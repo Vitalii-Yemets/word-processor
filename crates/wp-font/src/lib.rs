@@ -91,9 +91,76 @@ impl std::error::Error for Error {}
 
 /// Where a table sits in the file.
 #[derive(Clone, Copy, Debug)]
-struct TableRange {
-    offset: usize,
-    length: usize,
+pub struct TableRange {
+    pub offset: usize,
+    pub length: usize,
+}
+
+/// Reads a `cmap` table on its own, without the rest of the font.
+///
+/// Choosing a font for a character means asking many faces whether they cover
+/// it. Loading each whole file to ask is what turned showing one page into
+/// hundreds of megabytes; the mapping alone is a few kilobytes.
+pub fn character_map_from_table(table: &[u8]) -> Result<CharacterMap, Error> {
+    CharacterMap::parse(table, 0)
+}
+
+/// Reads the family name out of a `name` table on its own.
+///
+/// Cataloguing the fonts on a machine means reading a few hundred files for one
+/// string each. Loading each one whole to get it costs hundreds of megabytes,
+/// so the catalogue reads just this table and asks for the name directly.
+#[must_use]
+pub fn family_from_name_table(table: &[u8]) -> Option<String> {
+    name::find(table, 0, name::FAMILY)
+}
+
+/// Reads the table directory of a font, given the file's first bytes.
+///
+/// `header` must hold at least the twelve-byte header and the directory that
+/// follows it. Returns each table's tag and where it sits in the file, so a
+/// caller can read only the ones it needs.
+pub fn table_directory(header: &[u8]) -> Result<Vec<([u8; 4], TableRange)>, Error> {
+    let mut reader = Reader::new(header);
+    let version = reader.tag()?;
+    if !matches!(
+        version,
+        [0x00, 0x01, 0x00, 0x00] | [b't', b'r', b'u', b'e'] | [b'O', b'T', b'T', b'O']
+    ) {
+        return Err(Error::NotAFont);
+    }
+
+    let count = reader.u16()?;
+    reader.skip(6)?;
+
+    let mut tables = Vec::with_capacity(usize::from(count));
+    for _ in 0..count {
+        let tag = reader.tag()?;
+        reader.skip(4)?;
+        let offset = reader.u32()? as usize;
+        let length = reader.u32()? as usize;
+        tables.push((tag, TableRange { offset, length }));
+    }
+
+    Ok(tables)
+}
+
+/// Where each font in a collection begins, given the file's first bytes.
+///
+/// A file that is not a collection has one font, starting at zero.
+pub fn collection_offsets(header: &[u8]) -> Result<Vec<usize>, Error> {
+    let mut reader = Reader::new(header);
+    if reader.tag()? != COLLECTION_TAG {
+        return Ok(vec![0]);
+    }
+
+    reader.skip(4)?;
+    let count = reader.u32()?.min(64);
+    let mut offsets = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        offsets.push(reader.u32()? as usize);
+    }
+    Ok(offsets)
 }
 
 /// Vertical metrics, in font design units.

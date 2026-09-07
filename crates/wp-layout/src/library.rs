@@ -14,9 +14,12 @@
 //!   taken from another font. Without this, whole scripts come out as empty
 //!   boxes even when the machine has a font that covers them.
 
+use std::cell::OnceCell;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use wp_font::{Font, GlyphId};
+use wp_font::{CharacterMap, Font, GlyphId, TableRange};
 
 /// One font face that can be drawn with.
 #[derive(Debug)]
@@ -29,13 +32,58 @@ pub struct Face {
     pub path: PathBuf,
     /// Which font within the file, for collections.
     pub index: u32,
-    data: Vec<u8>,
+    /// The file, read the first time this face is actually drawn with.
+    ///
+    /// A machine can have hundreds of font files, and scanning them all is not
+    /// a reason to keep them all. Loading eagerly cost six hundred megabytes to
+    /// show one page; a document uses a handful of faces, and only those are
+    /// held.
+    data: OnceCell<Vec<u8>>,
+    /// Where the `cmap` table sits, so coverage can be checked without reading
+    /// the whole file.
+    cmap: Option<TableRange>,
+    /// Which characters this face can draw, read from that table alone.
+    coverage: OnceCell<CharacterMap>,
 }
 
 impl Face {
     /// Parses the face so it can be measured and drawn.
-    pub fn font(&self) -> Result<Font<'_>, wp_font::Error> {
-        Font::parse_index(&self.data, self.index)
+    ///
+    /// The file is read on first use and then kept, so the cost is paid once
+    /// per face rather than once per glyph.
+    #[must_use]
+    pub fn font(&self) -> Option<Font<'_>> {
+        Font::parse_index(self.bytes()?, self.index).ok()
+    }
+
+    /// Which characters this face covers.
+    ///
+    /// Answered from the character mapping table alone. Deciding which font can
+    /// draw a Chinese character means asking every face on the machine, and
+    /// loading each whole file to ask is what made showing one page cost half a
+    /// gigabyte.
+    #[must_use]
+    pub fn coverage(&self) -> Option<&CharacterMap> {
+        if self.coverage.get().is_none() {
+            let range = self.cmap?;
+            let mut file = File::open(&self.path).ok()?;
+            let table = read_at(&mut file, range.offset as u64, range.length)?;
+            let map = wp_font::character_map_from_table(&table).ok()?;
+            let _ = self.coverage.set(map);
+        }
+        self.coverage.get()
+    }
+
+    /// The file contents, read if they are not already in memory.
+    fn bytes(&self) -> Option<&Vec<u8>> {
+        if self.data.get().is_none() {
+            if let Ok(bytes) = std::fs::read(&self.path) {
+                // Only fails if another call won the race, which cannot happen
+                // here: a library belongs to one thread.
+                let _ = self.data.set(bytes);
+            }
+        }
+        self.data.get()
     }
 }
 
@@ -114,31 +162,20 @@ impl FontLibrary {
         if metadata.len() > MAX_FONT_BYTES {
             return 0;
         }
-        let Ok(data) = std::fs::read(path) else { return 0 };
 
-        let Ok(count) = Font::count(&data) else { return 0 };
         let mut added = 0;
-        for index in 0..count.min(64) {
-            let Ok(font) = Font::parse_index(&data, index) else {
-                continue;
-            };
-            // A font whose outlines cannot be read is no use for drawing.
-            if !font.has_outlines() {
-                continue;
-            }
-            let Some(family) = font.family_name() else {
-                continue;
-            };
-            let bold = font.is_bold() || font.weight() >= 600;
-            let italic = font.is_italic();
-
+        for description in describe_faces(path) {
             self.faces.push(Face {
-                family,
-                bold,
-                italic,
+                family: description.family,
+                bold: description.bold,
+                italic: description.italic,
                 path: path.to_path_buf(),
-                index,
-                data: data.clone(),
+                index: description.index,
+                // The bytes are deliberately not kept: this face may never be
+                // drawn with, and the scan visits every font on the machine.
+                data: OnceCell::new(),
+                cmap: description.cmap,
+                coverage: OnceCell::new(),
             });
             added += 1;
         }
@@ -243,8 +280,8 @@ impl FontLibrary {
                 if require_style && (face.bold != bold || face.italic != italic) {
                     continue;
                 }
-                let Ok(font) = face.font() else { continue };
-                if let Some(glyph) = font.glyph_for(character) {
+                let Some(coverage) = face.coverage() else { continue };
+                if let Some(glyph) = coverage.glyph_for(character) {
                     return Some((index, glyph));
                 }
             }
@@ -256,6 +293,115 @@ impl FontLibrary {
     #[must_use]
     pub fn face(&self, index: usize) -> Option<&Face> {
         self.faces.get(index)
+    }
+}
+
+/// What the catalogue needs to know about one face.
+struct Description {
+    index: u32,
+    family: String,
+    bold: bool,
+    italic: bool,
+    cmap: Option<TableRange>,
+}
+
+/// Reads just enough of a font file to catalogue the faces in it.
+///
+/// Reading each file whole for one string cost hundreds of megabytes across a
+/// machine's font directory. Only the table directory and the two tables that
+/// carry the name and the style are read, which is a few kilobytes per file.
+fn describe_faces(path: &Path) -> Vec<Description> {
+    let Ok(mut file) = File::open(path) else {
+        return Vec::new();
+    };
+
+    // Enough for the collection header and a large table directory.
+    let Some(header) = read_at(&mut file, 0, 4096) else {
+        return Vec::new();
+    };
+    let Ok(offsets) = wp_font::collection_offsets(&header) else {
+        return Vec::new();
+    };
+
+    let mut descriptions = Vec::new();
+    for (index, start) in offsets.iter().enumerate().take(64) {
+        let Some(directory_header) = read_at(&mut file, *start as u64, 4096) else {
+            continue;
+        };
+        let Ok(tables) = wp_font::table_directory(&directory_header) else {
+            continue;
+        };
+
+        let find = |wanted: &[u8; 4]| {
+            tables.iter().find(|(tag, _)| tag == wanted).map(|(_, range)| *range)
+        };
+
+        // A face whose outlines cannot be read is no use for drawing.
+        if find(b"glyf").is_none() || find(b"loca").is_none() {
+            continue;
+        }
+
+        let Some(name_range) = find(b"name") else { continue };
+        let Some(name_table) = read_at(&mut file, name_range.offset as u64, name_range.length)
+        else {
+            continue;
+        };
+        let Some(family) = wp_font::family_from_name_table(&name_table) else {
+            continue;
+        };
+
+        // The style flags sit at a fixed place in OS/2; two bytes are enough.
+        let (mut bold, mut italic) = (false, false);
+        if let Some(os2) = find(b"OS/2") {
+            if let Some(bytes) = read_at(&mut file, os2.offset as u64 + 62, 2) {
+                if bytes.len() == 2 {
+                    let selection = u16::from_be_bytes([bytes[0], bytes[1]]);
+                    italic = selection & 0x0001 != 0;
+                    bold = selection & 0x0020 != 0;
+                }
+            }
+            if let Some(bytes) = read_at(&mut file, os2.offset as u64 + 4, 2) {
+                if bytes.len() == 2 {
+                    bold = bold || u16::from_be_bytes([bytes[0], bytes[1]]) >= 600;
+                }
+            }
+        }
+
+        descriptions.push(Description {
+            index: index as u32,
+            family,
+            bold,
+            italic,
+            cmap: find(b"cmap"),
+        });
+    }
+
+    descriptions
+}
+
+/// Reads a stretch of a file, returning as much of it as exists.
+fn read_at(file: &mut File, offset: u64, length: usize) -> Option<Vec<u8>> {
+    // A malformed font can claim a table larger than any real one.
+    const MAX_READ: usize = 1 << 20;
+    if length == 0 || length > MAX_READ {
+        return None;
+    }
+
+    file.seek(SeekFrom::Start(offset)).ok()?;
+    let mut buffer = vec![0u8; length];
+    let mut filled = 0usize;
+    while filled < length {
+        match file.read(&mut buffer[filled..]) {
+            Ok(0) => break,
+            Ok(count) => filled += count,
+            Err(_) => return None,
+        }
+    }
+    buffer.truncate(filled);
+    if buffer.is_empty() {
+        None
+    } else {
+        Some(buffer)
     }
 }
 

@@ -3,6 +3,16 @@
 version = 3
 
 [[package]]
+name = "wp-app"
+version = "0.0.1"
+dependencies = [
+ "wp-docx",
+ "wp-layout",
+ "wp-raster",
+ "wp-shell",
+]
+
+[[package]]
 name = "wp-cli"
 version = "0.0.1"
 dependencies = [
@@ -52,6 +62,13 @@ name = "wp-raster"
 version = "0.0.1"
 dependencies = [
  "wp-deflate",
+]
+
+[[package]]
+name = "wp-shell"
+version = "0.0.1"
+dependencies = [
+ "wp-raster",
 ]
 
 [[package]]

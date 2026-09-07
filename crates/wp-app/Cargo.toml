@@ -1,0 +1,20 @@
+[package]
+name = "wp-app"
+description = "The windowed application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "word-processor"
+path = "src/main.rs"
+
+[dependencies]
+wp-docx = { path = "../wp-docx" }
+wp-layout = { path = "../wp-layout" }
+wp-raster = { path = "../wp-raster" }
+wp-shell = { path = "../wp-shell" }
+
+[lints]
+workspace = true

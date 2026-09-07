@@ -1,0 +1,16 @@
+[package]
+name = "wp-shell"
+description = "The platform shell: a window, an event loop, and getting pixels onto the screen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-raster = { path = "../wp-raster" }
+
+# The workspace forbids unsafe everywhere else. Talking to an operating system
+# means calling C functions, which cannot be done any other way, so this one
+# crate allows it and keeps the surface as small as possible.
+[lints.rust]
+missing_debug_implementations = "warn"

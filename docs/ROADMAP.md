@@ -111,7 +111,15 @@ produced, nor reopened in Word to confirm it reports no problems.
 
 ---
 
-## Stage 3 — Fonts
+## Stage 3 — Fonts — partly done
+
+**Done:** TrueType and OpenType parsing in `wp-font` — the table directory,
+metrics, the character mapping in the formats that occur, and glyph outlines
+including composite glyphs. Font discovery and matching on both platforms, with
+per-character fallback. Outlines are rasterized in `wp-raster`.
+
+**Still to do:** everything below.
+
 
 An OpenType and TrueType parser covering `cmap`, `glyf`/`loca`, CFF and CFF2,
 `head`, `hhea`, `hmtx`, `maxp`, `name`, `OS/2`, `post`, `kern`, `GDEF`, `GSUB`,
@@ -176,7 +184,14 @@ of test documents, tracked as a fidelity score rather than a pass/fail.
 
 ---
 
-## Stage 6 — Rendering
+## Stage 6 — Rendering — partly done
+
+**Done:** an anti-aliased path rasterizer using signed-area accumulation, a
+pixel canvas with alpha blending, and a PNG encoder. Enough to draw a page of
+text and to compare rendered output against a reference image.
+
+**Still to do:** everything below.
+
 
 A 2D graphics engine written from scratch: path filling with nonzero and even-odd
 rules, stroking and dashes, clipping, affine transforms, gradients, and alpha
@@ -195,7 +210,16 @@ validated and compared against Word's PDF export.
 
 ---
 
-## Stage 7 — Platform shells
+## Stage 7 — Platform shells — partly done
+
+**Done:** a Windows shell in `wp-shell`, written against the Win32 ABI directly
+with no binding crate: a window, a message loop, keyboard and wheel input, and
+the finished image presented through GDI. It is the only crate in the project
+allowed to use `unsafe`, and the surface is the declarations plus the few calls
+that use them.
+
+**Still to do:** everything below, and X11 or Wayland for Linux.
+
 
 Thin layers over the operating system, written against the raw ABI.
 
@@ -256,6 +280,14 @@ import.
 
 ## Where the work stands
 
+**There is a window.** A document is unpacked, parsed, resolved against its
+styles, laid out with fonts read from the machine, rasterized and shown on
+screen, entirely by code in this repository.
+
+It is a viewer: editing works in the layers underneath, but no caret is
+connected to the keyboard yet. That, and the text engine that will make Arabic
+and the Indic scripts join their letters properly, are the next things.
+
 A `.docx` can be created, opened, read, edited and saved. Saving a document that
 was not edited reproduces it byte for byte. Editing it rewrites only the part
 that changed, and inside that part only the nodes that changed — a content
@@ -267,7 +299,7 @@ cross-compiled from the same container that builds for Linux.
 
 ## Immediate next step
 
-Finishing Stage 2: typed models for styles, numbering, sections, headers and
-footers, so those can be read and changed rather than only carried through.
-Stage 1.4, the Unicode tables, comes after that — they are needed by the text
-engine in Stage 4, not before.
+A caret and keyboard editing in the window, so the editing that already works
+underneath becomes something a person can do. After that, Stage 1.4 and Stage 4:
+the Unicode tables and the shaping engine, which is what Arabic, Hebrew and the
+Indic scripts need to be drawn correctly rather than as isolated letters.

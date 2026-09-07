@@ -483,7 +483,7 @@ impl<'a> LayoutEngine<'a> {
     /// Parses a face, keeping it for later.
     fn font(&mut self, face: usize) -> Option<&Font<'a>> {
         if !self.fonts.contains_key(&face) {
-            let parsed = self.library.face(face)?.font().ok()?;
+            let parsed = self.library.face(face)?.font()?;
             self.fonts.insert(face, parsed);
         }
         self.fonts.get(&face)

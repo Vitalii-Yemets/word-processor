@@ -3,10 +3,14 @@
 An open-source word processor that reads and writes the same file formats as
 Microsoft Word and aims for the same feature set.
 
-**Status: early development.** The document stack works end to end: a `.docx` can
-be created, opened, read, edited and saved. There is no window yet — that comes
-later. See [docs/ROADMAP.md](docs/ROADMAP.md) for the plan and the current
-position.
+**Status: early development.** There is a window. A `.docx` can be created,
+opened, read, edited, saved, and now drawn on screen — the archive unpacked, the
+XML parsed, the styles resolved, the fonts read from the machine, the glyph
+outlines rasterized and the window filled, all by code in this repository.
+
+It is a viewer so far: editing works in the layers underneath, but there is no
+caret on screen yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the plan and the
+current position.
 
 ## Principles
 
@@ -54,8 +58,17 @@ Requires only Docker.
 
 On a Linux or macOS host use `./x.sh` with the same commands.
 
-`wp` is a command line front end used to exercise the stack while there is no
-window:
+The windowed application:
+
+```powershell
+.\dist\word-processor.exe                 # open with a sample document
+.\dist\word-processor.exe mine.docx       # open a file
+```
+
+Mouse wheel or the arrow keys scroll, Page Up and Page Down move a screen at a
+time, Escape closes.
+
+`wp` is a command line front end for everything the window does not expose yet:
 
 ```powershell
 .\dist\wp.exe new demo.docx          # write a document showing what the model covers
@@ -65,6 +78,8 @@ window:
 .\dist\wp.exe roundtrip a.docx b.docx        # open and save, checking nothing changed
 .\dist\wp.exe replace a.docx b.docx old new  # replace text, across run boundaries
 .\dist\wp.exe append a.docx b.docx "a line"  # add a paragraph at the end
+.\dist\wp.exe render a.docx page 150         # draw the pages as PNG images
+.\dist\wp.exe fonts                          # list the fonts on this machine
 ```
 
 The editing commands report which parts of the package changed. Exactly one
@@ -78,7 +93,12 @@ should: everything else must come out as it went in.
 | `wp-zip` | ZIP archives, including Zip64 |
 | `wp-xml` | XML pull parser and writer, namespace-aware |
 | `wp-opc` | Parts, content types, relationships |
-| `wp-docx` | The WordprocessingML document model |
+| `wp-docx` | The WordprocessingML document model and styles |
+| `wp-font` | TrueType and OpenType parsing: metrics, character mapping, outlines |
+| `wp-raster` | Anti-aliased path filling, a pixel canvas, and PNG output |
+| `wp-layout` | Finding fonts, breaking text into lines, drawing a page |
+| `wp-shell` | The window and its event loop, written against the Win32 ABI |
+| `wp-app` | The windowed application |
 | `wp-cli` | The `wp` command line front end |
 
 `tools/` holds development scripts, `docs/` the roadmap, `dist/` the build output

@@ -92,7 +92,7 @@ impl<'a> Renderer<'a> {
     }
 
     fn read_outline(&self, face: usize, glyph: GlyphId) -> Option<CachedOutline> {
-        let font = self.library.face(face)?.font().ok()?;
+        let font = self.library.face(face)?.font()?;
         let outline = font.outline(glyph).ok()??;
 
         let mut path = Path::new();

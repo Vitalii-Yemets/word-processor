@@ -6,6 +6,8 @@ members = [
     "crates/wp-docx",
     "crates/wp-font",
     "crates/wp-raster",
+    "crates/wp-shell",
+    "crates/wp-app",
     "crates/wp-layout",
     "crates/wp-opc",
     "crates/wp-xml",
