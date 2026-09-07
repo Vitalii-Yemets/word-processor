@@ -4,6 +4,9 @@ members = [
     "crates/wp-cli",
     "crates/wp-deflate",
     "crates/wp-docx",
+    "crates/wp-font",
+    "crates/wp-raster",
+    "crates/wp-layout",
     "crates/wp-opc",
     "crates/wp-xml",
     "crates/wp-zip",
@@ -12,7 +15,10 @@ members = [
 [workspace.package]
 version = "0.0.1"
 edition = "2021"
-rust-version = "1.75"
+# Raised from 1.75 when the font reader started using Option::is_none_or.
+# The declared minimum has to match what the code actually needs, or it is
+# a claim nobody has checked.
+rust-version = "1.82"
 license = "MIT"
 repository = ""
 

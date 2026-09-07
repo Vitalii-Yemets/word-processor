@@ -7,7 +7,9 @@ name = "wp-cli"
 version = "0.0.1"
 dependencies = [
  "wp-docx",
+ "wp-layout",
  "wp-opc",
+ "wp-raster",
 ]
 
 [[package]]
@@ -24,11 +26,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "wp-font"
+version = "0.0.1"
+
+[[package]]
+name = "wp-layout"
+version = "0.0.1"
+dependencies = [
+ "wp-docx",
+ "wp-font",
+ "wp-raster",
+ "wp-xml",
+]
+
+[[package]]
 name = "wp-opc"
 version = "0.0.1"
 dependencies = [
  "wp-xml",
  "wp-zip",
+]
+
+[[package]]
+name = "wp-raster"
+version = "0.0.1"
+dependencies = [
+ "wp-deflate",
 ]
 
 [[package]]

@@ -52,6 +52,9 @@ fn main() -> ExitCode {
             replace(&arguments[1], &arguments[2], &arguments[3], &arguments[4])
         }
         (Some("append"), 4) => append(&arguments[1], &arguments[2], &arguments[3]),
+        (Some("render"), 3) => render(&arguments[1], &arguments[2], "96"),
+        (Some("render"), 4) => render(&arguments[1], &arguments[2], &arguments[3]),
+        (Some("fonts"), 1) => fonts(),
         _ => {
             print_usage();
             // Started with no arguments at all, most likely by double-clicking
@@ -87,6 +90,9 @@ Usage: wp <command>
 
   replace <in> <out> <from> <to>   replace text, across run boundaries
   append <in> <out> <text>         add a paragraph at the end
+
+  render <in.docx> <prefix> [dpi]  draw the pages as PNG images
+  fonts                            list the fonts found on this machine
 
 The editing commands report which parts of the package changed, so it is
 visible that everything else was carried through untouched.
@@ -348,6 +354,71 @@ fn append(input: &str, output: &str, text: &str) -> Result<(), String> {
     outln!("appended a paragraph");
     outln!();
     report_part_changes(&original, &saved);
+    Ok(())
+}
+
+/// Draws a document's pages as images.
+///
+/// There is no window yet, so this is how the rendering stack can be looked at:
+/// the same layout and drawing code a window will use, writing to a file
+/// instead of to the screen.
+fn render(input: &str, prefix: &str, dpi: &str) -> Result<(), String> {
+    let dpi: f32 = dpi.parse().map_err(|_| format!("not a resolution: {dpi}"))?;
+    let document = open(input)?;
+
+    let library = wp_layout::FontLibrary::scan_system();
+    if library.is_empty() {
+        return Err("no usable fonts were found on this machine".to_owned());
+    }
+    outln!("fonts available: {} faces", library.faces().len());
+
+    let mut engine = wp_layout::LayoutEngine::new(&library).with_dpi(dpi);
+    let pages = engine.layout_document(&document);
+    outln!("pages laid out: {}", pages.len());
+
+    let mut renderer = wp_layout::Renderer::new(&library);
+    for (number, page) in pages.iter().enumerate() {
+        let canvas = renderer.render(page, wp_raster::Color::WHITE);
+        let image = wp_raster::encode_png(&canvas);
+        let path = format!("{prefix}-{:02}.png", number + 1);
+        write(&path, &image)?;
+        outln!(
+            "  {path}  {}x{} pixels, {} glyphs, {} bytes",
+            canvas.width(),
+            canvas.height(),
+            page.glyphs.len(),
+            image.len()
+        );
+    }
+    outln!("distinct glyphs drawn: {}", renderer.cached_glyphs());
+
+    Ok(())
+}
+
+/// Lists the font families this machine has.
+fn fonts() -> Result<(), String> {
+    let library = wp_layout::FontLibrary::scan_system();
+    if library.is_empty() {
+        return Err("no usable fonts were found on this machine".to_owned());
+    }
+
+    outln!("{} faces in {} families", library.faces().len(), library.families().len());
+    outln!();
+    for family in library.families() {
+        let styles: Vec<&str> = library
+            .faces()
+            .iter()
+            .filter(|face| face.family == family)
+            .map(|face| match (face.bold, face.italic) {
+                (false, false) => "regular",
+                (true, false) => "bold",
+                (false, true) => "italic",
+                (true, true) => "bold italic",
+            })
+            .collect();
+        outln!("{family}  [{}]", styles.join(", "));
+    }
+
     Ok(())
 }
 

@@ -1,0 +1,12 @@
+[package]
+name = "wp-font"
+description = "TrueType and OpenType font parsing: metrics, character mapping and glyph outlines"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

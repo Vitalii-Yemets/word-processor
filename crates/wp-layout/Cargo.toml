@@ -1,0 +1,16 @@
+[package]
+name = "wp-layout"
+description = "Finding fonts, breaking text into lines, and drawing a document page"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-docx = { path = "../wp-docx" }
+wp-font = { path = "../wp-font" }
+wp-raster = { path = "../wp-raster" }
+wp-xml = { path = "../wp-xml" }
+
+[lints]
+workspace = true

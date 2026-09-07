@@ -1,0 +1,14 @@
+[package]
+name = "wp-raster"
+description = "Anti-aliased path rasterization, a pixel canvas, and a PNG encoder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Only for the PNG encoder, which stores its image data as zlib.
+wp-deflate = { path = "../wp-deflate" }
+
+[lints]
+workspace = true
