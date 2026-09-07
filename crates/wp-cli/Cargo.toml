@@ -1,0 +1,18 @@
+[package]
+name = "wp-cli"
+description = "Command line front end, used to exercise the document stack while there is no window yet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "wp"
+path = "src/main.rs"
+
+[dependencies]
+wp-docx = { path = "../wp-docx" }
+wp-opc = { path = "../wp-opc" }
+
+[lints]
+workspace = true

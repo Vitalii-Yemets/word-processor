@@ -25,7 +25,7 @@ works from the same container that builds for Linux.
 
 ---
 
-## Stage 1 — Container and markup primitives
+## Stage 1 — Container and markup primitives ✅ complete
 
 Everything needed to open a `.docx` as a structured document rather than a blob.
 
@@ -41,25 +41,34 @@ our encoder does not); `gzip` accepts and correctly decodes streams we produce;
 every single-bit corruption and every truncation of a valid stream is rejected
 without a panic.
 
-### 1.2 ZIP and OPC packaging
+### 1.2 ZIP and OPC packaging ✅ complete
 
 ZIP reader and writer, including Zip64 for large documents, and the Open
 Packaging Conventions layer on top: content types, relationships, parts, and
 part naming rules.
 
-*Proven by:* a `.docx` produced by Word opens, and every part comes out
-byte-identical to what the system `unzip` extracts.
+*Proven by:* archives written by the system `zip` at three compression levels
+read correctly, including entry names it writes as unflagged UTF-8; archives we
+write pass `unzip -t` and extract identically; and a package survives open-and-
+save byte for byte, parts it does not model included.
 
-### 1.3 XML
+*Not yet proven:* nothing has been tested against a document Word itself
+produced. That needs a corpus of real files, which cannot live in the repository
+— see `corpus/`.
+
+### 1.3 XML ✅ complete
 
 A pull parser and a writer with namespace support, entity handling, encoding
 detection, and exact whitespace preservation (`xml:space`). Word is strict about
 what it will reopen, so output has to be faithful, not merely well-formed.
 
-*Proven by:* parsing every XML part of a corpus of real documents, re-serializing
-it, and comparing the result to the input.
+*Proven by:* parse, write and parse again produces the same event stream for
+documents covering namespaces, entities, CDATA, comments and every script tested;
+entity definitions in a document type declaration are never expanded, which
+closes both the billion-laughs expansion and external entity file disclosure;
+every truncation and bit-flip of a valid document is refused without a panic.
 
-### 1.4 Unicode character database
+### 1.4 Unicode character database — not started
 
 Generated, committed tables: general category, script, bidirectional class,
 line-break class, grapheme and word boundaries, case mappings, normalization
@@ -232,7 +241,21 @@ import.
 
 ---
 
+## Where the work stands
+
+A `.docx` can be created, opened, read and saved. Saving a document that was not
+edited reproduces it byte for byte, including parts nothing here understands.
+The `wp` command line tool exercises all of it, and the Windows executable is
+cross-compiled from the same container that builds for Linux.
+
+What is deliberately not offered yet: editing the body of an *opened* document.
+The model covers paragraphs, runs, character formatting and tables, which is not
+everything a real document contains, so writing an opened document back out from
+it would quietly discard the rest. Doing that safely needs the full document
+model — Stage 2.
+
 ## Immediate next step
 
-Stage 1.2 — the ZIP and OPC layer, so a real `.docx` can be opened and its parts
-listed. `wp-deflate` already provides everything it needs.
+Stage 1.4, the Unicode character database, then Stage 2. The tables are needed
+before the text engine and are already implied by the XML layer, so they come
+first.

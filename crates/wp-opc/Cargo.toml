@@ -1,0 +1,14 @@
+[package]
+name = "wp-opc"
+description = "Open Packaging Conventions (ECMA-376 Part 2): the package layer beneath every Office document"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-xml = { path = "../wp-xml" }
+wp-zip = { path = "../wp-zip" }
+
+[lints]
+workspace = true

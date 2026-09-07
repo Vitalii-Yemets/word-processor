@@ -1,7 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/wp-cli",
     "crates/wp-deflate",
+    "crates/wp-docx",
+    "crates/wp-opc",
     "crates/wp-xml",
     "crates/wp-zip",
 ]

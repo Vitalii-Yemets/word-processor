@@ -3,8 +3,33 @@
 version = 3
 
 [[package]]
+name = "wp-cli"
+version = "0.0.1"
+dependencies = [
+ "wp-docx",
+ "wp-opc",
+]
+
+[[package]]
 name = "wp-deflate"
 version = "0.0.1"
+
+[[package]]
+name = "wp-docx"
+version = "0.0.1"
+dependencies = [
+ "wp-opc",
+ "wp-xml",
+ "wp-zip",
+]
+
+[[package]]
+name = "wp-opc"
+version = "0.0.1"
+dependencies = [
+ "wp-xml",
+ "wp-zip",
+]
 
 [[package]]
 name = "wp-xml"

@@ -3,20 +3,21 @@
 An open-source word processor that reads and writes the same file formats as
 Microsoft Word and aims for the same feature set.
 
-**Status: early development.** Stage 0 (build environment) and the first part of
-Stage 1 (the DEFLATE layer) are complete. See [docs/ROADMAP.md](docs/ROADMAP.md)
-for the full plan and current position.
+**Status: early development.** The document stack is working end to end — a
+`.docx` can be created, read, and saved again byte for byte — but there is no
+window yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the plan and the current
+position.
 
 ## Principles
 
 These constraints are deliberate and shape every decision in the codebase.
 
 **Written from scratch, in Rust, with zero third-party crates.** Nothing but the
-Rust standard library. Compression, XML, fonts, text shaping, layout,
-rasterization and the GUI are all implemented here. The only external code the
-binary touches is the operating system's own ABI (Win32 on Windows, X11/Wayland
-on Linux), declared directly with `extern "system"` rather than through a
-binding crate.
+Rust standard library. Compression, ZIP, XML, the package layer and the document
+model are all implemented here, and so are the fonts, text shaping, layout,
+rasterization and GUI still to come. The only external code the binary touches is
+the operating system's own ABI (Win32 on Windows, X11/Wayland on Linux), declared
+directly with `extern "system"` rather than through a binding crate.
 
 **Windows first, Linux supported.** The core carries no operating-system
 dependency at all — it turns a document into a pixel buffer with nothing but
@@ -24,20 +25,20 @@ dependency at all — it turns a document into a pixel buffer with nothing but
 more shell.
 
 **Everything builds in Docker.** Nothing is installed on the developer's machine.
-A single container holds the Rust toolchain and the mingw-w64 linker used to
+One container holds the pinned Rust toolchain and the mingw-w64 linker used to
 cross-compile the Windows executable.
 
 **Files survive a round trip.** Word documents contain more than any single
 program models. Parts and elements this editor does not yet understand are
 preserved verbatim on save, so opening a document here and saving it never
-destroys work done elsewhere.
+destroys work done elsewhere. This is tested, not merely intended.
 
 **Multilingual from the ground up.** Not a translation added at the end: the text
-engine handles bidirectional scripts, complex shaping, and script-specific line
-breaking, and the interface is localizable and mirrors for right-to-left
+engine will handle bidirectional scripts, complex shaping, and script-specific
+line breaking, and the interface is localizable and mirrors for right-to-left
 languages. This has to be designed in from the start; it cannot be retrofitted.
 
-## Building
+## Trying it
 
 Requires only Docker.
 
@@ -45,29 +46,58 @@ Requires only Docker.
 .\x.ps1 image      # build the container image (once)
 .\x.ps1 test       # run the test suite
 .\x.ps1 check      # clippy, warnings treated as errors
-.\x.ps1 win        # release build of the Windows .exe -> ./dist
+.\x.ps1 win        # release build of the Windows .exe -> .\dist\wp.exe
 .\x.ps1 linux      # release build for Linux -> ./dist
 ```
 
 On a Linux or macOS host use `./x.sh` with the same commands.
 
+`wp` is a command line front end used to exercise the stack while there is no
+window:
+
+```powershell
+.\dist\wp.exe new demo.docx          # write a document showing what the model covers
+.\dist\wp.exe info demo.docx         # list the parts, content types and relationships
+.\dist\wp.exe text demo.docx         # print the text
+.\dist\wp.exe outline demo.docx      # print the structure with formatting
+.\dist\wp.exe roundtrip a.docx b.docx  # open and save, checking nothing changed
+```
+
 ## Layout
 
-| Path | Contents |
+| Crate | Contents |
 | --- | --- |
-| `crates/wp-deflate` | DEFLATE, zlib, CRC-32, Adler-32 |
-| `tools/` | Development scripts (test fixture generation) |
-| `docs/` | Roadmap and design notes |
-| `dist/` | Build output, copied out of the container |
+| `wp-deflate` | DEFLATE, zlib, CRC-32, Adler-32 |
+| `wp-zip` | ZIP archives, including Zip64 |
+| `wp-xml` | XML pull parser and writer, namespace-aware |
+| `wp-opc` | Parts, content types, relationships |
+| `wp-docx` | The WordprocessingML document model |
+| `wp-cli` | The `wp` command line front end |
+
+`tools/` holds development scripts, `docs/` the roadmap, `dist/` the build output
+copied out of the container, and `corpus/` is an ignored directory for real Word
+files to compare against.
+
+## Testing
+
+Every layer is tested against an implementation that had no part in writing it,
+because "it reads what it writes" proves only internal consistency:
+
+- DEFLATE streams from the system `gzip`, at three compression levels — this is
+  what covers dynamic Huffman codes, which Word emits and our encoder does not
+- Archives from `zip`, and archives of ours checked by `unzip -t`
+- Every single-bit corruption and every truncation of a valid file, which must
+  produce an error rather than a panic or a half-read document
 
 ## Specifications
 
 The formats are public and the implementation follows them directly:
 
-- **ECMA-376** — Office Open XML, the `.docx` format
+- **ECMA-376** — Office Open XML: Part 1 for WordprocessingML, Part 2 for packaging
 - **[MS-OI29500]** — Microsoft's documented deviations from ECMA-376
 - **[MS-DOC]**, **[MS-CFB]** — the legacy binary `.doc` format
 - **RFC 1950 / 1951 / 1952** — zlib, DEFLATE, gzip
+- **PKWARE APPNOTE** — the ZIP format, including Zip64
 - **ISO/IEC 14496-22**, OpenType — font files
 - **UAX #9, #14, #15, #29** — bidirectional text, line breaking, normalization,
   text segmentation
