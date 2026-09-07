@@ -5,3 +5,14 @@ version = 3
 [[package]]
 name = "wp-deflate"
 version = "0.0.1"
+
+[[package]]
+name = "wp-xml"
+version = "0.0.1"
+
+[[package]]
+name = "wp-zip"
+version = "0.0.1"
+dependencies = [
+ "wp-deflate",
+]

@@ -1,0 +1,12 @@
+[package]
+name = "wp-xml"
+description = "XML pull parser and writer with namespace support, implemented from scratch with no dependencies"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

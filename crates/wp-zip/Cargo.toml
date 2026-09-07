@@ -1,0 +1,14 @@
+[package]
+name = "wp-zip"
+description = "ZIP archive reader and writer, implemented from scratch with no dependencies"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Workspace-internal only. No third-party code.
+wp-deflate = { path = "../wp-deflate" }
+
+[lints]
+workspace = true

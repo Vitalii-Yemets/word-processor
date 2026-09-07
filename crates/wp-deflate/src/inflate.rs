@@ -147,10 +147,11 @@ impl Huffman {
         counts[0] = 0;
 
         // Kraft's inequality: an over-subscribed code is never valid.
+        // Length zero means "no code", so the count for it takes no part.
         let mut remaining: i32 = 1;
-        for length in 1..16 {
+        for &count in counts.iter().skip(1) {
             remaining <<= 1;
-            remaining -= i32::from(counts[length]);
+            remaining -= i32::from(count);
             if remaining < 0 {
                 return Err(Error::InvalidCodeLengths);
             }
@@ -410,12 +411,13 @@ fn inflate_block(
 
         // Copying one byte at a time is mandatory: source and destination may
         // overlap, and that is exactly how DEFLATE expresses runs (distance = 1).
-        let mut source = out.len() - distance;
+        // The range is fixed before the loop, so the bytes just appended are
+        // themselves read back when the match is longer than the distance.
+        let first = out.len() - distance;
         out.reserve(length);
-        for _ in 0..length {
+        for source in first..first + length {
             let byte = out[source];
             out.push(byte);
-            source += 1;
         }
     }
 }
