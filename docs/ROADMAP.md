@@ -52,6 +52,9 @@ read correctly, including entry names it writes as unflagged UTF-8; archives we
 write pass `unzip -t` and extract identically; and a package survives open-and-
 save byte for byte, parts it does not model included.
 
+*Also proven:* Microsoft Word opens a document written here without a repair
+prompt and without compatibility mode, and reads exactly the same words from it.
+
 *Not yet proven:* nothing has been tested against a document Word itself
 produced. That needs a corpus of real files, which cannot live in the repository
 — see `corpus/`.
@@ -106,8 +109,11 @@ that byte for byte intact, and changes no other part of the package; an
 unmodified document is written back from its original bytes and comes out
 identical.
 
+*Also proven:* Word opens a document written here in the current mode, reads the
+same 176 words this program reads, and lays it out on the same number of pages.
+
 *Not yet proven:* nothing has been tested against a document Word itself
-produced, nor reopened in Word to confirm it reports no problems.
+produced.
 
 ---
 

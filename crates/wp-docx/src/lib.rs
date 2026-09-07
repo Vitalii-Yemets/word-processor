@@ -57,6 +57,14 @@ const STYLES_CONTENT_TYPE: &str =
 const STYLES_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 
+/// Content type of the settings part.
+const SETTINGS_CONTENT_TYPE: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
+
+/// Relationship type of the settings part.
+const SETTINGS_RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings";
+
 /// Page width of A4 in twentieths of a point, the unit the format uses.
 const A4_WIDTH_TWIPS: &str = "11906";
 /// Page height of A4 in the same unit.
@@ -139,6 +147,11 @@ impl Document {
             xml.into_bytes(),
         );
         package.add_part("word/styles.xml", STYLES_CONTENT_TYPE, default_styles().into_bytes());
+        package.add_part(
+            "word/settings.xml",
+            SETTINGS_CONTENT_TYPE,
+            default_settings().into_bytes(),
+        );
 
         // A package is navigated by relationships, not by filenames, so the main
         // document has to be pointed at from the package root.
@@ -148,6 +161,7 @@ impl Document {
 
         let mut document_relationships = Relationships::new("word/document.xml");
         document_relationships.add(STYLES_RELATIONSHIP, "styles.xml", TargetMode::Internal);
+        document_relationships.add(SETTINGS_RELATIONSHIP, "settings.xml", TargetMode::Internal);
         package.set_relationships(&document_relationships)?;
 
         let styles = read_styles(&package, "word/document.xml");
@@ -383,20 +397,50 @@ fn section_properties() -> Element {
     section
 }
 
+/// Document settings.
+///
+/// The only thing in here is the compatibility mode, and it earns its place.
+/// Without it Word assumes a document was written for Word 2007 and opens it in
+/// compatibility mode: the title bar says so, newer features are disabled, and
+/// the user is invited to convert a file that never needed converting. The
+/// declaration is what says which version's rules the document was written to.
+fn default_settings() -> String {
+    let w = WORDPROCESSING_NAMESPACE;
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="{w}">
+<w:compat>
+<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>
+</w:compat>
+</w:settings>"#
+    )
+}
+
 /// A small stylesheet, so that documents created here have the styles their
 /// paragraphs refer to.
 ///
 /// Without it a `w:pStyle` naming `Heading1` would resolve to nothing and the
 /// heading would render as body text.
+///
+/// The document defaults state the paragraph spacing explicitly. Leaving it
+/// unstated does not mean zero: it means each program applies its own idea of a
+/// default, and Word's is eight points after every paragraph. The same document
+/// then came out one page here and two in Word. Saying it outright leaves
+/// nothing to anyone's discretion.
 fn default_styles() -> String {
     let w = WORDPROCESSING_NAMESPACE;
     format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="{w}">
-<w:docDefaults><w:rPrDefault><w:rPr>
+<w:docDefaults>
+<w:rPrDefault><w:rPr>
 <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri" w:eastAsia="Calibri"/>
 <w:sz w:val="22"/><w:szCs w:val="22"/>
-</w:rPr></w:rPrDefault></w:docDefaults>
+</w:rPr></w:rPrDefault>
+<w:pPrDefault><w:pPr>
+<w:spacing w:after="160" w:line="259" w:lineRule="auto"/>
+</w:pPr></w:pPrDefault>
+</w:docDefaults>
 <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
 <w:name w:val="Normal"/><w:qFormat/>
 </w:style>

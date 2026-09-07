@@ -115,6 +115,9 @@ because "it reads what it writes" proves only internal consistency:
 - Archives from `zip`, and archives of ours checked by `unzip -t`
 - Every single-bit corruption and every truncation of a valid file, which must
   produce an error rather than a panic or a half-read document
+- Microsoft Word itself, driven through its automation interface: it opens a
+  document written here without a repair prompt, in the current mode rather than
+  compatibility mode, reads exactly the same words, and agrees on the page count
 
 ## Specifications
 
