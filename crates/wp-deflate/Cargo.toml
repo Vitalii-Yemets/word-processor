@@ -1,0 +1,13 @@
+[package]
+name = "wp-deflate"
+description = "DEFLATE (RFC 1951), zlib (RFC 1950) and CRC-32, implemented from scratch with no dependencies"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# There are no dependencies and there will be none.
+[dependencies]
+
+[lints]
+workspace = true

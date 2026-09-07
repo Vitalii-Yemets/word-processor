@@ -1,0 +1,9 @@
+# The build runs in a Linux container, so text files keep LF line endings even
+# when checked out on Windows. Shell scripts with CRLF fail inside the container.
+* text=auto eol=lf
+
+# PowerShell scripts run on the Windows host and keep native line endings.
+*.ps1 text eol=crlf
+
+# Test fixtures are compressed streams: any line-ending translation destroys them.
+*.deflate binary

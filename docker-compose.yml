@@ -1,0 +1,18 @@
+services:
+  dev:
+    build: .
+    image: wp-dev:latest
+    working_dir: /work
+    volumes:
+      - .:/work
+      # target/ lives in a volume: on a Windows bind mount builds are about
+      # three times slower, and this way nothing is really built on the host.
+      - wp-target:/work/target
+    environment:
+      CARGO_NET_OFFLINE: "true"
+      CARGO_TERM_COLOR: "always"
+    tty: true
+    stdin_open: true
+
+volumes:
+  wp-target:
