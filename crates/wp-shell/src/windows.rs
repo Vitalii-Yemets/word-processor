@@ -14,7 +14,7 @@
 use std::cell::RefCell;
 use std::ffi::c_void;
 
-use crate::{App, Error, Event, Key, Response, WindowOptions};
+use crate::{App, Error, Event, Key, Modifiers, Response, WindowOptions};
 
 // --- Types the API uses -----------------------------------------------------
 
@@ -135,6 +135,9 @@ const KEY_UP: u32 = 0x26;
 const KEY_RIGHT: u32 = 0x27;
 const KEY_DOWN: u32 = 0x28;
 const KEY_DELETE: u32 = 0x2E;
+const KEY_CONTROL: i32 = 0x11;
+const KEY_SHIFT: i32 = 0x10;
+const KEY_ALT: i32 = 0x12;
 
 // --- The system functions used ----------------------------------------------
 
@@ -169,6 +172,7 @@ extern "system" {
     fn InvalidateRect(window: Handle, area: *const Rect, erase: i32) -> i32;
     fn GetClientRect(window: Handle, area: *mut Rect) -> i32;
     fn LoadCursorW(instance: Handle, name: *const u16) -> Handle;
+    fn GetKeyState(key: i32) -> i16;
 }
 
 #[link(name = "gdi32")]
@@ -343,7 +347,7 @@ unsafe extern "system" fn window_procedure(
             deliver(window, Event::Scroll { lines: f32::from(delta) / WHEEL_STEP })
         }
         MESSAGE_KEY_DOWN => match key_from_code(word as u32) {
-            Some(key) => deliver(window, Event::KeyDown(key)),
+            Some(key) => deliver(window, Event::KeyDown { key, modifiers: modifiers() }),
             None => DefWindowProcW(window, message, word, long),
         },
         MESSAGE_CHAR => match char::from_u32(word as u32) {
@@ -356,7 +360,7 @@ unsafe extern "system" fn window_procedure(
         MESSAGE_LEFT_BUTTON_DOWN => {
             let x = (long & 0xFFFF) as i16 as i32;
             let y = ((long >> 16) & 0xFFFF) as i16 as i32;
-            deliver(window, Event::MouseDown { x, y })
+            deliver(window, Event::MouseDown { x, y, modifiers: modifiers() })
         }
         MESSAGE_CLOSE => {
             deliver(window, Event::Closing);
@@ -431,8 +435,27 @@ fn paint(window: Handle) {
     }
 }
 
+/// Which modifier keys are held down right now.
+///
+/// Read at the moment the key arrives rather than tracked separately: the
+/// system already knows, and a separately maintained copy goes wrong the first
+/// time the window loses focus while a key is held.
+fn modifiers() -> Modifiers {
+    // The high bit of the state means the key is down.
+    let held = |key: i32| unsafe { GetKeyState(key) } < 0;
+    Modifiers {
+        control: held(KEY_CONTROL),
+        shift: held(KEY_SHIFT),
+        alt: held(KEY_ALT),
+    }
+}
+
 /// Maps a virtual key code to the small set of keys the shell reports.
 fn key_from_code(code: u32) -> Option<Key> {
+    // Letter keys carry their letter, which is what a shortcut needs.
+    if (0x41..=0x5A).contains(&code) {
+        return char::from_u32(code + 32).map(Key::Letter);
+    }
     Some(match code {
         KEY_UP => Key::Up,
         KEY_DOWN => Key::Down,

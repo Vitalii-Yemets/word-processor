@@ -24,7 +24,7 @@ use crate::model::{
 use crate::read::W;
 
 /// The namespace of the reserved `xml` prefix, which `xml:space` belongs to.
-const XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
+pub(crate) const XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
 
 /// The order the schema requires for the children of `w:pPr`.
 ///
@@ -92,7 +92,7 @@ fn find_in_namespace<'a>(element: &'a Element, namespace: &str) -> Option<&'a El
 }
 
 /// Builds a written element name for the WordprocessingML namespace.
-fn name_with(prefix: Option<&str>, local: &str) -> String {
+pub(crate) fn name_with(prefix: Option<&str>, local: &str) -> String {
     match prefix {
         Some(prefix) => format!("{prefix}:{local}"),
         None => local.to_owned(),
@@ -130,12 +130,12 @@ fn insert_ordered(parent: &mut Element, child: Element, order: &[&str]) {
 // --- Finding and replacing text ---------------------------------------------
 
 /// Where one `w:t` element sits, and what it holds.
-struct TextPiece {
+pub(crate) struct TextPiece {
     /// Indices into `children` at each level, from the paragraph down.
-    path: Vec<usize>,
-    text: String,
+    pub(crate) path: Vec<usize>,
+    pub(crate) text: String,
     /// Byte offset of this piece within the paragraph's assembled text.
-    start: usize,
+    pub(crate) start: usize,
 }
 
 /// Replaces every occurrence of `needle` in the document, returning how many
@@ -241,7 +241,7 @@ fn rebuild_piece(piece: &TextPiece, matches: &[(usize, usize)], replacement: &st
 }
 
 /// Collects every `w:t` under a paragraph, in document order.
-fn collect_text_pieces(paragraph: &Element) -> Vec<TextPiece> {
+pub(crate) fn collect_text_pieces(paragraph: &Element) -> Vec<TextPiece> {
     let mut pieces = Vec::new();
     let mut path = Vec::new();
     let mut offset = 0usize;
@@ -281,7 +281,7 @@ fn walk_text_pieces(
 }
 
 /// Resolves a child path back to a mutable element.
-fn element_at_path_mut<'a>(root: &'a mut Element, path: &[usize]) -> Option<&'a mut Element> {
+pub(crate) fn element_at_path_mut<'a>(root: &'a mut Element, path: &[usize]) -> Option<&'a mut Element> {
     let mut current = root;
     for &index in path {
         current = current.children.get_mut(index)?.as_element_mut()?;
@@ -294,7 +294,7 @@ fn element_at_path_mut<'a>(root: &'a mut Element, path: &[usize]) -> Option<&'a 
 ///
 /// Without the attribute a leading or trailing space is collapsed away on the
 /// next read, and two words silently run together.
-fn preserve_space_if_needed(element: &mut Element, text: &str) {
+pub(crate) fn preserve_space_if_needed(element: &mut Element, text: &str) {
     let needs_it = text.starts_with(char::is_whitespace) || text.ends_with(char::is_whitespace);
     if needs_it {
         element.set_namespaced_attribute("xml:space", XML_NAMESPACE, "preserve");

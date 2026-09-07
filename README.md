@@ -3,14 +3,14 @@
 An open-source word processor that reads and writes the same file formats as
 Microsoft Word and aims for the same feature set.
 
-**Status: early development.** There is a window. A `.docx` can be created,
-opened, read, edited, saved, and now drawn on screen — the archive unpacked, the
-XML parsed, the styles resolved, the fonts read from the machine, the glyph
-outlines rasterized and the window filled, all by code in this repository.
+**Status: early development, and it works.** A `.docx` opens in a window, can be
+clicked into, typed in, and saved — and Microsoft Word opens the result. The
+archive is unpacked, the XML parsed, the styles resolved, the fonts read from the
+machine, the glyph outlines rasterized and the window filled, all by code in this
+repository.
 
-It is a viewer so far: editing works in the layers underneath, but there is no
-caret on screen yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the plan and the
-current position.
+There is no selection, no undo, and no formatting from the keyboard yet. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for the plan and the current position.
 
 ## Principles
 
@@ -65,8 +65,9 @@ The windowed application:
 .\dist\word-processor.exe mine.docx       # open a file
 ```
 
-Mouse wheel or the arrow keys scroll, Page Up and Page Down move a screen at a
-time, Escape closes.
+Click in the text to put the caret there, then type. Enter splits a paragraph,
+Backspace joins one onto the last, Ctrl+S saves. The arrow keys move the caret,
+the wheel and Page Up/Down scroll, Escape closes.
 
 `wp` is a command line front end for everything the window does not expose yet:
 
@@ -117,7 +118,9 @@ because "it reads what it writes" proves only internal consistency:
   produce an error rather than a panic or a half-read document
 - Microsoft Word itself, driven through its automation interface: it opens a
   document written here without a repair prompt, in the current mode rather than
-  compatibility mode, reads exactly the same words, and agrees on the page count
+  compatibility mode, reads exactly the same words, and agrees on the page count.
+  It also opens a document this editor was typed into, and sees the paragraph a
+  keypress created carrying the style it should
 
 ## Specifications
 

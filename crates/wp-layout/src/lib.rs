@@ -29,6 +29,6 @@ mod layout;
 mod library;
 mod render;
 
-pub use layout::{Decoration, LayoutEngine, Page, PageMetrics, PositionedGlyph};
+pub use layout::{Decoration, LayoutEngine, Page, PageLine, PageMetrics, PositionedGlyph};
 pub use library::{Face, FontLibrary};
 pub use render::Renderer;

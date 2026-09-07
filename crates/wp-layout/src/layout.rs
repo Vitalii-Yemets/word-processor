@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use wp_docx::model::{
     Alignment, Block, Body, BreakKind, LineRule, Paragraph, ResolvedRunProperties, Run, RunContent,
 };
-use wp_docx::Document;
+use wp_docx::{Document, TextPosition};
 use wp_font::{Font, GlyphId};
 use wp_raster::Color;
 
@@ -147,9 +147,52 @@ pub struct PositionedGlyph {
     /// Where the glyph's origin sits.
     pub x: f32,
     pub baseline: f32,
+    /// How far the pen moves after it, which is what makes a caret land between
+    /// two letters rather than on one.
+    pub advance: f32,
     /// Height of one em in pixels, which is what the outline is scaled by.
     pub size: f32,
     pub color: Color,
+    /// Where in the document this glyph came from.
+    ///
+    /// Without this a page is a picture: something to look at but not to click
+    /// in. Carrying the position through is what lets a click become a caret.
+    pub source: TextPosition,
+    /// Byte length of the character it draws, so a caret can step past it.
+    pub source_length: usize,
+}
+
+/// One line of text on a page.
+///
+/// Kept because a caret and a mouse click are line-shaped questions: which line
+/// is this point on, and where in the document does that line begin and end.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PageLine {
+    pub baseline: f32,
+    pub ascent: f32,
+    pub descent: f32,
+    /// Where the line's text starts and ends horizontally.
+    pub left: f32,
+    pub right: f32,
+    /// Which glyphs of the page belong to it.
+    pub glyphs: core::ops::Range<usize>,
+    pub paragraph: usize,
+    /// The stretch of the paragraph's text this line covers.
+    pub start_offset: usize,
+    pub end_offset: usize,
+}
+
+impl PageLine {
+    /// The vertical band the line occupies.
+    #[must_use]
+    pub fn top(&self) -> f32 {
+        self.baseline - self.ascent
+    }
+
+    #[must_use]
+    pub fn bottom(&self) -> f32 {
+        self.baseline + self.descent
+    }
 }
 
 /// A filled rectangle: an underline, a strikethrough, a rule.
@@ -170,6 +213,106 @@ pub struct Page {
     pub height: f32,
     pub glyphs: Vec<PositionedGlyph>,
     pub decorations: Vec<Decoration>,
+    pub lines: Vec<PageLine>,
+}
+
+impl Page {
+    /// The place in the document a point on the page corresponds to.
+    ///
+    /// Used to turn a click into a caret. A point below the last line lands at
+    /// the end of the page rather than nowhere, which is what a person means
+    /// when they click in the empty space under the text.
+    #[must_use]
+    pub fn position_at(&self, x: f32, y: f32) -> Option<TextPosition> {
+        if self.lines.is_empty() {
+            return None;
+        }
+
+        // The line the point is on, or the nearest one above or below it.
+        let line = self
+            .lines
+            .iter()
+            .find(|line| y >= line.top() && y <= line.bottom())
+            .or_else(|| {
+                self.lines.iter().min_by(|first, second| {
+                    let distance = |line: &PageLine| {
+                        if y < line.top() {
+                            line.top() - y
+                        } else {
+                            y - line.bottom()
+                        }
+                    };
+                    distance(first).total_cmp(&distance(second))
+                })
+            })?;
+
+        // Before the first glyph or after the last, the answer is one end.
+        if x <= line.left {
+            return Some(TextPosition::new(line.paragraph, line.start_offset));
+        }
+        if x >= line.right {
+            return Some(TextPosition::new(line.paragraph, line.end_offset));
+        }
+
+        for index in line.glyphs.clone() {
+            let glyph = &self.glyphs[index];
+            if x < glyph.x + glyph.advance {
+                // Past the middle of a letter means the caret goes after it,
+                // which is what makes clicking feel like it lands where aimed.
+                let offset = if x > glyph.x + glyph.advance / 2.0 {
+                    glyph.source.offset + glyph.source_length
+                } else {
+                    glyph.source.offset
+                };
+                return Some(TextPosition::new(glyph.source.paragraph, offset));
+            }
+        }
+
+        Some(TextPosition::new(line.paragraph, line.end_offset))
+    }
+
+    /// Where a caret at a position should be drawn: its left edge, top, and
+    /// height.
+    #[must_use]
+    pub fn caret_at(&self, position: TextPosition) -> Option<(f32, f32, f32)> {
+        let line = self.line_of(position)?;
+
+        let mut x = line.left;
+        for index in line.glyphs.clone() {
+            let glyph = &self.glyphs[index];
+            if glyph.source.offset >= position.offset {
+                x = glyph.x;
+                break;
+            }
+            x = glyph.x + glyph.advance;
+        }
+        if position.offset >= line.end_offset {
+            x = line.right;
+        }
+
+        Some((x, line.top(), line.ascent + line.descent))
+    }
+
+    /// The line a position falls on.
+    #[must_use]
+    pub fn line_of(&self, position: TextPosition) -> Option<&PageLine> {
+        self.lines
+            .iter()
+            .find(|line| {
+                line.paragraph == position.paragraph
+                    && position.offset >= line.start_offset
+                    && position.offset <= line.end_offset
+            })
+            .or_else(|| {
+                self.lines.iter().find(|line| line.paragraph == position.paragraph)
+            })
+    }
+
+    /// Whether any of this page's text comes from a given paragraph.
+    #[must_use]
+    pub fn holds_paragraph(&self, paragraph: usize) -> bool {
+        self.lines.iter().any(|line| line.paragraph == paragraph)
+    }
 }
 
 /// How a run should look, reduced to what drawing needs.
@@ -192,6 +335,10 @@ struct ShapedGlyph {
     face: usize,
     glyph: GlyphId,
     advance: f32,
+    /// Byte offset of the character it draws, within the paragraph text.
+    offset: usize,
+    /// Byte length of that character.
+    length: usize,
 }
 
 /// The smallest thing a line can be broken between.
@@ -204,6 +351,10 @@ struct Item {
     /// Forces the rest of the paragraph onto a new line, or a new page.
     hard_break: Option<BreakKind>,
     style: usize,
+    /// Where this item sits in the paragraph text, so a line knows the stretch
+    /// of the document it covers.
+    start_offset: usize,
+    end_offset: usize,
 }
 
 /// Lays documents out with a given font library and resolution.
@@ -239,6 +390,58 @@ impl<'a> LayoutEngine<'a> {
         self.dpi / POINTS_PER_INCH
     }
 
+    /// Lays out a single line of plain text, for interface elements.
+    ///
+    /// The status strip and any other text the program shows go through the same
+    /// engine as the document, so there is one way to put text on screen rather
+    /// than two that drift apart.
+    pub fn simple_line(
+        &mut self,
+        text: &str,
+        x: f32,
+        baseline: f32,
+        size_points: f32,
+        color: Color,
+    ) -> Page {
+        let mut page = Page::default();
+        let size = size_points * self.pixels_per_point();
+
+        let Some(face) = self.library.default_face(false, false) else {
+            return page;
+        };
+        let style = RunStyle {
+            face,
+            size,
+            color,
+            underline: false,
+            strike: false,
+            right_to_left: false,
+            ascent: size,
+            descent: size * 0.25,
+            line_height: size * 1.25,
+        };
+
+        let mut pen = x;
+        for glyph in self.shape(text, &style, 0) {
+            page.glyphs.push(PositionedGlyph {
+                face: glyph.face,
+                glyph: glyph.glyph,
+                x: pen,
+                baseline,
+                advance: glyph.advance,
+                size,
+                color,
+                source: TextPosition::default(),
+                source_length: glyph.length,
+            });
+            pen += glyph.advance;
+        }
+
+        page.width = pen;
+        page.height = baseline + style.descent;
+        page
+    }
+
     /// Lays a whole document out into pages.
     pub fn layout_document(&mut self, document: &Document) -> Vec<Page> {
         let metrics = PageMetrics::from_document(document);
@@ -263,8 +466,9 @@ impl<'a> LayoutEngine<'a> {
         let mut pages = vec![Page { width: page_width, height: page_height, ..Page::default() }];
         let mut y = top;
 
-        for paragraph in collect_paragraphs(&body.blocks) {
+        for (index, paragraph) in collect_paragraphs(&body.blocks).into_iter().enumerate() {
             self.place_paragraph(
+                index,
                 paragraph,
                 document,
                 &mut pages,
@@ -277,8 +481,12 @@ impl<'a> LayoutEngine<'a> {
     }
 
     /// Where a paragraph may be drawn, in pixels.
+    ///
+    /// The index is the paragraph's place in reading order, which is what a
+    /// caret and a click are expressed in.
     fn place_paragraph(
         &mut self,
+        index: usize,
         paragraph: &Paragraph,
         document: &Document,
         pages: &mut Vec<Page>,
@@ -304,8 +512,29 @@ impl<'a> LayoutEngine<'a> {
         let mut styles = Vec::new();
         let items = self.build_items(paragraph, document, &mut styles);
         if items.is_empty() {
-            // An empty paragraph still takes up a line's worth of height.
-            *y += self.empty_line_height(paragraph, document);
+            // An empty paragraph still takes up a line's worth of height, and
+            // still needs a line recorded: a caret has to be able to sit in it.
+            let height = self.empty_line_height(paragraph, document);
+            if *y + height > area.bottom_limit
+                && !pages.last().is_some_and(|page| page.glyphs.is_empty())
+            {
+                self.start_page(pages, y, area);
+            }
+            let ascent = height * 0.8;
+            if let Some(page) = pages.last_mut() {
+                page.lines.push(PageLine {
+                    baseline: *y + ascent,
+                    ascent,
+                    descent: height - ascent,
+                    left: area.left + indent_start,
+                    right: area.left + indent_start,
+                    glyphs: page.glyphs.len()..page.glyphs.len(),
+                    paragraph: index,
+                    start_offset: 0,
+                    end_offset: 0,
+                });
+            }
+            *y += height;
             *y += space_after;
             return;
         }
@@ -343,13 +572,17 @@ impl<'a> LayoutEngine<'a> {
                 &items,
                 &styles,
                 pages.last_mut().expect("there is always a page"),
-                line_left,
-                line_width,
-                baseline,
-                descent,
-                resolved.alignment,
-                resolved.right_to_left,
-                number + 1 == lines.len(),
+                LinePlacement {
+                    left: line_left,
+                    width: line_width,
+                    baseline,
+                    ascent,
+                    descent,
+                    alignment: resolved.alignment,
+                    paragraph_rtl: resolved.right_to_left,
+                    is_last_line: number + 1 == lines.len(),
+                    paragraph: index,
+                },
             );
 
             *y += height;
@@ -384,6 +617,9 @@ impl<'a> LayoutEngine<'a> {
         styles: &mut Vec<RunStyle>,
     ) -> Vec<Item> {
         let mut items = Vec::new();
+        // Byte offset within the paragraph's text, counted the same way the
+        // editing layer counts it, so a glyph and a caret mean the same thing.
+        let mut offset = 0usize;
 
         for run in &paragraph.runs {
             let resolved = document.resolve_run(paragraph, run);
@@ -393,7 +629,7 @@ impl<'a> LayoutEngine<'a> {
             let style_index = styles.len();
             styles.push(style.clone());
 
-            self.build_run_items(run, &style, style_index, &mut items);
+            self.build_run_items(run, &style, style_index, &mut items, &mut offset);
         }
 
         items
@@ -405,25 +641,32 @@ impl<'a> LayoutEngine<'a> {
         style: &RunStyle,
         style_index: usize,
         items: &mut Vec<Item>,
+        offset: &mut usize,
     ) {
         for content in &run.content {
             match content {
                 RunContent::Text(text) => {
                     for chunk in segment(text) {
-                        let glyphs = self.shape(&chunk.text, style);
+                        let start = *offset;
+                        let glyphs = self.shape(&chunk.text, style, start);
                         let width = glyphs.iter().map(|glyph| glyph.advance).sum();
+                        *offset += chunk.text.len();
                         items.push(Item {
                             glyphs,
                             width,
                             is_space: chunk.is_space,
                             hard_break: None,
                             style: style_index,
+                            start_offset: start,
+                            end_offset: *offset,
                         });
                     }
                 }
                 RunContent::Tab => {
                     // A real tab stop table is a later stage; until then a tab
                     // advances by a fixed amount rather than being ignored.
+                    // It contributes no bytes, because the text a caret moves
+                    // through does not contain it either.
                     let width = style.size * 2.0;
                     items.push(Item {
                         glyphs: Vec::new(),
@@ -431,6 +674,8 @@ impl<'a> LayoutEngine<'a> {
                         is_space: false,
                         hard_break: None,
                         style: style_index,
+                        start_offset: *offset,
+                        end_offset: *offset,
                     });
                 }
                 RunContent::Break(kind) => {
@@ -440,6 +685,8 @@ impl<'a> LayoutEngine<'a> {
                         is_space: false,
                         hard_break: Some(*kind),
                         style: style_index,
+                        start_offset: *offset,
+                        end_offset: *offset,
                     });
                 }
             }
@@ -491,11 +738,11 @@ impl<'a> LayoutEngine<'a> {
 
     /// Turns text into glyphs, falling back to another font per character when
     /// the chosen one has no glyph for it.
-    fn shape(&mut self, text: &str, style: &RunStyle) -> Vec<ShapedGlyph> {
+    fn shape(&mut self, text: &str, style: &RunStyle, base_offset: usize) -> Vec<ShapedGlyph> {
         let mut glyphs = Vec::with_capacity(text.len());
         let mut previous: Option<GlyphId> = None;
 
-        for character in text.chars() {
+        for (local, character) in text.char_indices() {
             let mut chosen = None;
 
             if let Some(font) = self.font(style.face) {
@@ -526,7 +773,13 @@ impl<'a> LayoutEngine<'a> {
 
             match chosen {
                 Some((face, glyph, advance)) => {
-                    glyphs.push(ShapedGlyph { face, glyph, advance });
+                    glyphs.push(ShapedGlyph {
+                        face,
+                        glyph,
+                        advance,
+                        offset: base_offset + local,
+                        length: character.len_utf8(),
+                    });
                     previous = Some(glyph);
                 }
                 None => previous = None,
@@ -543,21 +796,14 @@ impl<'a> LayoutEngine<'a> {
         glyphs
     }
 
-    /// Places one line's glyphs, applying alignment.
-    #[allow(clippy::too_many_arguments)]
+    /// Places one line's glyphs, applying alignment, and records the line.
     fn place_line(
         &self,
         line: &Line,
         items: &[Item],
         styles: &[RunStyle],
         page: &mut Page,
-        left: f32,
-        width: f32,
-        baseline: f32,
-        descent: f32,
-        alignment: Alignment,
-        paragraph_rtl: bool,
-        is_last_line: bool,
+        placement: LinePlacement,
     ) {
         // Trailing whitespace hangs into the margin rather than being counted,
         // which is what keeps a centred line actually centred.
@@ -568,23 +814,23 @@ impl<'a> LayoutEngine<'a> {
             .map(|index| items[index].width)
             .sum();
 
-        let slack = (width - content_width).max(0.0);
+        let slack = (placement.width - content_width).max(0.0);
         let mut justify_extra = 0.0;
 
         // In a right-to-left paragraph the start edge is the right one.
-        let effective = match (alignment, paragraph_rtl) {
+        let effective = match (placement.alignment, placement.paragraph_rtl) {
             (Alignment::Start, false) | (Alignment::End, true) => Alignment::Start,
             (Alignment::End, false) | (Alignment::Start, true) => Alignment::End,
             (other, _) => other,
         };
 
         let mut x = match effective {
-            Alignment::Start => left,
-            Alignment::Center => left + slack / 2.0,
-            Alignment::End => left + slack,
+            Alignment::Start => placement.left,
+            Alignment::Center => placement.left + slack / 2.0,
+            Alignment::End => placement.left + slack,
             Alignment::Both => {
                 // The last line of a justified paragraph is not stretched.
-                if !is_last_line {
+                if !placement.is_last_line {
                     let gaps = line
                         .items
                         .clone()
@@ -594,9 +840,13 @@ impl<'a> LayoutEngine<'a> {
                         justify_extra = slack / gaps as f32;
                     }
                 }
-                left
+                placement.left
             }
         };
+
+        let line_left = x;
+        let first_glyph = page.glyphs.len();
+        let baseline = placement.baseline;
 
         for index in line.items.clone() {
             let item = &items[index];
@@ -613,8 +863,11 @@ impl<'a> LayoutEngine<'a> {
                     glyph: glyph.glyph,
                     x,
                     baseline,
+                    advance: glyph.advance,
                     size: style.size,
                     color: style.color,
+                    source: TextPosition::new(placement.paragraph, glyph.offset),
+                    source_length: glyph.length,
                 });
                 x += glyph.advance;
             }
@@ -630,7 +883,7 @@ impl<'a> LayoutEngine<'a> {
                 page.decorations.push(Decoration {
                     x: start_x,
                     // Just below the baseline, scaled so it stays proportional.
-                    y: baseline + descent * 0.25,
+                    y: baseline + placement.descent * 0.25,
                     width: drawn_width,
                     height: (style.size * 0.05).max(1.0),
                     color: style.color,
@@ -646,7 +899,49 @@ impl<'a> LayoutEngine<'a> {
                 });
             }
         }
+
+        // The stretch of the paragraph this line covers, so a caret and a click
+        // can be resolved against it later.
+        let start_offset = line
+            .items
+            .clone()
+            .map(|index| items[index].start_offset)
+            .min()
+            .unwrap_or(0);
+        let end_offset = line
+            .items
+            .clone()
+            .map(|index| items[index].end_offset)
+            .max()
+            .unwrap_or(start_offset);
+
+        page.lines.push(PageLine {
+            baseline,
+            ascent: placement.ascent,
+            descent: placement.descent,
+            left: line_left,
+            right: x,
+            glyphs: first_glyph..page.glyphs.len(),
+            paragraph: placement.paragraph,
+            start_offset,
+            end_offset,
+        });
     }
+}
+
+/// Where one line goes, and how it should be aligned.
+#[derive(Clone, Copy, Debug)]
+struct LinePlacement {
+    left: f32,
+    width: f32,
+    baseline: f32,
+    ascent: f32,
+    descent: f32,
+    alignment: Alignment,
+    paragraph_rtl: bool,
+    is_last_line: bool,
+    /// Which paragraph the line belongs to, in reading order.
+    paragraph: usize,
 }
 
 /// The rectangle text is placed within, in pixels.

@@ -32,6 +32,9 @@ mod windows;
 /// keystrokes to compose.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
+    /// A letter key, reported in lower case. Only used for shortcuts; ordinary
+    /// typing arrives as [`Event::Char`], already composed by the system.
+    Letter(char),
     Up,
     Down,
     Left,
@@ -47,6 +50,14 @@ pub enum Key {
     Tab,
 }
 
+/// Which modifier keys were held down.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Modifiers {
+    pub control: bool,
+    pub shift: bool,
+    pub alt: bool,
+}
+
 /// Something that happened to the window.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Event {
@@ -54,11 +65,11 @@ pub enum Event {
     Resized { width: u32, height: u32 },
     /// The wheel turned. Positive scrolls towards the start of the document.
     Scroll { lines: f32 },
-    KeyDown(Key),
+    KeyDown { key: Key, modifiers: Modifiers },
     /// A character was typed, after the operating system composed it.
     Char(char),
     /// A mouse button went down at a point in the drawing area.
-    MouseDown { x: i32, y: i32 },
+    MouseDown { x: i32, y: i32, modifiers: Modifiers },
     /// The window is closing.
     Closing,
 }

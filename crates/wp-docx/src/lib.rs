@@ -35,6 +35,7 @@
 
 pub mod edit;
 pub mod model;
+pub mod position;
 mod read;
 pub mod styles;
 
@@ -43,6 +44,7 @@ use wp_xml::tree::{Element, XmlTree};
 
 pub use model::Body;
 pub use read::W as WORDPROCESSING_NAMESPACE;
+pub use position::TextPosition;
 pub use styles::{Style, StyleKind, Styles};
 
 use model::{
@@ -260,6 +262,48 @@ impl Document {
         replaced
     }
 
+    /// How many paragraphs the document has, in reading order.
+    #[must_use]
+    pub fn paragraph_count(&self) -> usize {
+        position::paragraph_count(&self.tree.root)
+    }
+
+    /// The text of one paragraph, measured the way a [`TextPosition`] is.
+    #[must_use]
+    pub fn paragraph_text(&self, index: usize) -> Option<String> {
+        position::text_of(&self.tree.root, index)
+    }
+
+    /// Inserts text at a position, as typing does.
+    pub fn insert_text(&mut self, at: TextPosition, text: &str) -> bool {
+        let prefix = self.prefix();
+        let changed = position::insert_text(&mut self.tree.root, at, text, prefix.as_deref());
+        self.modified |= changed;
+        changed
+    }
+
+    /// Removes a stretch of text from one paragraph.
+    pub fn delete_range(&mut self, paragraph: usize, start: usize, end: usize) -> bool {
+        let changed = position::delete_range(&mut self.tree.root, paragraph, start, end);
+        self.modified |= changed;
+        changed
+    }
+
+    /// Splits a paragraph in two, as pressing Enter does.
+    pub fn split_paragraph(&mut self, at: TextPosition) -> bool {
+        let prefix = self.prefix();
+        let changed = position::split_paragraph(&mut self.tree.root, at, prefix.as_deref());
+        self.modified |= changed;
+        changed
+    }
+
+    /// Joins a paragraph onto the one before it, as Backspace at its start does.
+    pub fn merge_with_previous(&mut self, paragraph: usize) -> bool {
+        let changed = position::merge_with_previous(&mut self.tree.root, paragraph);
+        self.modified |= changed;
+        changed
+    }
+
     /// Appends a paragraph to the end of the document.
     pub fn append_paragraph(&mut self, paragraph: &Paragraph) -> bool {
         self.append_block(&Block::Paragraph(paragraph.clone()))
@@ -296,6 +340,26 @@ impl Document {
         let changed = edit::set_paragraph_alignment(body, index, alignment, prefix.as_deref());
         self.modified |= changed;
         changed
+    }
+
+    /// Records that the bytes from [`Self::save`] have actually been stored.
+    ///
+    /// This commits the edited tree into the package and clears the modified
+    /// flag. Clearing the flag alone would be a quiet corruption: the package
+    /// would still hold the *old* main part, so the next save would write the
+    /// document as it was before the edits.
+    pub fn mark_saved(&mut self) -> Result<(), Error> {
+        if !self.modified {
+            return Ok(());
+        }
+
+        let xml = self.tree.to_xml().map_err(|source| Error::Xml {
+            part: self.main_part.clone(),
+            source,
+        })?;
+        self.package.set_part(&self.main_part, xml.into_bytes());
+        self.modified = false;
+        Ok(())
     }
 
     /// Writes the document back out.

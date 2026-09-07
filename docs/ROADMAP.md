@@ -238,7 +238,16 @@ Thin layers over the operating system, written against the raw ABI.
 
 ---
 
-## Stage 8 — Editing core
+## Stage 8 — Editing core — partly done
+
+**Done:** a caret, placed by clicking and moved by the arrow keys, Home and End.
+Typing inserts, Backspace and Delete remove, Enter splits a paragraph and
+Backspace at its start joins it onto the last, and Ctrl+S saves. Every one of
+those goes through the document model, so a file keeps everything this program
+does not understand even after being typed into.
+
+**Still to do:** everything below.
+
 
 A piece-table text store, cursor and selection model, multi-level undo and redo,
 IME composition, autocorrect and autoformat, and clipboard interchange in the
@@ -286,13 +295,15 @@ import.
 
 ## Where the work stands
 
-**There is a window.** A document is unpacked, parsed, resolved against its
-styles, laid out with fonts read from the machine, rasterized and shown on
-screen, entirely by code in this repository.
+**It is an editor.** A document is unpacked, parsed, resolved against its styles,
+laid out with fonts read from the machine, rasterized and shown on screen — and
+then clicked into, typed in, and saved. Word opens the result in the current
+mode and sees the styles a keypress created.
 
-It is a viewer: editing works in the layers underneath, but no caret is
-connected to the keyboard yet. That, and the text engine that will make Arabic
-and the Indic scripts join their letters properly, are the next things.
+What is missing from the editing is selection, undo, and formatting from the
+keyboard. What is missing from the text is the shaping engine, which is what
+Arabic and the Indic scripts need to have their letters joined rather than drawn
+in isolation.
 
 A `.docx` can be created, opened, read, edited and saved. Saving a document that
 was not edited reproduces it byte for byte. Editing it rewrites only the part
@@ -305,7 +316,7 @@ cross-compiled from the same container that builds for Linux.
 
 ## Immediate next step
 
-A caret and keyboard editing in the window, so the editing that already works
-underneath becomes something a person can do. After that, Stage 1.4 and Stage 4:
-the Unicode tables and the shaping engine, which is what Arabic, Hebrew and the
-Indic scripts need to be drawn correctly rather than as isolated letters.
+Selection and undo, which are what turn a caret into an editor a person would
+trust. After that, Stage 1.4 and Stage 4: the Unicode tables and the shaping
+engine, which Arabic, Hebrew and the Indic scripts need to be drawn correctly
+rather than as isolated letters.
