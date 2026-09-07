@@ -1,19 +1,19 @@
-//! WordprocessingML documents: reading and creating a `.docx`.
+//! WordprocessingML documents: reading, creating and editing a `.docx`.
 //!
-//! # What this stage does and does not do
+//! # How editing stays safe
 //!
-//! A document that is **opened** can be read and saved again, and saving
-//! reproduces the original file byte for byte. That is the property everything
-//! else will be built on: nothing is lost, because nothing is regenerated.
+//! An opened document is held as an element tree that keeps everything it was
+//! given — every element, attribute and comment, understood or not. An edit
+//! changes the nodes it must and leaves the rest alone, so saving writes back a
+//! document that differs only where the user changed it.
 //!
-//! A document that is **created** here is generated from the model in
-//! [`model`], which covers paragraphs, runs, character formatting and tables.
+//! This matters more than it sounds. A real `.docx` carries a macro project, an
+//! embedded font, a chart, a content control, somebody else's tracked changes. A
+//! model that understood only what it knew about would throw the rest away the
+//! moment the user pressed save.
 //!
-//! Editing the body of an opened document is deliberately not offered yet. The
-//! model does not represent everything a real document contains, so writing an
-//! opened document back out from it would quietly discard the rest. Doing that
-//! properly needs the full document model, which is the next stage of the
-//! project.
+//! A document that is opened and saved without being edited comes back byte for
+//! byte identical, because nothing is re-serialized at all.
 //!
 //! # Example
 //!
@@ -21,28 +21,29 @@
 //! use wp_docx::{Document, model::{Block, Body, Paragraph}};
 //!
 //! let mut body = Body::default();
-//! body.blocks.push(Block::Paragraph(Paragraph::text("Hello")));
+//! body.blocks.push(Block::Paragraph(Paragraph::text("Hello, world")));
+//! let bytes = Document::create(&body)?.save()?;
 //!
-//! let document = Document::create(&body)?;
-//! let bytes = document.save()?;
-//!
-//! // Read it back.
-//! let reopened = Document::open(&bytes)?;
-//! assert_eq!(reopened.body()?.plain_text(), "Hello");
+//! // Reopen it and change one word.
+//! let mut document = Document::open(&bytes)?;
+//! assert_eq!(document.replace_text("world", "everyone"), 1);
+//! assert_eq!(document.plain_text(), "Hello, everyone");
 //! # Ok::<(), wp_docx::Error>(())
 //! ```
 
 #![forbid(unsafe_code)]
 
+pub mod edit;
 pub mod model;
 mod read;
-mod write;
 
 use wp_opc::{Package, Relationships, TargetMode};
-use wp_xml::Reader;
+use wp_xml::tree::{Element, XmlTree};
 
 pub use model::Body;
 pub use read::W as WORDPROCESSING_NAMESPACE;
+
+use model::{Alignment, Block, Paragraph};
 
 /// Content type of the styles part.
 const STYLES_CONTENT_TYPE: &str =
@@ -52,12 +53,19 @@ const STYLES_CONTENT_TYPE: &str =
 const STYLES_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 
+/// Page width of A4 in twentieths of a point, the unit the format uses.
+const A4_WIDTH_TWIPS: &str = "11906";
+/// Page height of A4 in the same unit.
+const A4_HEIGHT_TWIPS: &str = "16838";
+/// One inch of margin, in the same unit.
+const MARGIN_TWIPS: &str = "1440";
+
 /// Why a document could not be read or written.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     /// The package layer could not read or write the file.
     Package(wp_opc::Error),
-    /// The main document part is not valid XML.
+    /// A part is not valid XML.
     Xml { part: String, source: wp_xml::Error },
 }
 
@@ -83,6 +91,12 @@ impl From<wp_opc::Error> for Error {
 pub struct Document {
     package: Package,
     main_part: String,
+    tree: XmlTree,
+    /// Whether the tree has been changed since it was read.
+    ///
+    /// While it is false, saving writes the original bytes straight back, which
+    /// is what makes an untouched document come out identical.
+    modified: bool,
 }
 
 impl Document {
@@ -90,27 +104,36 @@ impl Document {
     pub fn open(bytes: &[u8]) -> Result<Self, Error> {
         let package = Package::open(bytes)?;
         let main_part = package.main_document_part()?;
-        Ok(Self { package, main_part })
+
+        let text = package
+            .xml_part(&main_part)
+            .ok_or_else(|| wp_opc::Error::MissingPart(main_part.clone()))??;
+        let tree = XmlTree::parse(&text).map_err(|source| Error::Xml {
+            part: main_part.clone(),
+            source,
+        })?;
+
+        Ok(Self { package, main_part, tree, modified: false })
     }
 
     /// Builds a new document containing the given body.
     pub fn create(body: &Body) -> Result<Self, Error> {
-        let mut package = Package::empty();
-
-        let document_xml = write::document_xml(body).map_err(|source| Error::Xml {
+        let tree = build_document(body);
+        let xml = tree.to_xml().map_err(|source| Error::Xml {
             part: "word/document.xml".to_owned(),
             source,
         })?;
 
+        let mut package = Package::empty();
         package.add_part(
             "word/document.xml",
             wp_opc::MAIN_DOCUMENT_CONTENT_TYPE,
-            document_xml.into_bytes(),
+            xml.into_bytes(),
         );
         package.add_part("word/styles.xml", STYLES_CONTENT_TYPE, default_styles().into_bytes());
 
-        // A package is navigated by relationships, not by filenames, so the
-        // main document has to be pointed at from the package root.
+        // A package is navigated by relationships, not by filenames, so the main
+        // document has to be pointed at from the package root.
         let mut root = Relationships::new("");
         root.add(wp_opc::OFFICE_DOCUMENT_RELATIONSHIP, "word/document.xml", TargetMode::Internal);
         package.set_relationships(&root)?;
@@ -119,7 +142,7 @@ impl Document {
         document_relationships.add(STYLES_RELATIONSHIP, "styles.xml", TargetMode::Internal);
         package.set_relationships(&document_relationships)?;
 
-        Ok(Self { package, main_part: "word/document.xml".to_owned() })
+        Ok(Self { package, main_part: "word/document.xml".to_owned(), tree, modified: false })
     }
 
     /// The package behind the document, for inspecting its parts.
@@ -134,36 +157,165 @@ impl Document {
         &self.main_part
     }
 
-    /// Reads the body.
+    /// The element tree of the main document part.
+    #[must_use]
+    pub fn tree(&self) -> &XmlTree {
+        &self.tree
+    }
+
+    /// The element tree, for edits this crate does not offer directly.
     ///
-    /// Parsed on demand rather than at open time: opening a document should not
-    /// pay for work the caller may not need.
-    pub fn body(&self) -> Result<Body, Error> {
-        let text = self
-            .package
-            .xml_part(&self.main_part)
-            .ok_or_else(|| wp_opc::Error::MissingPart(self.main_part.clone()))??;
+    /// Taking this marks the document as changed, since there is no way to know
+    /// afterwards whether it was.
+    pub fn tree_mut(&mut self) -> &mut XmlTree {
+        self.modified = true;
+        &mut self.tree
+    }
 
-        let events = Reader::new(&text).into_events().map_err(|source| Error::Xml {
-            part: self.main_part.clone(),
-            source,
-        })?;
+    /// Whether the document has been changed since it was opened.
+    #[must_use]
+    pub fn is_modified(&self) -> bool {
+        self.modified
+    }
 
-        Ok(read::parse_body(&events))
+    /// Reads the body.
+    #[must_use]
+    pub fn body(&self) -> Body {
+        read::read_document(&self.tree.root)
     }
 
     /// The whole document's text, with formatting removed.
-    pub fn plain_text(&self) -> Result<String, Error> {
-        Ok(self.body()?.plain_text())
+    #[must_use]
+    pub fn plain_text(&self) -> String {
+        self.body().plain_text()
+    }
+
+    /// The prefix this document uses for the WordprocessingML namespace.
+    fn prefix(&self) -> Option<String> {
+        edit::prefix_for(&self.tree.root, WORDPROCESSING_NAMESPACE)
+    }
+
+    /// Replaces every occurrence of a string, returning how many were changed.
+    ///
+    /// The search works across run boundaries, which it has to: Word splits a
+    /// paragraph's text between runs wherever formatting changes, so a word can
+    /// easily be stored in two pieces.
+    pub fn replace_text(&mut self, needle: &str, replacement: &str) -> usize {
+        let replaced = edit::replace_text(&mut self.tree.root, needle, replacement);
+        if replaced > 0 {
+            self.modified = true;
+        }
+        replaced
+    }
+
+    /// Appends a paragraph to the end of the document.
+    pub fn append_paragraph(&mut self, paragraph: &Paragraph) -> bool {
+        self.append_block(&Block::Paragraph(paragraph.clone()))
+    }
+
+    /// Appends a block to the end of the document, before the section properties.
+    pub fn append_block(&mut self, block: &Block) -> bool {
+        let prefix = self.prefix();
+        let Some(body) = read::find_body_mut(&mut self.tree.root) else {
+            return false;
+        };
+        edit::append_block(body, block, prefix.as_deref());
+        self.modified = true;
+        true
+    }
+
+    /// Sets the style of the paragraph at a given index, or clears it.
+    pub fn set_paragraph_style(&mut self, index: usize, style: Option<&str>) -> bool {
+        let prefix = self.prefix();
+        let Some(body) = read::find_body_mut(&mut self.tree.root) else {
+            return false;
+        };
+        let changed = edit::set_paragraph_style(body, index, style, prefix.as_deref());
+        self.modified |= changed;
+        changed
+    }
+
+    /// Sets the alignment of the paragraph at a given index.
+    pub fn set_paragraph_alignment(&mut self, index: usize, alignment: Alignment) -> bool {
+        let prefix = self.prefix();
+        let Some(body) = read::find_body_mut(&mut self.tree.root) else {
+            return false;
+        };
+        let changed = edit::set_paragraph_alignment(body, index, alignment, prefix.as_deref());
+        self.modified |= changed;
+        changed
     }
 
     /// Writes the document back out.
     ///
-    /// For a document that was opened and not modified, this reproduces the
-    /// original file exactly.
+    /// An unmodified document is written from its original bytes, so it comes
+    /// out identical. A modified one has only its main part re-serialized;
+    /// every other part is still written back exactly as it arrived.
     pub fn save(&self) -> Result<Vec<u8>, Error> {
-        Ok(self.package.save()?)
+        if !self.modified {
+            return Ok(self.package.save()?);
+        }
+
+        let xml = self.tree.to_xml().map_err(|source| Error::Xml {
+            part: self.main_part.clone(),
+            source,
+        })?;
+
+        let mut package = self.package.clone();
+        package.set_part(&self.main_part, xml.into_bytes());
+        Ok(package.save()?)
     }
+}
+
+/// Builds the tree of a brand new `document.xml`.
+fn build_document(body: &Body) -> XmlTree {
+    let namespace = WORDPROCESSING_NAMESPACE;
+
+    let mut root = Element::new("w:document", Some(namespace));
+    root.declarations.push((Some("w".to_owned()), namespace.to_owned()));
+
+    let mut body_element = Element::new("w:body", Some(namespace));
+    for block in &body.blocks {
+        edit::append_block(&mut body_element, block, Some("w"));
+    }
+    body_element.push_element(section_properties());
+    root.push_element(body_element);
+
+    XmlTree {
+        standalone: Some(true),
+        has_declaration: true,
+        doctype: None,
+        before_root: Vec::new(),
+        root,
+        after_root: Vec::new(),
+    }
+}
+
+/// Page size and margins, which must be the last child of the body.
+fn section_properties() -> Element {
+    let namespace = WORDPROCESSING_NAMESPACE;
+    let mut section = Element::new("w:sectPr", Some(namespace));
+
+    let mut size = Element::new("w:pgSz", Some(namespace));
+    size.set_namespaced_attribute("w:w", namespace, A4_WIDTH_TWIPS);
+    size.set_namespaced_attribute("w:h", namespace, A4_HEIGHT_TWIPS);
+    section.push_element(size);
+
+    let mut margins = Element::new("w:pgMar", Some(namespace));
+    for (name, value) in [
+        ("w:top", MARGIN_TWIPS),
+        ("w:right", MARGIN_TWIPS),
+        ("w:bottom", MARGIN_TWIPS),
+        ("w:left", MARGIN_TWIPS),
+        ("w:header", "708"),
+        ("w:footer", "708"),
+        ("w:gutter", "0"),
+    ] {
+        margins.set_namespaced_attribute(name, namespace, value);
+    }
+    section.push_element(margins);
+
+    section
 }
 
 /// A small stylesheet, so that documents created here have the styles their
@@ -172,7 +324,7 @@ impl Document {
 /// Without it a `w:pStyle` naming `Heading1` would resolve to nothing and the
 /// heading would render as body text.
 fn default_styles() -> String {
-    let w = read::W;
+    let w = WORDPROCESSING_NAMESPACE;
     format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="{w}">

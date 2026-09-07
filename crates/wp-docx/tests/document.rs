@@ -104,7 +104,7 @@ fn a_created_document_reads_back_as_it_was_written() {
     let bytes = document.save().unwrap();
 
     let reopened = Document::open(&bytes).unwrap();
-    let read_back = reopened.body().unwrap();
+    let read_back = reopened.body();
 
     assert_eq!(read_back, body, "the model did not survive a write and read");
 }
@@ -125,7 +125,7 @@ fn saving_an_opened_document_reproduces_it_exactly() {
 fn every_script_survives_the_round_trip() {
     let document = Document::create(&rich_body()).unwrap();
     let bytes = document.save().unwrap();
-    let text = Document::open(&bytes).unwrap().plain_text().unwrap();
+    let text = Document::open(&bytes).unwrap().plain_text();
 
     for (language, sample) in SAMPLES {
         assert!(text.contains(sample), "{language} text was lost: {sample:?}");
@@ -143,7 +143,7 @@ fn leading_and_trailing_spaces_are_preserved() {
     }));
 
     let bytes = Document::create(&body).unwrap().save().unwrap();
-    let text = Document::open(&bytes).unwrap().plain_text().unwrap();
+    let text = Document::open(&bytes).unwrap().plain_text();
 
     assert_eq!(text, "Hello,  world  spaced  ");
 }
@@ -156,7 +156,7 @@ fn characters_that_are_markup_in_xml_survive_as_text() {
     )));
 
     let bytes = Document::create(&body).unwrap().save().unwrap();
-    let text = Document::open(&bytes).unwrap().plain_text().unwrap();
+    let text = Document::open(&bytes).unwrap().plain_text();
 
     assert_eq!(text, "angle < brackets > and & ampersands \"quoted\" 'apostrophes' ]]> too");
 }
@@ -193,8 +193,8 @@ fn an_empty_document_is_still_valid() {
     let bytes = Document::create(&Body::default()).unwrap().save().unwrap();
     let document = Document::open(&bytes).unwrap();
 
-    assert_eq!(document.body().unwrap(), Body::default());
-    assert_eq!(document.plain_text().unwrap(), "");
+    assert_eq!(document.body(), Body::default());
+    assert_eq!(document.plain_text(), "");
 }
 
 #[test]
@@ -301,5 +301,5 @@ fn body_from_document_xml(document_xml: &str) -> Body {
     package.set_relationships(&root).unwrap();
 
     let bytes = package.save().unwrap();
-    Document::open(&bytes).unwrap().body().unwrap()
+    Document::open(&bytes).unwrap().body()
 }

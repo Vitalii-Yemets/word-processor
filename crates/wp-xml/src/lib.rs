@@ -36,6 +36,7 @@ mod encoding;
 mod escape;
 mod name;
 mod reader;
+pub mod tree;
 mod writer;
 
 pub use encoding::{decode_to_utf8, Encoding};

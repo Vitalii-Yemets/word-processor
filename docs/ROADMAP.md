@@ -79,9 +79,17 @@ XML layer already depends on some of them.
 
 ---
 
-## Stage 2 — Document model
+## Stage 2 — Document model — in progress
 
-The full WordprocessingML object model: body, paragraphs, runs and their
+**Done:** an element tree that keeps every element, attribute and comment it was
+given, whether or not this program models it, and editing that works on that
+tree. Replacing text works across run boundaries, which it must: Word splits a
+paragraph between runs wherever formatting changes, so a word is often stored in
+pieces. Paragraphs can be appended and their style and alignment changed. An
+edit rewrites only the part it touched, and only the nodes inside it that
+changed.
+
+**Still to do:** the full WordprocessingML object model: body, paragraphs, runs and their
 properties, sections, styles, numbering and lists, fonts, settings, themes,
 headers and footers, footnotes and endnotes, comments, bookmarks, fields,
 tables, drawings, content controls, and tracked revisions.
@@ -92,9 +100,14 @@ came in and written back unchanged. Without this the editor would quietly damage
 documents, which would make it unusable for real work no matter how good the
 rest is.
 
-*Proven by:* opening and saving a corpus of documents and comparing the result
-semantically; then reopening the saved file in Word to confirm it reports no
-problems.
+*Proven by:* an edit to a document whose body also holds a content control,
+unknown markup with a comment inside it, and a tracked deletion leaves all of
+that byte for byte intact, and changes no other part of the package; an
+unmodified document is written back from its original bytes and comes out
+identical.
+
+*Not yet proven:* nothing has been tested against a document Word itself
+produced, nor reopened in Word to confirm it reports no problems.
 
 ---
 
@@ -243,19 +256,18 @@ import.
 
 ## Where the work stands
 
-A `.docx` can be created, opened, read and saved. Saving a document that was not
-edited reproduces it byte for byte, including parts nothing here understands.
+A `.docx` can be created, opened, read, edited and saved. Saving a document that
+was not edited reproduces it byte for byte. Editing it rewrites only the part
+that changed, and inside that part only the nodes that changed — a content
+control, a chart or a colleague tracked change beside the edit comes through
+untouched.
+
 The `wp` command line tool exercises all of it, and the Windows executable is
 cross-compiled from the same container that builds for Linux.
 
-What is deliberately not offered yet: editing the body of an *opened* document.
-The model covers paragraphs, runs, character formatting and tables, which is not
-everything a real document contains, so writing an opened document back out from
-it would quietly discard the rest. Doing that safely needs the full document
-model — Stage 2.
-
 ## Immediate next step
 
-Stage 1.4, the Unicode character database, then Stage 2. The tables are needed
-before the text engine and are already implied by the XML layer, so they come
-first.
+Finishing Stage 2: typed models for styles, numbering, sections, headers and
+footers, so those can be read and changed rather than only carried through.
+Stage 1.4, the Unicode tables, comes after that — they are needed by the text
+engine in Stage 4, not before.

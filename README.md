@@ -3,9 +3,9 @@
 An open-source word processor that reads and writes the same file formats as
 Microsoft Word and aims for the same feature set.
 
-**Status: early development.** The document stack is working end to end — a
-`.docx` can be created, read, and saved again byte for byte — but there is no
-window yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the plan and the current
+**Status: early development.** The document stack works end to end: a `.docx` can
+be created, opened, read, edited and saved. There is no window yet — that comes
+later. See [docs/ROADMAP.md](docs/ROADMAP.md) for the plan and the current
 position.
 
 ## Principles
@@ -29,9 +29,11 @@ One container holds the pinned Rust toolchain and the mingw-w64 linker used to
 cross-compile the Windows executable.
 
 **Files survive a round trip.** Word documents contain more than any single
-program models. Parts and elements this editor does not yet understand are
-preserved verbatim on save, so opening a document here and saving it never
-destroys work done elsewhere. This is tested, not merely intended.
+program models — a macro project, an embedded font, a chart, a content control,
+somebody else's tracked changes. An opened document is held as an element tree
+that keeps all of it, and an edit rewrites only the nodes it must. A document
+opened and saved untouched comes back byte for byte identical; one that is
+edited differs only where it was edited. This is tested, not merely intended.
 
 **Multilingual from the ground up.** Not a translation added at the end: the text
 engine will handle bidirectional scripts, complex shaping, and script-specific
@@ -60,8 +62,13 @@ window:
 .\dist\wp.exe info demo.docx         # list the parts, content types and relationships
 .\dist\wp.exe text demo.docx         # print the text
 .\dist\wp.exe outline demo.docx      # print the structure with formatting
-.\dist\wp.exe roundtrip a.docx b.docx  # open and save, checking nothing changed
+.\dist\wp.exe roundtrip a.docx b.docx        # open and save, checking nothing changed
+.\dist\wp.exe replace a.docx b.docx old new  # replace text, across run boundaries
+.\dist\wp.exe append a.docx b.docx "a line"  # add a paragraph at the end
 ```
+
+The editing commands report which parts of the package changed. Exactly one
+should: everything else must come out as it went in.
 
 ## Layout
 

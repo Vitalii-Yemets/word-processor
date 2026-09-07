@@ -46,8 +46,19 @@ fn main() -> ExitCode {
         (Some("text"), 2) => text(&arguments[1]),
         (Some("outline"), 2) => outline(&arguments[1]),
         (Some("roundtrip"), 3) => roundtrip(&arguments[1], &arguments[2]),
+        (Some("replace"), 5) => {
+            replace(&arguments[1], &arguments[2], &arguments[3], &arguments[4])
+        }
+        (Some("append"), 4) => append(&arguments[1], &arguments[2], &arguments[3]),
         _ => {
             print_usage();
+            // Started with no arguments at all, most likely by double-clicking
+            // it in a file manager. Exiting immediately would close the console
+            // before anything could be read, so the program looks broken when it
+            // is only telling you how to use it.
+            if arguments.is_empty() {
+                wait_for_enter();
+            }
             return ExitCode::from(2);
         }
     };
@@ -71,8 +82,26 @@ Usage: wp <command>
   text <file.docx>             print the document text
   outline <file.docx>          print the structure with formatting
   roundtrip <in> <out>         open and save, checking nothing changed
+
+  replace <in> <out> <from> <to>   replace text, across run boundaries
+  append <in> <out> <text>         add a paragraph at the end
+
+The editing commands report which parts of the package changed, so it is
+visible that everything else was carried through untouched.
 "
     );
+}
+
+/// Holds the console open until the reader presses Enter.
+///
+/// Only used when the program was started with no arguments, so a terminal user
+/// typing the bare command sees the same help and presses Enter once.
+fn wait_for_enter() {
+    eprintln!();
+    eprint!("Press Enter to close.");
+    let _ = io::stderr().flush();
+    let mut discard = String::new();
+    let _ = io::stdin().read_line(&mut discard);
 }
 
 /// Reads a file, turning any failure into a message worth printing.
@@ -160,7 +189,7 @@ fn info(path: &str) -> Result<(), String> {
 /// Prints the document's text.
 fn text(path: &str) -> Result<(), String> {
     let document = open(path)?;
-    let text = document.plain_text().map_err(|error| format!("cannot read the body: {error}"))?;
+    let text = document.plain_text();
     outln!("{text}");
     Ok(())
 }
@@ -168,7 +197,7 @@ fn text(path: &str) -> Result<(), String> {
 /// Prints the structure, with the formatting of each run.
 fn outline(path: &str) -> Result<(), String> {
     let document = open(path)?;
-    let body = document.body().map_err(|error| format!("cannot read the body: {error}"))?;
+    let body = document.body();
 
     print_blocks(&body.blocks, 0);
     Ok(())
@@ -274,6 +303,80 @@ fn roundtrip(input: &str, output: &str) -> Result<(), String> {
         outln!("DIFFERENT: {} bytes in, {} bytes out", original.len(), saved.len());
         report_differences(&original, &saved);
         Err("the document changed on save".to_owned())
+    }
+}
+
+/// Replaces text throughout a document and reports what that touched.
+fn replace(input: &str, output: &str, from: &str, to: &str) -> Result<(), String> {
+    let original = read(input)?;
+    let mut document =
+        Document::open(&original).map_err(|error| format!("cannot open {input}: {error}"))?;
+
+    let count = document.replace_text(from, to);
+    let saved = document.save().map_err(|error| format!("cannot save: {error}"))?;
+    write(output, &saved)?;
+
+    outln!("replaced {count} occurrence(s) of {from:?} with {to:?}");
+    outln!();
+    report_part_changes(&original, &saved);
+    Ok(())
+}
+
+/// Adds a paragraph at the end of a document.
+fn append(input: &str, output: &str, text: &str) -> Result<(), String> {
+    let original = read(input)?;
+    let mut document =
+        Document::open(&original).map_err(|error| format!("cannot open {input}: {error}"))?;
+
+    if !document.append_paragraph(&Paragraph::text(text)) {
+        return Err("the document has no body to append to".to_owned());
+    }
+    let saved = document.save().map_err(|error| format!("cannot save: {error}"))?;
+    write(output, &saved)?;
+
+    outln!("appended a paragraph");
+    outln!();
+    report_part_changes(&original, &saved);
+    Ok(())
+}
+
+/// Shows which parts of the package an edit touched.
+///
+/// This is the point of the exercise: exactly one part should differ, and every
+/// other part — including anything this program does not understand — should
+/// come out byte for byte as it went in.
+fn report_part_changes(original: &[u8], saved: &[u8]) {
+    let (Ok(before), Ok(after)) = (wp_opc::Package::open(original), wp_opc::Package::open(saved))
+    else {
+        outln!("(one of the two is not a readable package)");
+        return;
+    };
+
+    let mut unchanged = 0usize;
+    let mut changed = Vec::new();
+
+    for entry in before.entries() {
+        match after.part(&entry.name) {
+            None => changed.push(format!("lost:     {}", entry.name)),
+            Some(data) if data != entry.data => {
+                changed.push(format!("changed:  {} ({} -> {} bytes)", entry.name, entry.data.len(), data.len()));
+            }
+            Some(_) => unchanged += 1,
+        }
+    }
+    for entry in after.entries() {
+        if before.part(&entry.name).is_none() {
+            changed.push(format!("added:    {}", entry.name));
+        }
+    }
+
+    outln!("parts unchanged: {unchanged}");
+    if changed.is_empty() {
+        outln!("no part changed");
+    } else {
+        for line in changed {
+            outln!("{line}");
+        }
     }
 }
 
