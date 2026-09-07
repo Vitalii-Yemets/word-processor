@@ -12,15 +12,15 @@
 use wp_xml::tree::Element;
 
 use crate::model::{
-    Alignment, Block, BreakKind, Body, Paragraph, Run, RunContent, RunProperties, Table, TableCell,
-    TableRow,
+    Alignment, Block, BreakKind, Body, LineRule, LineSpacing, NumberingReference, Paragraph,
+    ParagraphProperties, Run, RunContent, RunProperties, Table, TableCell, TableRow, Underline,
 };
 
 /// The WordprocessingML namespace.
 pub const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 /// Reads a `w:val` attribute.
-fn value(element: &Element) -> Option<&str> {
+pub(crate) fn value(element: &Element) -> Option<&str> {
     element.attribute(Some(W), "val")
 }
 
@@ -29,12 +29,8 @@ fn value(element: &Element) -> Option<&str> {
 /// `<w:b/>` means bold. So does `<w:b w:val="1"/>`. But `<w:b w:val="0"/>` means
 /// *not* bold — which matters, because that is how a run switches off something
 /// its style turned on.
-fn is_on(element: &Element) -> bool {
-    match value(element) {
-        None => true,
-        Some("0" | "false" | "off") => false,
-        Some(_) => true,
-    }
+pub(crate) fn on_off(element: &Element) -> bool {
+    !matches!(value(element), Some("0" | "false" | "off"))
 }
 
 /// Elements that hold runs but add nothing to the text themselves.
@@ -121,24 +117,83 @@ fn read_table(element: &Element) -> Table {
 }
 
 fn read_paragraph(element: &Element) -> Paragraph {
-    let mut paragraph = Paragraph::default();
+    let properties = element
+        .child(Some(W), "pPr")
+        .map(read_paragraph_properties)
+        .unwrap_or_default();
 
-    if let Some(properties) = element.child(Some(W), "pPr") {
-        for property in properties.child_elements() {
-            if property.namespace.as_deref() != Some(W) {
-                continue;
+    let mut runs = Vec::new();
+    collect_runs(element, &mut runs);
+    Paragraph { properties, runs }
+}
+
+/// Reads a `w:pPr`, wherever it appears — in a paragraph or in a style.
+#[must_use]
+pub fn read_paragraph_properties(properties: &Element) -> ParagraphProperties {
+    let mut result = ParagraphProperties::default();
+
+    for property in properties.child_elements() {
+        if property.namespace.as_deref() != Some(W) {
+            continue;
+        }
+        match property.local_name() {
+            "pStyle" => result.style = value(property).map(str::to_owned),
+            "jc" => result.alignment = value(property).and_then(Alignment::from_attribute),
+            "bidi" => result.right_to_left = Some(on_off(property)),
+            "keepNext" => result.keep_next = Some(on_off(property)),
+            "keepLines" => result.keep_lines = Some(on_off(property)),
+            "pageBreakBefore" => result.page_break_before = Some(on_off(property)),
+            "widowControl" => result.widow_control = Some(on_off(property)),
+            "outlineLvl" => {
+                result.outline_level = value(property).and_then(|text| text.parse().ok());
             }
-            match property.local_name() {
-                "pStyle" => paragraph.style = value(property).map(str::to_owned),
-                "jc" => paragraph.alignment = value(property).and_then(Alignment::from_attribute),
-                "bidi" => paragraph.right_to_left = is_on(property),
-                _ => {}
+            "ind" => {
+                // "start"/"end" are the current names; "left"/"right" are the
+                // older ones Word still writes.
+                result.indent_start = signed(property, "start").or_else(|| signed(property, "left"));
+                result.indent_end = signed(property, "end").or_else(|| signed(property, "right"));
+                result.indent_first_line = match signed(property, "hanging") {
+                    // A hanging indent is a negative first-line indent.
+                    Some(hanging) => Some(-hanging),
+                    None => signed(property, "firstLine"),
+                };
             }
+            "spacing" => {
+                result.space_before = signed(property, "before");
+                result.space_after = signed(property, "after");
+                if let Some(line) = signed(property, "line") {
+                    let rule = match property.attribute(Some(W), "lineRule") {
+                        Some("exact") => LineRule::Exact,
+                        Some("atLeast") => LineRule::AtLeast,
+                        _ => LineRule::Auto,
+                    };
+                    result.line_spacing = Some(LineSpacing { value: line, rule });
+                }
+            }
+            "numPr" => {
+                let id = property
+                    .child(Some(W), "numId")
+                    .and_then(value)
+                    .and_then(|text| text.parse().ok());
+                let level = property
+                    .child(Some(W), "ilvl")
+                    .and_then(value)
+                    .and_then(|text| text.parse().ok())
+                    .unwrap_or(0);
+                if let Some(id) = id {
+                    result.numbering = Some(NumberingReference { id, level });
+                }
+            }
+            _ => {}
         }
     }
 
-    collect_runs(element, &mut paragraph.runs);
-    paragraph
+    result
+}
+
+/// Reads a signed measurement attribute.
+fn signed(element: &Element, name: &str) -> Option<i32> {
+    element.attribute(Some(W), name).and_then(|text| text.parse().ok())
 }
 
 fn collect_runs(parent: &Element, runs: &mut Vec<Run>) {
@@ -155,35 +210,35 @@ fn collect_runs(parent: &Element, runs: &mut Vec<Run>) {
 }
 
 fn read_run(element: &Element) -> Run {
-    let mut run = Run::default();
+    let properties =
+        element.child(Some(W), "rPr").map(read_run_properties).unwrap_or_default();
 
-    if let Some(properties) = element.child(Some(W), "rPr") {
-        run.properties = read_run_properties(properties);
-    }
-
+    let mut content = Vec::new();
     for child in element.child_elements() {
         if child.namespace.as_deref() != Some(W) {
             continue;
         }
         match child.local_name() {
-            "t" => run.content.push(RunContent::Text(child.text_content())),
+            "t" => content.push(RunContent::Text(child.text_content())),
             "br" => {
                 let kind = match child.attribute(Some(W), "type") {
                     Some("page") => BreakKind::Page,
                     Some("column") => BreakKind::Column,
                     _ => BreakKind::Line,
                 };
-                run.content.push(RunContent::Break(kind));
+                content.push(RunContent::Break(kind));
             }
-            "tab" => run.content.push(RunContent::Tab),
+            "tab" => content.push(RunContent::Tab),
             _ => {}
         }
     }
 
-    run
+    Run { properties, content }
 }
 
-fn read_run_properties(properties: &Element) -> RunProperties {
+/// Reads a `w:rPr`, wherever it appears — in a run or in a style.
+#[must_use]
+pub fn read_run_properties(properties: &Element) -> RunProperties {
     let mut result = RunProperties::default();
 
     for property in properties.child_elements() {
@@ -191,15 +246,20 @@ fn read_run_properties(properties: &Element) -> RunProperties {
             continue;
         }
         match property.local_name() {
-            "b" => result.bold = is_on(property),
-            "i" => result.italic = is_on(property),
-            "strike" => result.strike = is_on(property),
-            "rtl" => result.right_to_left = is_on(property),
-            // Underline carries a style, and "none" means no underline.
-            "u" => result.underline = !matches!(value(property), None | Some("none")),
+            "rStyle" => result.style = value(property).map(str::to_owned),
+            "b" => result.bold = Some(on_off(property)),
+            "i" => result.italic = Some(on_off(property)),
+            "strike" => result.strike = Some(on_off(property)),
+            "rtl" => result.right_to_left = Some(on_off(property)),
+            "u" => {
+                result.underline = Some(match value(property) {
+                    // A bare <w:u/> with no value means a single underline.
+                    None => Underline::Single,
+                    Some(style) => Underline::from_attribute(style),
+                });
+            }
             "sz" => result.size_half_points = value(property).and_then(|v| v.parse().ok()),
             "color" => result.color = value(property).map(str::to_owned),
-            "rStyle" => result.style = value(property).map(str::to_owned),
             "lang" => result.language = value(property).map(str::to_owned),
             // The font differs per script; the Latin one is the name users
             // think of as "the font".

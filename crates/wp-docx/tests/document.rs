@@ -2,7 +2,7 @@
 
 use wp_docx::model::{
     Alignment, Block, Body, BreakKind, Paragraph, Run, RunContent, RunProperties, Table, TableCell,
-    TableRow,
+    TableRow, Underline,
 };
 use wp_docx::Document;
 
@@ -24,58 +24,47 @@ const SAMPLES: &[(&str, &str)] = &[
 fn rich_body() -> Body {
     let mut body = Body::default();
 
-    body.blocks.push(Block::Paragraph(Paragraph {
-        style: Some("Title".to_owned()),
-        alignment: Some(Alignment::Center),
-        ..Paragraph::text("Title")
-    }));
+    body.blocks.push(Block::Paragraph(
+        Paragraph::text("Title").with_style("Title").with_alignment(Alignment::Center),
+    ));
 
-    body.blocks.push(Block::Paragraph(Paragraph {
-        runs: vec![
-            Run::text("plain "),
-            Run {
-                properties: RunProperties {
-                    bold: true,
-                    italic: true,
-                    underline: true,
-                    strike: true,
-                    size_half_points: Some(28),
-                    color: Some("C00000".to_owned()),
-                    font: Some("Cambria".to_owned()),
-                    language: Some("en-GB".to_owned()),
-                    style: Some("Emphasis".to_owned()),
-                    right_to_left: false,
-                },
-                content: vec![RunContent::Text("formatted".to_owned())],
+    body.blocks.push(Block::Paragraph(Paragraph::from_runs(vec![
+        Run::text("plain "),
+        Run {
+            properties: RunProperties {
+                bold: Some(true),
+                italic: Some(true),
+                underline: Some(Underline::Single),
+                strike: Some(true),
+                size_half_points: Some(28),
+                color: Some("C00000".to_owned()),
+                font: Some("Cambria".to_owned()),
+                language: Some("en-GB".to_owned()),
+                style: Some("Emphasis".to_owned()),
+                right_to_left: Some(false),
             },
-            Run {
-                properties: RunProperties::default(),
-                content: vec![
-                    RunContent::Tab,
-                    RunContent::Break(BreakKind::Line),
-                    RunContent::Break(BreakKind::Page),
-                    RunContent::Text("after breaks".to_owned()),
-                ],
-            },
-        ],
-        ..Paragraph::default()
-    }));
+            content: vec![RunContent::Text("formatted".to_owned())],
+        },
+        Run {
+            properties: RunProperties::default(),
+            content: vec![
+                RunContent::Tab,
+                RunContent::Break(BreakKind::Line),
+                RunContent::Break(BreakKind::Page),
+                RunContent::Text("after breaks".to_owned()),
+            ],
+        },
+    ])));
 
     for (language, sample) in SAMPLES {
         let right_to_left = matches!(*language, "ar" | "he");
-        body.blocks.push(Block::Paragraph(Paragraph {
-            right_to_left,
-            alignment: Some(Alignment::Start),
-            runs: vec![Run {
-                properties: RunProperties {
-                    language: Some((*language).to_owned()),
-                    right_to_left,
-                    ..RunProperties::default()
-                },
-                content: vec![RunContent::Text((*sample).to_owned())],
-            }],
-            ..Paragraph::default()
-        }));
+        let mut run = Run::text(sample).in_language(language);
+        run.properties.right_to_left = Some(right_to_left);
+
+        let mut paragraph =
+            Paragraph::from_runs(vec![run]).with_alignment(Alignment::Start);
+        paragraph.properties.right_to_left = Some(right_to_left);
+        body.blocks.push(Block::Paragraph(paragraph));
     }
 
     body.blocks.push(Block::Table(Table {
@@ -213,9 +202,13 @@ fn a_run_can_switch_off_what_its_style_turned_on() {
     let body = body_from_document_xml(&source);
     let run = &body.paragraphs()[0].runs[0];
 
-    assert!(!run.properties.bold, "w:val=\"0\" means the property is off");
-    assert!(run.properties.italic);
-    assert!(!run.properties.underline, "an underline of \"none\" is no underline");
+    assert_eq!(run.properties.bold, Some(false), "w:val=0 means the property is off");
+    assert_eq!(run.properties.italic, Some(true));
+    assert_eq!(
+        run.properties.underline,
+        Some(Underline::None),
+        "an underline of \"none\" is explicitly no underline"
+    );
 }
 
 #[test]

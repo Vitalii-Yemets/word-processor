@@ -33,7 +33,9 @@ macro_rules! outln {
     ($($argument:tt)*) => { write_line(&format!($($argument)*)) };
 }
 
-use wp_docx::model::{Alignment, Block, Body, Paragraph, Run, RunContent, RunProperties, Table, TableCell, TableRow};
+use wp_docx::model::{
+    Alignment, Block, Body, Paragraph, ResolvedRunProperties, Run, Table, TableCell, TableRow,
+};
 use wp_docx::Document;
 
 fn main() -> ExitCode {
@@ -194,40 +196,54 @@ fn text(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Prints the structure, with the formatting of each run.
+/// Prints the structure with the formatting each run actually has.
+///
+/// The formatting shown is the *resolved* one — what the text really looks like
+/// once the style chain and the document defaults have been applied. Printing
+/// only what each run states directly would show almost nothing, since a heading
+/// is bold because its style says so and not because the run does.
 fn outline(path: &str) -> Result<(), String> {
     let document = open(path)?;
     let body = document.body();
 
-    print_blocks(&body.blocks, 0);
+    print_blocks(&document, &body.blocks, 0);
     Ok(())
 }
 
-fn print_blocks(blocks: &[Block], depth: usize) {
+fn print_blocks(document: &Document, blocks: &[Block], depth: usize) {
     let indent = "  ".repeat(depth);
 
     for block in blocks {
         match block {
             Block::Paragraph(paragraph) => {
+                let resolved = document.resolve_paragraph(paragraph);
+
                 let mut description = String::from("paragraph");
-                if let Some(style) = &paragraph.style {
+                if let Some(style) = paragraph.style() {
                     description.push_str(&format!(" style={style}"));
                 }
-                if let Some(alignment) = paragraph.alignment {
-                    description.push_str(&format!(" align={}", alignment.to_attribute()));
-                }
-                if paragraph.right_to_left {
+                description.push_str(&format!(" align={}", resolved.alignment.to_attribute()));
+                if resolved.right_to_left {
                     description.push_str(" rtl");
+                }
+                if let Some(level) = resolved.outline_level {
+                    description.push_str(&format!(" outline={level}"));
+                }
+                if resolved.space_before != 0 || resolved.space_after != 0 {
+                    description.push_str(&format!(
+                        " spacing={}/{}",
+                        resolved.space_before, resolved.space_after
+                    ));
                 }
                 outln!("{indent}{description}");
 
                 for run in &paragraph.runs {
-                    let formatting = describe(&run.properties);
                     let text = run.plain_text();
-                    if text.is_empty() && formatting.is_empty() {
+                    if text.is_empty() {
                         continue;
                     }
-                    outln!("{indent}  run{formatting}: {text:?}");
+                    let formatting = describe(&document.resolve_run(paragraph, run));
+                    outln!("{indent}  run [{formatting}]: {text:?}");
                 }
             }
             Block::Table(table) => {
@@ -237,7 +253,7 @@ fn print_blocks(blocks: &[Block], depth: usize) {
                     outln!("{indent}  row {row_index}");
                     for (cell_index, cell) in row.cells.iter().enumerate() {
                         outln!("{indent}    cell {cell_index}");
-                        print_blocks(&cell.blocks, depth + 3);
+                        print_blocks(document, &cell.blocks, depth + 3);
                     }
                 }
             }
@@ -245,30 +261,29 @@ fn print_blocks(blocks: &[Block], depth: usize) {
     }
 }
 
-/// Summarizes character formatting for the outline.
-fn describe(properties: &RunProperties) -> String {
+/// Summarizes the formatting a run actually has.
+fn describe(properties: &ResolvedRunProperties) -> String {
     let mut parts: Vec<String> = Vec::new();
+
+    // The format stores half-points; people think in points.
+    parts.push(format!("{}pt", properties.size_points()));
+    if let Some(font) = &properties.font {
+        parts.push(font.clone());
+    }
     if properties.bold {
         parts.push("bold".to_owned());
     }
     if properties.italic {
         parts.push("italic".to_owned());
     }
-    if properties.underline {
-        parts.push("underline".to_owned());
+    if properties.underline.is_visible() {
+        parts.push(format!("underline:{}", properties.underline.to_attribute()));
     }
     if properties.strike {
         parts.push("strike".to_owned());
     }
-    if let Some(half_points) = properties.size_half_points {
-        // The format stores half-points; people think in points.
-        parts.push(format!("{}pt", half_points as f64 / 2.0));
-    }
     if let Some(color) = &properties.color {
         parts.push(format!("#{color}"));
-    }
-    if let Some(font) = &properties.font {
-        parts.push(font.clone());
     }
     if let Some(language) = &properties.language {
         parts.push(language.clone());
@@ -277,11 +292,7 @@ fn describe(properties: &RunProperties) -> String {
         parts.push("rtl".to_owned());
     }
 
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" [{}]", parts.join(", "))
-    }
+    parts.join(", ")
 }
 
 /// Opens a document and saves it again, reporting whether anything changed.
@@ -413,52 +424,35 @@ fn short_type(uri: &str) -> String {
 fn demonstration_body() -> Body {
     let mut body = Body::default();
 
-    body.blocks.push(Block::Paragraph(Paragraph {
-        style: Some("Title".to_owned()),
-        alignment: Some(Alignment::Center),
-        ..Paragraph::text("Word Processor")
-    }));
+    body.blocks.push(Block::Paragraph(
+        Paragraph::text("Word Processor").with_style("Title").with_alignment(Alignment::Center),
+    ));
 
-    body.blocks.push(Block::Paragraph(Paragraph {
-        alignment: Some(Alignment::Center),
-        runs: vec![Run {
-            properties: RunProperties {
-                italic: true,
-                color: Some("595959".to_owned()),
-                ..RunProperties::default()
-            },
-            content: vec![RunContent::Text(
-                "Written from scratch in Rust, with no third-party code".to_owned(),
-            )],
-        }],
-        ..Paragraph::default()
-    }));
+    body.blocks.push(Block::Paragraph(
+        Paragraph::from_runs(vec![Run::text(
+            "Written from scratch in Rust, with no third-party code",
+        )
+        .italic()
+        .colored("595959")])
+        .with_alignment(Alignment::Center),
+    ));
 
     body.blocks.push(heading("Character formatting"));
-    body.blocks.push(Block::Paragraph(Paragraph {
-        runs: vec![
-            Run::text("This paragraph mixes "),
-            styled("bold", RunProperties { bold: true, ..RunProperties::default() }),
-            Run::text(", "),
-            styled("italic", RunProperties { italic: true, ..RunProperties::default() }),
-            Run::text(", "),
-            styled("underline", RunProperties { underline: true, ..RunProperties::default() }),
-            Run::text(", "),
-            styled("strikethrough", RunProperties { strike: true, ..RunProperties::default() }),
-            Run::text(", "),
-            styled(
-                "colour",
-                RunProperties { color: Some("C00000".to_owned()), ..RunProperties::default() },
-            ),
-            Run::text(" and "),
-            styled(
-                "size",
-                RunProperties { size_half_points: Some(36), ..RunProperties::default() },
-            ),
-            Run::text(" in a single line."),
-        ],
-        ..Paragraph::default()
-    }));
+    body.blocks.push(Block::Paragraph(Paragraph::from_runs(vec![
+        Run::text("This paragraph mixes "),
+        Run::text("bold").bold(),
+        Run::text(", "),
+        Run::text("italic").italic(),
+        Run::text(", "),
+        Run::text("underline").underlined(),
+        Run::text(", "),
+        Run::text("strikethrough").struck_through(),
+        Run::text(", "),
+        Run::text("colour").colored("C00000"),
+        Run::text(" and "),
+        Run::text("size").sized(18.0),
+        Run::text(" in a single line."),
+    ])));
 
     body.blocks.push(heading("Writing systems"));
     body.blocks.push(Block::Paragraph(Paragraph::text(
@@ -475,16 +469,9 @@ fn demonstration_body() -> Body {
         ("ja-JP", "いろはにほへと ちりぬるを"),
         ("ko-KR", "다람쥐 헌 쳇바퀴에 타고파."),
     ] {
-        body.blocks.push(Block::Paragraph(Paragraph {
-            runs: vec![Run {
-                properties: RunProperties {
-                    language: Some(language.to_owned()),
-                    ..RunProperties::default()
-                },
-                content: vec![RunContent::Text(format!("{language}  {sample}"))],
-            }],
-            ..Paragraph::default()
-        }));
+        body.blocks.push(Block::Paragraph(Paragraph::from_runs(vec![
+            Run::text(&format!("{language}  {sample}")).in_language(language),
+        ])));
     }
 
     body.blocks.push(Block::Paragraph(Paragraph::text(
@@ -496,19 +483,11 @@ fn demonstration_body() -> Body {
         ("ar", "نص حكيم له سر قاطع وذو شأن عظيم مكتوب على ثوب أخضر."),
         ("he", "דג סקרן שט בים מאוכזב ולפתע מצא חברה."),
     ] {
-        body.blocks.push(Block::Paragraph(Paragraph {
-            right_to_left: true,
-            alignment: Some(Alignment::Start),
-            runs: vec![Run {
-                properties: RunProperties {
-                    right_to_left: true,
-                    language: Some(language.to_owned()),
-                    ..RunProperties::default()
-                },
-                content: vec![RunContent::Text(sample.to_owned())],
-            }],
-            ..Paragraph::default()
-        }));
+        body.blocks.push(Block::Paragraph(
+            Paragraph::from_runs(vec![Run::text(sample).right_to_left().in_language(language)])
+                .right_to_left()
+                .with_alignment(Alignment::Start),
+        ));
     }
 
     body.blocks.push(heading("Alignment"));
@@ -517,10 +496,7 @@ fn demonstration_body() -> Body {
         (Alignment::Center, "Centred."),
         (Alignment::End, "Aligned to the end edge."),
     ] {
-        body.blocks.push(Block::Paragraph(Paragraph {
-            alignment: Some(alignment),
-            ..Paragraph::text(label)
-        }));
+        body.blocks.push(Block::Paragraph(Paragraph::text(label).with_alignment(alignment)));
     }
 
     body.blocks.push(heading("Tables"));
@@ -532,7 +508,7 @@ fn demonstration_body() -> Body {
             table_row(&["wp-zip", "ZIP archives, including Zip64"], false),
             table_row(&["wp-xml", "XML with namespaces"], false),
             table_row(&["wp-opc", "Parts, content types, relationships"], false),
-            table_row(&["wp-docx", "The document body"], false),
+            table_row(&["wp-docx", "The document body and styles"], false),
         ],
     }));
 
@@ -540,28 +516,16 @@ fn demonstration_body() -> Body {
 }
 
 fn heading(text: &str) -> Block {
-    Block::Paragraph(Paragraph {
-        style: Some("Heading1".to_owned()),
-        ..Paragraph::text(text)
-    })
-}
-
-fn styled(text: &str, properties: RunProperties) -> Run {
-    Run { properties, content: vec![RunContent::Text(text.to_owned())] }
+    Block::Paragraph(Paragraph::text(text).with_style("Heading1"))
 }
 
 fn table_row(cells: &[&str], header: bool) -> TableRow {
     TableRow {
         cells: cells
             .iter()
-            .map(|text| TableCell {
-                blocks: vec![Block::Paragraph(Paragraph {
-                    runs: vec![Run {
-                        properties: RunProperties { bold: header, ..RunProperties::default() },
-                        content: vec![RunContent::Text((*text).to_owned())],
-                    }],
-                    ..Paragraph::default()
-                })],
+            .map(|text| {
+                let run = if header { Run::text(text).bold() } else { Run::text(text) };
+                TableCell { blocks: vec![Block::Paragraph(Paragraph::from_runs(vec![run]))] }
             })
             .collect(),
     }

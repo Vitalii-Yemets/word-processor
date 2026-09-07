@@ -23,10 +23,7 @@ const SAMPLES: &[&str] = &[
 /// A document with a few paragraphs, one per script.
 fn multilingual_document() -> Vec<u8> {
     let mut body = Body::default();
-    body.blocks.push(Block::Paragraph(Paragraph {
-        style: Some("Title".to_owned()),
-        ..Paragraph::text("Title")
-    }));
+    body.blocks.push(Block::Paragraph(Paragraph::text("Title").with_style("Title")));
     for sample in SAMPLES {
         body.blocks.push(Block::Paragraph(Paragraph::text(sample)));
     }
@@ -68,7 +65,7 @@ fn replacing_text_works_across_run_boundaries() {
         runs: vec![
             Run::text("Hello, wo"),
             Run {
-                properties: RunProperties { bold: true, ..RunProperties::default() },
+                properties: RunProperties { bold: Some(true), ..RunProperties::default() },
                 content: vec![RunContent::Text("rl".to_owned())],
             },
             Run::text("d!"),
@@ -98,7 +95,7 @@ fn a_match_spanning_runs_leaves_the_untouched_run_alone() {
             Run::text("before "),
             Run::text("mat"),
             Run {
-                properties: RunProperties { bold: true, ..RunProperties::default() },
+                properties: RunProperties { bold: Some(true), ..RunProperties::default() },
                 content: vec![RunContent::Text("ch".to_owned())],
             },
             Run::text(" after"),
@@ -118,7 +115,11 @@ fn a_match_spanning_runs_leaves_the_untouched_run_alone() {
         panic!("expected a paragraph")
     };
     assert_eq!(paragraph.runs.len(), 4, "no run should have been removed");
-    assert!(paragraph.runs[2].properties.bold, "the bold run lost its formatting");
+    assert_eq!(
+        paragraph.runs[2].properties.bold,
+        Some(true),
+        "the bold run lost its formatting"
+    );
 }
 
 #[test]
@@ -263,8 +264,8 @@ fn paragraph_style_and_alignment_can_be_changed() {
         panic!("expected a paragraph")
     };
 
-    assert_eq!(paragraph.style.as_deref(), Some("Heading1"));
-    assert_eq!(paragraph.alignment, Some(Alignment::Center));
+    assert_eq!(paragraph.style(), Some("Heading1"));
+    assert_eq!(paragraph.properties.alignment, Some(Alignment::Center));
     assert_eq!(paragraph.plain_text(), "plain", "the text should be untouched");
 }
 

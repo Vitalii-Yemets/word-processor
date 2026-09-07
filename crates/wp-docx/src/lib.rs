@@ -36,14 +36,18 @@
 pub mod edit;
 pub mod model;
 mod read;
+pub mod styles;
 
 use wp_opc::{Package, Relationships, TargetMode};
 use wp_xml::tree::{Element, XmlTree};
 
 pub use model::Body;
 pub use read::W as WORDPROCESSING_NAMESPACE;
+pub use styles::{Style, StyleKind, Styles};
 
-use model::{Alignment, Block, Paragraph};
+use model::{
+    Alignment, Block, Paragraph, ResolvedParagraphProperties, ResolvedRunProperties, Run,
+};
 
 /// Content type of the styles part.
 const STYLES_CONTENT_TYPE: &str =
@@ -92,6 +96,8 @@ pub struct Document {
     package: Package,
     main_part: String,
     tree: XmlTree,
+    /// The document's style definitions, read once when it is opened.
+    styles: Styles,
     /// Whether the tree has been changed since it was read.
     ///
     /// While it is false, saving writes the original bytes straight back, which
@@ -113,7 +119,9 @@ impl Document {
             source,
         })?;
 
-        Ok(Self { package, main_part, tree, modified: false })
+        let styles = read_styles(&package, &main_part);
+
+        Ok(Self { package, main_part, tree, styles, modified: false })
     }
 
     /// Builds a new document containing the given body.
@@ -142,7 +150,15 @@ impl Document {
         document_relationships.add(STYLES_RELATIONSHIP, "styles.xml", TargetMode::Internal);
         package.set_relationships(&document_relationships)?;
 
-        Ok(Self { package, main_part: "word/document.xml".to_owned(), tree, modified: false })
+        let styles = read_styles(&package, "word/document.xml");
+
+        Ok(Self {
+            package,
+            main_part: "word/document.xml".to_owned(),
+            tree,
+            styles,
+            modified: false,
+        })
     }
 
     /// The package behind the document, for inspecting its parts.
@@ -188,6 +204,28 @@ impl Document {
     #[must_use]
     pub fn plain_text(&self) -> String {
         self.body().plain_text()
+    }
+
+    /// The document's style definitions.
+    #[must_use]
+    pub fn styles(&self) -> &Styles {
+        &self.styles
+    }
+
+    /// What a paragraph's formatting actually is, once its style chain and the
+    /// document defaults have been applied.
+    #[must_use]
+    pub fn resolve_paragraph(&self, paragraph: &Paragraph) -> ResolvedParagraphProperties {
+        self.styles.resolve_paragraph(&paragraph.properties)
+    }
+
+    /// What a run's formatting actually is.
+    ///
+    /// The paragraph is needed as well as the run: a run inside a heading is
+    /// bold because the *paragraph* style says so, not because the run does.
+    #[must_use]
+    pub fn resolve_run(&self, paragraph: &Paragraph, run: &Run) -> ResolvedRunProperties {
+        self.styles.resolve_run(paragraph.style(), &run.properties)
     }
 
     /// The prefix this document uses for the WordprocessingML namespace.
@@ -264,6 +302,33 @@ impl Document {
         let mut package = self.package.clone();
         package.set_part(&self.main_part, xml.into_bytes());
         Ok(package.save()?)
+    }
+}
+
+/// Reads the style definitions belonging to a document part.
+///
+/// The part is found by following the styles relationship rather than by
+/// guessing at a filename, which is how a package is meant to be navigated. A
+/// document with no styles part simply has none: that is unusual but valid, and
+/// everything then falls back to the built-in defaults.
+fn read_styles(package: &Package, main_part: &str) -> Styles {
+    let target = package
+        .relationships(main_part)
+        .ok()
+        .and_then(|relationships| {
+            let relationship = relationships.single_by_type(STYLES_RELATIONSHIP)?;
+            relationship.resolved_target(main_part)?.ok()
+        })
+        .unwrap_or_else(|| "word/styles.xml".to_owned());
+
+    let Some(Ok(text)) = package.xml_part(&target) else {
+        return Styles::default();
+    };
+    match XmlTree::parse(&text) {
+        Ok(tree) => Styles::parse(&tree.root),
+        // A damaged styles part should not stop the document opening; the text
+        // is still readable, it just renders with the defaults.
+        Err(_) => Styles::default(),
     }
 }
 

@@ -17,11 +17,49 @@
 
 use wp_xml::tree::{Element, Node};
 
-use crate::model::{Alignment, Block, BreakKind, Paragraph, Run, RunContent, RunProperties, Table};
+use crate::model::{
+    Alignment, Block, BreakKind, LineRule, Paragraph, ParagraphProperties, Run, RunContent,
+    RunProperties, Table,
+};
 use crate::read::W;
 
 /// The namespace of the reserved `xml` prefix, which `xml:space` belongs to.
 const XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
+
+/// The order the schema requires for the children of `w:pPr`.
+///
+/// Word rejects a document whose properties are out of sequence, so anything
+/// inserted has to go in the right place rather than simply at the end.
+const PARAGRAPH_PROPERTY_ORDER: &[&str] = &[
+    "pStyle",
+    "keepNext",
+    "keepLines",
+    "pageBreakBefore",
+    "framePr",
+    "widowControl",
+    "numPr",
+    "suppressLineNumbers",
+    "pBdr",
+    "shd",
+    "tabs",
+    "bidi",
+    "spacing",
+    "ind",
+    "contextualSpacing",
+    "jc",
+    "textDirection",
+    "textAlignment",
+    "outlineLvl",
+    "rPr",
+    "sectPr",
+];
+
+/// The same, for the children of `w:rPr`.
+const RUN_PROPERTY_ORDER: &[&str] = &[
+    "rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "color",
+    "spacing", "w", "kern", "position", "sz", "szCs", "highlight", "u", "effect", "bdr", "shd",
+    "vertAlign", "rtl", "cs", "em", "lang",
+];
 
 /// Finds the prefix a document uses for a namespace.
 ///
@@ -61,6 +99,34 @@ fn name_with(prefix: Option<&str>, local: &str) -> String {
     }
 }
 
+/// Inserts a property where the schema says it belongs.
+fn insert_ordered(parent: &mut Element, child: Element, order: &[&str]) {
+    let local = child.local_name().to_owned();
+    let rank = order.iter().position(|name| *name == local);
+
+    // An unknown property goes at the end, which is the least surprising place
+    // for something the order list does not mention.
+    let Some(rank) = rank else {
+        parent.push_element(child);
+        return;
+    };
+
+    let position = parent
+        .children
+        .iter()
+        .position(|node| {
+            node.as_element().is_some_and(|existing| {
+                order
+                    .iter()
+                    .position(|name| *name == existing.local_name())
+                    .is_none_or(|existing_rank| existing_rank > rank)
+            })
+        })
+        .unwrap_or(parent.children.len());
+
+    parent.insert_element(position, child);
+}
+
 // --- Finding and replacing text ---------------------------------------------
 
 /// Where one `w:t` element sits, and what it holds.
@@ -82,9 +148,8 @@ pub fn replace_text(root: &mut Element, needle: &str, replacement: &str) -> usiz
         return 0;
     }
 
-    let prefix = prefix_for(root, W);
     let mut replaced = 0;
-    replace_in_paragraphs(root, needle, replacement, prefix.as_deref(), &mut replaced);
+    replace_in_paragraphs(root, needle, replacement, &mut replaced);
     replaced
 }
 
@@ -92,25 +157,19 @@ fn replace_in_paragraphs(
     element: &mut Element,
     needle: &str,
     replacement: &str,
-    prefix: Option<&str>,
     replaced: &mut usize,
 ) {
     if element.is(Some(W), "p") {
-        *replaced += replace_in_paragraph(element, needle, replacement, prefix);
+        *replaced += replace_in_paragraph(element, needle, replacement);
         return;
     }
     for child in element.child_elements_mut() {
-        replace_in_paragraphs(child, needle, replacement, prefix, replaced);
+        replace_in_paragraphs(child, needle, replacement, replaced);
     }
 }
 
 /// Replaces inside one paragraph. Returns the number of occurrences changed.
-fn replace_in_paragraph(
-    paragraph: &mut Element,
-    needle: &str,
-    replacement: &str,
-    prefix: Option<&str>,
-) -> usize {
+fn replace_in_paragraph(paragraph: &mut Element, needle: &str, replacement: &str) -> usize {
     let pieces = collect_text_pieces(paragraph);
     if pieces.is_empty() {
         return 0;
@@ -131,7 +190,7 @@ fn replace_in_paragraph(
         }
         if let Some(element) = element_at_path_mut(paragraph, &piece.path) {
             element.set_text(&rebuilt);
-            preserve_space_if_needed(element, &rebuilt, prefix);
+            preserve_space_if_needed(element, &rebuilt);
         }
     }
 
@@ -170,8 +229,7 @@ fn rebuild_piece(piece: &TextPiece, matches: &[(usize, usize)], replacement: &st
             continue;
         }
 
-        let inside_match =
-            matches.iter().any(|(start, end)| absolute >= *start && absolute < *end);
+        let inside_match = matches.iter().any(|(start, end)| absolute >= *start && absolute < *end);
         let character = piece.text[local..].chars().next().expect("on a character boundary");
         if !inside_match {
             out.push(character);
@@ -236,8 +294,7 @@ fn element_at_path_mut<'a>(root: &'a mut Element, path: &[usize]) -> Option<&'a 
 ///
 /// Without the attribute a leading or trailing space is collapsed away on the
 /// next read, and two words silently run together.
-fn preserve_space_if_needed(element: &mut Element, text: &str, prefix: Option<&str>) {
-    let _ = prefix;
+fn preserve_space_if_needed(element: &mut Element, text: &str) {
     let needs_it = text.starts_with(char::is_whitespace) || text.ends_with(char::is_whitespace);
     if needs_it {
         element.set_namespaced_attribute("xml:space", XML_NAMESPACE, "preserve");
@@ -248,29 +305,166 @@ fn preserve_space_if_needed(element: &mut Element, text: &str, prefix: Option<&s
 
 // --- Building elements from the model ---------------------------------------
 
+/// An element carrying only a `w:val` attribute, the format's commonest shape.
+fn valued(prefix: Option<&str>, local: &str, value: &str) -> Element {
+    let mut element = Element::new(&name_with(prefix, local), Some(W));
+    element.set_namespaced_attribute(&name_with(prefix, "val"), W, value);
+    element
+}
+
+/// An on/off element, written only when it says something.
+fn toggle(prefix: Option<&str>, local: &str, state: bool) -> Element {
+    if state {
+        Element::new(&name_with(prefix, local), Some(W))
+    } else {
+        // Explicitly off, which is how a run overrides its style.
+        valued(prefix, local, "0")
+    }
+}
+
+/// Turns paragraph properties into a `w:pPr`.
+#[must_use]
+pub fn paragraph_properties_element(
+    properties: &ParagraphProperties,
+    prefix: Option<&str>,
+) -> Element {
+    let mut element = Element::new(&name_with(prefix, "pPr"), Some(W));
+    // Built in schema order, so nothing has to be sorted afterwards.
+    if let Some(style) = &properties.style {
+        element.push_element(valued(prefix, "pStyle", style));
+    }
+    if let Some(state) = properties.keep_next {
+        element.push_element(toggle(prefix, "keepNext", state));
+    }
+    if let Some(state) = properties.keep_lines {
+        element.push_element(toggle(prefix, "keepLines", state));
+    }
+    if let Some(state) = properties.page_break_before {
+        element.push_element(toggle(prefix, "pageBreakBefore", state));
+    }
+    if let Some(state) = properties.widow_control {
+        element.push_element(toggle(prefix, "widowControl", state));
+    }
+    if let Some(numbering) = properties.numbering {
+        let mut reference = Element::new(&name_with(prefix, "numPr"), Some(W));
+        reference.push_element(valued(prefix, "ilvl", &numbering.level.to_string()));
+        reference.push_element(valued(prefix, "numId", &numbering.id.to_string()));
+        element.push_element(reference);
+    }
+    if let Some(state) = properties.right_to_left {
+        element.push_element(toggle(prefix, "bidi", state));
+    }
+    if properties.space_before.is_some()
+        || properties.space_after.is_some()
+        || properties.line_spacing.is_some()
+    {
+        let mut spacing = Element::new(&name_with(prefix, "spacing"), Some(W));
+        if let Some(before) = properties.space_before {
+            spacing.set_namespaced_attribute(&name_with(prefix, "before"), W, &before.to_string());
+        }
+        if let Some(after) = properties.space_after {
+            spacing.set_namespaced_attribute(&name_with(prefix, "after"), W, &after.to_string());
+        }
+        if let Some(line) = properties.line_spacing {
+            spacing.set_namespaced_attribute(&name_with(prefix, "line"), W, &line.value.to_string());
+            let rule = match line.rule {
+                LineRule::Auto => "auto",
+                LineRule::Exact => "exact",
+                LineRule::AtLeast => "atLeast",
+            };
+            spacing.set_namespaced_attribute(&name_with(prefix, "lineRule"), W, rule);
+        }
+        element.push_element(spacing);
+    }
+    if properties.indent_start.is_some()
+        || properties.indent_end.is_some()
+        || properties.indent_first_line.is_some()
+    {
+        let mut indent = Element::new(&name_with(prefix, "ind"), Some(W));
+        if let Some(start) = properties.indent_start {
+            indent.set_namespaced_attribute(&name_with(prefix, "start"), W, &start.to_string());
+        }
+        if let Some(end) = properties.indent_end {
+            indent.set_namespaced_attribute(&name_with(prefix, "end"), W, &end.to_string());
+        }
+        if let Some(first) = properties.indent_first_line {
+            // A negative first-line indent is written as a hanging indent.
+            let (name, amount) =
+                if first < 0 { ("hanging", -first) } else { ("firstLine", first) };
+            indent.set_namespaced_attribute(&name_with(prefix, name), W, &amount.to_string());
+        }
+        element.push_element(indent);
+    }
+    if let Some(alignment) = properties.alignment {
+        element.push_element(valued(prefix, "jc", alignment.to_attribute()));
+    }
+    if let Some(level) = properties.outline_level {
+        element.push_element(valued(prefix, "outlineLvl", &level.to_string()));
+    }
+
+    element
+}
+
 /// Turns a paragraph from the model into an element ready to insert.
 #[must_use]
 pub fn paragraph_element(paragraph: &Paragraph, prefix: Option<&str>) -> Element {
     let mut element = Element::new(&name_with(prefix, "p"), Some(W));
 
-    let has_properties =
-        paragraph.style.is_some() || paragraph.alignment.is_some() || paragraph.right_to_left;
-    if has_properties {
-        let mut properties = Element::new(&name_with(prefix, "pPr"), Some(W));
-        if let Some(style) = &paragraph.style {
-            properties.push_element(valued(prefix, "pStyle", style));
-        }
-        if paragraph.right_to_left {
-            properties.push_element(Element::new(&name_with(prefix, "bidi"), Some(W)));
-        }
-        if let Some(alignment) = paragraph.alignment {
-            properties.push_element(valued(prefix, "jc", alignment.to_attribute()));
-        }
-        element.push_element(properties);
+    if !paragraph.properties.is_empty() {
+        element.push_element(paragraph_properties_element(&paragraph.properties, prefix));
     }
-
     for run in &paragraph.runs {
         element.push_element(run_element(run, prefix));
+    }
+
+    element
+}
+
+/// Turns run properties into a `w:rPr`.
+#[must_use]
+pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) -> Element {
+    let mut element = Element::new(&name_with(prefix, "rPr"), Some(W));
+
+    if let Some(style) = &properties.style {
+        element.push_element(valued(prefix, "rStyle", style));
+    }
+    if let Some(font) = &properties.font {
+        let mut fonts = Element::new(&name_with(prefix, "rFonts"), Some(W));
+        // All four scripts get the same family: without w:cs, right-to-left and
+        // East Asian text would silently fall back to a different font.
+        for attribute in ["ascii", "hAnsi", "cs", "eastAsia"] {
+            fonts.set_namespaced_attribute(&name_with(prefix, attribute), W, font);
+        }
+        element.push_element(fonts);
+    }
+    if let Some(state) = properties.bold {
+        element.push_element(toggle(prefix, "b", state));
+        // Complex-script text takes its weight from w:bCs, not w:b.
+        element.push_element(toggle(prefix, "bCs", state));
+    }
+    if let Some(state) = properties.italic {
+        element.push_element(toggle(prefix, "i", state));
+        element.push_element(toggle(prefix, "iCs", state));
+    }
+    if let Some(state) = properties.strike {
+        element.push_element(toggle(prefix, "strike", state));
+    }
+    if let Some(color) = &properties.color {
+        element.push_element(valued(prefix, "color", color));
+    }
+    if let Some(half_points) = properties.size_half_points {
+        let size = half_points.to_string();
+        element.push_element(valued(prefix, "sz", &size));
+        element.push_element(valued(prefix, "szCs", &size));
+    }
+    if let Some(underline) = &properties.underline {
+        element.push_element(valued(prefix, "u", underline.to_attribute()));
+    }
+    if let Some(state) = properties.right_to_left {
+        element.push_element(toggle(prefix, "rtl", state));
+    }
+    if let Some(language) = &properties.language {
+        element.push_element(valued(prefix, "lang", language));
     }
 
     element
@@ -281,7 +475,7 @@ pub fn paragraph_element(paragraph: &Paragraph, prefix: Option<&str>) -> Element
 pub fn run_element(run: &Run, prefix: Option<&str>) -> Element {
     let mut element = Element::new(&name_with(prefix, "r"), Some(W));
 
-    if !run.properties.is_default() {
+    if !run.properties.is_empty() {
         element.push_element(run_properties_element(&run.properties, prefix));
     }
 
@@ -299,8 +493,12 @@ pub fn run_element(run: &Run, prefix: Option<&str>) -> Element {
                 let mut node = Element::new(&name_with(prefix, "br"), Some(W));
                 match kind {
                     BreakKind::Line => {}
-                    BreakKind::Page => node.set_namespaced_attribute("w:type", W, "page"),
-                    BreakKind::Column => node.set_namespaced_attribute("w:type", W, "column"),
+                    BreakKind::Page => {
+                        node.set_namespaced_attribute(&name_with(prefix, "type"), W, "page");
+                    }
+                    BreakKind::Column => {
+                        node.set_namespaced_attribute(&name_with(prefix, "type"), W, "column");
+                    }
                 }
                 element.push_element(node);
             }
@@ -311,76 +509,6 @@ pub fn run_element(run: &Run, prefix: Option<&str>) -> Element {
     }
 
     element
-}
-
-fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) -> Element {
-    let mut element = Element::new(&name_with(prefix, "rPr"), Some(W));
-
-    // The order matters: Word rejects a document whose run properties are not
-    // in the sequence the schema declares.
-    if let Some(style) = &properties.style {
-        element.push_element(valued(prefix, "rStyle", style));
-    }
-    if let Some(font) = &properties.font {
-        let mut fonts = Element::new(&name_with(prefix, "rFonts"), Some(W));
-        for attribute in ["ascii", "hAnsi", "cs", "eastAsia"] {
-            fonts.set_namespaced_attribute(&name_with(prefix, attribute), W, font);
-        }
-        element.push_element(fonts);
-    }
-    if properties.bold {
-        element.push_element(Element::new(&name_with(prefix, "b"), Some(W)));
-        element.push_element(Element::new(&name_with(prefix, "bCs"), Some(W)));
-    }
-    if properties.italic {
-        element.push_element(Element::new(&name_with(prefix, "i"), Some(W)));
-        element.push_element(Element::new(&name_with(prefix, "iCs"), Some(W)));
-    }
-    if properties.strike {
-        element.push_element(Element::new(&name_with(prefix, "strike"), Some(W)));
-    }
-    if let Some(color) = &properties.color {
-        element.push_element(valued(prefix, "color", color));
-    }
-    if let Some(half_points) = properties.size_half_points {
-        let size = half_points.to_string();
-        element.push_element(valued(prefix, "sz", &size));
-        element.push_element(valued(prefix, "szCs", &size));
-    }
-    if properties.underline {
-        element.push_element(valued(prefix, "u", "single"));
-    }
-    if let Some(language) = &properties.language {
-        element.push_element(valued(prefix, "lang", language));
-    }
-    if properties.right_to_left {
-        element.push_element(Element::new(&name_with(prefix, "rtl"), Some(W)));
-    }
-
-    element
-}
-
-/// An element carrying only a `w:val` attribute, the format's commonest shape.
-fn valued(prefix: Option<&str>, local: &str, value: &str) -> Element {
-    let mut element = Element::new(&name_with(prefix, local), Some(W));
-    element.set_namespaced_attribute(&name_with(prefix, "val"), W, value);
-    element
-}
-
-/// Appends a block to the end of a body, before the section properties.
-///
-/// `w:sectPr` must remain the last child of `w:body`; a document with anything
-/// after it is rejected.
-pub fn append_block(body: &mut Element, block: &Block, prefix: Option<&str>) {
-    let element = match block {
-        Block::Paragraph(paragraph) => paragraph_element(paragraph, prefix),
-        Block::Table(table) => table_element(table, prefix),
-    };
-
-    match body.position_of(Some(W), "sectPr") {
-        Some(index) => body.insert_element(index, element),
-        None => body.push_element(element),
-    }
 }
 
 fn table_element(table: &Table, prefix: Option<&str>) -> Element {
@@ -414,11 +542,7 @@ fn table_element(table: &Table, prefix: Option<&str>) -> Element {
                 cell_element.push_element(Element::new(&name_with(prefix, "p"), Some(W)));
             } else {
                 for block in &cell.blocks {
-                    let child = match block {
-                        Block::Paragraph(paragraph) => paragraph_element(paragraph, prefix),
-                        Block::Table(nested) => table_element(nested, prefix),
-                    };
-                    cell_element.push_element(child);
+                    cell_element.push_element(block_element(block, prefix));
                 }
             }
 
@@ -430,6 +554,42 @@ fn table_element(table: &Table, prefix: Option<&str>) -> Element {
     element
 }
 
+fn block_element(block: &Block, prefix: Option<&str>) -> Element {
+    match block {
+        Block::Paragraph(paragraph) => paragraph_element(paragraph, prefix),
+        Block::Table(table) => table_element(table, prefix),
+    }
+}
+
+/// Appends a block to the end of a body, before the section properties.
+///
+/// `w:sectPr` must remain the last child of `w:body`; a document with anything
+/// after it is rejected.
+pub fn append_block(body: &mut Element, block: &Block, prefix: Option<&str>) {
+    let element = block_element(block, prefix);
+    match body.position_of(Some(W), "sectPr") {
+        Some(index) => body.insert_element(index, element),
+        None => body.push_element(element),
+    }
+}
+
+/// Finds the paragraph at a given index among the body's direct children.
+fn paragraph_at(body: &mut Element, index: usize) -> Option<&mut Element> {
+    body.child_elements_mut().filter(|element| element.is(Some(W), "p")).nth(index)
+}
+
+/// Ensures a paragraph has a `w:pPr` and returns it.
+fn paragraph_properties_of<'a>(
+    paragraph: &'a mut Element,
+    prefix: Option<&str>,
+) -> &'a mut Element {
+    if paragraph.child(Some(W), "pPr").is_none() {
+        // Paragraph properties must come first inside the paragraph.
+        paragraph.insert_element(0, Element::new(&name_with(prefix, "pPr"), Some(W)));
+    }
+    paragraph.child_mut(Some(W), "pPr").expect("just ensured")
+}
+
 /// Sets the style of the paragraph at a given index in the body.
 ///
 /// Returns whether a paragraph was found at that index.
@@ -439,27 +599,15 @@ pub fn set_paragraph_style(
     style: Option<&str>,
     prefix: Option<&str>,
 ) -> bool {
-    let Some(paragraph) = body
-        .child_elements_mut()
-        .filter(|element| element.is(Some(W), "p"))
-        .nth(index)
-    else {
+    let Some(paragraph) = paragraph_at(body, index) else {
         return false;
     };
-
-    let properties_name = name_with(prefix, "pPr");
-    if paragraph.child(Some(W), "pPr").is_none() {
-        // Paragraph properties must come first inside the paragraph.
-        paragraph.insert_element(0, Element::new(&properties_name, Some(W)));
-    }
-    let properties = paragraph.child_mut(Some(W), "pPr").expect("just ensured");
+    let properties = paragraph_properties_of(paragraph, prefix);
 
     properties.remove_children_named(Some(W), "pStyle");
     if let Some(style) = style {
-        // The style reference must be the first of the paragraph properties.
-        properties.insert_element(0, valued(prefix, "pStyle", style));
+        insert_ordered(properties, valued(prefix, "pStyle", style), PARAGRAPH_PROPERTY_ORDER);
     }
-
     true
 }
 
@@ -470,20 +618,56 @@ pub fn set_paragraph_alignment(
     alignment: Alignment,
     prefix: Option<&str>,
 ) -> bool {
-    let Some(paragraph) = body
-        .child_elements_mut()
-        .filter(|element| element.is(Some(W), "p"))
-        .nth(index)
-    else {
+    let Some(paragraph) = paragraph_at(body, index) else {
+        return false;
+    };
+    let properties = paragraph_properties_of(paragraph, prefix);
+
+    properties.remove_children_named(Some(W), "jc");
+    insert_ordered(
+        properties,
+        valued(prefix, "jc", alignment.to_attribute()),
+        PARAGRAPH_PROPERTY_ORDER,
+    );
+    true
+}
+
+/// Sets or clears one on/off character property on every run of a paragraph.
+pub fn set_run_toggle(
+    body: &mut Element,
+    index: usize,
+    local: &str,
+    state: Option<bool>,
+    prefix: Option<&str>,
+) -> bool {
+    let Some(paragraph) = paragraph_at(body, index) else {
         return false;
     };
 
-    if paragraph.child(Some(W), "pPr").is_none() {
-        paragraph.insert_element(0, Element::new(&name_with(prefix, "pPr"), Some(W)));
+    let mut runs: Vec<&mut Element> = Vec::new();
+    collect_run_elements(paragraph, &mut runs);
+    for run in runs {
+        if run.child(Some(W), "rPr").is_none() {
+            run.insert_element(0, Element::new(&name_with(prefix, "rPr"), Some(W)));
+        }
+        let properties = run.child_mut(Some(W), "rPr").expect("just ensured");
+        properties.remove_children_named(Some(W), local);
+        if let Some(state) = state {
+            insert_ordered(properties, toggle(prefix, local, state), RUN_PROPERTY_ORDER);
+        }
     }
-    let properties = paragraph.child_mut(Some(W), "pPr").expect("just ensured");
-
-    properties.remove_children_named(Some(W), "jc");
-    properties.push_element(valued(prefix, "jc", alignment.to_attribute()));
     true
+}
+
+fn collect_run_elements<'a>(parent: &'a mut Element, out: &mut Vec<&'a mut Element>) {
+    for child in parent.child_elements_mut() {
+        if child.namespace.as_deref() != Some(W) {
+            continue;
+        }
+        if child.local_name() == "r" {
+            out.push(child);
+        } else if child.local_name() != "del" {
+            collect_run_elements(child, out);
+        }
+    }
 }
