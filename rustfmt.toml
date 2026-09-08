@@ -1,0 +1,4 @@
+# The style the project was written in, written down so that running the
+# formatter does not rewrite files nobody touched.
+max_width = 100
+use_small_heuristics = "Max"
