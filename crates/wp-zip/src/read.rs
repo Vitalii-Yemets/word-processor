@@ -159,9 +159,7 @@ impl<'a> ZipArchive<'a> {
         let name_length = usize::from(read_u16(self.data, header + 26)?);
         let extra_length = usize::from(read_u16(self.data, header + 28)?);
 
-        header
-            .checked_add(LOCAL_HEADER_SIZE + name_length + extra_length)
-            .ok_or(Error::Truncated)
+        header.checked_add(LOCAL_HEADER_SIZE + name_length + extra_length).ok_or(Error::Truncated)
     }
 }
 
@@ -185,20 +183,19 @@ impl Directory {
 
         // A sentinel in either field means the real values live in the Zip64
         // record, which sits immediately before the locator.
-        let needs_zip64 = entry_count == u64::from(ZIP64_SENTINEL_16)
-            || offset == u64::from(ZIP64_SENTINEL_32);
+        let needs_zip64 =
+            entry_count == u64::from(ZIP64_SENTINEL_16) || offset == u64::from(ZIP64_SENTINEL_32);
         if !needs_zip64 {
             return Ok(Self { offset, entry_count });
         }
 
-        let locator_offset =
-            end_offset.checked_sub(ZIP64_LOCATOR_SIZE).ok_or(Error::Truncated)?;
+        let locator_offset = end_offset.checked_sub(ZIP64_LOCATOR_SIZE).ok_or(Error::Truncated)?;
         if read_u32(data, locator_offset)? != SIGNATURE_ZIP64_LOCATOR {
             return Err(Error::CorruptHeader("Zip64 end-of-central-directory locator"));
         }
 
-        let record_offset = usize::try_from(read_u64(data, locator_offset + 8)?)
-            .map_err(|_| Error::Truncated)?;
+        let record_offset =
+            usize::try_from(read_u64(data, locator_offset + 8)?).map_err(|_| Error::Truncated)?;
         if read_u32(data, record_offset)? != SIGNATURE_ZIP64_END_OF_CENTRAL_DIRECTORY {
             return Err(Error::CorruptHeader("Zip64 end-of-central-directory record"));
         }
@@ -245,9 +242,8 @@ fn parse_central_directory(data: &[u8], directory: &Directory) -> Result<Vec<Zip
     // Cap the allocation by what the file could physically contain, so a bogus
     // entry count cannot make us reserve gigabytes up front.
     let plausible_maximum = data.len() / CENTRAL_HEADER_SIZE + 1;
-    let capacity = usize::try_from(directory.entry_count)
-        .unwrap_or(plausible_maximum)
-        .min(plausible_maximum);
+    let capacity =
+        usize::try_from(directory.entry_count).unwrap_or(plausible_maximum).min(plausible_maximum);
     let mut entries = Vec::with_capacity(capacity);
 
     for _ in 0..directory.entry_count {
@@ -272,8 +268,7 @@ fn parse_central_directory(data: &[u8], directory: &Directory) -> Result<Vec<Zip
         let comment_length = usize::from(read_u16(data, offset + 32)?);
 
         let name_start = offset + CENTRAL_HEADER_SIZE;
-        let name_bytes =
-            data.get(name_start..name_start + name_length).ok_or(Error::Truncated)?;
+        let name_bytes = data.get(name_start..name_start + name_length).ok_or(Error::Truncated)?;
 
         let extra_start = name_start + name_length;
         let extra = data.get(extra_start..extra_start + extra_length).ok_or(Error::Truncated)?;

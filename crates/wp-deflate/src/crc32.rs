@@ -14,11 +14,7 @@ const fn build_table() -> [u32; 256] {
         let mut value = byte as u32;
         let mut bit = 0;
         while bit < 8 {
-            value = if value & 1 != 0 {
-                POLYNOMIAL ^ (value >> 1)
-            } else {
-                value >> 1
-            };
+            value = if value & 1 != 0 { POLYNOMIAL ^ (value >> 1) } else { value >> 1 };
             bit += 1;
         }
         table[byte] = value;

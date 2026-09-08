@@ -41,13 +41,14 @@ fn write_source_tree(root: &Path) -> Vec<(String, Vec<u8>)> {
         ("_rels/.rels".to_owned(), b"<Relationships/>".to_vec()),
         (
             "word/document.xml".to_owned(),
-            "<w:document><w:t>Multilingual: текст 文書 نص</w:t></w:document>"
-                .as_bytes()
-                .to_vec(),
+            "<w:document><w:t>Multilingual: текст 文書 نص</w:t></w:document>".as_bytes().to_vec(),
         ),
         // Long and repetitive, so the tool has a reason to use dynamic Huffman
         // codes — the branch our own encoder never exercises.
-        ("word/styles.xml".to_owned(), "<w:style w:styleId=\"Normal\"/>".repeat(3_000).into_bytes()),
+        (
+            "word/styles.xml".to_owned(),
+            "<w:style w:styleId=\"Normal\"/>".repeat(3_000).into_bytes(),
+        ),
         // Incompressible, so the tool stores it instead.
         ("word/media/image1.bin".to_owned(), (0..=255u8).cycle().take(20_000).collect()),
         ("docProps/название.xml".to_owned(), "<Properties/>".as_bytes().to_vec()),
@@ -193,7 +194,9 @@ fn unzip_accepts_a_stored_only_archive() {
 
     let mut writer = ZipWriter::new();
     writer.add_stored("mimetype", b"application/vnd.oasis.opendocument.text").unwrap();
-    writer.add_stored("word/image.bin", &(0..=255u8).cycle().take(5_000).collect::<Vec<_>>()).unwrap();
+    writer
+        .add_stored("word/image.bin", &(0..=255u8).cycle().take(5_000).collect::<Vec<_>>())
+        .unwrap();
     let bytes = writer.finish().unwrap();
     std::fs::write(directory.join("stored.zip"), &bytes).unwrap();
 

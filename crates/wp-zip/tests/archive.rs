@@ -78,12 +78,7 @@ fn empty_entries_roundtrip() {
 fn non_ascii_names_roundtrip() {
     // Part names in a package can carry any Unicode; the UTF-8 flag has to be
     // set for them and honoured on the way back.
-    let names = [
-        "word/документ.xml",
-        "word/文書.xml",
-        "word/مستند.xml",
-        "word/média/imagen.png",
-    ];
+    let names = ["word/документ.xml", "word/文書.xml", "word/مستند.xml", "word/média/imagen.png"];
 
     let mut writer = ZipWriter::new();
     for (index, name) in names.iter().enumerate() {

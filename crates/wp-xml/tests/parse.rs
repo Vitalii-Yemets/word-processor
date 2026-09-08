@@ -80,20 +80,14 @@ fn the_reserved_xml_prefix_needs_no_declaration() {
         })
         .expect("w:t should be present");
 
-    assert_eq!(
-        text_element.attribute(Some(wp_xml::XML_NAMESPACE), "space"),
-        Some("preserve")
-    );
+    assert_eq!(text_element.attribute(Some(wp_xml::XML_NAMESPACE), "space"), Some("preserve"));
 }
 
 #[test]
 fn whitespace_in_content_is_reported_exactly() {
     // With xml:space="preserve" the trailing space is content. A parser that
     // trimmed it would silently join two words in the finished document.
-    let events = parse(
-        r#"<w:t xmlns:w="urn:w" xml:space="preserve">Hello, </w:t>"#,
-    )
-    .unwrap();
+    let events = parse(r#"<w:t xmlns:w="urn:w" xml:space="preserve">Hello, </w:t>"#).unwrap();
     let text: Vec<&str> = events
         .iter()
         .filter_map(|event| match event {
@@ -127,10 +121,7 @@ fn reads_comments_cdata_and_processing_instructions() {
     let source = "<?custom target?><!-- a note --><a><![CDATA[raw <not> markup]]></a>";
     let events = parse(source).unwrap();
 
-    assert!(matches!(
-        events[0],
-        Event::ProcessingInstruction { target: "custom", data: "target" }
-    ));
+    assert!(matches!(events[0], Event::ProcessingInstruction { target: "custom", data: "target" }));
     assert!(matches!(events[1], Event::Comment(" a note ")));
     assert!(matches!(events[3], Event::CData("raw <not> markup")));
 }
@@ -140,11 +131,7 @@ fn reads_the_declaration() {
     let events = parse(DOCUMENT).unwrap();
     assert_eq!(
         events[0],
-        Event::Declaration {
-            version: "1.0",
-            encoding: Some("UTF-8"),
-            standalone: Some(true),
-        }
+        Event::Declaration { version: "1.0", encoding: Some("UTF-8"), standalone: Some(true) }
     );
 }
 
@@ -215,10 +202,7 @@ fn writer_produces_the_expected_markup() {
 fn writer_refuses_a_mismatched_end_tag() {
     let mut writer = Writer::new();
     writer.write_start("a", &[]).unwrap();
-    assert!(matches!(
-        writer.write_end("b").unwrap_err().kind,
-        ErrorKind::MismatchedEndTag { .. }
-    ));
+    assert!(matches!(writer.write_end("b").unwrap_err().kind, ErrorKind::MismatchedEndTag { .. }));
 }
 
 #[test]
@@ -240,10 +224,7 @@ fn expect_error(source: &str) -> Error {
 
 #[test]
 fn rejects_mismatched_tags() {
-    assert!(matches!(
-        expect_error("<a><b></a></b>").kind,
-        ErrorKind::MismatchedEndTag { .. }
-    ));
+    assert!(matches!(expect_error("<a><b></a></b>").kind, ErrorKind::MismatchedEndTag { .. }));
     assert!(matches!(expect_error("<a><b></a>").kind, ErrorKind::MismatchedEndTag { .. }));
     assert!(matches!(expect_error("<a>").kind, ErrorKind::UnclosedElements(_)));
     assert!(matches!(expect_error("</a>").kind, ErrorKind::UnexpectedEndTag(_)));
@@ -260,10 +241,7 @@ fn requires_exactly_one_root_element() {
 
 #[test]
 fn rejects_text_outside_the_root_element() {
-    assert!(matches!(
-        expect_error("stray text<a/>").kind,
-        ErrorKind::UnexpectedCharacter { .. }
-    ));
+    assert!(matches!(expect_error("stray text<a/>").kind, ErrorKind::UnexpectedCharacter { .. }));
 }
 
 #[test]
@@ -281,10 +259,7 @@ fn rejects_undeclared_prefixes() {
 
 #[test]
 fn rejects_duplicate_attributes() {
-    assert!(matches!(
-        expect_error("<a b=\"1\" b=\"2\"/>").kind,
-        ErrorKind::DuplicateAttribute(_)
-    ));
+    assert!(matches!(expect_error("<a b=\"1\" b=\"2\"/>").kind, ErrorKind::DuplicateAttribute(_)));
     // Two prefixes for one namespace still name the same attribute.
     assert!(matches!(
         expect_error("<a xmlns:p=\"urn:x\" xmlns:q=\"urn:x\" p:b=\"1\" q:b=\"2\"/>").kind,
@@ -369,8 +344,31 @@ fn errors_carry_a_useful_position() {
 fn arbitrary_input_never_panics() {
     // Fragments assembled from pieces of XML syntax, most of them nonsense.
     let pieces = [
-        "<", ">", "/", "?", "!", "-", "[", "]", "&", ";", "\"", "'", "=", "a", " ", "\n", ":",
-        "<a", "</", "<!--", "]]>", "<![CDATA[", "<?xml", "&#x", "\u{1F600}",
+        "<",
+        ">",
+        "/",
+        "?",
+        "!",
+        "-",
+        "[",
+        "]",
+        "&",
+        ";",
+        "\"",
+        "'",
+        "=",
+        "a",
+        " ",
+        "\n",
+        ":",
+        "<a",
+        "</",
+        "<!--",
+        "]]>",
+        "<![CDATA[",
+        "<?xml",
+        "&#x",
+        "\u{1F600}",
     ];
 
     let mut state = 0x1234_5678u64;

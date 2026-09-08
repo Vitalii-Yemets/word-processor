@@ -352,10 +352,7 @@ mod tests {
         emit_contour(&[on(0.0, 0.0), off(5.0, 10.0), on(10.0, 0.0)], &mut commands);
 
         assert_eq!(commands[0], PathCommand::MoveTo(Point::new(0.0, 0.0)));
-        assert_eq!(
-            commands[1],
-            PathCommand::QuadTo(Point::new(5.0, 10.0), Point::new(10.0, 0.0))
-        );
+        assert_eq!(commands[1], PathCommand::QuadTo(Point::new(5.0, 10.0), Point::new(10.0, 0.0)));
     }
 
     #[test]
@@ -370,17 +367,17 @@ mod tests {
             PathCommand::QuadTo(Point::new(4.0, 8.0), Point::new(6.0, 8.0)),
             "the implied midpoint should be at (6, 8)"
         );
-        assert_eq!(
-            commands[2],
-            PathCommand::QuadTo(Point::new(8.0, 8.0), Point::new(12.0, 0.0))
-        );
+        assert_eq!(commands[2], PathCommand::QuadTo(Point::new(8.0, 8.0), Point::new(12.0, 0.0)));
     }
 
     #[test]
     fn a_contour_with_no_on_curve_point_still_draws() {
         // Legal, and used for shapes made entirely of curves, such as an O.
         let mut commands = Vec::new();
-        emit_contour(&[off(0.0, 10.0), off(10.0, 10.0), off(10.0, 0.0), off(0.0, 0.0)], &mut commands);
+        emit_contour(
+            &[off(0.0, 10.0), off(10.0, 10.0), off(10.0, 0.0), off(0.0, 0.0)],
+            &mut commands,
+        );
 
         assert!(matches!(commands.first(), Some(PathCommand::MoveTo(_))));
         assert!(matches!(commands.last(), Some(PathCommand::Close)));

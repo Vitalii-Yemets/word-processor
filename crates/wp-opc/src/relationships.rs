@@ -76,10 +76,8 @@ impl Relationships {
         let mut reader = Reader::new(xml);
 
         while let Some(event) = reader.next_event() {
-            let event = event.map_err(|source| Error::Xml {
-                part: source_part.to_owned(),
-                source,
-            })?;
+            let event =
+                event.map_err(|source| Error::Xml { part: source_part.to_owned(), source })?;
             let tag = match event {
                 Event::Start(tag) | Event::Empty(tag) => tag,
                 _ => continue,
@@ -88,18 +86,15 @@ impl Relationships {
                 continue;
             }
 
-            let id = tag.attribute(None, "Id").ok_or(Error::MissingAttribute {
-                element: "Relationship",
-                attribute: "Id",
-            })?;
-            let kind = tag.attribute(None, "Type").ok_or(Error::MissingAttribute {
-                element: "Relationship",
-                attribute: "Type",
-            })?;
-            let target = tag.attribute(None, "Target").ok_or(Error::MissingAttribute {
-                element: "Relationship",
-                attribute: "Target",
-            })?;
+            let id = tag
+                .attribute(None, "Id")
+                .ok_or(Error::MissingAttribute { element: "Relationship", attribute: "Id" })?;
+            let kind = tag
+                .attribute(None, "Type")
+                .ok_or(Error::MissingAttribute { element: "Relationship", attribute: "Type" })?;
+            let target = tag
+                .attribute(None, "Target")
+                .ok_or(Error::MissingAttribute { element: "Relationship", attribute: "Target" })?;
             let mode = match tag.attribute(None, "TargetMode") {
                 Some("External") => TargetMode::External,
                 _ => TargetMode::Internal,
@@ -235,7 +230,10 @@ mod tests {
         let relationships = Relationships::parse("word/document.xml", DOCUMENT_RELS).unwrap();
 
         let styles = relationships.by_id("rId1").unwrap();
-        assert_eq!(styles.resolved_target("word/document.xml").unwrap().unwrap(), "word/styles.xml");
+        assert_eq!(
+            styles.resolved_target("word/document.xml").unwrap().unwrap(),
+            "word/styles.xml"
+        );
 
         let image = relationships.by_id("rId2").unwrap();
         assert_eq!(
@@ -281,8 +279,7 @@ mod tests {
     fn survives_a_round_trip() {
         for (source, xml) in [("", ROOT_RELS), ("word/document.xml", DOCUMENT_RELS)] {
             let original = Relationships::parse(source, xml).unwrap();
-            let rewritten =
-                Relationships::parse(source, &original.to_xml().unwrap()).unwrap();
+            let rewritten = Relationships::parse(source, &original.to_xml().unwrap()).unwrap();
             assert_eq!(original, rewritten, "source {source:?}");
         }
     }

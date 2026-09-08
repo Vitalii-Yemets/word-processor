@@ -64,12 +64,10 @@ impl Package {
             .map(|entry| entry.data.clone())
             .ok_or(Error::MissingContentTypes)?;
 
-        let content_types = parse_xml_part(CONTENT_TYPES_PART, &content_types_bytes)
-            .and_then(|text| {
-                ContentTypes::parse(&text).map_err(|source| Error::Xml {
-                    part: CONTENT_TYPES_PART.to_owned(),
-                    source,
-                })
+        let content_types =
+            parse_xml_part(CONTENT_TYPES_PART, &content_types_bytes).and_then(|text| {
+                ContentTypes::parse(&text)
+                    .map_err(|source| Error::Xml { part: CONTENT_TYPES_PART.to_owned(), source })
             })?;
 
         Ok(Self { entries, content_types })
@@ -121,11 +119,7 @@ impl Package {
     /// silently inventing one would hide the mistake.
     pub fn set_part(&mut self, name: &str, data: Vec<u8>) {
         let name = normalize(name);
-        match self
-            .entries
-            .iter_mut()
-            .find(|entry| entry.name.eq_ignore_ascii_case(&name))
-        {
+        match self.entries.iter_mut().find(|entry| entry.name.eq_ignore_ascii_case(&name)) {
             Some(entry) => entry.data = data,
             None => self.entries.push(PackageEntry {
                 name,
@@ -170,10 +164,9 @@ impl Package {
     /// Writes a part's relationships back into the package.
     pub fn set_relationships(&mut self, relationships: &Relationships) -> Result<(), Error> {
         let rels_part = relationships_part_for(relationships.source_part());
-        let xml = relationships.to_xml().map_err(|source| Error::Xml {
-            part: rels_part.clone(),
-            source,
-        })?;
+        let xml = relationships
+            .to_xml()
+            .map_err(|source| Error::Xml { part: rels_part.clone(), source })?;
 
         self.set_part(&rels_part, xml.into_bytes());
         // Relationships parts are covered by an extension default in every real
@@ -262,12 +255,7 @@ impl Package {
     pub fn save(&self) -> Result<Vec<u8>, Error> {
         let mut writer = ZipWriter::new();
         for entry in &self.entries {
-            writer.add_with(
-                &entry.name,
-                &entry.data,
-                entry.compression,
-                entry.last_modified,
-            )?;
+            writer.add_with(&entry.name, &entry.data, entry.compression, entry.last_modified)?;
         }
         Ok(writer.finish()?)
     }
@@ -326,10 +314,15 @@ impl Package {
     }
 
     /// Adds a part covered by an extension default rather than an override.
-    pub fn add_part_with_default_type(&mut self, name: &str, extension: &str, content_type: &str, data: Vec<u8>) {
+    pub fn add_part_with_default_type(
+        &mut self,
+        name: &str,
+        extension: &str,
+        content_type: &str,
+        data: Vec<u8>,
+    ) {
         self.set_part(name, data);
         self.content_types.set_default(extension, content_type);
         self.rewrite_content_types();
     }
 }
-

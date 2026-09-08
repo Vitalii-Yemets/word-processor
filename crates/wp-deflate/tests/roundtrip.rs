@@ -4,7 +4,9 @@
 //! the internet and from email, so on malformed input it must return an error
 //! rather than panic.
 
-use wp_deflate::{compress, compress_stored, compress_zlib, inflate, inflate_limited, inflate_zlib};
+use wp_deflate::{
+    compress, compress_stored, compress_zlib, inflate, inflate_limited, inflate_zlib,
+};
 
 /// Deterministic pseudo-random byte source. Tests must be reproducible, so no
 /// system entropy is used.
@@ -17,10 +19,8 @@ impl Lcg {
 
     fn next_byte(&mut self) -> u8 {
         // Constants from Numerical Recipes.
-        self.0 = self
-            .0
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
+        self.0 =
+            self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
         (self.0 >> 33) as u8
     }
 

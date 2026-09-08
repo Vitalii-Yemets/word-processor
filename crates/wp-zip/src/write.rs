@@ -238,11 +238,7 @@ impl ZipWriter {
         self.write_u16(0); // disk on which the entry starts
         self.write_u16(0); // internal attributes
         self.write_u32(0); // external attributes
-        self.write_u32(if offset_overflows {
-            u32::MAX
-        } else {
-            entry.local_header_offset as u32
-        });
+        self.write_u32(if offset_overflows { u32::MAX } else { entry.local_header_offset as u32 });
         self.out.extend_from_slice(name_bytes);
 
         if needs_zip64 {

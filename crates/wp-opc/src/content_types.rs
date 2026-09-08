@@ -74,10 +74,8 @@ impl ContentTypes {
 
         // Part names compare without regard to ASCII case, so an override
         // written as /word/Document.xml still covers word/document.xml.
-        if let Some((_, content_type)) = self
-            .overrides
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(&part))
+        if let Some((_, content_type)) =
+            self.overrides.iter().find(|(name, _)| name.eq_ignore_ascii_case(&part))
         {
             return Some(content_type);
         }
@@ -101,11 +99,7 @@ impl ContentTypes {
     /// Declares the type of one specific part.
     pub fn set_override(&mut self, part: &str, content_type: &str) {
         let part = normalize(part);
-        match self
-            .overrides
-            .iter_mut()
-            .find(|(name, _)| name.eq_ignore_ascii_case(&part))
-        {
+        match self.overrides.iter_mut().find(|(name, _)| name.eq_ignore_ascii_case(&part)) {
             Some((_, existing)) => *existing = content_type.to_owned(),
             None => self.overrides.push((part, content_type.to_owned())),
         }
@@ -179,10 +173,7 @@ mod tests {
     fn an_override_wins_over_a_default() {
         let types = ContentTypes::parse(SAMPLE).unwrap();
         // Both an "xml" default and an override apply; the override is the answer.
-        assert_eq!(
-            types.of("word/document.xml"),
-            Some(crate::MAIN_DOCUMENT_CONTENT_TYPE)
-        );
+        assert_eq!(types.of("word/document.xml"), Some(crate::MAIN_DOCUMENT_CONTENT_TYPE));
         assert_eq!(types.of("word/settings.xml"), Some("application/xml"));
     }
 

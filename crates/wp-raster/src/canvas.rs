@@ -46,19 +46,33 @@ impl Color {
     }
 }
 
+/// A band that drawing is confined to.
+///
+/// Half-open: the right and bottom edges are outside it, the way a range is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Clip {
+    pub left: usize,
+    pub top: usize,
+    pub right: usize,
+    pub bottom: usize,
+}
+
 /// A rectangular buffer of pixels, stored as red, green, blue, alpha.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Canvas {
     width: usize,
     height: usize,
     pixels: Vec<u8>,
+    /// Where drawing is allowed, if it has been narrowed. Nothing means the
+    /// whole canvas.
+    clip: Option<Clip>,
 }
 
 impl Canvas {
     /// A fully transparent canvas.
     #[must_use]
     pub fn new(width: usize, height: usize) -> Self {
-        Self { width, height, pixels: vec![0; width * height * 4] }
+        Self { width, height, pixels: vec![0; width * height * 4], clip: None }
     }
 
     /// A canvas filled with one colour, which is how a page starts.
@@ -85,6 +99,46 @@ impl Canvas {
         &self.pixels
     }
 
+    /// Confines drawing to a band, and gives back what it was confined to
+    /// before so it can be put back.
+    ///
+    /// Nothing outside the band is touched afterwards: this is what lets two
+    /// views of one document be drawn into the same window without either
+    /// spilling into the other.
+    pub fn set_clip(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<Clip> {
+        let previous = self.clip;
+        let wanted = Clip {
+            left: x.max(0) as usize,
+            top: y.max(0) as usize,
+            right: (x + width).clamp(0, self.width as i32) as usize,
+            bottom: (y + height).clamp(0, self.height as i32) as usize,
+        };
+        // A band inside a band is the overlap of the two, so nesting works.
+        self.clip = Some(match previous {
+            None => wanted,
+            Some(outer) => Clip {
+                left: wanted.left.max(outer.left),
+                top: wanted.top.max(outer.top),
+                right: wanted.right.min(outer.right),
+                bottom: wanted.bottom.min(outer.bottom),
+            },
+        });
+        previous
+    }
+
+    /// Puts back whatever [`Self::set_clip`] gave.
+    pub fn restore_clip(&mut self, previous: Option<Clip>) {
+        self.clip = previous;
+    }
+
+    /// Whether a pixel may be drawn.
+    #[must_use]
+    fn allowed(&self, x: usize, y: usize) -> bool {
+        match self.clip {
+            None => true,
+            Some(clip) => x >= clip.left && x < clip.right && y >= clip.top && y < clip.bottom,
+        }
+    }
     /// Replaces every pixel with one colour.
     pub fn clear(&mut self, color: Color) {
         for pixel in self.pixels.chunks_exact_mut(4) {
@@ -102,12 +156,7 @@ impl Canvas {
             return Color::TRANSPARENT;
         }
         let at = (y * self.width + x) * 4;
-        Color::rgba(
-            self.pixels[at],
-            self.pixels[at + 1],
-            self.pixels[at + 2],
-            self.pixels[at + 3],
-        )
+        Color::rgba(self.pixels[at], self.pixels[at + 1], self.pixels[at + 2], self.pixels[at + 3])
     }
 
     /// Draws one pixel over what is already there.
@@ -116,6 +165,9 @@ impl Canvas {
     /// blend rather than replace.
     pub fn blend(&mut self, x: usize, y: usize, color: Color, coverage: u8) {
         if x >= self.width || y >= self.height || coverage == 0 || color.alpha == 0 {
+            return;
+        }
+        if !self.allowed(x, y) {
             return;
         }
 
@@ -199,10 +251,9 @@ impl Canvas {
         let height = (bottom - top) as usize;
 
         let mut rasterizer = Rasterizer::new(width, height);
-        rasterizer.fill(&path.transformed(&crate::path::Transform::translate(
-            -(left as f32),
-            -(top as f32),
-        )));
+        rasterizer.fill(
+            &path.transformed(&crate::path::Transform::translate(-(left as f32), -(top as f32))),
+        );
 
         self.draw_mask(&rasterizer.finish(), left as i32, top as i32, color);
     }
@@ -221,6 +272,82 @@ impl Canvas {
                     continue;
                 }
                 self.blend(target_x as usize, target_y as usize, source, 255);
+            }
+        }
+    }
+
+    /// Draws a rectangle of RGBA pixels, scaled to a given size.
+    ///
+    /// # Why the sampling is what it is
+    ///
+    /// A picture in a document is nearly always drawn smaller than it was
+    /// stored, and a photograph reduced by nearest-neighbour sampling comes out
+    /// visibly ragged — every other row and column simply thrown away. So each
+    /// destination pixel is the average of the source pixels it covers, which
+    /// is what makes a shrunken photograph look like the photograph. Enlarging
+    /// falls back to taking the nearest source pixel, because there is nothing
+    /// to average.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_pixels(
+        &mut self,
+        pixels: &[u8],
+        source_width: usize,
+        source_height: usize,
+        x: i32,
+        y: i32,
+        width: usize,
+        height: usize,
+    ) {
+        if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
+            return;
+        }
+
+        for row in 0..height {
+            let target_y = y + row as i32;
+            if target_y < 0 || target_y as usize >= self.height {
+                continue;
+            }
+            // The band of source rows this destination row stands for.
+            let from_y = row * source_height / height;
+            let to_y = (((row + 1) * source_height).div_ceil(height)).min(source_height);
+
+            for column in 0..width {
+                let target_x = x + column as i32;
+                if target_x < 0 || target_x as usize >= self.width {
+                    continue;
+                }
+                let from_x = column * source_width / width;
+                let to_x = (((column + 1) * source_width).div_ceil(width)).min(source_width);
+
+                let mut totals = [0u32; 4];
+                let mut counted = 0u32;
+                for sample_y in from_y..to_y.max(from_y + 1) {
+                    for sample_x in from_x..to_x.max(from_x + 1) {
+                        let at = (sample_y.min(source_height - 1) * source_width
+                            + sample_x.min(source_width - 1))
+                            * 4;
+                        let Some(sample) = pixels.get(at..at + 4) else { continue };
+                        for (total, value) in totals.iter_mut().zip(sample) {
+                            *total += u32::from(*value);
+                        }
+                        counted += 1;
+                    }
+                }
+                if counted == 0 {
+                    continue;
+                }
+
+                let alpha = (totals[3] / counted) as u8;
+                if alpha == 0 {
+                    continue;
+                }
+                let color = Color {
+                    red: (totals[0] / counted) as u8,
+                    green: (totals[1] / counted) as u8,
+                    blue: (totals[2] / counted) as u8,
+                    alpha,
+                };
+                self.blend(target_x as usize, target_y as usize, color, alpha);
             }
         }
     }
@@ -276,6 +403,46 @@ fn bounds_of(path: &Path) -> Option<(f32, f32, f32, f32)> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn drawing_outside_a_clip_leaves_the_canvas_alone() {
+        let mut canvas = Canvas::filled(20, 20, Color::WHITE);
+        canvas.set_clip(0, 0, 20, 10);
+        canvas.fill_rect(0, 0, 20, 20, Color::BLACK);
+
+        assert_eq!(canvas.pixel(5, 5), Color::BLACK, "inside the band");
+        assert_eq!(canvas.pixel(5, 15), Color::WHITE, "outside it");
+    }
+
+    #[test]
+    fn a_clip_can_be_put_back_the_way_it_was() {
+        let mut canvas = Canvas::filled(20, 20, Color::WHITE);
+        let previous = canvas.set_clip(0, 0, 20, 10);
+        canvas.restore_clip(previous);
+        canvas.fill_rect(0, 0, 20, 20, Color::BLACK);
+
+        assert_eq!(canvas.pixel(5, 15), Color::BLACK, "the band was not lifted");
+    }
+
+    #[test]
+    fn a_clip_inside_a_clip_is_the_overlap_of_the_two() {
+        let mut canvas = Canvas::filled(20, 20, Color::WHITE);
+        canvas.set_clip(0, 0, 20, 10);
+        canvas.set_clip(0, 5, 20, 10);
+        canvas.fill_rect(0, 0, 20, 20, Color::BLACK);
+
+        assert_eq!(canvas.pixel(5, 2), Color::WHITE, "above the inner band");
+        assert_eq!(canvas.pixel(5, 7), Color::BLACK, "in both bands");
+        assert_eq!(canvas.pixel(5, 12), Color::WHITE, "below the outer band");
+    }
+
+    #[test]
+    fn a_clip_outside_the_canvas_stops_everything() {
+        let mut canvas = Canvas::filled(20, 20, Color::WHITE);
+        canvas.set_clip(50, 50, 10, 10);
+        canvas.fill_rect(0, 0, 20, 20, Color::BLACK);
+        assert_eq!(canvas.pixel(5, 5), Color::WHITE);
+    }
     use super::*;
 
     #[test]
@@ -316,10 +483,7 @@ mod tests {
         canvas.blend(0, 0, Color::rgba(0, 0, 0, 128), 255);
 
         let result = canvas.pixel(0, 0);
-        assert!(
-            (120..=136).contains(&result.red),
-            "expected roughly half grey, got {result:?}"
-        );
+        assert!((120..=136).contains(&result.red), "expected roughly half grey, got {result:?}");
     }
 
     #[test]

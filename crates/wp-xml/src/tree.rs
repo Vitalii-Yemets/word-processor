@@ -131,8 +131,7 @@ impl Element {
         self.attributes
             .iter()
             .find(|attribute| {
-                attribute.namespace.as_deref() == namespace
-                    && local_of(&attribute.name) == local
+                attribute.namespace.as_deref() == namespace && local_of(&attribute.name) == local
             })
             .map(|attribute| attribute.value.as_str())
     }
@@ -214,16 +213,15 @@ impl Element {
     /// The position of the first direct child with the given name.
     #[must_use]
     pub fn position_of(&self, namespace: Option<&str>, local: &str) -> Option<usize> {
-        self.children.iter().position(|node| {
-            node.as_element().is_some_and(|element| element.is(namespace, local))
-        })
+        self.children
+            .iter()
+            .position(|node| node.as_element().is_some_and(|element| element.is(namespace, local)))
     }
 
     /// Removes every direct child with the given name.
     pub fn remove_children_named(&mut self, namespace: Option<&str>, local: &str) {
-        self.children.retain(|node| {
-            !node.as_element().is_some_and(|element| element.is(namespace, local))
-        });
+        self.children
+            .retain(|node| !node.as_element().is_some_and(|element| element.is(namespace, local)));
     }
 
     /// Appends a child element.
@@ -315,20 +313,50 @@ impl XmlTree {
                 Event::Start(tag) => stack.push(element_from(&tag, false)),
                 Event::Empty(tag) => {
                     let element = element_from(&tag, true);
-                    place(&mut stack, Node::Element(element), &mut before_root, &mut after_root, &mut root);
+                    place(
+                        &mut stack,
+                        Node::Element(element),
+                        &mut before_root,
+                        &mut after_root,
+                        &mut root,
+                    );
                 }
                 Event::End(_) => {
                     let finished = stack.pop().expect("the reader guarantees matched tags");
-                    place(&mut stack, Node::Element(finished), &mut before_root, &mut after_root, &mut root);
+                    place(
+                        &mut stack,
+                        Node::Element(finished),
+                        &mut before_root,
+                        &mut after_root,
+                        &mut root,
+                    );
                 }
                 Event::Text(text) => {
-                    place(&mut stack, Node::Text(text.into_owned()), &mut before_root, &mut after_root, &mut root);
+                    place(
+                        &mut stack,
+                        Node::Text(text.into_owned()),
+                        &mut before_root,
+                        &mut after_root,
+                        &mut root,
+                    );
                 }
                 Event::CData(text) => {
-                    place(&mut stack, Node::CData(text.to_owned()), &mut before_root, &mut after_root, &mut root);
+                    place(
+                        &mut stack,
+                        Node::CData(text.to_owned()),
+                        &mut before_root,
+                        &mut after_root,
+                        &mut root,
+                    );
                 }
                 Event::Comment(text) => {
-                    place(&mut stack, Node::Comment(text.to_owned()), &mut before_root, &mut after_root, &mut root);
+                    place(
+                        &mut stack,
+                        Node::Comment(text.to_owned()),
+                        &mut before_root,
+                        &mut after_root,
+                        &mut root,
+                    );
                 }
                 Event::ProcessingInstruction { target, data } => {
                     let node = Node::ProcessingInstruction {
@@ -438,9 +466,8 @@ fn write_node(writer: &mut Writer, node: &Node) -> Result<(), Error> {
 fn write_element(writer: &mut Writer, element: &Element) -> Result<(), Error> {
     // Namespace declarations are written as attributes, before the rest, which
     // is where documents put them.
-    let mut attributes: Vec<(String, String)> = Vec::with_capacity(
-        element.declarations.len() + element.attributes.len(),
-    );
+    let mut attributes: Vec<(String, String)> =
+        Vec::with_capacity(element.declarations.len() + element.attributes.len());
     for (prefix, uri) in &element.declarations {
         let name = match prefix {
             Some(prefix) => format!("xmlns:{prefix}"),
@@ -489,7 +516,8 @@ mod tests {
 
     #[test]
     fn an_edit_leaves_its_neighbours_untouched() {
-        let source = "<r xmlns=\"urn:x\"><keep a=\"1\"/><change a=\"1\"/><keep2><deep/></keep2></r>";
+        let source =
+            "<r xmlns=\"urn:x\"><keep a=\"1\"/><change a=\"1\"/><keep2><deep/></keep2></r>";
         let mut tree = XmlTree::parse(source).unwrap();
 
         tree.root.child_mut(Some("urn:x"), "change").unwrap().set_attribute("a", "2");

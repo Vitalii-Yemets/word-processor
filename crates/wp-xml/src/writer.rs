@@ -64,10 +64,9 @@ impl Writer {
                 self.out.push('>');
                 Ok(())
             }
-            Some(expected) => Err(self.error(ErrorKind::MismatchedEndTag {
-                expected,
-                found: name.to_owned(),
-            })),
+            Some(expected) => {
+                Err(self.error(ErrorKind::MismatchedEndTag { expected, found: name.to_owned() }))
+            }
             None => Err(self.error(ErrorKind::UnexpectedEndTag(name.to_owned()))),
         }
     }
@@ -166,10 +165,7 @@ impl Writer {
     pub fn finish(self) -> Result<String, Error> {
         if !self.open.is_empty() {
             let position = position_in(&self.out);
-            return Err(Error {
-                kind: ErrorKind::UnclosedElements(self.open),
-                position,
-            });
+            return Err(Error { kind: ErrorKind::UnclosedElements(self.open), position });
         }
         Ok(self.out)
     }

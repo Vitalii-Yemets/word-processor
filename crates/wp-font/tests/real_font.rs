@@ -140,7 +140,9 @@ fn composite_glyphs_are_assembled() {
     let font = Font::parse(&data).unwrap();
 
     for character in ['Ä', 'é', 'ñ', 'Ż'] {
-        let Some(glyph) = font.glyph_for(character) else { continue };
+        let Some(glyph) = font.glyph_for(character) else {
+            continue;
+        };
         let outline = font
             .outline(glyph)
             .unwrap_or_else(|error| panic!("{character:?}: {error}"))

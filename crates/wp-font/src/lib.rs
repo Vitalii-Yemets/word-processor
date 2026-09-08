@@ -197,6 +197,9 @@ pub struct Font<'a> {
     loca: Option<TableRange>,
     glyf: Option<TableRange>,
     kern: Option<TableRange>,
+    /// Glyph substitution and positioning, which shaping needs.
+    gsub: Option<TableRange>,
+    gpos: Option<TableRange>,
     name: Option<TableRange>,
     os2: Option<TableRange>,
     character_map: CharacterMap,
@@ -265,6 +268,8 @@ impl<'a> Font<'a> {
         let mut glyf = None;
         let mut cmap = None;
         let mut kern = None;
+        let mut gsub = None;
+        let mut gpos = None;
         let mut name = None;
         let mut os2 = None;
 
@@ -290,6 +295,8 @@ impl<'a> Font<'a> {
                 b"glyf" => glyf = Some(range),
                 b"cmap" => cmap = Some(range),
                 b"kern" => kern = Some(range),
+                b"GSUB" => gsub = Some(range),
+                b"GPOS" => gpos = Some(range),
                 b"name" => name = Some(range),
                 b"OS/2" => os2 = Some(range),
                 _ => {}
@@ -337,6 +344,8 @@ impl<'a> Font<'a> {
             loca,
             glyf,
             kern,
+            gsub,
+            gpos,
             name,
             os2,
             character_map,
@@ -445,8 +454,7 @@ impl<'a> Font<'a> {
                 let mut high = usize::from(pair_count);
                 while low < high {
                     let middle = (low + high) / 2;
-                    let mut entry =
-                        Reader::at(self.data, pairs_start + middle * 6).ok()?;
+                    let mut entry = Reader::at(self.data, pairs_start + middle * 6).ok()?;
                     let key = entry.u32().ok()?;
                     if key < wanted {
                         low = middle + 1;
@@ -507,6 +515,27 @@ impl<'a> Font<'a> {
     fn weight_checked(&self) -> Option<u16> {
         let os2 = self.os2?;
         Reader::at(self.data, os2.offset + 4).ok()?.u16().ok()
+    }
+
+    /// The glyph substitution table, if the font has one.
+    ///
+    /// Substitution is what turns a sequence of characters into the glyphs that
+    /// actually draw it: an Arabic letter into the form it takes beside its
+    /// neighbours, a pair of letters into a ligature.
+    #[must_use]
+    pub fn substitution_table(&self) -> Option<&'a [u8]> {
+        self.raw_table(self.gsub)
+    }
+
+    /// The glyph positioning table, if the font has one.
+    #[must_use]
+    pub fn positioning_table(&self) -> Option<&'a [u8]> {
+        self.raw_table(self.gpos)
+    }
+
+    fn raw_table(&self, range: Option<TableRange>) -> Option<&'a [u8]> {
+        let range = range?;
+        self.data.get(range.offset..range.offset + range.length)
     }
 
     /// Whether outlines can be read from this font.

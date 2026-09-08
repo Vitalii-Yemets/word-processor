@@ -310,10 +310,7 @@ impl Rasterizer {
         self.deposit(base + first_column, signed_height * first_area);
 
         if last_column == first_column + 2 {
-            self.deposit(
-                base + first_column + 1,
-                signed_height * (1.0 - first_area - last_area),
-            );
+            self.deposit(base + first_column + 1, signed_height * (1.0 - first_area - last_area));
         } else {
             let second_area = inverse_width * (1.5 - (left - left_floor));
             self.deposit(base + first_column + 1, signed_height * (second_area - first_area));
@@ -322,8 +319,7 @@ impl Rasterizer {
                 self.deposit(base + column, signed_height * inverse_width);
             }
 
-            let covered =
-                second_area + (last_column - first_column - 3) as f32 * inverse_width;
+            let covered = second_area + (last_column - first_column - 3) as f32 * inverse_width;
             self.deposit(base + last_column - 1, signed_height * (1.0 - covered - last_area));
         }
 

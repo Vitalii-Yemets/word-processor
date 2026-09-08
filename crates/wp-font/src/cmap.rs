@@ -94,9 +94,7 @@ impl CharacterMap {
                 let value = (code as i64 + i64::from(*delta)) as u32 & 0xFFFF;
                 value as u16
             }
-            Mapping::Indices(indices) => {
-                *indices.get((code - segment.start) as usize)?
-            }
+            Mapping::Indices(indices) => *indices.get((code - segment.start) as usize)?,
         };
 
         // Glyph zero is the "missing glyph" box, which is not a match.
@@ -166,9 +164,8 @@ fn parse_subtable(data: &[u8], offset: usize) -> Result<Vec<Segment>, Error> {
 /// Format 0: a flat table of 256 bytes, one glyph per character code.
 fn parse_format0(data: &[u8], offset: usize) -> Result<Vec<Segment>, Error> {
     let mut reader = Reader::at(data, offset + 6)?;
-    let indices: Vec<u16> = (0..256)
-        .map(|_| reader.u8().map(u16::from))
-        .collect::<Result<_, _>>()?;
+    let indices: Vec<u16> =
+        (0..256).map(|_| reader.u8().map(u16::from)).collect::<Result<_, _>>()?;
 
     Ok(vec![Segment { start: 0, end: 255, mapping: Mapping::Indices(indices) }])
 }
@@ -203,11 +200,7 @@ fn parse_format4(data: &[u8], offset: usize) -> Result<Vec<Segment>, Error> {
         }
 
         if range_offset == 0 {
-            segments.push(Segment {
-                start,
-                end,
-                mapping: Mapping::Delta(i32::from(delta)),
-            });
+            segments.push(Segment { start, end, mapping: Mapping::Delta(i32::from(delta)) });
             continue;
         }
 
@@ -215,9 +208,8 @@ fn parse_format4(data: &[u8], offset: usize) -> Result<Vec<Segment>, Error> {
         // what makes this format awkward to read.
         let mut indices = Vec::with_capacity((end - start + 1) as usize);
         for code in start..=end {
-            let address = range_offset_field
-                + usize::from(range_offset)
-                + (code - start) as usize * 2;
+            let address =
+                range_offset_field + usize::from(range_offset) + (code - start) as usize * 2;
             let glyph = match Reader::at(data, address) {
                 Ok(mut entry) => entry.u16().unwrap_or(0),
                 Err(_) => 0,

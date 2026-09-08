@@ -78,12 +78,7 @@ fn decode_utf16(bytes: &[u8]) -> Option<String> {
 /// guessed at: the alternative is a name with wrong characters in it, which is
 /// worse than a visibly incomplete one.
 fn decode_mac_roman(bytes: &[u8]) -> Option<String> {
-    Some(
-        bytes
-            .iter()
-            .map(|&byte| if byte < 0x80 { byte as char } else { '\u{FFFD}' })
-            .collect(),
-    )
+    Some(bytes.iter().map(|&byte| if byte < 0x80 { byte as char } else { '\u{FFFD}' }).collect())
 }
 
 #[cfg(test)]
@@ -92,8 +87,7 @@ mod tests {
 
     /// Builds a `name` table with one Windows English family record.
     fn table_with(name: &str) -> Vec<u8> {
-        let encoded: Vec<u8> =
-            name.encode_utf16().flat_map(|unit| unit.to_be_bytes()).collect();
+        let encoded: Vec<u8> = name.encode_utf16().flat_map(|unit| unit.to_be_bytes()).collect();
 
         let mut out = Vec::new();
         out.extend_from_slice(&0u16.to_be_bytes()); // format

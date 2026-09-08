@@ -9,7 +9,11 @@ const MAIN_DOCUMENT: &[u8] = br#"<?xml version="1.0" encoding="UTF-8" standalone
 /// Builds a package the way a real producer would, and hands back its bytes.
 fn sample_package() -> Vec<u8> {
     let mut package = Package::empty();
-    package.add_part("word/document.xml", wp_opc::MAIN_DOCUMENT_CONTENT_TYPE, MAIN_DOCUMENT.to_vec());
+    package.add_part(
+        "word/document.xml",
+        wp_opc::MAIN_DOCUMENT_CONTENT_TYPE,
+        MAIN_DOCUMENT.to_vec(),
+    );
 
     let mut root = Relationships::new("");
     root.add(wp_opc::OFFICE_DOCUMENT_RELATIONSHIP, "word/document.xml", TargetMode::Internal);
@@ -29,7 +33,11 @@ fn falls_back_to_the_content_type_when_there_is_no_relationship() {
     // Some producers omit the package relationship. The content type names the
     // part just as definitely, so the document is still openable.
     let mut package = Package::empty();
-    package.add_part("word/document.xml", wp_opc::MAIN_DOCUMENT_CONTENT_TYPE, MAIN_DOCUMENT.to_vec());
+    package.add_part(
+        "word/document.xml",
+        wp_opc::MAIN_DOCUMENT_CONTENT_TYPE,
+        MAIN_DOCUMENT.to_vec(),
+    );
     let bytes = package.save().unwrap();
 
     let reopened = Package::open(&bytes).unwrap();
@@ -73,7 +81,11 @@ fn parts_the_program_does_not_understand_are_carried_through_untouched() {
     ];
 
     let mut package = Package::empty();
-    package.add_part("word/document.xml", wp_opc::MAIN_DOCUMENT_CONTENT_TYPE, MAIN_DOCUMENT.to_vec());
+    package.add_part(
+        "word/document.xml",
+        wp_opc::MAIN_DOCUMENT_CONTENT_TYPE,
+        MAIN_DOCUMENT.to_vec(),
+    );
     for (name, data) in unknown_parts {
         package.add_part(name, "application/octet-stream", data.to_vec());
     }
@@ -133,7 +145,11 @@ fn a_relationship_cannot_point_outside_the_package() {
     </Relationships>"#;
 
     let mut package = Package::empty();
-    package.add_part("word/document.xml", wp_opc::MAIN_DOCUMENT_CONTENT_TYPE, MAIN_DOCUMENT.to_vec());
+    package.add_part(
+        "word/document.xml",
+        wp_opc::MAIN_DOCUMENT_CONTENT_TYPE,
+        MAIN_DOCUMENT.to_vec(),
+    );
     package.set_part("word/_rels/document.xml.rels", rels.as_bytes().to_vec());
 
     let relationships = package.relationships("word/document.xml").unwrap();
@@ -148,7 +164,11 @@ fn a_relationship_cannot_point_outside_the_package() {
 #[test]
 fn validation_reports_a_part_with_no_declared_type() {
     let mut package = Package::empty();
-    package.add_part("word/document.xml", wp_opc::MAIN_DOCUMENT_CONTENT_TYPE, MAIN_DOCUMENT.to_vec());
+    package.add_part(
+        "word/document.xml",
+        wp_opc::MAIN_DOCUMENT_CONTENT_TYPE,
+        MAIN_DOCUMENT.to_vec(),
+    );
     // Added without declaring a type, which makes the package invalid.
     package.set_part("word/mystery.bin", vec![1, 2, 3]);
 
@@ -165,7 +185,11 @@ fn validation_reports_a_part_with_no_declared_type() {
 #[test]
 fn validation_reports_a_declared_part_that_is_absent() {
     let mut package = Package::empty();
-    package.add_part("word/document.xml", wp_opc::MAIN_DOCUMENT_CONTENT_TYPE, MAIN_DOCUMENT.to_vec());
+    package.add_part(
+        "word/document.xml",
+        wp_opc::MAIN_DOCUMENT_CONTENT_TYPE,
+        MAIN_DOCUMENT.to_vec(),
+    );
     // Declared, then the file itself removed from under the declaration.
     let mut content_types = package.content_types().clone();
     content_types.set_override("word/ghost.xml", "application/xml");

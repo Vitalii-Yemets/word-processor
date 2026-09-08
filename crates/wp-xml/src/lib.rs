@@ -266,10 +266,14 @@ impl core::fmt::Display for ErrorKind {
                 write!(f, "character reference {text:?} is not a legal character")
             }
             Self::DuplicateAttribute(name) => write!(f, "attribute {name:?} appears twice"),
-            Self::UndeclaredPrefix(prefix) => write!(f, "namespace prefix {prefix:?} is undeclared"),
+            Self::UndeclaredPrefix(prefix) => {
+                write!(f, "namespace prefix {prefix:?} is undeclared")
+            }
             Self::IllegalNamespaceDeclaration(detail) => write!(f, "{detail}"),
             Self::CDataEndInText => f.write_str("the literal \"]]>\" is not allowed in text"),
-            Self::IllegalComment => f.write_str("a comment may not contain \"--\" or end with \"-\""),
+            Self::IllegalComment => {
+                f.write_str("a comment may not contain \"--\" or end with \"-\"")
+            }
             Self::MalformedDeclaration(detail) => write!(f, "malformed XML declaration: {detail}"),
             Self::UnsupportedEncoding(name) => write!(f, "unsupported encoding {name:?}"),
             Self::MalformedEncoding(encoding) => write!(f, "input is not valid {encoding:?}"),

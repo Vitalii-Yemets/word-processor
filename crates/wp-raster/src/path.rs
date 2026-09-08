@@ -51,6 +51,20 @@ impl Transform {
         Self { a: x, b: 0.0, c: 0.0, d: y, e: 0.0, f: 0.0 }
     }
 
+    /// A turn about the origin, anticlockwise on a y-up grid and clockwise on
+    /// a canvas, which is the same turn seen from the other side.
+    #[must_use]
+    pub fn rotate(radians: f32) -> Self {
+        let (sin, cos) = (radians.sin(), radians.cos());
+        Self { a: cos, b: sin, c: -sin, d: cos, e: 0.0, f: 0.0 }
+    }
+
+    /// A turn about a point rather than about the origin.
+    #[must_use]
+    pub fn rotate_about(radians: f32, x: f32, y: f32) -> Self {
+        Self::translate(-x, -y).then(&Self::rotate(radians)).then(&Self::translate(x, y))
+    }
+
     /// A transform placing a glyph on the page.
     ///
     /// Font outlines are in a y-up design grid; a raster canvas is y-down. The
@@ -151,6 +165,81 @@ impl Path {
         path
     }
 
+    /// Every point the path names, control points and all.
+    ///
+    /// Enough to bound a path: a curve never reaches outside the box holding
+    /// its ends and its controls, so a box round these contains the shape.
+    pub fn points(&self) -> impl Iterator<Item = Point> + '_ {
+        self.commands.iter().flat_map(|command| match command {
+            Command::MoveTo(point) | Command::LineTo(point) => vec![*point],
+            Command::QuadTo(control, point) => vec![*control, *point],
+            Command::CubicTo(first, second, point) => vec![*first, *second, *point],
+            Command::Close => Vec::new(),
+        })
+    }
+
+    /// Adds another path to this one, wound the other way round.
+    ///
+    /// What makes a hole. Filling uses the nonzero rule, under which a contour
+    /// inside another one wound the same way is filled and one wound the other
+    /// way is not — so this is how a ring, a letter O, or the outline of a
+    /// shape is drawn without any stroking at all.
+    pub fn extend_reversed(&mut self, other: &Self) -> &mut Self {
+        // Walked backwards, each command's end point becomes the previous
+        // command's start, so the points are collected first and the commands
+        // rebuilt from them.
+        let mut contours: Vec<Vec<Command>> = Vec::new();
+        for command in &other.commands {
+            if matches!(command, Command::MoveTo(_)) || contours.is_empty() {
+                contours.push(Vec::new());
+            }
+            if let Some(last) = contours.last_mut() {
+                last.push(*command);
+            }
+        }
+
+        for contour in contours {
+            let mut points: Vec<Point> = Vec::new();
+            let mut controls: Vec<Vec<Point>> = Vec::new();
+            for command in &contour {
+                match command {
+                    Command::MoveTo(point) | Command::LineTo(point) => {
+                        points.push(*point);
+                        controls.push(Vec::new());
+                    }
+                    Command::QuadTo(control, point) => {
+                        points.push(*point);
+                        controls.push(vec![*control]);
+                    }
+                    Command::CubicTo(first, second, point) => {
+                        points.push(*point);
+                        controls.push(vec![*second, *first]);
+                    }
+                    Command::Close => {}
+                }
+            }
+            if points.is_empty() {
+                continue;
+            }
+
+            self.move_to(points[points.len() - 1]);
+            for at in (1..points.len()).rev() {
+                match controls[at].as_slice() {
+                    [control] => {
+                        self.quad_to(*control, points[at - 1]);
+                    }
+                    [second, first] => {
+                        self.cubic_to(*second, *first, points[at - 1]);
+                    }
+                    _ => {
+                        self.line_to(points[at - 1]);
+                    }
+                }
+            }
+            self.close();
+        }
+        self
+    }
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
@@ -217,5 +306,37 @@ mod tests {
         assert_eq!(path.commands.len(), 5);
         assert_eq!(path.commands[0], Command::MoveTo(Point::new(1.0, 2.0)));
         assert_eq!(path.commands[4], Command::Close);
+    }
+}
+
+#[cfg(test)]
+mod rotation_tests {
+    use super::{Point, Transform};
+
+    /// Close enough for a rotation, which cannot land exactly on a float.
+    fn near(left: Point, right: Point) {
+        assert!(
+            (left.x - right.x).abs() < 0.001 && (left.y - right.y).abs() < 0.001,
+            "{left:?} is not {right:?}"
+        );
+    }
+
+    #[test]
+    fn a_quarter_turn_takes_the_x_axis_to_the_y_axis() {
+        let quarter = Transform::rotate(core::f32::consts::FRAC_PI_2);
+        near(quarter.apply(Point::new(1.0, 0.0)), Point::new(0.0, 1.0));
+        near(quarter.apply(Point::new(0.0, 1.0)), Point::new(-1.0, 0.0));
+    }
+
+    #[test]
+    fn turning_about_a_point_leaves_that_point_where_it_was() {
+        let turn = Transform::rotate_about(0.7, 40.0, 25.0);
+        near(turn.apply(Point::new(40.0, 25.0)), Point::new(40.0, 25.0));
+    }
+
+    #[test]
+    fn a_full_turn_changes_nothing() {
+        let full = Transform::rotate(core::f32::consts::TAU);
+        near(full.apply(Point::new(3.0, -7.0)), Point::new(3.0, -7.0));
     }
 }

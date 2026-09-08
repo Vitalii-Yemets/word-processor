@@ -217,7 +217,9 @@ pub enum Error {
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::NotAnArchive => f.write_str("not a ZIP archive: no end-of-central-directory record"),
+            Self::NotAnArchive => {
+                f.write_str("not a ZIP archive: no end-of-central-directory record")
+            }
             Self::Truncated => f.write_str("archive ends in the middle of a structure"),
             Self::CorruptHeader(what) => write!(f, "corrupt {what}"),
             Self::MultiVolume => f.write_str("multi-volume archives are not supported"),

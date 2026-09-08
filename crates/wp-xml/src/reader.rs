@@ -203,16 +203,16 @@ impl<'a> Reader<'a> {
         // itself be mistaken for the start of the terminator.
         let body_start = start + "<?xml".len();
         let Some(index) = self.input[body_start..].find("?>") else {
-            return Err(self
-                .error_at(start, ErrorKind::Unterminated { construct: "XML declaration" }));
+            return Err(
+                self.error_at(start, ErrorKind::Unterminated { construct: "XML declaration" })
+            );
         };
 
         let body = &self.input[body_start..body_start + index];
         self.offset = body_start + index + 2;
 
-        let version = pseudo_attribute(body, "version").ok_or_else(|| {
-            self.error_at(start, ErrorKind::MalformedDeclaration("no version"))
-        })?;
+        let version = pseudo_attribute(body, "version")
+            .ok_or_else(|| self.error_at(start, ErrorKind::MalformedDeclaration("no version")))?;
         let encoding = pseudo_attribute(body, "encoding");
         let standalone = match pseudo_attribute(body, "standalone") {
             Some("yes") => Some(true),
@@ -235,10 +235,8 @@ impl<'a> Reader<'a> {
         // finds its terminator inside the opening itself.
         let body_start = start + 2;
         let Some(index) = self.input[body_start..].find("?>") else {
-            return Err(self.error_at(
-                start,
-                ErrorKind::Unterminated { construct: "processing instruction" },
-            ));
+            return Err(self
+                .error_at(start, ErrorKind::Unterminated { construct: "processing instruction" }));
         };
 
         let body = &self.input[body_start..body_start + index];
@@ -253,10 +251,8 @@ impl<'a> Reader<'a> {
         }
         // "xml" in any casing is reserved by the specification.
         if target.eq_ignore_ascii_case("xml") {
-            return Err(self.error_at(
-                start,
-                ErrorKind::MalformedDeclaration("\"xml\" is a reserved target"),
-            ));
+            return Err(self
+                .error_at(start, ErrorKind::MalformedDeclaration("\"xml\" is a reserved target")));
         }
 
         Ok(Event::ProcessingInstruction { target, data })
@@ -382,7 +378,8 @@ impl<'a> Reader<'a> {
             }
             index = skip_whitespace(self.input, index + 1);
 
-            let Some(quote) = self.input[index..].chars().next().filter(|q| *q == '"' || *q == '\'')
+            let Some(quote) =
+                self.input[index..].chars().next().filter(|q| *q == '"' || *q == '\'')
             else {
                 return Err(self.unexpected(index, "a quoted attribute value"));
             };
@@ -496,8 +493,10 @@ impl<'a> Reader<'a> {
         let mut attributes = Vec::with_capacity(raw_attributes.len());
         for (attribute_name, raw_value, position) in raw_attributes {
             // Declarations are reported separately, not as ordinary attributes.
-            if matches!((attribute_name.prefix, attribute_name.local), (Some("xmlns"), _) | (None, "xmlns"))
-            {
+            if matches!(
+                (attribute_name.prefix, attribute_name.local),
+                (Some("xmlns"), _) | (None, "xmlns")
+            ) {
                 continue;
             }
 
@@ -548,18 +547,13 @@ impl<'a> Reader<'a> {
         if prefix == "xml" {
             return Ok(XML_NAMESPACE);
         }
-        self.lookup(Some(prefix)).ok_or_else(|| {
-            self.error_at(position, ErrorKind::UndeclaredPrefix(prefix.to_owned()))
-        })
+        self.lookup(Some(prefix))
+            .ok_or_else(|| self.error_at(position, ErrorKind::UndeclaredPrefix(prefix.to_owned())))
     }
 
     /// Finds the innermost binding for a prefix.
     fn lookup(&self, prefix: Option<&str>) -> Option<&'a str> {
-        self.bindings
-            .iter()
-            .rev()
-            .find(|(bound, _)| *bound == prefix)
-            .map(|(_, uri)| *uri)
+        self.bindings.iter().rev().find(|(bound, _)| *bound == prefix).map(|(_, uri)| *uri)
     }
 
     // --- Lexing helpers ----------------------------------------------------
@@ -587,9 +581,7 @@ impl<'a> Reader<'a> {
 
     fn unexpected(&self, index: usize, expected: &'static str) -> Error {
         match self.input[index..].chars().next() {
-            Some(found) => {
-                self.error_at(index, ErrorKind::UnexpectedCharacter { found, expected })
-            }
+            Some(found) => self.error_at(index, ErrorKind::UnexpectedCharacter { found, expected }),
             None => self.error_at(index, ErrorKind::UnexpectedEof { expected }),
         }
     }

@@ -6,9 +6,7 @@
 //! into gigabytes.
 
 use crate::adler32::Adler32;
-use crate::tables::{
-    CODE_LENGTH_ORDER, DISTANCE_BASE, DISTANCE_EXTRA, LENGTH_BASE, LENGTH_EXTRA,
-};
+use crate::tables::{CODE_LENGTH_ORDER, DISTANCE_BASE, DISTANCE_EXTRA, LENGTH_BASE, LENGTH_EXTRA};
 
 /// Why a stream could not be decompressed.
 ///

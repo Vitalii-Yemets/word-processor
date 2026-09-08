@@ -123,8 +123,7 @@ fn decode_utf16(bytes: &[u8], read_unit: fn([u8; 2]) -> u16) -> Result<String, E
         return Err(error(ErrorKind::MalformedEncoding(Encoding::Utf16Le)));
     }
 
-    let units: Vec<u16> =
-        bytes.chunks_exact(2).map(|pair| read_unit([pair[0], pair[1]])).collect();
+    let units: Vec<u16> = bytes.chunks_exact(2).map(|pair| read_unit([pair[0], pair[1]])).collect();
 
     char::decode_utf16(units)
         .collect::<Result<String, _>>()
@@ -189,7 +188,10 @@ mod tests {
     #[test]
     fn honours_the_declared_encoding() {
         let bytes = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><t>caf\xE9</t>";
-        assert_eq!(decode_to_utf8(bytes).unwrap(), "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><t>café</t>");
+        assert_eq!(
+            decode_to_utf8(bytes).unwrap(),
+            "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><t>café</t>"
+        );
     }
 
     #[test]

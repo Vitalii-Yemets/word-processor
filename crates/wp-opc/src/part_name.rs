@@ -67,10 +67,8 @@ pub fn is_relationships_part(name: &str) -> bool {
 /// `word/media/image1.png`. A target starting with `/` is relative to the
 /// package root instead.
 pub fn resolve_target(source_part: &str, target: &str) -> Result<String, Error> {
-    let invalid = || Error::InvalidTarget {
-        source: source_part.to_owned(),
-        target: target.to_owned(),
-    };
+    let invalid =
+        || Error::InvalidTarget { source: source_part.to_owned(), target: target.to_owned() };
 
     if target.is_empty() {
         return Err(invalid());
@@ -134,10 +132,7 @@ mod tests {
     fn finds_the_relationships_part() {
         assert_eq!(relationships_part_for("word/document.xml"), "word/_rels/document.xml.rels");
         assert_eq!(relationships_part_for("/word/document.xml"), "word/_rels/document.xml.rels");
-        assert_eq!(
-            relationships_part_for("word/header1.xml"),
-            "word/_rels/header1.xml.rels"
-        );
+        assert_eq!(relationships_part_for("word/header1.xml"), "word/_rels/header1.xml.rels");
         // The package itself is addressed as an empty name.
         assert_eq!(relationships_part_for(""), "_rels/.rels");
     }

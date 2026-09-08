@@ -105,7 +105,8 @@ fn fixed_literal_code(symbol: u16) -> (u32, u32) {
 
 /// Hash of three bytes — the key under which match candidates are looked up.
 fn hash3(bytes: &[u8]) -> usize {
-    let value = (usize::from(bytes[0]) << 10) ^ (usize::from(bytes[1]) << 5) ^ usize::from(bytes[2]);
+    let value =
+        (usize::from(bytes[0]) << 10) ^ (usize::from(bytes[1]) << 5) ^ usize::from(bytes[2]);
     value & (HASH_SIZE - 1)
 }
 
@@ -283,10 +284,7 @@ fn write_match(writer: &mut BitWriter, length: usize, distance: usize) {
     let code = length_code(length);
     let (huffman, bits) = fixed_literal_code(257 + code as u16);
     writer.write_code(huffman, bits);
-    writer.write_bits(
-        (length - LENGTH_BASE[code] as usize) as u32,
-        u32::from(LENGTH_EXTRA[code]),
-    );
+    writer.write_bits((length - LENGTH_BASE[code] as usize) as u32, u32::from(LENGTH_EXTRA[code]));
 
     let code = distance_code(distance);
     // In the fixed tree, distances use five-bit codes numerically equal to the

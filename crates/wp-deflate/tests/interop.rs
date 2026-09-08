@@ -102,9 +102,7 @@ fn gzip_accepts_streams_produced_by_us() {
         ("single", b"z".to_vec()),
         (
             "multilingual",
-            "Interoperability check. Проверка. 検証. تحقّق. परीक्षण. "
-                .as_bytes()
-                .repeat(500),
+            "Interoperability check. Проверка. 検証. تحقّق. परीक्षण. ".as_bytes().repeat(500),
         ),
         ("markup", r#"<w:r><w:t>value</w:t></w:r>"#.as_bytes().repeat(2_000)),
         ("zeros", vec![0u8; 300_000]),

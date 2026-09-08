@@ -25,13 +25,7 @@ const HIGH_HALF: [char; 128] = [
 pub(crate) fn decode(bytes: &[u8]) -> String {
     bytes
         .iter()
-        .map(|&byte| {
-            if byte < 0x80 {
-                byte as char
-            } else {
-                HIGH_HALF[usize::from(byte) - 0x80]
-            }
-        })
+        .map(|&byte| if byte < 0x80 { byte as char } else { HIGH_HALF[usize::from(byte) - 0x80] })
         .collect()
 }
 
