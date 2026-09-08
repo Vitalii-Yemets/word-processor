@@ -18,8 +18,9 @@
 use wp_xml::tree::{Element, Node};
 
 use crate::model::{
-    Alignment, Block, BreakKind, LineRule, Paragraph, ParagraphProperties, Run, RunContent,
-    RunProperties, Table,
+    Alignment, Block, Border, BreakKind, LineRule, Paragraph, ParagraphBorders,
+    ParagraphProperties, RevisionKind, Run, RunContent, RunProperties, TabLeader, TabStop, Table,
+    TableBorders,
 };
 use crate::read::W;
 
@@ -30,7 +31,7 @@ pub(crate) const XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
 ///
 /// Word rejects a document whose properties are out of sequence, so anything
 /// inserted has to go in the right place rather than simply at the end.
-const PARAGRAPH_PROPERTY_ORDER: &[&str] = &[
+pub(crate) const PARAGRAPH_PROPERTY_ORDER: &[&str] = &[
     "pStyle",
     "keepNext",
     "keepLines",
@@ -55,10 +56,34 @@ const PARAGRAPH_PROPERTY_ORDER: &[&str] = &[
 ];
 
 /// The same, for the children of `w:rPr`.
-const RUN_PROPERTY_ORDER: &[&str] = &[
-    "rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "color",
-    "spacing", "w", "kern", "position", "sz", "szCs", "highlight", "u", "effect", "bdr", "shd",
-    "vertAlign", "rtl", "cs", "em", "lang",
+pub(crate) const RUN_PROPERTY_ORDER: &[&str] = &[
+    "rStyle",
+    "rFonts",
+    "b",
+    "bCs",
+    "i",
+    "iCs",
+    "caps",
+    "smallCaps",
+    "strike",
+    "dstrike",
+    "color",
+    "spacing",
+    "w",
+    "kern",
+    "position",
+    "sz",
+    "szCs",
+    "highlight",
+    "u",
+    "effect",
+    "bdr",
+    "shd",
+    "vertAlign",
+    "rtl",
+    "cs",
+    "em",
+    "lang",
 ];
 
 /// Finds the prefix a document uses for a namespace.
@@ -100,7 +125,7 @@ pub(crate) fn name_with(prefix: Option<&str>, local: &str) -> String {
 }
 
 /// Inserts a property where the schema says it belongs.
-fn insert_ordered(parent: &mut Element, child: Element, order: &[&str]) {
+pub(crate) fn insert_ordered(parent: &mut Element, child: Element, order: &[&str]) {
     let local = child.local_name().to_owned();
     let rank = order.iter().position(|name| *name == local);
 
@@ -129,13 +154,56 @@ fn insert_ordered(parent: &mut Element, child: Element, order: &[&str]) {
 
 // --- Finding and replacing text ---------------------------------------------
 
-/// Where one `w:t` element sits, and what it holds.
+/// Where one piece of a paragraph's text sits, and what it holds.
 pub(crate) struct TextPiece {
     /// Indices into `children` at each level, from the paragraph down.
     pub(crate) path: Vec<usize>,
     pub(crate) text: String,
     /// Byte offset of this piece within the paragraph's assembled text.
     pub(crate) start: usize,
+    /// Whether the piece is an element standing for one character rather than
+    /// text that can be edited in place — a tab or a line break.
+    pub(crate) atomic: bool,
+    /// Whether the piece is the cached answer of a field.
+    ///
+    /// Such text is not typed into: it is what something worked out, and it is
+    /// replaced whole the next time anything works the field out. Typing at the
+    /// end of a page number must land after the number, not inside it.
+    pub(crate) in_field: bool,
+}
+
+/// The character an element stands for, if it stands for one.
+///
+/// A tab and a line break are elements, not text, but a person moving the caret
+/// through a paragraph passes over them like any other character. Counting them
+/// as one character each is what lets the caret sit either side of a tab and
+/// Backspace delete it — and it is what makes the offsets the layout engine
+/// produces and the offsets the editor uses the same numbers.
+#[must_use]
+pub(crate) fn atomic_text(element: &Element) -> Option<&'static str> {
+    // An equation stands in the text as one character, the same as a picture.
+    if element.namespace.as_deref() == Some(crate::math::MATH_NAMESPACE)
+        && matches!(element.local_name(), "oMath" | "oMathPara")
+    {
+        return Some("\u{1}");
+    }
+    if element.namespace.as_deref() != Some(W) {
+        return None;
+    }
+    match element.local_name() {
+        "tab" => Some("\t"),
+        "br" => Some("\n"),
+        // A picture stands in the text as one character, so the caret can be
+        // put either side of it and Backspace can reach it. U+0001 rather than
+        // the object replacement character because it has to be one byte long:
+        // the layout counts a picture as one byte of the paragraph as well, and
+        // an offset has to mean the same thing in both.
+        "drawing" => Some("\u{1}"),
+        // The mark that points at a footnote or an endnote is one character
+        // too, for the same reasons.
+        "footnoteReference" | "endnoteReference" => Some("\u{2}"),
+        _ => None,
+    }
 }
 
 /// Replaces every occurrence of `needle` in the document, returning how many
@@ -184,6 +252,11 @@ fn replace_in_paragraph(paragraph: &mut Element, needle: &str, replacement: &str
     // Rewriting is done piece by piece against absolute offsets, so the order
     // does not matter and no offset ever goes stale.
     for piece in &pieces {
+        // A tab or a break is an element, not text: there is nothing in it to
+        // rewrite, and a match that runs over one leaves it where it is.
+        if piece.atomic {
+            continue;
+        }
         let rebuilt = rebuild_piece(piece, &matches, replacement);
         if rebuilt == piece.text {
             continue;
@@ -197,6 +270,63 @@ fn replace_in_paragraph(paragraph: &mut Element, needle: &str, replacement: &str
     matches.len()
 }
 
+/// Replaces several stretches of one paragraph at once.
+///
+/// Given ranges into the paragraph's assembled text, and what each becomes.
+/// The ranges must not overlap and must be in order, which is what
+/// [`crate::translate::Glossary::matches`] gives.
+///
+/// Returns how many were replaced. Works the same way one replacement does:
+/// each new word is written into the run its match starts in, and the
+/// characters it covers are dropped wherever they were.
+pub(crate) fn replace_ranges(paragraph: &mut Element, ranges: &[(usize, usize, String)]) -> usize {
+    let pieces = collect_text_pieces(paragraph);
+    if pieces.is_empty() || ranges.is_empty() {
+        return 0;
+    }
+
+    for piece in &pieces {
+        // A tab or a break is an element, not text: there is nothing in it to
+        // rewrite.
+        if piece.atomic {
+            continue;
+        }
+        let rebuilt = rebuild_piece_with(piece, ranges);
+        if rebuilt == piece.text {
+            continue;
+        }
+        if let Some(element) = element_at_path_mut(paragraph, &piece.path) {
+            element.set_text(&rebuilt);
+            preserve_space_if_needed(element, &rebuilt);
+        }
+    }
+    ranges.len()
+}
+
+/// Works out what one `w:t` should now contain, with a replacement per match.
+fn rebuild_piece_with(piece: &TextPiece, ranges: &[(usize, usize, String)]) -> String {
+    let mut out = String::with_capacity(piece.text.len());
+    let mut local = 0usize;
+
+    while local < piece.text.len() {
+        let absolute = piece.start + local;
+
+        if let Some((_, end, replacement)) = ranges.iter().find(|(start, _, _)| *start == absolute)
+        {
+            out.push_str(replacement);
+            local = end.saturating_sub(piece.start).min(piece.text.len());
+            continue;
+        }
+
+        let inside = ranges.iter().any(|(start, end, _)| absolute >= *start && absolute < *end);
+        let character = piece.text[local..].chars().next().expect("on a character boundary");
+        if !inside {
+            out.push(character);
+        }
+        local += character.len_utf8();
+    }
+    out
+}
 /// Every non-overlapping occurrence, as byte ranges.
 fn find_all(haystack: &str, needle: &str) -> Vec<(usize, usize)> {
     let mut found = Vec::new();
@@ -245,7 +375,7 @@ pub(crate) fn collect_text_pieces(paragraph: &Element) -> Vec<TextPiece> {
     let mut pieces = Vec::new();
     let mut path = Vec::new();
     let mut offset = 0usize;
-    walk_text_pieces(paragraph, &mut path, &mut offset, &mut pieces);
+    walk_text_pieces(paragraph, &mut path, &mut offset, &mut pieces, false);
     pieces
 }
 
@@ -254,10 +384,21 @@ fn walk_text_pieces(
     path: &mut Vec<usize>,
     offset: &mut usize,
     pieces: &mut Vec<TextPiece>,
+    in_field: bool,
 ) {
+    // A field written the long way is a run of markers among the runs; the text
+    // between `separate` and `end` is the field's answer, and typing at the end
+    // of it must land after the field rather than inside it. See
+    // [`crate::fields`].
+    let mut in_complex = false;
+
     for (index, node) in element.children.iter().enumerate() {
         let Node::Element(child) = node else { continue };
-        if child.namespace.as_deref() != Some(W) {
+        // Everything but WordprocessingML is skipped, except an equation: it
+        // is in a namespace of its own and stands for one character of the
+        // text, so it has to be counted.
+        let is_math = child.namespace.as_deref() == Some(crate::math::MATH_NAMESPACE);
+        if child.namespace.as_deref() != Some(W) && !is_math {
             continue;
         }
 
@@ -267,21 +408,64 @@ fn walk_text_pieces(
             continue;
         }
 
+        if child.local_name() == "r" {
+            match crate::fields::marker_of(child) {
+                Some(crate::fields::Marker::Separate) => {
+                    in_complex = true;
+                    continue;
+                }
+                Some(crate::fields::Marker::End) => {
+                    in_complex = false;
+                    continue;
+                }
+                Some(crate::fields::Marker::Begin) => continue,
+                None => {}
+            }
+        }
+
         path.push(index);
+        let inside_field = in_field || in_complex || child.local_name() == "fldSimple";
         if child.local_name() == "t" {
             let text = child.text_content();
             let length = text.len();
-            pieces.push(TextPiece { path: path.clone(), text, start: *offset });
+            pieces.push(TextPiece {
+                path: path.clone(),
+                text,
+                start: *offset,
+                atomic: false,
+                in_field: inside_field,
+            });
             *offset += length;
+        } else if let Some(text) = atomic_text(child) {
+            pieces.push(TextPiece {
+                path: path.clone(),
+                text: text.to_owned(),
+                start: *offset,
+                atomic: true,
+                in_field: inside_field,
+            });
+            *offset += text.len();
         } else {
-            walk_text_pieces(child, path, offset, pieces);
+            walk_text_pieces(child, path, offset, pieces, inside_field);
         }
         path.pop();
     }
 }
 
+/// Resolves a child path back to an element.
+pub(crate) fn element_at_path<'a>(root: &'a Element, path: &[usize]) -> Option<&'a Element> {
+    let mut current = root;
+    for &index in path {
+        current = current.children.get(index)?.as_element()?;
+    }
+    Some(current)
+}
+
 /// Resolves a child path back to a mutable element.
-pub(crate) fn element_at_path_mut<'a>(root: &'a mut Element, path: &[usize]) -> Option<&'a mut Element> {
+pub(crate) fn element_at_path_mut<'a>(
+    root: &'a mut Element,
+    path: &[usize],
+) -> Option<&'a mut Element> {
     let mut current = root;
     for &index in path {
         current = current.children.get_mut(index)?.as_element_mut()?;
@@ -306,20 +490,41 @@ pub(crate) fn preserve_space_if_needed(element: &mut Element, text: &str) {
 // --- Building elements from the model ---------------------------------------
 
 /// An element carrying only a `w:val` attribute, the format's commonest shape.
-fn valued(prefix: Option<&str>, local: &str, value: &str) -> Element {
+pub(crate) fn valued(prefix: Option<&str>, local: &str, value: &str) -> Element {
     let mut element = Element::new(&name_with(prefix, local), Some(W));
     element.set_namespaced_attribute(&name_with(prefix, "val"), W, value);
     element
 }
 
 /// An on/off element, written only when it says something.
-fn toggle(prefix: Option<&str>, local: &str, state: bool) -> Element {
+pub(crate) fn toggle(prefix: Option<&str>, local: &str, state: bool) -> Element {
     if state {
         Element::new(&name_with(prefix, local), Some(W))
     } else {
         // Explicitly off, which is how a run overrides its style.
         valued(prefix, local, "0")
     }
+}
+
+/// Turns a list of tab stops into a `w:tabs`.
+///
+/// In order along the line, because that is the order Word writes them in and
+/// the order anything reading them back expects.
+#[must_use]
+pub fn tab_stops_element(stops: &[TabStop], prefix: Option<&str>) -> Element {
+    let mut element = Element::new(&name_with(prefix, "tabs"), Some(W));
+    let mut sorted = stops.to_vec();
+    sorted.sort_by_key(|stop| stop.position);
+    for stop in sorted {
+        let mut tab = Element::new(&name_with(prefix, "tab"), Some(W));
+        tab.set_namespaced_attribute(&name_with(prefix, "val"), W, stop.alignment.word());
+        if stop.leader != TabLeader::None {
+            tab.set_namespaced_attribute(&name_with(prefix, "leader"), W, stop.leader.word());
+        }
+        tab.set_namespaced_attribute(&name_with(prefix, "pos"), W, &stop.position.to_string());
+        element.push_element(tab);
+    }
+    element
 }
 
 /// Turns paragraph properties into a `w:pPr`.
@@ -351,6 +556,19 @@ pub fn paragraph_properties_element(
         reference.push_element(valued(prefix, "numId", &numbering.id.to_string()));
         element.push_element(reference);
     }
+    if !properties.borders.is_empty() {
+        element.push_element(paragraph_borders_element(&properties.borders, prefix));
+    }
+    if let Some(fill) = &properties.shading {
+        let mut shading = Element::new(&name_with(prefix, "shd"), Some(W));
+        shading.set_namespaced_attribute(&name_with(prefix, "val"), W, "clear");
+        shading.set_namespaced_attribute(&name_with(prefix, "color"), W, "auto");
+        shading.set_namespaced_attribute(&name_with(prefix, "fill"), W, fill);
+        element.push_element(shading);
+    }
+    if !properties.tab_stops.is_empty() {
+        element.push_element(tab_stops_element(&properties.tab_stops, prefix));
+    }
     if let Some(state) = properties.right_to_left {
         element.push_element(toggle(prefix, "bidi", state));
     }
@@ -366,7 +584,11 @@ pub fn paragraph_properties_element(
             spacing.set_namespaced_attribute(&name_with(prefix, "after"), W, &after.to_string());
         }
         if let Some(line) = properties.line_spacing {
-            spacing.set_namespaced_attribute(&name_with(prefix, "line"), W, &line.value.to_string());
+            spacing.set_namespaced_attribute(
+                &name_with(prefix, "line"),
+                W,
+                &line.value.to_string(),
+            );
             let rule = match line.rule {
                 LineRule::Auto => "auto",
                 LineRule::Exact => "exact",
@@ -389,8 +611,7 @@ pub fn paragraph_properties_element(
         }
         if let Some(first) = properties.indent_first_line {
             // A negative first-line indent is written as a hanging indent.
-            let (name, amount) =
-                if first < 0 { ("hanging", -first) } else { ("firstLine", first) };
+            let (name, amount) = if first < 0 { ("hanging", -first) } else { ("firstLine", first) };
             indent.set_namespaced_attribute(&name_with(prefix, name), W, &amount.to_string());
         }
         element.push_element(indent);
@@ -413,8 +634,55 @@ pub fn paragraph_element(paragraph: &Paragraph, prefix: Option<&str>) -> Element
     if !paragraph.properties.is_empty() {
         element.push_element(paragraph_properties_element(&paragraph.properties, prefix));
     }
-    for run in &paragraph.runs {
-        element.push_element(run_element(run, prefix));
+    // Runs that belong to the same field or the same tracked change go back
+    // inside one wrapper, or the field would be lost and only its cached answer
+    // would remain, and a change would stop being a change.
+    let mut index = 0usize;
+    while index < paragraph.runs.len() {
+        let run = &paragraph.runs[index];
+
+        if let Some(revision) = &run.revision {
+            let mut wrapper = Element::new(&name_with(prefix, revision.kind.element()), Some(W));
+            wrapper.set_namespaced_attribute(&name_with(prefix, "id"), W, &revision.id.to_string());
+            wrapper.set_namespaced_attribute(&name_with(prefix, "author"), W, &revision.author);
+            wrapper.set_namespaced_attribute(&name_with(prefix, "date"), W, &revision.date);
+
+            let deleted = revision.kind == RevisionKind::Deleted;
+            while index < paragraph.runs.len()
+                && paragraph.runs[index].revision.as_ref() == Some(revision)
+            {
+                wrapper.push_element(revised_run_element(&paragraph.runs[index], prefix, deleted));
+                index += 1;
+            }
+            element.push_element(wrapper);
+            continue;
+        }
+
+        // An equation is not written inside a run: it is a sibling of the runs,
+        // in the namespace equations live in.
+        if let Some(crate::model::RunContent::Math(math)) = run.content.first() {
+            if run.content.len() == 1 {
+                element.push_element(crate::math::math_element(math, crate::math::MATH_PREFIX));
+                index += 1;
+                continue;
+            }
+        }
+
+        let Some(instruction) = &run.field else {
+            element.push_element(run_element(run, prefix));
+            index += 1;
+            continue;
+        };
+
+        let mut field = Element::new(&name_with(prefix, "fldSimple"), Some(W));
+        field.set_namespaced_attribute(&name_with(prefix, "instr"), W, &format!(" {instruction} "));
+        while index < paragraph.runs.len()
+            && paragraph.runs[index].field.as_deref() == Some(instruction.as_str())
+        {
+            field.push_element(run_element(&paragraph.runs[index], prefix));
+            index += 1;
+        }
+        element.push_element(field);
     }
 
     element
@@ -452,6 +720,12 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
     if let Some(color) = &properties.color {
         element.push_element(valued(prefix, "color", color));
     }
+    if let Some(highlight) = &properties.highlight {
+        element.push_element(valued(prefix, "highlight", highlight));
+    }
+    if let Some(alignment) = properties.vertical_align {
+        element.push_element(valued(prefix, "vertAlign", alignment.to_attribute()));
+    }
     if let Some(half_points) = properties.size_half_points {
         let size = half_points.to_string();
         element.push_element(valued(prefix, "sz", &size));
@@ -473,6 +747,16 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
 /// Turns a run from the model into an element.
 #[must_use]
 pub fn run_element(run: &Run, prefix: Option<&str>) -> Element {
+    revised_run_element(run, prefix, false)
+}
+
+/// The same, writing `w:delText` instead of `w:t` for deleted text.
+///
+/// The format insists on the different name: a reader that shows the document
+/// as it would be with every change accepted skips `w:delText` and keeps `w:t`,
+/// and it can only do that if the two are told apart by name.
+#[must_use]
+pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> Element {
     let mut element = Element::new(&name_with(prefix, "r"), Some(W));
 
     if !run.properties.is_empty() {
@@ -482,12 +766,31 @@ pub fn run_element(run: &Run, prefix: Option<&str>) -> Element {
     for piece in &run.content {
         match piece {
             RunContent::Text(text) => {
-                let mut node = Element::new(&name_with(prefix, "t"), Some(W));
-                node.set_text(text);
-                // Always written: a run's text is content, and the cost of the
-                // attribute is far smaller than the cost of losing a space.
-                node.set_namespaced_attribute("xml:space", XML_NAMESPACE, "preserve");
-                element.push_element(node);
+                // A tab inside a run's text is an element of its own in the
+                // format, not a character: Word writes `w:tab` and reads a
+                // literal tab in `w:t` as nothing at all. So the text goes in
+                // as pieces with tabs between them, and something built from
+                // plain text with tabs in it comes out right.
+                let local = if deleted { "delText" } else { "t" };
+                let pieces: Vec<&str> = text.split('\t').collect();
+                for (index, piece) in pieces.iter().enumerate() {
+                    if index > 0 {
+                        element.push_element(Element::new(&name_with(prefix, "tab"), Some(W)));
+                    }
+                    // Nothing between two tabs writes nothing — but a run whose
+                    // whole text is empty keeps its `w:t`, because that is where
+                    // a field puts its answer.
+                    if piece.is_empty() && pieces.len() > 1 {
+                        continue;
+                    }
+                    let mut node = Element::new(&name_with(prefix, local), Some(W));
+                    node.set_text(piece);
+                    // Always written: a run's text is content, and the cost of
+                    // the attribute is far smaller than the cost of losing a
+                    // space.
+                    node.set_namespaced_attribute("xml:space", XML_NAMESPACE, "preserve");
+                    element.push_element(node);
+                }
             }
             RunContent::Break(kind) => {
                 let mut node = Element::new(&name_with(prefix, "br"), Some(W));
@@ -505,13 +808,187 @@ pub fn run_element(run: &Run, prefix: Option<&str>) -> Element {
             RunContent::Tab => {
                 element.push_element(Element::new(&name_with(prefix, "tab"), Some(W)));
             }
+            // Building a drawing means writing four namespaces of DrawingML
+            // and adding a part and a relationship for the picture itself.
+            // Nothing here creates a picture yet, and one read from a document
+            // is carried through in its own element rather than rebuilt — so
+            // there is nothing to write, and pretending otherwise would lose
+            // the picture.
+            RunContent::Picture(_) => {}
+            // Nor a chart: it is a part of the package, carried through in
+            // its own element rather than rebuilt from the model.
+            RunContent::Chart(_) => {}
+            // An equation is not written from inside a run: it is a sibling
+            // of the runs, and `paragraph_element` writes it there.
+            RunContent::Math(_) => {}
+            // A shape, unlike a picture, needs no part and no relationship —
+            // it is described entirely by its own element — so it can be
+            // written out from the model.
+            RunContent::Shape(shape) => {
+                element.push_element(crate::shapes::shape_element(shape, prefix));
+            }
+            RunContent::NoteReference { id, endnote } => {
+                let local = if *endnote { "endnoteReference" } else { "footnoteReference" };
+                let mut node = Element::new(&name_with(prefix, local), Some(W));
+                node.set_namespaced_attribute(&name_with(prefix, "id"), W, &id.to_string());
+                element.push_element(node);
+            }
         }
     }
 
     element
 }
 
-fn table_element(table: &Table, prefix: Option<&str>) -> Element {
+/// Turns table borders into a `w:tblBorders`, in the order the schema wants.
+/// Turns paragraph borders into a `w:pBdr`.
+pub(crate) fn paragraph_borders_element(
+    borders: &ParagraphBorders,
+    prefix: Option<&str>,
+) -> Element {
+    let mut element = Element::new(&name_with(prefix, "pBdr"), Some(W));
+    for (name, border) in [
+        ("top", &borders.top),
+        ("start", &borders.start),
+        ("bottom", &borders.bottom),
+        ("end", &borders.end),
+        ("between", &borders.between),
+    ] {
+        let Some(border) = border else { continue };
+        element.push_element(border_element(name, border, prefix));
+    }
+    element
+}
+
+pub(crate) fn table_borders_element(borders: &TableBorders, prefix: Option<&str>) -> Element {
+    let mut element = Element::new(&name_with(prefix, "tblBorders"), Some(W));
+
+    for (name, border) in [
+        ("top", &borders.top),
+        ("start", &borders.start),
+        ("bottom", &borders.bottom),
+        ("end", &borders.end),
+        ("insideH", &borders.inside_horizontal),
+        ("insideV", &borders.inside_vertical),
+    ] {
+        let Some(border) = border else { continue };
+        element.push_element(border_element(name, border, prefix));
+    }
+
+    element
+}
+
+/// One edge of a border, wherever it appears.
+fn border_element(name: &str, border: &Border, prefix: Option<&str>) -> Element {
+    let mut side = Element::new(&name_with(prefix, name), Some(W));
+    side.set_namespaced_attribute(&name_with(prefix, "val"), W, &border.style);
+    side.set_namespaced_attribute(&name_with(prefix, "sz"), W, &border.size.to_string());
+    side.set_namespaced_attribute(&name_with(prefix, "space"), W, "1");
+    side.set_namespaced_attribute(
+        &name_with(prefix, "color"),
+        W,
+        border.color.as_deref().unwrap_or("auto"),
+    );
+    side
+}
+
+/// The namespaces a drawing is written in.
+///
+/// Four of them, each for a different layer of the same picture: where it sits
+/// in the text, what shape it is, what it is filled with, and which part of the
+/// package holds the bytes. A drawing that declares one of them wrongly is a
+/// drawing Word refuses to open.
+pub(crate) const DRAWING_WORDPROCESSING: &str =
+    "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+pub(crate) const DRAWING_MAIN: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const DRAWING_PICTURE: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+pub(crate) const RELATIONSHIPS: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+/// Builds the `w:drawing` that puts a picture in the line of text.
+///
+/// Written out in full because every element of it is required: the extent
+/// twice over, the shape properties, the fill, and the identifiers Word uses to
+/// name the picture in its own interface.
+#[must_use]
+pub fn drawing_element(
+    relationship: &str,
+    width_emu: i64,
+    height_emu: i64,
+    prefix: Option<&str>,
+) -> Element {
+    let mut drawing = Element::new(&name_with(prefix, "drawing"), Some(W));
+
+    let mut inline = Element::new("wp:inline", Some(DRAWING_WORDPROCESSING));
+    inline.declarations.push((Some("wp".to_owned()), DRAWING_WORDPROCESSING.to_owned()));
+    for side in ["distT", "distB", "distL", "distR"] {
+        inline.set_attribute(side, "0");
+    }
+
+    let mut extent = Element::new("wp:extent", Some(DRAWING_WORDPROCESSING));
+    extent.set_attribute("cx", &width_emu.to_string());
+    extent.set_attribute("cy", &height_emu.to_string());
+    inline.push_element(extent);
+
+    let mut properties = Element::new("wp:docPr", Some(DRAWING_WORDPROCESSING));
+    properties.set_attribute("id", "1");
+    properties.set_attribute("name", "Picture 1");
+    inline.push_element(properties);
+
+    let mut graphic = Element::new("a:graphic", Some(DRAWING_MAIN));
+    graphic.declarations.push((Some("a".to_owned()), DRAWING_MAIN.to_owned()));
+
+    let mut data = Element::new("a:graphicData", Some(DRAWING_MAIN));
+    data.set_attribute("uri", DRAWING_PICTURE);
+
+    let mut picture = Element::new("pic:pic", Some(DRAWING_PICTURE));
+    picture.declarations.push((Some("pic".to_owned()), DRAWING_PICTURE.to_owned()));
+
+    let mut non_visual = Element::new("pic:nvPicPr", Some(DRAWING_PICTURE));
+    let mut non_visual_properties = Element::new("pic:cNvPr", Some(DRAWING_PICTURE));
+    non_visual_properties.set_attribute("id", "0");
+    non_visual_properties.set_attribute("name", "Picture 1");
+    non_visual.push_element(non_visual_properties);
+    non_visual.push_element(Element::new("pic:cNvPicPr", Some(DRAWING_PICTURE)));
+    picture.push_element(non_visual);
+
+    let mut fill = Element::new("pic:blipFill", Some(DRAWING_PICTURE));
+    let mut blip = Element::new("a:blip", Some(DRAWING_MAIN));
+    blip.set_namespaced_attribute("r:embed", RELATIONSHIPS, relationship);
+    blip.declarations.push((Some("r".to_owned()), RELATIONSHIPS.to_owned()));
+    fill.push_element(blip);
+    let mut stretch = Element::new("a:stretch", Some(DRAWING_MAIN));
+    stretch.push_element(Element::new("a:fillRect", Some(DRAWING_MAIN)));
+    fill.push_element(stretch);
+    picture.push_element(fill);
+
+    let mut shape = Element::new("pic:spPr", Some(DRAWING_PICTURE));
+    let mut transform = Element::new("a:xfrm", Some(DRAWING_MAIN));
+    let mut offset = Element::new("a:off", Some(DRAWING_MAIN));
+    offset.set_attribute("x", "0");
+    offset.set_attribute("y", "0");
+    transform.push_element(offset);
+    let mut size = Element::new("a:ext", Some(DRAWING_MAIN));
+    size.set_attribute("cx", &width_emu.to_string());
+    size.set_attribute("cy", &height_emu.to_string());
+    transform.push_element(size);
+    shape.push_element(transform);
+
+    let mut geometry = Element::new("a:prstGeom", Some(DRAWING_MAIN));
+    geometry.set_attribute("prst", "rect");
+    geometry.push_element(Element::new("a:avLst", Some(DRAWING_MAIN)));
+    shape.push_element(geometry);
+    picture.push_element(shape);
+
+    data.push_element(picture);
+    graphic.push_element(data);
+    inline.push_element(graphic);
+    drawing.push_element(inline);
+    drawing
+}
+
+/// Turns a table from the model into an element ready to insert.
+#[must_use]
+pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
     let mut element = Element::new(&name_with(prefix, "tbl"), Some(W));
 
     let mut properties = Element::new(&name_with(prefix, "tblPr"), Some(W));
@@ -522,7 +999,22 @@ fn table_element(table: &Table, prefix: Option<&str>) -> Element {
     width.set_namespaced_attribute(&name_with(prefix, "w"), W, "0");
     width.set_namespaced_attribute(&name_with(prefix, "type"), W, "auto");
     properties.push_element(width);
+    if !table.borders.is_empty() {
+        properties.push_element(table_borders_element(&table.borders, prefix));
+    }
     element.push_element(properties);
+
+    // The grid decides the geometry, so it is written even when every column is
+    // the same width: a table without one is a table whose columns are guesses.
+    if !table.grid.is_empty() {
+        let mut grid = Element::new(&name_with(prefix, "tblGrid"), Some(W));
+        for column in &table.grid {
+            let mut entry = Element::new(&name_with(prefix, "gridCol"), Some(W));
+            entry.set_namespaced_attribute(&name_with(prefix, "w"), W, &column.to_string());
+            grid.push_element(entry);
+        }
+        element.push_element(grid);
+    }
 
     for row in &table.rows {
         let mut row_element = Element::new(&name_with(prefix, "tr"), Some(W));
@@ -531,9 +1023,24 @@ fn table_element(table: &Table, prefix: Option<&str>) -> Element {
 
             let mut cell_properties = Element::new(&name_with(prefix, "tcPr"), Some(W));
             let mut cell_width = Element::new(&name_with(prefix, "tcW"), Some(W));
-            cell_width.set_namespaced_attribute(&name_with(prefix, "w"), W, "0");
-            cell_width.set_namespaced_attribute(&name_with(prefix, "type"), W, "auto");
+            match cell.width {
+                Some(twips) => {
+                    cell_width.set_namespaced_attribute(
+                        &name_with(prefix, "w"),
+                        W,
+                        &twips.to_string(),
+                    );
+                    cell_width.set_namespaced_attribute(&name_with(prefix, "type"), W, "dxa");
+                }
+                None => {
+                    cell_width.set_namespaced_attribute(&name_with(prefix, "w"), W, "0");
+                    cell_width.set_namespaced_attribute(&name_with(prefix, "type"), W, "auto");
+                }
+            }
             cell_properties.push_element(cell_width);
+            if cell.span > 1 {
+                cell_properties.push_element(valued(prefix, "gridSpan", &cell.span.to_string()));
+            }
             cell_element.push_element(cell_properties);
 
             if cell.blocks.is_empty() {
@@ -554,7 +1061,7 @@ fn table_element(table: &Table, prefix: Option<&str>) -> Element {
     element
 }
 
-fn block_element(block: &Block, prefix: Option<&str>) -> Element {
+pub(crate) fn block_element(block: &Block, prefix: Option<&str>) -> Element {
     match block {
         Block::Paragraph(paragraph) => paragraph_element(paragraph, prefix),
         Block::Table(table) => table_element(table, prefix),
@@ -579,7 +1086,7 @@ fn paragraph_at(body: &mut Element, index: usize) -> Option<&mut Element> {
 }
 
 /// Ensures a paragraph has a `w:pPr` and returns it.
-fn paragraph_properties_of<'a>(
+pub(crate) fn paragraph_properties_of<'a>(
     paragraph: &'a mut Element,
     prefix: Option<&str>,
 ) -> &'a mut Element {
@@ -670,4 +1177,41 @@ fn collect_run_elements<'a>(parent: &'a mut Element, out: &mut Vec<&'a mut Eleme
             collect_run_elements(child, out);
         }
     }
+}
+
+/// Where among a paragraph's children something belonging at a text offset goes.
+///
+/// Used by anything that inserts a thing which is *between* runs rather than
+/// inside one — a comment anchor, a tracked-change wrapper. Split the runs at
+/// the offset first, or this lands on a boundary that does not exist yet.
+#[must_use]
+pub(crate) fn child_position_at_offset(paragraph: &Element, offset: usize) -> usize {
+    let mut seen = 0usize;
+    for (index, node) in paragraph.children.iter().enumerate() {
+        let Node::Element(child) = node else { continue };
+        if child.namespace.as_deref() != Some(W) || child.local_name() == "del" {
+            continue;
+        }
+        if seen >= offset {
+            return index;
+        }
+        seen += measured_length(child);
+    }
+    paragraph.children.len()
+}
+
+/// How many characters of a paragraph's text an element accounts for.
+#[must_use]
+pub(crate) fn measured_length(element: &Element) -> usize {
+    if element.namespace.as_deref() == Some(W) && element.local_name() == "t" {
+        return element.text_content().len();
+    }
+    if let Some(text) = atomic_text(element) {
+        return text.len();
+    }
+    element
+        .child_elements()
+        .filter(|child| child.namespace.as_deref() == Some(W) && child.local_name() != "del")
+        .map(measured_length)
+        .sum()
 }

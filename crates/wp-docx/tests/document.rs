@@ -1,8 +1,8 @@
 //! End-to-end tests over the whole stack: DEFLATE, ZIP, XML, package, model.
 
 use wp_docx::model::{
-    Alignment, Block, Body, BreakKind, Paragraph, Run, RunContent, RunProperties, Table, TableCell,
-    TableRow, Underline,
+    Alignment, Block, Body, BreakKind, Paragraph, Run, RunContent, RunProperties, Table, TableRow,
+    Underline,
 };
 use wp_docx::Document;
 
@@ -42,11 +42,22 @@ fn rich_body() -> Body {
                 language: Some("en-GB".to_owned()),
                 style: Some("Emphasis".to_owned()),
                 right_to_left: Some(false),
+                highlight: Some("yellow".to_owned()),
+                vertical_align: Some(wp_docx::model::VerticalAlignment::Superscript),
+                // This run writes its colour and its font out, so it names no
+                // theme slot for either.
+                color_theme: None,
+                effect: None,
+                font_theme: None,
             },
+            field: None,
+            revision: None,
             content: vec![RunContent::Text("formatted".to_owned())],
         },
         Run {
             properties: RunProperties::default(),
+            field: None,
+            revision: None,
             content: vec![
                 RunContent::Tab,
                 RunContent::Break(BreakKind::Line),
@@ -61,29 +72,21 @@ fn rich_body() -> Body {
         let mut run = Run::text(sample).in_language(language);
         run.properties.right_to_left = Some(right_to_left);
 
-        let mut paragraph =
-            Paragraph::from_runs(vec![run]).with_alignment(Alignment::Start);
+        let mut paragraph = Paragraph::from_runs(vec![run]).with_alignment(Alignment::Start);
         paragraph.properties.right_to_left = Some(right_to_left);
         body.blocks.push(Block::Paragraph(paragraph));
     }
 
-    body.blocks.push(Block::Table(Table {
-        style: Some("TableGrid".to_owned()),
-        rows: vec![
-            TableRow {
-                cells: vec![cell("first"), cell("second"), cell("третий")],
-            },
-            TableRow {
-                cells: vec![cell("a"), cell("b"), cell("c")],
-            },
-        ],
-    }));
+    body.blocks.push(Block::Table(Box::new(
+        Table::from_rows(vec![
+            TableRow::text(&["first", "second", "третий"]),
+            TableRow::text(&["a", "b", "c"]),
+        ])
+        .with_style("TableGrid")
+        .with_grid(vec![3000, 3000, 3000]),
+    )));
 
     body
-}
-
-fn cell(text: &str) -> TableCell {
-    TableCell { blocks: vec![Block::Paragraph(Paragraph::text(text))] }
 }
 
 #[test]
@@ -157,10 +160,7 @@ fn the_package_is_structured_the_way_the_format_requires() {
     let package = document.package();
 
     assert_eq!(document.main_part(), "word/document.xml");
-    assert_eq!(
-        package.content_type("word/document.xml"),
-        Some(wp_opc::MAIN_DOCUMENT_CONTENT_TYPE)
-    );
+    assert_eq!(package.content_type("word/document.xml"), Some(wp_opc::MAIN_DOCUMENT_CONTENT_TYPE));
     assert!(package.part("_rels/.rels").is_some(), "the package relationships are required");
     assert!(package.part("word/styles.xml").is_some(), "styles are referenced and must exist");
 

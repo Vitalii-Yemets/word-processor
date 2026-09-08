@@ -23,9 +23,10 @@ use wp_xml::tree::Element;
 
 use crate::model::{
     ParagraphProperties, ResolvedParagraphProperties, ResolvedRunProperties, RunProperties,
-    Underline,
+    TableBorders, Underline,
 };
-use crate::read::{read_paragraph_properties, read_run_properties, value, W};
+use crate::read::{read_paragraph_properties, read_run_properties, read_table_borders, value, W};
+use crate::theme::Theme;
 
 /// What a style can be applied to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,6 +67,11 @@ pub struct Style {
     pub is_default: bool,
     pub paragraph: ParagraphProperties,
     pub run: RunProperties,
+    /// The lines a table style draws. Empty for every other kind of style.
+    ///
+    /// This is where most real tables get their borders: the table itself says
+    /// only "TableGrid", and the grid lines live in the style.
+    pub table_borders: TableBorders,
 }
 
 /// Every style in a document, and the document defaults.
@@ -74,6 +80,12 @@ pub struct Styles {
     default_paragraph: ParagraphProperties,
     default_run: RunProperties,
     styles: Vec<Style>,
+    /// The colours and fonts the styles are named after.
+    ///
+    /// Kept here rather than beside the document because this is where names
+    /// are turned into what they stand for, and a name resolved anywhere else
+    /// would be resolved twice or not at all.
+    theme: Theme,
 }
 
 /// How deep a chain of `w:basedOn` references is followed.
@@ -83,6 +95,19 @@ pub struct Styles {
 const MAX_STYLE_DEPTH: usize = 32;
 
 impl Styles {
+    /// The same styles, told what the theme is.
+    #[must_use]
+    pub fn with_theme(mut self, theme: Theme) -> Self {
+        self.theme = theme;
+        self
+    }
+
+    /// The theme the styles resolve names against.
+    #[must_use]
+    pub fn theme(&self) -> &Theme {
+        &self.theme
+    }
+
     /// Reads a `w:styles` element.
     #[must_use]
     pub fn parse(root: &Element) -> Self {
@@ -111,10 +136,7 @@ impl Styles {
                 id: id.to_owned(),
                 name: definition.child(Some(W), "name").and_then(value).map(str::to_owned),
                 kind: StyleKind::from_attribute(definition.attribute(Some(W), "type")),
-                based_on: definition
-                    .child(Some(W), "basedOn")
-                    .and_then(value)
-                    .map(str::to_owned),
+                based_on: definition.child(Some(W), "basedOn").and_then(value).map(str::to_owned),
                 next: definition.child(Some(W), "next").and_then(value).map(str::to_owned),
                 is_default: definition
                     .attribute(Some(W), "default")
@@ -123,14 +145,28 @@ impl Styles {
                     .child(Some(W), "pPr")
                     .map(read_paragraph_properties)
                     .unwrap_or_default(),
-                run: definition
-                    .child(Some(W), "rPr")
-                    .map(read_run_properties)
+                run: definition.child(Some(W), "rPr").map(read_run_properties).unwrap_or_default(),
+                table_borders: definition
+                    .child(Some(W), "tblPr")
+                    .and_then(|properties| properties.child(Some(W), "tblBorders"))
+                    .map(read_table_borders)
                     .unwrap_or_default(),
             });
         }
 
         result
+    }
+
+    /// The borders a table style asks for, following what it is based on.
+    #[must_use]
+    pub fn resolve_table_borders(&self, id: Option<&str>) -> TableBorders {
+        let mut accumulated = TableBorders::default();
+        if let Some(id) = id {
+            for style in self.chain(id) {
+                accumulated = accumulated.overlaid_with(&style.table_borders);
+            }
+        }
+        accumulated
     }
 
     /// Every style, in the order the document declares them.
@@ -209,7 +245,10 @@ impl Styles {
             // Word turns widow control on unless a document says otherwise.
             widow_control: accumulated.widow_control.unwrap_or(true),
             outline_level: accumulated.outline_level,
+            borders: accumulated.borders,
+            shading: accumulated.shading,
             numbering: accumulated.numbering,
+            tab_stops: accumulated.tab_stops,
         }
     }
 
@@ -240,6 +279,18 @@ impl Styles {
         }
         accumulated = accumulated.overlaid_with(direct);
 
+        // A name is resolved only where nothing was written out: a run that
+        // says both means the written colour, and the name beside it is the
+        // answer somebody worked out last.
+        let color = accumulated
+            .color
+            .clone()
+            .or_else(|| accumulated.color_theme.as_ref().map(|named| self.theme.resolve(named)));
+        let font = accumulated
+            .font
+            .clone()
+            .or_else(|| accumulated.font_theme.map(|slot| self.theme.font(slot)));
+
         ResolvedRunProperties {
             bold: accumulated.bold.unwrap_or(false),
             italic: accumulated.italic.unwrap_or(false),
@@ -247,10 +298,25 @@ impl Styles {
             right_to_left: accumulated.right_to_left.unwrap_or(false),
             underline: accumulated.underline.unwrap_or(Underline::None),
             size_half_points: accumulated.size_half_points.unwrap_or(20),
-            color: accumulated.color,
-            font: accumulated.font,
+            color,
+            highlight: accumulated.highlight,
+            vertical_align: accumulated.vertical_align.unwrap_or_default(),
+            font,
             language: accumulated.language,
+            // "No effect" is what a run says to overrule an effect its style
+            // put on it, and it resolves to nothing rather than to itself.
+            effect: accumulated.effect.filter(|value| value.effect != crate::effects::Effect::None),
         }
+    }
+}
+
+impl crate::Document {
+    /// Tells the styles which theme to resolve names against.
+    ///
+    /// Called when the theme is replaced, so that a colour named after it comes
+    /// out the new colour without the document being closed and opened again.
+    pub(crate) fn set_styles_theme(&mut self, theme: Theme) {
+        self.styles_mut().theme = theme;
     }
 }
 
@@ -344,7 +410,8 @@ mod tests {
     #[test]
     fn a_character_style_applies_on_top_of_the_paragraph_style() {
         let styles = styles_from(SAMPLE);
-        let direct = RunProperties { style: Some("Emphasis".to_owned()), ..RunProperties::default() };
+        let direct =
+            RunProperties { style: Some("Emphasis".to_owned()), ..RunProperties::default() };
         let resolved = styles.resolve_run(Some("Heading1"), &direct);
 
         assert!(resolved.italic, "the character style should apply");
@@ -396,5 +463,144 @@ mod tests {
 
         let run = styles.resolve_run(Some("NoSuchStyle"), &RunProperties::default());
         assert_eq!(run.size_half_points, 22, "the document defaults still apply");
+    }
+
+    // --- Theme names ----------------------------------------------------------
+
+    use crate::theme::{FontSlot, Slot, Theme, ThemeColor};
+
+    /// A theme that is nothing like the Office one, so a resolved value cannot
+    /// be right by accident.
+    fn distinctive() -> Theme {
+        Theme {
+            name: "Test".to_owned(),
+            colors: Slot::ALL.iter().map(|_| "112233".to_owned()).collect(),
+            major_font: "Georgia".to_owned(),
+            minor_font: "Verdana".to_owned(),
+            effect: crate::theme::Effect::None,
+        }
+    }
+
+    #[test]
+    fn a_colour_named_after_the_theme_resolves_to_the_theme_colour() {
+        let styles = styles_from(SAMPLE).with_theme(distinctive());
+        let direct = RunProperties {
+            color_theme: Some(ThemeColor { slot: Slot::Accent1, tint: None, shade: None }),
+            ..RunProperties::default()
+        };
+        assert_eq!(styles.resolve_run(None, &direct).color.as_deref(), Some("112233"));
+    }
+
+    #[test]
+    fn a_font_named_after_the_theme_resolves_to_the_theme_font() {
+        let styles = styles_from(SAMPLE).with_theme(distinctive());
+        let heading =
+            RunProperties { font_theme: Some(FontSlot::Major), ..RunProperties::default() };
+        assert_eq!(styles.resolve_run(None, &heading).font.as_deref(), Some("Georgia"));
+
+        let body = RunProperties { font_theme: Some(FontSlot::Minor), ..RunProperties::default() };
+        assert_eq!(styles.resolve_run(None, &body).font.as_deref(), Some("Verdana"));
+    }
+
+    #[test]
+    fn a_colour_written_out_wins_over_the_name_beside_it() {
+        let styles = styles_from(SAMPLE).with_theme(distinctive());
+        let direct = RunProperties {
+            color: Some("C00000".to_owned()),
+            color_theme: Some(ThemeColor { slot: Slot::Accent1, tint: None, shade: None }),
+            ..RunProperties::default()
+        };
+        assert_eq!(
+            styles.resolve_run(None, &direct).color.as_deref(),
+            Some("C00000"),
+            "the name is the answer somebody worked out last, not the answer"
+        );
+    }
+
+    #[test]
+    fn a_font_written_out_wins_over_the_name_beside_it() {
+        let styles = styles_from(SAMPLE).with_theme(distinctive());
+        let direct = RunProperties {
+            font: Some("Courier New".to_owned()),
+            font_theme: Some(FontSlot::Minor),
+            ..RunProperties::default()
+        };
+        assert_eq!(styles.resolve_run(None, &direct).font.as_deref(), Some("Courier New"));
+    }
+
+    #[test]
+    fn a_name_is_inherited_down_the_style_chain_like_anything_else() {
+        let styles = styles_from(
+            r#"<w:style w:type="paragraph" w:styleId="Named">
+                 <w:name w:val="Named"/>
+                 <w:rPr><w:color w:themeColor="accent1"/><w:rFonts w:asciiTheme="majorHAnsi"/></w:rPr>
+               </w:style>"#,
+        )
+        .with_theme(distinctive());
+
+        let run = styles.resolve_run(Some("Named"), &RunProperties::default());
+        assert_eq!(run.color.as_deref(), Some("112233"));
+        assert_eq!(run.font.as_deref(), Some("Georgia"));
+    }
+
+    #[test]
+    fn a_run_of_its_own_overrides_a_name_it_inherited() {
+        let styles = styles_from(
+            r#"<w:style w:type="paragraph" w:styleId="Named">
+                 <w:name w:val="Named"/>
+                 <w:rPr><w:rFonts w:asciiTheme="majorHAnsi"/></w:rPr>
+               </w:style>"#,
+        )
+        .with_theme(distinctive());
+
+        let direct = RunProperties { font: Some("Arial".to_owned()), ..RunProperties::default() };
+        assert_eq!(styles.resolve_run(Some("Named"), &direct).font.as_deref(), Some("Arial"));
+    }
+
+    #[test]
+    fn styles_told_nothing_resolve_against_the_office_theme() {
+        let styles = styles_from(SAMPLE);
+        let direct =
+            RunProperties { font_theme: Some(FontSlot::Minor), ..RunProperties::default() };
+        assert_eq!(styles.resolve_run(None, &direct).font.as_deref(), Some("Calibri"));
+    }
+
+    #[test]
+    fn a_tint_is_read_off_the_run_and_applied() {
+        let properties = read_run_properties(
+            &XmlTree::parse(&format!(
+                r#"<w:rPr xmlns:w="{W}"><w:color w:themeColor="accent1" w:themeTint="00"/></w:rPr>"#
+            ))
+            .unwrap()
+            .root,
+        );
+        let named = properties.color_theme.clone().expect("a named colour");
+        assert_eq!(named.slot, Slot::Accent1);
+        assert_eq!(named.tint, Some(0));
+        assert_eq!(distinctive().resolve(&named), "FFFFFF", "no tint at all is white");
+    }
+
+    #[test]
+    fn a_run_that_names_no_theme_carries_no_name() {
+        let properties = read_run_properties(
+            &XmlTree::parse(&format!(
+                r#"<w:rPr xmlns:w="{W}"><w:color w:val="C00000"/><w:rFonts w:ascii="Arial"/></w:rPr>"#
+            ))
+            .unwrap()
+            .root,
+        );
+        assert!(properties.color_theme.is_none());
+        assert!(properties.font_theme.is_none());
+        assert_eq!(properties.color.as_deref(), Some("C00000"));
+    }
+
+    #[test]
+    fn a_colour_of_auto_is_no_colour_rather_than_the_word_auto() {
+        let properties = read_run_properties(
+            &XmlTree::parse(&format!(r#"<w:rPr xmlns:w="{W}"><w:color w:val="auto"/></w:rPr>"#))
+                .unwrap()
+                .root,
+        );
+        assert_eq!(properties.color, None);
     }
 }

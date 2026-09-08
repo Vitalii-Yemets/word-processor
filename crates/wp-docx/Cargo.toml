@@ -16,3 +16,4 @@ workspace = true
 [dev-dependencies]
 # Used only by the tests, to build an archive that is not a valid package.
 wp-zip = { path = "../wp-zip" }
+wp-image = { path = "../wp-image" }

@@ -209,8 +209,7 @@ fn pressing_enter_splits_a_paragraph() {
 #[test]
 fn splitting_keeps_the_style_on_both_halves() {
     let mut body = Body::default();
-    body.blocks
-        .push(Block::Paragraph(Paragraph::text("a heading").with_style("Heading1")));
+    body.blocks.push(Block::Paragraph(Paragraph::text("a heading").with_style("Heading1")));
     let bytes = Document::create(&body).unwrap().save().unwrap();
 
     let mut document = Document::open(&bytes).unwrap();
@@ -402,12 +401,29 @@ fn text_in_every_script_can_be_typed() {
 }
 
 #[test]
-fn a_paragraph_with_no_runs_reports_empty_text_rather_than_failing() {
+fn a_tab_counts_as_one_character_of_the_paragraph() {
+    // A tab is an element, not text, but the caret passes over it like any
+    // other character — so it has to take up exactly one place.
     let mut body = Body::default();
     body.blocks.push(Block::Paragraph(Paragraph {
-        runs: vec![Run { properties: RunProperties::default(), content: vec![RunContent::Tab] }],
+        runs: vec![Run {
+            properties: RunProperties::default(),
+            field: None,
+            revision: None,
+            content: vec![RunContent::Tab],
+        }],
         ..Paragraph::default()
     }));
+    let bytes = Document::create(&body).unwrap().save().unwrap();
+
+    let document = Document::open(&bytes).unwrap();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("\t"));
+}
+
+#[test]
+fn a_paragraph_with_no_runs_reports_empty_text_rather_than_failing() {
+    let mut body = Body::default();
+    body.blocks.push(Block::Paragraph(Paragraph::default()));
     let bytes = Document::create(&body).unwrap().save().unwrap();
 
     let document = Document::open(&bytes).unwrap();

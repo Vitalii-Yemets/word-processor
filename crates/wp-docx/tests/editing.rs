@@ -5,7 +5,7 @@
 //! come back byte for byte, because a real document is full of it.
 
 use wp_docx::model::{Alignment, Block, Body, Paragraph, Run, RunContent, RunProperties};
-use wp_docx::Document;
+use wp_docx::{Document, TextPosition};
 
 /// Text in the scripts the editor has to handle.
 const SAMPLES: &[&str] = &[
@@ -43,9 +43,7 @@ fn replacing_text_changes_only_the_main_part() {
     let after = wp_opc::Package::open(&saved).unwrap();
 
     for entry in before.entries() {
-        let updated = after
-            .part(&entry.name)
-            .unwrap_or_else(|| panic!("{} was lost", entry.name));
+        let updated = after.part(&entry.name).unwrap_or_else(|| panic!("{} was lost", entry.name));
         if entry.name == "word/document.xml" {
             assert_ne!(updated, entry.data.as_slice(), "the main part should have changed");
         } else {
@@ -66,6 +64,8 @@ fn replacing_text_works_across_run_boundaries() {
             Run::text("Hello, wo"),
             Run {
                 properties: RunProperties { bold: Some(true), ..RunProperties::default() },
+                field: None,
+                revision: None,
                 content: vec![RunContent::Text("rl".to_owned())],
             },
             Run::text("d!"),
@@ -96,6 +96,8 @@ fn a_match_spanning_runs_leaves_the_untouched_run_alone() {
             Run::text("mat"),
             Run {
                 properties: RunProperties { bold: Some(true), ..RunProperties::default() },
+                field: None,
+                revision: None,
                 content: vec![RunContent::Text("ch".to_owned())],
             },
             Run::text(" after"),
@@ -115,11 +117,7 @@ fn a_match_spanning_runs_leaves_the_untouched_run_alone() {
         panic!("expected a paragraph")
     };
     assert_eq!(paragraph.runs.len(), 4, "no run should have been removed");
-    assert_eq!(
-        paragraph.runs[2].properties.bold,
-        Some(true),
-        "the bold run lost its formatting"
-    );
+    assert_eq!(paragraph.runs[2].properties.bold, Some(true), "the bold run lost its formatting");
 }
 
 #[test]
@@ -352,4 +350,47 @@ fn package_around(document_xml: &str) -> Vec<u8> {
     );
     package.set_relationships(&root).unwrap();
     package.save().unwrap()
+}
+
+#[test]
+fn a_gesture_inside_a_gesture_is_still_one_step() {
+    // Moving text is a deletion and a paste, and a paste wraps itself. If
+    // the inner one closed the outer one, one undo would leave the document
+    // half changed.
+    let mut body = Body::default();
+    body.blocks.push(Block::Paragraph(Paragraph::text("one two three")));
+    let bytes = Document::create(&body).expect("a document").save().expect("saving");
+    let mut document = Document::open(&bytes).expect("reopening");
+    let before = document.plain_text();
+
+    document.begin_gesture();
+    document.set_caret(TextPosition::new(0, 0));
+    document.extend_selection_to(TextPosition::new(0, 4));
+    document.delete_selection();
+    // Nested: this begins and ends a gesture of its own.
+    document.set_caret(TextPosition::new(0, 0));
+    document.type_text("ONE ");
+    document.end_gesture();
+
+    assert!(document.undo());
+    assert_eq!(document.plain_text(), before, "one undo did not take the whole of it back");
+}
+
+#[test]
+fn a_gesture_that_has_ended_leaves_the_next_change_on_its_own() {
+    let mut body = Body::default();
+    body.blocks.push(Block::Paragraph(Paragraph::text("one")));
+    let bytes = Document::create(&body).expect("a document").save().expect("saving");
+    let mut document = Document::open(&bytes).expect("reopening");
+
+    document.begin_gesture();
+    document.set_caret(TextPosition::new(0, 3));
+    document.type_text("A");
+    document.end_gesture();
+    // A different kind of change, so it cannot merge with the typing: what
+    // separates the two steps is the gesture having ended.
+    document.press_enter();
+
+    assert!(document.undo());
+    assert_eq!(document.plain_text(), "oneA", "the second change was swallowed");
 }
