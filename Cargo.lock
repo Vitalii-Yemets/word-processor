@@ -7,9 +7,11 @@ name = "wp-app"
 version = "0.0.1"
 dependencies = [
  "wp-docx",
+ "wp-image",
  "wp-layout",
  "wp-raster",
  "wp-shell",
+ "wp-svg",
 ]
 
 [[package]]
@@ -30,6 +32,7 @@ version = "0.0.1"
 name = "wp-docx"
 version = "0.0.1"
 dependencies = [
+ "wp-image",
  "wp-opc",
  "wp-xml",
  "wp-zip",
@@ -40,12 +43,21 @@ name = "wp-font"
 version = "0.0.1"
 
 [[package]]
+name = "wp-image"
+version = "0.0.1"
+dependencies = [
+ "wp-deflate",
+]
+
+[[package]]
 name = "wp-layout"
 version = "0.0.1"
 dependencies = [
  "wp-docx",
  "wp-font",
+ "wp-image",
  "wp-raster",
+ "wp-shape",
  "wp-xml",
 ]
 
@@ -65,10 +77,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "wp-shape"
+version = "0.0.1"
+dependencies = [
+ "wp-font",
+]
+
+[[package]]
 name = "wp-shell"
 version = "0.0.1"
 dependencies = [
  "wp-raster",
+]
+
+[[package]]
+name = "wp-svg"
+version = "0.0.1"
+dependencies = [
+ "wp-raster",
+ "wp-xml",
 ]
 
 [[package]]

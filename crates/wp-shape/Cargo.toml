@@ -1,0 +1,13 @@
+[package]
+name = "wp-shape"
+description = "Turning characters into the glyphs that actually draw them"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-font = { path = "../wp-font" }
+
+[lints]
+workspace = true

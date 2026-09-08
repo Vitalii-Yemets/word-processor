@@ -1,0 +1,13 @@
+[package]
+name = "wp-image"
+description = "Decoding the image formats a document can carry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-deflate = { path = "../wp-deflate" }
+
+[lints]
+workspace = true
