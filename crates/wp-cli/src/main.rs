@@ -34,7 +34,8 @@ macro_rules! outln {
 }
 
 use wp_docx::model::{
-    Alignment, Block, Body, Paragraph, ResolvedRunProperties, Run, Table, TableCell, TableRow,
+    Alignment, Block, Body, Paragraph, ResolvedRunProperties, Run, Table, TableBorders, TableCell,
+    TableRow,
 };
 use wp_docx::Document;
 
@@ -48,9 +49,7 @@ fn main() -> ExitCode {
         (Some("text"), 2) => text(&arguments[1]),
         (Some("outline"), 2) => outline(&arguments[1]),
         (Some("roundtrip"), 3) => roundtrip(&arguments[1], &arguments[2]),
-        (Some("replace"), 5) => {
-            replace(&arguments[1], &arguments[2], &arguments[3], &arguments[4])
-        }
+        (Some("replace"), 5) => replace(&arguments[1], &arguments[2], &arguments[3], &arguments[4]),
         (Some("append"), 4) => append(&arguments[1], &arguments[2], &arguments[3]),
         (Some("render"), 3) => render(&arguments[1], &arguments[2], "96"),
         (Some("render"), 4) => render(&arguments[1], &arguments[2], &arguments[3]),
@@ -175,7 +174,12 @@ fn info(path: &str) -> Result<(), String> {
         outln!();
         outln!("package relationships:");
         for relationship in relationships.all() {
-            outln!("  {:<8} {:<12} {}", relationship.id, short_type(&relationship.kind), relationship.target);
+            outln!(
+                "  {:<8} {:<12} {}",
+                relationship.id,
+                short_type(&relationship.kind),
+                relationship.target
+            );
         }
     }
 
@@ -308,7 +312,8 @@ fn describe(properties: &ResolvedRunProperties) -> String {
 /// package layer is losing something.
 fn roundtrip(input: &str, output: &str) -> Result<(), String> {
     let original = read(input)?;
-    let document = Document::open(&original).map_err(|error| format!("cannot open {input}: {error}"))?;
+    let document =
+        Document::open(&original).map_err(|error| format!("cannot open {input}: {error}"))?;
     let saved = document.save().map_err(|error| format!("cannot save: {error}"))?;
 
     write(output, &saved)?;
@@ -441,7 +446,12 @@ fn report_part_changes(original: &[u8], saved: &[u8]) {
         match after.part(&entry.name) {
             None => changed.push(format!("lost:     {}", entry.name)),
             Some(data) if data != entry.data => {
-                changed.push(format!("changed:  {} ({} -> {} bytes)", entry.name, entry.data.len(), data.len()));
+                changed.push(format!(
+                    "changed:  {} ({} -> {} bytes)",
+                    entry.name,
+                    entry.data.len(),
+                    data.len()
+                ));
             }
             Some(_) => unchanged += 1,
         }
@@ -540,9 +550,10 @@ fn demonstration_body() -> Body {
         ("ja-JP", "いろはにほへと ちりぬるを"),
         ("ko-KR", "다람쥐 헌 쳇바퀴에 타고파."),
     ] {
-        body.blocks.push(Block::Paragraph(Paragraph::from_runs(vec![
-            Run::text(&format!("{language}  {sample}")).in_language(language),
-        ])));
+        body.blocks.push(Block::Paragraph(Paragraph::from_runs(vec![Run::text(&format!(
+            "{language}  {sample}"
+        ))
+        .in_language(language)])));
     }
 
     body.blocks.push(Block::Paragraph(Paragraph::text(
@@ -571,17 +582,18 @@ fn demonstration_body() -> Body {
     }
 
     body.blocks.push(heading("Tables"));
-    body.blocks.push(Block::Table(Table {
-        style: None,
-        rows: vec![
+    body.blocks.push(Block::Table(Box::new(
+        Table::from_rows(vec![
             table_row(&["Layer", "What it does"], true),
             table_row(&["wp-deflate", "DEFLATE, zlib, CRC-32"], false),
             table_row(&["wp-zip", "ZIP archives, including Zip64"], false),
             table_row(&["wp-xml", "XML with namespaces"], false),
             table_row(&["wp-opc", "Parts, content types, relationships"], false),
             table_row(&["wp-docx", "The document body and styles"], false),
-        ],
-    }));
+        ])
+        .with_grid(vec![2400, 5600])
+        .with_borders(TableBorders::grid()),
+    )));
 
     body
 }
@@ -591,13 +603,13 @@ fn heading(text: &str) -> Block {
 }
 
 fn table_row(cells: &[&str], header: bool) -> TableRow {
-    TableRow {
-        cells: cells
+    TableRow::from_cells(
+        cells
             .iter()
             .map(|text| {
                 let run = if header { Run::text(text).bold() } else { Run::text(text) };
-                TableCell { blocks: vec![Block::Paragraph(Paragraph::from_runs(vec![run]))] }
+                TableCell::from_blocks(vec![Block::Paragraph(Paragraph::from_runs(vec![run]))])
             })
             .collect(),
-    }
+    )
 }

@@ -15,39 +15,98 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 
+mod chrome;
+mod editor;
+mod sample;
+mod settings;
+
 use std::path::{Path, PathBuf};
 
-use wp_docx::model::{Alignment, Block, Body, Paragraph, Run};
-use wp_docx::{Document, TextPosition};
-use wp_layout::{FontLibrary, LayoutEngine, Page, Renderer};
-use wp_raster::{Canvas, Color};
-use wp_shell::{App, Event, Key, Modifiers, Response, WindowOptions};
-
-/// Space between one page and the next, in pixels.
-const PAGE_GAP: f32 = 24.0;
-/// How far the wheel moves the view per notch.
-const SCROLL_PER_NOTCH: f32 = 90.0;
-/// Height of the strip along the bottom that shows what is going on.
-const STATUS_HEIGHT: f32 = 26.0;
-/// How much of the window to keep clear around the caret when scrolling to it.
-const CARET_MARGIN: f32 = 40.0;
-
-const BACKGROUND: Color = Color::rgb(0x3A, 0x3D, 0x41);
-const PAPER: Color = Color::WHITE;
-const PAGE_EDGE: Color = Color::rgb(0x20, 0x22, 0x24);
-const CARET: Color = Color::rgb(0x10, 0x50, 0xC0);
-const STATUS_BACKGROUND: Color = Color::rgb(0x24, 0x26, 0x29);
+use editor::Editor;
+use wp_docx::Document;
+use wp_layout::FontLibrary;
+use wp_shell::{App, Event, WindowOptions};
 
 fn main() -> std::process::ExitCode {
-    let argument = std::env::args().nth(1);
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
 
-    match start(argument.as_deref()) {
+    // A picture of the window, written to a file instead of shown on a screen.
+    // The whole interface is drawn by this program onto a canvas, so it can be
+    // drawn without a window at all — which is how it gets checked on a machine
+    // that has no display.
+    let outcome = match arguments.first().map(String::as_str) {
+        Some("--picture") => picture(&arguments[1..]),
+        _ => start(arguments.first().map(String::as_str)),
+    };
+
+    match outcome {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(message) => {
             eprintln!("error: {message}");
             std::process::ExitCode::FAILURE
         }
     }
+}
+
+/// Draws the window into a PNG rather than onto a screen.
+fn picture(arguments: &[String]) -> Result<(), String> {
+    let [document_path, image_path, rest @ ..] = arguments else {
+        return Err("usage: --picture <document.docx|-> <image.png> [width height] [option...]
+\n             options: light, tab=<file|home|insert|layout|view>, nonav, marks"
+            .to_owned());
+    };
+    let width: usize = rest
+        .first()
+        .map_or(Ok(1400), |value| value.parse())
+        .map_err(|error: std::num::ParseIntError| format!("width is not a number: {error}"))?;
+    let height: usize = rest
+        .get(1)
+        .map_or(Ok(900), |value| value.parse())
+        .map_err(|error: std::num::ParseIntError| format!("height is not a number: {error}"))?;
+
+    let library = font_library()?;
+    let document = if document_path == "-" {
+        Document::create(&sample::welcome_document())
+            .map_err(|error| format!("cannot build the sample document: {error}"))?
+    } else {
+        let bytes = std::fs::read(document_path)
+            .map_err(|error| format!("cannot read {document_path}: {error}"))?;
+        Document::open(&bytes).map_err(|error| format!("cannot open {document_path}: {error}"))?
+    };
+
+    let mut editor = Editor::new(library, document, None);
+    // The size comes first: an option that puts something on the screen has to
+    // know how big the screen is before it can decide where.
+    editor.handle(Event::Resized { width: width as u32, height: height as u32 });
+    // Drawn once before the options are applied, because some of them ask the
+    // ribbon where one of its buttons ended up, and a ribbon that has never
+    // been drawn does not know.
+    editor.draw(width, height);
+
+    // The options exist because this is the only way the interface can be
+    // looked at on a machine with no display, and a picture of one theme and
+    // one tab would leave most of it unseen.
+    for option in rest.iter().skip(2) {
+        editor.set_view_option(option)?;
+    }
+
+    let canvas = editor.draw(width, height);
+
+    std::fs::write(image_path, wp_raster::encode_png(canvas))
+        .map_err(|error| format!("cannot write {image_path}: {error}"))
+}
+
+/// The fonts on this machine.
+///
+/// Given the lifetime of the process: the layout engine and the renderer both
+/// borrow from it for as long as the window is open, and threading a lifetime
+/// through every type would buy nothing, because nothing is freed anyway.
+fn font_library() -> Result<&'static FontLibrary, String> {
+    let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
+    if library.is_empty() {
+        return Err("no usable fonts were found on this machine".to_owned());
+    }
+    Ok(library)
 }
 
 fn start(path: Option<&str>) -> Result<(), String> {
@@ -57,15 +116,7 @@ fn start(path: Option<&str>) -> Result<(), String> {
         );
     }
 
-    // The library is needed for as long as the window is open, and both the
-    // layout engine and the renderer borrow from it. Giving it the lifetime of
-    // the process is simpler and more honest than threading a lifetime through
-    // every type, and nothing is freed early because nothing is freed at all.
-    let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
-    if library.is_empty() {
-        return Err("no usable fonts were found on this machine".to_owned());
-    }
-
+    let library = font_library()?;
     let (document, file, title) = match path {
         Some(path) => {
             let bytes =
@@ -77,565 +128,21 @@ fn start(path: Option<&str>) -> Result<(), String> {
         None => {
             // Started with no file, so there is something to look at rather than
             // an empty window.
-            let document = Document::create(&welcome_document())
+            let document = Document::create(&sample::welcome_document())
                 .map_err(|error| format!("cannot build the sample document: {error}"))?;
-            (document, None, "Sample document".to_owned())
+            (document, None, "Document".to_owned())
         }
     };
 
-    let editor = Editor::new(library, document, file);
-    let options = WindowOptions {
-        title: format!("{title} — Word Processor"),
-        ..WindowOptions::default()
-    };
+    let mut editor = Editor::new(library, document, file);
+    // The window comes up the way it was left rather than the way it starts.
+    editor.apply_settings(settings::Settings::load());
+    let options =
+        WindowOptions { title: format!("{title} — Word Processor"), width: 1400, height: 900 };
 
     wp_shell::run(options, Box::new(editor)).map_err(|error| error.to_string())
 }
 
 fn file_name(path: &str) -> String {
-    Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(path)
-        .to_owned()
-}
-
-/// Shows a document, and edits it.
-struct Editor {
-    document: Document,
-    engine: LayoutEngine<'static>,
-    renderer: Renderer<'static>,
-    pages: Vec<Page>,
-    /// The window-sized image, kept so a repaint does not allocate one.
-    canvas: Canvas,
-    scroll: f32,
-    view_width: usize,
-    view_height: usize,
-    caret: TextPosition,
-    file: Option<PathBuf>,
-    /// What the strip along the bottom says.
-    status: String,
-    needs_redraw: bool,
-}
-
-impl Editor {
-    fn new(
-        library: &'static FontLibrary,
-        document: Document,
-        file: Option<PathBuf>,
-    ) -> Self {
-        let mut engine = LayoutEngine::new(library).with_dpi(96.0);
-        let pages = engine.layout_document(&document);
-
-        Self {
-            document,
-            engine,
-            renderer: Renderer::new(library),
-            pages,
-            canvas: Canvas::new(1, 1),
-            scroll: 0.0,
-            view_width: 0,
-            view_height: 0,
-            caret: TextPosition::new(0, 0),
-            file,
-            status: String::from("Ready"),
-            needs_redraw: true,
-        }
-    }
-
-    // --- Geometry ----------------------------------------------------------
-
-    /// Where a page's top-left corner sits, before scrolling is applied.
-    fn page_origin(&self, index: usize) -> (f32, f32) {
-        let mut y = PAGE_GAP;
-        for page in self.pages.iter().take(index) {
-            y += page.height + PAGE_GAP;
-        }
-        let width = self.pages.get(index).map_or(0.0, |page| page.width);
-        let x = ((self.view_width as f32 - width) / 2.0).max(0.0);
-        (x, y)
-    }
-
-    fn total_height(&self) -> f32 {
-        self.pages.iter().map(|page| page.height + PAGE_GAP).sum::<f32>() + PAGE_GAP
-    }
-
-    /// The height available for pages, above the status strip.
-    fn viewport_height(&self) -> f32 {
-        (self.view_height as f32 - STATUS_HEIGHT).max(1.0)
-    }
-
-    fn clamp_scroll(&mut self) {
-        let limit = (self.total_height() - self.viewport_height()).max(0.0);
-        self.scroll = self.scroll.clamp(0.0, limit);
-    }
-
-    fn scroll_by(&mut self, amount: f32) -> Response {
-        let before = self.scroll;
-        self.scroll += amount;
-        self.clamp_scroll();
-        if (self.scroll - before).abs() < 0.5 {
-            Response::Ignored
-        } else {
-            self.needs_redraw = true;
-            Response::Redraw
-        }
-    }
-
-    // --- The caret ---------------------------------------------------------
-
-    /// Every line in the document, as page and line indices in reading order.
-    fn lines(&self) -> Vec<(usize, usize)> {
-        let mut out = Vec::new();
-        for (page_index, page) in self.pages.iter().enumerate() {
-            for line_index in 0..page.lines.len() {
-                out.push((page_index, line_index));
-            }
-        }
-        out
-    }
-
-    /// Which line the caret is on.
-    fn caret_line(&self) -> Option<(usize, usize)> {
-        self.lines().into_iter().find(|(page, line)| {
-            let line = &self.pages[*page].lines[*line];
-            line.paragraph == self.caret.paragraph
-                && self.caret.offset >= line.start_offset
-                && self.caret.offset <= line.end_offset
-        })
-    }
-
-    /// Where the caret should be drawn, in window coordinates.
-    fn caret_rect(&self) -> Option<(f32, f32, f32)> {
-        let (page_index, _) = self.caret_line()?;
-        let page = self.pages.get(page_index)?;
-        let (origin_x, origin_y) = self.page_origin(page_index);
-        let (x, y, height) = page.caret_at(self.caret)?;
-        Some((origin_x + x, origin_y + y - self.scroll, height))
-    }
-
-    /// Scrolls so the caret is on screen, if it is not already.
-    fn reveal_caret(&mut self) {
-        let Some((_, y, height)) = self.caret_rect() else { return };
-        let viewport = self.viewport_height();
-
-        if y < CARET_MARGIN {
-            self.scroll -= CARET_MARGIN - y;
-        } else if y + height > viewport - CARET_MARGIN {
-            self.scroll += y + height - (viewport - CARET_MARGIN);
-        }
-        self.clamp_scroll();
-    }
-
-    fn paragraph_text(&self, index: usize) -> String {
-        self.document.paragraph_text(index).unwrap_or_default()
-    }
-
-    /// The byte offset of the character boundary before an offset.
-    fn previous_boundary(text: &str, offset: usize) -> usize {
-        text[..offset.min(text.len())]
-            .char_indices()
-            .next_back()
-            .map_or(0, |(index, _)| index)
-    }
-
-    /// The byte offset of the character boundary after an offset.
-    fn next_boundary(text: &str, offset: usize) -> usize {
-        match text.get(offset..).and_then(|rest| rest.chars().next()) {
-            Some(character) => offset + character.len_utf8(),
-            None => text.len(),
-        }
-    }
-
-    fn move_left(&mut self) {
-        let text = self.paragraph_text(self.caret.paragraph);
-        if self.caret.offset > 0 {
-            self.caret.offset = Self::previous_boundary(&text, self.caret.offset);
-        } else if self.caret.paragraph > 0 {
-            // Off the front of a paragraph is the end of the one before it.
-            self.caret.paragraph -= 1;
-            self.caret.offset = self.paragraph_text(self.caret.paragraph).len();
-        }
-    }
-
-    fn move_right(&mut self) {
-        let text = self.paragraph_text(self.caret.paragraph);
-        if self.caret.offset < text.len() {
-            self.caret.offset = Self::next_boundary(&text, self.caret.offset);
-        } else if self.caret.paragraph + 1 < self.document.paragraph_count() {
-            self.caret.paragraph += 1;
-            self.caret.offset = 0;
-        }
-    }
-
-    /// Moves the caret a line up or down, keeping roughly the same column.
-    fn move_vertically(&mut self, downwards: bool) {
-        let lines = self.lines();
-        let Some(current) = self.caret_line() else { return };
-        let Some(index) = lines.iter().position(|entry| *entry == current) else {
-            return;
-        };
-
-        let target = if downwards { index + 1 } else { index.wrapping_sub(1) };
-        let Some(&(page_index, line_index)) = lines.get(target) else {
-            return;
-        };
-
-        // The column is kept by remembering where the caret is on screen and
-        // asking the target line what sits at the same place.
-        let wanted_x = self
-            .pages
-            .get(current.0)
-            .and_then(|page| page.caret_at(self.caret))
-            .map_or(0.0, |(x, _, _)| x);
-
-        let page = &self.pages[page_index];
-        let line = &page.lines[line_index];
-        if let Some(position) = page.position_at(wanted_x, line.baseline) {
-            self.caret = position;
-        }
-    }
-
-    fn move_to_line_edge(&mut self, end: bool) {
-        let Some((page_index, line_index)) = self.caret_line() else { return };
-        let line = &self.pages[page_index].lines[line_index];
-        self.caret = TextPosition::new(
-            line.paragraph,
-            if end { line.end_offset } else { line.start_offset },
-        );
-    }
-
-    // --- Editing -----------------------------------------------------------
-
-    /// Lays the document out again after a change.
-    fn relayout(&mut self) {
-        self.pages = self.engine.layout_document(&self.document);
-
-        // An edit can shorten the document under the caret.
-        let count = self.document.paragraph_count();
-        if count == 0 {
-            self.caret = TextPosition::default();
-        } else {
-            self.caret.paragraph = self.caret.paragraph.min(count - 1);
-            let length = self.paragraph_text(self.caret.paragraph).len();
-            self.caret.offset = self.caret.offset.min(length);
-        }
-
-        self.clamp_scroll();
-        self.needs_redraw = true;
-    }
-
-    fn insert(&mut self, text: &str) -> Response {
-        if !self.document.insert_text(self.caret, text) {
-            return Response::Ignored;
-        }
-        self.caret.offset += text.len();
-        self.relayout();
-        self.reveal_caret();
-        self.status = String::from("Edited");
-        Response::Redraw
-    }
-
-    fn backspace(&mut self) -> Response {
-        if self.caret.offset > 0 {
-            let text = self.paragraph_text(self.caret.paragraph);
-            let start = Self::previous_boundary(&text, self.caret.offset);
-            if self.document.delete_range(self.caret.paragraph, start, self.caret.offset) {
-                self.caret.offset = start;
-            }
-        } else if self.caret.paragraph > 0 {
-            // At the very start, Backspace joins this paragraph onto the last.
-            let previous = self.caret.paragraph - 1;
-            let join_at = self.paragraph_text(previous).len();
-            if !self.document.merge_with_previous(self.caret.paragraph) {
-                return Response::Ignored;
-            }
-            self.caret = TextPosition::new(previous, join_at);
-        } else {
-            return Response::Ignored;
-        }
-
-        self.relayout();
-        self.reveal_caret();
-        self.status = String::from("Edited");
-        Response::Redraw
-    }
-
-    fn delete_forward(&mut self) -> Response {
-        let text = self.paragraph_text(self.caret.paragraph);
-        if self.caret.offset < text.len() {
-            let end = Self::next_boundary(&text, self.caret.offset);
-            if !self.document.delete_range(self.caret.paragraph, self.caret.offset, end) {
-                return Response::Ignored;
-            }
-        } else if self.caret.paragraph + 1 < self.document.paragraph_count() {
-            if !self.document.merge_with_previous(self.caret.paragraph + 1) {
-                return Response::Ignored;
-            }
-        } else {
-            return Response::Ignored;
-        }
-
-        self.relayout();
-        self.reveal_caret();
-        self.status = String::from("Edited");
-        Response::Redraw
-    }
-
-    fn split(&mut self) -> Response {
-        if !self.document.split_paragraph(self.caret) {
-            return Response::Ignored;
-        }
-        self.caret = TextPosition::new(self.caret.paragraph + 1, 0);
-        self.relayout();
-        self.reveal_caret();
-        self.status = String::from("Edited");
-        Response::Redraw
-    }
-
-    fn save(&mut self) -> Response {
-        let path = match &self.file {
-            Some(path) => path.clone(),
-            // A document that came from nowhere still has to go somewhere.
-            None => PathBuf::from("untitled.docx"),
-        };
-
-        self.status = match self.document.save() {
-            Ok(bytes) => match std::fs::write(&path, &bytes) {
-                Ok(()) => {
-                    // Only once the bytes are really on disk does the document
-                    // count as saved.
-                    let _ = self.document.mark_saved();
-                    self.file = Some(path.clone());
-                    format!("Saved {} ({} bytes)", path.display(), bytes.len())
-                }
-                Err(error) => format!("Cannot write {}: {error}", path.display()),
-            },
-            Err(error) => format!("Cannot save: {error}"),
-        };
-
-        self.needs_redraw = true;
-        Response::Redraw
-    }
-
-    // --- Drawing -----------------------------------------------------------
-
-    fn draw_status(&mut self) {
-        let top = (self.view_height as f32 - STATUS_HEIGHT) as i32;
-        self.canvas.fill_rect(
-            0,
-            top,
-            self.view_width as i32,
-            STATUS_HEIGHT.ceil() as i32,
-            STATUS_BACKGROUND,
-        );
-
-        let text = format!(
-            "{}   paragraph {} of {}, offset {}{}",
-            self.status,
-            self.caret.paragraph + 1,
-            self.document.paragraph_count(),
-            self.caret.offset,
-            if self.document.is_modified() { "   •  unsaved changes" } else { "" }
-        );
-
-        // The status strip is drawn with the same text engine as the document,
-        // so there is only one way to put text on screen in this program.
-        let baseline = self.view_height as f32 - STATUS_HEIGHT + 18.0;
-        let line = self.engine.simple_line(&text, 10.0, baseline, 9.0, Color::rgb(0xC8, 0xCC, 0xD0));
-        self.renderer.draw_onto(&mut self.canvas, &line, 0.0, 0.0);
-    }
-}
-
-impl App for Editor {
-    fn handle(&mut self, event: Event) -> Response {
-        match event {
-            Event::Resized { width, height } => {
-                self.view_width = width as usize;
-                self.view_height = height as usize;
-                self.clamp_scroll();
-                self.needs_redraw = true;
-                Response::Redraw
-            }
-
-            Event::Scroll { lines } => self.scroll_by(-lines * SCROLL_PER_NOTCH),
-
-            Event::MouseDown { x, y, .. } => {
-                // Which page was clicked, and where on it.
-                for index in 0..self.pages.len() {
-                    let (origin_x, origin_y) = self.page_origin(index);
-                    let page_x = x as f32 - origin_x;
-                    let page_y = y as f32 - origin_y + self.scroll;
-                    let page = &self.pages[index];
-
-                    if page_y >= 0.0 && page_y <= page.height {
-                        if let Some(position) = page.position_at(page_x, page_y) {
-                            self.caret = position;
-                            self.status = String::from("Ready");
-                            self.needs_redraw = true;
-                            return Response::Redraw;
-                        }
-                    }
-                }
-                Response::Ignored
-            }
-
-            Event::Char(character) => self.insert(&character.to_string()),
-
-            Event::KeyDown { key, modifiers } => self.key(key, modifiers),
-
-            Event::Closing => Response::Ignored,
-        }
-    }
-
-    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
-        if self.canvas.width() != width || self.canvas.height() != height {
-            self.canvas = Canvas::new(width, height);
-            self.view_width = width;
-            self.view_height = height;
-            self.needs_redraw = true;
-        }
-        if !self.needs_redraw {
-            return &self.canvas;
-        }
-
-        self.canvas.clear(BACKGROUND);
-
-        for index in 0..self.pages.len() {
-            let (origin_x, origin_y) = self.page_origin(index);
-            let y = origin_y - self.scroll;
-            let page_height = self.pages[index].height;
-
-            // Anything scrolled off the screen costs nothing but this test.
-            if y + page_height < 0.0 || y > height as f32 {
-                continue;
-            }
-
-            let page_width = self.pages[index].width;
-            self.canvas.fill_rect(
-                origin_x as i32 - 1,
-                y as i32 - 1,
-                page_width as i32 + 2,
-                page_height as i32 + 2,
-                PAGE_EDGE,
-            );
-            self.canvas.fill_rect(
-                origin_x as i32,
-                y as i32,
-                page_width as i32,
-                page_height as i32,
-                PAPER,
-            );
-
-            let page = &self.pages[index];
-            self.renderer.draw_onto(&mut self.canvas, page, origin_x, y);
-        }
-
-        if let Some((x, y, caret_height)) = self.caret_rect() {
-            self.canvas.fill_rect(x as i32, y as i32, 2, caret_height.ceil() as i32, CARET);
-        }
-
-        self.draw_status();
-
-        self.needs_redraw = false;
-        &self.canvas
-    }
-}
-
-impl Editor {
-    /// Reacts to a key that is not ordinary typing.
-    fn key(&mut self, key: Key, modifiers: Modifiers) -> Response {
-        if modifiers.control {
-            return match key {
-                Key::Letter('s') => self.save(),
-                _ => Response::Ignored,
-            };
-        }
-
-        match key {
-            Key::Left => {
-                self.move_left();
-                self.reveal_caret();
-                self.needs_redraw = true;
-                Response::Redraw
-            }
-            Key::Right => {
-                self.move_right();
-                self.reveal_caret();
-                self.needs_redraw = true;
-                Response::Redraw
-            }
-            Key::Up | Key::Down => {
-                self.move_vertically(key == Key::Down);
-                self.reveal_caret();
-                self.needs_redraw = true;
-                Response::Redraw
-            }
-            Key::Home | Key::End => {
-                self.move_to_line_edge(key == Key::End);
-                self.reveal_caret();
-                self.needs_redraw = true;
-                Response::Redraw
-            }
-            Key::PageDown => self.scroll_by(self.viewport_height() * 0.9),
-            Key::PageUp => self.scroll_by(-(self.viewport_height() * 0.9)),
-            Key::Enter => self.split(),
-            Key::Backspace => self.backspace(),
-            Key::Delete => self.delete_forward(),
-            Key::Tab => self.insert("\t"),
-            Key::Escape => Response::Close,
-            Key::Letter(_) => Response::Ignored,
-        }
-    }
-}
-
-/// The document shown when the program is started without a file.
-fn welcome_document() -> Body {
-    let mut body = Body::default();
-
-    body.blocks.push(Block::Paragraph(
-        Paragraph::text("Word Processor").with_style("Title").with_alignment(Alignment::Center),
-    ));
-    body.blocks.push(Block::Paragraph(
-        Paragraph::from_runs(vec![Run::text(
-            "Every pixel on this page was drawn by this program",
-        )
-        .italic()
-        .colored("595959")])
-        .with_alignment(Alignment::Center),
-    ));
-
-    body.blocks.push(Block::Paragraph(
-        Paragraph::text("Try typing").with_style("Heading1"),
-    ));
-    body.blocks.push(Block::Paragraph(Paragraph::text(
-        "Click anywhere in the text to put the caret there, then type. Enter splits a \
-         paragraph, Backspace joins one onto the last, and Ctrl+S saves.",
-    )));
-    body.blocks.push(Block::Paragraph(Paragraph::text(
-        "An edit goes through the document model, which changes only the nodes it must. A file \
-         opened here keeps everything this program does not model - a chart, a content control, \
-         somebody else's tracked change - even after it has been typed in and saved.",
-    )));
-
-    body.blocks.push(Block::Paragraph(
-        Paragraph::text("What is drawn here").with_style("Heading1"),
-    ));
-    body.blocks.push(Block::Paragraph(Paragraph::text(
-        "The archive was unpacked, the XML parsed, the styles resolved, the fonts read from this \
-         machine, the glyph outlines rasterized and the window filled - all by code in this \
-         project, with no third-party libraries of any kind.",
-    )));
-
-    body.blocks.push(Block::Paragraph(
-        Paragraph::text("What is not here yet").with_style("Heading1"),
-    ));
-    body.blocks.push(Block::Paragraph(Paragraph::text(
-        "There is no selection, no undo, and no formatting from the keyboard. Arabic and the \
-         Indic scripts draw their isolated letter forms, because the shaping engine that joins \
-         them is a later stage. Tables are laid out as their paragraphs, without cells or \
-         borders.",
-    )));
-
-    body
+    Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path).to_owned()
 }
