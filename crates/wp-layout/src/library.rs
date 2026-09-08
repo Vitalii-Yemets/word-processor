@@ -150,15 +150,15 @@ impl FontLibrary {
     /// holds formats it does not handle, and the user does not need to hear
     /// about every one of them.
     pub fn add_file(&mut self, path: &Path) -> usize {
-        let extension = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(str::to_ascii_lowercase);
+        let extension =
+            path.extension().and_then(|value| value.to_str()).map(str::to_ascii_lowercase);
         if !matches!(extension.as_deref(), Some("ttf" | "ttc" | "otf" | "otc")) {
             return 0;
         }
 
-        let Ok(metadata) = std::fs::metadata(path) else { return 0 };
+        let Ok(metadata) = std::fs::metadata(path) else {
+            return 0;
+        };
         if metadata.len() > MAX_FONT_BYTES {
             return 0;
         }
@@ -220,9 +220,11 @@ impl FontLibrary {
         };
 
         // An exact match on family, weight and slant is the ideal.
-        if let Some(index) = self.faces.iter().position(|face| {
-            matches_family(face) && face.bold == bold && face.italic == italic
-        }) {
+        if let Some(index) = self
+            .faces
+            .iter()
+            .position(|face| matches_family(face) && face.bold == bold && face.italic == italic)
+        {
             return Some(index);
         }
         // The right family in the wrong weight still looks like the document.
@@ -262,10 +264,7 @@ impl FontLibrary {
         }
 
         // Anything at all is better than drawing nothing.
-        self.faces
-            .iter()
-            .position(|face| face.bold == bold && face.italic == italic)
-            .or(Some(0))
+        self.faces.iter().position(|face| face.bold == bold && face.italic == italic).or(Some(0))
     }
 
     /// Finds a face that can draw a character the chosen one cannot.
@@ -273,14 +272,21 @@ impl FontLibrary {
     /// Without this, a document mixing Latin and Chinese shows empty boxes for
     /// half of itself even when the machine has a font covering both.
     #[must_use]
-    pub fn fallback_for(&self, character: char, bold: bool, italic: bool) -> Option<(usize, GlyphId)> {
+    pub fn fallback_for(
+        &self,
+        character: char,
+        bold: bool,
+        italic: bool,
+    ) -> Option<(usize, GlyphId)> {
         // Prefer a face matching the requested weight and slant, then any.
         for require_style in [true, false] {
             for (index, face) in self.faces.iter().enumerate() {
                 if require_style && (face.bold != bold || face.italic != italic) {
                     continue;
                 }
-                let Some(coverage) = face.coverage() else { continue };
+                let Some(coverage) = face.coverage() else {
+                    continue;
+                };
                 if let Some(glyph) = coverage.glyph_for(character) {
                     return Some((index, glyph));
                 }
@@ -341,7 +347,9 @@ fn describe_faces(path: &Path) -> Vec<Description> {
             continue;
         }
 
-        let Some(name_range) = find(b"name") else { continue };
+        let Some(name_range) = find(b"name") else {
+            continue;
+        };
         let Some(name_table) = read_at(&mut file, name_range.offset as u64, name_range.length)
         else {
             continue;

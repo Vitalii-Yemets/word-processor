@@ -25,10 +25,16 @@
 
 #![forbid(unsafe_code)]
 
+pub mod charting;
+pub mod geometry;
 mod layout;
 mod library;
+pub mod math;
 mod render;
 
-pub use layout::{Decoration, LayoutEngine, Page, PageLine, PageMetrics, PositionedGlyph};
+pub use layout::{
+    Decoration, GlyphEffect, LayoutEngine, Page, PageLine, PageMetrics, PlacedImage,
+    PositionedGlyph, TextStyle,
+};
 pub use library::{Face, FontLibrary};
 pub use render::Renderer;
