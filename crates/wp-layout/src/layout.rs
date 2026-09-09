@@ -589,6 +589,41 @@ struct ShapedGlyph {
     character: char,
 }
 
+/// What was worked out for one paragraph last time it was laid out.
+///
+/// Typing a letter changes one paragraph. Everything the layout knows about
+/// the other eleven thousand is still true, and measuring them again — asking
+/// the font for every glyph, its width and its kerning — is most of what a
+/// keystroke costs. So the answer is kept, with the paragraph it was worked out
+/// from, and used again when that paragraph has not changed.
+///
+/// Only paragraphs of plain text are kept. A field says a different thing when
+/// the page it is on changes, a note carries a number that is worked out while
+/// laying out, and a picture is a shared handle rather than something to copy —
+/// so those are measured afresh every time, which is right and costs little
+/// because there are few of them.
+#[derive(Clone, Debug)]
+struct Measured {
+    /// The paragraph this was worked out from, to tell whether it still holds.
+    paragraph: Paragraph,
+    items: Vec<Item>,
+    styles: Vec<RunStyle>,
+    /// The direction of each item, which the text and the styles decide.
+    levels: Vec<u8>,
+}
+
+/// Whether a paragraph is one whose measurements may be kept.
+fn is_plain(paragraph: &Paragraph) -> bool {
+    paragraph.runs.iter().all(|run| {
+        run.field.is_none()
+            && run.revision.is_none()
+            && run
+                .content
+                .iter()
+                .all(|content| matches!(content, RunContent::Text(_) | RunContent::Tab))
+    })
+}
+
 /// The smallest thing a line can be broken between.
 #[derive(Clone, Debug)]
 struct Item {
@@ -648,6 +683,15 @@ pub struct LayoutEngine<'a> {
     show_markup: bool,
     /// How much of each page is kept for the footnotes printed at its foot.
     reserved: Vec<f32>,
+    /// What each paragraph of the main body measured to last time.
+    ///
+    /// Indexed by the paragraph's place in the document. A paragraph that has
+    /// not changed since is not measured again — see [`Measured`].
+    measured: Vec<Option<Measured>>,
+    /// Whether the body being laid out is the document's own, which is the only
+    /// one the measurements are kept for: a header and the text inside a shape
+    /// are counted from zero as well, and would be taken for the body's.
+    keeping: bool,
     /// The drawings floating on each page, which narrow the lines beside them.
     floats: Vec<Float>,
     /// The recipient whose values the merge fields show, when one is being
@@ -723,6 +767,8 @@ impl<'a> LayoutEngine<'a> {
             sequence_numbers: HashMap::new(),
             bookmark_pages: HashMap::new(),
             reserved: Vec::new(),
+            measured: Vec::new(),
+            keeping: false,
             floats: Vec::new(),
             merge_record: Vec::new(),
             outline: None,
@@ -739,8 +785,19 @@ impl<'a> LayoutEngine<'a> {
     /// change had been accepted, which is Word's "No Markup" view.
     #[must_use]
     pub fn with_markup(mut self, shown: bool) -> Self {
-        self.show_markup = shown;
+        self.set_markup(shown);
         self
+    }
+
+    /// The same, on an engine that is being kept and used again.
+    ///
+    /// Anything that changes how a paragraph is measured throws away what was
+    /// measured before it changed — see [`Measured`].
+    pub fn set_markup(&mut self, shown: bool) {
+        if self.show_markup != shown {
+            self.show_markup = shown;
+            self.measured.clear();
+        }
     }
 
     /// Sets what colour text is drawn in when the document names none.
@@ -749,9 +806,17 @@ impl<'a> LayoutEngine<'a> {
     /// text is light. A colour the document does name is left alone.
     #[must_use]
     pub fn with_automatic_colors(mut self, text: Color, line: Color) -> Self {
-        self.automatic_color = text;
-        self.automatic_line = line;
+        self.set_automatic_colors(text, line);
         self
+    }
+
+    /// The same, on an engine that is being kept and used again.
+    pub fn set_automatic_colors(&mut self, text: Color, line: Color) {
+        if self.automatic_color != text || self.automatic_line != line {
+            self.automatic_color = text;
+            self.automatic_line = line;
+            self.measured.clear();
+        }
     }
 
     /// Shows the document as an outline: every paragraph indented to the depth
@@ -761,8 +826,16 @@ impl<'a> LayoutEngine<'a> {
     /// the top headings alone. `None` shows the document as it is.
     #[must_use]
     pub fn with_outline(mut self, depth: Option<u8>) -> Self {
-        self.outline = depth;
+        self.set_outline(depth);
         self
+    }
+
+    /// The same, on an engine that is being kept and used again.
+    pub fn set_outline(&mut self, depth: Option<u8>) {
+        if self.outline != depth {
+            self.outline = depth;
+            self.measured.clear();
+        }
     }
     /// An engine that lays out for a device: a screen, or a printer.
     ///
@@ -777,8 +850,17 @@ impl<'a> LayoutEngine<'a> {
     /// Sets the resolution. Larger values render the same page bigger.
     #[must_use]
     pub fn with_dpi(mut self, dpi: f32) -> Self {
-        self.dpi = dpi.clamp(24.0, 1200.0);
+        self.set_dpi(dpi);
         self
+    }
+
+    /// The same, on an engine that is being kept and used again.
+    pub fn set_dpi(&mut self, dpi: f32) {
+        let wanted = dpi.clamp(24.0, 1200.0);
+        if (self.dpi - wanted).abs() > f32::EPSILON {
+            self.dpi = wanted;
+            self.measured.clear();
+        }
     }
 
     #[must_use]
@@ -902,8 +984,16 @@ impl<'a> LayoutEngine<'a> {
     /// its fields are worked out to.
     #[must_use]
     pub fn with_merge_record(mut self, record: Vec<(String, String)>) -> Self {
-        self.merge_record = record;
+        self.set_merge_record(record);
         self
+    }
+
+    /// The same, on an engine that is being kept and used again.
+    pub fn set_merge_record(&mut self, record: Vec<(String, String)>) {
+        if self.merge_record != record {
+            self.merge_record = record;
+            self.measured.clear();
+        }
     }
 
     pub fn layout_document(&mut self, document: &Document) -> Vec<Page> {
@@ -928,6 +1018,11 @@ impl<'a> LayoutEngine<'a> {
         // ordinary document; Word does the same and also stops.
         let footnotes = document.notes(wp_docx::notes::Kind::Footnote);
         let body = document.body();
+        // From here to the end of the body, the paragraphs are the document's
+        // own and their measurements are worth keeping. A header or the text
+        // inside a shape is counted from zero as well, so it must not be
+        // mistaken for the body — see [`Measured`].
+        self.keeping = true;
         let mut pages = self.layout_body(&body, document, metrics);
         if !footnotes.is_empty() {
             for _ in 0..2 {
@@ -959,6 +1054,9 @@ impl<'a> LayoutEngine<'a> {
         }
 
         // The numbers down the margin, where a section asks for them.
+        // Everything after this is a header, a footer or the text inside a
+        // shape, and those are counted from zero as the body is.
+        self.keeping = false;
         self.number_lines(&mut pages, document);
 
         // The header and the footer go on afterwards, once there are pages to
@@ -1260,46 +1358,77 @@ impl<'a> LayoutEngine<'a> {
 
         *y += space_before;
 
-        let mut styles = Vec::new();
-        let mut text = String::new();
-        let mut items = self.build_items(paragraph, document, &mut styles, index, &mut text);
+        // Measured last time, if this paragraph is one whose measurements are
+        // kept and it has not changed since. That is what makes typing into a
+        // long document cost what typing into a short one costs: the eleven
+        // thousand paragraphs nobody touched are not measured again.
+        let kept = self.keeping && is_plain(paragraph);
+        let ready = kept
+            .then(|| self.measured.get(index))
+            .flatten()
+            .and_then(Option::as_ref)
+            .filter(|measured| measured.paragraph == *paragraph)
+            .cloned();
 
-        // Which direction each piece of the paragraph is drawn in.
-        //
-        // Not a property of the run it came from: a Hebrew phrase inside an
-        // English sentence, or a price inside a Hebrew one, is a run of its own
-        // whatever the document says about the paragraph, and finding those runs
-        // needs the whole paragraph at once. See [`wp_bidi`].
+        let (items, styles, item_levels) = match ready {
+            Some(measured) => (measured.items, measured.styles, measured.levels),
+            None => {
+                let mut styles = Vec::new();
+                let mut text = String::new();
+                let mut items =
+                    self.build_items(paragraph, document, &mut styles, index, &mut text);
 
-        let direction = if resolved.right_to_left {
-            wp_bidi::Direction::RightToLeft
-        } else {
-            wp_bidi::Direction::LeftToRight
-        };
-        let bytes = wp_bidi::levels(&text, direction);
-        let base = u8::from(resolved.right_to_left);
-        let item_levels: Vec<u8> = items
-            .iter()
-            .map(|item| {
-                let level = bytes.get(item.start_offset).copied().unwrap_or(base);
-                // A run the document marks right-to-left reads that way
-                // whatever its characters are, which is what `w:rtl` means.
-                if styles.get(item.style).is_some_and(|style| style.right_to_left) {
-                    level | 1
+                // Which direction each piece of the paragraph is drawn in.
+                //
+                // Not a property of the run it came from: a Hebrew phrase inside
+                // an English sentence, or a price inside a Hebrew one, is a run
+                // of its own whatever the document says about the paragraph, and
+                // finding those runs needs the whole paragraph at once. See
+                // [`wp_bidi`].
+                let direction = if resolved.right_to_left {
+                    wp_bidi::Direction::RightToLeft
                 } else {
-                    level
+                    wp_bidi::Direction::LeftToRight
+                };
+                let bytes = wp_bidi::levels(&text, direction);
+                let base = u8::from(resolved.right_to_left);
+                let item_levels: Vec<u8> = items
+                    .iter()
+                    .map(|item| {
+                        let level = bytes.get(item.start_offset).copied().unwrap_or(base);
+                        // A run the document marks right-to-left reads that way
+                        // whatever its characters are, which is what `w:rtl`
+                        // means.
+                        if styles.get(item.style).is_some_and(|style| style.right_to_left) {
+                            level | 1
+                        } else {
+                            level
+                        }
+                    })
+                    .collect();
+                for (item, level) in items.iter_mut().zip(&item_levels) {
+                    // A piece that reads right to left is drawn from its
+                    // right-hand end, so its glyphs go down in the other order.
+                    if level % 2 == 1 {
+                        item.glyphs.reverse();
+                    }
                 }
-            })
-            .collect();
-        for (item, level) in items.iter_mut().zip(&item_levels) {
-            // A piece that reads right to left is drawn from its right-hand
-            // end, so its glyphs go down in the other order.
-            if level % 2 == 1 {
-                item.glyphs.reverse();
+                self.mirror_glyphs(&mut items, &item_levels, &styles);
+
+                if kept {
+                    if self.measured.len() <= index {
+                        self.measured.resize(index + 1, None);
+                    }
+                    self.measured[index] = Some(Measured {
+                        paragraph: paragraph.clone(),
+                        items: items.clone(),
+                        styles: styles.clone(),
+                        levels: item_levels.clone(),
+                    });
+                }
+                (items, styles, item_levels)
             }
-        }
-        self.mirror_glyphs(&mut items, &item_levels, &styles);
-        let items = items;
+        };
 
         if items.is_empty() {
             // An empty paragraph still takes up a line's worth of height, and

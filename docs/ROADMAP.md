@@ -287,27 +287,42 @@ will crawl. This has to be fixed before the document gets bigger, not after.
   document is long — ten times the pages costs fifty times the time — so
   something in the layout is quadratic and will be found in **B2**.
 
-- [ ] **B2. Incremental layout.** A keystroke relays the paragraph it changed
+- [x] **B2. Incremental layout.** A keystroke relays the paragraph it changed
   and the pages after it only as far as the change reaches — typically one page.
-  *Half done.* The quadratic terms are gone, and what is left is honest work
-  rather than waste. Four places asked the document a question whose answer
-  meant walking the whole document, and asked it once per paragraph or once per
-  page: the text of a paragraph, the bookmarks, the page numbers, and the line
-  numbering. Walking a thousand-page document a thousand times is what made ten
-  times the pages cost fifty times the time.
+  *Done in two halves.*
+
+  **The quadratic terms.** Four places asked the document a question whose
+  answer meant walking the whole document, and asked it once per paragraph or
+  once per page: the text of a paragraph, the bookmarks, the page numbers, and
+  the line numbering. Walking a thousand-page document a thousand times is what
+  made ten times the pages cost fifty times the time.
+
+  **What each paragraph measured to is kept.** Typing a letter changes one
+  paragraph; everything the layout knows about the other eleven thousand is
+  still true. Measuring them again — asking the font for every glyph, its width
+  and its kerning, working out which way each piece reads — was most of what a
+  keystroke cost. The answer is now kept with the paragraph it was worked out
+  from and used again while that paragraph is unchanged. Anything whose answer
+  can move on its own is measured afresh every time: a field says a different
+  thing on a different page, a note carries a number worked out while laying
+  out, a picture is a shared handle rather than something to copy.
 
   | Pages | Was | Now |
   | --- | --- | --- |
-  | 10 | 8.5 ms | 8 ms |
-  | 100 | 115 ms | 80 ms |
-  | 1000 | 5.96 s | 0.9 s |
+  | 10 | 8.5 ms | 2 ms |
+  | 100 | 115 ms | 15 ms |
+  | 1000 | 5.96 s | 250 ms |
 
-  Which is linear at last, and still too slow: a hundred pages at eighty
-  milliseconds a letter is a program that lags behind the typist. The rest of
-  this item is the real fix — relaying out the paragraph that changed and the
-  pages after it as far as the change reaches, rather than the whole document.
-  *Done when:* typing in a 300-page document is as fast as typing in a
-  three-page one, and the pages come out identical to a full relayout.
+  *Proven by:* `tests/incremental.rs` — whatever the engine has been through,
+  the pages it gives are the pages a new engine gives from the same document:
+  after an edit, after a paragraph is deleted and every later one shifts, after
+  the resolution changes, after the paper colour changes, and for a document of
+  fields whose answers move.
+
+  *What is left,* and it is a smaller thing than it was: the placement pass
+  still walks every page on every keystroke, which is the 250 ms on a thousand
+  pages. Reusing the pages before the change and stopping once the pagination
+  settles again is **B6**.
 
 - [ ] **B3. Undo without whole snapshots.** Snapshots are correct and cannot be
   subtly wrong, which is why they are there; they are also a copy of the
@@ -316,14 +331,26 @@ will crawl. This has to be fixed before the document gets bigger, not after.
   *Done when:* a thousand keystrokes cost a bounded amount of memory and undo
   still returns the document to its exact bytes.
 
-- [ ] **B4. Caching what is measured.** Shaping and measuring the same run over
+- [x] **B4. Caching what is measured.** Shaping and measuring the same run over
   and over is most of the layout time. Cache per (face, size, text) and throw
   the cache away when a font changes.
-  *Done when:* the benchmark shows it and no picture changes.
+  *Done as part of **B2**,* and per paragraph rather than per run — which is
+  the same saving with one comparison instead of one per run, and no cache to
+  grow without bound: there is one entry per paragraph of the document, and it
+  is replaced when that paragraph changes.
 
 - [ ] **B5. Drawing only what changed.** A caret blink redraws the whole window
   today.
   *Done when:* a blink touches the caret's rectangle and nothing else.
+
+- [ ] **B6. Reusing the pages that did not move.** The paragraphs are no longer
+  measured again, but they are all still *placed* again: a keystroke walks every
+  page of the document to work out where each line goes, which is the quarter of
+  a second a thousand pages cost. Keep the pages before the change, lay out from
+  the paragraph that changed, and stop as soon as the pagination lands where it
+  landed before.
+  *Done when:* a keystroke costs the same on a thousand pages as on ten, and
+  the pages are identical to a full relayout.
 
 ## C — The interface Word has
 

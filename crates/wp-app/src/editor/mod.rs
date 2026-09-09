@@ -908,19 +908,22 @@ impl Editor {
 
     /// Lays the document out again after a change.
     fn relayout(&mut self) {
+        // The engine is kept rather than built again, because it remembers what
+        // every paragraph measured to and a keystroke changes one of them. Each
+        // setting is handed to it, and anything that really changed throws away
+        // what depended on it.
+        //
         // Text the document calls "automatic" is whatever reads against the
         // paper, and the paper depends on the theme — so the engine is told
-        // both every time it is rebuilt.
-        self.engine = LayoutEngine::new(self.library)
-            .with_dpi(self.pixels_per_inch())
-            .with_automatic_colors(self.theme.page_text, self.theme.table_line)
-            .with_markup(self.show_markup)
-            .with_outline(self.outline_for_layout());
+        // both every time.
+        self.engine.set_dpi(self.pixels_per_inch());
+        self.engine.set_automatic_colors(self.theme.page_text, self.theme.table_line);
+        self.engine.set_markup(self.show_markup);
+        self.engine.set_outline(self.outline_for_layout());
         // A letter being previewed shows one recipient's values in place of the
         // names of its merge fields.
         let record = self.preview_record.map(|at| self.recipients.record(at)).unwrap_or_default();
-        self.engine = core::mem::replace(&mut self.engine, LayoutEngine::new(self.library))
-            .with_merge_record(record);
+        self.engine.set_merge_record(record);
 
         let metrics = self.view_metrics();
         self.pages = self.engine.layout_document_with(&self.document, metrics);
