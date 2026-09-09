@@ -36,6 +36,22 @@ pub struct TablePosition {
 }
 
 impl Document {
+    /// Whether a paragraph sits inside a table.
+    ///
+    /// Asked by the line numbering, which counts the lines of the text and not
+    /// the lines inside a table — that is Word's rule, and it is why a numbered
+    /// contract does not number its own schedule of figures.
+    #[must_use]
+    pub fn paragraph_in_table(&self, paragraph: usize) -> bool {
+        let Some(path) = position::paragraph_path(&self.tree().root, paragraph) else {
+            return false;
+        };
+        (0..path.len()).any(|depth| {
+            element_at(&self.tree().root, &path[..depth])
+                .is_some_and(|element| element.is(Some(read::W), "tbl"))
+        })
+    }
+
     /// Where the caret is in a table, if it is in one at all.
     #[must_use]
     pub fn table_here(&self) -> Option<TablePosition> {

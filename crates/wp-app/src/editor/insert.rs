@@ -248,6 +248,11 @@ impl Editor {
                 self.document.set_caret(wp_docx::TextPosition::new(0, 0));
                 self.run(crate::chrome::Command::InsertContents);
             }
+            "linenumbers" => {
+                // Numbers down the margin, to see where they land.
+                self.document.set_line_numbers(Some(wp_docx::appearance::LineNumbers::default()));
+                self.relayout();
+            }
             "numbering" => {
                 // The menu that says how the section numbers its pages.
                 self.ribbon.tab = crate::chrome::ribbon::Tab::Insert;

@@ -130,10 +130,21 @@ impl EditMode {
 impl Document {
     // --- Line numbers ---------------------------------------------------------
 
-    /// How the lines are numbered, if they are.
+    /// How the lines of one section are numbered, if they are.
+    #[must_use]
+    pub fn line_numbers_of(&self, section: usize) -> Option<LineNumbers> {
+        let properties = crate::sections::properties_of(&self.tree().root, section)?;
+        Self::read_line_numbers(properties)
+    }
+
+    /// How the lines are numbered in the caret's section, if they are.
     #[must_use]
     pub fn line_numbers(&self) -> Option<LineNumbers> {
-        let section = self.section_element()?;
+        self.line_numbers_of(self.section_here())
+    }
+
+    /// Reads the numbering out of a `w:sectPr`.
+    fn read_line_numbers(section: &Element) -> Option<LineNumbers> {
         let element = section.child(Some(read::W), "lnNumType")?;
         let number = |name: &str, fallback: u32| {
             element
@@ -149,6 +160,18 @@ impl Document {
             ),
             distance: element.attribute(Some(read::W), "distance").and_then(|t| t.parse().ok()),
         })
+    }
+
+    /// Whether a paragraph has asked to be left out of the line numbering.
+    ///
+    /// What Word's "Suppress for current paragraph" writes, and what a heading
+    /// in a numbered legal document usually carries.
+    #[must_use]
+    pub fn suppresses_line_numbers(&self, paragraph: usize) -> bool {
+        self.paragraph_element(paragraph)
+            .and_then(|element| element.child(Some(read::W), "pPr"))
+            .and_then(|properties| properties.child(Some(read::W), "suppressLineNumbers"))
+            .is_some_and(read::on_off)
     }
 
     /// Numbers the lines, or stops numbering them.
@@ -309,17 +332,6 @@ impl Document {
         }
         self.mark_modified();
         true
-    }
-
-    /// The body's `w:sectPr`, read-only.
-    fn section_element(&self) -> Option<&Element> {
-        fn body_of(element: &Element) -> Option<&Element> {
-            if element.is(Some(read::W), "body") {
-                return Some(element);
-            }
-            element.child_elements().find_map(body_of)
-        }
-        body_of(&self.tree().root)?.child(Some(read::W), "sectPr")
     }
 }
 

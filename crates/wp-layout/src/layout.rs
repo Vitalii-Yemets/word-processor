@@ -934,6 +934,9 @@ impl<'a> LayoutEngine<'a> {
             }
         }
 
+        // The numbers down the margin, where a section asks for them.
+        self.number_lines(&mut pages, document);
+
         // The header and the footer go on afterwards, once there are pages to
         // put them on and a total for a page number to count towards.
         self.place_all_furniture(&mut pages, document, metrics);
@@ -3926,6 +3929,93 @@ impl LayoutEngine<'_> {
             "PAGE" => Some(format.of(page)),
             "NUMPAGES" => Some(pages.to_string()),
             _ => None,
+        }
+    }
+
+    /// Numbers the lines down the margin, where a section asks for it.
+    ///
+    /// # What is counted
+    ///
+    /// The lines of the text, and only those. Word leaves out the lines inside
+    /// a table, and so does this: a numbered contract does not number the rows
+    /// of its own schedule. A paragraph can also ask to be left out, which is
+    /// what a heading in such a document usually does.
+    ///
+    /// The count runs on through the document, or starts again on every page,
+    /// or on every section, as the section asks. Which numbers are printed is a
+    /// separate question: counting by five prints every fifth, and counts the
+    /// four in between just the same.
+    fn number_lines(&mut self, pages: &mut [Page], document: &Document) {
+        use wp_docx::appearance::Restart;
+
+        let scale = self.pixels_per_point();
+        let mut counted: u32 = 0;
+        let mut last_section: Option<usize> = None;
+
+        for (index, page) in pages.iter_mut().enumerate() {
+            let section = self.page_sections.get(index).copied().unwrap_or(0);
+            let Some(rules) = document.line_numbers_of(section) else {
+                last_section = Some(section);
+                continue;
+            };
+
+            // Where the numbers hang: to the left of the text, by the distance
+            // the section asks for, or a quarter of an inch when it says
+            // nothing — which is what Word calls automatic.
+            let metrics = PageMetrics::from_setup(&document.sections()[section].setup);
+            let text_left = metrics.margin_left * scale;
+            let away = rules.distance.unwrap_or(360) as f32 / TWIPS_PER_POINT * scale;
+
+            let starting = last_section.is_none_or(|last| match rules.restart {
+                Restart::Continuous => false,
+                Restart::NewSection => last != section,
+                Restart::NewPage => true,
+            });
+            if starting || rules.restart == Restart::NewPage {
+                counted = 0;
+            }
+            last_section = Some(section);
+
+            // Gathered first: the numbers are drawn through the same shaping as
+            // the text, which needs the engine while the page is borrowed.
+            let mut wanted: Vec<(f32, String)> = Vec::new();
+            for line in &page.lines {
+                if document.paragraph_in_table(line.paragraph)
+                    || document.suppresses_line_numbers(line.paragraph)
+                {
+                    continue;
+                }
+                let number = rules.start + counted;
+                counted += 1;
+                if number % rules.count_by != 0 {
+                    continue;
+                }
+                wanted.push((line.baseline, number.to_string()));
+            }
+
+            // All at one size, the document's own: Word draws them through a
+            // character style of its own rather than at the size of the line
+            // they stand beside, so a heading does not get a giant number.
+            let size = document.styles().resolve_run(None, &Default::default()).size_half_points
+                as f32
+                / 2.0;
+            for (baseline, text) in wanted {
+                let drawn = self.simple_line(&text, 0.0, baseline, size, self.automatic_color);
+                let width = drawn.width;
+                let at = text_left - away - width;
+                let glyphs: Vec<PositionedGlyph> = drawn
+                    .glyphs
+                    .into_iter()
+                    .map(|glyph| PositionedGlyph {
+                        x: glyph.x + at,
+                        // The numbers are not text: a click among them lands
+                        // where a click in the margin lands, which is nowhere.
+                        source_length: 0,
+                        ..glyph
+                    })
+                    .collect();
+                page.glyphs.extend(glyphs);
+            }
         }
     }
 
