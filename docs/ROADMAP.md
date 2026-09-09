@@ -417,10 +417,15 @@ will crawl. This has to be fixed before the document gets bigger, not after.
 The ribbon is there and its arrangement matches Word's. What is missing is the
 depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
-- [ ] **C1. Which buttons do nothing.** Walk every tab, every group, every
+- [x] **C1. Which buttons do nothing.** Walk every tab, every group, every
   button; list what is drawn, what it does, and what it should do.
-  *Done when:* the list is in `docs/RIBBON.md`, and every entry is either done
-  or has a numbered item here.
+  *Done:* [RIBBON.md](RIBBON.md) — two hundred and seven buttons, one row each.
+  What it found is not what this item expected. **Nothing is decoration**: two
+  buttons do nothing and say so, and every other one runs something real. The
+  gap is depth. Word's small buttons are usually the top of a menu — Bullets
+  drops a library of bullet shapes, Accept drops four ways of accepting — and
+  here they are one action each: the common one, done straight away. Everything
+  that falls short is now **C10** to **C17** below.
 
 - [ ] **C2. The Font dialog.** Every character format Word has, the two tabs,
   the preview, Set As Default.
@@ -442,6 +447,38 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   move them over.
   *Done when:* a dialog can be opened, driven entirely from the keyboard, and
   closed, and a picture of it matches Word's arrangement.
+
+- [ ] **C10. The paste Word has.** Paste options — keep source formatting, merge
+  formatting, keep text only, and a picture where the clipboard holds one — and
+  the little button that offers them again after pasting.
+- [ ] **C11. The menus behind the buttons.** A dozen buttons do the common thing
+  where Word drops a menu: bullets and numbering (a library of shapes and
+  formats), multilevel lists, line spacing (with space before and after),
+  Change Case (five choices, not a cycle), Page Number (top, bottom, margins,
+  current position), Select, Next Footnote, Accept and Reject, Bring Forward and
+  Send Backward, Track Changes, Show Markup.
+  *Done when:* each of those drops what Word drops, and what it drops does what
+  it says.
+- [ ] **C12. The boxes on the Layout tab.** The indent boxes are drawn and
+  cannot be typed into — pressing them says to drag the ruler instead. Spacing
+  before and after has no boxes at all. Both are measurements a person types.
+- [ ] **C13. Design ▸ Paragraph Spacing does the wrong thing.** It cycles the
+  line spacing of the document. Word's sets a named spacing set — Compact,
+  Tight, Open, Relaxed, Double — on the style set, changing space before and
+  after as well as the lines.
+- [ ] **C14. Page Borders.** Opens the same list of edges a paragraph border
+  uses. Word opens Borders and Shading on its page tab: art borders, which pages
+  they go on, and the distance from the edge.
+- [ ] **C15. The Table Design tab.** Header Row and Banded Rows do nothing and
+  say so — the only two buttons in the program that do. The tab is also missing
+  the table styles gallery, shading, the border styles and the border painter,
+  and the first-column and banded-column switches.
+- [ ] **C16. The rest of the Table Layout tab.** Select, View Gridlines, Draw
+  Table and Eraser, AutoFit, the height and width boxes, Text Direction, Cell
+  Margins, Sort, Repeat Header Rows, Convert to Text, and Formula. And nine
+  alignments where there are three.
+- [ ] **C17. The rest of the Header & Footer tab.** Header from Top, Footer from
+  Bottom, and Insert Alignment Tab.
 
 ## D — Pictures and drawings
 
