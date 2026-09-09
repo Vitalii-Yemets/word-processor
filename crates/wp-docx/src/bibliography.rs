@@ -286,8 +286,7 @@ impl Document {
     #[must_use]
     pub fn citations(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for paragraph in self.paragraph_elements() {
             gather_citations(paragraph, &mut out);
         }
         out

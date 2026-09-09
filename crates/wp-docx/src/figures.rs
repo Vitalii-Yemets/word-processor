@@ -137,8 +137,7 @@ impl Document {
     #[must_use]
     pub fn index_entries(&self, pages: &[usize]) -> Vec<IndexEntry> {
         let mut out = Vec::new();
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             let mut offset = 0usize;
             walk_index_marks(paragraph, index, &mut offset, pages, &mut out);
         }
@@ -243,8 +242,7 @@ impl Document {
         let mut first = None;
         let mut last = 0usize;
 
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             if !holds_field(paragraph, instruction) {
                 if first.is_some() {
                     break;

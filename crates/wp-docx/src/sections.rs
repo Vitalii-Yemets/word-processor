@@ -417,12 +417,20 @@ impl Document {
     /// section says to start again.
     #[must_use]
     pub fn page_numbers(&self, sections_by_page: &[usize]) -> Vec<(usize, NumberFormat)> {
+        // What each section says about its page numbers, asked once per
+        // section. Finding a section means finding the breaks, and finding
+        // those means walking the whole document — so asking per page would
+        // walk the document once for every page in it.
+        let count = sections_by_page.iter().copied().max().map_or(0, |last| last + 1);
+        let numbering: Vec<PageNumbering> =
+            (0..count).map(|section| self.page_numbering(section)).collect();
+
         let mut out = Vec::with_capacity(sections_by_page.len());
         let mut number = 0usize;
         let mut previous: Option<usize> = None;
 
         for section in sections_by_page {
-            let numbering = self.page_numbering(*section);
+            let Some(numbering) = numbering.get(*section) else { continue };
             let first_of_section = previous != Some(*section);
             number = match numbering.start {
                 Some(start) if first_of_section => start.max(0) as usize,

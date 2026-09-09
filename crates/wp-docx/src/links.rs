@@ -182,8 +182,7 @@ impl Document {
     #[must_use]
     pub fn hyperlinks(&self) -> Vec<Link> {
         let mut out = Vec::new();
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             let targets = self.link_targets(index);
             let mut offset = 0usize;
             let mut seen = 0usize;

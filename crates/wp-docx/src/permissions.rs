@@ -56,8 +56,7 @@ impl Document {
         let mut ends: std::collections::HashMap<i32, TextPosition> =
             std::collections::HashMap::new();
 
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             let mut offset = 0usize;
             walk_permissions(paragraph, index, &mut offset, &mut starts, &mut ends);
         }

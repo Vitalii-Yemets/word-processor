@@ -149,8 +149,7 @@ impl Document {
         let mut first = None;
         let mut last = 0usize;
 
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             if !holds_contents_field(paragraph) {
                 if first.is_some() {
                     break;

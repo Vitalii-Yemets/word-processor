@@ -223,8 +223,7 @@ impl Document {
     /// Where each note's mark sits in the text.
     fn note_marks(&self, kind: Kind) -> std::collections::HashMap<i32, TextPosition> {
         let mut found = std::collections::HashMap::new();
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             let mut offset = 0usize;
             walk_marks(paragraph, kind, &mut offset, &mut found, index);
         }

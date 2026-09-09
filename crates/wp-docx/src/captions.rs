@@ -135,8 +135,7 @@ impl Document {
         let mut counts = std::collections::HashMap::new();
         let mut out = Vec::new();
 
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             let Some(label) = caption_label(paragraph) else { continue };
             let number = counts.entry(label.word()).or_insert(0usize);
             *number += 1;

@@ -136,12 +136,11 @@ impl Document {
         let page = self.page_color().unwrap_or_else(|| "FFFFFF".to_owned());
         let Some(background) = luminance(&page) else { return };
 
-        for index in 0..self.paragraph_count() {
-            let Some(text) = self.paragraph_text(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
+            let text = crate::position::paragraph_text(paragraph);
             if text.trim().is_empty() {
                 continue;
             }
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
             let resolved =
                 crate::format::resolved_in_range(paragraph, 0, text.len(), self.styles());
 

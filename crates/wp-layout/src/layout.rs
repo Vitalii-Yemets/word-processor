@@ -927,7 +927,8 @@ impl<'a> LayoutEngine<'a> {
         // the two are worked out together. Two passes settle it for any
         // ordinary document; Word does the same and also stops.
         let footnotes = document.notes(wp_docx::notes::Kind::Footnote);
-        let mut pages = self.layout_body(&document.body(), document, metrics);
+        let body = document.body();
+        let mut pages = self.layout_body(&body, document, metrics);
         if !footnotes.is_empty() {
             for _ in 0..2 {
                 let reserved = self.measure_footnotes(&pages, &footnotes, document, metrics);
@@ -1260,7 +1261,8 @@ impl<'a> LayoutEngine<'a> {
         *y += space_before;
 
         let mut styles = Vec::new();
-        let mut items = self.build_items(paragraph, document, &mut styles, index);
+        let mut text = String::new();
+        let mut items = self.build_items(paragraph, document, &mut styles, index, &mut text);
 
         // Which direction each piece of the paragraph is drawn in.
         //
@@ -1268,7 +1270,7 @@ impl<'a> LayoutEngine<'a> {
         // English sentence, or a price inside a Hebrew one, is a run of its own
         // whatever the document says about the paragraph, and finding those runs
         // needs the whole paragraph at once. See [`wp_bidi`].
-        let text = document.paragraph_text(index).unwrap_or_default();
+
         let direction = if resolved.right_to_left {
             wp_bidi::Direction::RightToLeft
         } else {
@@ -1872,14 +1874,21 @@ impl<'a> LayoutEngine<'a> {
             None => 0.0,
         }
     }
-
     /// Turns a paragraph into measured, breakable items.
+    ///
+    /// The paragraph's own text comes back with them, built as the runs are
+    /// walked. It could be asked of the document instead — but that means
+    /// finding the paragraph in the element tree, and finding it means walking
+    /// the tree from the top, once per paragraph. A thousand-page document laid
+    /// out that way spends most of its time counting paragraphs it has already
+    /// counted.
     fn build_items(
         &mut self,
         paragraph: &Paragraph,
         document: &Document,
         styles: &mut Vec<RunStyle>,
         paragraph_index: usize,
+        text: &mut String,
     ) -> Vec<Item> {
         let mut items = Vec::new();
         // Which field of this paragraph is being built, so a `SEQ` can be told
@@ -1930,6 +1939,7 @@ impl<'a> LayoutEngine<'a> {
                 style_index,
                 &mut items,
                 &mut offset,
+                text,
                 paragraph_index,
                 field_number,
             );
@@ -1958,6 +1968,10 @@ impl<'a> LayoutEngine<'a> {
                     item.end_offset = before;
                 }
                 offset = before;
+                // The text goes back with them: a deleted run is not part of
+                // what the document says, and the offsets after it count as
+                // though it were not there.
+                text.truncate(before);
             }
         }
 
@@ -1973,6 +1987,7 @@ impl<'a> LayoutEngine<'a> {
         style_index: usize,
         items: &mut Vec<Item>,
         offset: &mut usize,
+        paragraph_text: &mut String,
         paragraph_index: usize,
         field_number: usize,
     ) {
@@ -1980,6 +1995,7 @@ impl<'a> LayoutEngine<'a> {
             match content {
                 RunContent::Text(text) => {
                     // A run inside a field shows what the field works out, not
+                    paragraph_text.push_str(text);
                     // the answer somebody cached in the file. The cached text
                     // is still what the caret moves through, so the offsets
                     // advance by its length either way.
@@ -2029,6 +2045,7 @@ impl<'a> LayoutEngine<'a> {
                     }
                 }
                 RunContent::Tab => {
+                    paragraph_text.push('\t');
                     // A tab is one character to the caret, so it takes one byte
                     // of the paragraph's text — the same byte the editor counts.
                     let start = *offset;
@@ -2057,6 +2074,7 @@ impl<'a> LayoutEngine<'a> {
                 // out from where the marks fall in reading order rather than
                 // from the number in the file.
                 RunContent::NoteReference { id, endnote } => {
+                    paragraph_text.push(' ');
                     let start = *offset;
                     *offset += 1;
                     let shown = self.note_number(*id, *endnote).to_string();
@@ -2079,6 +2097,7 @@ impl<'a> LayoutEngine<'a> {
                     });
                 }
                 RunContent::Chart(reference) => {
+                    paragraph_text.push(' ');
                     // A chart takes one character of the paragraph, exactly as
                     // a picture does. It is drawn from the numbers in its own
                     // part, which is why the document is needed here.
@@ -2107,6 +2126,7 @@ impl<'a> LayoutEngine<'a> {
                     });
                 }
                 RunContent::Math(math) => {
+                    paragraph_text.push(' ');
                     // An equation takes one character of the paragraph, exactly
                     // as a picture does, so the caret can stand either side of
                     // it. It is measured whole here and drawn whole later: an
@@ -2134,6 +2154,7 @@ impl<'a> LayoutEngine<'a> {
                     });
                 }
                 RunContent::Shape(shape) => {
+                    paragraph_text.push(' ');
                     // A shape takes one character, exactly as a picture does,
                     // so the caret can stand either side of it.
                     let start = *offset;
@@ -2166,6 +2187,7 @@ impl<'a> LayoutEngine<'a> {
                     });
                 }
                 RunContent::Picture(picture) => {
+                    paragraph_text.push(' ');
                     // A picture takes one character of the paragraph's text, so
                     // the caret can stand either side of it and Backspace can
                     // reach it — the same rule a tab follows.
@@ -2204,6 +2226,7 @@ impl<'a> LayoutEngine<'a> {
                     });
                 }
                 RunContent::Break(kind) => {
+                    paragraph_text.push('\n');
                     let start = *offset;
                     *offset += 1;
                     items.push(Item {
@@ -4095,9 +4118,17 @@ impl LayoutEngine<'_> {
         let mut counted: u32 = 0;
         let mut last_section: Option<usize> = None;
 
+        // What each section says about numbering its lines, and how wide its
+        // margin is. Both mean finding the section breaks, and finding those
+        // means walking the whole document — so they are asked once per section
+        // rather than once per page.
+        let sections = document.sections();
+        let rules_of: Vec<Option<wp_docx::appearance::LineNumbers>> =
+            (0..sections.len()).map(|section| document.line_numbers_of(section)).collect();
+
         for (index, page) in pages.iter_mut().enumerate() {
             let section = self.page_sections.get(index).copied().unwrap_or(0);
-            let Some(rules) = document.line_numbers_of(section) else {
+            let Some(rules) = rules_of.get(section).copied().flatten() else {
                 last_section = Some(section);
                 continue;
             };
@@ -4105,7 +4136,7 @@ impl LayoutEngine<'_> {
             // Where the numbers hang: to the left of the text, by the distance
             // the section asks for, or a quarter of an inch when it says
             // nothing — which is what Word calls automatic.
-            let metrics = PageMetrics::from_setup(&document.sections()[section].setup);
+            let metrics = PageMetrics::from_setup(&sections[section].setup);
             let text_left = metrics.margin_left * scale;
             let away = rules.distance.unwrap_or(360) as f32 / TWIPS_PER_POINT * scale;
 
@@ -4186,6 +4217,16 @@ impl LayoutEngine<'_> {
         // is what a header printing a page number would otherwise say.
         let numbers = document.page_numbers(&belongs);
 
+        // Which of the three headers a page takes depends on the section it is
+        // in, and asking the document that means finding the section breaks —
+        // which means walking the document. Asked once per section here rather
+        // than once per page: a thousand-page document asked it a thousand
+        // times, and walked the whole document each time.
+        let sections = belongs.iter().copied().max().unwrap_or(0) + 1;
+        let first_differs: Vec<bool> =
+            (0..sections).map(|section| document.different_first_page(section)).collect();
+        let odd_and_even = document.different_odd_and_even();
+
         // Each header is read out of the package and parsed, so each one is
         // read once and kept: a hundred-page document would otherwise parse the
         // same header a hundred times over.
@@ -4194,7 +4235,13 @@ impl LayoutEngine<'_> {
         for page in 0..total {
             let section = belongs[page];
             let first_of_section = page == 0 || belongs[page - 1] != section;
-            let which = document.which_for_page(section, first_of_section, page + 1);
+            let which = if first_of_section && first_differs[section] {
+                Which::First
+            } else if (page + 1) % 2 == 0 && odd_and_even {
+                Which::Even
+            } else {
+                Which::Default
+            };
 
             for (kind, is_footer) in [(Furniture::Header, false), (Furniture::Footer, true)] {
                 let key = (section, is_footer, which);

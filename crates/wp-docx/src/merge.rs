@@ -278,8 +278,7 @@ impl Document {
     #[must_use]
     pub fn merge_fields(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for paragraph in self.paragraph_elements() {
             gather_merge_fields(paragraph, &mut out);
         }
         out
@@ -392,8 +391,7 @@ impl Document {
     #[must_use]
     pub fn merge_field_ranges(&self) -> Vec<(crate::TextPosition, crate::TextPosition)> {
         let mut out = Vec::new();
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             let mut offset = 0usize;
             walk_merge_ranges(paragraph, index, &mut offset, &mut out);
         }
@@ -474,8 +472,7 @@ impl Document {
     /// Whether a rule in the document says to leave this recipient out.
     #[must_use]
     pub fn record_is_skipped(&self, record: &[(String, String)]) -> bool {
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for paragraph in self.paragraph_elements() {
             if paragraph_skips(paragraph, record) {
                 return true;
             }

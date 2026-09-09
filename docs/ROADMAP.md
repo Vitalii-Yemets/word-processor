@@ -289,6 +289,23 @@ will crawl. This has to be fixed before the document gets bigger, not after.
 
 - [ ] **B2. Incremental layout.** A keystroke relays the paragraph it changed
   and the pages after it only as far as the change reaches — typically one page.
+  *Half done.* The quadratic terms are gone, and what is left is honest work
+  rather than waste. Four places asked the document a question whose answer
+  meant walking the whole document, and asked it once per paragraph or once per
+  page: the text of a paragraph, the bookmarks, the page numbers, and the line
+  numbering. Walking a thousand-page document a thousand times is what made ten
+  times the pages cost fifty times the time.
+
+  | Pages | Was | Now |
+  | --- | --- | --- |
+  | 10 | 8.5 ms | 8 ms |
+  | 100 | 115 ms | 80 ms |
+  | 1000 | 5.96 s | 0.9 s |
+
+  Which is linear at last, and still too slow: a hundred pages at eighty
+  milliseconds a letter is a program that lags behind the typist. The rest of
+  this item is the real fix — relaying out the paragraph that changed and the
+  pages after it as far as the change reaches, rather than the whole document.
   *Done when:* typing in a 300-page document is as fast as typing in a
   three-page one, and the pages come out identical to a full relayout.
 

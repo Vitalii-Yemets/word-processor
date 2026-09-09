@@ -149,8 +149,7 @@ impl Document {
     #[must_use]
     pub fn authorities(&self, pages: &[usize]) -> Vec<Authority> {
         let mut out = Vec::new();
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             let mut offset = 0usize;
             walk_marks(paragraph, index, &mut offset, pages, &mut out);
         }

@@ -2073,6 +2073,15 @@ impl Document {
         (from, to)
     }
 
+    /// Every paragraph of the document, in reading order.
+    ///
+    /// For anything that has to look at all of them: asking for them one at a
+    /// time walks the element tree from the top each time, and a loop over the
+    /// lot then costs the square of the document's length.
+    pub(crate) fn paragraph_elements(&self) -> Vec<&Element> {
+        position::paragraphs(&self.tree.root)
+    }
+
     /// The nth paragraph element, if there is one.
     fn paragraph_element(&self, index: usize) -> Option<&Element> {
         let path = position::paragraph_path(&self.tree.root, index)?;

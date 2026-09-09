@@ -37,6 +37,32 @@ impl TextPosition {
     }
 }
 
+/// Every paragraph of the document, in reading order.
+///
+/// One walk. Asking for them one at a time means walking from the root once
+/// per paragraph, and a loop over all of them then costs the square of the
+/// document's length — which on a thousand pages is seconds rather than
+/// milliseconds.
+#[must_use]
+pub fn paragraphs(root: &Element) -> Vec<&Element> {
+    let mut found = Vec::new();
+    gather_paragraphs(root, &mut found);
+    found
+}
+
+fn gather_paragraphs<'a>(element: &'a Element, found: &mut Vec<&'a Element>) {
+    for child in element.child_elements() {
+        if child.namespace.as_deref() != Some(W) {
+            continue;
+        }
+        if child.is(Some(W), "p") {
+            found.push(child);
+        } else {
+            gather_paragraphs(child, found);
+        }
+    }
+}
+
 /// How many paragraphs the document has, in reading order.
 #[must_use]
 pub fn paragraph_count(root: &Element) -> usize {

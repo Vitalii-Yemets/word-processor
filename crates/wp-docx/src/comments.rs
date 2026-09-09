@@ -94,8 +94,7 @@ impl Document {
         let mut starts = std::collections::HashMap::new();
         let mut ends = std::collections::HashMap::new();
 
-        for index in 0..self.paragraph_count() {
-            let Some(paragraph) = self.paragraph_element(index) else { continue };
+        for (index, paragraph) in self.paragraph_elements().into_iter().enumerate() {
             for (id, offset, is_start) in anchors_in(paragraph) {
                 let position = TextPosition::new(index, offset);
                 if is_start {
