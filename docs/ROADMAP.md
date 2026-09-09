@@ -384,6 +384,31 @@ will crawl. This has to be fixed before the document gets bigger, not after.
   a second a thousand pages cost. Keep the pages before the change, lay out from
   the paragraph that changed, and stop as soon as the pagination lands where it
   landed before.
+
+  *Deferred, and here is what it is measured against.* A person types about ten
+  characters a second, so a keystroke has about a hundred milliseconds before it
+  is felt:
+
+  | Pages | A keystroke |
+  | --- | --- |
+  | 10 | 2 ms |
+  | 100 | 15 ms |
+  | 300 | 65 ms |
+  | 1000 | 220 ms |
+
+  Up to a few hundred pages there is room to spare, and beyond that there is
+  not. The work itself is the hardest left in the layout: `layout_body` is one
+  pass over shared state — where the text has got to down the page, which
+  column and which page, the floating drawings, the list counters, the section
+  and its footnotes — and starting in the middle means being able to save all
+  of that at a paragraph boundary and take it up again. Getting it wrong does
+  not crash; it quietly draws the wrong page.
+
+  *Come back to it when* a document of several hundred pages is actually being
+  edited — the corpus of **K1** will say whether that happens — or when the
+  lag is felt. The guard is already written: `tests/incremental.rs` holds the
+  engine to giving what a fresh engine gives.
+
   *Done when:* a keystroke costs the same on a thousand pages as on ten, and
   the pages are identical to a full relayout.
 
