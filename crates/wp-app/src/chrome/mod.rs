@@ -12,6 +12,7 @@
 //! button that shows its own effect needs no label and no translation, which
 //! matters for a program meant to be used in every language Word supports.
 
+pub mod dialog;
 pub mod findbar;
 pub mod grid;
 mod icon_catalogue;

@@ -441,12 +441,27 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   that this program actually honours.
 - [ ] **C8. The File tab.** Word's backstage: Info, Recent, New from template,
   Open, Save As, Print, Share, Export, Close.
-- [ ] **C9. Real dialogs rather than strips.** The strips stand in for dialogs
+- [x] **C9. Real dialogs rather than strips.** The strips stand in for dialogs
   because there was no dialog machinery. Build the machinery — a window, a
   focus ring, tab order, default and cancel buttons, keyboard everything — and
   move them over.
-  *Done when:* a dialog can be opened, driven entirely from the keyboard, and
-  closed, and a picture of it matches Word's arrangement.
+  *Done:* `chrome/dialog.rs` is the machinery — a panel over a dimmed document
+  with a caption, a measured label column, six kinds of field (a heading, a
+  line it tells you, a text box, a number box with its unit, a tick box, a list
+  that drops open), Tab and Shift+Tab round the fields and on to the buttons,
+  Space to tick, the arrows inside a list, Enter for the button in bold, Escape
+  to cancel. `editor/dialogs.rs` asks the questions. A dialog is modal the way
+  Word's is: while one is up the document behind takes neither a key, a click
+  nor the wheel.
+  Three questions moved over: **Word Count** (Word's six counts and Word's tick
+  box, which counts notes and text boxes as well and is remembered between
+  openings), **Page Setup** (the margins typed rather than chosen from a list —
+  reached by Layout ▸ Margins ▸ Custom Margins…, as in Word) and **Bookmark**
+  (a name, and the names already in the document). The strips they used to be
+  are gone.
+  The rest of the strips move over as their dialogs are built: each is named in
+  its own item (**C2** to **C6**), because moving a strip is the small half of
+  building the dialog Word has.
 
 - [ ] **C10. The paste Word has.** Paste options — keep source formatting, merge
   formatting, keep text only, and a picture where the clipboard holds one — and

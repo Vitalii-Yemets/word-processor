@@ -27,6 +27,9 @@ use crate::chrome::{Choice, Command, Popup};
 
 use super::Editor;
 
+/// What the last row of the margins list says, which opens the dialog.
+pub(super) const CUSTOM_MARGINS: &str = "Custom Margins…";
+
 /// How many columns the text can be told to run down.
 ///
 /// Word's "Left" and "Right" are two columns of unequal width, which the format
@@ -72,7 +75,11 @@ impl Editor {
         let current = MARGIN_PRESETS
             .iter()
             .position(|(_, top, right, bottom, left)| (*top, *right, *bottom, *left) == here);
-        let items = MARGIN_PRESETS.iter().map(|(name, ..)| (*name).to_owned()).collect();
+        // The named margins, and then the way to type your own — which is
+        // where Word keeps it, at the bottom of the same list.
+        let mut items: Vec<String> =
+            MARGIN_PRESETS.iter().map(|(name, ..)| (*name).to_owned()).collect();
+        items.push(CUSTOM_MARGINS.to_owned());
         self.popup = Some(Popup::new(Choice::Margin, items, current, left, top, 200.0));
         self.needs_redraw = true;
         Response::Redraw
@@ -82,7 +89,8 @@ impl Editor {
     pub(super) fn choose_margins(&mut self, index: usize) -> Response {
         self.popup = None;
         let Some((name, top, right, bottom, left)) = MARGIN_PRESETS.get(index).copied() else {
-            return Response::Ignored;
+            // Past the end of the presets is the one that opens the dialog.
+            return self.open_page_setup();
         };
         let changed = self.document.set_page_margins(top, right, bottom, left);
         self.relayout();

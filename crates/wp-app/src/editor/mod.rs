@@ -8,6 +8,7 @@ mod citations;
 mod commands;
 mod context;
 mod diagram;
+mod dialogs;
 mod dispatch;
 mod dragtext;
 mod draw;
@@ -261,6 +262,14 @@ pub struct Editor {
     /// The pixels the caret was drawn over, so a blink can put them back
     /// rather than drawing the whole window again.
     under_caret: Option<(i32, i32, Vec<u8>)>,
+    /// The dialog that is up, if any. While one is, it has the window.
+    dialog: Option<crate::chrome::dialog::Dialog>,
+    /// What that dialog is asking, so its answer can be acted on.
+    asking: Option<dialogs::Asking>,
+    /// Whether Word Count counts what is written round the edges of the body:
+    /// notes and text boxes. Word remembers the tick between openings, so this
+    /// lives here rather than in the dialog.
+    count_the_edges: bool,
     /// Whether the only thing that changed is the caret's half of a blink.
     caret_only: bool,
     /// The little bar of formatting buttons floating over a selection.
@@ -431,6 +440,9 @@ impl Editor {
             print_preview: Vec::new(),
             printer_name: String::new(),
             print_device: wp_layout::Device::screen(),
+            dialog: None,
+            asking: None,
+            count_the_edges: false,
             under_caret: None,
             caret_only: false,
             mini_bar: None,

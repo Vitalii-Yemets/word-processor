@@ -324,17 +324,7 @@ impl Editor {
             Command::TableBandedRows => self.report("Banded rows are not built yet"),
 
             // --- Review -------------------------------------------------------
-            Command::WordCount => {
-                let text = self.document.plain_text();
-                let words = super::draw::count_words(&text);
-                let characters = text.chars().count();
-                let paragraphs = self.document.paragraph_count();
-                self.report(&format!(
-                    "{words} words, {characters} characters, {paragraphs} paragraphs, \
-                     {} pages",
-                    self.pages.len().max(1)
-                ))
-            }
+            Command::WordCount => self.open_word_count(),
 
             // --- View ---------------------------------------------------------
             Command::ToggleRulers => {

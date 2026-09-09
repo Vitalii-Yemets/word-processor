@@ -41,8 +41,6 @@ pub enum Purpose {
     Note,
     /// Typing the words of a caption.
     Caption,
-    /// Typing the name of a bookmark.
-    Bookmark,
     /// Typing the words to list in the index.
     IndexEntry,
     /// Typing the details of a source, semicolon by semicolon.
@@ -225,7 +223,6 @@ impl FindBar {
             Purpose::Comment => "Comment",
             Purpose::Note => "Note",
             Purpose::Caption => "Caption",
-            Purpose::Bookmark => "Name",
             Purpose::IndexEntry => "Index entry",
             Purpose::Source => "Source",
             Purpose::Link => "Address",
@@ -367,7 +364,6 @@ impl FindBar {
             Purpose::Comment => return vec![(Hit::Add, Icon::NewComment, "Add Comment")],
             Purpose::Note => return vec![(Hit::Add, Icon::Footnote, "Add Note")],
             Purpose::Caption => return vec![(Hit::Add, Icon::Caption, "Add Caption")],
-            Purpose::Bookmark => return vec![(Hit::Add, Icon::Bookmark, "Add Bookmark")],
             Purpose::IndexEntry => return vec![(Hit::Add, Icon::MarkEntry, "Mark Entry")],
             Purpose::Source => return vec![(Hit::Add, Icon::ManageSources, "Add Source")],
             Purpose::Link => return vec![(Hit::Add, Icon::Link, "Add Link")],

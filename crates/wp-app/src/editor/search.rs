@@ -64,7 +64,6 @@ impl Editor {
                 Purpose::Comment => return self.finish_comment(),
                 Purpose::Note => return self.finish_note(),
                 Purpose::Caption => return self.finish_caption(),
-                Purpose::Bookmark => return self.finish_bookmark(),
                 Purpose::IndexEntry => return self.finish_index_entry(),
                 Purpose::Source => return self.finish_source(),
                 Purpose::Link => return self.finish_link(),
@@ -130,7 +129,6 @@ impl Editor {
                 return match bar.purpose {
                     Purpose::Note => self.finish_note(),
                     Purpose::Caption => self.finish_caption(),
-                    Purpose::Bookmark => self.finish_bookmark(),
                     Purpose::IndexEntry => self.finish_index_entry(),
                     Purpose::Source => self.finish_source(),
                     Purpose::Link => self.finish_link(),

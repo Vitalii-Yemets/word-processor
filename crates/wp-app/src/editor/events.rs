@@ -172,6 +172,36 @@ impl App for Editor {
     }
 
     fn handle(&mut self, event: Event) -> Response {
+        // A dialog is modal, as every dialog in Word is: while one is up it has
+        // the mouse and the keyboard, and the document behind it neither
+        // scrolls nor takes a click. Everything else — the window changing size,
+        // the caret blinking — goes on behind it as it does in Word.
+        if self.in_dialog() {
+            match event {
+                Event::MouseDown { x, y, .. } | Event::DoubleClick { x, y } => {
+                    return self.dialog_press(x, y)
+                }
+                Event::MouseMove { x, y, .. } => {
+                    return if self.dialog_hover(x, y) {
+                        self.needs_redraw = true;
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    }
+                }
+                Event::KeyDown { key, modifiers } => return self.dialog_key(key, modifiers.shift),
+                Event::Char(character) => return self.dialog_character(character),
+                // Swallowed rather than passed through: the window behind a
+                // modal dialog does not answer these.
+                Event::Scroll { .. }
+                | Event::MouseUp { .. }
+                | Event::RightClick { .. }
+                | Event::MiddleClick { .. }
+                | Event::MenuKey => return Response::Ignored,
+                _ => {}
+            }
+        }
+
         match event {
             Event::Resized { width, height } => {
                 self.view_width = width as usize;

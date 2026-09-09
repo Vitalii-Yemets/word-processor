@@ -619,6 +619,9 @@ impl Editor {
             self.popup = Some(popup);
         }
 
+        // A dialog is over everything: while one is up, it is the window.
+        self.draw_dialog();
+
         // And the tip over even that: it is the one thing that is always about
         // whatever the pointer is on this instant.
         if let Some(tip) = self.tip.take() {

@@ -33,29 +33,6 @@ impl Editor {
         self.edited(changed, "Caption added")
     }
 
-    /// Opens the strip that takes the name of a bookmark.
-    pub(super) fn start_bookmark(&mut self) -> Response {
-        self.find_bar = Some(FindBar::for_purpose(Purpose::Bookmark));
-        self.clamp_scroll();
-        self.needs_redraw = true;
-        self.report("Type a name for this place, then press Enter")
-    }
-
-    /// Names the selection, or the caret.
-    pub(super) fn finish_bookmark(&mut self) -> Response {
-        let Some(bar) = &self.find_bar else { return Response::Ignored };
-        let wanted = bar.needle.trim().to_owned();
-        if wanted.is_empty() {
-            return self.close_find();
-        }
-        self.find_bar = None;
-
-        let name = wp_docx::bookmarks::sanitise_name(&wanted);
-        let changed = self.document.add_bookmark(&name);
-        self.needs_redraw = true;
-        self.edited(changed, &format!("Bookmark: {name}"))
-    }
-
     /// Drops open the list of places a cross-reference could point at.
     pub(super) fn open_references(&mut self, kind: Reference) -> Response {
         let targets = self.reference_targets();

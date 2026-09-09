@@ -248,6 +248,15 @@ impl Editor {
                 self.document.set_shading_here(Some("2B579A"));
                 self.relayout();
             }
+            "wordcount" => {
+                self.open_word_count();
+            }
+            "pagesetup" => {
+                self.open_page_setup();
+            }
+            "bookmark" => {
+                self.start_bookmark();
+            }
             "gridlines" => self.show_gridlines = true,
             "palette" => {
                 self.palette = Some(crate::chrome::palette::Palette::new(
