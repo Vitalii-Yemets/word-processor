@@ -772,6 +772,7 @@ impl Ribbon {
                     | Choice::Protection
                     | Choice::StatusBar
                     | Choice::TabStop
+                    | Choice::PageNumbering
                     | Choice::Margin
                     | Choice::Orientation
                     | Choice::Paper
@@ -1104,6 +1105,7 @@ static INSERT_GROUPS: &[Group] = &[
             Item::Large(Command::Header, Icon::Header, "Header"),
             Item::Large(Command::Footer, Icon::Footer, "Footer"),
             Item::Large(Command::PageNumber, Icon::PageNumber, "Page Number"),
+            Item::Small(Command::FormatPageNumbers, Icon::Numbering, "Format Page Numbers"),
         ],
     },
     Group {
@@ -1459,6 +1461,7 @@ static HEADER_FOOTER_GROUPS: &[Group] = &[
             Item::Large(Command::Header, Icon::Header, "Header"),
             Item::Large(Command::Footer, Icon::Footer, "Footer"),
             Item::Large(Command::PageNumber, Icon::PageNumber, "Page Number"),
+            Item::Small(Command::FormatPageNumbers, Icon::Numbering, "Format Page Numbers"),
         ],
     },
     Group {

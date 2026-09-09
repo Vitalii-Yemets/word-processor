@@ -163,6 +163,120 @@ impl Setup {
     }
 }
 
+/// How a section's pages are numbered.
+///
+/// # Why a section decides this
+///
+/// Because a book's front matter is numbered i, ii, iii and its body starts
+/// again at 1, and the two are different sections. Word keeps both facts in the
+/// section's own properties: where the numbering starts again, and what the
+/// numbers look like.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PageNumbering {
+    /// The number the section's first page carries. Nothing means the numbering
+    /// runs on from the section before it.
+    pub start: Option<i32>,
+    pub format: NumberFormat,
+}
+
+/// What a page number looks like.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NumberFormat {
+    #[default]
+    Decimal,
+    UpperRoman,
+    LowerRoman,
+    UpperLetter,
+    LowerLetter,
+}
+
+impl NumberFormat {
+    #[must_use]
+    pub fn from_word(word: &str) -> Self {
+        match word {
+            "upperRoman" => Self::UpperRoman,
+            "lowerRoman" => Self::LowerRoman,
+            "upperLetter" => Self::UpperLetter,
+            "lowerLetter" => Self::LowerLetter,
+            _ => Self::Decimal,
+        }
+    }
+
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Decimal => "decimal",
+            Self::UpperRoman => "upperRoman",
+            Self::LowerRoman => "lowerRoman",
+            Self::UpperLetter => "upperLetter",
+            Self::LowerLetter => "lowerLetter",
+        }
+    }
+
+    /// What the reader is shown for a page.
+    ///
+    /// Nothing sensible can be made of a number below one, and Word shows the
+    /// figures themselves rather than nothing, so it falls back to them.
+    #[must_use]
+    pub fn of(self, number: usize) -> String {
+        if number == 0 {
+            return number.to_string();
+        }
+        match self {
+            Self::Decimal => number.to_string(),
+            Self::UpperRoman => roman(number),
+            Self::LowerRoman => roman(number).to_lowercase(),
+            Self::UpperLetter => letters(number),
+            Self::LowerLetter => letters(number).to_lowercase(),
+        }
+    }
+}
+
+/// A number in Roman figures.
+///
+/// The ordinary subtractive kind, which is what a page number is written in:
+/// four is IV and nine is IX, not IIII and VIIII.
+#[must_use]
+fn roman(number: usize) -> String {
+    const FIGURES: &[(usize, &str)] = &[
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+
+    let mut left = number;
+    let mut out = String::new();
+    for (value, figure) in FIGURES {
+        while left >= *value {
+            out.push_str(figure);
+            left -= value;
+        }
+    }
+    out
+}
+
+/// A number as letters: A, B, ... Z, AA, BB, and so on.
+///
+/// Word's sequence rather than a base-26 count: the twenty-seventh page is AA
+/// and the twenty-eighth BB, which looks wrong written down and is what Word
+/// prints.
+#[must_use]
+fn letters(number: usize) -> String {
+    let count = (number - 1) / 26 + 1;
+    let letter = char::from(b'A' + ((number - 1) % 26) as u8);
+    core::iter::repeat_n(letter, count).collect()
+}
+
 /// One section: the blocks it covers and the paper they are printed on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Section {
@@ -246,6 +360,78 @@ impl Document {
     #[must_use]
     pub fn section_count(&self) -> usize {
         breaks(&self.tree().root).len() + 1
+    }
+
+    /// How a section numbers its pages.
+    #[must_use]
+    pub fn page_numbering(&self, section: usize) -> PageNumbering {
+        let Some(element) = properties_of(&self.tree().root, section)
+            .and_then(|properties| properties.child(Some(W), "pgNumType"))
+        else {
+            return PageNumbering::default();
+        };
+        PageNumbering {
+            start: element.attribute(Some(W), "start").and_then(|text| text.trim().parse().ok()),
+            format: element
+                .attribute(Some(W), "fmt")
+                .map_or(NumberFormat::Decimal, NumberFormat::from_word),
+        }
+    }
+
+    /// Sets how the caret's section numbers its pages.
+    pub fn set_page_numbering(&mut self, numbering: PageNumbering) -> bool {
+        if self.page_numbering(self.section_here()) == numbering {
+            return false;
+        }
+        let caret = self.caret();
+        self.record(crate::history::EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+        let Some(section) = self.section_properties_mut(prefix.as_deref()) else { return false };
+
+        section.remove_children_named(Some(W), "pgNumType");
+        if numbering != PageNumbering::default() {
+            let element = crate::page::section_child(section, prefix.as_deref(), "pgNumType");
+            if let Some(start) = numbering.start {
+                element.set_namespaced_attribute(
+                    &crate::edit::name_with(prefix.as_deref(), "start"),
+                    W,
+                    &start.to_string(),
+                );
+            }
+            if numbering.format != NumberFormat::Decimal {
+                element.set_namespaced_attribute(
+                    &crate::edit::name_with(prefix.as_deref(), "fmt"),
+                    W,
+                    numbering.format.word(),
+                );
+            }
+        }
+        self.mark_modified();
+        true
+    }
+
+    /// What each page of the document is numbered, and in what figures.
+    ///
+    /// Walked from the front, because a page's number depends on every page
+    /// before it: the numbering runs on from section to section unless a
+    /// section says to start again.
+    #[must_use]
+    pub fn page_numbers(&self, sections_by_page: &[usize]) -> Vec<(usize, NumberFormat)> {
+        let mut out = Vec::with_capacity(sections_by_page.len());
+        let mut number = 0usize;
+        let mut previous: Option<usize> = None;
+
+        for section in sections_by_page {
+            let numbering = self.page_numbering(*section);
+            let first_of_section = previous != Some(*section);
+            number = match numbering.start {
+                Some(start) if first_of_section => start.max(0) as usize,
+                _ => number + 1,
+            };
+            previous = Some(*section);
+            out.push((number, numbering.format));
+        }
+        out
     }
 
     /// Inserts a section break at the caret, the way Layout ▸ Breaks does.

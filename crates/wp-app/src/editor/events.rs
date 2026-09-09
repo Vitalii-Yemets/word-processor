@@ -932,6 +932,7 @@ impl Editor {
             // The strip's own menu hangs where it was opened, not under a
             // button of the ribbon.
             Choice::StatusBar | Choice::TabStop => Command::ExpandGroup(0),
+            Choice::PageNumbering => Command::FormatPageNumbers,
             Choice::Margin => Command::Margins,
             Choice::Orientation => Command::Orientation,
             Choice::Paper => Command::PageSize,
@@ -977,6 +978,7 @@ impl Editor {
             | Choice::Protection
             | Choice::StatusBar
             | Choice::TabStop
+            | Choice::PageNumbering
             | Choice::Margin
             | Choice::Orientation
             | Choice::Paper
@@ -1097,6 +1099,7 @@ impl Editor {
             Choice::Protection => self.choose_protection(index),
             Choice::StatusBar => self.choose_status_part(index),
             Choice::TabStop => self.choose_tab_stop_entry(index),
+            Choice::PageNumbering => self.choose_page_numbering(index),
             Choice::Margin => self.choose_margins(index),
             Choice::Orientation => self.choose_orientation(index),
             Choice::Paper => self.choose_page_size(index),

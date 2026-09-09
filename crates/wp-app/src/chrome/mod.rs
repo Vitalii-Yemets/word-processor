@@ -239,6 +239,8 @@ pub enum Command {
     DifferentFirstPage,
     DifferentOddEven,
     CloseFurniture,
+    /// How the section numbers its pages: the figures, and where it starts.
+    FormatPageNumbers,
     RestrictEditing,
 
     // Review.

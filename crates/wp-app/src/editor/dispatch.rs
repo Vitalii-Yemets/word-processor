@@ -139,6 +139,7 @@ impl Editor {
             Command::DifferentFirstPage => self.toggle_different_first_page(),
             Command::DifferentOddEven => self.toggle_different_odd_even(),
             Command::CloseFurniture => self.leave_furniture(),
+            Command::FormatPageNumbers => self.open_page_numbering(),
             Command::Footer => self.open_furniture(wp_docx::furniture::Furniture::Footer),
             Command::PageNumber => self.open_furniture(wp_docx::furniture::Furniture::Footer),
             Command::InsertDate => {

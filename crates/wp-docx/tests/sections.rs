@@ -228,3 +228,78 @@ fn the_header_the_caret_sees_is_its_own_sections() {
         .join("\n");
     assert!(here.contains("First"), "{here:?}");
 }
+
+/// How a section numbers its pages: where it starts and what the figures are.
+mod numbering {
+    use wp_docx::sections::{NumberFormat, PageNumbering};
+    use wp_docx::TextPosition;
+
+    use super::{broken, document, round_trip};
+
+    #[test]
+    fn a_section_says_nothing_about_its_numbering_to_begin_with() {
+        assert_eq!(document().page_numbering(0), PageNumbering::default());
+    }
+
+    #[test]
+    fn what_a_section_says_survives_being_saved() {
+        let mut document = document();
+        let wanted = PageNumbering { start: Some(1), format: NumberFormat::LowerRoman };
+        assert!(document.set_page_numbering(wanted));
+        assert_eq!(round_trip(&document).page_numbering(0), wanted);
+    }
+
+    #[test]
+    fn every_kind_of_figure_survives_the_trip() {
+        for format in [
+            NumberFormat::Decimal,
+            NumberFormat::UpperRoman,
+            NumberFormat::LowerRoman,
+            NumberFormat::UpperLetter,
+            NumberFormat::LowerLetter,
+        ] {
+            let mut document = document();
+            document.set_page_numbering(PageNumbering { start: None, format });
+            assert_eq!(round_trip(&document).page_numbering(0).format, format, "{format:?}");
+        }
+    }
+
+    #[test]
+    fn the_numbering_runs_on_from_one_section_to_the_next() {
+        let document = broken(wp_docx::sections::Start::NextPage);
+        // Three pages, all in sections that say nothing: 1, 2, 3.
+        let numbers = document.page_numbers(&[0, 0, 1, 1]);
+        assert_eq!(numbers.iter().map(|(number, _)| *number).collect::<Vec<_>>(), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn a_section_can_start_its_numbering_again() {
+        let mut document = broken(wp_docx::sections::Start::NextPage);
+        document.set_caret(TextPosition::new(2, 0));
+        document
+            .set_page_numbering(PageNumbering { start: Some(1), format: NumberFormat::Decimal });
+
+        let numbers = document.page_numbers(&[0, 0, 1, 1]);
+        assert_eq!(numbers.iter().map(|(number, _)| *number).collect::<Vec<_>>(), [1, 2, 1, 2]);
+    }
+
+    #[test]
+    fn a_section_can_start_at_a_number_of_its_own() {
+        let mut document = document();
+        document
+            .set_page_numbering(PageNumbering { start: Some(7), format: NumberFormat::Decimal });
+        let numbers = document.page_numbers(&[0, 0, 0]);
+        assert_eq!(numbers.iter().map(|(number, _)| *number).collect::<Vec<_>>(), [7, 8, 9]);
+    }
+
+    #[test]
+    fn the_figures_are_the_ones_the_section_asked_for() {
+        assert_eq!(NumberFormat::Decimal.of(4), "4");
+        assert_eq!(NumberFormat::UpperRoman.of(4), "IV");
+        assert_eq!(NumberFormat::LowerRoman.of(9), "ix");
+        assert_eq!(NumberFormat::UpperRoman.of(1944), "MCMXLIV");
+        assert_eq!(NumberFormat::UpperLetter.of(1), "A");
+        assert_eq!(NumberFormat::LowerLetter.of(26), "z");
+        assert_eq!(NumberFormat::UpperLetter.of(27), "AA");
+    }
+}

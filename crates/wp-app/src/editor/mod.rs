@@ -27,6 +27,7 @@ mod mailings;
 mod matching;
 mod minibar;
 mod notes;
+mod numbering;
 mod outline;
 mod pagesetup;
 mod parts;

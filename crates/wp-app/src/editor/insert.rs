@@ -248,6 +248,12 @@ impl Editor {
                 self.document.set_caret(wp_docx::TextPosition::new(0, 0));
                 self.run(crate::chrome::Command::InsertContents);
             }
+            "numbering" => {
+                // The menu that says how the section numbers its pages.
+                self.ribbon.tab = crate::chrome::ribbon::Tab::Insert;
+                self.paint(self.view_width, self.view_height);
+                self.open_page_numbering();
+            }
             "headerfooter" => {
                 // The tab that appears while a header is being edited.
                 self.document

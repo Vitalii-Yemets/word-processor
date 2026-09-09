@@ -31,7 +31,7 @@ use wp_docx::model::{
     RunContent, TabAlignment, TabLeader, TabStop, Table, TableBorders, TableCell, TableRow,
     VerticalAlignment,
 };
-use wp_docx::sections::Start;
+use wp_docx::sections::{NumberFormat, Start};
 use wp_docx::{Document, ListCounters, TextPosition};
 use wp_font::{Font, GlyphId};
 use wp_image::Image;
@@ -638,7 +638,7 @@ pub struct LayoutEngine<'a> {
     /// A `PAGE` field in a footer has to say which page it is on, and that is
     /// only known once the body has been laid out and the pages counted — so
     /// the footer is laid out afterwards, once per page, with this set.
-    field_page: Option<(usize, usize)>,
+    field_page: Option<(usize, usize, NumberFormat)>,
     /// Whether tracked changes are shown as changes rather than as the text
     /// they would leave behind.
     show_markup: bool,
@@ -3326,9 +3326,13 @@ struct Stretch {
 /// the section it belongs to.
 #[derive(Clone, Copy, Debug)]
 struct Numbering {
-    first: usize,
     total: usize,
     section: usize,
+    /// What the page is numbered and in what figures, which is not the same
+    /// as where it falls in the document: a section can start its numbering
+    /// again, and can ask for Roman figures.
+    printed: usize,
+    format: NumberFormat,
 }
 
 /// The rectangle text is placed within, in pixels.
@@ -3911,13 +3915,15 @@ impl LayoutEngine<'_> {
     /// better than showing nothing.
     fn field_value(&self, run: &Run) -> Option<String> {
         let instruction = run.field.as_deref()?;
-        let (page, pages) = self.field_page?;
+        let (page, pages, format) = self.field_page?;
 
         // The instruction is a little language: a name, then switches. Only the
         // name matters here.
         let name = instruction.split_whitespace().next()?.to_ascii_uppercase();
         match name.as_str() {
-            "PAGE" => Some(page.to_string()),
+            // In the figures the section asks for: a book's front matter is
+            // numbered i, ii, iii and its body starts again at 1.
+            "PAGE" => Some(format.of(page)),
             "NUMPAGES" => Some(pages.to_string()),
             _ => None,
         }
@@ -3943,6 +3949,10 @@ impl LayoutEngine<'_> {
         let belongs: Vec<usize> =
             (0..total).map(|page| self.page_sections.get(page).copied().unwrap_or(0)).collect();
 
+        // What each page is numbered: not where it falls in the document, which
+        // is what a header printing a page number would otherwise say.
+        let numbers = document.page_numbers(&belongs);
+
         // Each header is read out of the package and parsed, so each one is
         // read once and kept: a hundred-page document would otherwise parse the
         // same header a hundred times over.
@@ -3965,7 +3975,7 @@ impl LayoutEngine<'_> {
                     document,
                     metrics,
                     is_footer,
-                    Numbering { first: page, total, section },
+                    Numbering { total, section, printed: numbers[page].0, format: numbers[page].1 },
                 );
             }
         }
@@ -3989,8 +3999,8 @@ impl LayoutEngine<'_> {
         let scale = self.pixels_per_point();
         let (header_distance, footer_distance) = document.furniture_distances_of(numbering.section);
 
-        for (index, page) in pages.iter_mut().enumerate() {
-            self.field_page = Some((numbering.first + index + 1, numbering.total));
+        for page in pages.iter_mut() {
+            self.field_page = Some((numbering.printed, numbering.total, numbering.format));
 
             // Laid out at the top of a scratch page first, because how tall it
             // turns out decides where the footer starts.
