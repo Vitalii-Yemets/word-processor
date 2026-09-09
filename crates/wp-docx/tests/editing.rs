@@ -20,6 +20,15 @@ const SAMPLES: &[&str] = &[
     "דג סקרן שט בים מאוכזב ולפתע מצא חברה.",
 ];
 
+/// A document of plain paragraphs.
+fn document_with(lines: &[&str]) -> Vec<u8> {
+    let mut body = Body::default();
+    for line in lines {
+        body.blocks.push(Block::Paragraph(Paragraph::text(line)));
+    }
+    Document::create(&body).unwrap().save().unwrap()
+}
+
 /// A document with a few paragraphs, one per script.
 fn multilingual_document() -> Vec<u8> {
     let mut body = Body::default();
@@ -393,4 +402,58 @@ fn a_gesture_that_has_ended_leaves_the_next_change_on_its_own() {
 
     assert!(document.undo());
     assert_eq!(document.plain_text(), "oneA", "the second change was swallowed");
+}
+
+#[test]
+fn replacing_what_a_search_finds_does_not_mind_capitals() {
+    // Word's Replace All replaces what its Find would find, and its Find does
+    // not mind capitals unless it is told to.
+    let bytes = document_with(&["The cat and the CAT and a Cat"]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    let replaced = document.replace_matching("cat", "dog", wp_docx::search::Matching::default());
+    assert_eq!(replaced, 3);
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("The dog and the dog and a dog"));
+}
+
+#[test]
+fn replacing_a_whole_word_leaves_the_word_it_is_part_of_alone() {
+    let bytes = document_with(&["a cat in a catalogue"]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    let how = wp_docx::search::Matching { whole_word: true, ..Default::default() };
+    assert_eq!(document.replace_matching("cat", "dog", how), 1);
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("a dog in a catalogue"));
+}
+
+#[test]
+fn replacing_across_paragraphs_takes_them_all_back_in_one_step() {
+    let bytes = document_with(&["one here", "one there", "and one more"]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    assert_eq!(document.replace_matching("one", "two", Default::default()), 3);
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("two here"));
+    assert_eq!(document.paragraph_text(2).as_deref(), Some("and two more"));
+
+    assert!(document.undo());
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("one here"));
+    assert_eq!(document.paragraph_text(2).as_deref(), Some("and one more"));
+}
+
+#[test]
+fn replacing_an_accented_word_finds_it_written_either_way() {
+    let bytes = document_with(&["a cafe\u{0301} and a café"]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    assert_eq!(document.replace_matching("café", "bar", Default::default()), 2);
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("a bar and a bar"));
+}
+
+#[test]
+fn replacing_something_that_is_not_there_changes_nothing() {
+    let bytes = document_with(&["nothing to see"]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    assert_eq!(document.replace_matching("absent", "x", Default::default()), 0);
+    assert!(!document.is_modified());
 }

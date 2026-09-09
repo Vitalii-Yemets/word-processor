@@ -353,6 +353,10 @@ impl Editor {
                 self.ribbon.tab = *tab;
             }
         }
+        // Every option changes what the window looks like, and the window only
+        // draws itself again when it is told something has changed. An option
+        // that forgot to say so would be a picture of the window without it.
+        self.needs_redraw = true;
         Ok(())
     }
 }

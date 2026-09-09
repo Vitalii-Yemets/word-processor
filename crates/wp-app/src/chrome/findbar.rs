@@ -23,6 +23,8 @@ pub const HEIGHT: f32 = 34.0;
 const FIELD_WIDTH: f32 = 210.0;
 const FIELD_HEIGHT: f32 = 22.0;
 const LABEL_GAP: f32 = 8.0;
+/// Room kept at the right for the count of what was found.
+const COUNT_ROOM: f32 = 80.0;
 
 /// What the strip is for.
 ///
@@ -89,6 +91,7 @@ pub enum Hit {
     Replace,
     ReplaceAll,
     MatchCase,
+    WholeWord,
     Close,
     /// Finishes a comment.
     Add,
@@ -110,6 +113,8 @@ pub struct FindBar {
     pub focus: Focus,
     /// Whether the search minds about capital letters.
     pub match_case: bool,
+    /// Whether a match has to be a whole word rather than part of one.
+    pub whole_word: bool,
     /// Whether the replace field is shown at all.
     ///
     /// Word has two commands and one dialog; this has two commands and one
@@ -271,11 +276,46 @@ impl FindBar {
             );
         }
 
-        // The buttons, in the order they are used.
+        // The buttons, in the order they are used. A narrow strip cannot hold
+        // all their labels, and they go in the order they are missed least: an
+        // arrow says "next" without a word, and a toggle does not.
         x += 12.0;
-        for (hit, icon, label) in self.buttons() {
+        let buttons = self.buttons();
+        let room = width - 30.0 - x - COUNT_ROOM;
+        let shown = |hit: Hit, label: &'static str, dropped: u8| match dropped {
+            0 => label,
+            1 if Self::keeps_its_label(hit) => label,
+            _ => "",
+        };
+        let needed = |engine: &mut LayoutEngine<'_>, dropped: u8| -> f32 {
+            buttons
+                .iter()
+                .map(|(hit, _, label)| {
+                    let text = shown(*hit, label, dropped);
+                    engine.simple_line(text, 0.0, 0.0, 8.0, theme.text).width + 34.0
+                })
+                .sum()
+        };
+        let dropped = if needed(engine, 0) <= room {
+            0
+        } else if needed(engine, 1) <= room {
+            1
+        } else {
+            2
+        };
+
+        for (hit, icon, label) in &buttons {
             x = self.draw_button(
-                canvas, engine, renderer, hit, icon, label, x, middle, baseline, theme,
+                canvas,
+                engine,
+                renderer,
+                *hit,
+                *icon,
+                shown(*hit, label, dropped),
+                x,
+                middle,
+                baseline,
+                theme,
             );
         }
 
@@ -311,6 +351,14 @@ impl FindBar {
         }
         icons::draw_sized(canvas, Icon::Close, close_left + 3.0, middle + 3.0, 16.0, theme.text);
         self.placed.push((Hit::Close, close_left, middle, 22.0, FIELD_HEIGHT));
+    }
+
+    /// Whether a button says nothing without its label.
+    ///
+    /// An arrow does not need one: it points the way it goes. A toggle does —
+    /// no picture says on its own what it turns on.
+    fn keeps_its_label(hit: Hit) -> bool {
+        !matches!(hit, Hit::FindNext | Hit::FindPrevious)
     }
 
     /// The buttons the strip carries, which depend on what it was opened for.
@@ -349,6 +397,7 @@ impl FindBar {
             out.push((Hit::ReplaceAll, Icon::UpdateTable, "Replace All"));
         }
         out.push((Hit::MatchCase, Icon::ChangeCase, "Match Case"));
+        out.push((Hit::WholeWord, Icon::WordCount, "Whole Words"));
         out
     }
 
@@ -424,7 +473,8 @@ impl FindBar {
         let measured = engine.simple_line(label, 0.0, 0.0, 8.0, theme.text).width;
         let width = measured + 30.0;
 
-        let on = hit == Hit::MatchCase && self.match_case;
+        let on = (hit == Hit::MatchCase && self.match_case)
+            || (hit == Hit::WholeWord && self.whole_word);
         if on {
             canvas.fill_rect(
                 left as i32,

@@ -1,5 +1,6 @@
 //! Finding and replacing, and the strip that drives it.
 
+use wp_docx::search::Matching;
 use wp_docx::TextPosition;
 use wp_shell::Response;
 
@@ -120,6 +121,10 @@ impl Editor {
                 bar.match_case = !bar.match_case;
                 self.count_matches();
             }
+            Hit::WholeWord => {
+                bar.whole_word = !bar.whole_word;
+                self.count_matches();
+            }
             Hit::Close => return self.close_find(),
             Hit::Add => {
                 return match bar.purpose {
@@ -172,78 +177,58 @@ impl Editor {
     /// where the first one is as I type".
     fn jump_to_match(&mut self, forwards: bool, advance: bool) -> bool {
         let Some(bar) = &self.find_bar else { return false };
-        let needle = bar.needle.clone();
-        let match_case = bar.match_case;
-        if needle.is_empty() {
+        if bar.needle.is_empty() {
             return false;
         }
 
-        let matches = self.all_matches(&needle, match_case);
+        let matches = self.all_matches();
         if matches.is_empty() {
             return false;
         }
 
         let caret = self.caret();
+        let place = |position: &TextPosition| (position.paragraph, position.offset);
+        let here = place(&caret);
         let wanted = if forwards {
-            let after = |position: &TextPosition| {
-                if advance {
-                    (position.paragraph, position.offset) > (caret.paragraph, caret.offset)
-                } else {
-                    (position.paragraph, position.offset) >= (caret.paragraph, caret.offset)
-                }
-            };
             // Round the end and back to the beginning, which is what a search
             // that stopped at the last page would fail to do.
             matches
                 .iter()
-                .find(|position| after(position))
-                .copied()
-                .or_else(|| matches.first().copied())
+                .find(|(at, _)| if advance { place(at) > here } else { place(at) >= here })
+                .or_else(|| matches.first())
         } else {
-            matches
-                .iter()
-                .rev()
-                .find(|position| {
-                    (position.paragraph, position.offset) < (caret.paragraph, caret.offset)
-                })
-                .copied()
-                .or_else(|| matches.last().copied())
+            matches.iter().rev().find(|(at, _)| place(at) < here).or_else(|| matches.last())
         };
 
-        let Some(found) = wanted else { return false };
+        let Some((found, end)) = wanted.copied() else { return false };
         self.document.set_caret(found);
-        self.document
-            .extend_selection_to(TextPosition::new(found.paragraph, found.offset + needle.len()));
+        self.document.extend_selection_to(TextPosition::new(found.paragraph, end));
         self.reveal_caret();
         true
     }
 
-    /// Every place the needle appears, in reading order.
-    fn all_matches(&self, needle: &str, match_case: bool) -> Vec<TextPosition> {
-        let wanted = if match_case { needle.to_owned() } else { needle.to_lowercase() };
-        let mut out = Vec::new();
+    /// Every place the needle appears, in reading order, with where each ends.
+    ///
+    /// A match is not always as long as what was typed into the box: a search
+    /// that does not mind capitals matches a Turkish `İ` with an `i`, and one
+    /// that does not mind how an accent was written matches two characters
+    /// with one. So the end is carried rather than worked out.
+    fn all_matches(&self) -> Vec<(TextPosition, usize)> {
+        let Some(bar) = &self.find_bar else { return Vec::new() };
+        let mut found = self.document.find_all(&bar.needle, self.matching());
+        found.truncate(5000);
+        found
+    }
 
-        for paragraph in 0..self.document.paragraph_count() {
-            let Some(text) = self.document.paragraph_text(paragraph) else { continue };
-            let haystack = if match_case { text } else { text.to_lowercase() };
-            let mut from = 0usize;
-            while let Some(found) = haystack.get(from..).and_then(|rest| rest.find(&wanted)) {
-                let offset = from + found;
-                out.push(TextPosition::new(paragraph, offset));
-                from = offset + wanted.len().max(1);
-                if out.len() >= 5000 {
-                    return out;
-                }
-            }
-        }
-        out
+    /// What the strip's toggles say a search should mind about.
+    fn matching(&self) -> Matching {
+        let Some(bar) = &self.find_bar else { return Matching::default() };
+        Matching { match_case: bar.match_case, whole_word: bar.whole_word }
     }
 
     /// Counts what the current needle finds, for the strip to show.
     fn count_matches(&mut self) {
-        let Some(bar) = &self.find_bar else { return };
-        let (needle, match_case) = (bar.needle.clone(), bar.match_case);
-        let found = if needle.is_empty() { 0 } else { self.all_matches(&needle, match_case).len() };
+        let found = self.all_matches().len();
         if let Some(bar) = &mut self.find_bar {
             bar.found = found;
         }
@@ -252,22 +237,20 @@ impl Editor {
     /// Replaces the match that is selected, then moves to the next.
     fn replace_one(&mut self) -> Response {
         let Some(bar) = &self.find_bar else { return Response::Ignored };
-        let (needle, replacement, match_case) =
-            (bar.needle.clone(), bar.replacement.clone(), bar.match_case);
+        let (needle, replacement) = (bar.needle.clone(), bar.replacement.clone());
         if needle.is_empty() {
             return Response::Ignored;
         }
 
         // Only replace when the selection really is a match; otherwise this is
-        // a "find the first one" press.
+        // a "find the first one" press. The selection is asked the same way the
+        // search asks the document, so what was highlighted is what counts as a
+        // match — capitals, accents and whole words included.
         let selected = self.document.selected_text();
-        let matches = if match_case {
-            selected == needle
-        } else {
-            selected.eq_ignore_ascii_case(&needle)
-                || selected.to_lowercase() == needle.to_lowercase()
-        };
-        if !matches {
+        let hit = wp_docx::search::matches(&selected, &needle, self.matching())
+            .first()
+            .is_some_and(|found| found.start == 0 && found.end == selected.len());
+        if !hit {
             return self.find_step(true);
         }
 
@@ -290,10 +273,9 @@ impl Editor {
             return Response::Ignored;
         }
 
-        // Replace-all goes through the document's own machinery, which works
-        // across run boundaries — the reason a plain string replace would miss
-        // half the matches in a real document.
-        let count = self.document.replace_text(&needle, &replacement);
+        // What is replaced is what the search finds, and nothing else: the
+        // count the strip has been showing is the number that will change.
+        let count = self.document.replace_matching(&needle, &replacement, self.matching());
         if count > 0 {
             self.relayout();
         }

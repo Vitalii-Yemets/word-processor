@@ -1,0 +1,10 @@
+[package]
+name = "wp-normal"
+description = "The two ways of writing an accented letter, made one"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true

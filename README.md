@@ -125,6 +125,7 @@ should: everything else must come out as it went in.
 | `wp-shape` | Turning characters into the glyphs that draw them: joining, ligatures |
 | `wp-bidi` | The Unicode bidirectional algorithm, for mixed-direction text |
 | `wp-break` | Where a line of text may be broken |
+| `wp-normal` | The two ways of writing an accented letter, made one |
 | `wp-segment` | Where one character ends and the next begins, and one word and the next |
 | `wp-image` | Decoding the image formats a document can carry |
 | `wp-svg` | SVG path data, turned into outlines the rasterizer can fill |

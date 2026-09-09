@@ -42,6 +42,7 @@ name = "wp-docx"
 version = "0.0.1"
 dependencies = [
  "wp-image",
+ "wp-normal",
  "wp-opc",
  "wp-segment",
  "wp-xml",
@@ -72,6 +73,10 @@ dependencies = [
  "wp-shape",
  "wp-xml",
 ]
+
+[[package]]
+name = "wp-normal"
+version = "0.0.1"
 
 [[package]]
 name = "wp-opc"

@@ -71,6 +71,7 @@ pub mod properties;
 mod read;
 pub mod revisions;
 pub mod rules;
+pub mod search;
 pub mod sections;
 pub mod settings;
 pub mod shapes;
@@ -1658,6 +1659,24 @@ impl Document {
         changed
     }
 
+    /// Every place a string appears in the document, in reading order.
+    ///
+    /// Each is where the match starts and where it ends, which are not the
+    /// start and the start plus the needle's length: a match found without
+    /// minding capitals or how an accent was written may be a different length
+    /// from what was typed into the search box.
+    #[must_use]
+    pub fn find_all(&self, needle: &str, how: search::Matching) -> Vec<(TextPosition, usize)> {
+        let mut out = Vec::new();
+        for index in 0..self.paragraph_count() {
+            let Some(text) = self.paragraph_text(index) else { continue };
+            for found in search::matches(&text, needle, how) {
+                out.push((TextPosition::new(index, found.start), found.end));
+            }
+        }
+        out
+    }
+
     /// Finds the next occurrence of a string after a position, wrapping round.
     ///
     /// Wrapping because a search that stopped at the end of the document would
@@ -1675,11 +1694,57 @@ impl Document {
             let index = (after.paragraph + step) % count.max(1);
             let text = self.paragraph_text(index)?;
             let from = if step == 0 { after.offset.min(text.len()) } else { 0 };
-            if let Some(found) = text.get(from..).and_then(|rest| rest.find(needle)) {
-                return Some(TextPosition::new(index, from + found));
+            let found = search::matches(&text, needle, search::Matching::default())
+                .into_iter()
+                .find(|found| found.start >= from);
+            if let Some(found) = found {
+                return Some(TextPosition::new(index, found.start));
             }
         }
         None
+    }
+
+    /// Replaces every match of a string, and says how many there were.
+    ///
+    /// Unlike [`Document::replace_text`], which matches the bytes exactly, this
+    /// replaces what a search finds — the same matches, capitals and accents
+    /// and all, that the person was shown before they pressed the button.
+    ///
+    /// The replacing runs backwards through the document so that each edit
+    /// leaves the offsets of the matches before it alone, and the whole of it
+    /// is one gesture, so one press of undo takes all of it back.
+    pub fn replace_matching(
+        &mut self,
+        needle: &str,
+        replacement: &str,
+        how: search::Matching,
+    ) -> usize {
+        let found = self.find_all(needle, how);
+        if found.is_empty() {
+            return 0;
+        }
+
+        self.begin_gesture();
+        let mut replaced = 0;
+        for (at, end) in found.into_iter().rev() {
+            if !self.delete_range(at.paragraph, at.offset, end) {
+                continue;
+            }
+            if !replacement.is_empty() && !self.insert_text(at, replacement) {
+                continue;
+            }
+            replaced += 1;
+        }
+        self.end_gesture();
+
+        // The caret may have been sitting inside something that is no longer
+        // there, so it is put somewhere that certainly exists.
+        let caret = self.caret();
+        let length = self.paragraph_text(caret.paragraph).unwrap_or_default().len();
+        if caret.offset > length {
+            self.set_caret(TextPosition::new(caret.paragraph, length));
+        }
+        replaced
     }
 
     /// Puts a table of empty cells after the paragraph the caret is in.
