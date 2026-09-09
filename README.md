@@ -3,14 +3,37 @@
 An open-source word processor that reads and writes the same file formats as
 Microsoft Word and aims for the same feature set.
 
-**Status: early development, and it works.** A `.docx` opens in a window, can be
-clicked into, typed in, and saved — and Microsoft Word opens the result. The
-archive is unpacked, the XML parsed, the styles resolved, the fonts read from the
-machine, the glyph outlines rasterized and the window filled, all by code in this
-repository.
+**Status: it is a word processor.** A `.docx` opens in a window with a ribbon,
+and Microsoft Word opens back everything this program writes. The archive is
+unpacked, the XML parsed, the styles resolved, the fonts read from the machine
+and shaped, the glyph outlines rasterized, the pages laid out and every pixel of
+the window drawn by code in this repository.
 
-There is no selection, no undo, and no formatting from the keyboard yet. See
+What the document model holds is most of what the format can carry: sections
+with their own paper, margins, columns and headers; styles, lists, tables and
+tab stops; pictures, shapes, charts, equations and diagrams; footnotes,
+captions, cross-references, a table of contents, citations and an index;
+comments, tracked changes, a document comparison and a mail merge.
+
+What the window does is what Word's window does. The ribbon and its tabs, the
+rulers, the navigation pane, the status strip, find and replace, the mini
+toolbar over a selection, the menu the right button opens, the tooltips, and the
+letters Alt puts over the ribbon. The mouse behaves the same way too: a double
+click takes a word and a third takes the paragraph, the margin selects lines,
+text can be carried somewhere else, Ctrl and the wheel zooms, and the middle
+button starts the scroll that follows the pointer.
+
+Printing goes to a real printer through the same layout that draws the screen.
+
+Deliberate gaps, named rather than hidden: there is no grammar checker, the
+Indic scripts are drawn without the reordering they need, and several features
+are modelled to the depth a document needs rather than the depth Word's dialogs
+offer. Each such limit is stated in the module that owns it. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for the plan and the current position.
+
+`word-processor --picture <document.docx|-> <image.png> [width height]` draws the
+whole window into a PNG instead of onto a screen, which is how the interface is
+checked on a machine with no display.
 
 ## Principles
 
@@ -19,7 +42,7 @@ These constraints are deliberate and shape every decision in the codebase.
 **Written from scratch, in Rust, with zero third-party crates.** Nothing but the
 Rust standard library. Compression, ZIP, XML, the package layer and the document
 model are all implemented here, and so are the fonts, text shaping, layout,
-rasterization and GUI still to come. The only external code the binary touches is
+rasterization and the interface. The only external code the binary touches is
 the operating system's own ABI (Win32 on Windows, X11/Wayland on Linux), declared
 directly with `extern "system"` rather than through a binding crate.
 
@@ -39,10 +62,11 @@ that keeps all of it, and an edit rewrites only the nodes it must. A document
 opened and saved untouched comes back byte for byte identical; one that is
 edited differs only where it was edited. This is tested, not merely intended.
 
-**Multilingual from the ground up.** Not a translation added at the end: the text
-engine will handle bidirectional scripts, complex shaping, and script-specific
-line breaking, and the interface is localizable and mirrors for right-to-left
-languages. This has to be designed in from the start; it cannot be retrofitted.
+**Multilingual from the ground up.** Not a translation added at the end. The text
+engine lays out bidirectional scripts and shapes the ones that need shaping:
+Arabic and Syriac join, and ligatures are taken wherever a font offers them. The
+Indic scripts need reordering within a syllable as well and are not shaped yet.
+This has to be designed in from the start; it cannot be retrofitted.
 
 ## Trying it
 
@@ -65,9 +89,11 @@ The windowed application:
 .\dist\word-processor.exe mine.docx       # open a file
 ```
 
-Click in the text to put the caret there, then type. Enter splits a paragraph,
-Backspace joins one onto the last, Ctrl+S saves. The arrow keys move the caret,
-the wheel and Page Up/Down scroll, Escape closes.
+Click in the text to put the caret there, then type. The ribbon along the top is
+where the commands are; Alt puts a letter over each of its tabs and lets it be
+worked from the keyboard alone. Enter splits a paragraph, Backspace joins one
+onto the last, Ctrl+S saves. The wheel scrolls, Ctrl and the wheel zooms, and
+right-clicking opens a menu about whatever is under the pointer.
 
 `wp` is a command line front end for everything the window does not expose yet:
 

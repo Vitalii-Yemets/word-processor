@@ -297,11 +297,52 @@ import.
 
 **It is an editor.** A document is unpacked, parsed, resolved against its styles,
 laid out with fonts read from the machine, rasterized and shown on screen — and
-then clicked into, typed in, and saved. Word opens the result in the current
-mode and sees the styles a keypress created.
+then clicked into, selected in, typed in, undone and saved. Word opens the result
+in the current mode and sees the styles a keypress created.
 
-What is missing from the editing is selection, undo, and formatting from the
-keyboard. What is missing from the text is the shaping engine, which is what
+The caret and the selection belong to the document rather than to the window, so
+undo restores where the caret was along with what the text said. Undo keeps whole
+snapshots of the element tree rather than inverse operations: a snapshot cannot
+be subtly wrong three steps later, and correctness is worth more here than the
+memory. Steps merge while typing and break at a space, so undo takes back a word
+rather than a keystroke; typing over a selection, or pasting several paragraphs,
+is one step because it was one thing the person did. Cut, copy and paste go
+through the system clipboard, which the shell reaches with the same
+`extern "system"` declarations as the window.
+
+Formatting is applied to a range by splitting the runs at each end of it, because
+a run is the only place the format can record character formatting — so making
+half a word bold means the word becomes two runs. A split copies the run and
+keeps opposite halves, so both sides come out carrying everything the original
+had, including what this program does not model. Turning a format off writes it
+off rather than leaving it out: saying nothing about bold inside a heading would
+inherit the heading's bold straight back. Runs are only split where the split is
+needed, so formatting the same range twice, or typing letter by letter with bold
+chosen, does not leave one run per keystroke.
+
+With nothing selected, a formatting key applies to what is typed next rather than
+to nothing at all — and is forgotten as soon as the caret moves somewhere else,
+because by then it is about a place the user has left.
+
+A tab is stored as `w:tab`, the element Word uses, and counts as one character in
+the text the caret moves through — so the caret can stand either side of one,
+Backspace deletes it whole, and a selection reaches across it. The layout engine
+sends a tab to the next stop rather than advancing it by a fixed amount: a tab is
+a distance to a place, not a distance to travel. Stops are counted from the left
+edge of the text area, half an inch apart, which is where the marks on the ruler
+are drawn.
+
+The window has a toolbar and a ruler. Both are drawn onto the same canvas as the
+document, by the same rasterizer and out of the same fonts; there is no widget
+toolkit under them and no second way to put a pixel on screen. A toolbar button
+carries its own effect rather than a label — the bold button is a letter B set in
+bold — which needs no translation in a program meant to be used in every language
+Word supports. Because the whole interface is drawn onto a canvas, it can be
+drawn without a window at all: `--picture` writes it to a PNG, which is how it is
+checked on a machine with no display.
+
+What is missing from the interface is a ribbon with tabs, a style gallery and
+dialogs. What is missing from the text is the shaping engine, which is what
 Arabic and the Indic scripts need to have their letters joined rather than drawn
 in isolation.
 
@@ -316,7 +357,8 @@ cross-compiled from the same container that builds for Linux.
 
 ## Immediate next step
 
-Selection and undo, which are what turn a caret into an editor a person would
-trust. After that, Stage 1.4 and Stage 4: the Unicode tables and the shaping
-engine, which Arabic, Hebrew and the Indic scripts need to be drawn correctly
-rather than as isolated letters.
+Stage 1.4 and Stage 4: the Unicode tables and the shaping engine, which Arabic,
+Hebrew and the Indic scripts need to be drawn correctly rather than as isolated
+letters. That is the largest remaining gap between what this draws and what Word
+draws, and everything above it — the ribbon, the style gallery, tables with real
+cells — is work that can be done on top of a text engine that is already right.
