@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/wp-bidi",
+    "crates/wp-break",
     "crates/wp-cli",
     "crates/wp-deflate",
     "crates/wp-docx",

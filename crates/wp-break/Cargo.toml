@@ -1,0 +1,10 @@
+[package]
+name = "wp-break"
+description = "Where a line of text may be broken"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true

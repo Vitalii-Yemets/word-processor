@@ -12,6 +12,7 @@ wp-font = { path = "../wp-font" }
 wp-image = { path = "../wp-image" }
 wp-shape = { path = "../wp-shape" }
 wp-bidi = { path = "../wp-bidi" }
+wp-break = { path = "../wp-break" }
 wp-raster = { path = "../wp-raster" }
 wp-xml = { path = "../wp-xml" }
 

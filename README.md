@@ -122,6 +122,11 @@ should: everything else must come out as it went in.
 | `wp-opc` | Parts, content types, relationships |
 | `wp-docx` | The WordprocessingML document model and styles |
 | `wp-font` | TrueType and OpenType parsing: metrics, character mapping, outlines |
+| `wp-shape` | Turning characters into the glyphs that draw them: joining, ligatures |
+| `wp-bidi` | The Unicode bidirectional algorithm, for mixed-direction text |
+| `wp-break` | Where a line of text may be broken |
+| `wp-image` | Decoding the image formats a document can carry |
+| `wp-svg` | SVG path data, turned into outlines the rasterizer can fill |
 | `wp-raster` | Anti-aliased path filling, a pixel canvas, and PNG output |
 | `wp-layout` | Finding fonts, breaking text into lines, drawing a page |
 | `wp-shell` | The window and its event loop, written against the Win32 ABI |

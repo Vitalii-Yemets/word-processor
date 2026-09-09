@@ -592,6 +592,10 @@ struct Item {
     width: f32,
     /// Whitespace collapses at the end of a line rather than being drawn.
     is_space: bool,
+    /// Whether a line may end just before this item. Almost everything may
+    /// begin one; a full stop that a change of formatting left in a run of its
+    /// own may not.
+    breaks_before: bool,
     /// A tab, whose width is not known until the line is being placed: it
     /// reaches to the next stop, which depends on where the line has got to.
     is_tab: bool,
@@ -1869,6 +1873,10 @@ impl<'a> LayoutEngine<'a> {
         // Byte offset within the paragraph's text, counted the same way the
         // editing layer counts it, so a glyph and a caret mean the same thing.
         let mut offset = 0usize;
+        // The character the run before ended with. A line may be broken between
+        // two runs only where it could be broken inside one, or a full stop
+        // somebody made bold would be free to begin a line.
+        let mut previous_character: Option<char> = None;
 
         for run in &paragraph.runs {
             // Text somebody deleted is only drawn while the markup is showing;
@@ -1912,6 +1920,18 @@ impl<'a> LayoutEngine<'a> {
             );
             if run.field.is_some() {
                 field_number += 1;
+            }
+
+            // Whether this run's first item may begin a line depends on what
+            // the run before it ended with.
+            let (opens, closes) = run_edges(run);
+            if items.len() > first {
+                if let (Some(before), Some(after)) = (previous_character, opens) {
+                    if !wp_break::may_break(before, after) {
+                        items[first].breaks_before = false;
+                    }
+                }
+                previous_character = closes;
             }
 
             // Deleted text takes up no room in the document's own text, so it
@@ -1980,6 +2000,7 @@ impl<'a> LayoutEngine<'a> {
                             glyphs,
                             width,
                             is_space: chunk.is_space,
+                            breaks_before: true,
                             is_tab: false,
                             picture: None,
                             shape: None,
@@ -2005,6 +2026,7 @@ impl<'a> LayoutEngine<'a> {
                         width: self.default_tab_width(),
                         glyphs: Vec::new(),
                         is_space: false,
+                        breaks_before: true,
                         is_tab: true,
                         picture: None,
                         math: None,
@@ -2029,6 +2051,7 @@ impl<'a> LayoutEngine<'a> {
                         glyphs,
                         width,
                         is_space: false,
+                        breaks_before: true,
                         is_tab: false,
                         picture: None,
                         math: None,
@@ -2056,6 +2079,7 @@ impl<'a> LayoutEngine<'a> {
                         glyphs: Vec::new(),
                         width,
                         is_space: false,
+                        breaks_before: true,
                         is_tab: false,
                         picture: None,
                         math: None,
@@ -2082,6 +2106,7 @@ impl<'a> LayoutEngine<'a> {
                         glyphs: Vec::new(),
                         width,
                         is_space: false,
+                        breaks_before: true,
                         is_tab: false,
                         picture: None,
                         shape: None,
@@ -2113,6 +2138,7 @@ impl<'a> LayoutEngine<'a> {
                         glyphs: Vec::new(),
                         width,
                         is_space: false,
+                        breaks_before: true,
                         is_tab: false,
                         picture: None,
                         math: None,
@@ -2150,6 +2176,7 @@ impl<'a> LayoutEngine<'a> {
                         glyphs: Vec::new(),
                         width,
                         is_space: false,
+                        breaks_before: true,
                         is_tab: false,
                         picture: decoded.map(|image| (image, height)),
                         shape: None,
@@ -2168,6 +2195,7 @@ impl<'a> LayoutEngine<'a> {
                         glyphs: Vec::new(),
                         width: 0.0,
                         is_space: false,
+                        breaks_before: true,
                         is_tab: false,
                         picture: None,
                         math: None,
@@ -3679,53 +3707,61 @@ struct Chunk {
     is_space: bool,
 }
 
-/// Splits text into words, spaces, and characters that break on their own.
+/// Splits text into the pieces a line may be broken between.
 ///
-/// Chinese, Japanese and Korean are written without spaces, so a line may be
-/// broken between almost any two characters. Treating those as words would put
-/// a whole paragraph on one line.
+/// Where a break is allowed is [`wp_break`]'s business: it knows that a line
+/// may end after a hyphen but never before one, that a non-breaking space is
+/// not a place to break, and that Chinese and Japanese are written without
+/// spaces and so wrap between the characters themselves.
+///
+/// The spaces are then split off into pieces of their own, because a line drops
+/// the spaces that fall at its end and justification widens the ones that do
+/// not.
 fn segment(text: &str) -> Vec<Chunk> {
     let mut chunks = Vec::new();
-    let mut current = String::new();
-    let mut current_is_space = false;
-
-    let flush = |chunks: &mut Vec<Chunk>, current: &mut String, is_space: bool| {
-        if !current.is_empty() {
-            chunks.push(Chunk { text: std::mem::take(current), is_space });
-        }
-    };
-
-    for character in text.chars() {
-        if breaks_on_its_own(character) {
-            flush(&mut chunks, &mut current, current_is_space);
-            chunks.push(Chunk { text: character.to_string(), is_space: false });
-            continue;
-        }
-
-        let is_space = character.is_whitespace();
-        if is_space != current_is_space {
-            flush(&mut chunks, &mut current, current_is_space);
-            current_is_space = is_space;
-        }
-        current.push(character);
+    let mut start = 0;
+    for end in wp_break::opportunities(text).into_iter().chain([text.len()]) {
+        push_piece(&mut chunks, &text[start..end]);
+        start = end;
     }
-    flush(&mut chunks, &mut current, current_is_space);
-
     chunks
 }
 
-/// Whether a line may be broken after this character regardless of spaces.
-fn breaks_on_its_own(character: char) -> bool {
-    matches!(character as u32,
-        // CJK ideographs, and the Japanese and Korean syllabaries.
-        0x1100..=0x11FF
-        | 0x2E80..=0x9FFF
-        | 0xA960..=0xA97F
-        | 0xAC00..=0xD7FF
-        | 0xF900..=0xFAFF
-        | 0xFF00..=0xFF60
-        | 0x20000..=0x3FFFF
-    )
+/// Adds one unbreakable piece, with the spaces it ends with split off.
+fn push_piece(chunks: &mut Vec<Chunk>, piece: &str) {
+    let head = piece.trim_end_matches(collapses_at_a_line_end);
+    if !head.is_empty() {
+        chunks.push(Chunk { text: head.to_owned(), is_space: false });
+    }
+    if head.len() < piece.len() {
+        chunks.push(Chunk { text: piece[head.len()..].to_owned(), is_space: true });
+    }
+}
+
+/// Whether a space is one that disappears at the end of a line.
+///
+/// A non-breaking space is not: it is drawn wherever it falls, which is the
+/// whole point of it.
+fn collapses_at_a_line_end(character: char) -> bool {
+    character.is_whitespace() && wp_break::class_of(character) != wp_break::Class::Glue
+}
+
+/// The first and last characters of a run's text, for deciding whether a line
+/// may be broken between two runs.
+///
+/// A run that begins or ends with something that is not text — a tab, a
+/// picture, a break — has no character there, and a break beside it is always
+/// allowed.
+fn run_edges(run: &Run) -> (Option<char>, Option<char>) {
+    fn text(content: Option<&RunContent>) -> Option<&str> {
+        match content {
+            Some(RunContent::Text(text)) => Some(text.as_str()),
+            _ => None,
+        }
+    }
+    let first = text(run.content.first()).and_then(|text| text.chars().next());
+    let last = text(run.content.last()).and_then(|text| text.chars().last());
+    (first, last)
 }
 
 #[cfg(test)]
@@ -4561,14 +4597,16 @@ fn count_sequences(
 fn break_next_line(items: &[Item], start: usize, available: f32) -> Line {
     let mut index = start;
     let mut used = 0.0f32;
-    let mut last_visible = start;
 
     // A space at the start of a line is dropped rather than indenting it.
     while index < items.len() && items[index].is_space && used == 0.0 {
         index += 1;
     }
     let first = index;
-    last_visible = last_visible.max(first);
+    let mut last_visible = first;
+    // The last place the line could have ended, for when the item that does not
+    // fit is one no line may begin with.
+    let mut opportunity: Option<usize> = None;
 
     while index < items.len() {
         let item = &items[index];
@@ -4579,9 +4617,20 @@ fn break_next_line(items: &[Item], start: usize, available: f32) -> Line {
 
         let would_be = used + item.width;
         if would_be > available && used > 0.0 && !item.is_space {
-            return Line { items: first..index, last_visible };
+            if item.breaks_before {
+                return Line { items: first..index, last_visible };
+            }
+            // The item is glued to what comes before it — a closing bracket, a
+            // full stop — so the line ends further back and the pair goes over
+            // together.
+            if let Some(end) = opportunity {
+                return Line { items: first..end, last_visible: visible_end(items, first, end) };
+            }
         }
 
+        if index > first && item.breaks_before && !item.is_space {
+            opportunity = Some(index);
+        }
         used = would_be;
         if !item.is_space {
             last_visible = index + 1;
@@ -4590,6 +4639,12 @@ fn break_next_line(items: &[Item], start: usize, available: f32) -> Line {
     }
 
     Line { items: first..items.len(), last_visible }
+}
+
+/// Where the drawn part of a line ends, once the spaces at its end are left
+/// out.
+fn visible_end(items: &[Item], first: usize, end: usize) -> usize {
+    (first..end).rev().find(|index| !items[*index].is_space).map_or(first, |index| index + 1)
 }
 
 /// How tall a line is, once the paragraph's line spacing has had its say.
