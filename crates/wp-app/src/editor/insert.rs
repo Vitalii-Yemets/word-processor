@@ -207,6 +207,18 @@ impl Editor {
             "print" => {
                 self.open_print();
             }
+            "printselection" => {
+                // A paragraph selected, so the Print page can be photographed
+                // showing the selection laid out on its own.
+                self.document.set_caret(wp_docx::TextPosition::new(4, 0));
+                let end = self.document.paragraph_text(6).unwrap_or_default().len();
+                self.document.extend_selection_to(wp_docx::TextPosition::new(6, end));
+                self.open_print();
+                if let Some(pane) = &mut self.print_pane {
+                    pane.settings.which = crate::chrome::printpane::Which::Selection;
+                }
+                self.print_preview = self.layout_for_print(wp_layout::Device::screen());
+            }
             "table" => {
                 self.document.insert_table(3, 3);
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;

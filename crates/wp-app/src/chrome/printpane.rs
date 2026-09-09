@@ -26,14 +26,12 @@ const BOX_HEIGHT: f32 = 26.0;
 const ROW_GAP: f32 = 14.0;
 
 /// Which pages go to the printer.
-///
-/// Word also prints just what is selected. That is not here yet: it means
-/// laying out the selection on its own rather than choosing among the pages
-/// already laid out, which is a piece of work of its own — see item A7.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Which {
     #[default]
     All,
+    /// What is selected in the document, laid out on its own.
+    Selection,
     /// The page the caret is on.
     CurrentPage,
     /// The pages typed into the box under it.
@@ -41,12 +39,13 @@ pub enum Which {
 }
 
 impl Which {
-    pub const ALL: &'static [Self] = &[Self::All, Self::CurrentPage, Self::Custom];
+    pub const ALL: &'static [Self] = &[Self::All, Self::Selection, Self::CurrentPage, Self::Custom];
 
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::All => "Print All Pages",
+            Self::Selection => "Print Selection",
             Self::CurrentPage => "Print Current Page",
             Self::Custom => "Custom Print",
         }
@@ -57,6 +56,7 @@ impl Which {
     pub fn note(self) -> &'static str {
         match self {
             Self::All => "The whole thing",
+            Self::Selection => "Just what you selected",
             Self::CurrentPage => "Just this page",
             Self::Custom => "Type specific pages",
         }
@@ -151,7 +151,7 @@ impl Settings {
     #[must_use]
     pub fn chosen(&self, total: usize, current: usize) -> Vec<usize> {
         match self.which {
-            Which::All => (1..=total).collect(),
+            Which::All | Which::Selection => (1..=total).collect(),
             Which::CurrentPage => {
                 if current >= 1 && current <= total {
                     vec![current]

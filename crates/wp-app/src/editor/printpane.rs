@@ -45,7 +45,7 @@ impl Editor {
         let mut pane = PrintPane::new();
         pane.page = self.caret_page();
         self.print_pane = Some(pane);
-        self.print_preview = self.layout_for_print();
+        self.print_preview = self.layout_for_print(Device::screen());
         self.needs_redraw = true;
         Response::Redraw
     }
@@ -88,10 +88,25 @@ impl Editor {
     /// At the screen's resolution rather than the printer's: the two break
     /// their lines and their pages in the same places, and a preview does not
     /// need six hundred dots to the inch to be looked at.
-    fn layout_for_print(&mut self) -> Vec<Page> {
-        let mut engine = LayoutEngine::for_device(self.library, Device::screen())
-            .with_markup(self.print_markup());
+    pub(super) fn layout_for_print(&mut self, device: Device) -> Vec<Page> {
+        let markup = self.print_markup();
+        let mut engine = LayoutEngine::for_device(self.library, device).with_markup(markup);
+
+        // Printing a selection lays the selection out on its own, as Word does:
+        // one sheet with the chosen paragraphs on it, rather than the pages
+        // they happen to fall on.
+        if self.printing_selection() {
+            let body = wp_docx::model::Body { blocks: self.document.copy_selection() };
+            let metrics = wp_layout::PageMetrics::from_document(&self.document);
+            return engine.layout_body(&body, &self.document, metrics);
+        }
         engine.layout_document(&self.document)
+    }
+
+    /// Whether the job is the selection rather than the document.
+    fn printing_selection(&self) -> bool {
+        self.print_pane.as_ref().is_some_and(|pane| pane.settings.which == Which::Selection)
+            && self.document.selection().is_some()
     }
 
     /// Whether the preview and the printer show the tracked changes.
@@ -243,7 +258,7 @@ impl Editor {
             }
             Hit::Markup => {
                 pane.settings.markup = !pane.settings.markup;
-                self.print_preview = self.layout_for_print();
+                self.print_preview = self.layout_for_print(Device::screen());
                 self.redrawn()
             }
             Hit::Collation => {
@@ -275,8 +290,16 @@ impl Editor {
                 (Choice::Printer, names, current)
             }
             Hit::Which => {
-                let items = Which::ALL.iter().map(|which| which.label().to_owned()).collect();
-                let current = Which::ALL.iter().position(|which| *which == pane.settings.which);
+                // Printing a selection is offered only when there is one, as
+                // Word offers it: the setting is greyed out otherwise.
+                let has_selection = self.document.selection().is_some();
+                let offered: Vec<Which> = Which::ALL
+                    .iter()
+                    .copied()
+                    .filter(|which| has_selection || *which != Which::Selection)
+                    .collect();
+                let items = offered.iter().map(|which| which.label().to_owned()).collect();
+                let current = offered.iter().position(|which| *which == pane.settings.which);
                 (Choice::PrintWhich, items, current)
             }
             Hit::Sides => {
@@ -343,8 +366,17 @@ impl Editor {
                 }
             }
             Choice::PrintWhich => {
-                if let Some(which) = Which::ALL.get(index) {
-                    pane.settings.which = *which;
+                let has_selection = self.document.selection().is_some();
+                let offered: Vec<Which> = Which::ALL
+                    .iter()
+                    .copied()
+                    .filter(|which| has_selection || *which != Which::Selection)
+                    .collect();
+                if let Some(which) = offered.get(index) {
+                    if let Some(pane) = &mut self.print_pane {
+                        pane.settings.which = *which;
+                    }
+                    self.print_preview = self.layout_for_print(Device::screen());
                 }
             }
             Choice::PrintSides => {
@@ -409,10 +441,7 @@ impl Editor {
             return self.redrawn();
         };
 
-        let markup = self.print_markup();
-        let mut engine =
-            LayoutEngine::for_device(self.library, Device::paper()).with_markup(markup);
-        let all = engine.layout_document(&self.document);
+        let all = self.layout_for_print(Device::paper());
         // Only the pages that were asked for, in the order they were asked
         // for — the same list the preview was showing.
         let pages: Vec<wp_layout::Page> =
@@ -461,9 +490,7 @@ impl Editor {
         let paper = printer.page();
         let (left, top, right, bottom) = paper.unprintable();
         let device = Device::from_dots(paper.dpi_x, left, top, right, bottom);
-        let mut engine =
-            LayoutEngine::for_device(self.library, device).with_markup(settings.markup);
-        let pages = engine.layout_document(&self.document);
+        let pages = self.layout_for_print(device);
 
         if !printer.start(&self.document_name()) {
             wp_shell::dialog::show_error("The printer would not accept the document.");

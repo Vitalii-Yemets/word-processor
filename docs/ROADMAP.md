@@ -234,10 +234,13 @@ A word processor that cannot print is not one. Nothing of this exists yet.
   *Not yet proven:* nobody has printed a sheet on both sides, for the same
   reason as **A2**: no printer in the container.
 
-- [ ] **A7. Printing a selection.** Word prints what is selected and nothing
+- [x] **A7. Printing a selection.** Word prints what is selected and nothing
   else, laid out on its own rather than as the pages it happens to fall on.
-  *Done when:* selecting a paragraph and printing gives one sheet with that
-  paragraph on it.
+  *Done:* the selection is taken as blocks — the same ones a copy would put on
+  the clipboard, formatting and all — and laid out as a document of its own on
+  the document's own paper. The preview shows what will come out: one sheet
+  with the selected paragraphs at the top of it. The setting is offered only
+  when there is a selection, as Word offers it.
 
 - [x] **A4. PDF export.** The PDF file format, the graphics operators, and font
   subsetting — embedding only the glyphs used, because a document may not carry
