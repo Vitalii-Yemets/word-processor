@@ -25,7 +25,7 @@
 //! is printed on — editing it here changes it everywhere, which is the part
 //! that matters.
 
-use wp_docx::furniture::Furniture;
+use wp_docx::furniture::{Furniture, Which};
 use wp_layout::Page;
 use wp_raster::Color;
 use wp_shell::Response;
@@ -37,14 +37,48 @@ const DIMMED: u8 = 90;
 
 impl Editor {
     /// Opens the header or the footer for editing.
-    pub(super) fn edit_furniture(&mut self, which: Furniture) -> Response {
+    pub(super) fn edit_furniture(&mut self, kind: Furniture) -> Response {
         if self.document.part_being_edited().is_some() {
             return Response::Ignored;
         }
-        let Some(part) = self.document.furniture_part(which) else {
-            let name = if which == Furniture::Header { "header" } else { "footer" };
-            return self.report(&format!("This document has no {name} — Insert ▸ {name} adds one"));
+
+        // Which of the section's three the caret's page is printed with: the
+        // first page of a section can have its own, and so can the left-hand
+        // pages of a book. Editing the header of the page being looked at is
+        // the only thing a double click there can sensibly mean.
+        let which = self.which_furniture_here();
+        let section = self.document.section_here();
+        let part = match self.document.furniture_part_for(kind, section, which) {
+            Some(part) => part,
+            None if which == Which::Default => {
+                let name = if kind == Furniture::Header { "header" } else { "footer" };
+                return self
+                    .report(&format!("This document has no {name} — Insert ▸ {name} adds one"));
+            }
+            // A section that has asked for a different first page and never
+            // written one has a blank page waiting for it; a double click there
+            // is somebody about to fill it in.
+            None => {
+                if self
+                    .document
+                    .set_furniture_for(
+                        kind,
+                        which,
+                        wp_docx::furniture::Preset::Blank,
+                        wp_docx::model::Alignment::Start,
+                        "",
+                    )
+                    .is_err()
+                {
+                    return Response::Ignored;
+                }
+                let Some(part) = self.document.furniture_part_for(kind, section, which) else {
+                    return Response::Ignored;
+                };
+                part
+            }
         };
+
         if !self.document.enter_part(&part) {
             return Response::Ignored;
         }
@@ -52,12 +86,45 @@ impl Editor {
         // What was on screen a moment ago, kept as a picture of the document
         // to draw behind what is being edited.
         self.dimmed = dimmed(core::mem::take(&mut self.pages));
-        self.editing_furniture = Some(which);
+        self.editing_furniture = Some(kind);
+        // The ribbon shows the tab that is about headers and footers, which is
+        // what Word does the moment one is opened. Where it was is remembered,
+        // because coming back out should not leave somebody somewhere else.
+        self.tab_before_furniture = Some(self.ribbon.tab);
+        self.ribbon.tab = crate::chrome::ribbon::Tab::HeaderFooter;
         self.relayout();
         self.reveal_caret();
 
-        let name = if which == Furniture::Header { "Header" } else { "Footer" };
-        self.report(&format!("{name} — double-click the document or press Escape to come back"))
+        let name = if kind == Furniture::Header { "Header" } else { "Footer" };
+        let of = match which {
+            Which::First => " (first page)",
+            Which::Even => " (even pages)",
+            Which::Default => "",
+        };
+        self.report(&format!("{name}{of} — double-click the document or press Escape to come back"))
+    }
+
+    /// Which of a section's three headers the caret's page is printed with.
+    #[must_use]
+    pub(super) fn which_furniture_here(&self) -> Which {
+        let page = self.caret_page();
+        let section = self.document.section_here();
+        // The first page of the section is the first page whose text belongs to
+        // it, which the layout knows and nothing else does.
+        let first_of_section = self.first_page_of_section(section) == page;
+        self.document.which_for_page(section, first_of_section, page)
+    }
+
+    /// Which page a section's text begins on, counted from one.
+    #[must_use]
+    fn first_page_of_section(&self, section: usize) -> usize {
+        for (index, page) in self.pages.iter().enumerate() {
+            let Some(line) = page.lines.first() else { continue };
+            if self.document.section_index_of(line.paragraph) == section {
+                return index + 1;
+            }
+        }
+        1
     }
 
     /// Comes back out to the document.
@@ -67,9 +134,109 @@ impl Editor {
         }
         self.document.leave_part();
         self.dimmed = Vec::new();
+        if let Some(tab) = self.tab_before_furniture.take() {
+            self.ribbon.tab = tab;
+        }
         self.relayout();
         self.reveal_caret();
         self.report("Document")
+    }
+
+    /// Moves between the header and the footer of the page being edited.
+    ///
+    /// Word's Go to Header and Go to Footer. Coming out and going back in
+    /// rather than swapping the part underneath, because everything about the
+    /// state — the picture of the document behind, which part the caret is in,
+    /// what the strip says — is set up by going in.
+    pub(super) fn go_to_furniture(&mut self, kind: Furniture) -> Response {
+        if self.editing_furniture == Some(kind) {
+            return Response::Ignored;
+        }
+        self.leave_furniture();
+        self.edit_furniture(kind)
+    }
+
+    /// Whether the section this page belongs to takes its header from the
+    /// section before it.
+    #[must_use]
+    pub(super) fn linked_to_previous(&self) -> bool {
+        let Some(kind) = self.editing_furniture else { return false };
+        let section = self.document.section_here();
+        // The first section has nothing before it to be linked to.
+        section > 0 && !self.document.has_own_furniture(kind, section, self.which_furniture_here())
+    }
+
+    /// Links this section's header to the one before it, or breaks the link.
+    ///
+    /// Breaking it copies what the section was showing into a header of its
+    /// own, so that the page does not change the moment the link is broken —
+    /// which is what Word does and what makes the button safe to press.
+    pub(super) fn toggle_link_to_previous(&mut self) -> Response {
+        let Some(kind) = self.editing_furniture else { return Response::Ignored };
+        let section = self.document.section_here();
+        if section == 0 {
+            return self.report("The first section has nothing before it");
+        }
+        let which = self.which_furniture_here();
+
+        // The part being edited has to be let go of first: it is about to stop
+        // being the one this section uses.
+        let linked = self.linked_to_previous();
+        self.leave_furniture();
+
+        let changed = if linked {
+            let inherited = self.document.furniture_of_page(kind, section, which);
+            match inherited {
+                Some(body) => self.document.set_furniture_body(kind, which, &body).unwrap_or(false),
+                None => false,
+            }
+        } else {
+            self.document.unset_furniture(kind, which)
+        };
+
+        self.relayout();
+        let said =
+            if linked { "Same as previous section: off" } else { "Same as previous section" };
+        let response = self.edited(changed, said);
+        // Straight back into the header, because that is where the person was.
+        self.edit_furniture(kind);
+        response
+    }
+
+    /// Turns the section's different first page on or off.
+    pub(super) fn toggle_different_first_page(&mut self) -> Response {
+        let inside = self.editing_furniture;
+        if inside.is_some() {
+            self.leave_furniture();
+        }
+        let wanted = !self.document.different_first_page(self.document.section_here());
+        let changed = self.document.set_different_first_page(wanted);
+        self.relayout();
+        let response =
+            self.edited(changed, if wanted { "Different first page" } else { "Same first page" });
+        if let Some(kind) = inside {
+            self.edit_furniture(kind);
+        }
+        response
+    }
+
+    /// Turns different odd and even pages on or off, for the whole document.
+    pub(super) fn toggle_different_odd_even(&mut self) -> Response {
+        let inside = self.editing_furniture;
+        if inside.is_some() {
+            self.leave_furniture();
+        }
+        let wanted = !self.document.different_odd_and_even();
+        let changed = self.document.set_different_odd_and_even(wanted);
+        self.relayout();
+        let response = self.edited(
+            changed,
+            if wanted { "Different odd and even pages" } else { "Same on every page" },
+        );
+        if let Some(kind) = inside {
+            self.edit_furniture(kind);
+        }
+        response
     }
 
     /// Whether a header or a footer is being edited.

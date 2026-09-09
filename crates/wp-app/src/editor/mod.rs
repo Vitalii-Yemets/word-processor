@@ -139,6 +139,9 @@ pub struct Editor {
     /// Which piece of furniture is being edited, and the document as it was
     /// last laid out, to draw behind it. See [`furnitureedit`].
     editing_furniture: Option<wp_docx::furniture::Furniture>,
+    /// Which tab the ribbon was showing before a header was opened, so that
+    /// coming back out puts it back.
+    tab_before_furniture: Option<crate::chrome::ribbon::Tab>,
     dimmed: Vec<Page>,
     /// A press inside the selection that has not yet moved, and the text it
     /// turned into a drag. See [`dragtext`].
@@ -350,6 +353,7 @@ impl Editor {
             view_height: 0,
             dragging: false,
             editing_furniture: None,
+            tab_before_furniture: None,
             dimmed: Vec::new(),
             pending_text_drag: None,
             text_drag: None,
@@ -2070,5 +2074,32 @@ mod tests {
         assert_eq!(popup.row(0).kind, crate::chrome::popup::Kind::Heading);
         assert_eq!(popup.row(6).kind, crate::chrome::popup::Kind::Heading);
         assert_eq!(popup.row(11).kind, crate::chrome::popup::Kind::Separator);
+    }
+
+    #[test]
+    fn editing_a_header_puts_the_header_and_footer_tab_on_the_ribbon() {
+        use crate::chrome::ribbon::Tab;
+        let mut editor = editor(3);
+        editor.paint(1200, 800);
+        editor
+            .document
+            .set_furniture(
+                wp_docx::furniture::Furniture::Header,
+                wp_docx::furniture::Preset::Text,
+                wp_docx::model::Alignment::Start,
+                "Title",
+            )
+            .expect("a header");
+        editor.relayout();
+
+        editor.edit_furniture(wp_docx::furniture::Furniture::Header);
+        assert!(editor.in_furniture(), "the header was not opened");
+        assert_eq!(editor.ribbon.tab, Tab::HeaderFooter);
+        assert!(editor.toolbar_state().in_furniture, "the ribbon was not told");
+        assert!(Tab::HeaderFooter.applies(&editor.toolbar_state()));
+
+        editor.leave_furniture();
+        assert!(!editor.in_furniture());
+        assert_ne!(editor.ribbon.tab, Tab::HeaderFooter, "the tab stayed after coming out");
     }
 }

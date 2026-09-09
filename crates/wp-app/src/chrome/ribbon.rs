@@ -69,6 +69,8 @@ pub enum Tab {
     /// The two that appear only when the caret is in a table, as Word's do.
     TableDesign,
     TableLayout,
+    /// And the one that appears while a header or a footer is being edited.
+    HeaderFooter,
 }
 
 impl Tab {
@@ -86,8 +88,9 @@ impl Tab {
         Tab::Help,
     ];
 
-    /// The two that are only shown when the caret is in a table.
-    pub const CONTEXTUAL: &'static [Tab] = &[Tab::TableDesign, Tab::TableLayout];
+    /// The tabs that are only shown while what they are about is being worked
+    /// on: the two for a table, and the one for a header or a footer.
+    pub const CONTEXTUAL: &'static [Tab] = &[Tab::TableDesign, Tab::TableLayout, Tab::HeaderFooter];
 
     #[must_use]
     pub fn label(self) -> &'static str {
@@ -104,6 +107,7 @@ impl Tab {
             Self::Help => "Help",
             Self::TableDesign => "Table Design",
             Self::TableLayout => "Table Layout",
+            Self::HeaderFooter => "Header & Footer",
         }
     }
 
@@ -128,15 +132,23 @@ impl Tab {
             Self::Help => "Y",
             // Word reaches the two table tabs through J; with no other tab on
             // that letter here, they take one of their own.
+            // Word reaches the header and footer tab through J as well; here
+            // it takes a letter nothing else has.
+            Self::HeaderFooter => "E",
             Self::TableDesign => "T",
             Self::TableLayout => "L",
         }
     }
 
-    /// Whether this tab is only shown in some situations.
+    /// Whether the tab applies just now: a contextual tab is only there while
+    /// what it is about is being worked on.
     #[must_use]
-    pub fn is_contextual(self) -> bool {
-        matches!(self, Self::TableDesign | Self::TableLayout)
+    pub fn applies(self, state: &ToolbarState) -> bool {
+        match self {
+            Self::TableDesign | Self::TableLayout => state.in_table,
+            Self::HeaderFooter => state.in_furniture,
+            _ => true,
+        }
     }
 }
 
@@ -219,6 +231,7 @@ impl Ribbon {
             Tab::Help => HELP_GROUPS,
             Tab::TableDesign => TABLE_DESIGN_GROUPS,
             Tab::TableLayout => TABLE_LAYOUT_GROUPS,
+            Tab::HeaderFooter => HEADER_FOOTER_GROUPS,
         }
     }
 
@@ -317,7 +330,7 @@ impl Ribbon {
         canvas.fill_rect(0, (top + TOTAL_HEIGHT - 1.0) as i32, width, 1, theme.ribbon_edge);
 
         // A contextual tab that no longer applies cannot stay open.
-        if self.tab.is_contextual() && !state.in_table {
+        if !self.tab.applies(state) {
             self.tab = Tab::Home;
         }
 
@@ -341,7 +354,7 @@ impl Ribbon {
         let showing: Vec<Tab> = Tab::ALL
             .iter()
             .copied()
-            .chain(Tab::CONTEXTUAL.iter().copied().filter(|_| state.in_table))
+            .chain(Tab::CONTEXTUAL.iter().copied().filter(|tab| tab.applies(state)))
             .collect();
 
         for tab in &showing {
@@ -1435,6 +1448,57 @@ static TABLE_DESIGN_GROUPS: &[Group] = &[
     },
 ];
 
+/// The tab that appears while a header or a footer is being edited.
+///
+/// Word's, and in Word's order: what to put in, how to move about, what the
+/// section asks for, and the way out.
+static HEADER_FOOTER_GROUPS: &[Group] = &[
+    Group {
+        label: "Header & Footer",
+        items: &[
+            Item::Large(Command::Header, Icon::Header, "Header"),
+            Item::Large(Command::Footer, Icon::Footer, "Footer"),
+            Item::Large(Command::PageNumber, Icon::PageNumber, "Page Number"),
+        ],
+    },
+    Group {
+        label: "Insert",
+        items: &[
+            Item::Small(Command::InsertDate, Icon::DateTime, "Date & Time"),
+            Item::Break,
+            Item::Small(Command::DocumentProperties, Icon::Properties, "Document Info"),
+            Item::Break,
+            Item::Small(Command::InsertPicture, Icon::Picture, "Pictures"),
+        ],
+    },
+    Group {
+        label: "Navigation",
+        items: &[
+            Item::Small(Command::GoToHeader, Icon::Header, "Go to Header"),
+            Item::Break,
+            Item::Small(Command::GoToFooter, Icon::Footer, "Go to Footer"),
+            Item::Break,
+            Item::Small(Command::LinkToPrevious, Icon::Link, "Link to Previous"),
+        ],
+    },
+    Group {
+        label: "Options",
+        items: &[
+            Item::Small(Command::DifferentFirstPage, Icon::OnePage, "Different First Page"),
+            Item::Break,
+            Item::Small(
+                Command::DifferentOddEven,
+                Icon::MultiplePages,
+                "Different Odd & Even Pages",
+            ),
+        ],
+    },
+    Group {
+        label: "Close",
+        items: &[Item::Large(Command::CloseFurniture, Icon::Close, "Close Header and Footer")],
+    },
+];
+
 static TABLE_LAYOUT_GROUPS: &[Group] = &[
     Group {
         label: "Rows & Columns",
@@ -1497,6 +1561,7 @@ pub fn groups_of(tab: Tab) -> &'static [Group] {
         Tab::Help => HELP_GROUPS,
         Tab::TableDesign => TABLE_DESIGN_GROUPS,
         Tab::TableLayout => TABLE_LAYOUT_GROUPS,
+        Tab::HeaderFooter => HEADER_FOOTER_GROUPS,
     }
 }
 

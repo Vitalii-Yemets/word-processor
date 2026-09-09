@@ -44,6 +44,7 @@ impl Editor {
             show_markup: self.show_markup,
             show_comments: self.navigation.section == crate::chrome::navigation::Section::Comments,
             in_table: self.document.table_here().is_some(),
+            in_furniture: self.in_furniture(),
             text_color: self.chosen_text_color,
             highlight_color: self.chosen_highlight_color,
             indent_left: indents.0,

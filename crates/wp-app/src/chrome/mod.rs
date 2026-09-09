@@ -231,6 +231,14 @@ pub enum Command {
     SendBackward,
     LineNumbers,
     Hyphenation,
+
+    // The Header & Footer tab, which is only there while one is being edited.
+    GoToHeader,
+    GoToFooter,
+    LinkToPrevious,
+    DifferentFirstPage,
+    DifferentOddEven,
+    CloseFurniture,
     RestrictEditing,
 
     // Review.
@@ -393,6 +401,9 @@ pub struct ToolbarState {
     /// Whether the caret is in a table, which is what shows the two
     /// contextual tabs.
     pub in_table: bool,
+    /// Whether a header or a footer is being edited, which is what puts the
+    /// Header & Footer tab on the ribbon.
+    pub in_furniture: bool,
     /// Which list is dropped open, so its field stays lit while it is.
     pub open: Option<Choice>,
 }

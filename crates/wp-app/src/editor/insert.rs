@@ -248,6 +248,19 @@ impl Editor {
                 self.document.set_caret(wp_docx::TextPosition::new(0, 0));
                 self.run(crate::chrome::Command::InsertContents);
             }
+            "headerfooter" => {
+                // The tab that appears while a header is being edited.
+                self.document
+                    .set_furniture(
+                        wp_docx::furniture::Furniture::Header,
+                        wp_docx::furniture::Preset::Text,
+                        wp_docx::model::Alignment::Center,
+                        "Quarterly report",
+                    )
+                    .map_err(|error| error.to_string())?;
+                self.relayout();
+                self.edit_furniture(wp_docx::furniture::Furniture::Header);
+            }
             "tabmenu" => {
                 // The menu a double click on a tab stop opens.
                 use wp_docx::model::{TabAlignment, TabLeader, TabStop};

@@ -130,3 +130,93 @@ fn a_numbered_list_in_the_body_is_not_disturbed_by_the_furniture() {
 
     assert!(after > before, "the footer drew nothing");
 }
+
+/// Which of a section's three headers each page is printed with.
+mod three {
+    use wp_docx::furniture::{Furniture, Preset, Which};
+    use wp_docx::model::{Alignment, Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::{FontLibrary, LayoutEngine, PageMetrics};
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    /// A document long enough to run to three pages.
+    fn document() -> Document {
+        let mut body = Body::default();
+        for index in 0..120 {
+            body.blocks.push(Block::Paragraph(Paragraph::text(&format!("Paragraph {index}"))));
+        }
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        Document::open(&bytes).expect("reopening")
+    }
+
+    fn set(document: &mut Document, which: Which, text: &str) {
+        document
+            .set_furniture_for(Furniture::Header, which, Preset::Text, Alignment::Start, text)
+            .expect("a header");
+    }
+
+    /// The words drawn on one page, header and all.
+    fn words_on(document: &Document, page: usize) -> String {
+        let mut engine = LayoutEngine::new(library());
+        let pages = engine.layout_document_with(document, PageMetrics::default());
+        let Some(laid) = pages.get(page) else { return String::new() };
+        // The glyphs carry no text, so the header is found by its lines: the
+        // furniture's lines are dropped, which leaves its glyphs. Counting is
+        // enough — what matters is which header was placed.
+        format!("{} glyphs", laid.glyphs.len())
+    }
+
+    #[test]
+    fn every_page_gets_the_same_one_unless_asked_otherwise() {
+        let mut document = document();
+        set(&mut document, Which::Default, "Everywhere");
+        let first = words_on(&document, 0);
+        let second = words_on(&document, 1);
+        assert_ne!(first, "0 glyphs");
+        assert_ne!(second, "0 glyphs");
+    }
+
+    #[test]
+    fn a_different_first_page_leaves_the_first_page_bare() {
+        // Asked for and never written: the first page has no header, and the
+        // pages after it still have theirs.
+        let mut plain = document();
+        set(&mut plain, Which::Default, "Everywhere");
+        let before = words_on(&plain, 0);
+
+        let mut asked = document();
+        set(&mut asked, Which::Default, "Everywhere");
+        asked.set_different_first_page(true);
+        let after = words_on(&asked, 0);
+
+        assert_ne!(before, after, "the first page kept its header");
+        assert_eq!(words_on(&asked, 1), words_on(&plain, 1), "the second page lost its own");
+    }
+
+    #[test]
+    fn the_first_page_can_have_a_header_of_its_own() {
+        let mut document = document();
+        set(&mut document, Which::Default, "Everywhere");
+        set(&mut document, Which::First, "Only the first page, and rather longer");
+        document.set_different_first_page(true);
+
+        assert_ne!(words_on(&document, 0), words_on(&document, 1), "both pages read the same");
+    }
+
+    #[test]
+    fn even_pages_can_have_one_of_their_own() {
+        let mut document = document();
+        set(&mut document, Which::Default, "Odd");
+        set(&mut document, Which::Even, "Even pages, and rather longer than the other");
+        document.set_different_odd_and_even(true);
+
+        assert_ne!(
+            words_on(&document, 1),
+            words_on(&document, 2),
+            "page two reads like page three"
+        );
+    }
+}

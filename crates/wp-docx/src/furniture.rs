@@ -37,6 +37,49 @@ const HEADER_RELATIONSHIP: &str =
 const FOOTER_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
 
+/// Which of a section's three headers or footers a call is about.
+///
+/// # Why there are three
+///
+/// Because a book is not printed the way a letter is. The first page of a
+/// chapter carries the chapter's title and no running head; the left-hand and
+/// right-hand pages carry different ones, so that the reader always sees the
+/// book's title on one side and the chapter's on the other. Word offers both as
+/// switches — "Different First Page" and "Different Odd & Even Pages" — and a
+/// document written with either of them says so, whether or not the program
+/// reading it knows about them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Which {
+    /// Every page the other two do not claim.
+    #[default]
+    Default,
+    /// The first page of the section, when the section asks for one.
+    First,
+    /// The even-numbered pages, when the document asks for them.
+    Even,
+}
+
+impl Which {
+    /// What the format calls it, in the `w:type` of a reference.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::First => "first",
+            Self::Even => "even",
+        }
+    }
+
+    #[must_use]
+    pub fn from_word(word: &str) -> Self {
+        match word {
+            "first" => Self::First,
+            "even" => Self::Even,
+            _ => Self::Default,
+        }
+    }
+}
+
 /// Which of the two a call is about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Furniture {
@@ -132,32 +175,158 @@ impl Document {
         relationship.resolved_target(self.main_part())?.ok()
     }
 
-    /// Which relationship a section's header or footer is behind.
+    /// The header or footer a page should be printed with.
+    ///
+    /// Which of a section's three it is depends on where the page falls and on
+    /// what the document has asked for: the first page of the section gets the
+    /// first-page one where the section asks for a different first page, an
+    /// even-numbered page gets the even one where the document asks for
+    /// different odd and even pages, and everything else gets the ordinary one.
+    ///
+    /// A section that asks for a different first page and names no first-page
+    /// header has none on that page — it is not given the ordinary one. That is
+    /// what the format says and what Word does: ticking the box and typing
+    /// nothing leaves the first page bare, which is exactly what somebody
+    /// ticking it usually wants.
+    #[must_use]
+    pub fn furniture_for_page(
+        &self,
+        kind: Furniture,
+        section: usize,
+        first_of_section: bool,
+        page_number: usize,
+    ) -> Option<Body> {
+        self.furniture_of_page(
+            kind,
+            section,
+            self.which_for_page(section, first_of_section, page_number),
+        )
+    }
+
+    /// Which of the three a page falls under.
+    #[must_use]
+    pub fn which_for_page(
+        &self,
+        section: usize,
+        first_of_section: bool,
+        page_number: usize,
+    ) -> Which {
+        if first_of_section && self.different_first_page(section) {
+            return Which::First;
+        }
+        if page_number % 2 == 0 && self.different_odd_and_even() {
+            return Which::Even;
+        }
+        Which::Default
+    }
+
+    /// One of a section's three headers or footers.
+    #[must_use]
+    pub fn furniture_of_page(&self, kind: Furniture, section: usize, which: Which) -> Option<Body> {
+        let part = self.furniture_part_for(kind, section, which)?;
+        let text = self.package().xml_part(&part)?.ok()?;
+        let tree = XmlTree::parse(&text).ok()?;
+        Some(read::read_part(&tree.root))
+    }
+
+    /// The part behind one of a section's three.
+    #[must_use]
+    pub fn furniture_part_for(
+        &self,
+        kind: Furniture,
+        section: usize,
+        which: Which,
+    ) -> Option<String> {
+        let id = self.furniture_reference_for(kind, section, which)?;
+        let relationships = self.package().relationships(self.main_part()).ok()?;
+        let relationship = relationships.by_id(&id)?;
+        relationship.resolved_target(self.main_part())?.ok()
+    }
+
+    /// Whether the section's first page has a header and footer of its own.
+    #[must_use]
+    pub fn different_first_page(&self, section: usize) -> bool {
+        crate::sections::properties_of(&self.tree().root, section)
+            .and_then(|properties| properties.child(Some(read::W), "titlePg"))
+            .is_some_and(read::on_off)
+    }
+
+    /// Asks for one, or stops asking, in the caret's section.
+    pub fn set_different_first_page(&mut self, on: bool) -> bool {
+        if self.different_first_page(self.section_here()) == on {
+            return false;
+        }
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+        let Some(section) = self.section_properties_mut(prefix.as_deref()) else { return false };
+
+        section.remove_children_named(Some(read::W), "titlePg");
+        if on {
+            crate::page::section_child(section, prefix.as_deref(), "titlePg");
+        }
+        self.mark_modified();
+        true
+    }
+
+    /// Whether left-hand and right-hand pages carry different ones.
+    ///
+    /// A property of the whole document rather than of a section, because a
+    /// book is printed one way throughout.
+    #[must_use]
+    pub fn different_odd_and_even(&self) -> bool {
+        self.setting_is_on("evenAndOddHeaders")
+    }
+
+    /// Asks for that, or stops asking.
+    pub fn set_different_odd_and_even(&mut self, on: bool) -> bool {
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        if !self.set_setting_flag("evenAndOddHeaders", on) {
+            return false;
+        }
+        self.mark_modified();
+        true
+    }
+
+    /// Which relationship one of a section's headers or footers is behind.
     ///
     /// A section that names none of its own uses the one before it, which is
     /// what Word's "Link to Previous" means and what the format assumes when a
-    /// section leaves the reference out.
-    fn furniture_reference(&self, which: Furniture, section: usize) -> Option<String> {
+    /// section leaves the reference out. Each of the three is followed back on
+    /// its own: a section can have its own first-page header and inherit the
+    /// ordinary one.
+    fn furniture_reference_for(
+        &self,
+        kind: Furniture,
+        section: usize,
+        which: Which,
+    ) -> Option<String> {
         let mut index = section;
         loop {
-            if let Some(id) = self.own_reference(which, index) {
+            if let Some(id) = self.own_reference_for(kind, index, which) {
                 return Some(id);
             }
             index = index.checked_sub(1)?;
         }
     }
 
+    /// The ordinary one, which is what everything but a page asks for.
+    fn furniture_reference(&self, kind: Furniture, section: usize) -> Option<String> {
+        self.furniture_reference_for(kind, section, Which::Default)
+    }
+
     /// The reference a section writes itself, without following the ones before
     /// it — which is what says whether it has a header of its own at all.
-    fn own_reference(&self, which: Furniture, section: usize) -> Option<String> {
+    fn own_reference_for(&self, kind: Furniture, section: usize, which: Which) -> Option<String> {
         crate::sections::properties_of(&self.tree().root, section).and_then(|properties| {
             properties
-                .children_named(Some(read::W), which.reference())
-                // Only the default one: Word also allows a different header on
-                // the first page and on even pages, which this does not offer
-                // yet.
+                .children_named(Some(read::W), kind.reference())
                 .find(|element| {
-                    element.attribute(Some(read::W), "type").is_none_or(|kind| kind == "default")
+                    // A reference that says nothing is the ordinary one.
+                    element
+                        .attribute(Some(read::W), "type")
+                        .map_or(which == Which::Default, |named| Which::from_word(named) == which)
                 })
                 .and_then(|element| element.attribute(Some(read::RELATIONSHIPS), "id"))
                 .map(str::to_owned)
@@ -169,11 +338,68 @@ impl Document {
     /// What a change writes into: a section that has been using the section
     /// before it gets a part of its own rather than writing over the header the
     /// rest of the document is printing.
-    fn own_part(&self, which: Furniture, section: usize) -> Option<String> {
-        let id = self.own_reference(which, section)?;
+    fn own_part_for(&self, kind: Furniture, section: usize, which: Which) -> Option<String> {
+        let id = self.own_reference_for(kind, section, which)?;
         let relationships = self.package().relationships(self.main_part()).ok()?;
         let relationship = relationships.by_id(&id)?;
         relationship.resolved_target(self.main_part())?.ok()
+    }
+
+    /// Whether a section names one of its own rather than following the section
+    /// before it.
+    ///
+    /// What Word's "Link to Previous" shows: a section that names none of its
+    /// own is linked, and the button is pressed in.
+    #[must_use]
+    pub fn has_own_furniture(&self, kind: Furniture, section: usize, which: Which) -> bool {
+        self.own_reference_for(kind, section, which).is_some()
+    }
+
+    /// Puts a body of somebody else's making in as one of a section's three.
+    ///
+    /// What breaking a link needs: the section keeps showing what it was
+    /// showing, but from a part of its own, so that changing it no longer
+    /// changes the section before it.
+    pub fn set_furniture_body(
+        &mut self,
+        kind: Furniture,
+        which: Which,
+        body: &Body,
+    ) -> Result<bool, Error> {
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let xml = part_xml(kind, body)?;
+
+        let part = match self.own_part_for(kind, self.section_here(), which) {
+            Some(existing) => existing,
+            None => self.unused_part_name(kind),
+        };
+        self.package_mut().add_part(&part, kind.content_type(), xml.into_bytes());
+
+        let target = part.strip_prefix("word/").unwrap_or(&part).to_owned();
+        let main_part = self.main_part().to_owned();
+        let mut relationships = self
+            .package()
+            .relationships(&main_part)
+            .unwrap_or_else(|_| wp_opc::Relationships::new(&main_part));
+        let id = match relationships.all().iter().find(|entry| entry.target == target) {
+            Some(entry) => entry.id.clone(),
+            None => {
+                relationships.add(kind.relationship(), &target, TargetMode::Internal).id.clone()
+            }
+        };
+        self.package_mut().set_relationships(&relationships)?;
+
+        self.write_reference(kind, which, &id);
+        self.mark_modified();
+        Ok(true)
+    }
+
+    /// Takes a section's own reference away, so it follows the one before it.
+    pub fn unset_furniture(&mut self, kind: Furniture, which: Which) -> bool {
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        self.remove_furniture(kind, which)
     }
 
     /// Puts a header or footer on the document, replacing whatever was there.
@@ -181,7 +407,19 @@ impl Document {
     /// `caption` is used only by [`Preset::Text`].
     pub fn set_furniture(
         &mut self,
-        which: Furniture,
+        kind: Furniture,
+        preset: Preset,
+        alignment: Alignment,
+        caption: &str,
+    ) -> Result<bool, Error> {
+        self.set_furniture_for(kind, Which::Default, preset, alignment, caption)
+    }
+
+    /// The same for one of the three a section can have.
+    pub fn set_furniture_for(
+        &mut self,
+        kind: Furniture,
+        which: Which,
         preset: Preset,
         alignment: Alignment,
         caption: &str,
@@ -190,22 +428,22 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
 
         if preset == Preset::None {
-            return Ok(self.remove_furniture(which));
+            return Ok(self.remove_furniture(kind, which));
         }
 
         let body = preset_body(preset, alignment, caption);
-        let xml = part_xml(which, &body)?;
+        let xml = part_xml(kind, &body)?;
 
         // Re-use the part if this section has one of its own, so a header
         // changed twice does not leave an orphan behind in the package. A
         // section that has only been following the one before it gets a part of
         // its own instead of writing over the header the rest of the document
         // is printing.
-        let part = match self.own_part(which, self.section_here()) {
+        let part = match self.own_part_for(kind, self.section_here(), which) {
             Some(existing) => existing,
-            None => self.unused_part_name(which),
+            None => self.unused_part_name(kind),
         };
-        self.package_mut().add_part(&part, which.content_type(), xml.into_bytes());
+        self.package_mut().add_part(&part, kind.content_type(), xml.into_bytes());
 
         let target = part.strip_prefix("word/").unwrap_or(&part).to_owned();
         let main_part = self.main_part().to_owned();
@@ -219,40 +457,43 @@ impl Document {
         let id = match relationships.all().iter().find(|entry| entry.target == target) {
             Some(entry) => entry.id.clone(),
             None => {
-                relationships.add(which.relationship(), &target, TargetMode::Internal).id.clone()
+                relationships.add(kind.relationship(), &target, TargetMode::Internal).id.clone()
             }
         };
         self.package_mut().set_relationships(&relationships)?;
 
-        self.write_reference(which, &id);
+        self.write_reference(kind, which, &id);
         self.mark_modified();
         Ok(true)
     }
 
-    /// Takes the header or footer off, leaving the part behind unreferenced.
-    fn remove_furniture(&mut self, which: Furniture) -> bool {
+    /// Takes one of them off, leaving the part behind unreferenced.
+    fn remove_furniture(&mut self, kind: Furniture, which: Which) -> bool {
         let prefix = self.prefix();
         let Some(section) = self.section_properties_mut(prefix.as_deref()) else { return false };
-        if section.child(Some(read::W), which.reference()).is_none() {
+        let before = section.children_named(Some(read::W), kind.reference()).count();
+        // Only the one of that type: taking the first-page header off must
+        // leave the ordinary one alone.
+        retain_references(section, kind.reference(), |named| named != which);
+        if section.children_named(Some(read::W), kind.reference()).count() == before {
             return false;
         }
-        section.remove_children_named(Some(read::W), which.reference());
         self.mark_modified();
         true
     }
 
     /// Points `w:sectPr` at the part.
-    fn write_reference(&mut self, which: Furniture, id: &str) {
+    fn write_reference(&mut self, kind: Furniture, which: Which, id: &str) {
         let prefix = self.prefix();
         let Some(section) = self.section_properties_mut(prefix.as_deref()) else { return };
-        section.remove_children_named(Some(read::W), which.reference());
+        retain_references(section, kind.reference(), |named| named != which);
 
         let mut reference =
-            Element::new(&edit::name_with(prefix.as_deref(), which.reference()), Some(read::W));
+            Element::new(&edit::name_with(prefix.as_deref(), kind.reference()), Some(read::W));
         reference.set_namespaced_attribute(
             &edit::name_with(prefix.as_deref(), "type"),
             read::W,
-            "default",
+            which.word(),
         );
         reference.set_namespaced_attribute("r:id", read::RELATIONSHIPS, id);
         // The declaration goes on the element itself when the document has not
@@ -297,6 +538,23 @@ impl Document {
         };
         (read_one("header"), read_one("footer"))
     }
+}
+
+/// Keeps only the references a test agrees to, by the type each one names.
+///
+/// The three references of one kind live side by side in the section, told
+/// apart only by their `w:type`, so anything that changes one has to leave the
+/// other two exactly where they were.
+fn retain_references(section: &mut Element, local: &str, keep: impl Fn(Which) -> bool) {
+    section.children.retain(|node| {
+        let Some(element) = node.as_element() else { return true };
+        if !element.is(Some(read::W), local) {
+            return true;
+        }
+        let named =
+            element.attribute(Some(read::W), "type").map_or(Which::Default, Which::from_word);
+        keep(named)
+    });
 }
 
 /// The body of one of the ready-made headers and footers.

@@ -3736,45 +3736,51 @@ impl LayoutEngine<'_> {
         }
     }
 
-    /// Puts each section's header and footer on the pages that section fills.
+    /// Puts each page's header and footer on it.
     ///
-    /// A document of one section is the common case and comes out of this the
-    /// same as it always did: one header, on every page. Where there are
-    /// several, each section's pages get their own — and a section that names
-    /// none of its own is given the one before it, which is what Word's "Link
-    /// to Previous" leaves behind in the file.
+    /// Which one a page gets depends on the section it belongs to and on where
+    /// it falls within that section: the first page of a section can have one
+    /// of its own, and left-hand and right-hand pages can differ, both of which
+    /// a document asks for and this only obeys. A document that asks for
+    /// neither — which is nearly all of them — comes out of this the same as it
+    /// always did: one header, on every page.
     fn place_all_furniture(
         &mut self,
         pages: &mut [Page],
         document: &Document,
         metrics: PageMetrics,
     ) {
-        use wp_docx::furniture::Furniture;
+        use wp_docx::furniture::{Furniture, Which};
 
         let total = pages.len();
         let belongs: Vec<usize> =
             (0..total).map(|page| self.page_sections.get(page).copied().unwrap_or(0)).collect();
 
-        let mut first = 0usize;
-        while first < total {
-            let section = belongs[first];
-            let mut end = first + 1;
-            while end < total && belongs[end] == section {
-                end += 1;
-            }
+        // Each header is read out of the package and parsed, so each one is
+        // read once and kept: a hundred-page document would otherwise parse the
+        // same header a hundred times over.
+        let mut kept: HashMap<(usize, bool, Which), Option<Body>> = HashMap::new();
 
-            for (which, is_footer) in [(Furniture::Header, false), (Furniture::Footer, true)] {
-                let Some(body) = document.furniture_of(which, section) else { continue };
+        for page in 0..total {
+            let section = belongs[page];
+            let first_of_section = page == 0 || belongs[page - 1] != section;
+            let which = document.which_for_page(section, first_of_section, page + 1);
+
+            for (kind, is_footer) in [(Furniture::Header, false), (Furniture::Footer, true)] {
+                let key = (section, is_footer, which);
+                let found = kept
+                    .entry(key)
+                    .or_insert_with(|| document.furniture_of_page(kind, section, which));
+                let Some(body) = found.as_ref() else { continue };
                 self.place_furniture(
-                    &mut pages[first..end],
-                    &body,
+                    &mut pages[page..=page],
+                    body,
                     document,
                     metrics,
                     is_footer,
-                    Numbering { first, total, section },
+                    Numbering { first: page, total, section },
                 );
             }
-            first = end;
         }
     }
 

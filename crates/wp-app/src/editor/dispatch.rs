@@ -133,6 +133,12 @@ impl Editor {
             Command::InsertPicture => self.insert_picture(),
             Command::InsertSymbol => self.open_symbols(),
             Command::Header => self.open_furniture(wp_docx::furniture::Furniture::Header),
+            Command::GoToHeader => self.go_to_furniture(wp_docx::furniture::Furniture::Header),
+            Command::GoToFooter => self.go_to_furniture(wp_docx::furniture::Furniture::Footer),
+            Command::LinkToPrevious => self.toggle_link_to_previous(),
+            Command::DifferentFirstPage => self.toggle_different_first_page(),
+            Command::DifferentOddEven => self.toggle_different_odd_even(),
+            Command::CloseFurniture => self.leave_furniture(),
             Command::Footer => self.open_furniture(wp_docx::furniture::Furniture::Footer),
             Command::PageNumber => self.open_furniture(wp_docx::furniture::Furniture::Footer),
             Command::InsertDate => {
