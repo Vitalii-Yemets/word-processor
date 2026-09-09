@@ -121,10 +121,14 @@ impl App for Editor {
                 if fy < self.ribbon_bottom() {
                     return Cursor::Arrow;
                 }
-                return if rulers::hit_horizontal(self.ruler_top(), horizontal, x, y).is_some() {
-                    Cursor::ResizeHorizontal
-                } else {
-                    Cursor::Arrow
+                let stops = self.ruler_stops();
+                let hit = rulers::hit_horizontal(horizontal, &stops, x, y);
+                return match hit {
+                    // The box and the face are pressed, not dragged, so the
+                    // pointer over them says so.
+                    Some(rulers::Hit::StopSelector | rulers::Hit::Face) => Cursor::Hand,
+                    Some(_) => Cursor::ResizeHorizontal,
+                    None => Cursor::Arrow,
                 };
             }
             if fx < left + crate::chrome::VERTICAL_WIDTH {

@@ -242,6 +242,26 @@ impl Editor {
                 ))
             }
             "grid" => self.table_grid = Some(TableGrid::new(180.0, 140.0)),
+            "tabs" => {
+                // A stop of each kind, to see the markers the ruler draws.
+                use wp_docx::model::{TabAlignment, TabLeader, TabStop};
+                let stops: Vec<TabStop> = [
+                    (1440, TabAlignment::Start),
+                    (2880, TabAlignment::Center),
+                    (4320, TabAlignment::End),
+                    (5760, TabAlignment::Decimal),
+                    (7200, TabAlignment::Bar),
+                ]
+                .into_iter()
+                .map(|(position, alignment)| TabStop {
+                    position,
+                    alignment,
+                    leader: TabLeader::None,
+                })
+                .collect();
+                self.document.set_tab_stops_here(&stops);
+                self.relayout();
+            }
             "statusmenu" => {
                 // The menu the right button opens on the strip along the
                 // bottom.

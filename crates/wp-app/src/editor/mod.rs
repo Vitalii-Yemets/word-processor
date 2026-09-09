@@ -191,6 +191,11 @@ pub struct Editor {
     resizing_pane: bool,
     /// Which marker or margin on the rulers is being dragged, if any.
     ruler_drag: Option<ruler::Grab>,
+    /// Where the stop being dragged along the ruler is now, in twips from the
+    /// left margin, so the next move knows which one to take hold of.
+    ruler_stop_at: Option<i32>,
+    /// What kind of tab stop a click on the ruler puts down. See [`ruler`].
+    tab_kind: wp_docx::model::TabAlignment,
     /// What would stop somebody reading the document, when it was last asked.
     accessibility: Vec<wp_docx::accessibility::Finding>,
     /// Whether merge fields are shaded so they can be told from ordinary text.
@@ -373,6 +378,8 @@ impl Editor {
             pointer_y: 0.0,
             resizing_pane: false,
             ruler_drag: None,
+            ruler_stop_at: None,
+            tab_kind: wp_docx::model::TabAlignment::Start,
             accessibility: Vec::new(),
             highlight_fields: false,
             show_proofing: true,

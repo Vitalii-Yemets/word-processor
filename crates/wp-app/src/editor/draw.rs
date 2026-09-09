@@ -260,6 +260,8 @@ impl Editor {
         let indents = self.document.indents_here();
         let to_pixels = |twips: i32| twips as f32 / TWIPS_PER_POINT * scale;
         let horizontal = Measurements {
+            top: self.ruler_top(),
+            left_edge: self.pane_width(),
             page_left,
             page_width,
             margin_left: metrics.margin_left * scale,
@@ -290,16 +292,16 @@ impl Editor {
         // and asking the editor a question while they do is a borrow the
         // compiler will not allow — rightly, since the answer could change.
         let (horizontal, vertical) = self.ruler_measurements();
-        let ruler_top = self.ruler_top();
         let pane = self.pane_width();
 
+        let stops = self.ruler_stops();
+        let tabs = rulers::Tabs { stops: &stops, chosen: self.tab_kind };
         rulers::draw_horizontal(
             &mut self.canvas,
             &mut self.chrome_engine,
             &mut self.renderer,
-            ruler_top,
-            pane,
             horizontal,
+            tabs,
             &theme,
         );
 

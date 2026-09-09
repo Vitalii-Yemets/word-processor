@@ -11,13 +11,14 @@
 //! positive again to the left — which looks strange written down and is exactly
 //! what a person expects, because both directions are measured *from the text*.
 
+use wp_docx::model::TabAlignment;
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::{Canvas, Color};
 
 use super::theme::Theme;
 
 /// Height of the ruler across the top.
-pub const HORIZONTAL_HEIGHT: f32 = 24.0;
+pub const HORIZONTAL_HEIGHT: f32 = 28.0;
 
 // Where each part of the strip sits, measured down from its top. They are
 // constants rather than numbers written twice because the drawing and the
@@ -30,11 +31,11 @@ const FIRST_LINE_TOP: f32 = 1.0;
 const MARKER_HEIGHT: f32 = 5.0;
 /// The band showing the paper and its margins.
 const BAND_TOP: f32 = 5.0;
-const BAND_HEIGHT: f32 = 10.0;
+const BAND_HEIGHT: f32 = 15.0;
 /// The hanging marker and the right one, which point up from below the band.
-const HANGING_TOP: f32 = 13.0;
+const HANGING_TOP: f32 = 18.0;
 /// The square under the hanging marker, which moves both indents together.
-const SQUARE_TOP: f32 = 18.0;
+const SQUARE_TOP: f32 = 23.0;
 const SQUARE_HEIGHT: f32 = 4.0;
 const SQUARE_WIDTH: f32 = 9.0;
 /// Width of the ruler down the left side.
@@ -51,6 +52,11 @@ pub struct Indents {
 /// What the horizontal ruler needs to know.
 #[derive(Clone, Copy, Debug)]
 pub struct Measurements {
+    /// Where the strip itself is: its top edge, and where it begins across
+    /// the window. The drawing and the hit-testing both need them, and both
+    /// have to agree.
+    pub top: f32,
+    pub left_edge: f32,
     /// Where the page sits on screen and how wide it is, in pixels.
     pub page_left: f32,
     pub page_width: f32,
@@ -62,16 +68,117 @@ pub struct Measurements {
     pub indents: Indents,
 }
 
+/// The tab stops the ruler shows, and the kind the next one put down will be.
+#[derive(Clone, Copy, Debug)]
+pub struct Tabs<'a> {
+    pub stops: &'a [PlacedStop],
+    pub chosen: TabAlignment,
+}
+
+/// A tab stop as the ruler shows it: where it sits on screen, and what kind.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlacedStop {
+    pub x: f32,
+    pub alignment: TabAlignment,
+}
+
+/// The band the tab markers are drawn in, measured down from the ruler's top.
+const STOP_TOP: f32 = BAND_TOP + 8.0;
+const STOP_HEIGHT: f32 = 7.0;
+/// How wide the foot of a marker reaches from its stem.
+const STOP_FOOT: f32 = 4.0;
+/// The box at the left end that says what kind of stop a click will make.
+const SELECTOR_WIDTH: f32 = VERTICAL_WIDTH;
+
+/// Draws the marker for one kind of stop, with its stem on `x`.
+///
+/// The shapes are Word's, and they are not decoration: the marker says what the
+/// stop does to the text that lands on it. An L starts the text at the stem, a
+/// mirrored L ends it there, an upside-down T centres it on it, the same with a
+/// dot lines the decimal points up, and a bare stem is the line down the page.
+fn stop_marker(canvas: &mut Canvas, x: f32, top: f32, alignment: TabAlignment, colour: Color) {
+    let bottom = top + STOP_HEIGHT - 1.0;
+    let stem = |canvas: &mut Canvas, height: f32| {
+        canvas.fill_rect(x as i32, top as i32, 1, height as i32, colour);
+    };
+
+    match alignment {
+        TabAlignment::Start => {
+            stem(canvas, STOP_HEIGHT);
+            canvas.fill_rect(x as i32, bottom as i32, STOP_FOOT as i32, 1, colour);
+        }
+        TabAlignment::End => {
+            stem(canvas, STOP_HEIGHT);
+            canvas.fill_rect(
+                (x - STOP_FOOT + 1.0) as i32,
+                bottom as i32,
+                STOP_FOOT as i32,
+                1,
+                colour,
+            );
+        }
+        TabAlignment::Center => {
+            stem(canvas, STOP_HEIGHT);
+            canvas.fill_rect(
+                (x - STOP_FOOT + 1.0) as i32,
+                bottom as i32,
+                (STOP_FOOT * 2.0 - 1.0) as i32,
+                1,
+                colour,
+            );
+        }
+        TabAlignment::Decimal => {
+            stem(canvas, STOP_HEIGHT);
+            canvas.fill_rect(
+                (x - STOP_FOOT + 1.0) as i32,
+                bottom as i32,
+                (STOP_FOOT * 2.0 - 1.0) as i32,
+                1,
+                colour,
+            );
+            // The point the figures line up on.
+            canvas.fill_rect((x + 2.0) as i32, (bottom - 3.0) as i32, 2, 2, colour);
+        }
+        // A bar is a line down the page, so its marker is the line itself.
+        TabAlignment::Bar => stem(canvas, STOP_HEIGHT),
+        // Nothing is drawn for a stop that only cancels another.
+        TabAlignment::Clear => {}
+    }
+}
+
+/// Draws the box at the left end of the ruler that chooses the kind of stop.
+///
+/// Word puts it where the two rulers meet, and clicking it steps round the
+/// kinds. A person who has never noticed it loses nothing; a person who knows
+/// it is there can set a right-hand stop without opening anything.
+fn stop_selector(canvas: &mut Canvas, left: f32, top: f32, chosen: TabAlignment, theme: &Theme) {
+    canvas.fill_rect(
+        left as i32,
+        top as i32,
+        SELECTOR_WIDTH as i32,
+        HORIZONTAL_HEIGHT as i32,
+        theme.ribbon,
+    );
+    canvas.fill_rect(
+        (left + SELECTOR_WIDTH - 1.0) as i32,
+        top as i32,
+        1,
+        HORIZONTAL_HEIGHT as i32,
+        theme.ribbon_edge,
+    );
+    stop_marker(canvas, left + SELECTOR_WIDTH / 2.0, top + STOP_TOP, chosen, theme.text);
+}
+
 /// Draws the ruler across the top of the page area.
 pub fn draw_horizontal(
     canvas: &mut Canvas,
     engine: &mut LayoutEngine<'_>,
     renderer: &mut Renderer<'_>,
-    top: f32,
-    left_edge: f32,
     measurements: Measurements,
+    tabs: Tabs<'_>,
     theme: &Theme,
 ) {
+    let (top, left_edge) = (measurements.top, measurements.left_edge);
     let width = canvas.width() as i32;
     canvas.fill_rect(left_edge as i32, top as i32, width, HORIZONTAL_HEIGHT as i32, theme.ribbon);
     canvas.fill_rect(
@@ -165,6 +272,17 @@ pub fn draw_horizontal(
         SQUARE_HEIGHT as i32,
         theme.text,
     );
+
+    // The tab stops of the paragraph the caret is in, and the box at the left
+    // end that says what kind the next one will be.
+    for stop in tabs.stops {
+        if stop.x >= measurements.page_left
+            && stop.x <= measurements.page_left + measurements.page_width
+        {
+            stop_marker(canvas, stop.x, top + STOP_TOP, stop.alignment, theme.text);
+        }
+    }
+    stop_selector(canvas, left_edge, top, tabs.chosen, theme);
 }
 
 /// Draws the ruler down the left of the page area.
@@ -303,6 +421,12 @@ pub enum Hit {
     /// The join between the grey band and the white one, on either side.
     LeftMargin,
     RightMargin,
+    /// The box at the left end, which chooses the kind of stop a click makes.
+    StopSelector,
+    /// One of the tab stops, by its place in the list the ruler was given.
+    TabStop(usize),
+    /// The face of the ruler, where a click puts a new stop.
+    Face,
 }
 
 /// What on the vertical ruler a press landed on.
@@ -342,10 +466,22 @@ fn marker_positions(measurements: Measurements) -> (f32, f32, f32) {
 /// dragging a margin is the rarer act, and the one with somewhere else to be
 /// asked for (Layout ▸ Margins).
 #[must_use]
-pub fn hit_horizontal(top: f32, measurements: Measurements, x: i32, y: i32) -> Option<Hit> {
+pub fn hit_horizontal(
+    measurements: Measurements,
+    stops: &[PlacedStop],
+    x: i32,
+    y: i32,
+) -> Option<Hit> {
+    let (top, left_edge) = (measurements.top, measurements.left_edge);
     let (x, y) = (x as f32, y as f32);
     if y < top || y >= top + HORIZONTAL_HEIGHT || measurements.page_width <= 0.0 {
         return None;
+    }
+
+    // The box at the left end is not part of the ruler face and is tested
+    // before anything on it.
+    if x >= left_edge && x < left_edge + SELECTOR_WIDTH {
+        return Some(Hit::StopSelector);
     }
 
     let (first, start, end) = marker_positions(measurements);
@@ -366,6 +502,20 @@ pub fn hit_horizontal(top: f32, measurements: Measurements, x: i32, y: i32) -> O
         }
     }
 
+    // A stop, before the margins: the markers sit on the band and a press
+    // meant for one would otherwise drag the margin under it.
+    let on_the_stops = (top + STOP_TOP - 1.0..top + STOP_TOP + STOP_HEIGHT + 1.0).contains(&y);
+    if on_the_stops {
+        let found = stops
+            .iter()
+            .enumerate()
+            .filter(|(_, stop)| (stop.x - x).abs() <= GRAB)
+            .min_by(|(_, one), (_, other)| (one.x - x).abs().total_cmp(&(other.x - x).abs()));
+        if let Some((index, _)) = found {
+            return Some(Hit::TabStop(index));
+        }
+    }
+
     // The margins, on the band between the two rows of markers.
     let text_left = measurements.page_left + measurements.margin_left;
     let text_right = measurements.page_left + measurements.page_width - measurements.margin_right;
@@ -376,6 +526,13 @@ pub fn hit_horizontal(top: f32, measurements: Measurements, x: i32, y: i32) -> O
         if near(text_right, MARGIN_GRAB) {
             return Some(Hit::RightMargin);
         }
+    }
+
+    // Anywhere else on the face of the ruler, within the paper, is where a new
+    // stop is put — which is what makes a stop something a person can place
+    // without opening anything.
+    if on_the_stops && x > text_left && x < text_right {
+        return Some(Hit::Face);
     }
     None
 }
@@ -405,14 +562,16 @@ pub fn hit_vertical(left: f32, measurements: Vertical, x: i32, y: i32) -> Option
 #[cfg(test)]
 mod tests {
     use super::{
-        hit_horizontal, hit_vertical, Hit, Indents, Measurements, Vertical, VerticalHit,
-        HORIZONTAL_HEIGHT, VERTICAL_WIDTH,
+        hit_horizontal, hit_vertical, Hit, Indents, Measurements, PlacedStop, TabAlignment,
+        Vertical, VerticalHit, HORIZONTAL_HEIGHT, VERTICAL_WIDTH,
     };
 
     /// A page 8.5 inches across at 96 pixels to the inch, with inch margins,
     /// sitting 100 pixels from the left of the window.
     fn page() -> Measurements {
         Measurements {
+            top: TOP,
+            left_edge: 0.0,
             page_left: 100.0,
             page_width: 816.0,
             margin_left: 96.0,
@@ -439,49 +598,54 @@ mod tests {
 
     #[test]
     fn nothing_outside_the_strip_is_hit() {
-        assert_eq!(hit_horizontal(TOP, page(), 196, TOP as i32 - 1), None);
-        assert_eq!(hit_horizontal(TOP, page(), 196, (TOP + HORIZONTAL_HEIGHT) as i32), None);
+        assert_eq!(hit_horizontal(page(), &[], 196, TOP as i32 - 1), None);
+        assert_eq!(hit_horizontal(page(), &[], 196, (TOP + HORIZONTAL_HEIGHT) as i32), None);
     }
 
     #[test]
     fn the_first_line_marker_is_at_the_top_of_the_text_edge() {
         // Text begins at 100 + 96 = 196.
-        assert_eq!(hit_horizontal(TOP, page(), 196, TOP as i32 + 3), Some(Hit::FirstLine));
+        assert_eq!(hit_horizontal(page(), &[], 196, TOP as i32 + 3), Some(Hit::FirstLine));
     }
 
     #[test]
     fn the_hanging_marker_is_below_the_band_at_the_same_place() {
-        assert_eq!(hit_horizontal(TOP, page(), 196, TOP as i32 + 15), Some(Hit::Hanging));
+        assert_eq!(hit_horizontal(page(), &[], 196, TOP as i32 + 19), Some(Hit::Hanging));
     }
 
     #[test]
     fn the_square_is_below_the_hanging_marker() {
-        assert_eq!(hit_horizontal(TOP, page(), 196, TOP as i32 + 20), Some(Hit::LeftIndent));
+        assert_eq!(hit_horizontal(page(), &[], 196, TOP as i32 + 24), Some(Hit::LeftIndent));
     }
 
     #[test]
     fn the_right_marker_is_at_the_other_edge_of_the_text() {
         // The text ends at 100 + 816 − 96 = 820.
-        assert_eq!(hit_horizontal(TOP, page(), 820, TOP as i32 + 15), Some(Hit::RightIndent));
+        assert_eq!(hit_horizontal(page(), &[], 820, TOP as i32 + 19), Some(Hit::RightIndent));
     }
 
     #[test]
     fn the_margins_are_on_the_band_between_the_two_rows_of_markers() {
-        assert_eq!(hit_horizontal(TOP, page(), 196, TOP as i32 + 8), Some(Hit::LeftMargin));
-        assert_eq!(hit_horizontal(TOP, page(), 820, TOP as i32 + 8), Some(Hit::RightMargin));
+        assert_eq!(hit_horizontal(page(), &[], 196, TOP as i32 + 8), Some(Hit::LeftMargin));
+        assert_eq!(hit_horizontal(page(), &[], 820, TOP as i32 + 8), Some(Hit::RightMargin));
     }
 
     #[test]
-    fn the_middle_of_the_ruler_is_nothing_at_all() {
-        assert_eq!(hit_horizontal(TOP, page(), 500, TOP as i32 + 8), None);
-        assert_eq!(hit_horizontal(TOP, page(), 500, TOP as i32 + 20), None);
+    fn the_face_of_the_ruler_is_where_a_stop_is_put() {
+        // It used to be nothing at all. It is the one place a tab stop can be
+        // placed with the mouse, so a press on it means that.
+        assert_eq!(hit_horizontal(page(), &[], 500, TOP as i32 + 15), Some(Hit::Face));
+        // Below the face is still nothing: that band belongs to the markers.
+        assert_eq!(hit_horizontal(page(), &[], 500, TOP as i32 + 26), None);
+        // And outside the paper, where there is nothing to measure from.
+        assert_eq!(hit_horizontal(page(), &[], 120, TOP as i32 + 15), None);
     }
 
     #[test]
     fn a_marker_can_be_grabbed_a_few_pixels_either_side() {
-        assert_eq!(hit_horizontal(TOP, page(), 191, TOP as i32 + 3), Some(Hit::FirstLine));
-        assert_eq!(hit_horizontal(TOP, page(), 201, TOP as i32 + 3), Some(Hit::FirstLine));
-        assert_eq!(hit_horizontal(TOP, page(), 210, TOP as i32 + 3), None);
+        assert_eq!(hit_horizontal(page(), &[], 191, TOP as i32 + 3), Some(Hit::FirstLine));
+        assert_eq!(hit_horizontal(page(), &[], 201, TOP as i32 + 3), Some(Hit::FirstLine));
+        assert_eq!(hit_horizontal(page(), &[], 210, TOP as i32 + 3), None);
     }
 
     #[test]
@@ -489,24 +653,24 @@ mod tests {
         // Half an inch in at 96 pixels to the inch is 48 pixels.
         let measurements =
             Measurements { indents: Indents { first_line: 48.0, start: 48.0, end: 0.0 }, ..page() };
-        assert_eq!(hit_horizontal(TOP, measurements, 244, TOP as i32 + 3), Some(Hit::FirstLine));
-        assert_eq!(hit_horizontal(TOP, measurements, 196, TOP as i32 + 3), None);
+        assert_eq!(hit_horizontal(measurements, &[], 244, TOP as i32 + 3), Some(Hit::FirstLine));
+        assert_eq!(hit_horizontal(measurements, &[], 196, TOP as i32 + 3), None);
         // The margin has not moved with them.
-        assert_eq!(hit_horizontal(TOP, measurements, 196, TOP as i32 + 8), Some(Hit::LeftMargin));
+        assert_eq!(hit_horizontal(measurements, &[], 196, TOP as i32 + 8), Some(Hit::LeftMargin));
     }
 
     #[test]
     fn a_hanging_indent_puts_the_two_triangles_in_different_places() {
         let measurements =
             Measurements { indents: Indents { first_line: 0.0, start: 48.0, end: 0.0 }, ..page() };
-        assert_eq!(hit_horizontal(TOP, measurements, 196, TOP as i32 + 3), Some(Hit::FirstLine));
-        assert_eq!(hit_horizontal(TOP, measurements, 244, TOP as i32 + 15), Some(Hit::Hanging));
+        assert_eq!(hit_horizontal(measurements, &[], 196, TOP as i32 + 3), Some(Hit::FirstLine));
+        assert_eq!(hit_horizontal(measurements, &[], 244, TOP as i32 + 19), Some(Hit::Hanging));
     }
 
     #[test]
     fn a_page_of_no_width_has_nothing_to_hit() {
         let measurements = Measurements { page_width: 0.0, ..page() };
-        assert_eq!(hit_horizontal(TOP, measurements, 196, TOP as i32 + 3), None);
+        assert_eq!(hit_horizontal(measurements, &[], 196, TOP as i32 + 3), None);
     }
 
     #[test]
@@ -533,5 +697,59 @@ mod tests {
     #[test]
     fn the_middle_of_the_side_ruler_is_nothing_at_all() {
         assert_eq!(hit_vertical(10.0, side(), 15, 400), None);
+    }
+
+    /// Two stops on the ruler: at the left margin and two inches along.
+    fn stops() -> Vec<PlacedStop> {
+        vec![
+            PlacedStop { x: 196.0, alignment: TabAlignment::Start },
+            PlacedStop { x: 388.0, alignment: TabAlignment::End },
+        ]
+    }
+
+    #[test]
+    fn a_stop_can_be_taken_hold_of_by_its_marker() {
+        assert_eq!(
+            hit_horizontal(page(), &stops(), 388, TOP as i32 + 15),
+            Some(Hit::TabStop(1)),
+            "the second stop is at two inches"
+        );
+    }
+
+    #[test]
+    fn a_stop_can_be_grabbed_a_few_pixels_either_side() {
+        // A marker seven pixels tall is easy to see and hard to hit exactly.
+        assert_eq!(hit_horizontal(page(), &stops(), 392, TOP as i32 + 15), Some(Hit::TabStop(1)));
+        assert_eq!(hit_horizontal(page(), &stops(), 384, TOP as i32 + 15), Some(Hit::TabStop(1)));
+    }
+
+    #[test]
+    fn the_nearest_stop_is_the_one_taken_hold_of() {
+        let crowded = vec![
+            PlacedStop { x: 300.0, alignment: TabAlignment::Start },
+            PlacedStop { x: 306.0, alignment: TabAlignment::Start },
+        ];
+        assert_eq!(hit_horizontal(page(), &crowded, 305, TOP as i32 + 15), Some(Hit::TabStop(1)));
+        assert_eq!(hit_horizontal(page(), &crowded, 301, TOP as i32 + 15), Some(Hit::TabStop(0)));
+    }
+
+    #[test]
+    fn a_stop_is_taken_before_the_margin_under_it() {
+        // The first stop sits exactly on the left margin. A press there means
+        // the stop: the margin has somewhere else to be changed from, and the
+        // stop has not.
+        assert_eq!(hit_horizontal(page(), &stops(), 196, TOP as i32 + 15), Some(Hit::TabStop(0)));
+    }
+
+    #[test]
+    fn the_box_at_the_left_end_chooses_the_kind() {
+        let measurements = Measurements { left_edge: 40.0, ..page() };
+        assert_eq!(hit_horizontal(measurements, &[], 45, TOP as i32 + 8), Some(Hit::StopSelector));
+        // And ends where the ruler begins.
+        assert_eq!(
+            hit_horizontal(measurements, &[], (40.0 + VERTICAL_WIDTH) as i32 + 1, TOP as i32 + 8),
+            None,
+            "the box reached past its own width"
+        );
     }
 }
