@@ -1030,6 +1030,7 @@ impl<'a> LayoutEngine<'a> {
                     page_height,
                     columns: metrics.columns.max(1),
                     column_gap,
+                    keeping: true,
                 },
             );
             // Everything pushed while this section was placed is that section's.
@@ -1109,16 +1110,60 @@ impl<'a> LayoutEngine<'a> {
         column: &mut usize,
         area: Placement,
     ) {
-        for block in blocks {
-            match block {
+        // The run of paragraphs that have asked to stay with the one after
+        // them, and where that run began: a heading followed by two more
+        // headings goes over to the next page as a whole.
+        let mut kept: Option<(usize, usize, Mark)> = None;
+        // Which block has already been moved for this rule, so a paragraph that
+        // cannot be kept with the next one however far it is moved is laid out
+        // rather than moved for ever.
+        let mut moved_at: Option<usize> = None;
+
+        let mut position = 0usize;
+        while position < blocks.len() {
+            let before = Mark::here(pages, *y, *column, 0, 0);
+            let counted = *index;
+
+            match &blocks[position] {
                 Block::Paragraph(paragraph) => {
+                    let resolved = document.resolve_paragraph(paragraph);
                     self.place_paragraph(*index, paragraph, document, pages, y, column, area);
                     *index += 1;
+
+                    // Nothing of this paragraph landed on the page it began
+                    // on, so it started a page — and whatever asked to stay
+                    // with it has been left behind.
+                    let started_a_page =
+                        pages.get(before.page).is_some_and(|page| page.lines.len() == before.lines);
+                    let asked_for = resolved.page_break_before;
+                    let already = moved_at == Some(position);
+
+                    if area.keeping && started_a_page && !asked_for && !already {
+                        if let Some((block, at, mark)) =
+                            kept.filter(|(_, _, mark)| mark.page == before.page)
+                        {
+                            moved_at = Some(position);
+                            mark.take_back(pages);
+                            *y = mark.y;
+                            *column = mark.column;
+                            self.start_page(pages, y, column, area);
+                            *index = at;
+                            position = block;
+                            kept = None;
+                            continue;
+                        }
+                    }
+
+                    // A paragraph that asks to stay with the next one joins the
+                    // run, or begins it; one that does not ends it.
+                    kept = resolved.keep_next.then(|| kept.unwrap_or((position, counted, before)));
                 }
                 Block::Table(table) => {
                     self.place_table(table, index, document, pages, y, column, area);
+                    kept = None;
                 }
             }
+            position += 1;
         }
     }
 
@@ -1233,6 +1278,14 @@ impl<'a> LayoutEngine<'a> {
         // the heights that put the lines where they are.
         let mut cursor = 0usize;
         let mut number = 0usize;
+        // What the page held before this paragraph, and before the line last
+        // put on it: where the keeping rules put things back to.
+        let began = Mark::here(pages, *y, *column, 0, 0);
+        let mut before_line = began;
+        // Each rule moves things at most once, so a paragraph too tall for a
+        // page still gets laid out rather than moved for ever.
+        let mut kept_together = false;
+        let mut widow_moved = false;
         while cursor < items.len() || number == 0 {
             let extra_first = if number == 0 { indent_first.max(0.0) } else { 0.0 };
             let page_index = pages.len().saturating_sub(1);
@@ -1276,6 +1329,54 @@ impl<'a> LayoutEngine<'a> {
             if *y + height > self.limit(page_index, area)
                 && !pages.last().is_some_and(|p| p.glyphs.is_empty())
             {
+                // The rules about where a paragraph may be broken, which are
+                // the reason a heading is never left alone at the foot of a
+                // page and a paragraph never leaves one line behind.
+                //
+                // A paragraph that must not be split at all, and a break that
+                // would leave a single first line behind, both move the whole
+                // paragraph to the next page. It is put back off the page and
+                // laid out again there, once — a paragraph taller than a page
+                // has to be broken somewhere.
+                // Moving it is only worth anything if there is something above
+                // it to move away from: a paragraph that begins a page and
+                // still does not fit has nowhere better to go.
+                let alone_on_the_page = began.lines == 0;
+                let orphan = resolved.widow_control && number == 1;
+                let must_not_break = resolved.keep_lines && number > 0;
+                if (orphan || must_not_break) && !kept_together && !alone_on_the_page {
+                    kept_together = true;
+                    began.take_back(pages);
+                    *y = began.y;
+                    *column = began.column;
+                    self.start_page(pages, y, column, area);
+                    bands.clear();
+                    before_line = Mark::here(pages, *y, *column, 0, 0);
+                    cursor = 0;
+                    number = 0;
+                    continue;
+                }
+
+                // And a break that would leave the last line alone at the top
+                // of the next page takes the line before it along, so that two
+                // go over rather than one. Word's rule, and the reason it is
+                // called widow control.
+                if resolved.widow_control
+                    && !widow_moved
+                    && number >= 2
+                    && is_one_line_left(&items, cursor, line_width)
+                {
+                    widow_moved = true;
+                    before_line.take_back(pages);
+                    *y = before_line.y;
+                    *column = before_line.column;
+                    bands.retain(|(page, ..)| *page <= before_line.page);
+                    self.start_page(pages, y, column, area);
+                    cursor = before_line.cursor;
+                    number = before_line.number;
+                    continue;
+                }
+
                 self.start_page(pages, y, column, area);
                 // A new page has its own floats and its own room, so the line
                 // is broken again against what is actually there.
@@ -1305,6 +1406,10 @@ impl<'a> LayoutEngine<'a> {
                 }
                 _ => bands.push((page_index, here.left, *y, *y + height)),
             }
+
+            // Remembered before the line goes down, so that a widow can put
+            // this one on the next page along with the one after it.
+            before_line = Mark::here(pages, *y, *column, cursor, number);
 
             let baseline = *y + ascent;
             let next = line.items.end;
@@ -2666,6 +2771,82 @@ impl<'a> LayoutEngine<'a> {
     }
 }
 
+/// Whether what is left of a paragraph after a break is a single line.
+///
+/// Asked before a break is taken, because a break that would leave one line
+/// alone on the next page is the thing widow control exists to prevent. The
+/// width used is the one the line being broken had: near enough, since the two
+/// lines are on the same page and the same column.
+fn is_one_line_left(items: &[Item], cursor: usize, width: f32) -> bool {
+    if cursor >= items.len() {
+        return false;
+    }
+    let line = break_next_line(items, cursor, width);
+    line.items.end >= items.len()
+}
+
+/// What a page held before something was put on it.
+///
+/// # Why anything is ever taken back off a page
+///
+/// Because the rules about where a paragraph may be broken are only known to
+/// have been broken after the breaking. A paragraph that must not be split is
+/// laid out line by line like any other, and it is only when the page runs out
+/// halfway through that the rule bites. Putting the lines back — truncating the
+/// page to what it held before them — and starting again on the next page is
+/// exactly what Word does, and it is far simpler than predicting the break
+/// before any line has been measured.
+#[derive(Clone, Copy, Debug)]
+struct Mark {
+    page: usize,
+    glyphs: usize,
+    images: usize,
+    shapes: usize,
+    decorations: usize,
+    paths: usize,
+    lines: usize,
+    /// Where the text had got to down the page, and which column it was in.
+    y: f32,
+    column: usize,
+    /// How far through the paragraph's items the line breaker had got, and how
+    /// many lines of the paragraph were already down.
+    cursor: usize,
+    number: usize,
+}
+
+impl Mark {
+    /// What the page holds now.
+    fn here(pages: &[Page], y: f32, column: usize, cursor: usize, number: usize) -> Self {
+        let page = pages.len().saturating_sub(1);
+        let last = pages.last();
+        Self {
+            page,
+            glyphs: last.map_or(0, |page| page.glyphs.len()),
+            images: last.map_or(0, |page| page.images.len()),
+            shapes: last.map_or(0, |page| page.shapes.len()),
+            decorations: last.map_or(0, |page| page.decorations.len()),
+            paths: last.map_or(0, |page| page.paths.len()),
+            lines: last.map_or(0, |page| page.lines.len()),
+            y,
+            column,
+            cursor,
+            number,
+        }
+    }
+
+    /// Puts the pages back the way they were.
+    fn take_back(self, pages: &mut Vec<Page>) {
+        pages.truncate(self.page + 1);
+        let Some(page) = pages.last_mut() else { return };
+        page.glyphs.truncate(self.glyphs);
+        page.images.truncate(self.images);
+        page.shapes.truncate(self.shapes);
+        page.decorations.truncate(self.decorations);
+        page.paths.truncate(self.paths);
+        page.lines.truncate(self.lines);
+    }
+}
+
 /// The stretch of a line that follows a tab, which is what its stop places.
 ///
 /// Everything up to the next tab or the end of the line: a centred stop centres
@@ -3163,6 +3344,12 @@ struct Placement {
     /// How many columns the text flows down, and the gap between them.
     columns: usize,
     column_gap: f32,
+    /// Whether the rules about keeping paragraphs together apply.
+    ///
+    /// They are about page breaks, so they mean nothing where a page break
+    /// means nothing — inside a header, a footnote or a shape, each of which
+    /// is laid out onto a page of its own that is never turned.
+    keeping: bool,
 }
 
 impl Placement {
@@ -3816,6 +4003,7 @@ impl LayoutEngine<'_> {
                 page_height: page.height,
                 columns: 1,
                 column_gap: 0.0,
+                keeping: false,
             };
 
             let mut scratch =
@@ -3972,6 +4160,7 @@ impl LayoutEngine<'_> {
             page_height: metrics.height * scale,
             columns: 1,
             column_gap: 0.0,
+            keeping: false,
         }
     }
 
