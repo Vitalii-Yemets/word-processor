@@ -177,7 +177,7 @@ it is, what finishing it means, and how it is proven.
 
 A word processor that cannot print is not one. Nothing of this exists yet.
 
-- [ ] **A1. Laying a page out for a device rather than a screen.** The layout
+- [x] **A1. Laying a page out for a device rather than a screen.** The layout
   engine works in pixels at a screen resolution; a printer is 600 or 1200 dots
   per inch and has a hardware margin the paper cannot be drawn in. Lay out at a
   given resolution, and know the printable area.

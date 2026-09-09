@@ -14,6 +14,7 @@ use wp_raster::{Canvas, Color, Path, Point, Transform};
 
 use wp_docx::effects::Effect;
 
+use crate::device::Device;
 use crate::layout::{GlyphEffect, Page, PositionedGlyph};
 use crate::library::FontLibrary;
 
@@ -45,6 +46,27 @@ impl<'a> Renderer<'a> {
         let height = page.height.round().max(1.0) as usize;
         let mut canvas = Canvas::filled(width, height, background);
         self.draw_onto(&mut canvas, page, 0.0, 0.0);
+        canvas
+    }
+
+    /// The image a device is given for one page.
+    ///
+    /// The whole sheet at the device's resolution, less the band the device
+    /// cannot draw in. A printer's origin is the corner of what it can reach
+    /// rather than the corner of the paper, so an image that included that band
+    /// would come out shifted by it — every line a quarter of an inch too far
+    /// down and to the right.
+    #[must_use]
+    pub fn page_for_device(&mut self, page: &Page, device: Device, background: Color) -> Canvas {
+        let left = device.dots(device.unprintable.left);
+        let top = device.dots(device.unprintable.top);
+        let right = device.dots(device.unprintable.right);
+        let bottom = device.dots(device.unprintable.bottom);
+
+        let width = (page.width - left - right).round().max(1.0) as usize;
+        let height = (page.height - top - bottom).round().max(1.0) as usize;
+        let mut canvas = Canvas::filled(width, height, background);
+        self.draw_onto(&mut canvas, page, -left, -top);
         canvas
     }
 

@@ -26,12 +26,14 @@
 #![forbid(unsafe_code)]
 
 pub mod charting;
+mod device;
 pub mod geometry;
 mod layout;
 mod library;
 pub mod math;
 mod render;
 
+pub use device::{Device, Unprintable};
 pub use layout::{
     Decoration, GlyphEffect, LayoutEngine, Page, PageLine, PageMetrics, PlacedImage,
     PositionedGlyph, TextStyle,

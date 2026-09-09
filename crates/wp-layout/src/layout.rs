@@ -764,6 +764,16 @@ impl<'a> LayoutEngine<'a> {
         self.outline = depth;
         self
     }
+    /// An engine that lays out for a device: a screen, or a printer.
+    ///
+    /// The only difference the device makes is how fine the drawing is. Where
+    /// the words go is worked out in points and must come out the same on
+    /// both — see `tests/resolution.rs`, which holds it to that.
+    #[must_use]
+    pub fn for_device(library: &'a FontLibrary, device: crate::Device) -> Self {
+        Self::new(library).with_dpi(device.dpi)
+    }
+
     /// Sets the resolution. Larger values render the same page bigger.
     #[must_use]
     pub fn with_dpi(mut self, dpi: f32) -> Self {
