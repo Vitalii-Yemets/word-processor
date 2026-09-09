@@ -395,6 +395,31 @@ impl Editor {
         self.stop_autoscroll();
         self.tip = None;
 
+        // The Print page is what the window is showing, so a press belongs to
+        // it and to nothing behind it — except a list it has dropped open,
+        // which is in front of it.
+        if self.printing() {
+            if let Some(popup) = &self.popup {
+                if let Some(index) = popup.hit(x, y) {
+                    return self.choose(index);
+                }
+                self.popup = None;
+                self.needs_redraw = true;
+                return Response::Redraw;
+            }
+            if (y as f32) < chrome::TITLE_HEIGHT {
+                if let Some(button) = self.titlebar.window_button_at(x, y) {
+                    wp_shell::window_command(match button {
+                        chrome::WindowButton::Minimise => wp_shell::WindowCommand::Minimise,
+                        chrome::WindowButton::Maximise => wp_shell::WindowCommand::ToggleMaximise,
+                        chrome::WindowButton::Close => wp_shell::WindowCommand::Close,
+                    });
+                }
+                return Response::Ignored;
+            }
+            return self.print_pane_press(x, y);
+        }
+
         // A palette takes a press before anything else while it is open.
         if let Some(palette) = self.palette {
             if let Some(index) = palette.hit(x, y) {
@@ -823,6 +848,13 @@ impl Editor {
             };
         }
 
+        // Over the Print page, only the Print page lights up.
+        if self.printing() {
+            let changed = self.print_pane_hover(x, y);
+            self.needs_redraw |= changed;
+            return if changed { Response::Redraw } else { Response::Ignored };
+        }
+
         if self.sliding && held {
             if let Some(slider) = self.slider {
                 return self.set_zoom(slider.zoom_at(x));
@@ -938,6 +970,11 @@ impl Editor {
             Choice::Paper => Command::PageSize,
             Choice::Column => Command::Columns,
             Choice::Break => Command::Breaks,
+            // The Print page hangs its lists from its own settings, which it
+            // has told the editor the place of.
+            Choice::Printer | Choice::PrintWhich | Choice::PrintSides | Choice::PrintPerSheet => {
+                Command::Print
+            }
         };
         // Under the button that asked for it — or, when the mini toolbar asked,
         // under the box of the mini toolbar that was pressed.
@@ -947,6 +984,11 @@ impl Editor {
         };
 
         let (items, current) = match choice {
+            // The Print page builds its own lists, because they are about the
+            // job rather than about the document.
+            Choice::Printer | Choice::PrintWhich | Choice::PrintSides | Choice::PrintPerSheet => {
+                return Response::Ignored
+            }
             Choice::Font => {
                 let wanted = self.document.font_here();
                 let index = wanted.as_deref().and_then(|name| {
@@ -1105,6 +1147,9 @@ impl Editor {
             Choice::Paper => self.choose_page_size(index),
             Choice::Column => self.choose_columns(index),
             Choice::Break => self.choose_break(index),
+            Choice::Printer | Choice::PrintWhich | Choice::PrintSides | Choice::PrintPerSheet => {
+                self.choose_print_setting(choice, index)
+            }
             Choice::Zoom => {
                 let percent = text.trim_end_matches('%').parse::<f32>().unwrap_or(self.zoom);
                 self.set_zoom(percent)
@@ -1167,6 +1212,25 @@ impl Editor {
                 }
                 _ => {}
             }
+        }
+
+        // The Print page has the keyboard while it is showing: Escape goes
+        // back to the document, and the arrows walk the pages.
+        if self.printing() && self.popup.is_none() && !modifiers.control {
+            return match key {
+                Key::Escape => self.close_print(),
+                Key::Left | Key::PageUp | Key::Up => self.turn_print_page(false),
+                Key::Right | Key::PageDown | Key::Down => self.turn_print_page(true),
+                Key::Backspace => {
+                    if self.print_pane_character('\u{8}') {
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    }
+                }
+                Key::Enter => self.start_printing(),
+                _ => Response::Ignored,
+            };
         }
 
         // While the letters are showing over the ribbon, the keyboard is

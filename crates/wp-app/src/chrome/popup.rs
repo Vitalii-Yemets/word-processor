@@ -72,6 +72,14 @@ pub enum Choice {
     Macro,
     /// The arrangements a diagram can take.
     Diagram,
+    /// The printers this machine can reach.
+    Printer,
+    /// Which pages of the document go to one.
+    PrintWhich,
+    /// Whether the sheets are printed on both sides.
+    PrintSides,
+    /// How many pages go on one sheet.
+    PrintPerSheet,
     /// The windows a picture can be taken of.
     Screenshot,
     /// How deep the outline goes.

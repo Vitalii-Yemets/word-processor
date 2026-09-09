@@ -204,12 +204,34 @@ A word processor that cannot print is not one. Nothing of this exists yet.
   to paper of a different size — both belong to the dialog, and offering them
   and then ignoring them would be worse than not offering them.
 
-- [ ] **A3. Print preview and the print dialog.** Word's is a whole view: page
+- [x] **A3. Print preview and the print dialog.** Word's is a whole view: page
   thumbnails, zoom, page ranges, what to print (document, markup, styles),
   pages per sheet, and the settings that belong to the printer rather than the
   document.
-  *Done when:* Ctrl+P opens it, every setting is honoured, and a picture of it
-  matches Word's arrangement.
+  *Done:* Ctrl+P turns the window into the Print page, as Word's does — the
+  settings down the left and the document as it will come out beside them. The
+  preview is the document laid out again rather than a photograph of the
+  window, so what is shown is what will be printed. The printers are listed
+  from the spooler and chosen by name; the copies, which pages (all, this one,
+  or a typed list like `1-3, 8, 12-`), collated or not, how many pages to a
+  sheet, and whether the tracked changes are printed all take effect. The
+  paper, the orientation and the margins are the document's own page setup,
+  changed from here as from the Layout tab, exactly as in Word. The warning
+  that the margins fall where the printer cannot reach is shown when they do.
+  *Not offered, rather than offered and ignored:* printing on both sides (see
+  **A6**) and printing a selection (see **A7**).
+
+- [ ] **A6. Printing on both sides.** Telling a printer to turn the paper over
+  means handing the driver a `DEVMODE` with its duplex field set, which means
+  `DocumentPropertiesW` and a structure of a hundred and fifty bytes laid out
+  exactly. The Print page has the row ready for it.
+  *Done when:* a duplex printer prints on both sides, and the setting says
+  which edge it turns on.
+
+- [ ] **A7. Printing a selection.** Word prints what is selected and nothing
+  else, laid out on its own rather than as the pages it happens to fall on.
+  *Done when:* selecting a paragraph and printing gives one sheet with that
+  paragraph on it.
 
 - [ ] **A4. PDF export.** The PDF file format, the graphics operators, and font
   subsetting — embedding only the glyphs used, because a document may not carry

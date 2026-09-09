@@ -5,10 +5,9 @@ use std::path::{Path, PathBuf};
 
 use wp_docx::model::{Block, Body, Paragraph};
 use wp_docx::Document;
-use wp_layout::{Device, LayoutEngine, Renderer};
 use wp_shell::Response;
 
-use super::{Editor, PRINTED_PAPER};
+use super::Editor;
 
 /// What a document with no file of its own is called.
 pub const UNTITLED: &str = "Document";
@@ -179,69 +178,6 @@ impl Editor {
                 Response::Redraw
             }
         }
-    }
-
-    /// Puts the document on paper.
-    ///
-    /// The document is laid out again for the printer rather than for the
-    /// screen, so the page that comes out is the page the layout engine
-    /// describes and not a photograph of the window. Each page is then
-    /// rasterized a band at a time: a whole page at six hundred dots to the
-    /// inch is well over a hundred megabytes.
-    pub(super) fn print(&mut self) -> Response {
-        let Some(mut printer) = wp_shell::printing::choose() else {
-            self.status = String::from("Not printed");
-            self.needs_redraw = true;
-            return Response::Redraw;
-        };
-
-        let paper = printer.page();
-        let (left, top, right, bottom) = paper.unprintable();
-        let device = Device::from_dots(paper.dpi_x, left, top, right, bottom);
-        let mut engine = LayoutEngine::for_device(self.library, device);
-        let pages = engine.layout_document(&self.document);
-        if pages.is_empty() {
-            self.status = String::from("Nothing to print");
-            self.needs_redraw = true;
-            return Response::Redraw;
-        }
-
-        if !printer.start(&self.document_name()) {
-            wp_shell::dialog::show_error("The printer would not accept the document.");
-            self.status = String::from("The printer refused the document");
-            self.needs_redraw = true;
-            return Response::Redraw;
-        }
-
-        let mut renderer = Renderer::new(self.library);
-        let mut printed = 0usize;
-        for page in &pages {
-            // What the printer can reach of this page, and no more: the band it
-            // holds the sheet by is not part of the image, because the printer
-            // draws from the corner of what it can reach.
-            let (page_width, page_height) = Renderer::printable_dots(page, device);
-            let width = paper.width.min(page_width);
-            let height = paper.height.min(page_height);
-
-            let sent = printer.print_page(width, height, |top, rows| {
-                renderer.band_for_device(page, device, top, rows, PRINTED_PAPER, width)
-            });
-            if !sent {
-                break;
-            }
-            printed += 1;
-        }
-
-        if printed == pages.len() {
-            printer.finish();
-            self.status = format!("Printed {printed} of {} pages", pages.len());
-        } else {
-            printer.cancel();
-            self.status = format!("Printing stopped after {printed} pages");
-        }
-
-        self.needs_redraw = true;
-        Response::Redraw
     }
 }
 

@@ -150,6 +150,42 @@ impl Editor {
         }
     }
 
+    /// Draws the bar along the top, which every view of the window has.
+    pub(super) fn draw_title_bar(&mut self) {
+        let state = self.toolbar_state();
+        let caption = format!(
+            "{}{} — Word Processor",
+            if state.modified { "*" } else { "" },
+            self.document_name()
+        );
+        let mut titlebar = std::mem::take(&mut self.titlebar);
+        let theme = self.theme;
+        titlebar.draw(
+            &mut self.canvas,
+            &mut self.chrome_engine,
+            &mut self.renderer,
+            &caption,
+            &state,
+            &theme,
+        );
+        self.titlebar = titlebar;
+    }
+
+    /// Draws whatever list is dropped open, over everything else.
+    pub(super) fn draw_open_popup(&mut self) {
+        let theme = self.theme;
+        if let Some(popup) = self.popup.take() {
+            let mut popup = popup;
+            popup.keep_inside(
+                self.view_width as f32,
+                crate::chrome::TITLE_HEIGHT,
+                self.view_height as f32,
+            );
+            popup.draw(&mut self.canvas, &mut self.chrome_engine, &mut self.renderer, &theme);
+            self.popup = Some(popup);
+        }
+    }
+
     /// Draws the ribbon, the rulers, the navigation pane and the status strip.
     pub(super) fn draw_chrome(&mut self) {
         let state = self.toolbar_state();
@@ -458,6 +494,16 @@ impl Editor {
         }
 
         self.canvas.clear(self.theme.desk);
+
+        // The Print page is not a thing over the document: it is what the
+        // window shows instead of it, as Word's is.
+        if self.printing() {
+            self.draw_title_bar();
+            self.draw_print_pane();
+            self.draw_open_popup();
+            return;
+        }
+
         // The document behind whatever is being edited in front of it.
         self.draw_dimmed_document();
 

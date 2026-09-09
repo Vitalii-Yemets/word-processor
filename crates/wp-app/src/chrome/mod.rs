@@ -21,6 +21,7 @@ pub mod minibar;
 pub mod navigation;
 pub mod palette;
 pub mod popup;
+pub mod printpane;
 pub mod ribbon;
 pub mod rulers;
 pub mod scrollbar;

@@ -445,6 +445,28 @@ extern "system" {
     fn EndPage(device_context: Handle) -> i32;
     fn DeleteDC(device_context: Handle) -> i32;
     fn AbortDoc(device_context: Handle) -> i32;
+    fn CreateDCW(
+        driver: *const u16,
+        device: *const u16,
+        output: *const u16,
+        mode: *const c_void,
+    ) -> Handle;
+}
+
+// The print spooler, which is where the printers themselves are listed.
+#[link(name = "winspool")]
+extern "system" {
+    fn GetDefaultPrinterW(name: *mut u16, size: *mut u32) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    fn EnumPrintersW(
+        flags: u32,
+        name: *const u16,
+        level: u32,
+        buffer: *mut u8,
+        size: u32,
+        needed: *mut u32,
+        returned: *mut u32,
+    ) -> i32;
 }
 
 #[link(name = "kernel32")]
@@ -1246,6 +1268,134 @@ pub(crate) fn show_error(message: &str) {
 }
 
 // --- Printing ---------------------------------------------------------------
+
+/// The name of every printer this machine can reach.
+///
+/// Word lists them in the Print page rather than making a person go through the
+/// system's own dialog for them, and a person choosing a printer is choosing
+/// between names.
+pub(crate) fn printer_names() -> Vec<String> {
+    /// Printers installed on this machine, and printers on other machines this
+    /// one has been connected to.
+    const LOCAL: u32 = 0x0000_0002;
+    const CONNECTIONS: u32 = 0x0000_0004;
+    /// The level of detail asked for: `PRINTER_INFO_4`, which is the name, the
+    /// server it lives on, and its attributes — the cheapest one to gather,
+    /// because it does not open any of them.
+    const LEVEL: u32 = 4;
+
+    let mut needed = 0u32;
+    let mut returned = 0u32;
+
+    // SAFETY: the first call is the documented way of asking how much room the
+    // answer needs; it is expected to fail and fills in `needed`.
+    unsafe {
+        EnumPrintersW(
+            LOCAL | CONNECTIONS,
+            core::ptr::null(),
+            LEVEL,
+            core::ptr::null_mut(),
+            0,
+            &mut needed,
+            &mut returned,
+        );
+    }
+    if needed == 0 {
+        return Vec::new();
+    }
+
+    // The answer is a run of structures at the front of the buffer and the
+    // strings they point at at the back of it, so it has to be read where it
+    // was written.
+    let mut buffer = vec![0u8; needed as usize];
+    // SAFETY: the buffer is as large as the system asked for.
+    let ok = unsafe {
+        EnumPrintersW(
+            LOCAL | CONNECTIONS,
+            core::ptr::null(),
+            LEVEL,
+            buffer.as_mut_ptr(),
+            needed,
+            &mut needed,
+            &mut returned,
+        )
+    };
+    if ok == 0 {
+        return Vec::new();
+    }
+
+    let mut names = Vec::with_capacity(returned as usize);
+    for index in 0..returned as usize {
+        // `PRINTER_INFO_4W` is a pointer to the name, a pointer to the server,
+        // and a word of attributes.
+        let entry = buffer.as_ptr() as usize + index * core::mem::size_of::<PrinterInfo>();
+        // SAFETY: the system wrote `returned` of these into the buffer.
+        let info = unsafe { &*(entry as *const PrinterInfo) };
+        if info.name.is_null() {
+            continue;
+        }
+        // SAFETY: the pointer is into the same buffer and the string is
+        // terminated, as the API promises.
+        names.push(unsafe { from_wide(info.name) });
+    }
+    names
+}
+
+/// The printer a document goes to when nobody has said otherwise.
+pub(crate) fn default_printer_name() -> Option<String> {
+    let mut size = 0u32;
+    // SAFETY: asking with no buffer is how the length is found.
+    unsafe {
+        GetDefaultPrinterW(core::ptr::null_mut(), &mut size);
+    }
+    if size == 0 {
+        return None;
+    }
+
+    let mut buffer = vec![0u16; size as usize];
+    // SAFETY: the buffer holds `size` characters, which is what was asked for.
+    let ok = unsafe { GetDefaultPrinterW(buffer.as_mut_ptr(), &mut size) };
+    if ok == 0 {
+        return None;
+    }
+    let end = buffer.iter().position(|unit| *unit == 0).unwrap_or(buffer.len());
+    Some(String::from_utf16_lossy(&buffer[..end]))
+}
+
+/// Opens a printer by name, ready to be sent pages.
+pub(crate) fn open_printer(name: &str) -> Option<crate::printing::Printer> {
+    let wide_name = wide(name);
+    // SAFETY: the name outlives the call, and a null driver means "work it out
+    // from the name", which is what the API documents.
+    let context = unsafe {
+        CreateDCW(core::ptr::null(), wide_name.as_ptr(), core::ptr::null(), core::ptr::null())
+    };
+    if context.is_null() {
+        return None;
+    }
+    Some(crate::printing::Printer::from_device_context(context as usize))
+}
+
+/// Reads a string the system wrote and terminated.
+///
+/// # Safety
+///
+/// The pointer must be to a run of UTF-16 ending in a zero.
+unsafe fn from_wide(text: *const u16) -> String {
+    let mut length = 0usize;
+    while *text.add(length) != 0 {
+        length += 1;
+    }
+    String::from_utf16_lossy(core::slice::from_raw_parts(text, length))
+}
+
+/// `PRINTER_INFO_4W`, which is what the cheapest listing hands back.
+#[repr(C)]
+struct PrinterInfo {
+    name: *const u16,
+    server: *const u16,
+    attributes: u32,
+}
 
 /// Asks which printer to use, and opens it.
 pub(crate) fn choose_printer() -> Option<crate::printing::Printer> {

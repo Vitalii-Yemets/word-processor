@@ -38,7 +38,7 @@ impl Editor {
                 self.save_as_now();
                 self.after_file_command()
             }
-            Command::Print => self.print(),
+            Command::Print => self.open_print(),
             Command::CloseDocument => {
                 if self.may_discard() {
                     self.new_document()

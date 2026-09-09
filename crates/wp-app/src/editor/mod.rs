@@ -32,6 +32,7 @@ mod outline;
 mod pagesetup;
 mod parts;
 mod preferences;
+mod printpane;
 mod proofing;
 mod properties;
 mod references;
@@ -91,10 +92,6 @@ const POINTS_PER_INCH: f32 = 72.0;
 const TWIPS_PER_POINT: f32 = 20.0;
 /// How far one press of the indent button moves a paragraph: half an inch.
 const INDENT_STEP: i32 = 720;
-
-/// Paper is white on a printer whatever the screen is set to: a dark theme is
-/// about a screen at night, not about the ink in the machine.
-pub const PRINTED_PAPER: Color = Color::WHITE;
 
 /// The line spacings the button cycles through.
 const SPACINGS: &[(f32, &str)] = &[(1.0, "Single"), (1.15, "1.15"), (1.5, "1.5"), (2.0, "Double")];
@@ -248,6 +245,16 @@ pub struct Editor {
     /// them has to hang under that box rather than under the ribbon button
     /// with the same name.
     popup_anchor: Option<(f32, f32, f32)>,
+    /// The Print page, while it is what the window is showing.
+    ///
+    /// Word gives printing a page rather than a dialog: the settings down one
+    /// side and the document as it will come out beside them.
+    print_pane: Option<crate::chrome::printpane::PrintPane>,
+    /// The document laid out for the printer, which is what the preview shows.
+    print_preview: Vec<wp_layout::Page>,
+    /// Which printer the job would go to, and what it says about itself.
+    printer_name: String,
+    print_device: wp_layout::Device,
     /// The little bar of formatting buttons floating over a selection.
     mini_bar: Option<MiniBar>,
     /// How long the caret rests on each side of a blink.
@@ -412,6 +419,10 @@ impl Editor {
             hovered: None,
             popup: None,
             popup_anchor: None,
+            print_pane: None,
+            print_preview: Vec::new(),
+            printer_name: String::new(),
+            print_device: wp_layout::Device::screen(),
             mini_bar: None,
             caret_blink: wp_shell::caret_blink_millis()
                 .map(|millis| Duration::from_millis(u64::from(millis))),

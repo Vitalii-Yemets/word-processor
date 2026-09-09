@@ -634,7 +634,50 @@ pub mod printing {
         }
     }
 
-    /// Asks which printer to use. `None` means the user cancelled.
+    /// Every printer this machine can reach, by name.
+    ///
+    /// Empty where there are none, and on a system with no spooler at all.
+    #[must_use]
+    pub fn names() -> Vec<String> {
+        #[cfg(windows)]
+        {
+            crate::windows::printer_names()
+        }
+        #[cfg(not(windows))]
+        {
+            Vec::new()
+        }
+    }
+
+    /// The one a document goes to when nobody has said otherwise.
+    #[must_use]
+    pub fn default_name() -> Option<String> {
+        #[cfg(windows)]
+        {
+            crate::windows::default_printer_name()
+        }
+        #[cfg(not(windows))]
+        {
+            None
+        }
+    }
+
+    /// Opens a printer by name, ready to be sent pages.
+    #[must_use]
+    pub fn open(name: &str) -> Option<Printer> {
+        #[cfg(windows)]
+        {
+            crate::windows::open_printer(name)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = name;
+            None
+        }
+    }
+
+    /// Asks which printer to use through the system's own dialog. `None` means
+    /// the user cancelled.
     #[must_use]
     pub fn choose() -> Option<Printer> {
         #[cfg(windows)]

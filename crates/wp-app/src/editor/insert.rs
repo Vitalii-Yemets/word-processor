@@ -204,6 +204,9 @@ impl Editor {
             "marks" => self.show_marks = true,
             "joined" => self.joined_pages = true,
             "find" => self.find_bar = Some(crate::chrome::findbar::FindBar::new(true)),
+            "print" => {
+                self.open_print();
+            }
             "table" => {
                 self.document.insert_table(3, 3);
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;

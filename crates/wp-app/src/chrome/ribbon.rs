@@ -773,6 +773,10 @@ impl Ribbon {
                     | Choice::StatusBar
                     | Choice::TabStop
                     | Choice::PageNumbering
+                    | Choice::Printer
+                    | Choice::PrintWhich
+                    | Choice::PrintSides
+                    | Choice::PrintPerSheet
                     | Choice::Margin
                     | Choice::Orientation
                     | Choice::Paper

@@ -55,6 +55,43 @@ const SECTION_PROPERTY_ORDER: &[&str] = &[
 ];
 
 impl Document {
+    /// What the paper is called, when it is one of the sizes with a name.
+    ///
+    /// Turned round or not: A4 on its side is still A4, which is what the
+    /// orientation setting beside it says.
+    #[must_use]
+    pub fn page_size_name(&self) -> Option<&'static str> {
+        let (width, height) = self.page_size();
+        let (width, height) = if width > height { (height, width) } else { (width, height) };
+        PAGE_SIZES
+            .iter()
+            .find(|(_, named_width, named_height)| {
+                (width - named_width).abs() <= 2 && (height - named_height).abs() <= 2
+            })
+            .map(|(name, ..)| *name)
+    }
+
+    /// The paper written out, which is what Word puts under the name.
+    ///
+    /// In inches, because that is what the rulers of this program are marked
+    /// in; following the user's own measurement units is a later piece of work.
+    #[must_use]
+    pub fn page_size_note(&self) -> String {
+        let (width, height) = self.page_size();
+        let inches = |twips: i32| f64::from(twips) / 1440.0;
+        format!("{:.2}\" x {:.2}\"", inches(width), inches(height))
+    }
+
+    /// What the margins are called, when they are one of the sets with a name.
+    #[must_use]
+    pub fn margin_preset_name(&self) -> Option<&'static str> {
+        let here = self.page_margins();
+        MARGIN_PRESETS
+            .iter()
+            .find(|(_, top, right, bottom, left)| (*top, *right, *bottom, *left) == here)
+            .map(|(name, ..)| *name)
+    }
+
     /// The page's width and height in twentieths of a point.
     #[must_use]
     pub fn page_size(&self) -> (i32, i32) {
