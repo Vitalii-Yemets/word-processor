@@ -59,7 +59,7 @@ impl Editor {
         if self.printer_name.is_empty() {
             return Device::screen();
         }
-        let Some(printer) = wp_shell::printing::open(&self.printer_name) else {
+        let Some(printer) = wp_shell::printing::open(&self.printer_name, None) else {
             return Device::screen();
         };
         let paper = printer.page();
@@ -280,6 +280,11 @@ impl Editor {
                 (Choice::PrintWhich, items, current)
             }
             Hit::Sides => {
+                // Only a printer that can turn the paper over is asked to: a
+                // list of one is not a choice, and Word greys it out too.
+                if !wp_shell::printing::prints_both_sides(&self.printer_name) {
+                    return Response::Ignored;
+                }
                 let items = Sides::ALL.iter().map(|sides| sides.label().to_owned()).collect();
                 let current = Sides::ALL.iter().position(|sides| *sides == pane.settings.sides);
                 (Choice::PrintSides, items, current)
@@ -445,7 +450,7 @@ impl Editor {
         let opened = if self.printer_name.is_empty() {
             wp_shell::printing::choose()
         } else {
-            wp_shell::printing::open(&self.printer_name)
+            wp_shell::printing::open(&self.printer_name, settings.sides.both_sides())
         };
         let Some(mut printer) = opened else {
             wp_shell::dialog::show_error("There is no printer to print to.");

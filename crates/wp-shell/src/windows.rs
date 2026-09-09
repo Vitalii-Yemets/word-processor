@@ -467,6 +467,23 @@ extern "system" {
         needed: *mut u32,
         returned: *mut u32,
     ) -> i32;
+    fn OpenPrinterW(name: *const u16, handle: *mut Handle, defaults: *const c_void) -> i32;
+    fn ClosePrinter(handle: Handle) -> i32;
+    fn DocumentPropertiesW(
+        window: Handle,
+        printer: Handle,
+        device: *const u16,
+        out_mode: *mut u8,
+        in_mode: *const u8,
+        mode: u32,
+    ) -> i32;
+    fn DeviceCapabilitiesW(
+        device: *const u16,
+        port: *const u16,
+        capability: u16,
+        output: *mut u16,
+        mode: *const u8,
+    ) -> i32;
 }
 
 #[link(name = "kernel32")]
@@ -1362,18 +1379,147 @@ pub(crate) fn default_printer_name() -> Option<String> {
     Some(String::from_utf16_lossy(&buffer[..end]))
 }
 
-/// Opens a printer by name, ready to be sent pages.
-pub(crate) fn open_printer(name: &str) -> Option<crate::printing::Printer> {
+/// Where the duplex setting sits inside a `DEVMODE`, and the bit that says it
+/// has been set.
+///
+/// A `DEVMODE` is the structure a printer driver keeps its settings in. Its
+/// first hundred and fifty-six bytes are fixed by the operating system and have
+/// been since Windows 3, and the driver adds its own on the end. Only two
+/// numbers in it are wanted here, so the structure is not declared: the bytes
+/// are read and written where the API documents them, and nothing is touched
+/// that the driver did not hand over.
+mod devmode {
+    /// `dmSize`: how much of the structure the operating system owns.
+    pub(super) const SIZE_AT: usize = 68;
+    /// `dmFields`: which of the settings below the driver should believe.
+    pub(super) const FIELDS_AT: usize = 72;
+    /// `dmDuplex`, a signed word.
+    pub(super) const DUPLEX_AT: usize = 94;
+    /// The bit of `dmFields` that says the duplex setting means something.
+    pub(super) const FIELD_DUPLEX: u32 = 0x0000_1000;
+    /// The whole of the part the operating system owns, which is as far as
+    /// anything here reads.
+    pub(super) const FIXED_SIZE: usize = 156;
+}
+
+/// Whether a printer can print on both sides of the sheet.
+pub(crate) fn supports_both_sides(name: &str) -> bool {
+    /// `DC_DUPLEX`: one when the printer can, zero when it cannot.
+    const DC_DUPLEX: u16 = 7;
+
     let wide_name = wide(name);
-    // SAFETY: the name outlives the call, and a null driver means "work it out
-    // from the name", which is what the API documents.
+    // SAFETY: the name outlives the call; a null port means the printer's own,
+    // and a null mode means its current settings.
+    let answer = unsafe {
+        DeviceCapabilitiesW(
+            wide_name.as_ptr(),
+            core::ptr::null(),
+            DC_DUPLEX,
+            core::ptr::null_mut(),
+            core::ptr::null(),
+        )
+    };
+    answer == 1
+}
+
+/// Opens a printer by name, set up to print on both sides or on one.
+///
+/// The setting belongs to the driver rather than to the page image, so it is
+/// written into the structure the driver keeps its settings in and handed back
+/// with the request for a device context.
+pub(crate) fn open_printer_with(
+    name: &str,
+    both_sides: Option<bool>,
+) -> Option<crate::printing::Printer> {
+    let wide_name = wide(name);
+    let settings = both_sides.and_then(|long_edge| driver_settings(&wide_name, long_edge));
+    let mode = settings.as_ref().map_or(core::ptr::null(), |bytes| bytes.as_ptr());
+
+    // SAFETY: the name and the settings outlive the call, and a null driver
+    // means "work it out from the name", which is what the API documents.
     let context = unsafe {
-        CreateDCW(core::ptr::null(), wide_name.as_ptr(), core::ptr::null(), core::ptr::null())
+        CreateDCW(core::ptr::null(), wide_name.as_ptr(), core::ptr::null(), mode.cast::<c_void>())
     };
     if context.is_null() {
         return None;
     }
     Some(crate::printing::Printer::from_device_context(context as usize))
+}
+
+/// The printer's own settings, with the duplex field set.
+///
+/// `None` when the driver will not give them up, in which case the printer is
+/// opened with whatever it is already set to — which is better than refusing to
+/// print.
+fn driver_settings(wide_name: &[u16], long_edge: bool) -> Option<Vec<u8>> {
+    /// `DM_OUT_BUFFER`: fill in the structure handed over.
+    const DM_OUT_BUFFER: u32 = 2;
+    /// What `dmDuplex` is set to: one for a single side, two for a sheet
+    /// turned over its long edge, three for its short one.
+    const DUPLEX_VERTICAL: i16 = 2;
+    const DUPLEX_HORIZONTAL: i16 = 3;
+
+    let mut printer: Handle = core::ptr::null_mut();
+    // SAFETY: the name outlives the call, and the handle is closed below.
+    if unsafe { OpenPrinterW(wide_name.as_ptr(), &mut printer, core::ptr::null()) } == 0 {
+        return None;
+    }
+
+    // How large the structure is, driver's own part included. Asking with no
+    // buffer is how the size is found.
+    // SAFETY: the printer handle is open and the name outlives the call.
+    let needed = unsafe {
+        DocumentPropertiesW(
+            core::ptr::null_mut(),
+            printer,
+            wide_name.as_ptr(),
+            core::ptr::null_mut(),
+            core::ptr::null(),
+            0,
+        )
+    };
+    if needed < devmode::FIXED_SIZE as i32 {
+        // SAFETY: the handle came from `OpenPrinterW` and is not used again.
+        unsafe { ClosePrinter(printer) };
+        return None;
+    }
+
+    let mut bytes = vec![0u8; needed as usize];
+    // SAFETY: the buffer is as large as the driver asked for.
+    let filled = unsafe {
+        DocumentPropertiesW(
+            core::ptr::null_mut(),
+            printer,
+            wide_name.as_ptr(),
+            bytes.as_mut_ptr(),
+            core::ptr::null(),
+            DM_OUT_BUFFER,
+        )
+    };
+    // SAFETY: the handle came from `OpenPrinterW` and is not used again.
+    unsafe { ClosePrinter(printer) };
+    if filled < 0 {
+        return None;
+    }
+
+    // The driver said how much of the structure it filled in; nothing is
+    // written past that, whatever the offsets below say.
+    let size = u16::from_le_bytes([bytes[devmode::SIZE_AT], bytes[devmode::SIZE_AT + 1]]) as usize;
+    if size < devmode::DUPLEX_AT + 2 || bytes.len() < size {
+        return None;
+    }
+
+    let fields = u32::from_le_bytes([
+        bytes[devmode::FIELDS_AT],
+        bytes[devmode::FIELDS_AT + 1],
+        bytes[devmode::FIELDS_AT + 2],
+        bytes[devmode::FIELDS_AT + 3],
+    ]) | devmode::FIELD_DUPLEX;
+    bytes[devmode::FIELDS_AT..devmode::FIELDS_AT + 4].copy_from_slice(&fields.to_le_bytes());
+
+    let duplex = if long_edge { DUPLEX_VERTICAL } else { DUPLEX_HORIZONTAL };
+    bytes[devmode::DUPLEX_AT..devmode::DUPLEX_AT + 2].copy_from_slice(&duplex.to_le_bytes());
+    Some(bytes)
 }
 
 /// Reads a string the system wrote and terminated.

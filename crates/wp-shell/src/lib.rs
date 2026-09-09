@@ -662,16 +662,37 @@ pub mod printing {
         }
     }
 
-    /// Opens a printer by name, ready to be sent pages.
+    /// Whether a printer can print on both sides of the sheet.
+    ///
+    /// Word greys the setting out when it cannot, rather than offering
+    /// something that will not happen.
     #[must_use]
-    pub fn open(name: &str) -> Option<Printer> {
+    pub fn prints_both_sides(name: &str) -> bool {
         #[cfg(windows)]
         {
-            crate::windows::open_printer(name)
+            crate::windows::supports_both_sides(name)
         }
         #[cfg(not(windows))]
         {
             let _ = name;
+            false
+        }
+    }
+
+    /// Opens a printer by name, ready to be sent pages.
+    ///
+    /// `both_sides` is `None` for one side, `Some(true)` for a sheet turned
+    /// over its long edge — the way a book turns — and `Some(false)` for its
+    /// short edge.
+    #[must_use]
+    pub fn open(name: &str, both_sides: Option<bool>) -> Option<Printer> {
+        #[cfg(windows)]
+        {
+            crate::windows::open_printer_with(name, both_sides)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (name, both_sides);
             None
         }
     }

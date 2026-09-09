@@ -64,27 +64,46 @@ impl Which {
 }
 
 /// Whether the sheets are printed on both sides, and which way they turn.
-///
-/// Not offered yet: telling a printer to turn the paper over means handing the
-/// driver a `DEVMODE` with the duplex field set, and a setting drawn on the
-/// page but not carried to the printer would be a lie. See item A6.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Sides {
     #[default]
     One,
+    /// Turned over the long edge, which is how a book turns.
+    LongEdge,
+    /// Turned over the short edge, which is how a notepad turns.
+    ShortEdge,
 }
 
 impl Sides {
-    pub const ALL: &'static [Self] = &[Self::One];
+    pub const ALL: &'static [Self] = &[Self::One, Self::LongEdge, Self::ShortEdge];
 
     #[must_use]
     pub fn label(self) -> &'static str {
-        "Print One Sided"
+        match self {
+            Self::One => "Print One Sided",
+            Self::LongEdge => "Print on Both Sides",
+            Self::ShortEdge => "Print on Both Sides",
+        }
     }
 
     #[must_use]
     pub fn note(self) -> &'static str {
-        "Only print on one side of the sheet"
+        match self {
+            Self::One => "Only print on one side of the sheet",
+            Self::LongEdge => "Flip pages on long edge",
+            Self::ShortEdge => "Flip pages on short edge",
+        }
+    }
+
+    /// How the printer is asked for it: nothing for one side, and which edge
+    /// the sheet turns over for two.
+    #[must_use]
+    pub fn both_sides(self) -> Option<bool> {
+        match self {
+            Self::One => None,
+            Self::LongEdge => Some(true),
+            Self::ShortEdge => Some(false),
+        }
     }
 }
 

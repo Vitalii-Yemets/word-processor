@@ -221,12 +221,18 @@ A word processor that cannot print is not one. Nothing of this exists yet.
   *Not offered, rather than offered and ignored:* printing on both sides (see
   **A6**) and printing a selection (see **A7**).
 
-- [ ] **A6. Printing on both sides.** Telling a printer to turn the paper over
+- [x] **A6. Printing on both sides.** Telling a printer to turn the paper over
   means handing the driver a `DEVMODE` with its duplex field set, which means
-  `DocumentPropertiesW` and a structure of a hundred and fifty bytes laid out
-  exactly. The Print page has the row ready for it.
-  *Done when:* a duplex printer prints on both sides, and the setting says
-  which edge it turns on.
+  `DocumentPropertiesW` and a structure of a hundred and fifty-six bytes laid
+  out exactly.
+  *Done:* the driver is asked for its own settings, the duplex field and the
+  bit that says it means something are written where the API documents them,
+  and the settings go back with the request for a device context. Nothing is
+  written past the size the driver said it filled in. The setting is offered
+  only where the printer says it can turn the paper over — `DC_DUPLEX` — so it
+  is never a choice that does nothing.
+  *Not yet proven:* nobody has printed a sheet on both sides, for the same
+  reason as **A2**: no printer in the container.
 
 - [ ] **A7. Printing a selection.** Word prints what is selected and nothing
   else, laid out on its own rather than as the pages it happens to fall on.
