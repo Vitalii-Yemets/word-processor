@@ -87,6 +87,9 @@ const CARET_MARGIN: f32 = 40.0;
 /// calls 100%.
 pub const DPI: f32 = 96.0;
 /// Points per inch, for turning page metrics into pixels.
+/// How wide the caret is drawn, in pixels.
+const CARET_WIDTH: i32 = 2;
+
 const POINTS_PER_INCH: f32 = 72.0;
 /// Twentieths of a point, the unit the format measures indents in.
 const TWIPS_PER_POINT: f32 = 20.0;
@@ -255,6 +258,11 @@ pub struct Editor {
     /// Which printer the job would go to, and what it says about itself.
     printer_name: String,
     print_device: wp_layout::Device,
+    /// The pixels the caret was drawn over, so a blink can put them back
+    /// rather than drawing the whole window again.
+    under_caret: Option<(i32, i32, Vec<u8>)>,
+    /// Whether the only thing that changed is the caret's half of a blink.
+    caret_only: bool,
     /// The little bar of formatting buttons floating over a selection.
     mini_bar: Option<MiniBar>,
     /// How long the caret rests on each side of a blink.
@@ -423,6 +431,8 @@ impl Editor {
             print_preview: Vec::new(),
             printer_name: String::new(),
             print_device: wp_layout::Device::screen(),
+            under_caret: None,
+            caret_only: false,
             mini_bar: None,
             caret_blink: wp_shell::caret_blink_millis()
                 .map(|millis| Duration::from_millis(u64::from(millis))),
@@ -1317,6 +1327,64 @@ mod tests {
         editor
     }
 
+    /// The window as it stands, as bytes.
+    fn painted(editor: &mut Editor) -> Vec<u8> {
+        editor.paint(editor.view_width, editor.view_height);
+        editor.canvas().pixels().to_vec()
+    }
+
+    #[test]
+    fn a_blink_leaves_the_window_exactly_as_a_full_repaint_would() {
+        // The caret blinks twice a second for as long as the window is open,
+        // and drawing only the caret is only worth doing if the result cannot
+        // be told from drawing everything. So: blink it off, blink it on, and
+        // compare with a window drawn from nothing.
+        let mut editor = editor(40);
+        editor.caret_on = true;
+        let with_caret = painted(&mut editor);
+
+        editor.caret_on = false;
+        editor.caret_only = true;
+        let without = painted(&mut editor);
+
+        editor.needs_redraw = true;
+        let expected_without = painted(&mut editor);
+        assert_eq!(without, expected_without, "the caret was not taken away cleanly");
+
+        editor.caret_on = true;
+        editor.caret_only = true;
+        let back = painted(&mut editor);
+        assert_eq!(back, with_caret, "the caret did not come back the way it was");
+    }
+
+    #[test]
+    fn a_blink_over_an_open_list_draws_the_window_rather_than_the_caret() {
+        // A list dropped over the page may have been drawn on top of the
+        // caret, and putting back what was under it would put it back over the
+        // list.
+        let mut editor = editor(40);
+        editor.caret_on = true;
+        painted(&mut editor);
+
+        editor.popup = Some(crate::chrome::Popup::new(
+            crate::chrome::Choice::Zoom,
+            vec!["100%".to_owned()],
+            None,
+            100.0,
+            300.0,
+            120.0,
+        ));
+        let with_list = painted(&mut editor);
+
+        editor.caret_on = false;
+        editor.caret_only = true;
+        let blinked = painted(&mut editor);
+        assert_ne!(blinked, with_list, "nothing was drawn at all");
+
+        editor.needs_redraw = true;
+        editor.caret_on = false;
+        assert_eq!(blinked, painted(&mut editor), "the list was drawn over");
+    }
     #[test]
     fn the_page_being_looked_at_is_the_first_one_before_anything_is_scrolled() {
         assert_eq!(editor(200).visible_page(), 0);

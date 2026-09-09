@@ -258,6 +258,53 @@ impl Canvas {
         self.draw_mask(&rasterizer.finish(), left as i32, top as i32, color);
     }
 
+    /// The pixels of one rectangle, copied out.
+    ///
+    /// For putting something back the way it was: the caret blinks twice a
+    /// second, and redrawing the whole window each time — every glyph on the
+    /// page, rasterized again — is work nobody asked for. Keeping what was
+    /// under it and putting it back is a few hundred bytes and no drawing at
+    /// all.
+    #[must_use]
+    pub fn copy_rect(&self, x: i32, y: i32, width: i32, height: i32) -> Vec<u8> {
+        let mut out = Vec::new();
+        let (left, top, right, bottom) = self.clamped(x, y, width, height);
+        for row in top..bottom {
+            let start = (row * self.width + left) * 4;
+            let end = (row * self.width + right) * 4;
+            out.extend_from_slice(&self.pixels[start..end]);
+        }
+        out
+    }
+
+    /// Puts pixels copied out by [`Canvas::copy_rect`] back where they came
+    /// from.
+    ///
+    /// The rectangle must be the one they were taken from; anything else is
+    /// ignored rather than drawn askew.
+    pub fn paste_rect(&mut self, x: i32, y: i32, width: i32, height: i32, pixels: &[u8]) {
+        let (left, top, right, bottom) = self.clamped(x, y, width, height);
+        let row_bytes = (right - left) * 4;
+        if row_bytes == 0 || pixels.len() != row_bytes * (bottom - top) {
+            return;
+        }
+        for (number, row) in (top..bottom).enumerate() {
+            let start = (row * self.width + left) * 4;
+            let from = number * row_bytes;
+            self.pixels[start..start + row_bytes].copy_from_slice(&pixels[from..from + row_bytes]);
+        }
+    }
+
+    /// A rectangle cut down to what is actually on the canvas, as left, top,
+    /// right and bottom.
+    fn clamped(&self, x: i32, y: i32, width: i32, height: i32) -> (usize, usize, usize, usize) {
+        let left = (x.max(0) as usize).min(self.width);
+        let top = (y.max(0) as usize).min(self.height);
+        let right = ((x + width.max(0)).max(0) as usize).min(self.width);
+        let bottom = ((y + height.max(0)).max(0) as usize).min(self.height);
+        (left, top, right.max(left), bottom.max(top))
+    }
+
     /// Draws another canvas on top of this one.
     pub fn draw_canvas(&mut self, other: &Canvas, x: i32, y: i32) {
         for row in 0..other.height {

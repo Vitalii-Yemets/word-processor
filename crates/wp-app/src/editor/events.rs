@@ -746,7 +746,8 @@ impl Editor {
 
         self.caret_flipped = Instant::now();
         self.caret_on = !self.caret_on;
-        self.needs_redraw = true;
+        // Only the caret changed, so only the caret is drawn again.
+        self.caret_only = true;
         Response::Redraw
     }
 

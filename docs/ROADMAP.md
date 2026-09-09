@@ -348,9 +348,20 @@ will crawl. This has to be fixed before the document gets bigger, not after.
   grow without bound: there is one entry per paragraph of the document, and it
   is replaced when that paragraph changes.
 
-- [ ] **B5. Drawing only what changed.** A caret blink redraws the whole window
+- [x] **B5. Drawing only what changed.** A caret blink redraws the whole window
   today.
-  *Done when:* a blink touches the caret's rectangle and nothing else.
+  *Done:* the pixels under the caret are kept when it is drawn, so a blink puts
+  them back and draws the caret again — a few hundred bytes copied instead of
+  every glyph on the page rasterized afresh. A blink went from eleven
+  milliseconds to two hundred nanoseconds, which is fifty thousand times less
+  work, twice a second, for as long as the window is open.
+
+  While anything floats over the page — a list, the mini toolbar, a tip — a
+  blink is an ordinary repaint, because those are drawn after the caret and
+  putting back what was under it would put it back over them.
+
+  *Proven by:* a blink off and a blink on leave the window byte for byte what a
+  full repaint leaves, and a blink under an open list does repaint.
 
 - [ ] **B6. Reusing the pages that did not move.** The paragraphs are no longer
   measured again, but they are all still *placed* again: a keystroke walks every

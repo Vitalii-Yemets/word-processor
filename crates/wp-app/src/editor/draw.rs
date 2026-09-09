@@ -7,7 +7,7 @@ use crate::chrome::rulers::{Indents, Measurements};
 use crate::chrome::status::StatusState;
 use crate::chrome::{rulers, status, ToolbarState};
 
-use super::{Editor, DPI, POINTS_PER_INCH, TWIPS_PER_POINT};
+use super::{Editor, CARET_WIDTH, DPI, POINTS_PER_INCH, TWIPS_PER_POINT};
 
 impl Editor {
     /// What the ribbon needs to know about the document to draw itself.
@@ -448,18 +448,66 @@ impl Editor {
 
     /// Draws the caret, if it is inside the pane being drawn.
     pub(super) fn draw_caret(&mut self) {
-        // Half of a blink is the caret not being there at all.
-        if !self.caret_on {
+        let Some((x, y, caret_height)) = self.caret_rect() else {
+            self.under_caret = None;
             return;
-        }
-        let caret_colour = self.theme.caret;
-        let Some((x, y, caret_height)) = self.caret_rect() else { return };
+        };
         // Only inside the page area: a caret scrolled up behind the ribbon
         // must not be drawn on top of it.
         if y < self.content_top() || y + caret_height > self.content_bottom() {
+            self.under_caret = None;
             return;
         }
-        self.canvas.fill_rect(x as i32, y as i32, 2, caret_height.ceil() as i32, caret_colour);
+
+        // What is under it is kept whether it is drawn or not, so that either
+        // half of the next blink can be done without drawing the window again.
+        let (x, y, height) = (x as i32, y as i32, caret_height.ceil() as i32);
+        let under = self.canvas.copy_rect(x, y, CARET_WIDTH, height);
+        if self.caret_on {
+            self.canvas.fill_rect(x, y, CARET_WIDTH, height, self.theme.caret);
+        }
+        self.under_caret = Some((x, y, under));
+    }
+
+    /// Draws the caret's half of a blink, and nothing else.
+    ///
+    /// A caret blinks twice a second for as long as the window is open. Drawing
+    /// the whole window each time — every glyph of every page on screen,
+    /// rasterized again — is work nobody asked for and a fan nobody wants. What
+    /// was under the caret was kept when it was drawn, so putting it back is a
+    /// few hundred bytes copied and no drawing at all.
+    ///
+    /// True when the window was changed and has to be shown again.
+    pub(super) fn blink_caret(&mut self) -> bool {
+        // Anything floating over the page may have been drawn on top of the
+        // caret after it was drawn, and putting back what was under the caret
+        // would put it back over that. So while something floats, a blink is
+        // an ordinary repaint.
+        if self.popup.is_some()
+            || self.mini_bar.is_some()
+            || self.palette.is_some()
+            || self.table_grid.is_some()
+            || self.tip.is_some()
+            || self.showing_key_tips()
+        {
+            return false;
+        }
+
+        let Some((x, y, under)) = self.under_caret.take() else {
+            // Nothing was kept, which means the caret was not drawn last time.
+            // Then this is not a blink but a first drawing, and the caller
+            // paints the window.
+            return false;
+        };
+        let height = (under.len() / (CARET_WIDTH.max(1) as usize * 4)) as i32;
+        self.canvas.paste_rect(x, y, CARET_WIDTH, height, &under);
+        if self.caret_on {
+            self.canvas.fill_rect(x, y, CARET_WIDTH, height, self.theme.caret);
+        }
+        // The pixels kept are the ones under the caret, not the caret itself,
+        // so they serve both halves of every blink after this one.
+        self.under_caret = Some((x, y, under));
+        true
     }
 
     /// Draws the mark that shows where carried text would land.
@@ -488,7 +536,20 @@ impl Editor {
             self.view_width = width;
             self.view_height = height;
             self.needs_redraw = true;
+            self.under_caret = None;
         }
+
+        // A blink and nothing else: put back what the caret was drawn over and
+        // draw it again, rather than drawing the window.
+        if !self.needs_redraw && self.caret_only {
+            self.caret_only = false;
+            if self.blink_caret() {
+                return;
+            }
+            self.needs_redraw = true;
+        }
+        self.caret_only = false;
+
         if !self.needs_redraw {
             return;
         }
