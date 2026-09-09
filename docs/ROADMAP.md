@@ -14,22 +14,30 @@ means an automated test, and wherever an outside reference exists — a real Wor
 document, the system `gzip`, a font file — the test is run against that
 reference rather than against our own output.
 
+## How the work is tracked
+
+The remaining work is numbered. A numbered item is finished when it runs, is
+covered by tests, passes `./x.sh check` on both targets, and is committed; the
+item is then ticked here in the same commit. Anything found on the way that is
+not part of the item is written down as a new one rather than done quietly.
+
 ---
 
-## Stage 0 — Build environment ✅ complete
+# Part one — what is built
+
+The foundations. Each of these is in the repository, tested, and used by the
+program as it runs today.
+
+## Stage 0 — Build environment ✅
 
 A Docker image holding the Rust toolchain and the mingw-w64 linker; a Cargo
 workspace; `x.ps1` / `x.sh` as the only entry points. Nothing is installed or
 built on the developer's machine, and cross-compilation to a Windows `.exe`
 works from the same container that builds for Linux.
 
----
+## Stage 1 — Container and markup ✅
 
-## Stage 1 — Container and markup primitives ✅ complete
-
-Everything needed to open a `.docx` as a structured document rather than a blob.
-
-### 1.1 Compression ✅ complete — `crates/wp-deflate`
+### 1.1 Compression ✅ — `wp-deflate`
 
 DEFLATE (RFC 1951) decoder and encoder, zlib wrapper (RFC 1950), CRC-32 and
 Adler-32. The decoder tolerates hostile input: it never panics on corrupt data
@@ -41,7 +49,7 @@ our encoder does not); `gzip` accepts and correctly decodes streams we produce;
 every single-bit corruption and every truncation of a valid stream is rejected
 without a panic.
 
-### 1.2 ZIP and OPC packaging ✅ complete
+### 1.2 ZIP and OPC packaging ✅ — `wp-zip`, `wp-opc`
 
 ZIP reader and writer, including Zip64 for large documents, and the Open
 Packaging Conventions layer on top: content types, relationships, parts, and
@@ -55,11 +63,7 @@ save byte for byte, parts it does not model included.
 *Also proven:* Microsoft Word opens a document written here without a repair
 prompt and without compatibility mode, and reads exactly the same words from it.
 
-*Not yet proven:* nothing has been tested against a document Word itself
-produced. That needs a corpus of real files, which cannot live in the repository
-— see `corpus/`.
-
-### 1.3 XML ✅ complete
+### 1.3 XML ✅ — `wp-xml`
 
 A pull parser and a writer with namespace support, entity handling, encoding
 detection, and exact whitespace preservation (`xml:space`). Word is strict about
@@ -71,37 +75,18 @@ entity definitions in a document type declaration are never expanded, which
 closes both the billion-laughs expansion and external entity file disclosure;
 every truncation and bit-flip of a valid document is refused without a panic.
 
-### 1.4 Unicode character database — not started
+## Stage 2 — Document model ✅ for what the editor does
 
-Generated, committed tables: general category, script, bidirectional class,
-line-break class, grapheme and word boundaries, case mappings, normalization
-data. These are the foundation of Stage 4 and are needed this early because the
-XML layer already depends on some of them.
+An element tree that keeps every element, attribute and comment it was given,
+whether or not this program models it. On top of it: paragraphs and runs and
+their properties, styles with inheritance, numbering and lists, sections,
+headers and footers, footnotes and endnotes, comments, bookmarks, hyperlinks,
+fields, tables, drawings and pictures, shapes, charts, equations, content
+controls, tracked revisions, themes, settings and document properties.
 
-*Proven by:* the conformance test files published with the Unicode standard.
-
----
-
-## Stage 2 — Document model — in progress
-
-**Done:** an element tree that keeps every element, attribute and comment it was
-given, whether or not this program models it, and editing that works on that
-tree. Replacing text works across run boundaries, which it must: Word splits a
-paragraph between runs wherever formatting changes, so a word is often stored in
-pieces. Paragraphs can be appended and their style and alignment changed. An
-edit rewrites only the part it touched, and only the nodes inside it that
-changed.
-
-**Still to do:** the full WordprocessingML object model: body, paragraphs, runs and their
-properties, sections, styles, numbering and lists, fonts, settings, themes,
-headers and footers, footnotes and endnotes, comments, bookmarks, fields,
-tables, drawings, content controls, and tracked revisions.
-
-The defining requirement is **lossless round-tripping**. Anything not yet
-modelled — an element, an attribute, a whole part — is retained exactly as it
-came in and written back unchanged. Without this the editor would quietly damage
-documents, which would make it unusable for real work no matter how good the
-rest is.
+The defining requirement is **lossless round-tripping**. Anything not modelled —
+an element, an attribute, a whole part — is retained exactly as it came in and
+written back unchanged.
 
 *Proven by:* an edit to a document whose body also holds a content control,
 unknown markup with a comment inside it, and a tracked deletion leaves all of
@@ -109,256 +94,361 @@ that byte for byte intact, and changes no other part of the package; an
 unmodified document is written back from its original bytes and comes out
 identical.
 
-*Also proven:* Word opens a document written here in the current mode, reads the
-same 176 words this program reads, and lays it out on the same number of pages.
-
 *Not yet proven:* nothing has been tested against a document Word itself
-produced.
+produced. That needs a corpus of real files, which cannot live in the repository
+— see `corpus/`, and item **K1** below.
 
----
+## Stage 3 — Fonts ✅ for the tables that occur
 
-## Stage 3 — Fonts — partly done
-
-**Done:** TrueType and OpenType parsing in `wp-font` — the table directory,
-metrics, the character mapping in the formats that occur, and glyph outlines
-including composite glyphs. Font discovery and matching on both platforms, with
-per-character fallback. Outlines are rasterized in `wp-raster`.
-
-**Still to do:** everything below.
-
-
-An OpenType and TrueType parser covering `cmap`, `glyf`/`loca`, CFF and CFF2,
-`head`, `hhea`, `hmtx`, `maxp`, `name`, `OS/2`, `post`, `kern`, `GDEF`, `GSUB`,
-`GPOS`, variable-font tables, and colour and bitmap glyph tables. Font
-enumeration and matching on both platforms, with per-script fallback chains.
-
-A glyph rasterizer: outline decoding, scanline anti-aliasing, subpixel
-positioning, gamma-correct blending.
+TrueType and OpenType parsing in `wp-font`: the table directory, metrics, the
+character mapping in the formats that occur, glyph outlines including composite
+glyphs, kerning, and the `GSUB`/`GPOS` tables the shaper needs. Font discovery
+and matching on both platforms, with per-character fallback. Outlines are
+rasterized in `wp-raster` with scanline anti-aliasing.
 
 No font files are shipped. Typefaces are data with their own licences, and the
 ones Word uses belong to Microsoft; the editor reads whatever is installed on
 the system, which is what Word does too.
 
-*Proven by:* glyph metrics and outlines compared against values read out of the
-same font files by independent means; rendered glyphs compared against reference
-images.
+*Not done:* CFF and CFF2 outlines (PostScript-flavoured fonts), variable fonts,
+colour and bitmap glyph tables — items **E8** to **E10**.
+
+## Stage 4 — Text engine — the part every document needs ✅
+
+- **Bidirectional text** (UAX #9) — `wp-bidi`: the explicit embeddings and
+  isolates, the weak and neutral types, paired brackets (N0), the implicit
+  levels, the reordering of a line, and the characters drawn mirrored in it.
+- **Shaping** — `wp-shape`: Arabic and Syriac joining forms and ligatures
+  through the font's own `GSUB` table.
+- **Line breaking** (UAX #14) — `wp-break`: where a line may be broken, the CJK
+  rules included.
+- **Segmentation** (UAX #29) — `wp-segment`: grapheme cluster and word
+  boundaries, which is what the caret steps by and what a double click selects.
+- **Normalization** (UAX #15) — `wp-normal`: the two ways of writing an accented
+  letter, made one, for the Latin alphabets of Europe, Greek and Cyrillic.
+
+The rest of the text engine is items **E1** to **E7**.
+
+## Stage 5 — Layout and rendering — what the program draws today ✅
+
+Line-by-line layout with fonts read from the machine: runs, tab stops with
+leaders, alignment and justification, indentation, line and paragraph spacing,
+borders and shading, keep-with-next and keep-together, widow and orphan control,
+page and column breaks, sections with their own page setup, columns, headers and
+footers with first-page and even-page variants, page numbering per section, line
+numbering, footnotes and endnotes, tables with merged cells and rows that split
+across pages, floating objects with square, tight, through, top-and-bottom and
+behind-text wrapping, pictures, shapes, charts, equations, and the fields that
+have to be worked out while laying out — `PAGE`, `NUMPAGES`, `TOC`, `REF`,
+`SEQ`, `DATE`, `STYLEREF` and the rest.
+
+Rendering: an anti-aliased path rasterizer, a pixel canvas with alpha blending,
+image decoding, SVG-style path data for shape geometry, text effects, and a PNG
+encoder. Everything on screen — the document and the interface alike — is drawn
+by this and nothing else.
+
+## Stage 6 — The window and the editor ✅ for one platform
+
+A Windows shell written against the Win32 ABI directly, with no binding crate:
+window, message loop, keyboard, mouse, wheel, timers, the caret blink, the
+system clipboard, and the finished image presented through GDI. It is the only
+crate allowed `unsafe`.
+
+The editor on top of it: caret and selection that belong to the document,
+clicking and dragging, double click by word, keyboard movement by character,
+word, line, paragraph and page, typing, deleting, splitting and joining
+paragraphs, multi-level undo and redo that merges by word, cut, copy and paste,
+formatting by range, find and replace, zoom, split view, and the view modes.
+
+The interface: a ribbon with contextual tabs, a style gallery, a navigation
+pane, rulers with tab stops and indents, a status bar, a mini toolbar, key tips,
+menus and popups, and the strips that stand in for dialogs. All of it drawn on
+the same canvas as the document, so `--picture` can write the whole window to a
+PNG on a machine with no display — which is how it is checked.
 
 ---
 
-## Stage 4 — Text engine
+# Part two — the work that remains
 
-This is where support for the world's writing systems actually lives.
+Ordered by what a person using the program notices first. Every item says what
+it is, what finishing it means, and how it is proven.
 
-- The Unicode bidirectional algorithm (UAX #9) for Arabic, Hebrew, and mixed text
-- Script itemization and complex shaping: Arabic joining forms, Indic
-  reordering, Thai and Lao clustering, Hangul composition, applied through the
-  font's `GSUB` and `GPOS` tables
-- Line breaking (UAX #14) including the CJK rules, and word segmentation (UAX #29)
-- Hyphenation, with per-language pattern data
-- Vertical writing modes and ruby annotations
-- Normalization (UAX #15) and case mapping with language-specific tailoring
+## A — Printing
 
-*Proven by:* the Unicode conformance suites, plus shaping output compared against
-reference renderings per script.
+A word processor that cannot print is not one. Nothing of this exists yet.
+
+- [ ] **A1. Laying a page out for a device rather than a screen.** The layout
+  engine works in pixels at a screen resolution; a printer is 600 or 1200 dots
+  per inch and has a hardware margin the paper cannot be drawn in. Lay out at a
+  given resolution, and know the printable area.
+  *Done when:* the same document laid out at 96 and at 600 dpi breaks its lines
+  and its pages in exactly the same places.
+
+- [ ] **A2. The Windows spooler.** `OpenPrinter`, `StartDocPrinter`,
+  `StartPagePrinter`, the device context, and the page image handed over — all
+  declared with `extern "system"` like the rest of the shell. Printer
+  enumeration, the default printer, paper sizes, orientation, duplex, copies,
+  collation, and the printer's own margins.
+  *Done when:* a document prints, on paper, matching what the screen showed.
+
+- [ ] **A3. Print preview and the print dialog.** Word's is a whole view: page
+  thumbnails, zoom, page ranges, what to print (document, markup, styles),
+  pages per sheet, and the settings that belong to the printer rather than the
+  document.
+  *Done when:* Ctrl+P opens it, every setting is honoured, and a picture of it
+  matches Word's arrangement.
+
+- [ ] **A4. PDF export.** The PDF file format, the graphics operators, and font
+  subsetting — embedding only the glyphs used, because a document may not carry
+  a whole licensed typeface. Text has to stay text: selectable, searchable,
+  with the right character codes.
+  *Done when:* a PDF written here opens in a viewer, its text can be copied out
+  and comes back as what was typed, and its pages match the printed ones.
+
+- [ ] **A5. Printing on Linux.** CUPS, the same page images, through the same
+  layer.
+  *Done when:* it prints from the Linux build.
+
+## B — Speed on a document that is not a toy
+
+The program lays out the whole document on every edit and remembers the whole
+element tree on every undo step. On two pages nothing shows; on three hundred it
+will crawl. This has to be fixed before the document gets bigger, not after.
+
+- [ ] **B1. A corpus and a measurement.** Documents of 10, 100 and 1000 pages,
+  generated rather than committed, and a benchmark that says how long opening,
+  typing, scrolling and saving take.
+  *Done when:* `./x.sh bench` prints the numbers and they are recorded here.
+
+- [ ] **B2. Incremental layout.** A keystroke relays the paragraph it changed
+  and the pages after it only as far as the change reaches — typically one page.
+  *Done when:* typing in a 300-page document is as fast as typing in a
+  three-page one, and the pages come out identical to a full relayout.
+
+- [ ] **B3. Undo without whole snapshots.** Snapshots are correct and cannot be
+  subtly wrong, which is why they are there; they are also a copy of the
+  document per keystroke. Keep them for structural edits and record text edits
+  as what changed.
+  *Done when:* a thousand keystrokes cost a bounded amount of memory and undo
+  still returns the document to its exact bytes.
+
+- [ ] **B4. Caching what is measured.** Shaping and measuring the same run over
+  and over is most of the layout time. Cache per (face, size, text) and throw
+  the cache away when a font changes.
+  *Done when:* the benchmark shows it and no picture changes.
+
+- [ ] **B5. Drawing only what changed.** A caret blink redraws the whole window
+  today.
+  *Done when:* a blink touches the caret's rectangle and nothing else.
+
+## C — The interface Word has
+
+The ribbon is there and its arrangement matches Word's. What is missing is the
+depth behind it: the dialogs, and the buttons that are drawn but do nothing.
+
+- [ ] **C1. Which buttons do nothing.** Walk every tab, every group, every
+  button; list what is drawn, what it does, and what it should do.
+  *Done when:* the list is in `docs/RIBBON.md`, and every entry is either done
+  or has a numbered item here.
+
+- [ ] **C2. The Font dialog.** Every character format Word has, the two tabs,
+  the preview, Set As Default.
+- [ ] **C3. The Paragraph dialog.** Indents and spacing, line and page breaks,
+  the preview, tab stops from inside it.
+- [ ] **C4. The Styles pane and Manage Styles.** Applying, creating, modifying,
+  the style inspector, what is in use, and the whole style chain shown.
+- [ ] **C5. Insert Symbol and Special Characters.** The grid, the subsets, the
+  recently used, the shortcut keys, AutoCorrect from inside it.
+- [ ] **C6. Table properties.** Table, row, column, cell and alt text; borders
+  and shading; autofit rules.
+- [ ] **C7. Options.** The dialog behind File → Options, and the settings in it
+  that this program actually honours.
+- [ ] **C8. The File tab.** Word's backstage: Info, Recent, New from template,
+  Open, Save As, Print, Share, Export, Close.
+- [ ] **C9. Real dialogs rather than strips.** The strips stand in for dialogs
+  because there was no dialog machinery. Build the machinery — a window, a
+  focus ring, tab order, default and cancel buttons, keyboard everything — and
+  move them over.
+  *Done when:* a dialog can be opened, driven entirely from the keyboard, and
+  closed, and a picture of it matches Word's arrangement.
+
+## D — Pictures and drawings
+
+- [ ] **D1. The image formats a document carries.** PNG is done. JPEG baseline
+  and progressive, GIF including animation's first frame, TIFF, BMP in its
+  several forms.
+  *Done when:* each decodes to the same pixels as an independent decoder for a
+  set of test images.
+- [ ] **D2. WMF and EMF.** The metafile formats Word documents still carry:
+  a record interpreter drawing through the rasterizer.
+- [ ] **D3. The rest of DrawingML.** The preset shape geometries that are not
+  yet built, gradients, patterns, 3-D effects, and the shape effects Word draws.
+- [ ] **D4. Charts.** The chart types beyond those drawn today, their axes,
+  legends, labels and the data table behind them.
+- [ ] **D5. SmartArt.** The diagram layouts, which are a language of their own
+  in the file format.
+- [ ] **D6. Ink and media.** What a document holds when somebody drew on it or
+  put a video in it.
+
+## E — The rest of the text engine
+
+- [ ] **E1. Indic reordering.** Devanagari, Bengali, Tamil, Telugu and the rest:
+  a syllable is reordered before it is drawn, and the rules differ per script.
+- [ ] **E2. Thai and Lao clustering**, and the line breaking they need, which is
+  by dictionary rather than by rule.
+- [ ] **E3. Hyphenation.** Breaking inside a word, with pattern data per
+  language, and Word's controls: automatic, manual, hyphenation zone, limit
+  consecutive hyphens.
+- [ ] **E4. Vertical writing and ruby.** Japanese set vertically, and the small
+  annotations above it.
+- [ ] **E5. Case mapping with language tailoring.** Turkish `i` and `İ`, German
+  `ß`, Greek final sigma, and Word's Change Case following the paragraph's
+  language.
+- [ ] **E6. Word segmentation for Chinese and Japanese.** A dictionary, because
+  there is no rule: it is what a double click selects and what the word count
+  counts.
+- [ ] **E7. The full Unicode tables.** The subsets written by hand for bidi,
+  breaking, segmentation and normalization become generated, committed tables
+  covering every character, checked against the conformance files.
+- [ ] **E8. CFF and CFF2 outlines.** PostScript-flavoured fonts, which a good
+  many documents ask for.
+- [ ] **E9. Variable fonts.** The axes, the named instances, and the deltas.
+- [ ] **E10. Colour and bitmap glyphs.** Emoji, in colour, as Word draws them.
+
+## F — Proofing
+
+- [ ] **F1. Real dictionaries.** Reading the open dictionary formats — the
+  affix rules and the word list — so that a language's inflections are known
+  rather than a fixed list of words.
+- [ ] **F2. Spelling as Word does it.** As-you-type checking, the wavy line, the
+  right-click list of suggestions, add to dictionary, ignore all, custom
+  dictionaries, per-language settings, and the settings that turn it off.
+- [ ] **F3. Grammar.** A rule engine and the rules for at least one language,
+  with the wavy line of its own colour and the explanation Word gives.
+- [ ] **F4. Thesaurus.**
+- [ ] **F5. AutoCorrect and AutoFormat as you type.** The replacement table,
+  the capitalisation rules, smart quotes, dashes, lists that start themselves,
+  and the little box that lets a person undo one of them.
+- [ ] **F6. Translation.** What Word's Translate does, in so far as it can be
+  done without sending the document to somebody else's computer.
+
+## G — The files Word can open
+
+- [ ] **G1. The other OOXML files.** `.docm`, `.dotx`, `.dotm`: templates and
+  macro-enabled documents, which differ in their content types and their parts.
+- [ ] **G2. Plain text**, with encoding detection and the dialog Word shows when
+  it is not sure.
+- [ ] **G3. RTF.** Read and write. It is the format everything else exports to.
+- [ ] **G4. HTML and MHT.** Read and write, including the mess Word itself
+  writes.
+- [ ] **G5. The binary `.doc`.** [MS-DOC] over [MS-CFB]: the compound file, the
+  piece table, the formatting sprms. A project in itself, and the reason a
+  twenty-year-old document can still be opened.
+- [ ] **G6. ODT.** Read and write, which is what an open format is for.
+- [ ] **G7. PDF import.** Word does it; it is text extraction and reflow.
+
+## H — The system around the window
+
+- [ ] **H1. IME.** Without it Chinese, Japanese and Korean cannot be typed at
+  all: the composition window, the candidate list, and the text that is not yet
+  committed shown in the document.
+- [ ] **H2. The clipboard formats Word uses.** `CF_HTML`, RTF, and images, so
+  that copying between this and Word keeps the formatting.
+- [ ] **H3. Drag and drop.** Between programs as well as within the document,
+  and dropping a file onto the window.
+- [ ] **H4. Accessibility.** UI Automation on Windows, AT-SPI on Linux: a screen
+  reader has to be able to read the document and drive the ribbon.
+- [ ] **H5. High DPI and several monitors.** Per-monitor scaling, and the window
+  moving between monitors of different scales without redrawing wrongly.
+- [ ] **H6. The Linux shell.** X11 and Wayland: window, input, clipboard,
+  presentation. The rest of the program is already portable.
+- [ ] **H7. Files the way an operating system means them.** Recent documents,
+  file associations, the shell's open and save dialogs, autosave and recovery
+  after a crash.
+
+## I — The language of the interface
+
+- [ ] **I1. Message catalogues.** Every string in the interface comes from a
+  catalogue rather than from the code.
+- [ ] **I2. A mirrored interface.** For Arabic and Hebrew the whole window
+  reverses: the ribbon, the panes, the scrollbar, the dialogs.
+- [ ] **I3. The user's locale.** Dates, numbers, paper sizes and measurement
+  units — inches or centimetres — as the system says.
+
+## J — Protection, collaboration and the rest of Word's features
+
+- [ ] **J1. Document protection.** Read-only, filling in forms only, tracked
+  changes forced on, and the password behind them.
+- [ ] **J2. Encryption.** Opening and writing the encrypted `.docx` Word makes,
+  which is an OLE compound file with the package encrypted inside it.
+- [ ] **J3. Digital signatures.**
+- [ ] **J4. Compare and merge, finished.** Word's three-way merge and its
+  compare view.
+- [ ] **J5. Mail merge, finished.** The data sources, the field mapping, the
+  preview, and the merge to a document, to a printer or to mail.
+- [ ] **J6. Building blocks, Quick Parts and templates.** Including the
+  `Normal.dotm` a person's own defaults live in.
+- [ ] **J7. Macros.** A VBA interpreter is a language implementation; it is
+  listed here so that the decision not to write one is a decision and not an
+  oversight.
+
+## K — Proving it against Word rather than against ourselves
+
+- [ ] **K1. A corpus of real documents.** Files Word itself wrote, kept outside
+  the repository, and a harness that opens, saves and compares every one of
+  them.
+  *Done when:* `./x.sh corpus` reports how many round-trip byte for byte and
+  what differs in the rest.
+- [ ] **K2. Page images compared against Word's.** A fidelity score per
+  document rather than a pass or a fail, tracked over time so that it can be
+  seen to improve.
+- [ ] **K3. The Unicode conformance suites** run against the text engine, once
+  **E7** has replaced the hand-written tables.
 
 ---
 
-## Stage 5 — Layout engine
+## The order of the work
 
-The largest and hardest stage, and the one no specification describes.
+Printing first (**A**), because it is the one thing a word processor cannot be
+without and there is none of it. Then speed (**B**), because it has to be fixed
+while the documents are still small enough to work with, and because every
+later item makes the layout do more. Then the interface (**C**), which is the
+largest body of work but also the most divisible: each dialog is finished on its
+own and shows up immediately.
 
-- **Inline:** runs, tab stops, alignment, justification, character and paragraph
-  spacing, kerning, superscript and subscript
-- **Block:** indentation, spacing, borders, shading, keep-with-next, widow and
-  orphan control, page and column breaks
-- **Page:** sections, columns, margins, headers and footers, page numbering,
-  mirrored margins
-- **Tables:** Word's autofit and fixed-layout algorithms, merged cells, nested
-  tables, rows split across pages
-- **Floating objects:** anchoring and text wrapping — square, tight, through,
-  top-and-bottom, behind and in front of text
-- **Notes:** footnote and endnote placement and balancing across page breaks
-- **Fields:** calculating `PAGE`, `NUMPAGES`, `TOC`, `REF`, `SEQ`, `DATE`,
-  `STYLEREF` and the rest
-
-ECMA-376 defines how these are *stored*, not how Word *lays them out*. The
-algorithms have to be recovered by rendering documents and comparing against
-Word's output, which is why this stage takes the longest.
-
-*Proven by:* page-image comparison against Word's rendering of a growing corpus
-of test documents, tracked as a fidelity score rather than a pass/fail.
-
----
-
-## Stage 6 — Rendering — partly done
-
-**Done:** an anti-aliased path rasterizer using signed-area accumulation, a
-pixel canvas with alpha blending, and a PNG encoder. Enough to draw a page of
-text and to compare rendered output against a reference image.
-
-**Still to do:** everything below.
-
-
-A 2D graphics engine written from scratch: path filling with nonzero and even-odd
-rules, stroking and dashes, clipping, affine transforms, gradients, and alpha
-compositing.
-
-Image decoders for PNG, JPEG (baseline and progressive), BMP, GIF, TIFF, and the
-WMF/EMF metafile formats Word documents still carry.
-
-DrawingML: preset shape geometries, text boxes, effects, charts, SmartArt.
-
-Output targets: the screen, the printer, PDF (with font subsetting), and image
-export.
-
-*Proven by:* rendered output compared against reference images; generated PDFs
-validated and compared against Word's PDF export.
-
----
-
-## Stage 7 — Platform shells — partly done
-
-**Done:** a Windows shell in `wp-shell`, written against the Win32 ABI directly
-with no binding crate: a window, a message loop, keyboard and wheel input, and
-the finished image presented through GDI. It is the only crate in the project
-allowed to use `unsafe`, and the surface is the declarations plus the few calls
-that use them.
-
-**Still to do:** everything below, and X11 or Wayland for Linux.
-
-
-Thin layers over the operating system, written against the raw ABI.
-
-- **Windows:** window and message loop, presentation, printing through the
-  spooler, clipboard, drag and drop, IME, HiDPI, and UI Automation for
-  accessibility
-- **Linux:** X11 and Wayland, printing through CUPS, clipboard, IME, and AT-SPI
-
-*Proven by:* automated interaction tests driving a real window.
-
----
-
-## Stage 8 — Editing core — partly done
-
-**Done:** a caret, placed by clicking and moved by the arrow keys, Home and End.
-Typing inserts, Backspace and Delete remove, Enter splits a paragraph and
-Backspace at its start joins it onto the last, and Ctrl+S saves. Every one of
-those goes through the document model, so a file keeps everything this program
-does not understand even after being typed into.
-
-**Still to do:** everything below.
-
-
-A piece-table text store, cursor and selection model, multi-level undo and redo,
-IME composition, autocorrect and autoformat, and clipboard interchange in the
-formats Word uses (`CF_HTML`, RTF, Unicode text, images).
-
-*Proven by:* property-based tests — a random sequence of edits followed by full
-undo must return the document to its exact original state.
-
----
-
-## Stage 9 — User interface
-
-A widget toolkit built on the rasterizer: ribbon, dialogs, menus, task panes,
-rulers, scrollbars, status bar. Views for print layout, web layout, outline,
-draft, and reading, with zoom, split windows, and a navigation pane.
-
-Localization is part of the framework, not an afterthought: all interface text
-comes from message catalogues, the layout mirrors for right-to-left languages,
-dates and numbers follow the user's locale, and proofing settings are per
-language — the same breadth of language support Word offers.
-
-*Proven by:* interface screenshots rendered in several languages, including a
-right-to-left one, compared against references.
-
----
-
-## Stage 10 — Word features
-
-Styles and formatting panes; find and replace with wildcards; spelling and
-grammar checking with an engine of our own reading open dictionary formats;
-thesaurus; tracked changes; comments; document compare and merge; mail merge;
-tables of contents and indexes; bookmarks, hyperlinks, cross-references and
-captions; equations (OMML, with mathematical layout); charts; document
-protection and encryption; building blocks and templates; macros.
-
----
-
-## Stage 11 — Remaining formats
-
-`.docm`, `.dotx`, `.dotm`; the legacy binary `.doc` ([MS-DOC] over [MS-CFB]);
-RTF; ODT; HTML and MHT; plain text with encoding detection; PDF export and
-import.
+**D** to **K** are ordered by how often a real document needs them, and that
+order is a judgement rather than a rule: a document that will not open because
+of a metafile picture moves **D2** to the front of the queue.
 
 ---
 
 ## Where the work stands
 
-**It is an editor.** A document is unpacked, parsed, resolved against its styles,
-laid out with fonts read from the machine, rasterized and shown on screen — and
-then clicked into, selected in, typed in, undone and saved. Word opens the result
-in the current mode and sees the styles a keypress created.
+**It is an editor, and it looks like Word.** A document is unpacked, parsed,
+resolved against its styles, laid out with the fonts on the machine, rasterized
+and shown in a window with a ribbon — and then clicked into, selected in, typed
+in, formatted, searched, undone and saved. Word opens the result in the current
+mode and reads the same words back.
 
-The caret and the selection belong to the document rather than to the window, so
-undo restores where the caret was along with what the text said. Undo keeps whole
-snapshots of the element tree rather than inverse operations: a snapshot cannot
-be subtly wrong three steps later, and correctness is worth more here than the
-memory. Steps merge while typing and break at a space, so undo takes back a word
-rather than a keystroke; typing over a selection, or pasting several paragraphs,
-is one step because it was one thing the person did. Cut, copy and paste go
-through the system clipboard, which the shell reaches with the same
-`extern "system"` declarations as the window.
+The whole interface is drawn by the same rasterizer as the document. There is no
+widget toolkit and no second way to put a pixel on screen, which is why the
+window can be photographed without a window: `--picture` writes it to a PNG, and
+that is how every part of it is checked.
 
-Formatting is applied to a range by splitting the runs at each end of it, because
-a run is the only place the format can record character formatting — so making
-half a word bold means the word becomes two runs. A split copies the run and
-keeps opposite halves, so both sides come out carrying everything the original
-had, including what this program does not model. Turning a format off writes it
-off rather than leaving it out: saying nothing about bold inside a heading would
-inherit the heading's bold straight back. Runs are only split where the split is
-needed, so formatting the same range twice, or typing letter by letter with bold
-chosen, does not leave one run per keystroke.
-
-With nothing selected, a formatting key applies to what is typed next rather than
-to nothing at all — and is forgotten as soon as the caret moves somewhere else,
-because by then it is about a place the user has left.
-
-A tab is stored as `w:tab`, the element Word uses, and counts as one character in
-the text the caret moves through — so the caret can stand either side of one,
-Backspace deletes it whole, and a selection reaches across it. The layout engine
-sends a tab to the next stop rather than advancing it by a fixed amount: a tab is
-a distance to a place, not a distance to travel. Stops are counted from the left
-edge of the text area, half an inch apart, which is where the marks on the ruler
-are drawn.
-
-The window has a toolbar and a ruler. Both are drawn onto the same canvas as the
-document, by the same rasterizer and out of the same fonts; there is no widget
-toolkit under them and no second way to put a pixel on screen. A toolbar button
-carries its own effect rather than a label — the bold button is a letter B set in
-bold — which needs no translation in a program meant to be used in every language
-Word supports. Because the whole interface is drawn onto a canvas, it can be
-drawn without a window at all: `--picture` writes it to a PNG, which is how it is
-checked on a machine with no display.
-
-What is missing from the interface is a ribbon with tabs, a style gallery and
-dialogs. What is missing from the text is the shaping engine, which is what
-Arabic and the Indic scripts need to have their letters joined rather than drawn
-in isolation.
+Text is handled as the standards say it should be, not as English-only code
+would: mixed Hebrew and English come out in the right order with their brackets
+facing the right way, Arabic is joined by the font's own rules, lines break
+where the language allows, the caret steps over a whole character however many
+code points it took, and a search finds a word whichever way its accents were
+typed.
 
 A `.docx` can be created, opened, read, edited and saved. Saving a document that
 was not edited reproduces it byte for byte. Editing it rewrites only the part
 that changed, and inside that part only the nodes that changed — a content
-control, a chart or a colleague tracked change beside the edit comes through
+control, a chart or a colleague's tracked change beside the edit comes through
 untouched.
 
-The `wp` command line tool exercises all of it, and the Windows executable is
-cross-compiled from the same container that builds for Linux.
+**What it cannot do yet** is print, and that is where the work goes next.
 
-## Immediate next step
-
-Stage 1.4 and Stage 4: the Unicode tables and the shaping engine, which Arabic,
-Hebrew and the Indic scripts need to be drawn correctly rather than as isolated
-letters. That is the largest remaining gap between what this draws and what Word
-draws, and everything above it — the ribbon, the style gallery, tables with real
-cells — is work that can be done on top of a text engine that is already right.
+[MS-DOC]: https://learn.microsoft.com/openspecs/office_file_formats/ms-doc/
+[MS-CFB]: https://learn.microsoft.com/openspecs/windows_protocols/ms-cfb/
