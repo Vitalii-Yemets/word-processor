@@ -157,3 +157,43 @@ fn every_byte_of_a_character_carries_its_level() {
     assert_eq!(levels[0], levels[1], "the two bytes of the Hebrew letter disagree");
     assert_ne!(levels[0] % 2, levels[2] % 2, "the Latin letter took the Hebrew level");
 }
+
+#[test]
+fn brackets_take_the_direction_of_what_they_enclose() {
+    // N0: the pair holds a Latin word, so both brackets read as Latin does —
+    // even though the letter before the opening one is Hebrew and N1 alone
+    // would hand it that direction.
+    let text = format!("a {ALEF} ({BET} c) d");
+    let levels = character_levels(&text, Direction::LeftToRight);
+    let opening = text.chars().position(|character| character == '(').expect("a bracket");
+    assert_eq!(levels[opening] % 2, 0, "the opening bracket did not follow what it encloses");
+}
+
+#[test]
+fn a_bracketed_hebrew_phrase_keeps_both_its_brackets() {
+    // The other half of N0: nothing Latin inside, and the text before the pair
+    // is Hebrew, so both brackets read as Hebrew — including the closing one,
+    // which N1 alone would give to the Latin word after it.
+    let text = format!("{ALEF} ({BET} {GIMEL}) c");
+    let levels = character_levels(&text, Direction::LeftToRight);
+    let closing = text.chars().position(|character| character == ')').expect("a bracket");
+    assert_eq!(levels[closing] % 2, 1, "the closing bracket was left with the Latin after it");
+}
+
+#[test]
+fn an_unmatched_bracket_is_left_to_the_ordinary_rules() {
+    // Nothing to pair with, so N0 says nothing and the bracket takes the
+    // direction around it as any other neutral would.
+    let text = format!("{ALEF} ({BET}");
+    let levels = character_levels(&text, Direction::RightToLeft);
+    let bracket = text.chars().position(|character| character == '(').expect("a bracket");
+    assert_eq!(levels[bracket] % 2, 1);
+}
+
+#[test]
+fn a_bracket_read_right_to_left_is_drawn_the_other_way_round() {
+    // L4: the shape swaps, because a bracket is a role and not a picture.
+    assert_eq!(wp_bidi::mirrored('('), Some(')'));
+    assert_eq!(wp_bidi::mirrored('\u{00AB}'), Some('\u{00BB}'));
+    assert_eq!(wp_bidi::mirrored('a'), None);
+}

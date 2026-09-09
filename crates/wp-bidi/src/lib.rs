@@ -17,14 +17,9 @@
 //!
 //! [UAX #9], the standard's own algorithm, in the order the standard sets it
 //! out: the paragraph's direction (P2 and P3), the explicit embeddings and
-//! isolates (X1 to X8), the weak types (W1 to W7), the neutrals (N0 to N2), the
-//! implicit levels (I1 and I2), and the reordering of a line (L1 and L2).
-//!
-//! What is not here is the pairing of brackets from `BidiBrackets.txt` (N0),
-//! which needs the character database this project has not built yet. Without
-//! it a bracket takes the direction of its surroundings rather than of what it
-//! encloses, which is right far more often than not and wrong for a bracketed
-//! Latin phrase inside Hebrew.
+//! isolates (X1 to X8), the weak types (W1 to W7), the paired brackets and the
+//! neutrals (N0 to N2), the implicit levels (I1 and I2), the reordering of a
+//! line (L1 and L2), and the characters that are drawn mirrored in it (L4).
 //!
 //! [UAX #9]: https://www.unicode.org/reports/tr9/
 //!
@@ -42,8 +37,10 @@
 #![forbid(unsafe_code)]
 
 pub mod class;
+pub mod mirror;
 
 pub use class::{class_of, Class};
+pub use mirror::mirrored;
 
 /// The greatest depth the standard allows.
 const MAX_DEPTH: u8 = 125;
@@ -156,7 +153,8 @@ pub fn reorder(levels: &[u8]) -> Vec<usize> {
 /// The embedding level of every character.
 #[must_use]
 pub fn character_levels(text: &str, paragraph: Direction) -> Vec<u8> {
-    let original: Vec<Class> = text.chars().map(class_of).collect();
+    let characters: Vec<char> = text.chars().collect();
+    let original: Vec<Class> = characters.iter().copied().map(class_of).collect();
     let base = paragraph.level();
     let mut classes = original.clone();
     let mut levels = vec![base; classes.len()];
@@ -170,6 +168,7 @@ pub fn character_levels(text: &str, paragraph: Direction) -> Vec<u8> {
         let sos = boundary(&levels, &run, base, true);
         let eos = boundary(&levels, &run, base, false);
         weak(&original, &mut classes, &levels, &run, sos);
+        brackets(&characters, &original, &mut classes, &levels, &run, sos);
         neutral(&mut classes, &levels, &run, sos, eos);
         implicit(&classes, &mut levels, &run);
     }
@@ -470,6 +469,134 @@ fn next_class(classes: &[Class], run: &core::ops::Range<usize>, index: usize) ->
     (index + 1..run.end).map(|at| classes[at]).find(|class| *class != Class::BN)
 }
 
+/// Rule N0: a bracketed phrase takes the direction of what is inside it.
+///
+/// The rule exists because the brackets themselves say nothing about
+/// direction, and taking it from their surroundings puts them the wrong way
+/// round: a Latin phrase in brackets inside a Hebrew sentence should have its
+/// brackets read as the Latin does, not as the Hebrew around them does.
+///
+/// The pairs are found first, as BD16 says: a stack of the brackets that are
+/// open, and a closing one matched against the nearest opening one it fits. An
+/// unmatched bracket is left to the rules that follow.
+fn brackets(
+    characters: &[char],
+    original: &[Class],
+    classes: &mut [Class],
+    levels: &[u8],
+    run: &core::ops::Range<usize>,
+    sos: Class,
+) {
+    let embedding = if levels[run.start] % 2 == 0 { Class::L } else { Class::R };
+    let opposite = if embedding == Class::L { Class::R } else { Class::L };
+
+    for (opening, closing) in pairs(characters, classes, run) {
+        // The strong directions inside the pair, brackets not counted.
+        let inside = (opening + 1..closing).filter_map(|at| strong(classes[at]));
+        let mut found_embedding = false;
+        let mut found_opposite = false;
+        for class in inside {
+            if class == embedding {
+                found_embedding = true;
+                break;
+            }
+            found_opposite = true;
+        }
+
+        let wanted = if found_embedding {
+            // N0 b: what is inside reads the way the text around it does, so
+            // the brackets do too.
+            embedding
+        } else if found_opposite {
+            // N0 c: what is inside reads the other way. The brackets follow it
+            // only if the text before them was already going that way.
+            let before = (run.start..opening)
+                .rev()
+                .find_map(|at| strong(classes[at]))
+                .unwrap_or(if sos == Class::R { Class::R } else { Class::L });
+            if before == opposite {
+                opposite
+            } else {
+                embedding
+            }
+        } else {
+            // N0 d: nothing strong inside, so the brackets are left to N1 and
+            // N2 like any other neutral.
+            continue;
+        };
+
+        for at in [opening, closing] {
+            classes[at] = wanted;
+            // The marks hanging from a bracket go with it: they are drawn on
+            // it, so they cannot read the other way.
+            for following in at + 1..run.end {
+                if original[following] != Class::NSM {
+                    break;
+                }
+                classes[following] = wanted;
+            }
+        }
+    }
+}
+
+/// The direction a class counts as for the bracket rule.
+///
+/// A number counts as right-to-left here, exactly as it does for N1: digits in
+/// a Hebrew sentence are part of the Hebrew, however they are drawn.
+fn strong(class: Class) -> Option<Class> {
+    match class {
+        Class::L => Some(Class::L),
+        Class::R | Class::EN | Class::AN => Some(Class::R),
+        _ => None,
+    }
+}
+
+/// The bracket pairs inside one sequence, in the order they open.
+///
+/// BD16: a stack of what is open, and a closing bracket matched against the
+/// nearest opening one that fits. The standard stops looking after sixty-three
+/// open brackets rather than growing the stack without limit, and so does this.
+fn pairs(
+    characters: &[char],
+    classes: &[Class],
+    run: &core::ops::Range<usize>,
+) -> Vec<(usize, usize)> {
+    const STACK_LIMIT: usize = 63;
+
+    let mut open: Vec<(char, usize)> = Vec::new();
+    let mut found: Vec<(usize, usize)> = Vec::new();
+
+    for index in run.clone() {
+        // Only a bracket that is still a neutral counts: one the weak rules
+        // have already turned into something else is no longer a bracket.
+        if classes[index] != Class::ON {
+            continue;
+        }
+        let Some(character) = characters.get(index).copied() else { continue };
+        let Some((side, closing)) = mirror::bracket(character) else { continue };
+
+        match side {
+            mirror::Side::Opening => {
+                if open.len() == STACK_LIMIT {
+                    break;
+                }
+                open.push((closing, index));
+            }
+            mirror::Side::Closing => {
+                if let Some(depth) =
+                    open.iter().rposition(|(wanted, _)| mirror::same_bracket(*wanted, closing))
+                {
+                    found.push((open[depth].1, index));
+                    open.truncate(depth);
+                }
+            }
+        }
+    }
+
+    found.sort_unstable();
+    found
+}
+
 /// Rules N1 and N2: the neutrals take the direction around them.
 fn neutral(
     classes: &mut [Class],
@@ -480,14 +607,6 @@ fn neutral(
 ) {
     let embedding = if levels[run.start] % 2 == 0 { Class::L } else { Class::R };
     let indices: Vec<usize> = run.clone().filter(|index| classes[*index] != Class::BN).collect();
-
-    let strength = |class: Class| match class {
-        Class::L => Some(Class::L),
-        // A number counts as right-to-left for this rule, which is what keeps
-        // a comma between two numbers with the numbers.
-        Class::R | Class::EN | Class::AN => Some(Class::R),
-        _ => None,
-    };
 
     let mut position = 0;
     while position < indices.len() {
@@ -501,8 +620,8 @@ fn neutral(
         }
 
         let before =
-            start.checked_sub(1).and_then(|at| strength(classes[indices[at]])).unwrap_or(sos);
-        let after = indices.get(position).and_then(|at| strength(classes[*at])).unwrap_or(eos);
+            start.checked_sub(1).and_then(|at| strong(classes[indices[at]])).unwrap_or(sos);
+        let after = indices.get(position).and_then(|at| strong(classes[*at])).unwrap_or(eos);
 
         // N1: neutrals between two of the same direction take it. N2: the rest
         // take the direction of the paragraph they sit in.

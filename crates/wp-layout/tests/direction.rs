@@ -111,3 +111,33 @@ fn a_right_to_left_paragraph_of_hebrew_reads_from_the_right() {
     let placed = placed(&page(&document));
     assert!(drawn_backwards(&placed, 0..text.len()), "{placed:?}");
 }
+
+/// The glyph drawn for the one character of a document.
+fn only_glyph(document: &Document) -> u16 {
+    let page = page(document);
+    page.glyphs
+        .iter()
+        .find(|glyph| !glyph.invisible && glyph.source_length > 0)
+        .expect("a glyph")
+        .glyph
+        .0
+}
+
+#[test]
+fn a_bracket_in_a_right_to_left_line_is_drawn_the_other_way_round() {
+    // L4: the document holds the bracket that opens the phrase, and in Hebrew
+    // the one that opens it is drawn as a Latin reader's closing bracket.
+    let opening_in_hebrew = only_glyph(&document("(", true));
+    let closing_in_english = only_glyph(&document(")", false));
+    assert_eq!(opening_in_hebrew, closing_in_english, "the bracket was drawn facing the wrong way");
+
+    let opening_in_english = only_glyph(&document("(", false));
+    assert_ne!(opening_in_hebrew, opening_in_english, "nothing was mirrored at all");
+}
+
+#[test]
+fn a_bracket_in_a_left_to_right_line_is_left_alone() {
+    let drawn = only_glyph(&document("(", false));
+    let closing = only_glyph(&document(")", false));
+    assert_ne!(drawn, closing, "an English bracket was mirrored");
+}

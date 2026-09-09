@@ -583,6 +583,10 @@ struct ShapedGlyph {
     offset: usize,
     /// Byte length of that character.
     length: usize,
+    /// The character it was chosen for, kept because a bracket in a line that
+    /// reads right to left is drawn as the other end of its pair and the glyph
+    /// has to be chosen again.
+    character: char,
 }
 
 /// The smallest thing a line can be broken between.
@@ -1282,6 +1286,7 @@ impl<'a> LayoutEngine<'a> {
                 item.glyphs.reverse();
             }
         }
+        self.mirror_glyphs(&mut items, &item_levels, &styles);
         let items = items;
 
         if items.is_empty() {
@@ -2705,6 +2710,38 @@ impl<'a> LayoutEngine<'a> {
         self.fonts.get(&face)
     }
 
+    /// Rule L4: the characters that are drawn mirrored where the line reads
+    /// right to left.
+    ///
+    /// A bracket is a role, not a shape. The document holds the bracket that
+    /// opens the phrase, and in Hebrew or Arabic the one that opens it is drawn
+    /// as what a Latin reader calls a closing bracket. The same goes for the
+    /// comparisons and the guillemets. Only the drawing changes: the document
+    /// still holds what was typed, so the caret and a copy are unaffected.
+    fn mirror_glyphs(&mut self, items: &mut [Item], levels: &[u8], styles: &[RunStyle]) {
+        for (item, level) in items.iter_mut().zip(levels) {
+            if level % 2 == 0 {
+                continue;
+            }
+            let Some(style) = styles.get(item.style).cloned() else { continue };
+            for index in 0..item.glyphs.len() {
+                let glyph = item.glyphs[index];
+                let Some(mirror) = wp_bidi::mirrored(glyph.character) else { continue };
+
+                let mut buffer = [0u8; 4];
+                let drawn = self.shape(mirror.encode_utf8(&mut buffer), &style, glyph.offset);
+                let Some(chosen) = drawn.first() else { continue };
+
+                // The pair are usually the same width, but nothing promises it,
+                // and a line that has been measured must stay measured.
+                item.width += chosen.advance - glyph.advance;
+                item.glyphs[index] =
+                    ShapedGlyph { face: chosen.face, glyph: chosen.glyph, ..glyph };
+                item.glyphs[index].advance = chosen.advance;
+            }
+        }
+    }
+
     /// Turns text into glyphs, falling back to another font per character when
     /// the chosen one has no glyph for it.
     fn shape(&mut self, text: &str, style: &RunStyle, base_offset: usize) -> Vec<ShapedGlyph> {
@@ -2753,6 +2790,7 @@ impl<'a> LayoutEngine<'a> {
                         glyph,
                         advance,
                         offset: base_offset + local,
+                        character,
                         length: character.len_utf8(),
                     });
                     previous = Some(glyph);
@@ -2810,6 +2848,7 @@ impl<'a> LayoutEngine<'a> {
                 glyph: entry.glyph,
                 advance,
                 offset: base_offset + entry.cluster,
+                character: text[entry.cluster..].chars().next().unwrap_or('\u{FFFD}'),
                 length: length.max(1),
             });
         }
