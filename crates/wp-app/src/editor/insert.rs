@@ -248,6 +248,17 @@ impl Editor {
                 self.document.set_caret(wp_docx::TextPosition::new(0, 0));
                 self.run(crate::chrome::Command::InsertContents);
             }
+            "tabmenu" => {
+                // The menu a double click on a tab stop opens.
+                use wp_docx::model::{TabAlignment, TabLeader, TabStop};
+                self.document.set_tab_stops_here(&[TabStop {
+                    position: 2880,
+                    alignment: TabAlignment::End,
+                    leader: TabLeader::Dot,
+                }]);
+                self.relayout();
+                self.open_tab_stop_menu(0, 400, self.ruler_top() as i32 + 15);
+            }
             "tabs" => {
                 // A stop of each kind, to see the markers the ruler draws.
                 use wp_docx::model::{TabAlignment, TabLeader, TabStop};

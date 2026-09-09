@@ -268,6 +268,17 @@ impl App for Editor {
                 if self.between_pages(x, y).is_some() {
                     return self.toggle_joined_pages();
                 }
+                // A double click on a tab stop opens what can be changed about
+                // it: the dialog Word opens from the same place, as a menu.
+                if self.show_rulers {
+                    let (horizontal, _) = self.ruler_measurements();
+                    let stops = self.ruler_stops();
+                    if let Some(rulers::Hit::TabStop(index)) =
+                        rulers::hit_horizontal(horizontal, &stops, x, y)
+                    {
+                        return self.open_tab_stop_menu(index, x, y);
+                    }
+                }
                 // And double-clicking a ruler opens the page setup, which is
                 // what a ruler is a picture of.
                 if self.show_rulers && self.on_a_ruler(x, y) {
@@ -920,7 +931,7 @@ impl Editor {
             Choice::Protection => Command::RestrictEditing,
             // The strip's own menu hangs where it was opened, not under a
             // button of the ribbon.
-            Choice::StatusBar => Command::ExpandGroup(0),
+            Choice::StatusBar | Choice::TabStop => Command::ExpandGroup(0),
             Choice::Margin => Command::Margins,
             Choice::Orientation => Command::Orientation,
             Choice::Paper => Command::PageSize,
@@ -965,6 +976,7 @@ impl Editor {
             | Choice::Hyphenation
             | Choice::Protection
             | Choice::StatusBar
+            | Choice::TabStop
             | Choice::Margin
             | Choice::Orientation
             | Choice::Paper
@@ -1084,6 +1096,7 @@ impl Editor {
             Choice::Hyphenation => self.choose_hyphenation(index),
             Choice::Protection => self.choose_protection(index),
             Choice::StatusBar => self.choose_status_part(index),
+            Choice::TabStop => self.choose_tab_stop_entry(index),
             Choice::Margin => self.choose_margins(index),
             Choice::Orientation => self.choose_orientation(index),
             Choice::Paper => self.choose_page_size(index),

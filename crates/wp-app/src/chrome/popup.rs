@@ -101,6 +101,8 @@ pub enum Choice {
     Protection,
     /// What the strip along the bottom shows.
     StatusBar,
+    /// What one tab stop on the ruler does.
+    TabStop,
     /// The breaks that can be put in: of a page, of a column, and of a section.
     Break,
     /// The margins Word offers by name.
@@ -168,6 +170,12 @@ impl Row {
     #[must_use]
     pub fn new(kind: Kind, icon: Icon) -> Self {
         Self { kind, icon }
+    }
+
+    /// A line between two groups.
+    #[must_use]
+    pub fn separator() -> Self {
+        Self { kind: Kind::Separator, icon: Icon::None }
     }
 
     /// A row that names the ones under it.

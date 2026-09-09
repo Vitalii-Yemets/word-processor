@@ -758,6 +758,7 @@ impl Ribbon {
                     | Choice::Hyphenation
                     | Choice::Protection
                     | Choice::StatusBar
+                    | Choice::TabStop
                     | Choice::Margin
                     | Choice::Orientation
                     | Choice::Paper

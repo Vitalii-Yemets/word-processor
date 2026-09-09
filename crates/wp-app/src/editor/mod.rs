@@ -194,6 +194,9 @@ pub struct Editor {
     /// Where the stop being dragged along the ruler is now, in twips from the
     /// left margin, so the next move knows which one to take hold of.
     ruler_stop_at: Option<i32>,
+    /// Which stop the menu opened by a double click on the ruler is about,
+    /// in twips from the left margin.
+    tab_stop_at: Option<i32>,
     /// What kind of tab stop a click on the ruler puts down. See [`ruler`].
     tab_kind: wp_docx::model::TabAlignment,
     /// What would stop somebody reading the document, when it was last asked.
@@ -379,6 +382,7 @@ impl Editor {
             resizing_pane: false,
             ruler_drag: None,
             ruler_stop_at: None,
+            tab_stop_at: None,
             tab_kind: wp_docx::model::TabAlignment::Start,
             accessibility: Vec::new(),
             highlight_fields: false,
@@ -1999,5 +2003,72 @@ mod tests {
         editor.choose_status_part(1);
         assert!(!editor.status_shows.at(0), "the page number was not switched off");
         assert!(editor.popup.is_some(), "the list closed when something was ticked");
+    }
+
+    /// An editor whose paragraph has one right-hand stop with dots.
+    fn with_a_tab_stop() -> Editor {
+        use wp_docx::model::{TabAlignment, TabLeader, TabStop};
+        let mut editor = editor(3);
+        editor.paint(1200, 800);
+        editor.document.set_tab_stops_here(&[TabStop {
+            position: 2880,
+            alignment: TabAlignment::End,
+            leader: TabLeader::Dot,
+        }]);
+        editor
+    }
+
+    #[test]
+    fn the_menu_of_a_stop_changes_what_it_does_to_the_text() {
+        use wp_docx::model::TabAlignment;
+        let mut editor = with_a_tab_stop();
+        editor.open_tab_stop_menu(0, 400, 100);
+        // The second row is Left; the first names the stop.
+        editor.choose_tab_stop_entry(1);
+        assert_eq!(editor.document.tab_stops_here()[0].alignment, TabAlignment::Start);
+    }
+
+    #[test]
+    fn the_menu_of_a_stop_changes_what_fills_the_space() {
+        use wp_docx::model::TabLeader;
+        let mut editor = with_a_tab_stop();
+        editor.open_tab_stop_menu(0, 400, 100);
+        // Underline is the last of the four leaders.
+        editor.choose_tab_stop_entry(10);
+        assert_eq!(editor.document.tab_stops_here()[0].leader, TabLeader::Underscore);
+    }
+
+    #[test]
+    fn a_stop_can_be_cleared_from_its_own_menu() {
+        let mut editor = with_a_tab_stop();
+        editor.open_tab_stop_menu(0, 400, 100);
+        editor.choose_tab_stop_entry(12);
+        assert!(editor.document.tab_stops_here().is_empty());
+    }
+
+    #[test]
+    fn clear_all_takes_every_stop_away() {
+        use wp_docx::model::{TabAlignment, TabLeader, TabStop};
+        let mut editor = with_a_tab_stop();
+        editor.document.add_tab_stop_here(TabStop {
+            position: 5760,
+            alignment: TabAlignment::Center,
+            leader: TabLeader::None,
+        });
+        assert_eq!(editor.document.tab_stops_here().len(), 2);
+
+        editor.open_tab_stop_menu(0, 400, 100);
+        editor.choose_tab_stop_entry(13);
+        assert!(editor.document.tab_stops_here().is_empty());
+    }
+
+    #[test]
+    fn the_headings_and_the_line_in_that_menu_cannot_be_chosen() {
+        let mut editor = with_a_tab_stop();
+        editor.open_tab_stop_menu(0, 400, 100);
+        let popup = editor.popup.as_ref().expect("the menu is open");
+        assert_eq!(popup.row(0).kind, crate::chrome::popup::Kind::Heading);
+        assert_eq!(popup.row(6).kind, crate::chrome::popup::Kind::Heading);
+        assert_eq!(popup.row(11).kind, crate::chrome::popup::Kind::Separator);
     }
 }
