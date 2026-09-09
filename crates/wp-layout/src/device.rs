@@ -64,6 +64,22 @@ impl Device {
         Self { dpi, unprintable: Unprintable::default() }
     }
 
+    /// A printer described the way a driver describes itself: everything in the
+    /// device's own dots.
+    #[must_use]
+    pub fn from_dots(dpi: f32, left: f32, top: f32, right: f32, bottom: f32) -> Self {
+        let per_point = (dpi / 72.0).max(f32::MIN_POSITIVE);
+        Self {
+            dpi,
+            unprintable: Unprintable {
+                left: left / per_point,
+                top: top / per_point,
+                right: right / per_point,
+                bottom: bottom / per_point,
+            },
+        }
+    }
+
     /// The same device, told what it cannot reach.
     #[must_use]
     pub fn with_unprintable(mut self, unprintable: Unprintable) -> Self {
@@ -162,6 +178,16 @@ mod tests {
         assert_eq!(fixed.margin_top, narrow.margin_top);
     }
 
+    #[test]
+    fn a_printer_that_speaks_in_dots_is_understood_in_points() {
+        // A quarter of an inch at six hundred dots to the inch is a hundred and
+        // fifty of them, and eighteen points.
+        let printer = Device::from_dots(600.0, 150.0, 150.0, 150.0, 150.0);
+        assert_eq!(printer.dpi, 600.0);
+        assert!((printer.unprintable.left - 18.0).abs() < 0.01);
+        assert!((printer.unprintable.bottom - 18.0).abs() < 0.01);
+        assert!((printer.dots(printer.unprintable.left) - 150.0).abs() < 0.01);
+    }
     #[test]
     fn a_length_in_points_becomes_the_devices_own_dots() {
         assert_eq!(Device::screen().dots(72.0), 96.0);

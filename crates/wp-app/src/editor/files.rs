@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 
 use wp_docx::model::{Block, Body, Paragraph};
 use wp_docx::Document;
-use wp_layout::{LayoutEngine, Renderer};
-use wp_raster::Canvas;
+use wp_layout::{Device, LayoutEngine, Renderer};
 use wp_shell::Response;
 
 use super::{Editor, PRINTED_PAPER};
@@ -184,9 +183,9 @@ impl Editor {
 
     /// Puts the document on paper.
     ///
-    /// The document is laid out again at the printer's own resolution rather
-    /// than the screen's, so the page that comes out is the page the layout
-    /// engine describes and not a photograph of the window. Each page is then
+    /// The document is laid out again for the printer rather than for the
+    /// screen, so the page that comes out is the page the layout engine
+    /// describes and not a photograph of the window. Each page is then
     /// rasterized a band at a time: a whole page at six hundred dots to the
     /// inch is well over a hundred megabytes.
     pub(super) fn print(&mut self) -> Response {
@@ -197,7 +196,9 @@ impl Editor {
         };
 
         let paper = printer.page();
-        let mut engine = LayoutEngine::new(self.library).with_dpi(paper.dpi_x);
+        let (left, top, right, bottom) = paper.unprintable();
+        let device = Device::from_dots(paper.dpi_x, left, top, right, bottom);
+        let mut engine = LayoutEngine::for_device(self.library, device);
         let pages = engine.layout_document(&self.document);
         if pages.is_empty() {
             self.status = String::from("Nothing to print");
@@ -215,15 +216,15 @@ impl Editor {
         let mut renderer = Renderer::new(self.library);
         let mut printed = 0usize;
         for page in &pages {
-            // The printer's paper may not be the document's page; drawing to
-            // the smaller of the two keeps the text on the paper.
-            let width = paper.width.min(page.width.round().max(1.0) as usize);
-            let height = paper.height.min(page.height.round().max(1.0) as usize);
+            // What the printer can reach of this page, and no more: the band it
+            // holds the sheet by is not part of the image, because the printer
+            // draws from the corner of what it can reach.
+            let (page_width, page_height) = Renderer::printable_dots(page, device);
+            let width = paper.width.min(page_width);
+            let height = paper.height.min(page_height);
 
             let sent = printer.print_page(width, height, |top, rows| {
-                let mut band = Canvas::filled(width, rows, PRINTED_PAPER);
-                renderer.draw_onto(&mut band, page, 0.0, -(top as f32));
-                band
+                renderer.band_for_device(page, device, top, rows, PRINTED_PAPER, width)
             });
             if !sent {
                 break;

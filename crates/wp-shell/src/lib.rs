@@ -491,13 +491,33 @@ pub mod dialog {
 pub mod printing {
     use wp_raster::Canvas;
 
-    /// The paper a printer is set up for, in its own pixels.
+    /// The paper a printer is set up for, in its own dots.
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct PageSetup {
+        /// The part of the sheet the printer can draw in.
         pub width: usize,
         pub height: usize,
+        /// The whole sheet, which is larger by the band the printer holds it in.
+        pub paper_width: usize,
+        pub paper_height: usize,
+        /// Where the printable part begins on the sheet. The printer's own
+        /// origin is that corner, so a page drawn as though it were the corner
+        /// of the paper comes out shifted by this much.
+        pub offset_x: usize,
+        pub offset_y: usize,
         pub dpi_x: f32,
         pub dpi_y: f32,
+    }
+
+    impl PageSetup {
+        /// The band of paper the printer cannot draw in, in its own dots, as
+        /// left, top, right and bottom.
+        #[must_use]
+        pub fn unprintable(&self) -> (f32, f32, f32, f32) {
+            let right = self.paper_width.saturating_sub(self.width + self.offset_x);
+            let bottom = self.paper_height.saturating_sub(self.height + self.offset_y);
+            (self.offset_x as f32, self.offset_y as f32, right as f32, bottom as f32)
+        }
     }
 
     /// A printer, open and ready to be sent pages.
@@ -528,7 +548,16 @@ pub mod printing {
             }
             #[cfg(not(windows))]
             {
-                PageSetup { width: 1, height: 1, dpi_x: 96.0, dpi_y: 96.0 }
+                PageSetup {
+                    width: 1,
+                    height: 1,
+                    paper_width: 1,
+                    paper_height: 1,
+                    offset_x: 0,
+                    offset_y: 0,
+                    dpi_x: 96.0,
+                    dpi_y: 96.0,
+                }
             }
         }
 
@@ -826,5 +855,57 @@ pub fn set_frame_appearance(dark: bool, border: (u8, u8, u8), caption: (u8, u8, 
     #[cfg(not(windows))]
     {
         let _ = (dark, border, caption);
+    }
+}
+
+#[cfg(test)]
+mod printing_tests {
+    use super::printing::PageSetup;
+
+    /// A printer that grips a quarter of an inch of the sheet at 600 dots to
+    /// the inch: 150 dots at the left and top, and what is left over at the
+    /// right and bottom.
+    fn office_printer() -> PageSetup {
+        PageSetup {
+            width: 4660,
+            height: 6715,
+            paper_width: 4960,
+            paper_height: 7015,
+            offset_x: 150,
+            offset_y: 150,
+            dpi_x: 600.0,
+            dpi_y: 600.0,
+        }
+    }
+
+    #[test]
+    fn the_band_a_printer_cannot_reach_is_worked_out_from_what_it_reports() {
+        let (left, top, right, bottom) = office_printer().unprintable();
+        assert_eq!((left, top), (150.0, 150.0));
+        assert_eq!((right, bottom), (150.0, 150.0));
+    }
+
+    #[test]
+    fn a_printer_that_reaches_the_whole_sheet_says_so() {
+        let all_of_it = PageSetup {
+            width: 4960,
+            height: 7015,
+            paper_width: 4960,
+            paper_height: 7015,
+            offset_x: 0,
+            offset_y: 0,
+            dpi_x: 600.0,
+            dpi_y: 600.0,
+        };
+        assert_eq!(all_of_it.unprintable(), (0.0, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn a_printer_that_reports_nonsense_does_not_report_a_negative_band() {
+        // A driver saying the printable area is larger than the paper is not
+        // impossible, and subtracting it must not wrap round.
+        let confused = PageSetup { paper_width: 100, paper_height: 100, ..office_printer() };
+        let (_, _, right, bottom) = confused.unprintable();
+        assert_eq!((right, bottom), (0.0, 0.0));
     }
 }

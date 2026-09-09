@@ -184,12 +184,25 @@ A word processor that cannot print is not one. Nothing of this exists yet.
   *Done when:* the same document laid out at 96 and at 600 dpi breaks its lines
   and its pages in exactly the same places.
 
-- [ ] **A2. The Windows spooler.** `OpenPrinter`, `StartDocPrinter`,
+- [x] **A2. The Windows spooler.** `OpenPrinter`, `StartDocPrinter`,
   `StartPagePrinter`, the device context, and the page image handed over — all
   declared with `extern "system"` like the rest of the shell. Printer
   enumeration, the default printer, paper sizes, orientation, duplex, copies,
   collation, and the printer's own margins.
-  *Done when:* a document prints, on paper, matching what the screen showed.
+  *Done:* the system print dialog chooses the printer and hands back its device
+  context, which is what settles enumeration, the default, the paper, the
+  orientation, the duplex and the copies — those belong to the driver and the
+  driver is asked for them. The document is laid out for the printer's own
+  resolution and sent a band of rows at a time, because a page of A4 at six
+  hundred dots to the inch is a hundred and forty megabytes. The band the
+  printer grips the sheet by is read from the driver and left out of the image,
+  so the text lands where it was laid out rather than a quarter of an inch down
+  and across.
+  *Not yet proven:* nobody has printed a sheet with it. The container has no
+  printer; the geometry is tested, the pressing of the button is not.
+  *Left for A3:* printing a page range or a selection, and scaling a document
+  to paper of a different size — both belong to the dialog, and offering them
+  and then ignoring them would be worse than not offering them.
 
 - [ ] **A3. Print preview and the print dialog.** Word's is a whole view: page
   thumbnails, zoom, page ranges, what to print (document, markup, styles),

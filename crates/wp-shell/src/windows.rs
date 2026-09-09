@@ -271,6 +271,15 @@ const CAPABILITY_HORIZONTAL_PIXELS: i32 = 8;
 const CAPABILITY_VERTICAL_PIXELS: i32 = 10;
 const CAPABILITY_DPI_X: i32 = 88;
 const CAPABILITY_DPI_Y: i32 = 90;
+/// The whole sheet, in the device's own dots — larger than the printable area
+/// by the band the printer holds the paper in.
+const CAPABILITY_PAPER_WIDTH: i32 = 110;
+const CAPABILITY_PAPER_HEIGHT: i32 = 111;
+/// Where the printable area begins on that sheet. A printer's origin is this
+/// corner, not the corner of the paper, and a page drawn without allowing for
+/// it comes out shifted by a quarter of an inch.
+const CAPABILITY_OFFSET_X: i32 = 112;
+const CAPABILITY_OFFSET_Y: i32 = 113;
 
 // What a hit test can say a point is on.
 const HIT_CLIENT: Result_ = 1;
@@ -1273,6 +1282,10 @@ pub(crate) fn printer_page(device_context: usize) -> crate::printing::PageSetup 
     crate::printing::PageSetup {
         width: ask(CAPABILITY_HORIZONTAL_PIXELS).max(1) as usize,
         height: ask(CAPABILITY_VERTICAL_PIXELS).max(1) as usize,
+        paper_width: ask(CAPABILITY_PAPER_WIDTH).max(1) as usize,
+        paper_height: ask(CAPABILITY_PAPER_HEIGHT).max(1) as usize,
+        offset_x: ask(CAPABILITY_OFFSET_X).max(0) as usize,
+        offset_y: ask(CAPABILITY_OFFSET_Y).max(0) as usize,
         dpi_x: ask(CAPABILITY_DPI_X).max(1) as f32,
         dpi_y: ask(CAPABILITY_DPI_Y).max(1) as f32,
     }

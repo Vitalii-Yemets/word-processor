@@ -58,16 +58,40 @@ impl<'a> Renderer<'a> {
     /// down and to the right.
     #[must_use]
     pub fn page_for_device(&mut self, page: &Page, device: Device, background: Color) -> Canvas {
-        let left = device.dots(device.unprintable.left);
-        let top = device.dots(device.unprintable.top);
-        let right = device.dots(device.unprintable.right);
-        let bottom = device.dots(device.unprintable.bottom);
+        let (width, height) = Self::printable_dots(page, device);
+        self.band_for_device(page, device, 0, height, background, width)
+    }
 
-        let width = (page.width - left - right).round().max(1.0) as usize;
-        let height = (page.height - top - bottom).round().max(1.0) as usize;
-        let mut canvas = Canvas::filled(width, height, background);
-        self.draw_onto(&mut canvas, page, -left, -top);
+    /// One band of that image, so that a whole page need never be held.
+    ///
+    /// At six hundred dots to the inch a page of A4 is a hundred and forty
+    /// megabytes of pixels; a printer is fed a few hundred rows at a time and
+    /// this is what draws them.
+    #[must_use]
+    pub fn band_for_device(
+        &mut self,
+        page: &Page,
+        device: Device,
+        top: usize,
+        rows: usize,
+        background: Color,
+        width: usize,
+    ) -> Canvas {
+        let left = device.dots(device.unprintable.left);
+        let above = device.dots(device.unprintable.top);
+        let mut canvas = Canvas::filled(width.max(1), rows.max(1), background);
+        self.draw_onto(&mut canvas, page, -left, -(above + top as f32));
         canvas
+    }
+
+    /// How much of a page a device can actually draw, in its own dots.
+    #[must_use]
+    pub fn printable_dots(page: &Page, device: Device) -> (usize, usize) {
+        let across = device.dots(device.unprintable.left + device.unprintable.right);
+        let down = device.dots(device.unprintable.top + device.unprintable.bottom);
+        let width = (page.width - across).round().max(1.0) as usize;
+        let height = (page.height - down).round().max(1.0) as usize;
+        (width, height)
     }
 
     /// Draws a page onto an existing canvas at an offset.
