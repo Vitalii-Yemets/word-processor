@@ -20,7 +20,10 @@
 use wp_xml::tree::Element;
 
 use crate::history::EditKind;
-use crate::model::{Alignment, Block, Paragraph, ParagraphProperties, Run, RunProperties};
+use crate::model::{
+    Alignment, Block, Paragraph, ParagraphProperties, Run, RunProperties, TabAlignment, TabLeader,
+    TabStop,
+};
 use crate::{edit, position, read, Document, TextPosition};
 
 /// One line of a table of contents.
@@ -97,7 +100,12 @@ impl Document {
         };
 
         let prefix = self.prefix();
-        let blocks = contents_blocks(&entries);
+        // The page number goes against the right margin with dots leading to
+        // it, which is what a table of contents looks like — so the entries
+        // need to know how wide the text is.
+        let setup = self.setup_here();
+        let text_width = (setup.width - setup.margin_left - setup.margin_right).max(720);
+        let blocks = contents_blocks(&entries, text_width);
         let Some(path) = position::paragraph_path(
             &self.tree().root,
             at.min(self.paragraph_count().saturating_sub(1)),
@@ -195,18 +203,24 @@ fn holds_contents_field(paragraph: &Element) -> bool {
 ///
 /// Every one of them carries the field, so the whole table can be found again
 /// and replaced when it is updated.
-fn contents_blocks(entries: &[Entry]) -> Vec<Block> {
+fn contents_blocks(entries: &[Entry], text_width: i32) -> Vec<Block> {
     let mut blocks = Vec::new();
 
     // The heading over the table, which Word puts there and every reader
     // expects. It is part of the field too, so Update replaces it as well.
-    blocks.push(Block::Paragraph(contents_paragraph(vec![heading_run("Contents")], 0, true)));
+    blocks.push(Block::Paragraph(contents_paragraph(
+        vec![heading_run("Contents")],
+        0,
+        true,
+        text_width,
+    )));
 
     if entries.is_empty() {
         blocks.push(Block::Paragraph(contents_paragraph(
             vec![Run::field(INSTRUCTION, "No headings in this document")],
             0,
             false,
+            text_width,
         )));
         return blocks;
     }
@@ -221,13 +235,26 @@ fn contents_blocks(entries: &[Entry]) -> Vec<Block> {
             vec![Run::field(INSTRUCTION, &line)],
             entry.level,
             false,
+            text_width,
         )));
     }
     blocks
 }
 
 /// One line of the table, indented by its level.
-fn contents_paragraph(runs: Vec<Run>, level: u8, heading: bool) -> Paragraph {
+///
+/// The page number is put against the right margin with dots leading to it,
+/// which is the whole look of a table of contents: a right-hand tab stop at the
+/// width of the text, with a dotted leader. The stop is measured from the left
+/// margin rather than from the indent, so every level's numbers line up in one
+/// column however deep the entry is — which is what Word does and what makes
+/// the right-hand edge straight.
+fn contents_paragraph(runs: Vec<Run>, level: u8, heading: bool, text_width: i32) -> Paragraph {
+    let stops = if heading {
+        Vec::new()
+    } else {
+        vec![TabStop { position: text_width, alignment: TabAlignment::End, leader: TabLeader::Dot }]
+    };
     Paragraph {
         properties: ParagraphProperties {
             // Half an inch of indent per level, which is what Word's built-in
@@ -235,6 +262,7 @@ fn contents_paragraph(runs: Vec<Run>, level: u8, heading: bool) -> Paragraph {
             indent_start: Some(i32::from(level) * 360),
             alignment: if heading { Some(Alignment::Start) } else { None },
             space_after: Some(0),
+            tab_stops: stops,
             ..ParagraphProperties::default()
         },
         runs,
@@ -267,7 +295,7 @@ mod tests {
 
     #[test]
     fn an_empty_table_still_carries_its_field() {
-        let blocks = contents_blocks(&[]);
+        let blocks = contents_blocks(&[], 9360);
         assert_eq!(blocks.len(), 2, "a heading and a line saying there is nothing");
         let Block::Paragraph(paragraph) = &blocks[1] else { panic!("a paragraph") };
         assert!(paragraph.runs[0].field.is_some());
@@ -279,7 +307,7 @@ mod tests {
             Entry { text: "One".to_owned(), level: 0, paragraph: 0, page: 1 },
             Entry { text: "Two".to_owned(), level: 1, paragraph: 1, page: 2 },
         ];
-        let blocks = contents_blocks(&entries);
+        let blocks = contents_blocks(&entries, 9360);
         let Block::Paragraph(first) = &blocks[1] else { panic!("a paragraph") };
         let Block::Paragraph(second) = &blocks[2] else { panic!("a paragraph") };
         assert!(second.properties.indent_start > first.properties.indent_start);
@@ -288,7 +316,7 @@ mod tests {
     #[test]
     fn a_page_number_is_put_after_a_tab() {
         let entries = [Entry { text: "One".to_owned(), level: 0, paragraph: 0, page: 4 }];
-        let blocks = contents_blocks(&entries);
+        let blocks = contents_blocks(&entries, 9360);
         assert_eq!(blocks[1].plain_text(), "One\t4");
     }
 }

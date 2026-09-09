@@ -193,9 +193,13 @@ impl Document {
             None => caret.paragraph,
         };
 
+        // The pages go against the right-hand edge with dots leading to them.
+        let setup = self.setup_here();
+        let text_width = (setup.width - setup.margin_left - setup.margin_right).max(720);
         let mut blocks = vec![Block::Paragraph(figures::field_paragraph(
             vec![figures::heading_run(category.label(), &instruction)],
             0,
+            None,
         ))];
         if gathered.is_empty() {
             blocks.push(Block::Paragraph(figures::field_paragraph(
@@ -204,6 +208,7 @@ impl Document {
                     &format!("No {} are marked", category.label().to_lowercase()),
                 )],
                 0,
+                None,
             )));
         }
         for (text, pages) in &gathered {
@@ -216,6 +221,7 @@ impl Document {
             blocks.push(Block::Paragraph(figures::field_paragraph(
                 vec![Run::field(&instruction, &line)],
                 0,
+                Some(text_width),
             )));
         }
 

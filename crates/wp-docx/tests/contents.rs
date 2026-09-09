@@ -177,3 +177,27 @@ fn the_document_itself_is_not_disturbed() {
     document.remove_contents();
     assert_eq!(round_trip(&document).plain_text(), document.plain_text());
 }
+
+#[test]
+fn every_line_puts_its_page_number_against_the_right_margin() {
+    // What makes a table of contents look like one: a right-hand stop at the
+    // width of the text, with dots leading to the number.
+    use wp_docx::model::{TabAlignment, TabLeader};
+
+    let mut document = document();
+    document.insert_contents(3, &[1, 2, 3]);
+
+    let bytes = document.save().expect("saving");
+    let mut reopened = Document::open(&bytes).expect("reopening");
+
+    // The heading is the first paragraph of the table; the entries follow.
+    reopened.set_caret(wp_docx::TextPosition::new(2, 0));
+    let stops = reopened.tab_stops_here();
+    assert_eq!(stops.len(), 1, "{stops:?}");
+    assert_eq!(stops[0].alignment, TabAlignment::End);
+    assert_eq!(stops[0].leader, TabLeader::Dot);
+
+    let (width, _) = reopened.page_size();
+    let (_, right, _, left) = reopened.page_margins();
+    assert_eq!(stops[0].position, width - left - right, "the stop is not at the right margin");
+}

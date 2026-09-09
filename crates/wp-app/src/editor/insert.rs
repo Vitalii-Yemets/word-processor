@@ -242,6 +242,12 @@ impl Editor {
                 ))
             }
             "grid" => self.table_grid = Some(TableGrid::new(180.0, 140.0)),
+            "contents" => {
+                // A table of contents at the top of the document, to see the
+                // page numbers put against the right margin with dots.
+                self.document.set_caret(wp_docx::TextPosition::new(0, 0));
+                self.run(crate::chrome::Command::InsertContents);
+            }
             "tabs" => {
                 // A stop of each kind, to see the markers the ruler draws.
                 use wp_docx::model::{TabAlignment, TabLeader, TabStop};

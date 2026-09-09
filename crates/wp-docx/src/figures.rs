@@ -15,7 +15,9 @@ use wp_xml::tree::{Element, Node};
 
 use crate::captions::Label;
 use crate::history::EditKind;
-use crate::model::{Block, Paragraph, ParagraphProperties, Run, RunProperties};
+use crate::model::{
+    Block, Paragraph, ParagraphProperties, Run, RunProperties, TabAlignment, TabLeader, TabStop,
+};
 use crate::{edit, position, read, Document, TextPosition};
 
 /// The instruction for a table of figures of one label.
@@ -62,20 +64,29 @@ impl Document {
             None => caret.paragraph,
         };
 
+        // Where the page numbers are put: against the right-hand edge of the
+        // text, with dots leading to them.
+        let setup = self.setup_here();
+        let text_width = (setup.width - setup.margin_left - setup.margin_right).max(720);
         let mut blocks = vec![Block::Paragraph(field_paragraph(
             vec![heading_run(&format!("Table of {}s", label.word()), &instruction)],
             0,
+            None,
         ))];
         if wanted.is_empty() {
             blocks.push(Block::Paragraph(field_paragraph(
                 vec![Run::field(&instruction, &format!("No {}s in this document", label.word()))],
                 0,
+                None,
             )));
         }
         for (text, page) in &wanted {
             let line = if *page > 0 { format!("{text}\t{page}") } else { text.clone() };
-            blocks
-                .push(Block::Paragraph(field_paragraph(vec![Run::field(&instruction, &line)], 0)));
+            blocks.push(Block::Paragraph(field_paragraph(
+                vec![Run::field(&instruction, &line)],
+                0,
+                Some(text_width),
+            )));
         }
 
         self.write_generated(at, &blocks);
@@ -171,14 +182,20 @@ impl Document {
             None => caret.paragraph,
         };
 
+        // Where the page numbers are put: against the right-hand edge of the
+        // text, with dots leading to them.
+        let setup = self.setup_here();
+        let text_width = (setup.width - setup.margin_left - setup.margin_right).max(720);
         let mut blocks = vec![Block::Paragraph(field_paragraph(
             vec![heading_run("Index", INDEX_INSTRUCTION)],
             0,
+            None,
         ))];
         if lines.is_empty() {
             blocks.push(Block::Paragraph(field_paragraph(
                 vec![Run::field(INDEX_INSTRUCTION, "Nothing has been marked for the index")],
                 0,
+                None,
             )));
         }
 
@@ -192,6 +209,7 @@ impl Document {
                     blocks.push(Block::Paragraph(field_paragraph(
                         vec![heading_run(first, INDEX_INSTRUCTION)],
                         0,
+                        None,
                     )));
                 }
                 letter = first;
@@ -206,6 +224,7 @@ impl Document {
             blocks.push(Block::Paragraph(field_paragraph(
                 vec![Run::field(INDEX_INSTRUCTION, &line)],
                 1,
+                Some(text_width),
             )));
         }
 
@@ -337,12 +356,22 @@ pub fn index_entry_text(instruction: &str) -> Option<String> {
     Some(inside[..end].to_owned())
 }
 
-/// One line of a generated table, indented by its level.
-pub(crate) fn field_paragraph(runs: Vec<Run>, level: u8) -> Paragraph {
+/// One paragraph of a generated table, indented by its level.
+///
+/// `stop_at` puts a right-hand tab stop with a dotted leader at that many twips
+/// from the left margin, which is how a line of page numbers is put against the
+/// right-hand edge with dots leading to it. Nothing means no stop: a heading
+/// over the table has no number to place.
+pub(crate) fn field_paragraph(runs: Vec<Run>, level: u8, stop_at: Option<i32>) -> Paragraph {
     Paragraph {
         properties: ParagraphProperties {
             indent_start: Some(i32::from(level) * 360),
             space_after: Some(0),
+            tab_stops: stop_at
+                .map(|position| {
+                    vec![TabStop { position, alignment: TabAlignment::End, leader: TabLeader::Dot }]
+                })
+                .unwrap_or_default(),
             ..ParagraphProperties::default()
         },
         runs,

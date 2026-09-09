@@ -321,17 +321,22 @@ impl Document {
         let mut blocks = vec![Block::Paragraph(crate::figures::field_paragraph(
             vec![crate::figures::heading_run("Bibliography", BIBLIOGRAPHY_INSTRUCTION)],
             0,
+            None,
         ))];
         if sources.is_empty() {
             blocks.push(Block::Paragraph(crate::figures::field_paragraph(
                 vec![Run::field(BIBLIOGRAPHY_INSTRUCTION, "Nothing in this document is cited")],
                 0,
+                None,
             )));
         }
         for source in &sources {
             blocks.push(Block::Paragraph(crate::figures::field_paragraph(
                 vec![Run::field(BIBLIOGRAPHY_INSTRUCTION, &source.line())],
                 0,
+                // A bibliography is prose, not a column of numbers: nothing to
+                // put against the right-hand edge.
+                None,
             )));
         }
 
