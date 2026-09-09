@@ -465,14 +465,29 @@ impl Document {
     pub(crate) fn record(&mut self, kind: EditKind, ends_at: TextPosition, mergeable: bool) {
         // Inside a gesture only the first change is noted, so the whole of it
         // comes back in one step.
-        if self.gesture_depth > 0 {
+        let in_gesture = self.gesture_depth > 0;
+        if in_gesture {
             if self.gesture_noted {
                 return;
             }
             self.gesture_noted = true;
         }
+
+        // Typing and deleting change one paragraph and nothing else, so one
+        // paragraph is what is kept. A copy of the whole document per word
+        // typed is fourteen megabytes on a thousand pages, and a person types
+        // a word every second.
+        //
+        // Not inside a gesture, though: there only the first change is noted,
+        // and the rest of the gesture may be anywhere in the document. What
+        // one paragraph would keep is then not what undo has to put back.
+        let one_paragraph = !in_gesture && matches!(kind, EditKind::Typing | EditKind::Deleting);
+        let kept = one_paragraph
+            .then(|| self.kept_paragraph(ends_at.paragraph))
+            .flatten()
+            .unwrap_or_else(|| history::Kept::Whole(self.tree.clone()));
         self.history.record(
-            &self.tree,
+            kept,
             &self.main_part,
             self.caret,
             self.modified,
@@ -480,6 +495,41 @@ impl Document {
             ends_at,
             mergeable,
         );
+    }
+
+    /// One paragraph exactly as it is, for a step that changes only that one.
+    fn kept_paragraph(&self, index: usize) -> Option<history::Kept> {
+        let path = position::paragraph_path(&self.tree.root, index)?;
+        let element = edit::element_at_path(&self.tree.root, &path)?.clone();
+        Some(history::Kept::Paragraph { index, element: Box::new(element) })
+    }
+
+    /// The present state, kept the same way a step keeps it.
+    ///
+    /// Undo has to leave a way back, and the way back has to be of the same
+    /// shape: a step that kept one paragraph is undone by putting that
+    /// paragraph back, and redone by putting back the paragraph that is there
+    /// now.
+    fn kept_like(&self, shape: &history::Kept) -> history::Kept {
+        match shape {
+            history::Kept::Whole(_) => history::Kept::Whole(self.tree.clone()),
+            history::Kept::Paragraph { index, .. } => self
+                .kept_paragraph(*index)
+                .unwrap_or_else(|| history::Kept::Whole(self.tree.clone())),
+        }
+    }
+
+    /// Puts a kept state back where it came from.
+    fn put_back(&mut self, kept: history::Kept) {
+        match kept {
+            history::Kept::Whole(tree) => self.tree = tree,
+            history::Kept::Paragraph { index, element } => {
+                let Some(path) = position::paragraph_path(&self.tree.root, index) else { return };
+                if let Some(target) = edit::element_at_path_mut(&mut self.tree.root, &path) {
+                    *target = *element;
+                }
+            }
+        }
     }
 
     /// Begins a gesture: a run of changes that undo should treat as one.
@@ -1194,36 +1244,40 @@ impl Document {
     /// brings that part back with it, because undoing an edit means being where
     /// the edit was.
     pub fn undo(&mut self) -> bool {
-        let Some((tree, part, caret, modified)) =
-            self.history.undo(&self.tree, &self.main_part, self.caret, self.modified)
+        let Some(shape) = self.history.next_undo() else { return false };
+        let now = self.kept_like(shape);
+        let Some((kept, part, caret, modified)) =
+            self.history.undo(now, &self.main_part, self.caret, self.modified)
         else {
             return false;
         };
-        self.restore(tree, part, caret, modified);
+        self.restore(kept, part, caret, modified);
         true
     }
 
     /// Puts back a change that was taken back.
     pub fn redo(&mut self) -> bool {
-        let Some((tree, part, caret, modified)) =
-            self.history.redo(&self.tree, &self.main_part, self.caret, self.modified)
+        let Some(shape) = self.history.next_redo() else { return false };
+        let now = self.kept_like(shape);
+        let Some((kept, part, caret, modified)) =
+            self.history.redo(now, &self.main_part, self.caret, self.modified)
         else {
             return false;
         };
-        self.restore(tree, part, caret, modified);
+        self.restore(kept, part, caret, modified);
         true
     }
 
     /// Puts a remembered state back, moving to its part if that is not the one
     /// being edited.
-    fn restore(&mut self, tree: XmlTree, part: String, caret: TextPosition, modified: bool) {
+    fn restore(&mut self, kept: history::Kept, part: String, caret: TextPosition, modified: bool) {
         if part != self.main_part {
             // The tree being left has to reach the package, or the step that
             // put it there would be lost.
             self.flush_part();
             self.main_part = part;
         }
-        self.tree = tree;
+        self.put_back(kept);
         self.caret = self.clamp(caret);
         self.anchor = None;
         self.pending = RunProperties::default();

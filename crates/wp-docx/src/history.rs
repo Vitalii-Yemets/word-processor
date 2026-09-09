@@ -1,15 +1,25 @@
 //! Undo and redo.
 //!
-//! # Why whole snapshots
+//! # Why states rather than inverses
 //!
 //! The alternative is to record an inverse for every operation — a deletion for
 //! each insertion, and so on. That is smaller, and it is also the design where a
 //! single missed case silently corrupts a document three undos later, because
-//! the inverse was very slightly wrong. Keeping a copy of the tree cannot be
-//! wrong: what comes back is exactly what was there.
+//! the inverse was very slightly wrong. Keeping a copy of what was there cannot
+//! be wrong: what comes back is exactly what was there.
 //!
-//! It costs memory, so the history is bounded. A document large enough for that
-//! to matter is a document where correctness matters more.
+//! # Why not always the whole document
+//!
+//! Because a copy of the whole element tree is fourteen megabytes on a
+//! thousand-page document, and a person typing makes a step every word. That is
+//! a gigabyte in a minute of typing, which is not a price worth paying for a
+//! guarantee that a smaller copy gives just as well.
+//!
+//! Typing and deleting change one paragraph and nothing else. So those steps
+//! keep that one paragraph, exactly as it was, and put it back where it was.
+//! It is the same guarantee — a state, not an inverse — for a thousandth of the
+//! memory. Anything that changes the shape of the document keeps the whole
+//! tree, because anything is where it might have changed.
 //!
 //! # Why steps are merged
 //!
@@ -17,7 +27,7 @@
 //! typing is therefore folded into one step, and the fold is broken at a space
 //! — so undo takes back a word at a time, which is what a person means by it.
 
-use wp_xml::tree::XmlTree;
+use wp_xml::tree::{Element, XmlTree};
 
 use crate::position::TextPosition;
 
@@ -32,17 +42,26 @@ pub enum EditKind {
     Structural,
 }
 
+/// What a step keeps of the document, so that it can be put back.
+#[derive(Clone, Debug)]
+pub(crate) enum Kept {
+    /// The whole tree, for a change that could have touched any of it.
+    Whole(XmlTree),
+    /// One paragraph as it was, and where it sat.
+    Paragraph { index: usize, element: Box<Element> },
+}
+
 /// One recoverable state of the document.
 #[derive(Clone, Debug)]
 struct Step {
-    tree: XmlTree,
+    kept: Kept,
     caret: TextPosition,
     modified: bool,
     kind: EditKind,
-    /// Which part of the package the tree belongs to.
+    /// Which part of the package the state belongs to.
     ///
     /// A header lives in a part of its own, and editing one swaps which part
-    /// is loaded. Undo has to put the right tree back into the right part —
+    /// is loaded. Undo has to put the right state back into the right part —
     /// and switch to that part first, which is what Word does when undo
     /// reaches back past the moment a header was opened.
     part: String,
@@ -88,10 +107,10 @@ impl History {
     /// `caret` is where the caret was before it, and `ends_at` where the change
     /// will leave it; together they decide whether this change continues the
     /// last one or starts a new step.
-    #[allow(clippy::too_many_arguments, reason = "a step is a tree, a place, a kind and a part")]
+    #[allow(clippy::too_many_arguments, reason = "a step is a state, a place, a kind and a part")]
     pub(crate) fn record(
         &mut self,
-        tree: &XmlTree,
+        kept: Kept,
         part: &str,
         caret: TextPosition,
         modified: bool,
@@ -116,62 +135,65 @@ impl History {
             }
         }
 
-        self.past.push(Step {
-            tree: tree.clone(),
-            part: part.to_owned(),
-            caret,
-            modified,
-            kind,
-            ends_at,
-        });
+        self.past.push(Step { kept, part: part.to_owned(), caret, modified, kind, ends_at });
         if self.past.len() > self.limit {
             self.past.remove(0);
         }
     }
 
-    /// Steps back, given the current state to keep for redo.
+    /// What the next step back keeps, so the caller can keep the same of the
+    /// present state for redo.
+    pub(crate) fn next_undo(&self) -> Option<&Kept> {
+        self.past.last().map(|step| &step.kept)
+    }
+
+    /// The same, for a step forward.
+    pub(crate) fn next_redo(&self) -> Option<&Kept> {
+        self.future.last().map(|step| &step.kept)
+    }
+
+    /// Steps back, given the present state to keep for redo.
     ///
-    /// What comes back is the tree, which part of the package it belongs to,
+    /// What comes back is the state, which part of the package it belongs to,
     /// where the caret was and whether the document had been changed.
     pub(crate) fn undo(
         &mut self,
-        current_tree: &XmlTree,
+        now: Kept,
         current_part: &str,
         current_caret: TextPosition,
         current_modified: bool,
-    ) -> Option<(XmlTree, String, TextPosition, bool)> {
+    ) -> Option<(Kept, String, TextPosition, bool)> {
         let step = self.past.pop()?;
         self.future.push(Step {
-            tree: current_tree.clone(),
+            kept: now,
             part: current_part.to_owned(),
             caret: current_caret,
             modified: current_modified,
             kind: step.kind,
             ends_at: step.ends_at,
         });
-        Some((step.tree, step.part, step.caret, step.modified))
+        Some((step.kept, step.part, step.caret, step.modified))
     }
 
     /// Steps forward again.
     pub(crate) fn redo(
         &mut self,
-        current_tree: &XmlTree,
+        now: Kept,
         current_part: &str,
         current_caret: TextPosition,
         current_modified: bool,
-    ) -> Option<(XmlTree, String, TextPosition, bool)> {
+    ) -> Option<(Kept, String, TextPosition, bool)> {
         let step = self.future.pop()?;
         self.past.push(Step {
-            tree: current_tree.clone(),
+            kept: now,
             part: current_part.to_owned(),
             caret: current_caret,
             modified: current_modified,
             kind: step.kind,
             ends_at: step.ends_at,
         });
-        Some((step.tree, step.part, step.caret, step.modified))
+        Some((step.kept, step.part, step.caret, step.modified))
     }
-
     /// Ends the current step, so the next change starts a new one.
     ///
     /// Called when something happens that is not itself an edit — the caret is

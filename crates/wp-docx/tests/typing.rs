@@ -497,3 +497,93 @@ fn ctrl_right_crosses_a_word_with_an_apostrophe_in_one_step() {
     document.word_right(false);
     assert_eq!(document.caret().offset, 6, "the caret stopped inside the word");
 }
+
+#[test]
+fn any_run_of_edits_undone_gives_back_exactly_what_was_there() {
+    // The promise undo makes, said as a property rather than as an example: it
+    // does not matter what was done, only that taking all of it back leaves the
+    // document as it was found — the same text, the same markup, byte for byte.
+    //
+    // The sequence is worked out from a number rather than chosen by hand, so
+    // that it covers combinations nobody would think to write down; the number
+    // is fixed, so a failure can be looked at again.
+    let bytes = document_with(&["one two three", "four five six", "seven eight nine"]);
+    let before = main_part_xml(&bytes);
+    let mut document = Document::open(&bytes).unwrap();
+
+    let mut seed = 0x2545_F491_4F6C_DD1Du64;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed >> 33) as usize
+    };
+
+    for _ in 0..200 {
+        let paragraph = next() % document.paragraph_count().max(1);
+        let length = document.paragraph_text(paragraph).unwrap_or_default().len();
+        let offset = if length == 0 { 0 } else { next() % (length + 1) };
+        // Never inside a character: the caret cannot be there, so neither can
+        // an edit.
+        let text = document.paragraph_text(paragraph).unwrap_or_default();
+        let offset = text
+            .char_indices()
+            .map(|(at, _)| at)
+            .chain(std::iter::once(text.len()))
+            .take_while(|at| *at <= offset)
+            .last()
+            .unwrap_or(0);
+        document.set_caret(TextPosition::new(paragraph, offset));
+
+        match next() % 6 {
+            0 | 1 => {
+                document.type_text("x");
+            }
+            2 => {
+                document.type_text(" ");
+            }
+            3 => {
+                document.backspace();
+            }
+            4 => {
+                document.delete_forward();
+            }
+            _ => {
+                document.press_enter();
+            }
+        }
+    }
+
+    // And now all the way back.
+    let mut steps = 0;
+    while document.undo() {
+        steps += 1;
+        assert!(steps < 10_000, "undo is not getting anywhere");
+    }
+    assert!(steps > 10, "the edits should have made more steps than this");
+
+    let after = main_part_xml(&document.save().unwrap());
+    assert_eq!(after, before, "undoing everything did not give the document back");
+}
+
+#[test]
+fn what_undo_takes_back_redo_puts_back_exactly() {
+    let bytes = document_with(&["one two three", "four five six"]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    document.set_caret(TextPosition::new(0, 3));
+    document.type_text(" and more");
+    document.set_caret(TextPosition::new(1, 0));
+    document.type_text("first ");
+    let edited = main_part_xml(&document.save().unwrap());
+
+    while document.undo() {}
+    assert_ne!(main_part_xml(&document.save().unwrap()), edited);
+    while document.redo() {}
+
+    assert_eq!(
+        main_part_xml(&document.save().unwrap()),
+        edited,
+        "redoing everything did not give the edited document back"
+    );
+}

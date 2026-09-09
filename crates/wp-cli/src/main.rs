@@ -27,6 +27,34 @@ fn write_line(text: &str) {
     }
 }
 
+/// How much memory this program is actually using, in bytes.
+///
+/// Asked of the operating system rather than counted here: a counting allocator
+/// would mean `unsafe`, and this program keeps all of that in one crate. Linux
+/// only, because that is where the benchmark runs; elsewhere it says nothing
+/// rather than guessing.
+fn memory_in_use() -> Option<usize> {
+    let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+    // The second number is the resident set, in pages.
+    let pages: usize = statm.split_whitespace().nth(1)?.parse().ok()?;
+    Some(pages * 4096)
+}
+
+/// A number of bytes, written the way a person reads one.
+fn size(bytes: usize) -> String {
+    #[allow(clippy::cast_precision_loss)]
+    let value = bytes as f64;
+    if bytes >= 1024 * 1024 * 1024 {
+        format!("{:.2} GB", value / 1024.0 / 1024.0 / 1024.0)
+    } else if bytes >= 1024 * 1024 {
+        format!("{:.1} MB", value / 1024.0 / 1024.0)
+    } else if bytes >= 1024 {
+        format!("{:.1} kB", value / 1024.0)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 /// Like `println!`, but survives a closed pipe.
 macro_rules! outln {
     () => { write_line("") };
@@ -428,6 +456,19 @@ fn bench(pages: &str) -> Result<(), String> {
     let after = engine.layout_document(&document);
     let relayout = start.elapsed();
 
+    // What a hundred letters cost, which is what a person types in half a
+    // minute — and what the undo history has to hold afterwards. Typed the way
+    // a person types: on from where the last letter went, with spaces between
+    // the words, because a space is where undo breaks a step.
+    let before_typing = memory_in_use();
+    let start = Instant::now();
+    document.set_caret(wp_docx::TextPosition::new(middle, 0));
+    for index in 0..100 {
+        document.type_text(if index % 6 == 5 { " " } else { "x" });
+    }
+    let hundred = start.elapsed();
+    let after_typing = memory_in_use();
+
     let start = Instant::now();
     let saved = document.save().map_err(|error| format!("cannot save: {error}"))?;
     let saving = start.elapsed();
@@ -440,6 +481,14 @@ fn bench(pages: &str) -> Result<(), String> {
     outln!("{:<26} {:>10}", "typing one letter", took(typing));
     outln!("{:<26} {:>10}", "laying it out again", took(relayout));
     outln!("{:<26} {:>10}", "saving it", took(saving));
+    outln!("{:<26} {:>10}", "typing a hundred letters", took(hundred));
+    outln!("{:<26} {:>10}", "  undo steps kept", document.undo_depth().to_string());
+    if let (Some(before), Some(after)) = (before_typing, after_typing) {
+        outln!("{:<26} {:>10}", "  which cost, in memory", size(after.saturating_sub(before)));
+    }
+    if let Some(now) = memory_in_use() {
+        outln!("{:<26} {:>10}", "memory in use", size(now));
+    }
     outln!();
     outln!("bytes written: {}", saved.len());
 
