@@ -15,6 +15,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wp-bidi"
+version = "0.0.1"
+
+[[package]]
 name = "wp-cli"
 version = "0.0.1"
 dependencies = [
@@ -53,6 +57,7 @@ dependencies = [
 name = "wp-layout"
 version = "0.0.1"
 dependencies = [
+ "wp-bidi",
  "wp-docx",
  "wp-font",
  "wp-image",

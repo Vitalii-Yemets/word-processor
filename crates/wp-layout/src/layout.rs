@@ -11,13 +11,9 @@
 //! This is a first layout engine, and it is deliberately honest about its
 //! limits rather than approximating quietly:
 //!
-//! * **No complex shaping.** Each character becomes one glyph. That is correct
-//!   for Latin, Cyrillic, Greek and CJK, and wrong for Arabic and the Indic
-//!   scripts, where letters change form depending on their neighbours. Those
-//!   need the shaping engine, which is a later stage.
-//! * **No bidirectional algorithm.** A run marked right-to-left has its glyphs
-//!   reversed, which puts the text in the right direction but does not implement
-//!   the real rules for mixed-direction lines.
+//! * **No bracket pairing in the bidirectional algorithm.** A bracket takes the
+//!   direction of what is around it rather than of what it encloses, which
+//!   needs the pairings from the character database. See [`wp_bidi`].
 //! * **Kerning only from the old `kern` table.** Modern fonts put it in `GPOS`,
 //!   which arrives with shaping.
 //! * **A table row does not split across a page.** A row that will not fit
@@ -830,8 +826,17 @@ impl<'a> LayoutEngine<'a> {
             line_height: size * 1.25,
         };
 
+        // A line of interface text is one direction throughout — a button's
+        // name, a font's name, a measurement — so its direction is taken from
+        // the text itself rather than through the whole algorithm, which needs
+        // a paragraph to work on.
+        let mut glyphs = self.shape(text, &style, 0);
+        if wp_bidi::Direction::from_text(text).is_right_to_left() {
+            glyphs.reverse();
+        }
+
         let mut pen = x;
-        for glyph in self.shape(text, &style, 0) {
+        for glyph in glyphs {
             page.glyphs.push(PositionedGlyph {
                 face: glyph.face,
                 glyph: glyph.glyph,
@@ -1237,7 +1242,44 @@ impl<'a> LayoutEngine<'a> {
         *y += space_before;
 
         let mut styles = Vec::new();
-        let items = self.build_items(paragraph, document, &mut styles, index);
+        let mut items = self.build_items(paragraph, document, &mut styles, index);
+
+        // Which direction each piece of the paragraph is drawn in.
+        //
+        // Not a property of the run it came from: a Hebrew phrase inside an
+        // English sentence, or a price inside a Hebrew one, is a run of its own
+        // whatever the document says about the paragraph, and finding those runs
+        // needs the whole paragraph at once. See [`wp_bidi`].
+        let text = document.paragraph_text(index).unwrap_or_default();
+        let direction = if resolved.right_to_left {
+            wp_bidi::Direction::RightToLeft
+        } else {
+            wp_bidi::Direction::LeftToRight
+        };
+        let bytes = wp_bidi::levels(&text, direction);
+        let base = u8::from(resolved.right_to_left);
+        let item_levels: Vec<u8> = items
+            .iter()
+            .map(|item| {
+                let level = bytes.get(item.start_offset).copied().unwrap_or(base);
+                // A run the document marks right-to-left reads that way
+                // whatever its characters are, which is what `w:rtl` means.
+                if styles.get(item.style).is_some_and(|style| style.right_to_left) {
+                    level | 1
+                } else {
+                    level
+                }
+            })
+            .collect();
+        for (item, level) in items.iter_mut().zip(&item_levels) {
+            // A piece that reads right to left is drawn from its right-hand
+            // end, so its glyphs go down in the other order.
+            if level % 2 == 1 {
+                item.glyphs.reverse();
+            }
+        }
+        let items = items;
+
         if items.is_empty() {
             // An empty paragraph still takes up a line's worth of height, and
             // still needs a line recorded: a caret has to be able to sit in it.
@@ -1454,7 +1496,7 @@ impl<'a> LayoutEngine<'a> {
                     page: page_index,
                     area,
                 },
-                &resolved.tab_stops,
+                Composition { stops: &resolved.tab_stops, levels: &item_levels },
             );
 
             *y += height;
@@ -2691,13 +2733,9 @@ impl<'a> LayoutEngine<'a> {
             }
         }
 
-        // A right-to-left run reads the other way. This is not the full
-        // bidirectional algorithm, but it puts the text in the right direction
-        // instead of backwards.
-        if style.right_to_left {
-            glyphs.reverse();
-        }
-
+        // Which way round the glyphs go is not decided here: it belongs to the
+        // paragraph, not the run, and the bidirectional algorithm settles it
+        // once the whole paragraph is known. See [`wp_bidi`].
         glyphs
     }
 
@@ -2748,12 +2786,9 @@ impl<'a> LayoutEngine<'a> {
             });
         }
 
-        // Arabic and Syriac read right to left whether or not the run says so:
-        // the direction is a property of the script, not of the document.
-        if style.right_to_left || text.chars().any(wp_shape::is_joining_script) {
-            glyphs.reverse();
-        }
-
+        // In the order they are stored, not the order they are drawn: which way
+        // round a piece of text goes is settled once for the whole paragraph,
+        // by the bidirectional algorithm. See [`wp_bidi`].
         Some(glyphs)
     }
 
@@ -2848,6 +2883,16 @@ impl Mark {
         page.paths.truncate(self.paths);
         page.lines.truncate(self.lines);
     }
+}
+
+/// What a paragraph says about the pieces of one of its lines, beyond the
+/// pieces themselves: where its tabs stop, and which way round each piece
+/// reads.
+#[derive(Clone, Copy, Debug)]
+struct Composition<'a> {
+    stops: &'a [TabStop],
+    /// One level per item of the paragraph, from the bidirectional algorithm.
+    levels: &'a [u8],
 }
 
 /// The stretch of a line that follows a tab, which is what its stop places.
@@ -3018,8 +3063,9 @@ impl LayoutEngine<'_> {
         styles: &[RunStyle],
         page: &mut Page,
         placement: LinePlacement,
-        stops: &[TabStop],
+        composition: Composition<'_>,
     ) {
+        let Composition { stops, levels } = composition;
         // Trailing whitespace hangs into the margin rather than being counted,
         // which is what keeps a centred line actually centred.
         let content_width: f32 = line
@@ -3079,7 +3125,19 @@ impl LayoutEngine<'_> {
             });
         }
 
-        for index in line.items.clone() {
+        // The order the pieces are drawn in, which is not the order they are
+        // stored in wherever the line holds both directions at once. Everything
+        // that follows walks the line in this order and leaves the logical
+        // index alone, because the caret, the selection and the trailing space
+        // are all still counted the way the text is stored. See [`wp_bidi`].
+        let line_levels: Vec<u8> =
+            line.items.clone().map(|index| levels.get(index).copied().unwrap_or(0)).collect();
+        let visual: Vec<usize> = wp_bidi::reorder(&line_levels)
+            .into_iter()
+            .map(|position| line.items.start + position)
+            .collect();
+
+        for index in visual {
             let item = &items[index];
             let style = &styles[item.style];
 

@@ -11,6 +11,7 @@ wp-docx = { path = "../wp-docx" }
 wp-font = { path = "../wp-font" }
 wp-image = { path = "../wp-image" }
 wp-shape = { path = "../wp-shape" }
+wp-bidi = { path = "../wp-bidi" }
 wp-raster = { path = "../wp-raster" }
 wp-xml = { path = "../wp-xml" }
 
