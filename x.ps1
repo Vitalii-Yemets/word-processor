@@ -20,6 +20,7 @@ switch ($Cmd) {
     'test'     { Invoke-InContainer (@('cargo', 'test') + $Rest) }
     'check'    { Invoke-InContainer (@('cargo', 'clippy', '--all-targets', '--', '-D', 'warnings') + $Rest) }
     'fmt'      { Invoke-InContainer (@('cargo', 'fmt', '--all') + $Rest) }
+    'bench'    { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'bench') + $Rest) }
     'fixtures' { Invoke-InContainer @('bash', 'tools/make-fixtures.sh') }
     'shell'    { docker compose run --rm dev bash }
     'win' {
@@ -40,6 +41,7 @@ Usage: .\x.ps1 <command>
   test       cargo test inside the container
   check      cargo clippy, warnings treated as errors
   fmt        cargo fmt
+  bench      time what a person waits for, on a document of N pages
   fixtures   regenerate the gzip interop fixtures
   win        release build of the Windows .exe -> ./dist
   linux      release build for Linux -> ./dist

@@ -12,6 +12,7 @@ case "${1:-help}" in
   check)    shift; run cargo clippy --all-targets -- -D warnings "$@" ;;
   fmt)      shift; run cargo fmt --all "$@" ;;
   fixtures) run bash tools/make-fixtures.sh ;;
+  bench)    shift; run cargo run -q --release -p wp-cli -- bench "${1:-100}" ;;
   shell)    run bash ;;
   win)
     run cargo build --release --target x86_64-pc-windows-gnu
@@ -30,6 +31,7 @@ Usage: ./x.sh <command>
   test       cargo test inside the container
   check      cargo clippy, warnings treated as errors
   fmt        cargo fmt
+  bench      time what a person waits for, on a document of N pages
   fixtures   regenerate the gzip interop fixtures
   win        release build of the Windows .exe -> ./dist
   linux      release build for Linux -> ./dist

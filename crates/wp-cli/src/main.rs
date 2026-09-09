@@ -33,6 +33,8 @@ macro_rules! outln {
     ($($argument:tt)*) => { write_line(&format!($($argument)*)) };
 }
 
+use std::time::Instant;
+
 use wp_docx::model::{
     Alignment, Block, Body, Paragraph, ResolvedRunProperties, Run, Table, TableBorders, TableCell,
     TableRow,
@@ -54,6 +56,8 @@ fn main() -> ExitCode {
         (Some("render"), 3) => render(&arguments[1], &arguments[2], "96"),
         (Some("render"), 4) => render(&arguments[1], &arguments[2], &arguments[3]),
         (Some("pdf"), 3) => pdf(&arguments[1], &arguments[2]),
+        (Some("bench"), 1) => bench("100"),
+        (Some("bench"), 2) => bench(&arguments[1]),
         (Some("fonts"), 1) => fonts(),
         _ => {
             print_usage();
@@ -93,6 +97,7 @@ Usage: wp <command>
 
   render <in.docx> <prefix> [dpi]  draw the pages as PNG images
   pdf <in.docx> <out.pdf>         write the pages out as a PDF
+  bench [pages]                   time what a person waits for
   fonts                            list the fonts found on this machine
 
 The editing commands report which parts of the package changed, so it is
@@ -368,6 +373,96 @@ fn append(input: &str, output: &str, text: &str) -> Result<(), String> {
 ///
 /// There is no window yet, so this is how the rendering stack can be looked at:
 /// the same layout and drawing code a window will use, writing to a file
+/// Times what a person waits for, on a document that is not a toy.
+///
+/// Four numbers, because they are the four waits: opening a file, laying it
+/// out, typing one letter into the middle of it, and saving it. The one that
+/// matters most is the third — it happens on every keystroke, and a person
+/// notices a tenth of a second.
+fn bench(pages: &str) -> Result<(), String> {
+    let wanted: usize = pages.parse().map_err(|_| format!("not a number of pages: {pages}"))?;
+    let library = wp_layout::FontLibrary::scan_system();
+    if library.is_empty() {
+        return Err("no usable fonts were found on this machine".to_owned());
+    }
+
+    // A document of about the size asked for: a page of A4 holds some fifty
+    // lines, and these paragraphs are four lines each.
+    let paragraphs = wanted * 12;
+    let mut body = Body::default();
+    for number in 0..paragraphs {
+        if number % 12 == 0 {
+            body.blocks.push(Block::Paragraph(
+                Paragraph::text(&format!("Chapter {}", number / 12 + 1)).with_style("Heading1"),
+            ));
+        }
+        body.blocks.push(Block::Paragraph(Paragraph::text(
+            "Some words that go on for long enough to fill several lines of a page, so that \
+             the line breaking has something to decide and the paragraph is the size of a \
+             paragraph somebody would really write in a document of this length.",
+        )));
+    }
+
+    let built = Document::create(&body).map_err(|error| format!("cannot build: {error}"))?;
+    let bytes = built.save().map_err(|error| format!("cannot save: {error}"))?;
+    outln!("document: {paragraphs} paragraphs, {} bytes on disk", bytes.len());
+
+    let start = Instant::now();
+    let mut document = Document::open(&bytes).map_err(|error| format!("cannot open: {error}"))?;
+    let opening = start.elapsed();
+
+    let mut engine = wp_layout::LayoutEngine::new(&library);
+    let start = Instant::now();
+    let laid = engine.layout_document(&document);
+    let layout = start.elapsed();
+
+    // A letter typed into the middle of the document, and the pages worked out
+    // again — which is what happens on every keystroke.
+    let middle = document.paragraph_count() / 2;
+    document.set_caret(wp_docx::TextPosition::new(middle, 0));
+    let start = Instant::now();
+    document.insert_text(wp_docx::TextPosition::new(middle, 0), "x");
+    let typing = start.elapsed();
+
+    let start = Instant::now();
+    let after = engine.layout_document(&document);
+    let relayout = start.elapsed();
+
+    let start = Instant::now();
+    let saved = document.save().map_err(|error| format!("cannot save: {error}"))?;
+    let saving = start.elapsed();
+
+    outln!("pages: {} before the edit, {} after", laid.len(), after.len());
+    outln!();
+    outln!("{:<26} {:>10}", "WHAT", "TIME");
+    outln!("{:<26} {:>10}", "opening the file", took(opening));
+    outln!("{:<26} {:>10}", "laying it out", took(layout));
+    outln!("{:<26} {:>10}", "typing one letter", took(typing));
+    outln!("{:<26} {:>10}", "laying it out again", took(relayout));
+    outln!("{:<26} {:>10}", "saving it", took(saving));
+    outln!();
+    outln!("bytes written: {}", saved.len());
+
+    // The one that decides whether the program is usable on a document this
+    // size, said out loud rather than left to be worked out from the table.
+    let keystroke = typing + relayout;
+    outln!();
+    outln!("a keystroke costs {} on {wanted} pages", took(keystroke));
+    Ok(())
+}
+
+/// A duration written the way a person reads one.
+fn took(duration: std::time::Duration) -> String {
+    let millis = duration.as_secs_f64() * 1000.0;
+    if millis >= 1000.0 {
+        format!("{:.2} s", millis / 1000.0)
+    } else if millis >= 1.0 {
+        format!("{millis:.1} ms")
+    } else {
+        format!("{:.0} us", millis * 1000.0)
+    }
+}
+
 /// Writes a document out as a PDF.
 ///
 /// The pages are laid out for paper rather than for a screen — seventy-two dots

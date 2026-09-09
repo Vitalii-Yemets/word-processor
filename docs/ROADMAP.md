@@ -254,6 +254,10 @@ A word processor that cannot print is not one. Nothing of this exists yet.
 
 - [ ] **A5. Printing on Linux.** CUPS, the same page images, through the same
   layer.
+  *Waiting for **H6**, the Linux window.* There is nothing on Linux to print
+  from yet, and nothing in the build container to print to, so the code could
+  not be run even once. What the Linux build can already do is write the PDF
+  that CUPS takes as its own input.
   *Done when:* it prints from the Linux build.
 
 ## B — Speed on a document that is not a toy
@@ -262,10 +266,26 @@ The program lays out the whole document on every edit and remembers the whole
 element tree on every undo step. On two pages nothing shows; on three hundred it
 will crawl. This has to be fixed before the document gets bigger, not after.
 
-- [ ] **B1. A corpus and a measurement.** Documents of 10, 100 and 1000 pages,
+- [x] **B1. A corpus and a measurement.** Documents of 10, 100 and 1000 pages,
   generated rather than committed, and a benchmark that says how long opening,
   typing, scrolling and saving take.
-  *Done when:* `./x.sh bench` prints the numbers and they are recorded here.
+  *Done:* `./x.sh bench [pages]` builds a document of that many pages and times
+  the four waits — opening the file, laying it out, typing one letter, and
+  saving — and then says what the one that matters costs: a keystroke, which is
+  typing plus laying the document out again.
+
+  As it stands, on the machine this was written on:
+
+  | Pages | A keystroke |
+  | --- | --- |
+  | 10 | 8.5 ms |
+  | 100 | 115 ms |
+  | 1000 | 5.96 s |
+
+  Two things are wrong with that table. A hundred pages at a tenth of a second
+  a letter is already too slow to type into. And the growth is worse than the
+  document is long — ten times the pages costs fifty times the time — so
+  something in the layout is quadratic and will be found in **B2**.
 
 - [ ] **B2. Incremental layout.** A keystroke relays the paragraph it changed
   and the pages after it only as far as the change reaches — typically one page.
