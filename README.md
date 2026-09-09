@@ -130,6 +130,7 @@ should: everything else must come out as it went in.
 | `wp-image` | Decoding the image formats a document can carry |
 | `wp-svg` | SVG path data, turned into outlines the rasterizer can fill |
 | `wp-raster` | Anti-aliased path filling, a pixel canvas, and PNG output |
+| `wp-pdf` | Writing a laid-out document out as a PDF |
 | `wp-layout` | Finding fonts, breaking text into lines, drawing a page |
 | `wp-shell` | The window and its event loop, written against the Win32 ABI |
 | `wp-app` | The windowed application |

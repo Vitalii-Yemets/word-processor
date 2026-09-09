@@ -18,9 +18,20 @@ use crate::chrome::popup::{Choice, Popup};
 use crate::chrome::printpane::{self, Hit, PaneState, Preview, PrintPane, Sides, Which, PER_SHEET};
 
 use super::Editor;
-
 /// The colour a sheet is drawn in, both in the preview and on paper.
 const PAPER: Color = Color::rgb(255, 255, 255);
+
+/// The printer that is not a printer: choosing it writes a PDF.
+///
+/// Word has one of these — "Microsoft Print to PDF" — and a person wanting a
+/// PDF looks for it where they look for paper.
+pub(super) const TO_PDF: &str = "Save as PDF";
+
+/// What the save dialog offers when it is a PDF being saved.
+const PDF_FILTERS: &[wp_shell::dialog::FileFilter] = &[
+    wp_shell::dialog::FileFilter { label: "PDF documents (*.pdf)", pattern: "*.pdf" },
+    wp_shell::dialog::FileFilter { label: "All files (*.*)", pattern: "*.*" },
+];
 
 impl Editor {
     /// Opens the Print page, or closes it if it is already open.
@@ -29,7 +40,7 @@ impl Editor {
             return self.close_print();
         }
 
-        self.printer_name = wp_shell::printing::default_name().unwrap_or_default();
+        self.printer_name = wp_shell::printing::default_name().unwrap_or_else(|| TO_PDF.to_owned());
         self.print_device = self.ask_the_printer();
         let mut pane = PrintPane::new();
         pane.page = self.caret_page();
@@ -256,7 +267,10 @@ impl Editor {
 
         let (choice, items, current) = match hit {
             Hit::Printer => {
-                let names = wp_shell::printing::names();
+                // The PDF goes at the end of the list, where Word keeps its own
+                // one, and is there even when the machine has no printer at all.
+                let mut names = wp_shell::printing::names();
+                names.push(TO_PDF.to_owned());
                 let current = names.iter().position(|name| *name == self.printer_name);
                 (Choice::Printer, names, current)
             }
@@ -317,7 +331,9 @@ impl Editor {
 
         match choice {
             Choice::Printer => {
-                if let Some(name) = wp_shell::printing::names().get(index) {
+                let mut names = wp_shell::printing::names();
+                names.push(TO_PDF.to_owned());
+                if let Some(name) = names.get(index) {
                     self.printer_name = name.clone();
                 }
             }
@@ -374,6 +390,43 @@ impl Editor {
         self.print_now()
     }
 
+    /// Writes the document out as a PDF instead of sending it to a printer.
+    ///
+    /// Word has a printer of its own called "Microsoft Print to PDF", and a
+    /// person looking for a PDF looks in the same place they look for paper.
+    /// This is that: the same settings, the same pages, written to a file.
+    fn write_pdf(&mut self, chosen: &[usize]) -> Response {
+        let name = self.document_name();
+        let suggested = std::path::PathBuf::from(format!("{name}.pdf"));
+        let Some(path) = wp_shell::dialog::save_file("Save as PDF", PDF_FILTERS, Some(&suggested))
+        else {
+            self.status = String::from("Not saved");
+            return self.redrawn();
+        };
+
+        let markup = self.print_markup();
+        let mut engine =
+            LayoutEngine::for_device(self.library, Device::paper()).with_markup(markup);
+        let all = engine.layout_document(&self.document);
+        // Only the pages that were asked for, in the order they were asked
+        // for — the same list the preview was showing.
+        let pages: Vec<wp_layout::Page> =
+            chosen.iter().filter_map(|number| all.get(number.saturating_sub(1)).cloned()).collect();
+
+        let bytes = wp_pdf::write(&pages, self.library, &name);
+        match std::fs::write(&path, &bytes) {
+            Ok(()) => {
+                self.status = format!("Saved {} pages to {}", pages.len(), path.display());
+                self.close_print()
+            }
+            Err(error) => {
+                wp_shell::dialog::show_error(&format!("Cannot write {}: {error}", path.display()));
+                self.status = String::from("Not saved");
+                self.redrawn()
+            }
+        }
+    }
+
     /// Sends the job to the printer the page names.
     fn print_now(&mut self) -> Response {
         let settings = match &self.print_pane {
@@ -384,6 +437,9 @@ impl Editor {
         if chosen.is_empty() {
             self.status = String::from("There are no pages to print");
             return self.redrawn();
+        }
+        if self.printer_name == TO_PDF {
+            return self.write_pdf(&chosen);
         }
 
         let opened = if self.printer_name.is_empty() {

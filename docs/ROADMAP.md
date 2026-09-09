@@ -233,12 +233,24 @@ A word processor that cannot print is not one. Nothing of this exists yet.
   *Done when:* selecting a paragraph and printing gives one sheet with that
   paragraph on it.
 
-- [ ] **A4. PDF export.** The PDF file format, the graphics operators, and font
+- [x] **A4. PDF export.** The PDF file format, the graphics operators, and font
   subsetting — embedding only the glyphs used, because a document may not carry
   a whole licensed typeface. Text has to stay text: selectable, searchable,
   with the right character codes.
-  *Done when:* a PDF written here opens in a viewer, its text can be copied out
-  and comes back as what was typed, and its pages match the printed ones.
+  *Done:* `wp-pdf` writes the pages the layout engine produces — text, rules,
+  pictures with their transparency, shapes and chart paths — with each font cut
+  down to the glyphs the document actually draws and a table saying which
+  character each glyph stands for. The Print page offers "Save as PDF" where
+  Word offers "Microsoft Print to PDF", and honours the same settings; the
+  command line has `wp pdf in.docx out.pdf`.
+  *Proven by:* the file is read back by the tests themselves — the streams are
+  decompressed, the instructions are read, and the glyph numbers are put
+  through the file's own character table. What comes out is what was typed, in
+  Latin, Cyrillic and Greek. The cut-down font is parsed again by the same font
+  reader that reads the ones on the machine, and every letter the page draws
+  still has its outline while the hundreds it does not draw have none.
+  *Not yet proven:* no PDF reader has opened one. There is none in the
+  container.
 
 - [ ] **A5. Printing on Linux.** CUPS, the same page images, through the same
   layer.

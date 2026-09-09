@@ -53,6 +53,7 @@ fn main() -> ExitCode {
         (Some("append"), 4) => append(&arguments[1], &arguments[2], &arguments[3]),
         (Some("render"), 3) => render(&arguments[1], &arguments[2], "96"),
         (Some("render"), 4) => render(&arguments[1], &arguments[2], &arguments[3]),
+        (Some("pdf"), 3) => pdf(&arguments[1], &arguments[2]),
         (Some("fonts"), 1) => fonts(),
         _ => {
             print_usage();
@@ -91,6 +92,7 @@ Usage: wp <command>
   append <in> <out> <text>         add a paragraph at the end
 
   render <in.docx> <prefix> [dpi]  draw the pages as PNG images
+  pdf <in.docx> <out.pdf>         write the pages out as a PDF
   fonts                            list the fonts found on this machine
 
 The editing commands report which parts of the package changed, so it is
@@ -366,6 +368,33 @@ fn append(input: &str, output: &str, text: &str) -> Result<(), String> {
 ///
 /// There is no window yet, so this is how the rendering stack can be looked at:
 /// the same layout and drawing code a window will use, writing to a file
+/// Writes a document out as a PDF.
+///
+/// The pages are laid out for paper rather than for a screen — seventy-two dots
+/// to the inch, which is one dot to the point, the unit a PDF measures in.
+fn pdf(input: &str, output: &str) -> Result<(), String> {
+    let document = open(input)?;
+
+    let library = wp_layout::FontLibrary::scan_system();
+    if library.is_empty() {
+        return Err("no usable fonts were found on this machine".to_owned());
+    }
+
+    let mut engine = wp_layout::LayoutEngine::for_device(&library, wp_layout::Device::paper());
+    let pages = engine.layout_document(&document);
+    outln!("pages laid out: {}", pages.len());
+
+    let title = std::path::Path::new(input)
+        .file_stem()
+        .map_or_else(|| input.to_owned(), |stem| stem.to_string_lossy().into_owned());
+    let bytes = wp_pdf::write(&pages, &library, &title);
+    write(output, &bytes)?;
+
+    let glyphs: usize = pages.iter().map(|page| page.glyphs.len()).sum();
+    outln!("{output}  {} pages, {glyphs} glyphs, {} bytes", pages.len(), bytes.len());
+    Ok(())
+}
+
 /// instead of to the screen.
 fn render(input: &str, prefix: &str, dpi: &str) -> Result<(), String> {
     let dpi: f32 = dpi.parse().map_err(|_| format!("not a resolution: {dpi}"))?;

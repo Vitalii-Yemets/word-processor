@@ -4,6 +4,7 @@ members = [
     "crates/wp-bidi",
     "crates/wp-break",
     "crates/wp-normal",
+    "crates/wp-pdf",
     "crates/wp-segment",
     "crates/wp-cli",
     "crates/wp-deflate",

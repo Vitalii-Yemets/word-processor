@@ -59,6 +59,40 @@ impl CharacterMap {
         self.symbol_encoded
     }
 
+    /// Every character the font can draw, with the glyph that draws it.
+    ///
+    /// The mapping the other way round from the one a renderer wants, and the
+    /// one a program *writing* a PDF needs: a reader copying text out of the
+    /// file gets its characters back through it.
+    #[must_use]
+    pub fn pairs(&self) -> Vec<(char, GlyphId)> {
+        let mut out = Vec::new();
+        for segment in &self.segments {
+            for code in segment.start..=segment.end {
+                let glyph = match &segment.mapping {
+                    Mapping::Delta(delta) => {
+                        let raw = (i64::from(code) + i64::from(*delta)) & 0xFFFF;
+                        GlyphId(raw as u16)
+                    }
+                    Mapping::Indices(indices) => {
+                        let at = (code - segment.start) as usize;
+                        match indices.get(at) {
+                            Some(0) | None => continue,
+                            Some(index) => GlyphId(*index),
+                        }
+                    }
+                };
+                if glyph.0 == 0 {
+                    continue;
+                }
+                if let Some(character) = char::from_u32(code) {
+                    out.push((character, glyph));
+                }
+            }
+        }
+        out
+    }
+
     /// The glyph a character maps to.
     #[must_use]
     pub fn glyph_for(&self, character: char) -> Option<GlyphId> {

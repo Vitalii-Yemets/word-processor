@@ -1,0 +1,20 @@
+[package]
+name = "wp-pdf"
+description = "Writing a laid-out document out as a PDF"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-deflate = { path = "../wp-deflate" }
+wp-font = { path = "../wp-font" }
+wp-layout = { path = "../wp-layout" }
+wp-raster = { path = "../wp-raster" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+wp-docx = { path = "../wp-docx" }
+wp-font = { path = "../wp-font" }

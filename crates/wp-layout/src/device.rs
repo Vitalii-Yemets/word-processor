@@ -57,6 +57,17 @@ impl Device {
         Self { dpi: 96.0, unprintable: Unprintable::default() }
     }
 
+    /// Paper, measured the way paper is: seventy-two dots to the inch, so that
+    /// one dot is one point.
+    ///
+    /// What a PDF is written in — the format measures in points and nothing
+    /// else, so a page laid out for this device needs no scaling on the way
+    /// out.
+    #[must_use]
+    pub fn paper() -> Self {
+        Self { dpi: 72.0, unprintable: Unprintable::default() }
+    }
+
     /// A printer at a given resolution, with nothing yet known about the band
     /// it cannot draw in — which is what a device that reports none means.
     #[must_use]

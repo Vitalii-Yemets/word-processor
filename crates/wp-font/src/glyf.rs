@@ -316,6 +316,63 @@ fn read_composite(
     Ok(commands)
 }
 
+/// The glyphs a composite glyph is built out of, and the glyphs those are built
+/// out of in turn.
+///
+/// A font cut down to the glyphs a document uses has to carry these as well:
+/// `é` drawn as an `e` with an accent is three glyphs, and leaving two of them
+/// behind leaves an empty box.
+pub(crate) fn components(font: &Font<'_>, glyph: GlyphId) -> Vec<GlyphId> {
+    let mut found = Vec::new();
+    gather(font, glyph, 0, &mut found);
+    found
+}
+
+fn gather(font: &Font<'_>, glyph: GlyphId, depth: usize, found: &mut Vec<GlyphId>) {
+    if depth > MAX_COMPOSITE_DEPTH {
+        return;
+    }
+    let Ok(Some((start, _))) = font.glyph_range(glyph) else { return };
+    let Ok(mut reader) = Reader::at(font.data(), start) else { return };
+    let Ok(contour_count) = reader.i16() else { return };
+    if contour_count >= 0 {
+        return;
+    }
+
+    // Past the bounding box, the components follow one after another, each
+    // saying whether there is another after it.
+    for _ in 0..4 {
+        if reader.i16().is_err() {
+            return;
+        }
+    }
+    loop {
+        let (Ok(flags), Ok(index)) = (reader.u16(), reader.u16()) else { return };
+        let part = GlyphId(index);
+        if !found.contains(&part) {
+            found.push(part);
+            gather(font, part, depth + 1, found);
+        }
+
+        // The arguments, whose size the flags give, and then the transform.
+        let arguments = if flags & ARGS_ARE_WORDS != 0 { 4 } else { 2 };
+        let transform = if flags & HAS_SCALE != 0 {
+            2
+        } else if flags & HAS_X_AND_Y_SCALE != 0 {
+            4
+        } else if flags & HAS_TWO_BY_TWO != 0 {
+            8
+        } else {
+            0
+        };
+        if reader.skip(arguments + transform).is_err() {
+            return;
+        }
+        if flags & MORE_COMPONENTS == 0 {
+            return;
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

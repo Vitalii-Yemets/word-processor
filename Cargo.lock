@@ -9,6 +9,7 @@ dependencies = [
  "wp-docx",
  "wp-image",
  "wp-layout",
+ "wp-pdf",
  "wp-raster",
  "wp-segment",
  "wp-shell",
@@ -30,6 +31,7 @@ dependencies = [
  "wp-docx",
  "wp-layout",
  "wp-opc",
+ "wp-pdf",
  "wp-raster",
 ]
 
@@ -84,6 +86,17 @@ version = "0.0.1"
 dependencies = [
  "wp-xml",
  "wp-zip",
+]
+
+[[package]]
+name = "wp-pdf"
+version = "0.0.1"
+dependencies = [
+ "wp-deflate",
+ "wp-docx",
+ "wp-font",
+ "wp-layout",
+ "wp-raster",
 ]
 
 [[package]]

@@ -419,6 +419,52 @@ impl<'a> Font<'a> {
         glyf::outline(self, glyph)
     }
 
+    /// The bytes of one table, for a program that has to *write* a font rather
+    /// than draw with one.
+    ///
+    /// Embedding a font in a PDF means building a smaller font out of the
+    /// original's tables, and that needs them as they are.
+    #[must_use]
+    pub fn table(&self, tag: &[u8; 4]) -> Option<&'a [u8]> {
+        let ranges = table_directory(self.data).ok()?;
+        let (_, range) = ranges.iter().find(|(found, _)| found == tag)?;
+        self.data.get(range.offset..range.offset + range.length)
+    }
+
+    /// The outline of one glyph exactly as it sits in `glyf`.
+    ///
+    /// Empty for a glyph with no outline, such as a space, which is what the
+    /// format itself says by giving it no bytes.
+    #[must_use]
+    pub fn glyph_data(&self, glyph: GlyphId) -> &'a [u8] {
+        let Ok(Some((start, end))) = self.glyph_range(glyph) else {
+            return &[];
+        };
+        self.data.get(start..end).unwrap_or(&[])
+    }
+
+    /// The glyphs a composite glyph is built out of.
+    ///
+    /// A font that draws `é` as an `e` with an accent on it needs all three
+    /// when it is cut down, or the letter comes out as an empty box.
+    #[must_use]
+    pub fn components(&self, glyph: GlyphId) -> Vec<GlyphId> {
+        glyf::components(self, glyph)
+    }
+
+    /// Whether `loca` holds its offsets as words or as longs.
+    #[must_use]
+    pub fn has_long_loca(&self) -> bool {
+        self.long_loca
+    }
+
+    /// How many glyphs have their own advance width in `hmtx`; the rest share
+    /// the last one.
+    #[must_use]
+    pub fn horizontal_metrics_count(&self) -> u16 {
+        self.number_of_h_metrics
+    }
+
     /// The kerning adjustment between two glyphs, in font units.
     ///
     /// Only the old `kern` table is read. Modern fonts put kerning in `GPOS`
