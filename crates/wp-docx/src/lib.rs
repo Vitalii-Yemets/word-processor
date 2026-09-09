@@ -2351,17 +2351,18 @@ fn default_styles() -> String {
     )
 }
 
-/// The byte offset of the character boundary before an offset.
+/// Where the character before an offset begins.
+///
+/// A character is what a reader counts, not what Rust calls a `char`: `é` may
+/// be a letter and an accent drawn on it, an emoji may be seven code points
+/// joined together, and Backspace takes the whole of either.
 fn previous_boundary(text: &str, offset: usize) -> usize {
-    text[..offset.min(text.len())].char_indices().next_back().map_or(0, |(index, _)| index)
+    wp_segment::previous_character(text, offset)
 }
 
-/// The byte offset of the character boundary after an offset.
+/// Where the character after an offset ends.
 fn next_boundary(text: &str, offset: usize) -> usize {
-    match text.get(offset..).and_then(|rest| rest.chars().next()) {
-        Some(character) => offset + character.len_utf8(),
-        None => text.len(),
-    }
+    wp_segment::next_character(text, offset)
 }
 
 /// A stretch of a string, clamped to what is actually there.

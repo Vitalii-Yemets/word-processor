@@ -759,7 +759,24 @@ impl Editor {
             }
         }
 
-        best.map(|(_, position)| position)
+        best.map(|(_, position)| self.snapped(position))
+    }
+
+    /// The same position, moved to the nearest place a caret may actually be.
+    ///
+    /// A click is aimed at a pixel, and a pixel can fall between a letter and
+    /// the accent drawn on it, or inside an emoji built out of several code
+    /// points. The caret never goes there: it goes to the edge of the whole
+    /// character, as it does in Word.
+    fn snapped(&self, position: TextPosition) -> TextPosition {
+        let Some(text) = self.document.paragraph_text(position.paragraph) else {
+            return position;
+        };
+        let nearest = wp_segment::character_boundaries(&text)
+            .into_iter()
+            .min_by_key(|at| at.abs_diff(position.offset))
+            .unwrap_or(position.offset);
+        TextPosition::new(position.paragraph, nearest)
     }
 
     /// Where the caret should be drawn, in window coordinates.

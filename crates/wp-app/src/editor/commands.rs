@@ -267,34 +267,32 @@ impl Editor {
 
 impl Editor {
     /// Selects the word under a point, which is what a double click does.
+    ///
+    /// Which word is not quite "the one the offset falls in": a click on the
+    /// right half of the last letter of `hello` puts the caret after it, and
+    /// the word wanted is still `hello`, not the comma that follows.
     pub(super) fn select_word_at(&mut self, x: i32, y: i32) -> Response {
         let Some(position) = self.position_at(x, y) else { return Response::Ignored };
         let Some(text) = self.document.paragraph_text(position.paragraph) else {
             return Response::Ignored;
         };
 
-        // Outwards from the caret to the first thing that is not part of a
-        // word, in each direction.
-        let is_word = |character: char| character.is_alphanumeric() || character == '_';
-        let start = text[..position.offset.min(text.len())]
-            .char_indices()
-            .rev()
-            .take_while(|(_, character)| is_word(*character))
-            .last()
-            .map_or(position.offset, |(index, _)| index);
-        let end = text[position.offset.min(text.len())..]
-            .char_indices()
-            .take_while(|(_, character)| is_word(*character))
-            .last()
-            .map_or(position.offset, |(index, character)| {
-                position.offset + index + character.len_utf8()
-            });
+        let offset = position.offset.min(text.len());
+        let mut word = wp_segment::word_at(&text, offset);
+        if word.start == offset && offset > 0 {
+            let earlier = wp_segment::word_at(&text, offset - 1);
+            if !is_gap(&text[earlier.clone()]) {
+                word = earlier;
+            }
+        }
 
-        if end <= start {
+        // A double click in the white space between two words selects nothing
+        // rather than selecting the gap.
+        if word.is_empty() || is_gap(&text[word.clone()]) {
             return Response::Ignored;
         }
-        self.document.move_caret(TextPosition::new(position.paragraph, start), false);
-        self.document.move_caret(TextPosition::new(position.paragraph, end), true);
+        self.document.move_caret(TextPosition::new(position.paragraph, word.start), false);
+        self.document.move_caret(TextPosition::new(position.paragraph, word.end), true);
         self.needs_redraw = true;
         Response::Redraw
     }
@@ -429,4 +427,9 @@ impl Editor {
             }
         }
     }
+}
+
+/// Whether a piece of text is white space rather than a word.
+fn is_gap(piece: &str) -> bool {
+    piece.chars().all(char::is_whitespace)
 }

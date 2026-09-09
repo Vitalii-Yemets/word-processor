@@ -456,3 +456,44 @@ fn marking_an_unedited_document_saved_changes_nothing() {
     document.mark_saved().unwrap();
     assert_eq!(document.save().unwrap(), bytes);
 }
+
+#[test]
+fn the_caret_steps_over_a_letter_and_its_accent_together() {
+    // "e" and a combining acute are two code points and one character. The
+    // caret goes round the pair, and Backspace takes both.
+    let bytes = document_with(&["e\u{0301}f"]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    document.set_caret(TextPosition::new(0, 0));
+    document.caret_right(false);
+    assert_eq!(document.caret().offset, 3, "the caret stopped on the accent");
+
+    document.backspace();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("f"), "half a character was left");
+}
+
+#[test]
+fn the_caret_steps_over_a_whole_emoji() {
+    // A family: three people and the joiners that draw them as one.
+    let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+    let bytes = document_with(&[&format!("{family}!")]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    document.set_caret(TextPosition::new(0, 0));
+    document.caret_right(false);
+    assert_eq!(document.caret().offset, family.len(), "the family came apart");
+
+    document.set_caret(TextPosition::new(0, family.len()));
+    document.backspace();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("!"));
+}
+
+#[test]
+fn ctrl_right_crosses_a_word_with_an_apostrophe_in_one_step() {
+    let bytes = document_with(&["don't stop"]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    document.set_caret(TextPosition::new(0, 0));
+    document.word_right(false);
+    assert_eq!(document.caret().offset, 6, "the caret stopped inside the word");
+}

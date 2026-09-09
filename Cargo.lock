@@ -10,6 +10,7 @@ dependencies = [
  "wp-image",
  "wp-layout",
  "wp-raster",
+ "wp-segment",
  "wp-shell",
  "wp-svg",
 ]
@@ -42,6 +43,7 @@ version = "0.0.1"
 dependencies = [
  "wp-image",
  "wp-opc",
+ "wp-segment",
  "wp-xml",
  "wp-zip",
 ]
@@ -85,6 +87,10 @@ version = "0.0.1"
 dependencies = [
  "wp-deflate",
 ]
+
+[[package]]
+name = "wp-segment"
+version = "0.0.1"
 
 [[package]]
 name = "wp-shape"

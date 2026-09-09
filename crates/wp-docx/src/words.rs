@@ -2,43 +2,16 @@
 //!
 //! # What counts as a word
 //!
-//! Three kinds of character, and a word is a run of one kind: letters and
-//! digits are one, whitespace is another, and everything else — punctuation,
-//! brackets, dashes — is the third. `Ctrl+Right` in `hello, world` steps over
-//! `hello`, then over `, `, and lands on `world`, which is what every editor
-//! that has ever bound that key does.
+//! [`wp_segment`] answers that: it holds the Unicode rules, which know that the
+//! apostrophe of `don't` and the point of `3.14` are inside the word and the
+//! hyphen of `well-known` is between two.
 //!
-//! Letters means letters in any alphabet, not the twenty-six: `is_alphanumeric`
-//! is true of Cyrillic, Greek, Arabic and Han alike, so this works in a document
-//! written in any of them.
-//!
-//! # Where it is not right, and why it is still this
-//!
-//! Chinese and Japanese are written without spaces, so a run of them is one
-//! word by this rule where a reader sees several. Splitting them properly needs
-//! a dictionary of the language — which Word has and this does not, yet. Until
-//! it does, a rule that is simple and predictable beats one that is subtly
-//! wrong in a way nobody can guess.
-
-/// What kind of character something is, for the purpose of finding words.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Kind {
-    Space,
-    Word,
-    Symbol,
-}
-
-impl Kind {
-    fn of(character: char) -> Self {
-        if character.is_whitespace() {
-            Self::Space
-        } else if character.is_alphanumeric() || character == '_' {
-            Self::Word
-        } else {
-            Self::Symbol
-        }
-    }
-}
+//! What is left here is what an editor does with the answer. `Ctrl+Right` in
+//! `hello, world` steps over `hello`, then over `, `, and lands on `world`: a
+//! run of whitespace is crossed rather than stopped in, because nobody wants
+//! the caret to stop in a gap. `Ctrl+Left` does the same going backwards, so
+//! pressing it at the end of `one two ` lands at the `t` of `two`, not in the
+//! space after it.
 
 /// Where the next word begins, going forwards from an offset.
 ///
@@ -48,62 +21,40 @@ impl Kind {
 #[must_use]
 pub fn next_word(text: &str, offset: usize) -> usize {
     let offset = offset.min(text.len());
-    let Some(rest) = text.get(offset..) else { return text.len() };
-
-    let mut at = offset;
-    let mut characters = rest.chars();
-    let Some(first) = characters.next() else { return text.len() };
-
-    // Whitespace at the caret is only skipped — there is no word under it to
-    // step over first.
-    if Kind::of(first) != Kind::Space {
-        let kind = Kind::of(first);
-        at += first.len_utf8();
-        for character in characters.by_ref() {
-            if Kind::of(character) != kind {
-                break;
-            }
-            at += character.len_utf8();
+    let bounds = wp_segment::word_boundaries(text);
+    for (index, start) in bounds.iter().enumerate() {
+        if *start <= offset {
+            continue;
+        }
+        match bounds.get(index + 1) {
+            // A gap is crossed rather than stopped in.
+            Some(end) if is_gap(&text[*start..*end]) => continue,
+            _ => return *start,
         }
     }
-
-    for character in text[at..].chars() {
-        if Kind::of(character) != Kind::Space {
-            break;
-        }
-        at += character.len_utf8();
-    }
-    at
+    text.len()
 }
 
 /// Where the word under the caret begins, going backwards from an offset.
-///
-/// The whitespace behind the caret is stepped over first, then the word behind
-/// that — so pressing it at the end of `one two ` lands at the `t` of `two`,
-/// not in the gap after it.
 #[must_use]
 pub fn previous_word(text: &str, offset: usize) -> usize {
     let offset = offset.min(text.len());
-    let Some(before) = text.get(..offset) else { return 0 };
-
-    let mut at = offset;
-    for character in before.chars().rev() {
-        if Kind::of(character) != Kind::Space {
-            break;
+    let bounds = wp_segment::word_boundaries(text);
+    for (index, start) in bounds.iter().enumerate().rev() {
+        if *start >= offset {
+            continue;
         }
-        at -= character.len_utf8();
-    }
-
-    let Some(before) = text.get(..at) else { return 0 };
-    let Some(last) = before.chars().next_back() else { return at };
-    let kind = Kind::of(last);
-    for character in before.chars().rev() {
-        if Kind::of(character) != kind {
-            break;
+        match bounds.get(index + 1) {
+            Some(end) if is_gap(&text[*start..*end]) => continue,
+            _ => return *start,
         }
-        at -= character.len_utf8();
     }
-    at
+    0
+}
+
+/// Whether a piece of text is a gap between words rather than one of them.
+fn is_gap(piece: &str) -> bool {
+    piece.chars().all(char::is_whitespace)
 }
 
 #[cfg(test)]
@@ -176,6 +127,20 @@ mod tests {
         assert_eq!(previous_word("одно два", 16), 9);
         // Greek, to be sure it is not one alphabet that was special-cased.
         assert_eq!(next_word("ένα δύο", 0), 7);
+    }
+
+    #[test]
+    fn a_word_with_an_apostrophe_in_it_is_crossed_in_one_step() {
+        // Word does this: Ctrl+Right over "don't" lands on "stop", not on the
+        // apostrophe and then the t.
+        assert_eq!(next_word("don't stop", 0), 6);
+        assert_eq!(previous_word("don't stop", 6), 0);
+    }
+
+    #[test]
+    fn a_number_is_crossed_in_one_step_however_it_is_written() {
+        assert_eq!(next_word("3.14 is pi", 0), 5);
+        assert_eq!(next_word("1,000 apples", 0), 6);
     }
 
     #[test]

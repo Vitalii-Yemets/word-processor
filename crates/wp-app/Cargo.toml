@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 wp-docx = { path = "../wp-docx" }
+wp-segment = { path = "../wp-segment" }
 wp-layout = { path = "../wp-layout" }
 wp-raster = { path = "../wp-raster" }
 wp-image = { path = "../wp-image" }
