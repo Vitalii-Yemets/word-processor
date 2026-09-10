@@ -215,6 +215,16 @@ impl Styles {
         chain
     }
 
+    /// What the document says every paragraph starts from.
+    ///
+    /// The bottom of the chain, `w:docDefaults`. Word's Design tab sets the
+    /// spacing of a whole document by writing here, and a menu that marks which
+    /// set is in force has to be able to read it back.
+    #[must_use]
+    pub fn document_paragraph_defaults(&self) -> &ParagraphProperties {
+        &self.default_paragraph
+    }
+
     /// Works out what a paragraph's formatting actually is.
     #[must_use]
     pub fn resolve_paragraph(&self, direct: &ParagraphProperties) -> ResolvedParagraphProperties {

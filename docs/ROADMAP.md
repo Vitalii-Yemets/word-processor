@@ -813,10 +813,26 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Paragraph group is two columns of two, and left to wrap it came out three and
   one), and `Press::Type`/`Press::Step`, so a press can land in a box or on one
   of its arrows.
-- [ ] **C13. Design ▸ Paragraph Spacing does the wrong thing.** It cycles the
+- [x] **C13. Design ▸ Paragraph Spacing does the wrong thing.** It cycles the
   line spacing of the document. Word's sets a named spacing set — Compact,
   Tight, Open, Relaxed, Double — on the style set, changing space before and
   after as well as the lines.
+  *Done:* the button had been sharing `Command::LineSpacing` with the Home
+  tab's, which is why it did the wrong thing — one command cannot be two jobs.
+  It has its own now, and drops Word's six sets: No Paragraph Space, Compact,
+  Tight, Open, Relaxed and Double, each shown with what it does, and Custom
+  Paragraph Spacing at the foot.
+
+  What each set writes is Word's own numbers, and they go into `w:docDefaults`
+  rather than onto the paragraphs. That is the difference between the document's
+  spacing and a change to every paragraph in it: a paragraph that was given its
+  own spacing keeps it, and every paragraph that never said otherwise follows.
+  Reading them back is what marks the set in force, through the new
+  `Styles::document_paragraph_defaults`.
+
+  Custom Paragraph Spacing opens the Paragraph dialog, which has Set As Default
+  on it — the same job Word's ends in, through the dialog this program already
+  has for it.
 - [ ] **C14. Page Borders.** Opens the same list of edges a paragraph border
   uses. Word opens Borders and Shading on its page tab: art borders, which pages
   they go on, and the distance from the edge.

@@ -107,6 +107,7 @@ impl Editor {
             }
             Command::Sort => self.sort_selection(),
             Command::LineSpacing => self.open_list(Choice::LineSpacing),
+            Command::DocumentSpacing => self.open_list(Choice::DocumentSpacing),
             Command::ShowMarks => {
                 self.show_marks = !self.show_marks;
                 self.needs_redraw = true;

@@ -231,6 +231,7 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::Numbering, choice: Choice::NumberLibrary, split: true },
     Menu { command: Command::MultilevelList, choice: Choice::MultilevelLibrary, split: false },
     Menu { command: Command::LineSpacing, choice: Choice::LineSpacing, split: false },
+    Menu { command: Command::DocumentSpacing, choice: Choice::DocumentSpacing, split: false },
     Menu { command: Command::ChangeCase, choice: Choice::LetterCase, split: false },
     Menu { command: Command::PageNumber, choice: Choice::PageNumberPlace, split: false },
     Menu { command: Command::SelectAll, choice: Choice::Selecting, split: false },
@@ -1081,6 +1082,7 @@ impl Ribbon {
                     | Choice::Break
                     | Choice::Watermark
                     | Choice::PasteOption
+                    | Choice::DocumentSpacing
                     | Choice::BulletLibrary
                     | Choice::NumberLibrary
                     | Choice::MultilevelLibrary
@@ -1483,7 +1485,7 @@ static DESIGN_GROUPS: &[Group] = &[
             Item::Large(Command::Themes, Icon::Themes, "Themes"),
             Item::Large(Command::ThemeColors, Icon::Colors, "Colors"),
             Item::Large(Command::ThemeFonts, Icon::Fonts, "Fonts"),
-            Item::Small(Command::LineSpacing, Icon::ParagraphSpacing, "Paragraph Spacing"),
+            Item::Small(Command::DocumentSpacing, Icon::ParagraphSpacing, "Paragraph Spacing"),
             Item::Break,
             Item::Small(Command::Effects, Icon::Effects, "Effects"),
             Item::Break,

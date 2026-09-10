@@ -1075,7 +1075,8 @@ impl Editor {
             | Choice::NoteJump
             | Choice::Accepting
             | Choice::Rejecting
-            | Choice::Tracking => return self.open_ribbon_menu(choice),
+            | Choice::Tracking
+            | Choice::DocumentSpacing => return self.open_ribbon_menu(choice),
             Choice::Font => Command::ChooseFont,
             Choice::Size => Command::ChooseSize,
             Choice::Style => Command::ChooseStyle,
@@ -1197,6 +1198,7 @@ impl Editor {
             | Choice::Accepting
             | Choice::Rejecting
             | Choice::Tracking
+            | Choice::DocumentSpacing
             | Choice::Cover
             | Choice::Authority
             | Choice::Theme
@@ -1282,7 +1284,8 @@ impl Editor {
             | Choice::NoteJump
             | Choice::Accepting
             | Choice::Rejecting
-            | Choice::Tracking => self.choose_from_menu(choice, index),
+            | Choice::Tracking
+            | Choice::DocumentSpacing => self.choose_from_menu(choice, index),
             Choice::PasteOption => self.choose_paste_option(index),
             Choice::Cover => self.choose_cover_page(index),
             Choice::Authority => self.choose_authorities(index),

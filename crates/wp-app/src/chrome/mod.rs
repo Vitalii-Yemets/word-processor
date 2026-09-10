@@ -126,6 +126,9 @@ pub enum Command {
     Sort,
     ShowMarks,
     LineSpacing,
+    /// Word's Design tab: the spacing of the whole document, rather than of
+    /// the paragraph the caret is in.
+    DocumentSpacing,
     Shading,
     Borders,
 

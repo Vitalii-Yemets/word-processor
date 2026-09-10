@@ -40,6 +40,8 @@ pub enum Choice {
     MultilevelLibrary,
     /// The spacings between lines, and the room above and below a paragraph.
     LineSpacing,
+    /// The spacing sets Word gives a whole document.
+    DocumentSpacing,
     /// Sentence case, lower, upper, each word, and the one that swaps them.
     LetterCase,
     /// Where a page number goes.

@@ -108,6 +108,29 @@ const SPACINGS: &[(f32, &str)] =
 /// Ten points before and after, which is what its Add Space entries put in.
 const ROOM: i32 = 200;
 
+/// One of the spacing sets Word's Design tab gives a whole document.
+///
+/// The numbers are Word's own, in twentieths of a point for the room round a
+/// paragraph and in 240ths of single for the lines. They are not chosen here:
+/// a document made in Word and given "Relaxed" has to look the same when it is
+/// opened here and told the same thing.
+struct Spacing {
+    name: &'static str,
+    before: i32,
+    after: i32,
+    /// The line spacing, as a multiple of single.
+    lines: f32,
+}
+
+const DOCUMENT_SPACINGS: &[Spacing] = &[
+    Spacing { name: "No Paragraph Space", before: 0, after: 0, lines: 1.0 },
+    Spacing { name: "Compact", before: 0, after: 80, lines: 1.0 },
+    Spacing { name: "Tight", before: 0, after: 120, lines: 1.15 },
+    Spacing { name: "Open", before: 0, after: 200, lines: 1.15 },
+    Spacing { name: "Relaxed", before: 0, after: 120, lines: 1.5 },
+    Spacing { name: "Double", before: 0, after: 160, lines: 2.0 },
+];
+
 impl Editor {
     /// Drops open the menu one of the ribbon's arrows carries.
     pub(super) fn open_ribbon_menu(&mut self, choice: Choice) -> Response {
@@ -197,6 +220,29 @@ impl Editor {
                 rows.push(Row::new(Kind::Choice, Icon::ParagraphSpacing));
                 (items, rows, self.spacing_in_force(), WIDTH)
             }
+            Choice::DocumentSpacing => {
+                // Word's list says what each set does under its name, because
+                // "Compact" and "Tight" mean nothing until you are told.
+                let mut items: Vec<String> = DOCUMENT_SPACINGS
+                    .iter()
+                    .map(|set| {
+                        format!(
+                            "{}   {} pt after, {:.2} lines",
+                            set.name,
+                            set.after / 20,
+                            set.lines
+                        )
+                    })
+                    .collect();
+                let mut rows: Vec<Row> =
+                    items.iter().map(|_| Row::new(Kind::Choice, Icon::ParagraphSpacing)).collect();
+
+                items.push(String::new());
+                rows.push(Row::separator());
+                items.push("Custom Paragraph Spacing…".to_owned());
+                rows.push(Row::new(Kind::Choice, Icon::LineSpacing));
+                (items, rows, self.document_spacing_in_force(), 320.0)
+            }
             Choice::LetterCase => {
                 let items: Vec<String> =
                     CaseChange::ALL.iter().map(|case| case.label().to_owned()).collect();
@@ -278,6 +324,7 @@ impl Editor {
             Choice::NumberLibrary => self.choose_number(index),
             Choice::MultilevelLibrary => self.choose_multilevel(index),
             Choice::LineSpacing => self.choose_spacing(index),
+            Choice::DocumentSpacing => self.choose_document_spacing(index),
             Choice::LetterCase => self.choose_case(index),
             Choice::PageNumberPlace => self.choose_page_number(index),
             Choice::Selecting => self.choose_selecting(index),
@@ -403,6 +450,55 @@ impl Editor {
         };
         let changed = self.document.set_paragraph_format(&change);
         self.edited(changed, note)
+    }
+
+    // --- The spacing of a whole document ------------------------------------
+
+    /// Which of Word's sets the document is in, if it is in one.
+    ///
+    /// Read from `w:docDefaults` and not from the paragraph at the caret: this
+    /// is about the document, and a paragraph that was given its own spacing
+    /// says nothing about what every other paragraph starts from.
+    fn document_spacing_in_force(&self) -> Option<usize> {
+        let defaults = self.document.styles().document_paragraph_defaults();
+        let lines = defaults.line_spacing.and_then(|spacing| {
+            (spacing.rule == LineRule::Auto).then_some(spacing.value as f32 / 240.0)
+        })?;
+        DOCUMENT_SPACINGS.iter().position(|set| {
+            defaults.space_before.unwrap_or(0) == set.before
+                && defaults.space_after.unwrap_or(0) == set.after
+                && (lines - set.lines).abs() < 0.01
+        })
+    }
+
+    /// Gives the whole document one of them.
+    fn choose_document_spacing(&mut self, index: usize) -> Response {
+        let Some(set) = DOCUMENT_SPACINGS.get(index) else {
+            // The last row: Word's Custom Paragraph Spacing, which is a dialog
+            // about one paragraph's spacing with Set As Default on it — the
+            // same job, and the dialog this program already has for it.
+            if index == DOCUMENT_SPACINGS.len() + 1 {
+                return self.open_paragraph_dialog();
+            }
+            return Response::Ignored;
+        };
+
+        // Into the document's defaults, which is the bottom of the chain: every
+        // paragraph that never said otherwise follows it, and one that did is
+        // left alone. That is what makes this the document's spacing rather
+        // than a change to every paragraph in it.
+        let change = ParagraphProperties {
+            space_before: Some(set.before),
+            space_after: Some(set.after),
+            line_spacing: Some(LineSpacing {
+                value: (set.lines * 240.0).round() as i32,
+                rule: LineRule::Auto,
+            }),
+            ..ParagraphProperties::default()
+        };
+        let changed = self.document.set_default_paragraph_format(&change);
+        self.relayout();
+        self.edited(changed, &format!("Paragraph spacing: {}", set.name))
     }
 
     // --- The rest -----------------------------------------------------------
@@ -744,5 +840,77 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_document_spacing_set_goes_into_the_documents_defaults() {
+        // Not onto the paragraphs: every paragraph that never said otherwise
+        // follows the document's defaults, and one that did is left alone.
+        // That is what makes it the document's spacing.
+        let mut editor = editor();
+        // "Relaxed", which is six points after and a line and a half.
+        editor.choose_document_spacing(4);
+
+        let defaults = editor.document.styles().document_paragraph_defaults().clone();
+        assert_eq!(defaults.space_after, Some(120));
+        assert_eq!(defaults.line_spacing.map(|spacing| spacing.value), Some(360));
+
+        // And the paragraph itself was not touched.
+        let body = editor.document.body();
+        let wp_docx::model::Block::Paragraph(paragraph) = &body.blocks[0] else {
+            panic!("a paragraph")
+        };
+        assert_eq!(paragraph.properties.space_after, None, "it wrote on the paragraph");
+    }
+
+    #[test]
+    fn the_set_that_is_in_force_is_the_one_marked() {
+        let mut editor = editor();
+        editor.choose_document_spacing(1);
+        assert_eq!(editor.document_spacing_in_force(), Some(1));
+
+        editor.choose_document_spacing(5);
+        assert_eq!(editor.document_spacing_in_force(), Some(5));
+    }
+
+    #[test]
+    fn a_document_in_none_of_the_sets_marks_none_of_them() {
+        // A document whose defaults are something else entirely — which most
+        // documents from elsewhere are — must not have a set ticked.
+        let mut editor = editor();
+        editor.document.set_default_paragraph_format(&ParagraphProperties {
+            space_after: Some(133),
+            line_spacing: Some(LineSpacing { value: 300, rule: LineRule::Auto }),
+            ..ParagraphProperties::default()
+        });
+        assert_eq!(editor.document_spacing_in_force(), None);
+    }
+
+    #[test]
+    fn the_document_spacing_reaches_what_is_drawn() {
+        // The point of the whole item: the pages have to be laid out again,
+        // or the setting is a line in a file nobody sees.
+        let mut editor = editor();
+        let before = editor.pages.first().map(|page| page.lines.len()).unwrap_or(0);
+        assert!(before > 0, "nothing was laid out");
+
+        editor.choose_document_spacing(5);
+        let after = editor.document.paragraph_format_here();
+        assert_eq!(after.space_after, 160, "the paragraph does not follow the document");
+        assert_eq!(
+            after.line_spacing.map(|spacing| spacing.value),
+            Some(480),
+            "double spacing did not reach the paragraph"
+        );
+    }
+
+    #[test]
+    fn the_last_row_opens_the_dialog_that_sets_the_defaults() {
+        // Word's Custom Paragraph Spacing ends in a dialog with Set As Default
+        // on it, which is the dialog this program already has for the job.
+        let mut editor = editor();
+        let (items, ..) = editor.menu_contents(Choice::DocumentSpacing);
+        editor.choose_document_spacing(items.len() - 1);
+        assert!(editor.in_dialog(), "the dialog did not open");
     }
 }

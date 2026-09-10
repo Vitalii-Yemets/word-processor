@@ -435,6 +435,7 @@ impl Editor {
                         "numbers" => crate::chrome::Choice::NumberLibrary,
                         "levels" => crate::chrome::Choice::MultilevelLibrary,
                         "spacing" => crate::chrome::Choice::LineSpacing,
+                        "documentspacing" => crate::chrome::Choice::DocumentSpacing,
                         "case" => crate::chrome::Choice::LetterCase,
                         "pagenumber" => crate::chrome::Choice::PageNumberPlace,
                         "select" => crate::chrome::Choice::Selecting,

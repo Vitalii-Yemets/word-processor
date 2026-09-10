@@ -121,6 +121,7 @@ pub fn label_of(command: Command) -> Option<&'static str> {
         Command::IndentLess => "Decrease Indent",
         Command::IndentMore => "Increase Indent",
         Command::LineSpacing => "Line and Paragraph Spacing",
+        Command::DocumentSpacing => "Paragraph Spacing for the whole document",
         Command::MultilevelList => "Multilevel List",
         Command::Numbering => "Numbering",
         Command::Shading => "Shading",
