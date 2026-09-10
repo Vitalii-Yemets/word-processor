@@ -28,6 +28,8 @@ pub enum Choice {
     Source,
     /// The ready-made watermarks.
     Watermark,
+    /// The ways the thing just pasted could have been pasted instead.
+    PasteOption,
     /// The cover page arrangements.
     Cover,
     /// The categories a table of authorities can gather.

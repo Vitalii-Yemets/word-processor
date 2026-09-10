@@ -22,6 +22,7 @@ pub mod keytips;
 pub mod minibar;
 pub mod navigation;
 pub mod palette;
+pub mod pastebadge;
 pub mod popup;
 pub mod printpane;
 pub mod ribbon;
@@ -70,6 +71,12 @@ pub enum Command {
     Cut,
     Copy,
     Paste,
+    /// The four answers Word's paste options offer. See
+    /// [`crate::editor`]'s `paste` module for what each one means.
+    PasteKeepSource,
+    PasteMerge,
+    PasteAsPicture,
+    PasteTextOnly,
     FormatPainter,
 
     // Font.

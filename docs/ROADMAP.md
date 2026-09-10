@@ -701,9 +701,43 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   its own item (**C2** to **C6**), because moving a strip is the small half of
   building the dialog Word has.
 
-- [ ] **C10. The paste Word has.** Paste options — keep source formatting, merge
+- [x] **C10. The paste Word has.** Paste options — keep source formatting, merge
   formatting, keep text only, and a picture where the clipboard holds one — and
   the little button that offers them again after pasting.
+  *Done:* all four, and the button. A paste is a guess about whether the words
+  should arrive dressed as they were or dressed as their surroundings, and Word
+  does not ask first — it pastes the likeliest way and leaves a small "(Ctrl)"
+  button at the end of what it put down. Pressing it, or pressing Control on
+  its own, opens the four; choosing one takes the paste back and puts it down
+  the other way, which is why a paste is one thing to undo whichever way it
+  went. The button goes at the next thing done — a key, a click elsewhere,
+  Escape — because going on without it is an answer.
+
+  **Keep Source Formatting** brings the runs and the shape of the paragraphs
+  both; a paragraph the paste made carries the shape it was copied with, and
+  the paragraph it lands in keeps its own unless there was nothing in it to
+  disagree. **Merge Formatting** brings the emphasis — bold, italic, underline,
+  the two strikethroughs, superscript and subscript — and drops the font, the
+  size, the colour and the style, so the text takes its surroundings.
+  **Picture** lays the copied paragraphs out against this document, draws them
+  at twice the screen's resolution and puts the result in as a PNG: a
+  photograph of the text, which cannot reflow. **Keep Text Only** is the words.
+  The first two are `wp_docx::clipboard::Formatting`; the picture is
+  `editor/paste.rs`, because only that layer can lay a document out and
+  rasterize it.
+
+  Reached from the button, from the right-click menu (which offers the four
+  outright, as Word's does, whenever the clipboard holds formatting to decide
+  about) and from Ctrl+Shift+V for the words alone. Control pressed and let go
+  with nothing in between is a new event from the shell, `Event::ControlKey`,
+  built the same way as the Alt that shows the key tips — the only way to tell
+  that Control from the one in Ctrl+S is to watch what happens while it is
+  held.
+
+  Not here: the split button on the ribbon's Paste, whose lower half drops the
+  same four. That is **C11**, which is about every split button at once. Paste
+  Special — pasting as HTML, as RTF, as an embedded object — needs those
+  formats on the clipboard first, which is **H2**.
 - [ ] **C11. The menus behind the buttons.** A dozen buttons do the common thing
   where Word drops a menu: bullets and numbering (a library of shapes and
   formats), multilevel lists, line spacing (with space before and after),

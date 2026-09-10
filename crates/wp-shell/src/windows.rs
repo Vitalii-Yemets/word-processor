@@ -183,6 +183,7 @@ const MESSAGE_SIZE: u32 = 0x0005;
 const MESSAGE_PAINT: u32 = 0x000F;
 const MESSAGE_ERASE_BACKGROUND: u32 = 0x0014;
 const MESSAGE_KEY_DOWN: u32 = 0x0100;
+const MESSAGE_KEY_UP: u32 = 0x0101;
 const MESSAGE_CHAR: u32 = 0x0102;
 const MESSAGE_MOUSE_MOVE: u32 = 0x0200;
 const MESSAGE_MOUSE_LEAVE: u32 = 0x02A3;
@@ -788,6 +789,14 @@ thread_local! {
     /// means nothing of the kind. The only way to tell them apart is to watch
     /// what happens between the key going down and coming up again.
     static ALT_ALONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
+    /// The same for Control, and for the same reason.
+    ///
+    /// Word's paste options open when Control is pressed and let go with
+    /// nothing in between, which is not the same key as the Control in
+    /// Ctrl+S. Telling them apart takes watching what happens while it is
+    /// held, exactly as Alt does.
+    static CONTROL_ALONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// The window procedure, which the system calls for every message.
@@ -887,10 +896,19 @@ unsafe extern "system" fn window_procedure(
         MESSAGE_SYSTEM_CHAR => 0,
         MESSAGE_KEY_DOWN => {
             ALT_ALONE.with(|alone| alone.set(false));
+            // Control going down starts the watch; anything else going down
+            // ends it, because then Control is a modifier and not a gesture.
+            CONTROL_ALONE.with(|alone| alone.set(word as i32 == KEY_CONTROL));
             match key_from_code(word as u32) {
                 Some(key) => deliver(window, Event::KeyDown { key, modifiers: modifiers() }),
                 None => DefWindowProcW(window, message, word, long),
             }
+        }
+        MESSAGE_KEY_UP if word as i32 == KEY_CONTROL => {
+            if CONTROL_ALONE.with(|alone| alone.replace(false)) {
+                return deliver(window, Event::ControlKey);
+            }
+            0
         }
         MESSAGE_CHAR => match char::from_u32(word as u32) {
             // Control characters arrive here too; they are not text.

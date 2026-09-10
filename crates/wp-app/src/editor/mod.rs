@@ -36,6 +36,7 @@ mod outline;
 mod pagesetup;
 mod paragraphdialog;
 mod parts;
+mod paste;
 mod preferences;
 mod printpane;
 mod proofing;
@@ -254,6 +255,9 @@ pub struct Editor {
     /// them has to hang under that box rather than under the ribbon button
     /// with the same name.
     popup_anchor: Option<(f32, f32, f32)>,
+    /// What the last paste put down, while the little button that offers the
+    /// other ways of pasting it is still showing. See [`paste`].
+    pasted: Option<paste::Pasted>,
     /// The File tab, while it is what the window is showing.
     ///
     /// Word's File tab is not a ribbon page: it is a window of its own about
@@ -461,6 +465,7 @@ impl Editor {
             hovered: None,
             popup: None,
             popup_anchor: None,
+            pasted: None,
             backstage: None,
             print_pane: None,
             print_preview: Vec::new(),
@@ -1062,40 +1067,6 @@ impl Editor {
         self.edited(changed, &format!("Cut {characters} characters"))
     }
 
-    fn paste(&mut self) -> Response {
-        let Some(text) = wp_shell::clipboard::text() else {
-            return self.report("The clipboard holds no text");
-        };
-        let characters = text.chars().count();
-
-        // The formatted content is used only while the clipboard still holds
-        // the words it was copied with. Anything else means another program
-        // has copied since, and what that program put there is what the person
-        // last asked for.
-        let rich = match &self.clipboard {
-            Some((copied, blocks)) if *copied == text => Some(blocks.clone()),
-            _ => None,
-        };
-
-        let changed = match rich {
-            Some(blocks) => self.document.paste_blocks(&blocks),
-            None => self.document.paste(&text),
-        };
-        self.edited(changed, &format!("Pasted {characters} characters"))
-    }
-
-    /// Pastes the words with none of their formatting.
-    ///
-    /// Word's Keep Text Only, on Ctrl+Shift+V. The formatted content that was
-    /// copied is ignored, and what goes in is what the system clipboard holds.
-    fn paste_plain(&mut self) -> Response {
-        let Some(text) = wp_shell::clipboard::text() else {
-            return self.report("The clipboard holds no text");
-        };
-        let characters = text.chars().count();
-        let changed = self.document.paste(&text);
-        self.edited(changed, &format!("Pasted {characters} characters, unformatted"))
-    }
     fn select_all(&mut self) -> Response {
         self.document.select_all();
         self.needs_redraw = true;

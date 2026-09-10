@@ -129,6 +129,12 @@ pub enum Event {
     /// Alt was pressed and let go without anything else being pressed, which
     /// is what asks the ribbon to show the letters that reach its commands.
     MenuKey,
+    /// Control was pressed and let go without anything else being pressed.
+    ///
+    /// Word gives this one gesture: it opens the paste options after a paste,
+    /// which is why its little button says "(Ctrl)". It means nothing at any
+    /// other time, and a Control held as part of a shortcut is not this.
+    ControlKey,
     /// The pointer left the window, so nothing in it is under the pointer any
     /// more. Windows only says so when asked, and it is asked.
     PointerLeft,

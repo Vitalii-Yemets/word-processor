@@ -23,8 +23,31 @@
 //! table — selecting across one copies the text of its cells as paragraphs,
 //! which is what the plain text of a table is anyway.
 
-use crate::model::{Block, Paragraph, Run, RunContent};
+use crate::model::{Block, Paragraph, ParagraphProperties, Run, RunContent, RunProperties};
 use crate::{read, Document, TextPosition};
+
+/// How much of the copied formatting comes across on a paste.
+///
+/// Word offers this every time, because the answer depends on why the text was
+/// copied. Text taken from a heading and dropped into a paragraph is usually
+/// wanted as a paragraph; a paragraph moved from one page to another is wanted
+/// exactly as it was.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Formatting {
+    /// Word's Keep Source Formatting: it arrives looking the way it left — the
+    /// runs and the shape of the paragraphs both.
+    #[default]
+    Source,
+    /// Word's Merge Formatting: the emphasis comes across and nothing else, so
+    /// the text takes the font, the size, the colour and the style of where it
+    /// lands.
+    ///
+    /// What counts as emphasis is what Word keeps: bold, italic, underline,
+    /// the two strikethroughs, and whether the text rides above or below the
+    /// line. A word that was bold in a heading is still bold in a paragraph;
+    /// it is not still twenty-eight point.
+    Merged,
+}
 
 impl Document {
     /// The selection as blocks, with everything about it kept.
@@ -44,15 +67,21 @@ impl Document {
         out
     }
 
-    /// Puts blocks in at the caret, one paragraph after another.
+    /// Puts blocks in at the caret, one paragraph after another, keeping the
+    /// formatting they were copied with.
     ///
     /// Returns whether anything was put in. The selection is replaced, the same
     /// way typing over a selection replaces it.
     pub fn paste_blocks(&mut self, blocks: &[Block]) -> bool {
-        let paragraphs: Vec<&Paragraph> = blocks
+        self.paste_blocks_as(blocks, Formatting::Source)
+    }
+
+    /// The same, told how much of the copied formatting to bring.
+    pub fn paste_blocks_as(&mut self, blocks: &[Block], formatting: Formatting) -> bool {
+        let paragraphs: Vec<Paragraph> = blocks
             .iter()
             .filter_map(|block| match block {
-                Block::Paragraph(paragraph) => Some(paragraph),
+                Block::Paragraph(paragraph) => Some(paragraph.clone()),
                 Block::Table(_) => None,
             })
             .collect();
@@ -61,7 +90,9 @@ impl Document {
         }
 
         // One gesture: a paste is one thing, however many paragraphs it is
-        // made of, and one undo has to take the whole of it back.
+        // made of, and one undo has to take the whole of it back. The paste
+        // options depend on that — choosing another one takes the last paste
+        // back and puts it down again the other way.
         self.begin_gesture();
         if self.selection().is_some() {
             self.delete_selection();
@@ -73,12 +104,56 @@ impl Document {
                 self.press_enter();
                 changed = true;
             }
-            if self.insert_runs(&paragraph.runs) {
+
+            // Whether this paragraph brings its own shape — its style, its
+            // alignment, its indents — or takes the one it lands in.
+            //
+            // Every paragraph after the first was made by this paste and has no
+            // shape of its own to lose. The first one is different: it is a
+            // paragraph that was already there, and Word overwrites its shape
+            // only when there is nothing in it to disagree with the pasted one.
+            let empty = self
+                .paragraph_text(self.caret().paragraph)
+                .is_none_or(|text| text.trim().is_empty());
+            if formatting == Formatting::Source && (index > 0 || empty) {
+                self.reshape_paragraph(&paragraph.properties);
+            }
+
+            let runs: Vec<Run> = match formatting {
+                Formatting::Source => paragraph.runs.clone(),
+                Formatting::Merged => paragraph.runs.iter().map(merged).collect(),
+            };
+            if self.insert_runs(&runs) {
                 changed = true;
             }
         }
         self.end_gesture();
         changed
+    }
+
+    /// Gives the paragraph the caret is in the shape a copied one had.
+    ///
+    /// Everything it had before goes first. A paragraph that is being made to
+    /// look like another one has to lose what the other one does not say as
+    /// well as gain what it does — otherwise a heading pasted into a
+    /// right-aligned paragraph comes out right-aligned, which is neither where
+    /// it came from nor what was asked for.
+    fn reshape_paragraph(&mut self, wanted: &ParagraphProperties) {
+        let caret = self.caret();
+        let prefix = self.prefix();
+        let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
+            return;
+        };
+        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        else {
+            return;
+        };
+
+        paragraph.remove_children_named(Some(read::W), "pPr");
+        crate::format::set_paragraph_style(paragraph, wanted.style.as_deref(), prefix.as_deref());
+        crate::format::set_paragraph_numbering(paragraph, wanted.numbering, prefix.as_deref());
+        crate::format::apply_paragraph_properties(paragraph, wanted, prefix.as_deref());
+        self.mark_modified();
     }
 
     /// Puts formatted runs in at the caret.
@@ -118,6 +193,27 @@ impl Document {
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + length));
         self.mark_modified();
         true
+    }
+}
+
+/// A run with everything but its emphasis taken off.
+///
+/// See [`Formatting::Merged`] for what is kept and why.
+#[must_use]
+fn merged(run: &Run) -> Run {
+    Run {
+        properties: RunProperties {
+            bold: run.properties.bold,
+            italic: run.properties.italic,
+            underline: run.properties.underline.clone(),
+            strike: run.properties.strike,
+            double_strike: run.properties.double_strike,
+            vertical_align: run.properties.vertical_align,
+            ..RunProperties::default()
+        },
+        content: run.content.clone(),
+        field: run.field.clone(),
+        revision: run.revision.clone(),
     }
 }
 

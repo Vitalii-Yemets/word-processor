@@ -820,6 +820,7 @@ impl Ribbon {
                     | Choice::Column
                     | Choice::Break
                     | Choice::Watermark
+                    | Choice::PasteOption
                     | Choice::Cover
                     | Choice::Authority
                     | Choice::Theme
@@ -1663,13 +1664,13 @@ pub fn groups_of(tab: Tab) -> &'static [Group] {
     }
 }
 
-/// What the File tab's places are called.
+/// The commands that have a name but no button on the ribbon.
 ///
-/// They are not on any ribbon page — the File tab opens the backstage instead
-/// of one — but a macro that saves the document has to be able to write down
-/// that it saved the document. So they are named here, where everything else a
-/// macro can record is named.
-static BACKSTAGE_COMMANDS: &[(Command, &str)] = &[
+/// The File tab's places are here because that tab opens the backstage rather
+/// than a page of buttons, and the paste options because they live on the
+/// little button at the end of a paste. Both still need names: a macro that
+/// saves the document has to be able to write down that it saved the document.
+static OFF_RIBBON_COMMANDS: &[(Command, &str)] = &[
     (Command::New, "New"),
     (Command::Open, "Open"),
     (Command::Save, "Save"),
@@ -1678,6 +1679,10 @@ static BACKSTAGE_COMMANDS: &[(Command, &str)] = &[
     (Command::DocumentProperties, "Info"),
     (Command::Options, "Options"),
     (Command::CloseDocument, "Close"),
+    (Command::PasteKeepSource, "Keep Source Formatting"),
+    (Command::PasteMerge, "Merge Formatting"),
+    (Command::PasteAsPicture, "Paste as Picture"),
+    (Command::PasteTextOnly, "Keep Text Only"),
 ];
 
 /// What a command is called, taken from the button that runs it.
@@ -1687,7 +1692,7 @@ static BACKSTAGE_COMMANDS: &[(Command, &str)] = &[
 /// one only a keystroke reaches — has no name here and is not recorded.
 #[must_use]
 pub fn name_of(command: Command) -> Option<&'static str> {
-    if let Some((_, name)) = BACKSTAGE_COMMANDS.iter().find(|(found, _)| *found == command) {
+    if let Some((_, name)) = OFF_RIBBON_COMMANDS.iter().find(|(found, _)| *found == command) {
         return Some(name);
     }
     for tab in Tab::ALL {
@@ -1714,7 +1719,7 @@ pub fn name_of(command: Command) -> Option<&'static str> {
 /// And back again: the command a name stands for.
 #[must_use]
 pub fn command_named(name: &str) -> Option<Command> {
-    if let Some((command, _)) = BACKSTAGE_COMMANDS.iter().find(|(_, found)| *found == name) {
+    if let Some((command, _)) = OFF_RIBBON_COMMANDS.iter().find(|(_, found)| *found == name) {
         return Some(*command);
     }
     for tab in Tab::ALL {

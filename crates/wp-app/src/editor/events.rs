@@ -49,6 +49,11 @@ impl App for Editor {
             }
         }
 
+        // The little button at the end of a paste is a button.
+        if self.over_paste_badge(x, y) {
+            return Cursor::Hand;
+        }
+
         // The File tab covers everything under the caption bar, so what is
         // under the pointer there is a line of it or nothing — never the
         // document, and never an I-beam.
@@ -207,7 +212,8 @@ impl App for Editor {
                 | Event::MouseUp { .. }
                 | Event::RightClick { .. }
                 | Event::MiddleClick { .. }
-                | Event::MenuKey => return Response::Ignored,
+                | Event::MenuKey
+                | Event::ControlKey => return Response::Ignored,
                 _ => {}
             }
         }
@@ -384,8 +390,10 @@ impl App for Editor {
                 if self.is_locked() {
                     return self.refuse_locked();
                 }
-                // Typing is somebody saying they were not after the bar.
+                // Typing is somebody saying they were not after the bar — nor
+                // after the other ways of pasting what was just pasted.
                 self.hide_mini_bar();
+                self.forget_paste();
                 self.type_character(character)
             }
 
@@ -405,6 +413,10 @@ impl App for Editor {
             // Alt on its own puts the letters over the ribbon, and takes them
             // away again.
             Event::MenuKey => self.toggle_key_tips(),
+
+            // Control on its own opens the paste options, which is the one
+            // thing Word gives that key by itself.
+            Event::ControlKey => self.control_pressed_alone(),
 
             // The wheel pressed starts the scroll that follows the pointer, and
             // pressed again stops it.
@@ -536,6 +548,15 @@ impl Editor {
             self.needs_redraw = true;
             return Response::Redraw;
         }
+
+        // The little button at the end of a paste floats over the page, so it
+        // takes a press before the page does — but after a list, because the
+        // list it drops open is in front of it. A press anywhere else puts it
+        // away: going on without it is an answer to what it was asking.
+        if self.over_paste_badge(x, y) {
+            return self.open_paste_menu();
+        }
+        self.forget_paste();
 
         // The title bar: the window's own buttons and the quick access ones.
         if (y as f32) < chrome::TITLE_HEIGHT {
@@ -930,6 +951,16 @@ impl Editor {
             };
         }
 
+        // The little button at the end of a paste lights up under the pointer,
+        // and takes it from the page behind it.
+        if self.follow_paste_badge(x, y) {
+            self.needs_redraw = true;
+            return Response::Redraw;
+        }
+        if self.over_paste_badge(x, y) {
+            return Response::Ignored;
+        }
+
         // Over the File tab, only the File tab lights up.
         if self.in_backstage() {
             let changed = self.backstage_hover(x, y);
@@ -1009,6 +1040,9 @@ impl Editor {
         }
 
         let command = match choice {
+            // The paste options are not on the ribbon: they hang under the
+            // little button at the end of the paste, which knows where it is.
+            Choice::PasteOption => return self.open_paste_menu(),
             Choice::Font => Command::ChooseFont,
             Choice::Size => Command::ChooseSize,
             Choice::Style => Command::ChooseStyle,
@@ -1118,6 +1152,7 @@ impl Editor {
             | Choice::Column
             | Choice::Break
             | Choice::Watermark
+            | Choice::PasteOption
             | Choice::Cover
             | Choice::Authority
             | Choice::Theme
@@ -1191,6 +1226,7 @@ impl Editor {
             Choice::Citation => self.choose_citation(index),
             Choice::Source => self.choose_source(index),
             Choice::Watermark => self.choose_watermark(index),
+            Choice::PasteOption => self.choose_paste_option(index),
             Choice::Cover => self.choose_cover_page(index),
             Choice::Authority => self.choose_authorities(index),
             Choice::Shape => self.choose_shape(index),
@@ -1546,6 +1582,12 @@ impl Editor {
                 }
                 if self.popup.take().is_some() {
                     self.needs_redraw = true;
+                    return Response::Redraw;
+                }
+                // The little button at the end of a paste goes the same way as
+                // anything else Escape closes.
+                if self.offering_paste_options() {
+                    self.forget_paste();
                     return Response::Redraw;
                 }
                 if self.document.selection().is_some() {

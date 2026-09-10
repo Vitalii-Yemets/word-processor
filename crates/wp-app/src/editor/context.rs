@@ -148,6 +148,20 @@ impl Editor {
             Entry::item(Command::Paste, "Paste", Icon::Clipboard).only_if(self.can_paste()),
         ];
 
+        // Word's right-click offers the paste options themselves and not only
+        // Paste, which saves pasting and then changing one's mind. They are
+        // there only when there is formatting to decide about: text another
+        // program put on the clipboard is words, and there is one way to put
+        // words down.
+        if self.clipboard_has_formatting() {
+            entries.extend([
+                Entry::item(Command::PasteKeepSource, "Keep Source Formatting", Icon::Clipboard),
+                Entry::item(Command::PasteMerge, "Merge Formatting", Icon::Brush),
+                Entry::item(Command::PasteAsPicture, "Picture", Icon::Picture),
+                Entry::item(Command::PasteTextOnly, "Keep Text Only", Icon::Letter),
+            ]);
+        }
+
         // The spellings for a word the checker does not know, which is what a
         // right-click on a red underline is for.
         if self.misspelling_at(x, y) {

@@ -219,6 +219,22 @@ impl Editor {
                 }
                 self.print_preview = self.layout_for_print(wp_layout::Device::screen());
             }
+            "paste" => {
+                // A paragraph copied and put down again with the little button
+                // showing and its menu open, which is the only way to look at
+                // them on a machine with no clipboard and no pointer.
+                let end = self.document.paragraph_text(4).unwrap_or_default().len();
+                let landing = self.document.paragraph_text(3).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(4, 0));
+                self.document.extend_selection_to(wp_docx::TextPosition::new(4, end));
+                let copied = self.document.copy_selection();
+                let text = self.document.selected_text();
+
+                self.document.set_caret(wp_docx::TextPosition::new(3, landing));
+                self.put_down(&text, &copied, super::paste::PasteAs::KeepSource);
+                self.relayout();
+                self.open_paste_menu();
+            }
             "table" => {
                 self.document.insert_table(3, 3);
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;

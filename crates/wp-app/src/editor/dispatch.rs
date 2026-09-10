@@ -13,6 +13,7 @@ use wp_shell::Response;
 use crate::chrome::palette::Kind as PaletteKind;
 use crate::chrome::{Choice, Command, TableBorderChoice};
 
+use super::paste;
 use super::{Editor, INDENT_STEP};
 
 impl Editor {
@@ -57,6 +58,10 @@ impl Editor {
             Command::Cut => self.cut(),
             Command::Copy => self.copy(),
             Command::Paste => self.paste(),
+            Command::PasteKeepSource => self.paste_as(paste::PasteAs::KeepSource),
+            Command::PasteMerge => self.paste_as(paste::PasteAs::Merge),
+            Command::PasteAsPicture => self.paste_as(paste::PasteAs::Picture),
+            Command::PasteTextOnly => self.paste_as(paste::PasteAs::TextOnly),
             Command::FormatPainter => self.toggle_format_painter(),
 
             // --- Font ---------------------------------------------------------

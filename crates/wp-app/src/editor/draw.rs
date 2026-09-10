@@ -608,6 +608,10 @@ impl Editor {
         // The mark the middle-button scroll is measured from.
         self.draw_autoscroll_mark();
 
+        // The little button at the end of a paste floats over the page, and
+        // under whatever it drops open.
+        self.draw_paste_badge();
+
         // The letters over the ribbon, while Alt has put them there.
         self.draw_key_tips();
 
