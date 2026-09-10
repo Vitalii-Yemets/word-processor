@@ -27,38 +27,51 @@ use crate::chrome::palette::TEXT_COLORS;
 use super::dialogs::Asking;
 use super::Editor;
 
-// The Font tab.
+// The Font tab. The markers that arrange the rows — a tab, a row of columns,
+// a group's caption — are numbered along with everything else, because they
+// take a place in the one list of fields.
 const TAB_FONT: usize = 0;
-const FONT: usize = 1;
-const STYLE: usize = 2;
-const SIZE: usize = 3;
-const COLOR: usize = 4;
-const UNDERLINE: usize = 5;
-const UNDERLINE_COLOR: usize = 6;
-const EFFECTS: usize = 7;
-const STRIKE: usize = 8;
-const DOUBLE_STRIKE: usize = 9;
-const SUPERSCRIPT: usize = 10;
-const SUBSCRIPT: usize = 11;
+const ROW_TYPEFACE: usize = 1;
+const FONT: usize = 2;
+const STYLE: usize = 3;
+const SIZE: usize = 4;
+const ROW_COLOUR: usize = 5;
+const COLOR: usize = 6;
+const UNDERLINE: usize = 7;
+const UNDERLINE_COLOR: usize = 8;
+const EFFECTS: usize = 9;
+const ROW_EFFECT_ONE: usize = 10;
+const STRIKE: usize = 11;
 const SMALL_CAPS: usize = 12;
-const ALL_CAPS: usize = 13;
-const HIDDEN: usize = 14;
-const PREVIEW_FONT: usize = 15;
+const ROW_EFFECT_TWO: usize = 13;
+const DOUBLE_STRIKE: usize = 14;
+const ALL_CAPS: usize = 15;
+const ROW_EFFECT_THREE: usize = 16;
+const SUPERSCRIPT: usize = 17;
+const HIDDEN: usize = 18;
+const SUBSCRIPT: usize = 19;
+const PREVIEW_GROUP_FONT: usize = 20;
+const PREVIEW_FONT: usize = 21;
 
 // The Advanced tab.
-const TAB_ADVANCED: usize = 16;
-const SPACING_HEADING: usize = 17;
-const SCALE: usize = 18;
-const SPACING: usize = 19;
-const POSITION: usize = 20;
-const KERNING: usize = 21;
-const OPENTYPE_HEADING: usize = 22;
-const LIGATURES: usize = 23;
-const NUMBER_SPACING: usize = 24;
-const NUMBER_FORMS: usize = 25;
-const STYLISTIC_SET: usize = 26;
-const CONTEXTUAL: usize = 27;
-const PREVIEW_ADVANCED: usize = 28;
+const TAB_ADVANCED: usize = 22;
+const SPACING_GROUP: usize = 23;
+const ROW_SPACING_ONE: usize = 24;
+const SCALE: usize = 25;
+const SPACING: usize = 26;
+const ROW_SPACING_TWO: usize = 27;
+const POSITION: usize = 28;
+const KERNING: usize = 29;
+const OPENTYPE_GROUP: usize = 30;
+const ROW_FEATURE_ONE: usize = 31;
+const LIGATURES: usize = 32;
+const NUMBER_SPACING: usize = 33;
+const ROW_FEATURE_TWO: usize = 34;
+const NUMBER_FORMS: usize = 35;
+const STYLISTIC_SET: usize = 36;
+const CONTEXTUAL: usize = 37;
+const PREVIEW_GROUP_ADVANCED: usize = 38;
+const PREVIEW_ADVANCED: usize = 39;
 
 /// The answer that means "make this the default for new documents".
 ///
@@ -154,10 +167,15 @@ impl Editor {
 
         let fields = vec![
             // --- Font ------------------------------------------------------
+            // Word's arrangement: three across the top, three under them, the
+            // effects in two columns inside a box, and the preview in a box of
+            // its own at the foot.
             Field::Tab("Font".to_owned()),
+            Field::Columns(3),
             choice("Font", fonts.clone(), position_of(&fonts, &chosen_font)),
             choice("Font style", STYLES.iter().map(|s| (*s).to_owned()).collect(), weight),
             choice("Size", sizes.clone(), position_of(&sizes, &format_points(now))),
+            Field::Columns(3),
             choice("Font color", colours.clone(), colour_of(now.color.as_deref())),
             choice(
                 "Underline style",
@@ -165,18 +183,23 @@ impl Editor {
                 UNDERLINES.iter().position(|(_, kind)| *kind == now.underline).unwrap_or(0),
             ),
             choice("Underline color", colours, colour_of(now.underline_color.as_deref())),
-            Field::Heading("Effects".to_owned()),
+            Field::Group("Effects".to_owned()),
+            Field::Columns(2),
             check("Strikethrough", now.strike),
-            check("Double strikethrough", now.double_strike),
-            check("Superscript", now.vertical_align == VerticalAlignment::Superscript),
-            check("Subscript", now.vertical_align == VerticalAlignment::Subscript),
             check("Small caps", now.small_caps),
+            Field::Columns(2),
+            check("Double strikethrough", now.double_strike),
             check("All caps", now.caps),
+            Field::Columns(2),
+            check("Superscript", now.vertical_align == VerticalAlignment::Superscript),
             check("Hidden", now.hidden),
+            check("Subscript", now.vertical_align == VerticalAlignment::Subscript),
+            Field::Group("Preview".to_owned()),
             Field::Preview(Box::new(sample.clone())),
             // --- Advanced --------------------------------------------------
             Field::Tab("Advanced".to_owned()),
-            Field::Heading("Character Spacing".to_owned()),
+            Field::Group("Character Spacing".to_owned()),
+            Field::Columns(2),
             Field::Number { label: "Scale".to_owned(), value: now.scale.to_string(), unit: "%" },
             Field::Number {
                 label: "Spacing".to_owned(),
@@ -185,6 +208,7 @@ impl Editor {
                 value: format!("{:.2}", f64::from(now.spacing_twentieths) / 20.0),
                 unit: "pt",
             },
+            Field::Columns(2),
             Field::Number {
                 label: "Position".to_owned(),
                 value: format!("{:.1}", f64::from(now.position_half_points) / 2.0),
@@ -197,7 +221,8 @@ impl Editor {
                 value: format!("{:.1}", f64::from(now.kerning_half_points.unwrap_or(0)) / 2.0),
                 unit: "pt",
             },
-            Field::Heading("OpenType Features".to_owned()),
+            Field::Group("OpenType Features".to_owned()),
+            Field::Columns(2),
             choice(
                 "Ligatures",
                 Ligatures::CHOICES.iter().map(|kind| kind.label().to_owned()).collect(),
@@ -214,6 +239,7 @@ impl Editor {
                     .position(|kind| *kind == now.open_type.number_spacing)
                     .unwrap_or(0),
             ),
+            Field::Columns(2),
             choice(
                 "Number forms",
                 NumberForms::CHOICES.iter().map(|kind| kind.label().to_owned()).collect(),
@@ -230,10 +256,14 @@ impl Editor {
                 now.open_type.stylistic_sets.first().map_or(0, |set| usize::from(*set)),
             ),
             check("Use contextual alternates", now.open_type.contextual_alternates),
+            Field::Group("Preview".to_owned()),
             Field::Preview(Box::new(sample)),
         ];
 
         check_rows(&fields);
+        // Wider than a plain dialog: three fields across need the room, and
+        // Word's own Font dialog is wider than its Bookmark for the same
+        // reason.
         Dialog::with_buttons(
             "Font",
             fields,
@@ -243,6 +273,7 @@ impl Editor {
                 Button { label: "Cancel".to_owned(), answer: Answer::Cancel, default: false },
             ],
         )
+        .wide(480.0)
     }
 
     /// What the dialog's fields say, as formatting.
@@ -351,37 +382,50 @@ fn check_rows(fields: &[Field]) {
         Some(Field::Number { .. }) => "a number",
         Some(Field::Text { .. }) => "a box",
         Some(Field::Said { .. }) => "a line",
+        Some(Field::Columns(_)) => "a row",
+        Some(Field::Group(_)) => "a group",
         None => "nothing",
     };
     let wanted: &[(usize, &str)] = &[
         (TAB_FONT, "a tab"),
+        (ROW_TYPEFACE, "a row"),
         (FONT, "a list"),
         (STYLE, "a list"),
         (SIZE, "a list"),
+        (ROW_COLOUR, "a row"),
         (COLOR, "a list"),
         (UNDERLINE, "a list"),
         (UNDERLINE_COLOR, "a list"),
-        (EFFECTS, "a heading"),
+        (EFFECTS, "a group"),
+        (ROW_EFFECT_ONE, "a row"),
         (STRIKE, "a tick box"),
-        (DOUBLE_STRIKE, "a tick box"),
-        (SUPERSCRIPT, "a tick box"),
-        (SUBSCRIPT, "a tick box"),
         (SMALL_CAPS, "a tick box"),
+        (ROW_EFFECT_TWO, "a row"),
+        (DOUBLE_STRIKE, "a tick box"),
         (ALL_CAPS, "a tick box"),
+        (ROW_EFFECT_THREE, "a row"),
+        (SUPERSCRIPT, "a tick box"),
         (HIDDEN, "a tick box"),
+        (SUBSCRIPT, "a tick box"),
+        (PREVIEW_GROUP_FONT, "a group"),
         (PREVIEW_FONT, "a preview"),
         (TAB_ADVANCED, "a tab"),
-        (SPACING_HEADING, "a heading"),
+        (SPACING_GROUP, "a group"),
+        (ROW_SPACING_ONE, "a row"),
         (SCALE, "a number"),
         (SPACING, "a number"),
+        (ROW_SPACING_TWO, "a row"),
         (POSITION, "a number"),
         (KERNING, "a number"),
-        (OPENTYPE_HEADING, "a heading"),
+        (OPENTYPE_GROUP, "a group"),
+        (ROW_FEATURE_ONE, "a row"),
         (LIGATURES, "a list"),
         (NUMBER_SPACING, "a list"),
+        (ROW_FEATURE_TWO, "a row"),
         (NUMBER_FORMS, "a list"),
         (STYLISTIC_SET, "a list"),
         (CONTEXTUAL, "a tick box"),
+        (PREVIEW_GROUP_ADVANCED, "a group"),
         (PREVIEW_ADVANCED, "a preview"),
     ];
     for (row, expected) in wanted {

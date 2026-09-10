@@ -98,6 +98,36 @@ impl<'a> Renderer<'a> {
     ///
     /// The offset is what makes scrolling work: the same page is drawn at a
     /// different vertical position rather than laid out again.
+    /// Draws only what falls inside a rectangle, and leaves out the rest.
+    ///
+    /// For text that has to stay inside a box it may be longer than: a font
+    /// with a long name in a narrow list, a path in a field. A letter is drawn
+    /// only if the whole of it fits, so the text stops rather than being cut
+    /// down the middle — which is what every list in Word does.
+    pub fn draw_within(
+        &mut self,
+        canvas: &mut Canvas,
+        page: &Page,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) {
+        let mut inside = Page { width: page.width, height: page.height, ..Page::default() };
+        inside.glyphs = page
+            .glyphs
+            .iter()
+            .filter(|glyph| {
+                glyph.x >= x
+                    && glyph.x + glyph.advance <= x + width
+                    && glyph.baseline >= y
+                    && glyph.baseline <= y + height + glyph.size
+            })
+            .copied()
+            .collect();
+        self.draw_onto(canvas, &inside, 0.0, 0.0);
+    }
+
     pub fn draw_onto(&mut self, canvas: &mut Canvas, page: &Page, offset_x: f32, offset_y: f32) {
         // Decorations go first so that a glyph sitting on an underline is drawn
         // over it rather than under it.

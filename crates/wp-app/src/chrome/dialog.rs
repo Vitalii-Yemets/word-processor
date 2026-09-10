@@ -54,6 +54,18 @@ const TAB_HEIGHT: f32 = 30.0;
 /// The box a preview is drawn inside.
 const PREVIEW_HEIGHT: f32 = 64.0;
 
+/// The room a label takes when it stands above its field rather than beside it.
+const LABEL_HEIGHT: f32 = 18.0;
+
+/// Between two fields that share a row.
+const COLUMN_GAP: f32 = 10.0;
+
+/// How far in from the panel a group's contents are set.
+const GROUP_INSET: f32 = 10.0;
+
+/// The room a group's caption takes above its first field.
+const GROUP_CAPTION: f32 = 20.0;
+
 /// One thing a dialog asks about.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Field {
@@ -81,6 +93,21 @@ pub enum Field {
     /// A sample of what is being asked about, drawn as the document would draw
     /// it. See [`crate::editor`] for what fills it in.
     Preview(Box<Sample>),
+    /// The next `n` fields share one row, each with its label above it rather
+    /// than beside it.
+    ///
+    /// Word's dialogs are built of these: Font, Font style and Size across the
+    /// top of the Font dialog; Left, Right and Special across the Paragraph
+    /// dialog. Fields that belong together are put together, and the eye finds
+    /// them as a group instead of walking a column of twenty.
+    Columns(u8),
+    /// A rectangle round everything that follows, with a caption on its top
+    /// edge, until the next group or the next tab.
+    ///
+    /// The other half of what makes Word's dialogs readable: "Indentation"
+    /// drawn round the two indent boxes says what those two boxes have to do
+    /// with each other, which no amount of putting them near each other does.
+    Group(String),
 }
 
 /// What a preview shows: some text, and the formatting to draw it with.
@@ -94,7 +121,15 @@ impl Field {
     /// Whether the keyboard can land on it.
     #[must_use]
     pub fn takes_focus(&self) -> bool {
-        !matches!(self, Self::Heading(_) | Self::Said { .. } | Self::Tab(_) | Self::Preview(_))
+        !matches!(
+            self,
+            Self::Heading(_)
+                | Self::Said { .. }
+                | Self::Tab(_)
+                | Self::Preview(_)
+                | Self::Columns(_)
+                | Self::Group(_)
+        )
     }
 
     /// The word down the left-hand column, for the fields that have one.
@@ -104,7 +139,12 @@ impl Field {
     #[must_use]
     pub fn label(&self) -> Option<&str> {
         match self {
-            Self::Heading(_) | Self::Check { .. } | Self::Tab(_) | Self::Preview(_) => None,
+            Self::Heading(_)
+            | Self::Check { .. }
+            | Self::Tab(_)
+            | Self::Preview(_)
+            | Self::Columns(_)
+            | Self::Group(_) => None,
             Self::Said { label, .. }
             | Self::Text { label, .. }
             | Self::Number { label, .. }
@@ -112,13 +152,15 @@ impl Field {
         }
     }
 
-    /// How tall this field is drawn.
+    /// How tall this field is drawn, on a row of its own.
     fn height(&self) -> f32 {
         match self {
-            // The tabs are drawn once, along the top, rather than where the
-            // marker sits.
-            Self::Tab(_) => 0.0,
+            // Neither takes a row: the tabs are drawn along the top, and a
+            // shared row's height comes from the fields on it.
+            Self::Tab(_) | Self::Columns(_) => 0.0,
             Self::Heading(_) => ROW,
+            // Room for the caption, and then whatever follows it inside.
+            Self::Group(_) => GROUP_CAPTION,
             Self::Preview(_) => PREVIEW_HEIGHT + PADDING,
             _ => ROW + 4.0,
         }
@@ -158,6 +200,37 @@ pub enum Reaction {
     Changed,
     /// The dialog is finished with, one way or the other.
     Closed(Answer),
+}
+
+/// One row of a dialog's body: which fields are drawn across it, and how tall.
+///
+/// Worked out once and used by both the drawing and the measuring, because a
+/// panel whose height was decided one way and whose contents were laid out
+/// another is a panel with its buttons over its last field.
+#[derive(Clone, Debug)]
+struct Row {
+    /// One field, or several sharing the row.
+    fields: Vec<usize>,
+    height: f32,
+    /// Whether the labels stand above their fields rather than beside them.
+    ///
+    /// True for fields that share a row and carry a label — Word puts the
+    /// label over the box there. Not for a row of tick boxes, which label
+    /// themselves and would leave an empty line above each one.
+    labels_above: bool,
+    /// Whether the row is inside a group's rectangle, and so set in from the
+    /// edge of the panel.
+    inside_group: bool,
+}
+
+/// Where one field is drawn.
+#[derive(Clone, Copy, Debug)]
+struct Place {
+    label_x: f32,
+    label_y: f32,
+    box_x: f32,
+    box_y: f32,
+    box_width: f32,
 }
 
 /// Where the mouse can land.
@@ -261,6 +334,17 @@ impl Dialog {
                 *value = typed.clone();
             }
         }
+    }
+
+    /// The same dialog, drawn wider.
+    ///
+    /// Word's dialogs are not all one width: the Font dialog holds three
+    /// fields across and needs the room for them; the Bookmark dialog holds
+    /// one name.
+    #[must_use]
+    pub fn wide(mut self, width: f32) -> Self {
+        self.width = width.max(240.0);
+        self
     }
 
     /// Whether a box is ticked.
@@ -526,20 +610,116 @@ impl Dialog {
     /// The body height of the tallest tab, or of the whole dialog when it has
     /// no tabs.
     fn tallest_page(&self) -> f32 {
-        if self.tabs().is_empty() {
-            return self.fields.iter().map(Field::height).sum();
+        let count = self.tabs().len();
+        if count == 0 {
+            return self.rows_of(0).iter().map(|row| row.height).sum();
         }
-        let mut tallest = 0.0f32;
-        let mut running = 0.0f32;
-        for field in &self.fields {
-            if matches!(field, Field::Tab(_)) {
-                tallest = tallest.max(running);
-                running = 0.0;
+        (0..count)
+            .map(|tab| self.rows_of(tab).iter().map(|row| row.height).sum::<f32>())
+            .fold(0.0f32, f32::max)
+    }
+
+    /// The rows of the body, in the order they are drawn.
+    fn rows(&self) -> Vec<Row> {
+        self.rows_of(self.tab)
+    }
+
+    /// The same, for whichever tab is asked about.
+    ///
+    /// The one place that decides what goes on a row and how tall it is. Both
+    /// the drawing and the measuring go through it, because a panel measured
+    /// one way and laid out another is a panel with its buttons on top of its
+    /// last field.
+    fn rows_of(&self, tab: usize) -> Vec<Row> {
+        let mut out: Vec<Row> = Vec::new();
+        let mut inside_group = false;
+        let mut index = 0usize;
+
+        // A group's rectangle needs room under its last field for its own
+        // bottom edge, and only the row before knows where that is.
+        let finish_group = |out: &mut Vec<Row>, inside: &mut bool| {
+            if *inside {
+                if let Some(last) = out.last_mut() {
+                    last.height += GROUP_INSET;
+                }
+            }
+            *inside = false;
+        };
+
+        while index < self.fields.len() {
+            // A tab marker ends whatever group was open on the tab before it.
+            if matches!(self.fields[index], Field::Tab(_)) {
+                finish_group(&mut out, &mut inside_group);
+                index += 1;
                 continue;
             }
-            running += field.height();
+            if !self.on_tab(index, tab) {
+                index += 1;
+                continue;
+            }
+
+            match &self.fields[index] {
+                Field::Tab(_) => unreachable!("handled above"),
+                Field::Group(_) => {
+                    finish_group(&mut out, &mut inside_group);
+                    inside_group = true;
+                    out.push(Row {
+                        fields: vec![index],
+                        height: GROUP_CAPTION,
+                        labels_above: false,
+                        inside_group: false,
+                    });
+                    index += 1;
+                }
+                Field::Columns(count) => {
+                    // The fields that follow, up to the number asked for or up
+                    // to whatever ends the row first.
+                    let wanted = usize::from(*count).max(1);
+                    let mut together = Vec::new();
+                    let mut at = index + 1;
+                    while at < self.fields.len() && together.len() < wanted {
+                        if matches!(
+                            self.fields[at],
+                            Field::Tab(_) | Field::Columns(_) | Field::Group(_)
+                        ) {
+                            break;
+                        }
+                        together.push(at);
+                        at += 1;
+                    }
+                    if together.is_empty() {
+                        index = at.max(index + 1);
+                        continue;
+                    }
+                    // A row of tick boxes needs no label above it: each one
+                    // carries its own, and stacking would leave an empty line
+                    // over every box.
+                    let labels_above =
+                        together.iter().any(|at| !matches!(self.fields[*at], Field::Check { .. }));
+                    let height =
+                        if labels_above { LABEL_HEIGHT + BOX_HEIGHT + 10.0 } else { ROW + 4.0 };
+                    out.push(Row { fields: together, height, labels_above, inside_group });
+                    index = at;
+                }
+                field => {
+                    out.push(Row {
+                        fields: vec![index],
+                        height: field.height(),
+                        labels_above: false,
+                        inside_group,
+                    });
+                    index += 1;
+                }
+            }
         }
-        tallest.max(running)
+
+        finish_group(&mut out, &mut inside_group);
+        out
+    }
+
+    /// Whether a field belongs to a given tab, or to a dialog with none.
+    fn on_tab(&self, index: usize, tab: usize) -> bool {
+        self.tabs().is_empty() || self.tab_of(index).is_none_or(|found| found == tab)
     }
 
     /// The tabs this dialog has, in order.
@@ -573,7 +753,7 @@ impl Dialog {
 
     /// Whether a field is on the tab that is showing.
     fn on_this_tab(&self, index: usize) -> bool {
-        self.tabs().is_empty() || self.tab_of(index).is_none_or(|tab| tab == self.tab)
+        self.on_tab(index, self.tab)
     }
 
     /// Shows one of the tabs, putting the keyboard on its first field.
@@ -755,9 +935,10 @@ impl Dialog {
         width: f32,
         theme: &Theme,
     ) -> f32 {
-        // The labels line up in one column, as wide as the widest of them.
-        // A fixed column would either waste room or — with a label as long as
-        // "Characters (no spaces)" — run into what stands beside it.
+        // The labels that stand beside their field line up in one column, as
+        // wide as the widest of them. A fixed column would either waste room
+        // or — with a label as long as "Characters (no spaces)" — run into what
+        // stands beside it.
         let widest = (0..self.fields.len())
             .filter(|index| self.on_this_tab(*index))
             .filter_map(|index| self.fields[index].label())
@@ -765,196 +946,319 @@ impl Dialog {
             .fold(0.0f32, f32::max);
         let room = width - PADDING * 2.0;
         let label_width = (widest + PADDING).clamp(130.0, (room - 120.0).max(130.0));
-        let strip = if self.tabs().is_empty() { 0.0 } else { TAB_HEIGHT };
-        let mut y = top + TITLE_HEIGHT + strip + PADDING;
 
-        for index in 0..self.fields.len() {
-            // A tab is drawn along the top rather than here, and the fields of
-            // the tabs that are not showing are not drawn at all.
-            if matches!(self.fields[index], Field::Tab(_)) || !self.on_this_tab(index) {
+        let strip = if self.tabs().is_empty() { 0.0 } else { TAB_HEIGHT };
+        let body_top = top + TITLE_HEIGHT + strip + PADDING;
+        let rows = self.rows();
+
+        // The boxes round the groups go on first, so that everything inside
+        // them is drawn over the lines rather than under.
+        self.draw_group_boxes(canvas, engine, renderer, left, body_top, width, &rows, theme);
+
+        let mut y = body_top;
+        for row in &rows {
+            if matches!(self.fields.get(row.fields[0]), Some(Field::Group(_))) {
+                // The caption was drawn with the box; nothing else goes here.
+                y += row.height;
                 continue;
             }
-            let field = self.fields[index].clone();
-            let focused = self.focus == index;
-            let box_left = left + PADDING + label_width;
-            let box_width = width - PADDING * 2.0 - label_width;
 
-            match field {
-                Field::Tab(_) => continue,
-                Field::Preview(sample) => {
-                    // Word's Preview: a box with the text drawn in it as it
-                    // will be drawn on the page. Not an approximation — the
-                    // same engine, the same font choice, the same shaping.
-                    let box_top = y;
-                    canvas.fill_rect(
-                        (left + PADDING) as i32,
-                        box_top as i32,
-                        (width - PADDING * 2.0) as i32,
-                        PREVIEW_HEIGHT as i32,
-                        theme.field,
-                    );
-                    outline(
-                        canvas,
-                        left + PADDING,
-                        box_top,
-                        width - PADDING * 2.0,
-                        PREVIEW_HEIGHT,
-                        theme.field_edge,
-                    );
+            let inset = if row.inside_group { GROUP_INSET } else { 0.0 };
+            let row_left = left + PADDING + inset;
+            let row_width = width - PADDING * 2.0 - inset * 2.0;
 
-                    // Measured first so it can be centred: a sample pushed
-                    // against the left edge reads as a mistake.
-                    let measured =
-                        engine.sample_line(&sample.text, &sample.properties, 0.0, 0.0).width;
-                    let room = width - PADDING * 2.0;
-                    let start = left + PADDING + ((room - measured) / 2.0).max(6.0);
-                    let line = engine.sample_line(
-                        &sample.text,
-                        &sample.properties,
-                        start,
-                        box_top + PREVIEW_HEIGHT * 0.62,
-                    );
-                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
-
-                    y += PREVIEW_HEIGHT + PADDING;
-                    continue;
-                }
-                Field::Heading(text) => {
-                    let line = engine.simple_line(&text, left + PADDING, y + 16.0, 9.0, theme.text);
-                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
-                    canvas.fill_rect(
-                        (left + PADDING) as i32,
-                        (y + 22.0) as i32,
-                        (width - PADDING * 2.0) as i32,
-                        1,
-                        theme.pane_edge,
-                    );
-                    y += ROW;
-                    continue;
-                }
-                Field::Said { label, value } => {
-                    let line =
-                        engine.simple_line(&label, left + PADDING, y + 16.0, 9.0, theme.text);
-                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
-                    let line = engine.simple_line(&value, box_left, y + 16.0, 9.0, theme.text);
-                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
-                    y += ROW + 4.0;
-                    continue;
-                }
-                Field::Check { label, on } => {
-                    // The box, then the label beside it: a tick box labels
-                    // itself, which is why it has no label down the left.
-                    let size = 16.0;
-                    let boxes_left = left + PADDING;
-                    canvas.fill_rect(
-                        boxes_left as i32,
-                        (y + 4.0) as i32,
-                        size as i32,
-                        size as i32,
-                        theme.field,
-                    );
-                    outline(
-                        canvas,
-                        boxes_left,
-                        y + 4.0,
-                        size,
-                        size,
-                        if focused { theme.accent } else { theme.field_edge },
-                    );
-                    if on {
-                        canvas.fill_rect(
-                            (boxes_left + 4.0) as i32,
-                            (y + 8.0) as i32,
-                            (size - 8.0) as i32,
-                            (size - 8.0) as i32,
-                            theme.accent,
-                        );
-                    }
-                    let line = engine.simple_line(
-                        &label,
-                        boxes_left + size + 8.0,
-                        y + 16.0,
-                        9.0,
-                        theme.text,
-                    );
-                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
-                    self.placed.push((
-                        Hit::Field(index),
-                        boxes_left,
-                        y,
-                        width - PADDING * 2.0,
-                        ROW,
-                    ));
-                    y += ROW + 4.0;
-                    continue;
-                }
-                Field::Text { label, value } | Field::Number { label, value, .. } => {
-                    let line =
-                        engine.simple_line(&label, left + PADDING, y + 17.0, 9.0, theme.text);
-                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
-                    canvas.fill_rect(
-                        box_left as i32,
-                        y as i32,
-                        box_width as i32,
-                        BOX_HEIGHT as i32,
-                        theme.field,
-                    );
-                    outline(
-                        canvas,
-                        box_left,
-                        y,
-                        box_width,
-                        BOX_HEIGHT,
-                        if focused { theme.accent } else { theme.field_edge },
-                    );
-                    let unit = match &self.fields[index] {
-                        Field::Number { unit, .. } => *unit,
-                        _ => "",
+            if row.fields.len() > 1 {
+                // Fields side by side: Word's Font, Font style and Size across
+                // the top of its Font dialog, and its two columns of tick boxes
+                // under Effects.
+                let count = row.fields.len() as f32;
+                let each = (row_width - COLUMN_GAP * (count - 1.0)) / count;
+                for (at, index) in row.fields.iter().enumerate() {
+                    let column = row_left + (each + COLUMN_GAP) * at as f32;
+                    let place = if row.labels_above {
+                        Place {
+                            label_x: column,
+                            label_y: y + LABEL_HEIGHT - 5.0,
+                            box_x: column,
+                            box_y: y + LABEL_HEIGHT,
+                            box_width: each,
+                        }
+                    } else {
+                        Place {
+                            label_x: column,
+                            label_y: y + 17.0,
+                            box_x: column,
+                            box_y: y,
+                            box_width: each,
+                        }
                     };
-                    let shown = with_unit(&value, unit);
-                    let typed =
-                        engine.simple_line(&shown, box_left + 6.0, y + 17.0, 9.0, theme.text);
-                    let measured = typed.width - (box_left + 6.0);
-                    renderer.draw_onto(canvas, &typed, 0.0, 0.0);
-                    if focused {
-                        let caret = box_left + 6.0 + measured - unit_width(unit, measured, &shown);
-                        canvas.fill_rect(caret as i32, (y + 5.0) as i32, 1, 14, theme.text);
-                    }
-                    self.placed.push((Hit::Field(index), box_left, y, box_width, BOX_HEIGHT));
-                    y += ROW + 4.0;
-                    continue;
+                    self.draw_field(canvas, engine, renderer, *index, place, theme);
                 }
-                Field::Choice { label, items, current } => {
-                    let line =
-                        engine.simple_line(&label, left + PADDING, y + 17.0, 9.0, theme.text);
-                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
-                    canvas.fill_rect(
-                        box_left as i32,
-                        y as i32,
-                        box_width as i32,
-                        BOX_HEIGHT as i32,
-                        theme.field,
-                    );
-                    outline(
-                        canvas,
-                        box_left,
-                        y,
-                        box_width,
-                        BOX_HEIGHT,
-                        if focused { theme.accent } else { theme.field_edge },
-                    );
-                    let chosen = items.get(current).cloned().unwrap_or_default();
-                    let line =
-                        engine.simple_line(&chosen, box_left + 6.0, y + 17.0, 9.0, theme.text);
-                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
-                    chevron(canvas, box_left + box_width - 16.0, y + BOX_HEIGHT / 2.0, theme.text);
-                    self.placed.push((Hit::Field(index), box_left, y, box_width, BOX_HEIGHT));
-                    y += ROW + 4.0;
-                    continue;
-                }
+            } else {
+                let index = row.fields[0];
+                let place = Place {
+                    label_x: row_left,
+                    label_y: y + 17.0,
+                    box_x: row_left + label_width,
+                    box_y: y,
+                    box_width: (row_width - label_width).max(60.0),
+                };
+                self.draw_field(canvas, engine, renderer, index, place, theme);
             }
+            y += row.height;
         }
         y
+    }
+
+    /// Draws the rectangle round each group, with its caption on the top edge.
+    ///
+    /// Word's dialogs are made of these, and they are what turns a column of
+    /// fields into a dialog somebody can read: "Indentation" round the two
+    /// indent boxes says what those two boxes have to do with each other.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_group_boxes(
+        &mut self,
+        canvas: &mut Canvas,
+        engine: &mut LayoutEngine<'_>,
+        renderer: &mut Renderer<'_>,
+        left: f32,
+        body_top: f32,
+        width: f32,
+        rows: &[Row],
+        theme: &Theme,
+    ) {
+        let mut y = body_top;
+        let mut open: Option<(String, f32)> = None;
+
+        for row in rows {
+            let starts_group = match self.fields.get(row.fields[0]) {
+                Some(Field::Group(caption)) => Some(caption.clone()),
+                _ => None,
+            };
+            if let Some(caption) = starts_group {
+                if let Some((was, from)) = open.take() {
+                    self.close_group(canvas, engine, renderer, left, from, y, width, &was, theme);
+                }
+                open = Some((caption, y));
+            }
+            y += row.height;
+        }
+        if let Some((was, from)) = open {
+            self.close_group(canvas, engine, renderer, left, from, y, width, &was, theme);
+        }
+    }
+
+    /// One group's rectangle, once its bottom edge is known.
+    #[allow(clippy::too_many_arguments)]
+    fn close_group(
+        &mut self,
+        canvas: &mut Canvas,
+        engine: &mut LayoutEngine<'_>,
+        renderer: &mut Renderer<'_>,
+        left: f32,
+        from: f32,
+        to: f32,
+        width: f32,
+        caption: &str,
+        theme: &Theme,
+    ) {
+        let box_left = left + PADDING;
+        let box_width = width - PADDING * 2.0;
+        // The line sits half-way up the caption, which is what makes the
+        // caption read as sitting on the edge rather than inside the box.
+        let box_top = from + GROUP_CAPTION / 2.0;
+        outline(
+            canvas,
+            box_left,
+            box_top,
+            box_width,
+            (to - box_top - 4.0).max(1.0),
+            theme.pane_edge,
+        );
+
+        // The caption, with the line rubbed out behind it.
+        let measured = engine.simple_line(caption, 0.0, 0.0, 8.5, theme.text).width;
+        let text_left = box_left + PADDING;
+        canvas.fill_rect(
+            (text_left - 4.0) as i32,
+            box_top as i32,
+            (measured + 8.0) as i32,
+            1,
+            theme.pane,
+        );
+        let line =
+            engine.simple_line(caption, text_left, from + GROUP_CAPTION - 3.0, 8.5, theme.text);
+        renderer.draw_onto(canvas, &line, 0.0, 0.0);
+    }
+
+    /// Draws one field into the room it was given.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_field(
+        &mut self,
+        canvas: &mut Canvas,
+        engine: &mut LayoutEngine<'_>,
+        renderer: &mut Renderer<'_>,
+        index: usize,
+        place: Place,
+        theme: &Theme,
+    ) {
+        let Some(field) = self.fields.get(index).cloned() else { return };
+        let focused = self.focus == index;
+        let Place { label_x, label_y, box_x, box_y, box_width } = place;
+
+        match field {
+            // Neither is drawn here: a tab goes along the top, and a group's
+            // caption goes on its own rectangle.
+            Field::Tab(_) | Field::Group(_) | Field::Columns(_) => {}
+
+            Field::Preview(sample) => {
+                // Word's Preview: a box with the text drawn in it as it will be
+                // drawn on the page. Not an approximation — the same engine,
+                // the same font choice, the same shaping.
+                canvas.fill_rect(
+                    label_x as i32,
+                    box_y as i32,
+                    (box_x + box_width - label_x) as i32,
+                    PREVIEW_HEIGHT as i32,
+                    theme.field,
+                );
+                outline(
+                    canvas,
+                    label_x,
+                    box_y,
+                    box_x + box_width - label_x,
+                    PREVIEW_HEIGHT,
+                    theme.field_edge,
+                );
+
+                // Measured first so it can be centred: a sample pushed against
+                // the left edge reads as a mistake.
+                let room = box_x + box_width - label_x;
+                let measured = engine.sample_line(&sample.text, &sample.properties, 0.0, 0.0).width;
+                let start = label_x + ((room - measured) / 2.0).max(6.0);
+                let line = engine.sample_line(
+                    &sample.text,
+                    &sample.properties,
+                    start,
+                    box_y + PREVIEW_HEIGHT * 0.62,
+                );
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+            }
+
+            Field::Heading(text) => {
+                let line = engine.simple_line(&text, label_x, box_y + 16.0, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                canvas.fill_rect(
+                    label_x as i32,
+                    (box_y + 22.0) as i32,
+                    (box_x + box_width - label_x) as i32,
+                    1,
+                    theme.pane_edge,
+                );
+            }
+
+            Field::Said { label, value } => {
+                let line = engine.simple_line(&label, label_x, box_y + 16.0, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                let line = engine.simple_line(&value, box_x, box_y + 16.0, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+            }
+
+            Field::Check { label, on } => {
+                // The box, then the label beside it: a tick box labels itself,
+                // which is why it has no label down the left.
+                let size = 16.0;
+                canvas.fill_rect(
+                    label_x as i32,
+                    (box_y + 4.0) as i32,
+                    size as i32,
+                    size as i32,
+                    theme.field,
+                );
+                outline(
+                    canvas,
+                    label_x,
+                    box_y + 4.0,
+                    size,
+                    size,
+                    if focused { theme.accent } else { theme.field_edge },
+                );
+                if on {
+                    canvas.fill_rect(
+                        (label_x + 4.0) as i32,
+                        (box_y + 8.0) as i32,
+                        (size - 8.0) as i32,
+                        (size - 8.0) as i32,
+                        theme.accent,
+                    );
+                }
+                let line =
+                    engine.simple_line(&label, label_x + size + 8.0, box_y + 16.0, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                self.placed.push((
+                    Hit::Field(index),
+                    label_x,
+                    box_y,
+                    box_x + box_width - label_x,
+                    ROW,
+                ));
+            }
+
+            Field::Text { label, value } | Field::Number { label, value, .. } => {
+                let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                self.draw_box(canvas, box_x, box_y, box_width, focused, theme);
+
+                let unit = match &self.fields[index] {
+                    Field::Number { unit, .. } => *unit,
+                    _ => "",
+                };
+                let shown = with_unit(&value, unit);
+                let typed = engine.simple_line(&shown, box_x + 6.0, box_y + 17.0, 9.0, theme.text);
+                let measured = typed.width - (box_x + 6.0);
+                renderer.draw_onto(canvas, &typed, 0.0, 0.0);
+                if focused {
+                    let caret = box_x + 6.0 + measured - unit_width(unit, measured, &shown);
+                    canvas.fill_rect(caret as i32, (box_y + 5.0) as i32, 1, 14, theme.text);
+                }
+                self.placed.push((Hit::Field(index), box_x, box_y, box_width, BOX_HEIGHT));
+            }
+
+            Field::Choice { label, items, current } => {
+                let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                self.draw_box(canvas, box_x, box_y, box_width, focused, theme);
+
+                let chosen = items.get(current).cloned().unwrap_or_default();
+                // Clipped to the box: a font with a long name must not run out
+                // over the field beside it.
+                let line = engine.simple_line(&chosen, box_x + 6.0, box_y + 17.0, 9.0, theme.text);
+                renderer.draw_within(canvas, &line, box_x, box_y, box_width - 18.0, BOX_HEIGHT);
+                chevron(canvas, box_x + box_width - 16.0, box_y + BOX_HEIGHT / 2.0, theme.text);
+                self.placed.push((Hit::Field(index), box_x, box_y, box_width, BOX_HEIGHT));
+            }
+        }
+    }
+
+    /// The sunken box a value sits in, which every field that holds one shares.
+    fn draw_box(
+        &self,
+        canvas: &mut Canvas,
+        x: f32,
+        y: f32,
+        width: f32,
+        focused: bool,
+        theme: &Theme,
+    ) {
+        canvas.fill_rect(x as i32, y as i32, width as i32, BOX_HEIGHT as i32, theme.field);
+        outline(
+            canvas,
+            x,
+            y,
+            width,
+            BOX_HEIGHT,
+            if focused { theme.accent } else { theme.field_edge },
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1268,5 +1572,130 @@ mod tests {
         );
         let labels: Vec<&str> = dialog.fields.iter().filter_map(Field::label).collect();
         assert_eq!(labels, vec!["Characters (no spaces)"]);
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::{Answer, Button, Dialog, Field};
+
+    fn number(label: &str) -> Field {
+        Field::Number { label: label.to_owned(), value: "0".to_owned(), unit: "pt" }
+    }
+
+    fn check(label: &str) -> Field {
+        Field::Check { label: label.to_owned(), on: false }
+    }
+
+    fn dialog(fields: Vec<Field>) -> Dialog {
+        Dialog::with_buttons(
+            "Test",
+            fields,
+            vec![Button { label: "OK".to_owned(), answer: Answer::Accept, default: true }],
+        )
+    }
+
+    #[test]
+    fn fields_told_to_share_a_row_share_one() {
+        let one = dialog(vec![number("a"), number("b"), number("c")]);
+        let across = dialog(vec![Field::Columns(3), number("a"), number("b"), number("c")]);
+
+        assert_eq!(one.rows().len(), 3, "three fields on three rows");
+        assert_eq!(across.rows().len(), 1, "three fields on one row");
+        assert_eq!(across.rows()[0].fields.len(), 3);
+        // And the panel is shorter for it, which is the point.
+        assert!(across.height() < one.height());
+    }
+
+    #[test]
+    fn a_row_takes_only_as_many_fields_as_it_was_promised() {
+        let dialog =
+            dialog(vec![Field::Columns(2), number("a"), number("b"), number("c"), number("d")]);
+        let rows = dialog.rows();
+        assert_eq!(rows.len(), 3, "two together and two alone");
+        assert_eq!(rows[0].fields.len(), 2);
+        assert_eq!(rows[1].fields.len(), 1);
+    }
+
+    #[test]
+    fn a_row_of_tick_boxes_needs_no_label_above_it() {
+        // Each tick box carries its own label, so stacking would leave an empty
+        // line over every one of them.
+        let boxes = dialog(vec![Field::Columns(2), check("one"), check("two")]);
+        let fields = dialog(vec![Field::Columns(2), number("one"), number("two")]);
+
+        assert!(!boxes.rows()[0].labels_above);
+        assert!(fields.rows()[0].labels_above);
+        assert!(boxes.rows()[0].height < fields.rows()[0].height);
+    }
+
+    #[test]
+    fn a_group_holds_what_follows_it_until_the_next_one() {
+        let dialog = dialog(vec![
+            Field::Group("First".to_owned()),
+            number("a"),
+            number("b"),
+            Field::Group("Second".to_owned()),
+            number("c"),
+        ]);
+        let rows = dialog.rows();
+
+        // A row for each caption, and each field inside the group before it.
+        assert_eq!(rows.len(), 5);
+        assert!(!rows[0].inside_group, "the caption is not inside its own box");
+        assert!(rows[1].inside_group && rows[2].inside_group);
+        assert!(!rows[3].inside_group);
+        assert!(rows[4].inside_group);
+    }
+
+    #[test]
+    fn a_new_tab_closes_the_group_the_old_one_left_open() {
+        let dialog = dialog(vec![
+            Field::Tab("One".to_owned()),
+            Field::Group("Boxed".to_owned()),
+            number("a"),
+            Field::Tab("Two".to_owned()),
+            number("b"),
+        ]);
+        // The second tab's field is not inside the first tab's group.
+        let second = dialog.rows_of(1);
+        assert_eq!(second.len(), 1);
+        assert!(!second[0].inside_group);
+    }
+
+    #[test]
+    fn the_panel_is_as_tall_as_its_tallest_tab() {
+        // A dialog whose height jumped as tabs were clicked would move its own
+        // buttons out from under the pointer.
+        let dialog = dialog(vec![
+            Field::Tab("Short".to_owned()),
+            number("a"),
+            Field::Tab("Long".to_owned()),
+            number("b"),
+            number("c"),
+            number("d"),
+        ]);
+        let tall = dialog.height();
+
+        let mut showing_the_long_one = dialog.clone();
+        showing_the_long_one.show_tab(1);
+        assert_eq!(showing_the_long_one.height(), tall, "the panel changed height with the tab");
+    }
+
+    #[test]
+    fn the_keyboard_does_not_walk_into_a_marker() {
+        // A row marker and a group's caption take places in the list of fields
+        // but are not fields anybody can type into.
+        let dialog = dialog(vec![
+            Field::Group("Boxed".to_owned()),
+            Field::Columns(2),
+            number("a"),
+            number("b"),
+        ]);
+        assert!(!Field::Columns(2).takes_focus());
+        assert!(!Field::Group("Boxed".to_owned()).takes_focus());
+        // The keyboard starts on the first thing it can land on, which is the
+        // first number rather than either marker.
+        assert_eq!(dialog.said(2), "0");
     }
 }

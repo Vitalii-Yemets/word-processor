@@ -17,6 +17,19 @@ use super::Editor;
 /// the list the dialog is built from, a few lines further down.
 const EDGES: usize = 6;
 
+/// Where each answer sits in the Page Setup dialog.
+///
+/// Named rather than written as a number twice, for the same reason the Font
+/// dialog names its rows: the markers that arrange the fields take places in
+/// the list too, so a row moved without moving these applies the wrong margin
+/// to the wrong edge and never looks wrong doing it.
+const MARGIN_TOP: usize = 2;
+const MARGIN_BOTTOM: usize = 3;
+const MARGIN_LEFT: usize = 5;
+const MARGIN_RIGHT: usize = 6;
+const PAPER_SIZE: usize = 9;
+const ORIENTATION: usize = 10;
+
 /// Which question is being asked, so the answer can be acted on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Asking {
@@ -221,12 +234,17 @@ impl Editor {
         let dialog = Dialog::new(
             "Page Setup",
             vec![
-                Field::Heading("Margins".to_owned()),
+                // Word's arrangement: the four margins two by two inside a box
+                // of their own, and the paper under them in a box of its own.
+                Field::Group("Margins".to_owned()),
+                Field::Columns(2),
                 Field::Number { label: "Top".to_owned(), value: inches(top), unit: "\"" },
                 Field::Number { label: "Bottom".to_owned(), value: inches(bottom), unit: "\"" },
+                Field::Columns(2),
                 Field::Number { label: "Left".to_owned(), value: inches(left), unit: "\"" },
                 Field::Number { label: "Right".to_owned(), value: inches(right), unit: "\"" },
-                Field::Heading("Paper".to_owned()),
+                Field::Group("Paper".to_owned()),
+                Field::Columns(2),
                 Field::Choice { label: "Paper size".to_owned(), items: papers, current: paper },
                 Field::Choice {
                     label: "Orientation".to_owned(),
@@ -246,16 +264,16 @@ impl Editor {
             // large that there is no page left.
             (inches.clamp(0.0, 22.0) * 1440.0).round() as i32
         };
-        let top = twips(dialog.said(1));
-        let bottom = twips(dialog.said(2));
-        let left = twips(dialog.said(3));
-        let right = twips(dialog.said(4));
+        let top = twips(dialog.said(MARGIN_TOP));
+        let bottom = twips(dialog.said(MARGIN_BOTTOM));
+        let left = twips(dialog.said(MARGIN_LEFT));
+        let right = twips(dialog.said(MARGIN_RIGHT));
 
         let mut changed = self.document.set_page_margins(top, right, bottom, left);
-        if let Some((_, width, height)) = wp_docx::page::PAGE_SIZES.get(dialog.chose(6)) {
+        if let Some((_, width, height)) = wp_docx::page::PAGE_SIZES.get(dialog.chose(PAPER_SIZE)) {
             changed |= self.document.set_page_size(*width, *height);
         }
-        changed |= self.document.set_landscape(dialog.chose(7) == 1);
+        changed |= self.document.set_landscape(dialog.chose(ORIENTATION) == 1);
 
         self.relayout();
         self.edited(changed, "Page setup")
@@ -367,7 +385,7 @@ mod tests {
 
         // The top margin, typed afresh: Word takes inches, and stores twips.
         if let Some(dialog) = &mut editor.dialog {
-            dialog.fields[1] =
+            dialog.fields[super::MARGIN_TOP] =
                 Field::Number { label: "Top".to_owned(), value: "2".to_owned(), unit: "\"" };
         }
         editor.handle(Event::KeyDown { key: Key::Enter, modifiers: Modifiers::default() });

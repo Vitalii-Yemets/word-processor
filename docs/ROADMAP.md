@@ -468,10 +468,10 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   chain, so it reaches every paragraph that never said otherwise — this document
   only, because there is no template yet to write it into. That is **H4**.
 
-  What it does not yet match is the *arrangement*: Word puts Font, Font style
-  and Size side by side with their labels above them, and this puts every field
-  in one column with its label beside it. Everything the dialog sets is there
-  and works; only the shape of it differs. **C18**.
+  The arrangement is Word's too — Font, Font style and Size across the top,
+  three colours under them, the effects in two columns inside a box, the
+  preview in a box of its own. That took the row and group machinery of
+  **C18**, which was written for this and is what **C3** onwards will use.
 - [ ] **C3. The Paragraph dialog.** Indents and spacing, line and page breaks,
   the preview, tab stops from inside it.
 - [ ] **C4. The Styles pane and Manage Styles.** Applying, creating, modifying,
@@ -538,17 +538,28 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 - [ ] **C17. The rest of the Header & Footer tab.** Header from Top, Footer from
   Bottom, and Insert Alignment Tab.
 
-- [ ] **C18. The way a dialog is laid out.** Every dialog here puts one field
+- [x] **C18. The way a dialog is laid out.** Every dialog here put one field
   per row with its label down the left. Word's put related fields side by side
-  with their labels above them — Font, Font style and Size across the top of the
-  Font dialog; Left, Right and Special across the Paragraph dialog — and group
-  the rest inside boxes with a caption on the edge. It is the difference between
-  a dialog that holds what Word's holds and one that looks like Word's.
-  Wanted: fields that share a row, labels above as well as beside, and a group
-  box. Needed by **C2** (done otherwise), **C3**, **C4**, **C6** and **C7**,
-  which is why it is one item rather than five.
-  *Done when:* a picture of the Font dialog and a picture of Word's put side by
-  side differ in the letters, not in where anything is.
+  with their labels above them, and group the rest inside boxes with a caption
+  on the edge.
+  *Done:* two markers in the one flat list of fields, so that a field keeps the
+  same number however the rows are arranged — the same reason the tabs of
+  **C9** are a marker rather than a list of lists.
+  `Field::Columns(n)` puts the next *n* fields across one row; a row of tick
+  boxes is noticed and drawn without the empty line a label above each one
+  would leave. `Field::Group(caption)` draws Word's rectangle with its caption
+  on the top edge, holding everything until the next group or the next tab, and
+  sets its contents in from the panel's edge.
+  One place decides the rows — `Dialog::rows_of` — and both the drawing and the
+  measuring go through it, because a panel measured one way and laid out
+  another is a panel with its buttons on top of its last field.
+  Two dialogs rebuilt on it: the **Font** dialog is now Word's arrangement —
+  Font, Font style and Size across the top, three colours under them, the seven
+  effects in two columns inside a box, the preview in a box of its own — and
+  **Page Setup** has its four margins two by two inside "Margins" with the
+  paper under them inside "Paper". The rest follow as they are built.
+  Also added: `Renderer::draw_within`, so a font with a long name stops at the
+  edge of its box instead of running out over the field beside it.
 
 ## D — Pictures and drawings
 
