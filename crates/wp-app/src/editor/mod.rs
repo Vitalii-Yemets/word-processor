@@ -32,6 +32,7 @@ mod notes;
 mod numbering;
 mod outline;
 mod pagesetup;
+mod paragraphdialog;
 mod parts;
 mod preferences;
 mod printpane;
@@ -51,6 +52,7 @@ mod split;
 mod stationery;
 mod statusmenu;
 mod table_properties;
+mod tabsdialog;
 mod theme_effects;
 mod themes;
 mod translate;
@@ -200,9 +202,6 @@ pub struct Editor {
     /// Where the stop being dragged along the ruler is now, in twips from the
     /// left margin, so the next move knows which one to take hold of.
     ruler_stop_at: Option<i32>,
-    /// Which stop the menu opened by a double click on the ruler is about,
-    /// in twips from the left margin.
-    tab_stop_at: Option<i32>,
     /// What kind of tab stop a click on the ruler puts down. See [`ruler`].
     tab_kind: wp_docx::model::TabAlignment,
     /// What would stop somebody reading the document, when it was last asked.
@@ -412,7 +411,6 @@ impl Editor {
             resizing_pane: false,
             ruler_drag: None,
             ruler_stop_at: None,
-            tab_stop_at: None,
             tab_kind: wp_docx::model::TabAlignment::Start,
             accessibility: Vec::new(),
             highlight_fields: false,
@@ -2137,30 +2135,46 @@ mod tests {
     }
 
     #[test]
-    fn the_menu_of_a_stop_changes_what_it_does_to_the_text() {
+    fn a_double_click_on_a_stop_opens_the_tabs_dialog_on_it() {
+        // Word opens its Tabs dialog here. There was a menu instead until the
+        // dialog existed; a menu Word does not have is one nobody looks for.
+        let mut editor = with_a_tab_stop();
+        editor.open_tab_stop_menu(0, 400, 100);
+
+        let dialog = editor.dialog.as_ref().expect("the dialog is open");
+        assert_eq!(dialog.title, "Tabs");
+        // Opened on the stop that was double-clicked, not on a blank one.
+        assert_eq!(dialog.said(2), "2.00", "the stop's own position is not shown");
+    }
+
+    #[test]
+    fn the_tabs_dialog_changes_what_a_stop_does_to_the_text() {
         use wp_docx::model::TabAlignment;
         let mut editor = with_a_tab_stop();
         editor.open_tab_stop_menu(0, 400, 100);
-        // The second row is Left; the first names the stop.
-        editor.choose_tab_stop_entry(1);
-        assert_eq!(editor.document.tab_stops_here()[0].alignment, TabAlignment::Start);
+
+        // Right is the third alignment Word offers.
+        if let Some(dialog) = &mut editor.dialog {
+            if let Some(crate::chrome::dialog::Field::Choice { current, .. }) =
+                dialog.fields.get_mut(5)
+            {
+                *current = 2;
+            }
+        }
+        let dialog = editor.dialog.clone().expect("a dialog");
+        editor.tabs_dialog_button(&dialog, "Set");
+
+        let stops = editor.document.tab_stops_here();
+        assert_eq!(stops.len(), 1, "Set on an existing stop replaces it");
+        assert_eq!(stops[0].alignment, TabAlignment::End);
     }
 
     #[test]
-    fn the_menu_of_a_stop_changes_what_fills_the_space() {
-        use wp_docx::model::TabLeader;
+    fn a_stop_can_be_cleared_from_the_tabs_dialog() {
         let mut editor = with_a_tab_stop();
         editor.open_tab_stop_menu(0, 400, 100);
-        // Underline is the last of the four leaders.
-        editor.choose_tab_stop_entry(10);
-        assert_eq!(editor.document.tab_stops_here()[0].leader, TabLeader::Underscore);
-    }
-
-    #[test]
-    fn a_stop_can_be_cleared_from_its_own_menu() {
-        let mut editor = with_a_tab_stop();
-        editor.open_tab_stop_menu(0, 400, 100);
-        editor.choose_tab_stop_entry(12);
+        let dialog = editor.dialog.clone().expect("a dialog");
+        editor.tabs_dialog_button(&dialog, "Clear");
         assert!(editor.document.tab_stops_here().is_empty());
     }
 
@@ -2176,18 +2190,9 @@ mod tests {
         assert_eq!(editor.document.tab_stops_here().len(), 2);
 
         editor.open_tab_stop_menu(0, 400, 100);
-        editor.choose_tab_stop_entry(13);
+        let dialog = editor.dialog.clone().expect("a dialog");
+        editor.tabs_dialog_button(&dialog, "Clear All");
         assert!(editor.document.tab_stops_here().is_empty());
-    }
-
-    #[test]
-    fn the_headings_and_the_line_in_that_menu_cannot_be_chosen() {
-        let mut editor = with_a_tab_stop();
-        editor.open_tab_stop_menu(0, 400, 100);
-        let popup = editor.popup.as_ref().expect("the menu is open");
-        assert_eq!(popup.row(0).kind, crate::chrome::popup::Kind::Heading);
-        assert_eq!(popup.row(6).kind, crate::chrome::popup::Kind::Heading);
-        assert_eq!(popup.row(11).kind, crate::chrome::popup::Kind::Separator);
     }
 
     #[test]

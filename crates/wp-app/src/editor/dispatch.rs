@@ -77,6 +77,7 @@ impl Editor {
             Command::TextColor => self.open_palette(PaletteKind::Text),
             Command::Highlight => self.open_palette(PaletteKind::Highlight),
             Command::FontDialog => self.open_font_dialog(),
+            Command::ParagraphDialog => self.open_paragraph_dialog(),
             Command::ChooseFont => self.open_list(Choice::Font),
             Command::ChooseSize => self.open_list(Choice::Size),
             Command::ChooseStyle => self.open_list(Choice::Style),

@@ -42,6 +42,10 @@ pub(super) enum Asking {
     Bookmark,
     /// Every character format there is: Word's Font dialog.
     Font,
+    /// Where the lines of a paragraph sit, and where it may break.
+    Paragraph,
+    /// Where the tabs of a paragraph stop.
+    TabStops,
 }
 
 impl Editor {
@@ -60,7 +64,17 @@ impl Editor {
     }
 
     /// Shuts the dialog, acting on the answer if it was accepted.
+    ///
+    /// Not every button shuts it. Word's Tabs dialog has three that change the
+    /// list of stops and leave the dialog standing, and its Paragraph dialog
+    /// has one that opens the Tabs dialog instead of answering. Those are dealt
+    /// with first, and only what is left is an answer.
     fn finish_dialog(&mut self, answer: Answer) -> Response {
+        if let Answer::Named(button) = answer {
+            if let Some(response) = self.pressed_without_answering(button) {
+                return response;
+            }
+        }
         let Some(dialog) = self.dialog.take() else { return Response::Ignored };
         let asking = self.asking.take();
         self.needs_redraw = true;
@@ -73,11 +87,44 @@ impl Editor {
             // asking.
             Some(Asking::PageSetup) => self.apply_page_setup(&dialog),
             Some(Asking::Bookmark) => self.apply_bookmark(&dialog),
-            Some(Asking::Font) => self.apply_font_dialog(&dialog, answer == Answer::Other),
+            Some(Asking::Font) => self.apply_font_dialog(
+                &dialog,
+                answer == Answer::Named(super::fontdialog::SET_AS_DEFAULT),
+            ),
+            Some(Asking::Paragraph) => self.apply_paragraph_dialog(
+                &dialog,
+                answer == Answer::Named(super::paragraphdialog::SET_AS_DEFAULT),
+            ),
+            Some(Asking::TabStops) => self.apply_tabs_dialog(&dialog),
             Some(Asking::WordCount) | None => {
                 let _ = dialog;
                 Response::Redraw
             }
+        }
+    }
+
+    /// The buttons that do something other than answer the dialog.
+    ///
+    /// `None` when the button is not one of them, and the caller goes on to
+    /// treat it as an answer.
+    fn pressed_without_answering(&mut self, button: &str) -> Option<Response> {
+        use super::tabsdialog::{CLEAR, CLEAR_ALL, SET};
+
+        match (self.asking, button) {
+            // Word's Tabs button hands over to the Tabs dialog. What the
+            // Paragraph dialog said is applied first, so that a stop set from
+            // inside it lands on the paragraph the dialog was describing.
+            (Some(Asking::Paragraph), super::paragraphdialog::TABS) => {
+                let dialog = self.dialog.take()?;
+                self.apply_paragraph_dialog(&dialog, false);
+                Some(self.open_tabs_dialog())
+            }
+            // Set, Clear and Clear All change the list and leave the dialog up.
+            (Some(Asking::TabStops), SET | CLEAR | CLEAR_ALL) => {
+                let dialog = self.dialog.clone()?;
+                Some(self.tabs_dialog_button(&dialog, button))
+            }
+            _ => None,
         }
     }
 
@@ -111,6 +158,16 @@ impl Editor {
                         if let Some(dialog) = self.dialog.take() {
                             let said = self.font_dialog_says(&dialog);
                             let mut built = self.font_dialog(&said);
+                            built.carry_typing_from(&dialog);
+                            self.dialog = Some(built);
+                        }
+                    }
+                    // The same for the Paragraph dialog, whose preview is the
+                    // shape its fields describe.
+                    Some(Asking::Paragraph) => {
+                        if let Some(dialog) = self.dialog.take() {
+                            let said = self.paragraph_dialog_says(&dialog);
+                            let mut built = self.paragraph_dialog(&said);
                             built.carry_typing_from(&dialog);
                             self.dialog = Some(built);
                         }

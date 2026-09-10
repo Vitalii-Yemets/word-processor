@@ -28,8 +28,8 @@ use crate::edit::{
     RUN_PROPERTY_ORDER,
 };
 use crate::model::{
-    Alignment, LineRule, LineSpacing, NumberingReference, ParagraphBorders, ResolvedRunProperties,
-    RunProperties, TabStop, Underline, VerticalAlignment,
+    Alignment, LineRule, LineSpacing, NumberingReference, ParagraphBorders, ParagraphProperties,
+    ResolvedRunProperties, RunProperties, TabStop, Underline, VerticalAlignment,
 };
 use crate::read::{self, W};
 use crate::styles::Styles;
@@ -885,4 +885,165 @@ pub(crate) fn set_paragraph_shading(
     shading.set_namespaced_attribute(&name_with(prefix, "color"), W, "auto");
     shading.set_namespaced_attribute(&name_with(prefix, "fill"), W, fill);
     insert_ordered(properties, shading, PARAGRAPH_PROPERTY_ORDER);
+}
+
+/// Applies a whole set of paragraph properties to one `w:p`.
+///
+/// What Word's Paragraph dialog does when it is answered: every property it
+/// asks about is written, and the ones it does not ask about are left exactly
+/// as they were.
+pub(crate) fn apply_paragraph_properties(
+    paragraph: &mut Element,
+    change: &ParagraphProperties,
+    prefix: Option<&str>,
+) {
+    let properties = paragraph_properties_of(paragraph, prefix);
+    write_paragraph_properties(properties, change, prefix);
+}
+
+/// The same, into a `w:pPr` wherever that `pPr` lives.
+///
+/// A paragraph has one, and so does a style, and so does the document's own set
+/// of defaults. Word's Set As Default writes into the last of those, and it
+/// must write it exactly as a paragraph would.
+pub(crate) fn write_paragraph_properties(
+    properties: &mut Element,
+    change: &ParagraphProperties,
+    prefix: Option<&str>,
+) {
+    // The on-or-off ones, each written where the schema puts it.
+    for (local, state) in [
+        ("keepNext", change.keep_next),
+        ("keepLines", change.keep_lines),
+        ("pageBreakBefore", change.page_break_before),
+        ("widowControl", change.widow_control),
+        ("suppressLineNumbers", change.suppress_line_numbers),
+        ("suppressAutoHyphens", change.no_hyphenation),
+        ("contextualSpacing", change.contextual_spacing),
+        ("mirrorIndents", change.mirror_indents),
+    ] {
+        let Some(state) = state else { continue };
+        set_toggle(properties, local, state, prefix);
+    }
+
+    if let Some(alignment) = change.alignment {
+        properties.remove_children_named(Some(W), "jc");
+        insert_ordered(
+            properties,
+            valued(prefix, "jc", alignment.to_attribute()),
+            PARAGRAPH_PROPERTY_ORDER,
+        );
+    }
+    // Body text is no level at all, which is what saying nothing means — so a
+    // change that names none takes the element away rather than writing a zero.
+    properties.remove_children_named(Some(W), "outlineLvl");
+    if let Some(level) = change.outline_level {
+        insert_ordered(
+            properties,
+            valued(prefix, "outlineLvl", &level.to_string()),
+            PARAGRAPH_PROPERTY_ORDER,
+        );
+    }
+
+    // The three indents share one element, so they are written together and
+    // only when the change names at least one of them.
+    if change.indent_start.is_some()
+        || change.indent_end.is_some()
+        || change.indent_first_line.is_some()
+    {
+        let existing = properties.child(Some(W), "ind");
+        let kept = |name: &str, fallback: &str| {
+            existing
+                .and_then(|element| element.attribute(Some(W), name))
+                .or_else(|| existing.and_then(|element| element.attribute(Some(W), fallback)))
+                .and_then(|text| text.parse::<i32>().ok())
+                .unwrap_or(0)
+        };
+        let hanging = existing
+            .and_then(|element| element.attribute(Some(W), "hanging"))
+            .and_then(|text| text.parse::<i32>().ok())
+            .map(|value| -value);
+        let first = change
+            .indent_first_line
+            .unwrap_or_else(|| hanging.unwrap_or_else(|| kept("firstLine", "firstLine")));
+
+        let start = change.indent_start.unwrap_or_else(|| kept("start", "left"));
+        let end = change.indent_end.unwrap_or_else(|| kept("end", "right"));
+
+        properties.remove_children_named(Some(W), "ind");
+        let mut indent = Element::new(&name_with(prefix, "ind"), Some(W));
+        // Both spellings of each: `start`/`end` are what the standard says and
+        // `left`/`right` are what every version of Word before 2013 wrote and
+        // every version since still reads.
+        for (name, value) in [("start", start), ("left", start), ("end", end), ("right", end)] {
+            indent.set_namespaced_attribute(&name_with(prefix, name), W, &value.to_string());
+        }
+        // A first line pushed in and one pulled out are two attributes, and
+        // writing both would be a paragraph that says two things.
+        match first.cmp(&0) {
+            core::cmp::Ordering::Greater => {
+                indent.set_namespaced_attribute(
+                    &name_with(prefix, "firstLine"),
+                    W,
+                    &first.to_string(),
+                );
+            }
+            core::cmp::Ordering::Less => {
+                indent.set_namespaced_attribute(
+                    &name_with(prefix, "hanging"),
+                    W,
+                    &(-first).to_string(),
+                );
+            }
+            core::cmp::Ordering::Equal => {}
+        }
+        insert_ordered(properties, indent, PARAGRAPH_PROPERTY_ORDER);
+    }
+
+    // Space before and after, and the line spacing, share one element too.
+    if change.space_before.is_some()
+        || change.space_after.is_some()
+        || change.line_spacing.is_some()
+    {
+        let existing = properties.child(Some(W), "spacing");
+        let kept = |name: &str| {
+            existing
+                .and_then(|element| element.attribute(Some(W), name))
+                .and_then(|text| text.parse::<i32>().ok())
+        };
+        let before = change.space_before.or_else(|| kept("before"));
+        let after = change.space_after.or_else(|| kept("after"));
+
+        properties.remove_children_named(Some(W), "spacing");
+        let mut element = Element::new(&name_with(prefix, "spacing"), Some(W));
+        if let Some(before) = before {
+            element.set_namespaced_attribute(&name_with(prefix, "before"), W, &before.to_string());
+        }
+        if let Some(after) = after {
+            element.set_namespaced_attribute(&name_with(prefix, "after"), W, &after.to_string());
+        }
+        if let Some(spacing) = change.line_spacing {
+            element.set_namespaced_attribute(
+                &name_with(prefix, "line"),
+                W,
+                &spacing.value.to_string(),
+            );
+            let rule = match spacing.rule {
+                LineRule::Auto => "auto",
+                LineRule::Exact => "exact",
+                LineRule::AtLeast => "atLeast",
+            };
+            element.set_namespaced_attribute(&name_with(prefix, "lineRule"), W, rule);
+        }
+        insert_ordered(properties, element, PARAGRAPH_PROPERTY_ORDER);
+    }
+
+    if !change.tab_stops.is_empty() {
+        properties.remove_children_named(Some(W), "tabs");
+        insert_ordered(
+            properties,
+            crate::edit::tab_stops_element(&change.tab_stops, prefix),
+            PARAGRAPH_PROPERTY_ORDER,
+        );
+    }
 }

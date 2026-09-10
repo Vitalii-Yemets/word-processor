@@ -257,6 +257,16 @@ impl Editor {
             "bookmark" => {
                 self.start_bookmark();
             }
+            "paragraphdialog" => {
+                self.open_paragraph_dialog();
+            }
+            "paragraphbreaks" => {
+                self.open_paragraph_dialog();
+                self.dialog_key(wp_shell::Key::Tab, false, true);
+            }
+            "tabsdialog" => {
+                self.open_tabs_dialog();
+            }
             "fontdialog" => {
                 self.open_font_dialog();
             }

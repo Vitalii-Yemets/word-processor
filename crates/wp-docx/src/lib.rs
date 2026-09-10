@@ -100,8 +100,8 @@ pub use styles::{Style, StyleKind, Styles};
 
 use model::{
     nearest_stop, Alignment, Block, BreakKind, LineSpacing, NumberingReference, Paragraph,
-    ParagraphBorders, ResolvedParagraphProperties, ResolvedRunProperties, Run, RunProperties,
-    TabStop, Table, TableCell, TableRow,
+    ParagraphBorders, ParagraphProperties, ResolvedParagraphProperties, ResolvedRunProperties, Run,
+    RunProperties, TabStop, Table, TableCell, TableRow,
 };
 
 /// Content type of the styles part.
@@ -1681,6 +1681,51 @@ impl Document {
         })
     }
 
+    /// Everything the paragraph at the caret is formatted with, which is what
+    /// the Paragraph dialog opens showing.
+    #[must_use]
+    pub fn paragraph_format_here(&self) -> ResolvedParagraphProperties {
+        self.resolve_paragraph_here()
+    }
+
+    /// Applies a whole set of paragraph formatting at once.
+    ///
+    /// The Paragraph dialog is answered all together rather than a property at
+    /// a time, and a change made in one go is one undo step and one pass over
+    /// the paragraphs — which is what Word does, and what stops a dialog with
+    /// twenty fields in it from filling the undo list with twenty entries.
+    pub fn set_paragraph_format(&mut self, change: &ParagraphProperties) -> bool {
+        let change = change.clone();
+        self.change_paragraphs(move |paragraph, prefix| {
+            format::apply_paragraph_properties(paragraph, &change, prefix);
+        })
+    }
+
+    /// Word's Set As Default for a paragraph: makes this the formatting every
+    /// paragraph that never said otherwise inherits.
+    ///
+    /// Written into `w:docDefaults`, under every style, exactly as
+    /// [`Self::set_default_character_format`] writes the character half.
+    pub fn set_default_paragraph_format(&mut self, change: &ParagraphProperties) -> bool {
+        let Some(mut tree) = self.styles_tree() else { return false };
+
+        let prefix = edit::prefix_for(&tree.root, WORDPROCESSING_NAMESPACE);
+        let defaults = child_or_new(&mut tree.root, "docDefaults", prefix.as_deref());
+        let paragraph_defaults = child_or_new(defaults, "pPrDefault", prefix.as_deref());
+        let properties = child_or_new(paragraph_defaults, "pPr", prefix.as_deref());
+
+        let before = properties.clone();
+        format::write_paragraph_properties(properties, change, prefix.as_deref());
+        if *properties == before {
+            return false;
+        }
+
+        self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
+        self.save_styles_tree(&tree);
+        self.mark_modified();
+        true
+    }
+
     /// Makes every paragraph the selection touches an item of a list, or takes
     /// it out of one.
     pub fn set_list_here(&mut self, list: Option<NumberingReference>) -> bool {
@@ -2155,6 +2200,19 @@ impl Document {
             .and_then(|text| text.trim().parse::<i32>().ok())
             .filter(|width| *width > 0)
             .unwrap_or(720)
+    }
+
+    /// Sets how far apart the default stops are.
+    ///
+    /// A document-wide setting rather than a paragraph one, which is why
+    /// Word's Tabs dialog puts it beside the stops of this paragraph and not
+    /// among them.
+    pub fn set_default_tab_width(&mut self, twips: i32) -> bool {
+        let twips = twips.clamp(1, 31_680);
+        if self.default_tab_width() == twips {
+            return false;
+        }
+        self.set_setting_value("defaultTabStop", Some(&twips.to_string()))
     }
 
     /// The indents of the paragraph at the caret, in twentieths of a point:

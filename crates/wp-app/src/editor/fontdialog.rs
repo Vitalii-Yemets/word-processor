@@ -77,7 +77,7 @@ const PREVIEW_ADVANCED: usize = 39;
 ///
 /// A third button beside OK and Cancel, as Word has: it applies what the dialog
 /// says and then writes it into the style everything else inherits from.
-const SET_AS_DEFAULT: &str = "Set As Default";
+pub(super) const SET_AS_DEFAULT: &str = "Set As Default";
 
 /// The four weights Word offers, which are bold and italic in the four
 /// combinations rather than four separate things.
@@ -269,7 +269,11 @@ impl Editor {
             fields,
             vec![
                 Button { label: "OK".to_owned(), answer: Answer::Accept, default: true },
-                Button { label: SET_AS_DEFAULT.to_owned(), answer: Answer::Other, default: false },
+                Button {
+                    label: SET_AS_DEFAULT.to_owned(),
+                    answer: Answer::Named(SET_AS_DEFAULT),
+                    default: false,
+                },
                 Button { label: "Cancel".to_owned(), answer: Answer::Cancel, default: false },
             ],
         )
@@ -373,19 +377,6 @@ impl Editor {
 /// built — a handful of comparisons against a click — rather than left to a
 /// test, because the cost is nothing and the failure is silent.
 fn check_rows(fields: &[Field]) {
-    let kind_of = |row: usize| match fields.get(row) {
-        Some(Field::Tab(_)) => "a tab",
-        Some(Field::Heading(_)) => "a heading",
-        Some(Field::Preview(_)) => "a preview",
-        Some(Field::Check { .. }) => "a tick box",
-        Some(Field::Choice { .. }) => "a list",
-        Some(Field::Number { .. }) => "a number",
-        Some(Field::Text { .. }) => "a box",
-        Some(Field::Said { .. }) => "a line",
-        Some(Field::Columns(_)) => "a row",
-        Some(Field::Group(_)) => "a group",
-        None => "nothing",
-    };
     let wanted: &[(usize, &str)] = &[
         (TAB_FONT, "a tab"),
         (ROW_TYPEFACE, "a row"),
@@ -428,15 +419,7 @@ fn check_rows(fields: &[Field]) {
         (PREVIEW_GROUP_ADVANCED, "a group"),
         (PREVIEW_ADVANCED, "a preview"),
     ];
-    for (row, expected) in wanted {
-        assert_eq!(
-            kind_of(*row),
-            *expected,
-            "row {row} of the Font dialog is {} and should be {expected}",
-            kind_of(*row),
-        );
-    }
-    assert_eq!(fields.len(), PREVIEW_ADVANCED + 1, "the Font dialog has grown a row nobody named");
+    crate::chrome::dialog::check_rows("Font", fields, wanted);
 }
 
 /// The size on the dialog, in the points a person types.

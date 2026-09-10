@@ -792,7 +792,6 @@ impl Ribbon {
                     | Choice::Hyphenation
                     | Choice::Protection
                     | Choice::StatusBar
-                    | Choice::TabStop
                     | Choice::PageNumbering
                     | Choice::Printer
                     | Choice::PrintWhich
@@ -1079,7 +1078,7 @@ static HOME_GROUPS: &[Group] = &[
             Item::Button(Command::Shading, Icon::Shading),
             Item::Button(Command::Borders, Icon::Borders),
         ],
-        launcher: None,
+        launcher: Some(Command::ParagraphDialog),
     },
     Group { label: "Styles", items: &[Item::StyleGallery], launcher: None },
     Group {
@@ -1229,7 +1228,7 @@ static LAYOUT_GROUPS: &[Group] = &[
             Item::Break,
             Item::Measure(Command::IndentRightBox, "Right:", 54.0),
         ],
-        launcher: None,
+        launcher: Some(Command::ParagraphDialog),
     },
     Group {
         label: "Arrange",

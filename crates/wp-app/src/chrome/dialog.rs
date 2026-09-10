@@ -22,7 +22,7 @@
 //! cancel, and a click anywhere outside that does nothing at all — because a
 //! modal dialog is modal.
 
-use wp_docx::model::ResolvedRunProperties;
+use wp_docx::model::{Alignment, ResolvedParagraphProperties, ResolvedRunProperties};
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::{Canvas, Color};
 use wp_shell::Key;
@@ -53,6 +53,10 @@ const TAB_HEIGHT: f32 = 30.0;
 
 /// The box a preview is drawn inside.
 const PREVIEW_HEIGHT: f32 = 64.0;
+
+/// The box a paragraph's shape is drawn inside, which needs room for three
+/// paragraphs rather than one line.
+const SHAPE_HEIGHT: f32 = 108.0;
 
 /// The room a label takes when it stands above its field rather than beside it.
 const LABEL_HEIGHT: f32 = 18.0;
@@ -93,6 +97,14 @@ pub enum Field {
     /// A sample of what is being asked about, drawn as the document would draw
     /// it. See [`crate::editor`] for what fills it in.
     Preview(Box<Sample>),
+    /// A sample of a paragraph rather than of a letter: bars standing for lines
+    /// of text, at the indents, spacing and alignment being asked about.
+    ///
+    /// Word's Paragraph dialog shows this rather than real text, and it is
+    /// right to: what is being set is where the lines start and end and how far
+    /// apart they are, and grey bars show that at a glance where a wall of
+    /// lorem ipsum would not.
+    Shape(Box<ParagraphSample>),
     /// The next `n` fields share one row, each with its label above it rather
     /// than beside it.
     ///
@@ -117,6 +129,12 @@ pub struct Sample {
     pub properties: Box<ResolvedRunProperties>,
 }
 
+/// What a paragraph preview shows: the shape a paragraph so formatted takes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParagraphSample {
+    pub properties: Box<ResolvedParagraphProperties>,
+}
+
 impl Field {
     /// Whether the keyboard can land on it.
     #[must_use]
@@ -127,6 +145,7 @@ impl Field {
                 | Self::Said { .. }
                 | Self::Tab(_)
                 | Self::Preview(_)
+                | Self::Shape(_)
                 | Self::Columns(_)
                 | Self::Group(_)
         )
@@ -143,12 +162,37 @@ impl Field {
             | Self::Check { .. }
             | Self::Tab(_)
             | Self::Preview(_)
+            | Self::Shape(_)
             | Self::Columns(_)
             | Self::Group(_) => None,
             Self::Said { label, .. }
             | Self::Text { label, .. }
             | Self::Number { label, .. }
             | Self::Choice { label, .. } => Some(label),
+        }
+    }
+
+    /// What kind of thing this is, in words.
+    ///
+    /// For the check a dialog makes on itself when it is built: the rows it
+    /// reads back are named by constant, and a row inserted in the middle moves
+    /// every row after it. Comparing what is at each named row against what
+    /// should be there catches that, and catches it loudly — a dialog reading
+    /// the wrong rows applies the wrong thing and never looks wrong doing it.
+    #[must_use]
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Heading(_) => "a heading",
+            Self::Said { .. } => "a line",
+            Self::Text { .. } => "a box",
+            Self::Number { .. } => "a number",
+            Self::Check { .. } => "a tick box",
+            Self::Choice { .. } => "a list",
+            Self::Tab(_) => "a tab",
+            Self::Preview(_) => "a preview",
+            Self::Shape(_) => "a shape",
+            Self::Columns(_) => "a row",
+            Self::Group(_) => "a group",
         }
     }
 
@@ -162,6 +206,7 @@ impl Field {
             // Room for the caption, and then whatever follows it inside.
             Self::Group(_) => GROUP_CAPTION,
             Self::Preview(_) => PREVIEW_HEIGHT + PADDING,
+            Self::Shape(_) => SHAPE_HEIGHT + PADDING,
             _ => ROW + 4.0,
         }
     }
@@ -174,12 +219,14 @@ pub enum Answer {
     Accept,
     /// Leave everything as it was.
     Cancel,
-    /// Take what the fields say, and do the further thing the button offered.
+    /// Take what the fields say, and do the further thing the named button
+    /// offered.
     ///
-    /// Word's dialogs have a third button often enough to be worth a third
-    /// answer: the Font dialog's Set As Default applies the formatting and
-    /// then makes it the formatting everything else inherits.
-    Other,
+    /// Word's dialogs have buttons past OK and Cancel often enough to be worth
+    /// a third answer, and more than one of them at a time: the Paragraph
+    /// dialog has both Tabs and Set As Default. Named rather than numbered so
+    /// that the place that acts on the answer says which button it means.
+    Named(&'static str),
 }
 
 /// A button along the bottom of the dialog.
@@ -1145,6 +1192,19 @@ impl Dialog {
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
             }
 
+            Field::Shape(sample) => {
+                let room = box_x + box_width - label_x;
+                canvas.fill_rect(
+                    label_x as i32,
+                    box_y as i32,
+                    room as i32,
+                    SHAPE_HEIGHT as i32,
+                    theme.field,
+                );
+                outline(canvas, label_x, box_y, room, SHAPE_HEIGHT, theme.field_edge);
+                draw_paragraph_shape(canvas, &sample.properties, label_x, box_y, room, theme);
+            }
+
             Field::Heading(text) => {
                 let line = engine.simple_line(&text, label_x, box_y + 16.0, 9.0, theme.text);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
@@ -1698,4 +1758,127 @@ mod layout_tests {
         // first number rather than either marker.
         assert_eq!(dialog.said(2), "0");
     }
+}
+
+/// Draws the shape a paragraph takes, as Word's Paragraph dialog shows it.
+///
+/// Three paragraphs: the one before, the one being set, and the one after. The
+/// middle one is drawn dark and the others faint, so that what is being changed
+/// stands out from what it will sit between — which is the whole reason Word
+/// shows its neighbours at all. Spacing before and after is only visible as a
+/// gap against something, and an indent is only visible against a margin.
+fn draw_paragraph_shape(
+    canvas: &mut Canvas,
+    wanted: &ResolvedParagraphProperties,
+    left: f32,
+    top: f32,
+    width: f32,
+    theme: &Theme,
+) {
+    // A page of the preview is the box less a margin, and everything the
+    // paragraph asks for is measured against that.
+    let margin = 12.0;
+    let page_left = left + margin;
+    let page_width = width - margin * 2.0;
+
+    // Twentieths of a point against a page six inches wide, which is what the
+    // preview is standing in for.
+    let scale = page_width / (6.0 * 1440.0);
+    let indent_start = (wanted.indent_start as f32 * scale).clamp(0.0, page_width / 2.0);
+    let indent_end = (wanted.indent_end as f32 * scale).clamp(0.0, page_width / 2.0);
+    let indent_first = (wanted.indent_first_line as f32 * scale)
+        .clamp(-indent_start, page_width / 2.0 - indent_start);
+
+    let bar = 3.0f32;
+    // Line spacing, as a proportion of single. Only the multiple rule is worth
+    // showing: an exact height in points means nothing at this size.
+    let leading = match wanted.line_spacing {
+        Some(spacing) if spacing.rule == wp_docx::model::LineRule::Auto => {
+            (spacing.value as f32 / 240.0).clamp(0.7, 3.0)
+        }
+        _ => 1.0,
+    };
+    let step = bar + 3.0 * leading;
+    let before = (wanted.space_before as f32 * 0.02).clamp(0.0, 14.0);
+    let after = (wanted.space_after as f32 * 0.02).clamp(0.0, 14.0);
+
+    // A line of the middle paragraph, honouring the indents and the alignment.
+    let faint = fade(theme.text, theme.field);
+    let mut y = top + 8.0;
+
+    let paragraph =
+        |canvas: &mut Canvas, y: &mut f32, lines: usize, colour: Color, of_its_own: bool| {
+            for line in 0..lines {
+                let first = line == 0;
+                let last = line + 1 == lines;
+                let (start, end) = if of_its_own {
+                    (indent_start + if first { indent_first.max(0.0) } else { 0.0 }, indent_end)
+                } else {
+                    (0.0, 0.0)
+                };
+                // A hanging indent pulls the first line out rather than pushing it
+                // in, which is the whole of what "hanging" means.
+                let start = if of_its_own && first && indent_first < 0.0 {
+                    (indent_start + indent_first).max(0.0)
+                } else {
+                    start
+                };
+
+                let room = (page_width - start - end).max(6.0);
+                // The last line of a paragraph is short, as the last line of a
+                // paragraph is — except in justified text, where it is still short:
+                // justification does not stretch it.
+                let drawn = if last { room * 0.62 } else { room };
+                let x = match wanted.alignment {
+                    Alignment::Center => page_left + start + (room - drawn) / 2.0,
+                    Alignment::End => page_left + start + (room - drawn),
+                    _ => page_left + start,
+                };
+                canvas.fill_rect(x as i32, *y as i32, drawn as i32, bar as i32, colour);
+                *y += step;
+            }
+        };
+
+    paragraph(canvas, &mut y, 2, faint, false);
+    y += before;
+    paragraph(canvas, &mut y, 4, theme.text, true);
+    y += after;
+    paragraph(canvas, &mut y, 2, faint, false);
+}
+
+/// A colour mixed most of the way towards the paper.
+///
+/// For the parts of a preview that are only there to be measured against: the
+/// paragraphs either side, which say where this one begins and ends without
+/// competing with it for attention.
+fn fade(colour: Color, paper: Color) -> Color {
+    let mix = |ink: u8, paper: u8| {
+        // A quarter of the ink and three quarters of the paper, which is faint
+        // enough to read as background on either theme.
+        ((u16::from(ink) + u16::from(paper) * 3) / 4) as u8
+    };
+    Color::rgb(
+        mix(colour.red, paper.red),
+        mix(colour.green, paper.green),
+        mix(colour.blue, paper.blue),
+    )
+}
+
+/// Checks that a dialog's rows are where the constants naming them say.
+///
+/// A dialog is built as one list and read back by row number. A row inserted in
+/// the middle moves every row after it, and a dialog reading the wrong ones
+/// applies the wrong thing without ever looking wrong. Checked when the dialog
+/// is built — a handful of comparisons against a click — rather than left to a
+/// test, because the cost is nothing and the failure is silent.
+///
+/// The last row named must be the last row there is, so a row added at the end
+/// is caught as well as one added in the middle.
+pub fn check_rows(dialog: &str, fields: &[Field], wanted: &[(usize, &str)]) {
+    for (row, expected) in wanted {
+        let found = fields.get(*row).map_or("nothing", Field::kind_name);
+        assert_eq!(found, *expected, "row {row} of the {dialog} dialog is {found}, not {expected}");
+    }
+    let last = wanted.iter().map(|(row, _)| *row).max().map_or(0, |row| row + 1);
+    assert_eq!(fields.len(), last, "the {dialog} dialog has a row nobody named");
 }

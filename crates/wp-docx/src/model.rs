@@ -373,6 +373,22 @@ pub struct ParagraphProperties {
     /// Empty means the paragraph says nothing and the default grid applies,
     /// which is what a paragraph nobody has set tabs on does.
     pub tab_stops: Vec<TabStop>,
+    /// Leave out the space before and after where this paragraph meets another
+    /// of the same style, `w:contextualSpacing`.
+    ///
+    /// Word's "Don't add space between paragraphs of the same style", and what
+    /// makes a bulleted list read as a list rather than as a column of
+    /// paragraphs with gaps between them.
+    pub contextual_spacing: Option<bool>,
+    /// Swap the left and right indents on facing pages, `w:mirrorIndents`.
+    ///
+    /// For a document that will be bound: the inner margin wants the extra
+    /// room, and which side is the inner one changes every page.
+    pub mirror_indents: Option<bool>,
+    /// Leave this paragraph out of the line numbering, `w:suppressLineNumbers`.
+    pub suppress_line_numbers: Option<bool>,
+    /// Never break a word in this paragraph, `w:suppressAutoHyphens`.
+    pub no_hyphenation: Option<bool>,
 }
 
 /// One place a tab reaches, and what happens to the text there.
@@ -530,6 +546,10 @@ impl ParagraphProperties {
             } else {
                 other.tab_stops.clone()
             },
+            contextual_spacing: other.contextual_spacing.or(self.contextual_spacing),
+            mirror_indents: other.mirror_indents.or(self.mirror_indents),
+            suppress_line_numbers: other.suppress_line_numbers.or(self.suppress_line_numbers),
+            no_hyphenation: other.no_hyphenation.or(self.no_hyphenation),
         }
     }
 }
@@ -555,6 +575,10 @@ pub struct ResolvedParagraphProperties {
     pub shading: Option<String>,
     /// Where the tabs stop, after the style chain has had its say.
     pub tab_stops: Vec<TabStop>,
+    pub contextual_spacing: bool,
+    pub mirror_indents: bool,
+    pub suppress_line_numbers: bool,
+    pub no_hyphenation: bool,
 }
 
 /// The lines drawn round a paragraph.

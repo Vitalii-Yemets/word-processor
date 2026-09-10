@@ -1595,8 +1595,28 @@ impl<'a> LayoutEngine<'a> {
         let (mark, level_indent_start, level_indent_hanging) = self.list_mark(&resolved, document);
 
         // Spacing is in twentieths of a point, like almost everything else.
-        let space_before = resolved.space_before as f32 / TWIPS_PER_POINT * scale;
-        let space_after = resolved.space_after as f32 / TWIPS_PER_POINT * scale;
+        //
+        // Word's "Don't add space between paragraphs of the same style" drops
+        // it where one such paragraph meets another of the same style. It is
+        // what makes a bulleted list read as a list instead of as a column of
+        // paragraphs with gaps between them, and it is asked of the neighbours
+        // rather than of this paragraph alone.
+        let same_as = |other: usize| {
+            resolved.contextual_spacing && document.style_of(other) == document.style_of(index)
+        };
+        let after_its_own_kind = index > 0 && same_as(index - 1);
+        let before_its_own_kind = index + 1 < document.paragraph_count() && same_as(index + 1);
+
+        let space_before = if after_its_own_kind {
+            0.0
+        } else {
+            resolved.space_before as f32 / TWIPS_PER_POINT * scale
+        };
+        let space_after = if before_its_own_kind {
+            0.0
+        } else {
+            resolved.space_after as f32 / TWIPS_PER_POINT * scale
+        };
         // A list level's indents apply only where nothing else set one: a
         // paragraph that says where it sits has already been believed.
         let authored_indent = resolved.indent_start != 0 || resolved.indent_first_line != 0;

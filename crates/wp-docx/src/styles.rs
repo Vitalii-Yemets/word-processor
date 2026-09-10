@@ -249,6 +249,10 @@ impl Styles {
             shading: accumulated.shading,
             numbering: accumulated.numbering,
             tab_stops: accumulated.tab_stops,
+            contextual_spacing: accumulated.contextual_spacing.unwrap_or(false),
+            mirror_indents: accumulated.mirror_indents.unwrap_or(false),
+            suppress_line_numbers: accumulated.suppress_line_numbers.unwrap_or(false),
+            no_hyphenation: accumulated.no_hyphenation.unwrap_or(false),
         }
     }
 

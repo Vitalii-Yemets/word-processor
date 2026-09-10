@@ -40,6 +40,7 @@ pub(crate) const PARAGRAPH_PROPERTY_ORDER: &[&str] = &[
     "widowControl",
     "numPr",
     "suppressLineNumbers",
+    "suppressAutoHyphens",
     "pBdr",
     "shd",
     "tabs",
@@ -47,6 +48,7 @@ pub(crate) const PARAGRAPH_PROPERTY_ORDER: &[&str] = &[
     "spacing",
     "ind",
     "contextualSpacing",
+    "mirrorIndents",
     "jc",
     "textDirection",
     "textAlignment",
@@ -550,6 +552,18 @@ pub fn paragraph_properties_element(
     }
     if let Some(state) = properties.widow_control {
         element.push_element(toggle(prefix, "widowControl", state));
+    }
+    if let Some(state) = properties.suppress_line_numbers {
+        element.push_element(toggle(prefix, "suppressLineNumbers", state));
+    }
+    if let Some(state) = properties.no_hyphenation {
+        element.push_element(toggle(prefix, "suppressAutoHyphens", state));
+    }
+    if let Some(state) = properties.contextual_spacing {
+        element.push_element(toggle(prefix, "contextualSpacing", state));
+    }
+    if let Some(state) = properties.mirror_indents {
+        element.push_element(toggle(prefix, "mirrorIndents", state));
     }
     if let Some(numbering) = properties.numbering {
         let mut reference = Element::new(&name_with(prefix, "numPr"), Some(W));

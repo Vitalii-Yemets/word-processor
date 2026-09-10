@@ -18,10 +18,7 @@ use wp_shell::{Modifiers, Response};
 
 use wp_docx::model::{TabAlignment, TabLeader, TabStop};
 
-use crate::chrome::icons::Icon;
-use crate::chrome::popup::{Kind, Row};
 use crate::chrome::rulers::{self, Hit, PlacedStop, VerticalHit};
-use crate::chrome::{Choice, Popup};
 
 use super::Editor;
 
@@ -402,116 +399,18 @@ fn inches(twips: i32) -> String {
     format!("{text}\"")
 }
 
-/// What one line of the menu a tab stop opens does to it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum StopEdit {
-    Align(TabAlignment),
-    Leader(TabLeader),
-    /// Takes this stop away.
-    Clear,
-    /// Takes every stop of the paragraph away.
-    ClearAll,
-}
-
-/// The menu a tab stop opens, in the order Word's Tabs dialog lists things.
-const STOP_MENU: &[(&str, Option<StopEdit>)] = &[
-    ("Alignment", None),
-    ("Left", Some(StopEdit::Align(TabAlignment::Start))),
-    ("Center", Some(StopEdit::Align(TabAlignment::Center))),
-    ("Right", Some(StopEdit::Align(TabAlignment::End))),
-    ("Decimal", Some(StopEdit::Align(TabAlignment::Decimal))),
-    ("Bar", Some(StopEdit::Align(TabAlignment::Bar))),
-    ("Leader", None),
-    ("None", Some(StopEdit::Leader(TabLeader::None))),
-    ("Dots", Some(StopEdit::Leader(TabLeader::Dot))),
-    ("Dashes", Some(StopEdit::Leader(TabLeader::Hyphen))),
-    ("Underline", Some(StopEdit::Leader(TabLeader::Underscore))),
-    ("", None),
-    ("Clear", Some(StopEdit::Clear)),
-    ("Clear All", Some(StopEdit::ClearAll)),
-];
-
-/// How wide that menu is drawn.
-const STOP_MENU_WIDTH: f32 = 190.0;
-
 impl Editor {
-    /// Opens the menu for the stop a double click landed on.
+    /// Opens the Tabs dialog on the stop a double click landed on.
     ///
-    /// Word opens a dialog here, with the position typed into a box, the
-    /// alignment and the leader chosen from lists, and buttons that clear one
-    /// stop or all of them. This is the same choices in a menu: the position is
-    /// already set by where the marker was dragged to, which is the one thing
-    /// the dialog is worse at.
-    pub(super) fn open_tab_stop_menu(&mut self, index: usize, x: i32, y: i32) -> Response {
-        let Some(stop) = self.document.tab_stops_here().get(index).copied() else {
-            return Response::Ignored;
-        };
-
-        let items = STOP_MENU
-            .iter()
-            .enumerate()
-            .map(|(row, (label, _))| {
-                if row == 0 {
-                    format!("Tab stop at {}", inches(stop.position))
-                } else {
-                    (*label).to_owned()
-                }
-            })
-            .collect();
-        let rows = STOP_MENU
-            .iter()
-            .map(|(label, edit)| match edit {
-                // A tick against what this stop already is.
-                Some(StopEdit::Align(alignment)) if *alignment == stop.alignment => {
-                    Row::new(Kind::Choice, Icon::Accept)
-                }
-                Some(StopEdit::Leader(leader)) if *leader == stop.leader => {
-                    Row::new(Kind::Choice, Icon::Accept)
-                }
-                Some(_) => Row::default(),
-                None if label.is_empty() => Row::separator(),
-                None => Row::heading(),
-            })
-            .collect();
-
-        self.tab_stop_at = Some(stop.position);
-        self.popup = Some(
-            Popup::new(Choice::TabStop, items, None, x as f32, y as f32, STOP_MENU_WIDTH)
-                .with_rows(rows),
-        );
-        self.needs_redraw = true;
-        Response::Redraw
-    }
-
-    /// Carries out whichever line of that menu was chosen.
-    pub(super) fn choose_tab_stop_entry(&mut self, row: usize) -> Response {
-        self.popup = None;
-        let Some(position) = self.tab_stop_at.take() else { return Response::Ignored };
-        let Some((label, Some(edit))) = STOP_MENU.get(row).copied() else {
-            return Response::Ignored;
-        };
-
-        let mut stops = self.document.tab_stops_here();
-        let found = stops.iter().position(|stop| stop.position == position);
-        match edit {
-            StopEdit::Align(alignment) => {
-                let Some(found) = found else { return Response::Ignored };
-                stops[found].alignment = alignment;
-            }
-            StopEdit::Leader(leader) => {
-                let Some(found) = found else { return Response::Ignored };
-                stops[found].leader = leader;
-            }
-            StopEdit::Clear => {
-                let Some(found) = found else { return Response::Ignored };
-                stops.remove(found);
-            }
-            StopEdit::ClearAll => stops.clear(),
-        }
-
-        let changed = self.document.set_tab_stops_here(&stops);
-        self.relayout();
-        self.edited(changed, label)
+    /// What Word does. There was a menu here instead, offering the same
+    /// choices, because the dialog did not exist: see **C3**. It does now, and
+    /// a menu Word does not have is a menu somebody who knows Word will not
+    /// look for.
+    pub(super) fn open_tab_stop_menu(&mut self, index: usize, _x: i32, _y: i32) -> Response {
+        let stops = self.document.tab_stops_here();
+        let Some(stop) = stops.get(index).copied() else { return Response::Ignored };
+        let dialog = self.tabs_dialog(&stops, Some(stop));
+        self.ask(super::dialogs::Asking::TabStops, dialog)
     }
 }
 

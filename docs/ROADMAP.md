@@ -472,8 +472,39 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   three colours under them, the effects in two columns inside a box, the
   preview in a box of its own. That took the row and group machinery of
   **C18**, which was written for this and is what **C3** onwards will use.
-- [ ] **C3. The Paragraph dialog.** Indents and spacing, line and page breaks,
+- [x] **C3. The Paragraph dialog.** Indents and spacing, line and page breaks,
   the preview, tab stops from inside it.
+  *Done:* both tabs, in Word's arrangement, on the machinery of **C18**.
+
+  **Indents and Spacing** — alignment and outline level under "General"; the two
+  indents, Word's "Special" list (which is one property under two names: a
+  first line pushed in is a positive first-line indent, one pulled out a
+  negative) and mirror indents under "Indentation"; before, after, the six line
+  spacings and "Don't add space between paragraphs of the same style" under
+  "Spacing". **Line and Page Breaks** — widow control, keep with next, keep
+  lines together and page break before under "Pagination"; suppress line
+  numbers and don't hyphenate under "Formatting exceptions".
+
+  **The model** gained the four Word sets here that it did not hold:
+  `w:contextualSpacing`, `w:mirrorIndents`, `w:suppressLineNumbers` and
+  `w:suppressAutoHyphens`. Contextual spacing is honoured in the layout as well
+  as stored — the space is dropped where one such paragraph meets another of
+  the same style, which is what makes a bulleted list read as a list rather
+  than as a column of paragraphs with gaps between them.
+
+  **The preview** is a shape rather than text, as Word's is: grey bars for the
+  lines, at the indents, spacing and alignment being asked about, with the
+  paragraphs either side drawn faintly — spacing is only visible against
+  something and an indent only against a margin.
+
+  **Tabs.** The Tabs button hands over to a Tabs dialog of Word's shape: the
+  stops as a list, a position typed, an alignment and a leader chosen, and Set,
+  Clear and Clear All, which change the list and leave the dialog standing. A
+  double click on a stop in the ruler opens it too — which is what Word does,
+  and which replaced the menu that had been standing in for it. That menu said
+  so in its own comment.
+
+  **Set As Default** writes into `w:docDefaults`, as the Font dialog's does.
 - [ ] **C4. The Styles pane and Manage Styles.** Applying, creating, modifying,
   the style inspector, what is in use, and the whole style chain shown.
 - [ ] **C5. Insert Symbol and Special Characters.** The grid, the subsets, the

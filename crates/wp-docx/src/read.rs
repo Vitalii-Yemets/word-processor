@@ -290,6 +290,10 @@ pub fn read_paragraph_properties(properties: &Element) -> ParagraphProperties {
             "keepLines" => result.keep_lines = Some(on_off(property)),
             "pageBreakBefore" => result.page_break_before = Some(on_off(property)),
             "widowControl" => result.widow_control = Some(on_off(property)),
+            "contextualSpacing" => result.contextual_spacing = Some(on_off(property)),
+            "mirrorIndents" => result.mirror_indents = Some(on_off(property)),
+            "suppressLineNumbers" => result.suppress_line_numbers = Some(on_off(property)),
+            "suppressAutoHyphens" => result.no_hyphenation = Some(on_off(property)),
             "pBdr" => result.borders = read_paragraph_borders(property),
             "tabs" => result.tab_stops = read_tab_stops(property),
             "shd" => {

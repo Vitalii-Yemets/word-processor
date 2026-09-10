@@ -109,8 +109,6 @@ pub enum Choice {
     Protection,
     /// What the strip along the bottom shows.
     StatusBar,
-    /// What one tab stop on the ruler does.
-    TabStop,
     /// How a section numbers its pages.
     PageNumbering,
     /// The breaks that can be put in: of a page, of a column, and of a section.

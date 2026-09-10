@@ -278,6 +278,9 @@ pub enum Command {
     /// Word's Font dialog, behind the launcher in the corner of the Font group
     /// and behind Ctrl+D.
     FontDialog,
+    /// Word's Paragraph dialog, behind the launcher in the corner of the
+    /// Paragraph group.
+    ParagraphDialog,
 
     /// Opens one of the lists.
     ChooseFont,
