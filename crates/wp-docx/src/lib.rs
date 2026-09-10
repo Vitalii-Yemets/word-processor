@@ -121,7 +121,7 @@ const SETTINGS_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings";
 
 /// Relationship type of the numbering part, which holds the list definitions.
-const NUMBERING_RELATIONSHIP: &str =
+pub(crate) const NUMBERING_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering";
 
 /// Relationship type of an embedded picture.
@@ -129,7 +129,7 @@ const IMAGE_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 
 /// Content type of the numbering part.
-const NUMBERING_CONTENT_TYPE: &str =
+pub(crate) const NUMBERING_CONTENT_TYPE: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml";
 
 /// The list a created document uses for bullets.
@@ -2548,7 +2548,7 @@ fn read_numbering(package: &Package, main_part: &str) -> Numbering {
 ///
 /// The fallback name is what almost every document uses, and is worth trying:
 /// a document whose relationships are damaged usually still has the part.
-fn related_tree(
+pub(crate) fn related_tree(
     package: &Package,
     main_part: &str,
     relationship: &str,
@@ -2666,7 +2666,7 @@ fn default_settings() -> String {
 ///
 /// The indents are Word's: half an inch per level, with the mark hanging a
 /// quarter of an inch back into it.
-fn default_numbering() -> String {
+pub(crate) fn default_numbering() -> String {
     let w = WORDPROCESSING_NAMESPACE;
 
     let mut levels = String::new();

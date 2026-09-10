@@ -135,6 +135,30 @@ impl Editor {
         self.report(&name_for(decision, resolved))
     }
 
+    /// Moves the caret to the tracked change before or after it.
+    ///
+    /// Word's Accept and Reject buttons do this as soon as they have dealt with
+    /// one, so that a document can be gone through without touching the mouse.
+    pub(super) fn step_change(&mut self, forwards: bool) -> Response {
+        let paragraphs = self.document.paragraphs_with_revisions();
+        if paragraphs.is_empty() {
+            return Response::Ignored;
+        }
+
+        let here = self.caret().paragraph;
+        let wanted = if forwards {
+            paragraphs.iter().find(|index| **index > here).or_else(|| paragraphs.first())
+        } else {
+            paragraphs.iter().rev().find(|index| **index < here).or_else(|| paragraphs.last())
+        };
+        let Some(paragraph) = wanted.copied() else { return Response::Ignored };
+
+        self.document.set_caret(TextPosition::new(paragraph, 0));
+        self.reveal_caret();
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
     /// Accepts or rejects every change in the document.
     pub(super) fn resolve_all(&mut self, decision: Decision) -> Response {
         let resolved = self.document.resolve_all_revisions(decision);

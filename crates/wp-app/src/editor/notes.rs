@@ -48,6 +48,9 @@ impl Editor {
     }
 
     /// Moves the caret to the next note mark, of either kind.
+    ///
+    /// What the button's face does. Its arrow asks which kind and which way,
+    /// and goes to [`Editor::step_note_of`].
     pub(super) fn step_note(&mut self) -> Response {
         let mut marks: Vec<(TextPosition, String)> = Vec::new();
         for kind in [Kind::Footnote, Kind::Endnote] {
@@ -57,18 +60,51 @@ impl Editor {
                 }
             }
         }
+        self.go_to_note(marks, true, "This document has no notes")
+    }
+
+    /// The same for one kind of note, in either direction.
+    pub(super) fn step_note_of(&mut self, kind: Kind, forwards: bool) -> Response {
+        let marks: Vec<(TextPosition, String)> = self
+            .document
+            .notes(kind)
+            .into_iter()
+            .filter_map(|note| note.mark.map(|mark| (mark, note.text)))
+            .collect();
+        let nothing = match kind {
+            Kind::Footnote => "This document has no footnotes",
+            Kind::Endnote => "This document has no endnotes",
+        };
+        self.go_to_note(marks, forwards, nothing)
+    }
+
+    /// Goes to the nearest of a set of marks, wrapping round the document.
+    ///
+    /// Wrapping is what Word does: the notes are a ring, and stepping past the
+    /// last one comes back to the first rather than stopping dead.
+    fn go_to_note(
+        &mut self,
+        mut marks: Vec<(TextPosition, String)>,
+        forwards: bool,
+        nothing: &str,
+    ) -> Response {
         if marks.is_empty() {
-            return self.report("This document has no notes");
+            return self.report(nothing);
         }
         marks.sort_by_key(|(mark, _)| (mark.paragraph, mark.offset));
 
         let caret = self.caret();
-        let (mark, text) = marks
-            .iter()
-            .find(|(mark, _)| (mark.paragraph, mark.offset) > (caret.paragraph, caret.offset))
-            .or_else(|| marks.first())
-            .cloned()
-            .expect("the list is not empty");
+        let after =
+            |mark: &TextPosition| (mark.paragraph, mark.offset) > (caret.paragraph, caret.offset);
+        let before =
+            |mark: &TextPosition| (mark.paragraph, mark.offset) < (caret.paragraph, caret.offset);
+
+        let found = if forwards {
+            marks.iter().find(|(mark, _)| after(mark)).or_else(|| marks.first())
+        } else {
+            marks.iter().rev().find(|(mark, _)| before(mark)).or_else(|| marks.last())
+        };
+        let (mark, text) = found.cloned().expect("the list is not empty");
 
         self.document.set_caret(mark);
         self.reveal_caret();

@@ -50,6 +50,15 @@ const COLLAPSED_WIDTH: f32 = 62.0;
 const EDGE: f32 = 4.0;
 /// How wide one tile of the style gallery is.
 const STYLE_TILE_WIDTH: f32 = 76.0;
+/// How many of them are shown when there is room for them all, and the fewest
+/// worth showing when there is not.
+///
+/// The gallery is the widest thing on the Home tab, so it is what makes the
+/// ribbon too long for a narrow window. Word shrinks it and keeps the group;
+/// giving up the whole group instead would take the styles off the tab a person
+/// uses them from.
+const STYLE_TILES_MOST: usize = 8;
+const STYLE_TILES_LEAST: usize = 3;
 /// The letters a style tile is shown with, which are Word's own.
 const SPECIMEN: &str = "AaBbCcDdEe";
 
@@ -173,6 +182,75 @@ pub enum Item {
     Break,
 }
 
+/// A button that drops a menu, and how much of it drops one.
+///
+/// Word has two kinds and they do not behave the same. A **split button** runs
+/// a command from its face and drops a list from its arrow: pressing Bullets
+/// puts bullets on, pressing the arrow beside it offers the shapes. A **plain
+/// dropdown** has no command of its own, and pressing anywhere on it drops the
+/// list — Change Case is one, because there is no such thing as "the case".
+///
+/// Drawing one as the other is not a detail: a person who presses the face of
+/// what they take for a split button and gets a list has lost a keystroke, and
+/// one who presses what they take for a dropdown and silently changes the
+/// document has lost more than that.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Menu {
+    pub command: Command,
+    pub choice: Choice,
+    /// Whether the face does something of its own.
+    pub split: bool,
+}
+
+/// How wide the arrow half of a button is.
+const ARROW_WIDTH: f32 = 10.0;
+
+/// How deep the arrow half of a large button is.
+///
+/// Word splits a large button across rather than down: the icon on top runs the
+/// command, the label and the arrow underneath drop the list.
+const ARROW_DEPTH: f32 = 22.0;
+
+/// Every button that drops a menu, and which menu it drops.
+///
+/// One table rather than a variant per button, because what makes these
+/// different from an ordinary button is one fact about each of them, and a
+/// table of facts is a thing that can be read through and checked against Word.
+static MENUS: &[Menu] = &[
+    Menu { command: Command::Bullets, choice: Choice::BulletLibrary, split: true },
+    Menu { command: Command::Numbering, choice: Choice::NumberLibrary, split: true },
+    Menu { command: Command::MultilevelList, choice: Choice::MultilevelLibrary, split: false },
+    Menu { command: Command::LineSpacing, choice: Choice::LineSpacing, split: false },
+    Menu { command: Command::ChangeCase, choice: Choice::LetterCase, split: false },
+    Menu { command: Command::PageNumber, choice: Choice::PageNumberPlace, split: false },
+    Menu { command: Command::SelectAll, choice: Choice::Selecting, split: false },
+    Menu { command: Command::NextNote, choice: Choice::NoteJump, split: true },
+    Menu { command: Command::AcceptChange, choice: Choice::Accepting, split: true },
+    Menu { command: Command::RejectChange, choice: Choice::Rejecting, split: true },
+    Menu { command: Command::TrackChanges, choice: Choice::Tracking, split: true },
+];
+
+/// The menu a command drops, if it drops one.
+#[must_use]
+pub fn menu_of(command: Command) -> Option<Menu> {
+    MENUS.iter().copied().find(|menu| menu.command == command)
+}
+
+/// And the other way: the button a menu drops from, which is where it hangs.
+#[must_use]
+pub fn command_of(choice: Choice) -> Option<Command> {
+    MENUS.iter().find(|menu| menu.choice == choice).map(|menu| menu.command)
+}
+
+/// What a press on the ribbon means.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Press {
+    /// Run it.
+    Run(Command),
+    /// Drop the menu it carries.
+    Drop(Command, Choice),
+}
+
 /// A named set of commands.
 #[derive(Debug)]
 pub struct Group {
@@ -205,6 +283,8 @@ pub struct Ribbon {
     tabs: Vec<(Tab, f32, f32)>,
     /// Where the search box on the tab strip ended up.
     search: Option<(f32, f32, f32)>,
+    /// How many tiles of the style gallery the window has room for.
+    style_tiles: usize,
 }
 
 impl Default for Ribbon {
@@ -216,7 +296,14 @@ impl Default for Ribbon {
 impl Ribbon {
     #[must_use]
     pub fn new() -> Self {
-        Self { tab: Tab::Home, top: 0.0, placed: Vec::new(), tabs: Vec::new(), search: None }
+        Self {
+            tab: Tab::Home,
+            top: 0.0,
+            placed: Vec::new(),
+            tabs: Vec::new(),
+            search: None,
+            style_tiles: STYLE_TILES_MOST,
+        }
     }
 
     /// The groups of the tab currently open.
@@ -275,6 +362,37 @@ impl Ribbon {
                     && y < item.top + item.height
             })
             .map(|item| item.command)
+    }
+
+    /// What a press at a point means: running a command, or dropping its menu.
+    ///
+    /// The two halves of a split button are told apart here and nowhere else,
+    /// so the drawing and the pressing cannot disagree about where the line
+    /// between them is.
+    #[must_use]
+    pub fn press_at(&self, x: i32, y: i32) -> Option<Press> {
+        let command = self.command_at(x, y)?;
+        let Some(menu) = menu_of(command) else { return Some(Press::Run(command)) };
+        if !menu.split {
+            return Some(Press::Drop(command, menu.choice));
+        }
+
+        let item = self
+            .placed
+            .iter()
+            .find(|item| item.command == command)
+            .map(|item| (item.left, item.top, item.width, item.height))?;
+        let (left, top, width, height) = item;
+        let dropping = if item_is_large(height) {
+            (y as f32) >= top + height - ARROW_DEPTH
+        } else {
+            (x as f32) >= left + width - ARROW_WIDTH
+        };
+        if dropping {
+            Some(Press::Drop(command, menu.choice))
+        } else {
+            Some(Press::Run(command))
+        }
     }
 
     /// Every tab that is showing, and where it sits: its left edge and width.
@@ -434,6 +552,11 @@ impl Ribbon {
         // How many rows of small buttons the ribbon is tall enough for.
         let rows = ((body / ROW_HEIGHT).floor() as usize).max(1);
 
+        // The style gallery gives up tiles before any group is given up
+        // altogether, because it is the widest thing on the tab and the only
+        // one that can be made smaller without losing a command.
+        self.style_tiles = self.tiles_that_fit(engine, rows, right_edge - EDGE);
+
         // A window too narrow for every group shows the last of them as one
         // button each, which opens what is inside it. Word does the same, and
         // the alternative is a group drawn half off the edge of the window.
@@ -537,21 +660,32 @@ impl Ribbon {
     /// and the label is set in a font that only the layout engine can measure.
     fn item_width(&self, engine: &mut LayoutEngine<'_>, item: &Item) -> f32 {
         let colour = Color::BLACK;
-        match item {
-            Item::Large(_, _, label) => {
-                engine.simple_line(label, 0.0, 0.0, 8.0, colour).width.max(icons::LARGE_SIZE) + 14.0
+        // A button that drops a menu needs room for the arrow beside it —
+        // except a large one, whose arrow goes under the label where there is
+        // room already.
+        let arrow = match item {
+            Item::Small(command, ..) | Item::Button(command, _) if menu_of(*command).is_some() => {
+                ARROW_WIDTH
             }
-            Item::Small(_, _, label) => {
-                engine.simple_line(label, 0.0, 0.0, 8.0, colour).width + icons::SIZE + 14.0
+            _ => 0.0,
+        };
+        arrow
+            + match item {
+                Item::Large(_, _, label) => {
+                    engine.simple_line(label, 0.0, 0.0, 8.0, colour).width.max(icons::LARGE_SIZE)
+                        + 14.0
+                }
+                Item::Small(_, _, label) => {
+                    engine.simple_line(label, 0.0, 0.0, 8.0, colour).width + icons::SIZE + 14.0
+                }
+                Item::Button(..) | Item::Letter(..) => ROW_HEIGHT,
+                Item::Measure(_, label, width) => {
+                    engine.simple_line(label, 0.0, 0.0, 8.0, colour).width + width + 14.0
+                }
+                Item::Field(_, _, width) => *width,
+                Item::StyleGallery => STYLE_TILE_WIDTH * self.style_tiles as f32,
+                Item::Break => 0.0,
             }
-            Item::Button(..) | Item::Letter(..) => ROW_HEIGHT,
-            Item::Measure(_, label, width) => {
-                engine.simple_line(label, 0.0, 0.0, 8.0, colour).width + width + 14.0
-            }
-            Item::Field(_, _, width) => *width,
-            Item::StyleGallery => STYLE_TILE_WIDTH * 8.0,
-            Item::Break => 0.0,
-        }
     }
 
     /// How wide a whole group is, laid out the way it will be drawn.
@@ -578,6 +712,22 @@ impl Ribbon {
             }
         }
         widest.max(cursor)
+    }
+
+    /// How many tiles of the style gallery there is room for.
+    ///
+    /// The most that leaves every group of the tab drawn in full, and the
+    /// fewest worth showing when even that is not enough — at which point the
+    /// groups on the right are given up as they always were.
+    fn tiles_that_fit(&mut self, engine: &mut LayoutEngine<'_>, rows: usize, room: f32) -> usize {
+        let showing = self.groups().len();
+        for tiles in (STYLE_TILES_LEAST..=STYLE_TILES_MOST).rev() {
+            self.style_tiles = tiles;
+            if self.collapsed_groups(engine, rows, room) >= showing {
+                return tiles;
+            }
+        }
+        STYLE_TILES_LEAST
     }
 
     /// How many groups are drawn in full, the rest being collapsed to one
@@ -717,6 +867,41 @@ impl Ribbon {
         }
         let color = if active { theme.on_accent() } else { color };
 
+        // The arrow that says a menu drops from here, and the line that says
+        // which part of the button drops it.
+        if let Some(menu) = menu_of(command) {
+            let large = matches!(item, Item::Large(..));
+            let (arrow_x, arrow_y) = if large {
+                (left + width / 2.0, top + height - 4.0)
+            } else {
+                (left + width - ARROW_WIDTH / 2.0, top + height / 2.0)
+            };
+            // Only a split button is divided: a plain dropdown is one button
+            // that happens to have an arrow on it, and a line down the middle
+            // of it would promise a face command it does not have.
+            if menu.split && enabled {
+                let edge = if active { theme.on_accent() } else { theme.group_separator };
+                if large {
+                    canvas.fill_rect(
+                        (left + 4.0) as i32,
+                        (top + height - ARROW_DEPTH) as i32,
+                        (width - 8.0) as i32,
+                        1,
+                        edge,
+                    );
+                } else {
+                    canvas.fill_rect(
+                        (left + width - ARROW_WIDTH) as i32,
+                        (top + 4.0) as i32,
+                        1,
+                        (height - 8.0) as i32,
+                        edge,
+                    );
+                }
+            }
+            chevron(canvas, arrow_x - 3.5, arrow_y, color);
+        }
+
         match item {
             Item::Large(_, icon, label) => {
                 // The icon over its name, which is how a ribbon marks the one
@@ -729,11 +914,15 @@ impl Ribbon {
                     icons::LARGE_SIZE,
                     color,
                 );
+                // A button with a menu keeps its label clear of the arrow
+                // underneath it, so a descender and the arrow are not drawn on
+                // top of one another.
+                let baseline = top + height - if menu_of(command).is_some() { 12.0 } else { 7.0 };
                 let measured = engine.simple_line(label, 0.0, 0.0, 8.0, color);
                 let line = engine.simple_line(
                     label,
                     left + (width - measured.width) / 2.0,
-                    top + height - 7.0,
+                    baseline,
                     8.0,
                     color,
                 );
@@ -821,6 +1010,17 @@ impl Ribbon {
                     | Choice::Break
                     | Choice::Watermark
                     | Choice::PasteOption
+                    | Choice::BulletLibrary
+                    | Choice::NumberLibrary
+                    | Choice::MultilevelLibrary
+                    | Choice::LineSpacing
+                    | Choice::LetterCase
+                    | Choice::PageNumberPlace
+                    | Choice::Selecting
+                    | Choice::NoteJump
+                    | Choice::Accepting
+                    | Choice::Rejecting
+                    | Choice::Tracking
                     | Choice::Cover
                     | Choice::Authority
                     | Choice::Theme
@@ -882,7 +1082,7 @@ impl Ribbon {
         theme: &Theme,
     ) -> f32 {
         let mut x = left;
-        for (index, sample) in state.styles.iter().enumerate() {
+        for (index, sample) in state.styles.iter().take(self.style_tiles).enumerate() {
             let command = Command::Style(index);
             let chosen = sample.id == state.style;
 
@@ -971,6 +1171,16 @@ fn outline(canvas: &mut Canvas, x: f32, y: f32, width: f32, height: f32, colour:
     canvas.fill_rect(x, y + height - 1, width, 1, colour);
     canvas.fill_rect(x, y, 1, height, colour);
     canvas.fill_rect(x + width - 1, y, 1, height, colour);
+}
+
+/// Whether an item's height means it is a large button.
+///
+/// A large button fills the group; every other kind is one row of it. Told from
+/// the height rather than carried about, because the height is what the person
+/// is pointing at, and it is what decides whether the button is split across or
+/// down.
+fn item_is_large(height: f32) -> bool {
+    height > ROW_HEIGHT + 1.0
 }
 
 /// The small triangle that says a list drops from here.
@@ -1786,4 +1996,93 @@ fn launcher_mark(canvas: &mut Canvas, x: f32, y: f32, size: f32, colour: Color) 
     // And its head.
     canvas.fill_rect(x + size - 3, y + 1, 3, 1, colour);
     canvas.fill_rect(x + size - 1, y + 1, 1, 3, colour);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Places one item by hand, the way a drawing pass would.
+    fn placed(command: Command, left: f32, top: f32, width: f32, height: f32) -> Ribbon {
+        let mut ribbon = Ribbon::new();
+        ribbon.placed.push(Placed { command, left, top, width, height });
+        ribbon
+    }
+
+    #[test]
+    fn a_button_with_no_menu_is_run_wherever_it_is_pressed() {
+        let ribbon = placed(Command::Copy, 10.0, 40.0, 26.0, 26.0);
+        assert_eq!(ribbon.press_at(12, 42), Some(Press::Run(Command::Copy)));
+        assert_eq!(ribbon.press_at(34, 42), Some(Press::Run(Command::Copy)));
+    }
+
+    #[test]
+    fn the_face_of_a_split_button_runs_and_its_arrow_drops() {
+        // Bullets is Word's split button: pressing it puts bullets on, and
+        // pressing the arrow beside it asks which bullet.
+        let ribbon = placed(Command::Bullets, 10.0, 40.0, 39.0, 26.0);
+        assert_eq!(ribbon.press_at(12, 45), Some(Press::Run(Command::Bullets)));
+        assert_eq!(
+            ribbon.press_at(46, 45),
+            Some(Press::Drop(Command::Bullets, Choice::BulletLibrary))
+        );
+    }
+
+    #[test]
+    fn a_plain_dropdown_drops_wherever_it_is_pressed() {
+        // Change Case has no command of its own: there is no such thing as
+        // "the case", so every part of the button asks which one.
+        let ribbon = placed(Command::ChangeCase, 10.0, 40.0, 39.0, 26.0);
+        assert_eq!(
+            ribbon.press_at(12, 45),
+            Some(Press::Drop(Command::ChangeCase, Choice::LetterCase))
+        );
+        assert_eq!(
+            ribbon.press_at(46, 45),
+            Some(Press::Drop(Command::ChangeCase, Choice::LetterCase))
+        );
+    }
+
+    #[test]
+    fn a_large_split_button_is_divided_across_rather_than_down() {
+        // Word splits a large button into an icon that runs the command and a
+        // label under it that drops the list.
+        let ribbon = placed(Command::AcceptChange, 10.0, 40.0, 60.0, 79.0);
+        assert_eq!(ribbon.press_at(40, 50), Some(Press::Run(Command::AcceptChange)));
+        assert_eq!(
+            ribbon.press_at(40, 110),
+            Some(Press::Drop(Command::AcceptChange, Choice::Accepting))
+        );
+    }
+
+    #[test]
+    fn every_menu_hangs_under_a_button_that_is_really_on_the_ribbon() {
+        // A menu whose button is on no tab could never be opened, and the
+        // arrow drawn on it would be an arrow to nowhere.
+        for menu in MENUS {
+            let on_a_tab = Tab::ALL
+                .iter()
+                .chain(Tab::CONTEXTUAL.iter())
+                .flat_map(|tab| groups_of(*tab))
+                .flat_map(|group| group.items.iter())
+                .any(|item| match item {
+                    Item::Large(command, ..)
+                    | Item::Small(command, ..)
+                    | Item::Button(command, _)
+                    | Item::Letter(command, ..)
+                    | Item::Measure(command, ..)
+                    | Item::Field(command, ..) => *command == menu.command,
+                    Item::Break | Item::StyleGallery => false,
+                });
+            assert!(on_a_tab, "{:?} drops a menu and is on no tab", menu.command);
+        }
+    }
+
+    #[test]
+    fn no_command_carries_two_menus() {
+        for menu in MENUS {
+            let count = MENUS.iter().filter(|other| other.command == menu.command).count();
+            assert_eq!(count, 1, "{:?} carries more than one menu", menu.command);
+        }
+    }
 }

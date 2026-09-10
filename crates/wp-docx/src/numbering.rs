@@ -18,9 +18,10 @@
 
 use std::collections::HashMap;
 
-use wp_xml::tree::Element;
+use wp_xml::tree::{Element, XmlTree};
 
 use crate::read::{value, W};
+use crate::Document;
 
 /// How the numbers of a level are written.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -148,6 +149,20 @@ impl Level {
     pub fn bullet(&self) -> char {
         let character = self.text.chars().next().unwrap_or('\u{2022}');
         map_symbol(character, self.font.as_deref())
+    }
+
+    /// What the level shows, as a [`Shape`] names it.
+    ///
+    /// A bullet as the character any font can draw rather than as the private
+    /// use character Word may have written it with, so that a list of Word's
+    /// bullets and a list of this program's are recognised as the same list.
+    #[must_use]
+    pub fn shown_as(&self) -> String {
+        if self.format == NumberFormat::Bullet {
+            self.bullet().to_string()
+        } else {
+            self.text.clone()
+        }
     }
 }
 
@@ -396,6 +411,258 @@ impl ListCounters {
     }
 }
 
+// --- Making a list of a chosen shape ----------------------------------------
+
+/// What a list is marked or counted with.
+///
+/// One shape is what Word's bullet library and its number library each pick:
+/// everything else about a list — the indents, how it nests — is the same
+/// whichever mark is on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shape {
+    /// The format as the file writes it: `bullet`, `decimal`, `lowerLetter`.
+    pub format: &'static str,
+    /// What the level shows: a single character for a bullet, or a template
+    /// such as `%1.` for a count.
+    pub text: &'static str,
+}
+
+impl Shape {
+    /// A list marked with a character.
+    #[must_use]
+    pub const fn bullet(mark: &'static str) -> Self {
+        Self { format: "bullet", text: mark }
+    }
+
+    /// A list counted in a format, written to a template.
+    #[must_use]
+    pub const fn counted(format: &'static str, text: &'static str) -> Self {
+        Self { format, text }
+    }
+
+    /// Whether this is a mark rather than a count.
+    #[must_use]
+    pub fn is_bullet(&self) -> bool {
+        self.format == "bullet"
+    }
+}
+
+impl Document {
+    /// The identifier of a list with this shape, making one if there is none.
+    ///
+    /// # Why a list has to be looked for before it is made
+    ///
+    /// A document that already has a list of hollow circles and is given
+    /// another paragraph of hollow circles must use the list it has. Writing a
+    /// second definition would give the same-looking list two identities, and
+    /// two identities is two counters: a numbered list carried on further down
+    /// the page would start again at one.
+    ///
+    /// Returns nothing only when the numbering part can be neither read nor
+    /// started, which is a damaged document.
+    pub fn list_shaped(&mut self, levels: &[Shape]) -> Option<i32> {
+        if levels.is_empty() {
+            return None;
+        }
+        let mut tree = self.numbering_tree()?;
+
+        if let Some(found) = list_with_shape(&tree.root, levels) {
+            return Some(found);
+        }
+
+        let prefix = numbering_prefix(&tree.root);
+        let abstract_id = spare_id(&tree.root, "abstractNum", "abstractNumId");
+        let num_id = spare_id(&tree.root, "num", "numId");
+
+        tree.root.push_element(abstract_definition(abstract_id, levels, prefix.as_deref()));
+        tree.root.push_element(list_definition(num_id, abstract_id, prefix.as_deref()));
+
+        self.save_numbering_tree(&tree);
+        Some(num_id)
+    }
+
+    /// The numbering part as a tree, or the default one where there is none.
+    ///
+    /// A document with no lists has no numbering part, and adding a list to it
+    /// has to start one. The default is the pair Word's own blank template
+    /// carries, so a document that gains its first list gains the same two
+    /// definitions it would have had from the beginning.
+    fn numbering_tree(&self) -> Option<XmlTree> {
+        crate::related_tree(
+            self.package(),
+            self.main_part(),
+            crate::NUMBERING_RELATIONSHIP,
+            "word/numbering.xml",
+        )
+        .or_else(|| XmlTree::parse(&crate::default_numbering()).ok())
+    }
+
+    /// Writes the numbering part back, and reads it again so that what the
+    /// document says about its lists and what it draws them from agree.
+    fn save_numbering_tree(&mut self, tree: &XmlTree) {
+        let Ok(xml) = tree.to_xml() else { return };
+        let main_part = self.main_part().to_owned();
+        let target = self
+            .package()
+            .relationships(&main_part)
+            .ok()
+            .and_then(|relationships| {
+                let found = relationships.single_by_type(crate::NUMBERING_RELATIONSHIP)?;
+                found.resolved_target(&main_part)?.ok()
+            })
+            .unwrap_or_else(|| "word/numbering.xml".to_owned());
+
+        // A part nothing points at is a part Word will not read, so a document
+        // that had no numbering gains the relationship along with the part.
+        self.point_at_numbering(&target);
+        self.package_mut().add_part(&target, crate::NUMBERING_CONTENT_TYPE, xml.into_bytes());
+        self.numbering = Numbering::parse(&tree.root);
+        self.mark_modified();
+    }
+
+    /// Makes sure the main document names the numbering part.
+    fn point_at_numbering(&mut self, target: &str) {
+        let main_part = self.main_part().to_owned();
+        let already = self
+            .package()
+            .relationships(&main_part)
+            .ok()
+            .is_some_and(|found| found.single_by_type(crate::NUMBERING_RELATIONSHIP).is_some());
+        if already {
+            return;
+        }
+
+        let Ok(mut relationships) = self.package().relationships(&main_part) else { return };
+        // Named relative to the part that points at it, which is how every
+        // other relationship in the package is written.
+        let relative = target.strip_prefix("word/").unwrap_or(target).to_owned();
+        relationships.add(crate::NUMBERING_RELATIONSHIP, &relative, wp_opc::TargetMode::Internal);
+        let _ = self.package_mut().set_relationships(&relationships);
+    }
+}
+
+/// The list already defined with these shapes, if the document has one.
+///
+/// Every level that was asked for has to match. Two galleries can start the
+/// same way and part company further down — Word's `1. a. i.` and `1. 1.1
+/// 1.1.1` both begin with a decimal — and treating them as one list would give
+/// a document the wrong one.
+fn list_with_shape(root: &Element, levels: &[Shape]) -> Option<i32> {
+    let mut shaped: Vec<i32> = Vec::new();
+    for definition in root.children_named(Some(W), "abstractNum") {
+        let Some(id) = numeric_attribute(definition, "abstractNumId") else { continue };
+        let defined: Vec<Level> =
+            definition.children_named(Some(W), "lvl").map(read_level).collect();
+        if defined.len() < levels.len() {
+            continue;
+        }
+        let same = levels.iter().zip(defined.iter()).all(|(wanted, level)| {
+            level.format == NumberFormat::from_attribute(wanted.format)
+                && level.shown_as() == wanted.text
+        });
+        if same {
+            shaped.push(id);
+        }
+    }
+
+    root.children_named(Some(W), "num")
+        .filter_map(|entry| {
+            let id = numeric_attribute(entry, "numId")?;
+            let target = entry
+                .child(Some(W), "abstractNumId")
+                .and_then(value)
+                .and_then(|text| text.parse::<i32>().ok())?;
+            shaped.contains(&target).then_some(id)
+        })
+        .min()
+}
+
+/// A number nothing of that kind is using yet.
+fn spare_id(root: &Element, element: &str, attribute: &str) -> i32 {
+    root.children_named(Some(W), element)
+        .filter_map(|found| numeric_attribute(found, attribute))
+        .max()
+        .unwrap_or(0)
+        + 1
+}
+
+/// The prefix the numbering part writes its own elements with.
+///
+/// Word writes `w:lvl`; a document from somewhere else may write `lvl` against
+/// a default namespace, and an element written the other way round would be
+/// ignored by whatever reads it back.
+fn numbering_prefix(root: &Element) -> Option<String> {
+    root.name.split_once(':').map(|(prefix, _)| prefix.to_owned())
+}
+
+/// A whole list definition: the chosen shape at the top and Word's nesting
+/// underneath it.
+fn abstract_definition(id: i32, levels: &[Shape], prefix: Option<&str>) -> Element {
+    let mut definition = Element::new(&named(prefix, "abstractNum"), Some(W));
+    definition.set_namespaced_attribute(&named(prefix, "abstractNumId"), W, &id.to_string());
+    definition.push_element(valued(prefix, "multiLevelType", "hybridMultilevel"));
+
+    let first = levels.first().copied().unwrap_or(Shape::bullet("\u{2022}"));
+    for level in 0..crate::LIST_LEVELS {
+        // The levels that were asked for are used as they were given; anything
+        // deeper is what Word nests with, so a list indented past the end of
+        // the gallery entry still looks like a list.
+        let shape = levels.get(level as usize).copied().unwrap_or_else(|| nested(first, level));
+        definition.push_element(level_element(level, shape, prefix));
+    }
+    definition
+}
+
+/// What a level deeper than the first is marked with.
+fn nested(shape: Shape, level: i32) -> Shape {
+    let step = level as usize % 3;
+    if shape.is_bullet() {
+        // Bullet, circle, square: the marks Word cycles through by depth.
+        Shape::bullet(["\u{2022}", "\u{25E6}", "\u{25AA}"][step])
+    } else {
+        // Numbers, then letters, then roman, which is Word's nesting too.
+        Shape::counted(["decimal", "lowerLetter", "lowerRoman"][step], ["%1.", "%2.", "%3."][step])
+    }
+}
+
+fn level_element(level: i32, shape: Shape, prefix: Option<&str>) -> Element {
+    let mut element = Element::new(&named(prefix, "lvl"), Some(W));
+    element.set_namespaced_attribute(&named(prefix, "ilvl"), W, &level.to_string());
+    element.push_element(valued(prefix, "start", "1"));
+    element.push_element(valued(prefix, "numFmt", shape.format));
+    element.push_element(valued(prefix, "lvlText", shape.text));
+    element.push_element(valued(prefix, "lvlJc", "left"));
+
+    // Half an inch per level, with the mark hanging a quarter of an inch back
+    // into it, which is what Word's own lists use.
+    let mut properties = Element::new(&named(prefix, "pPr"), Some(W));
+    let mut indent = Element::new(&named(prefix, "ind"), Some(W));
+    indent.set_namespaced_attribute(&named(prefix, "left"), W, &(720 * (level + 1)).to_string());
+    indent.set_namespaced_attribute(&named(prefix, "hanging"), W, "360");
+    properties.push_element(indent);
+    element.push_element(properties);
+    element
+}
+
+fn list_definition(num_id: i32, abstract_id: i32, prefix: Option<&str>) -> Element {
+    let mut entry = Element::new(&named(prefix, "num"), Some(W));
+    entry.set_namespaced_attribute(&named(prefix, "numId"), W, &num_id.to_string());
+    entry.push_element(valued(prefix, "abstractNumId", &abstract_id.to_string()));
+    entry
+}
+
+fn named(prefix: Option<&str>, local: &str) -> String {
+    match prefix {
+        Some(prefix) => format!("{prefix}:{local}"),
+        None => local.to_owned(),
+    }
+}
+
+fn valued(prefix: Option<&str>, local: &str, value: &str) -> Element {
+    let mut element = Element::new(&named(prefix, local), Some(W));
+    element.set_namespaced_attribute(&named(prefix, "val"), W, value);
+    element
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -588,10 +588,14 @@ impl Editor {
             if let Some(tab) = self.ribbon.tab_at(x, y) {
                 return self.choose_tab(tab);
             }
-            if let Some(command) = self.ribbon.command_at(x, y) {
-                return self.run(command);
-            }
-            return Response::Ignored;
+            // A button with an arrow means two things depending on which half
+            // of it was pressed, and the ribbon is what knows where the line
+            // between them was drawn.
+            return match self.ribbon.press_at(x, y) {
+                Some(chrome::ribbon::Press::Run(command)) => self.run(command),
+                Some(chrome::ribbon::Press::Drop(_, choice)) => self.open_list(choice),
+                None => Response::Ignored,
+            };
         }
 
         // The status strip: the zoom slider and the two buttons beside it.
@@ -1043,6 +1047,20 @@ impl Editor {
             // The paste options are not on the ribbon: they hang under the
             // little button at the end of the paste, which knows where it is.
             Choice::PasteOption => return self.open_paste_menu(),
+            // The menus the ribbon's arrows drop are filled in by the module
+            // that owns them, which knows what is in each and which of its
+            // entries is in force.
+            Choice::BulletLibrary
+            | Choice::NumberLibrary
+            | Choice::MultilevelLibrary
+            | Choice::LineSpacing
+            | Choice::LetterCase
+            | Choice::PageNumberPlace
+            | Choice::Selecting
+            | Choice::NoteJump
+            | Choice::Accepting
+            | Choice::Rejecting
+            | Choice::Tracking => return self.open_ribbon_menu(choice),
             Choice::Font => Command::ChooseFont,
             Choice::Size => Command::ChooseSize,
             Choice::Style => Command::ChooseStyle,
@@ -1153,6 +1171,17 @@ impl Editor {
             | Choice::Break
             | Choice::Watermark
             | Choice::PasteOption
+            | Choice::BulletLibrary
+            | Choice::NumberLibrary
+            | Choice::MultilevelLibrary
+            | Choice::LineSpacing
+            | Choice::LetterCase
+            | Choice::PageNumberPlace
+            | Choice::Selecting
+            | Choice::NoteJump
+            | Choice::Accepting
+            | Choice::Rejecting
+            | Choice::Tracking
             | Choice::Cover
             | Choice::Authority
             | Choice::Theme
@@ -1226,6 +1255,19 @@ impl Editor {
             Choice::Citation => self.choose_citation(index),
             Choice::Source => self.choose_source(index),
             Choice::Watermark => self.choose_watermark(index),
+            // Everything the ribbon's arrows drop goes to one place, which is
+            // where each of those menus was filled in.
+            Choice::BulletLibrary
+            | Choice::NumberLibrary
+            | Choice::MultilevelLibrary
+            | Choice::LineSpacing
+            | Choice::LetterCase
+            | Choice::PageNumberPlace
+            | Choice::Selecting
+            | Choice::NoteJump
+            | Choice::Accepting
+            | Choice::Rejecting
+            | Choice::Tracking => self.choose_from_menu(choice, index),
             Choice::PasteOption => self.choose_paste_option(index),
             Choice::Cover => self.choose_cover_page(index),
             Choice::Authority => self.choose_authorities(index),

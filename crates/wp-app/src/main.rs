@@ -89,6 +89,10 @@ fn picture(arguments: &[String]) -> Result<(), String> {
     // looked at on a machine with no display, and a picture of one theme and
     // one tab would leave most of it unseen.
     for option in rest.iter().skip(2) {
+        // Drawn again between one option and the next, because an option may
+        // depend on where the last one put something: `menu=accept` hangs a
+        // list under a button that `tab=review` has only just brought out.
+        editor.draw(width, height);
         editor.set_view_option(option)?;
     }
 

@@ -82,6 +82,23 @@ impl Document {
         count
     }
 
+    /// Which paragraphs hold tracked changes, in order.
+    ///
+    /// What "move to the next change" needs. The count alone says whether there
+    /// are any; it does not say where to go next, and Word's Accept button goes
+    /// on to the next change as soon as it has dealt with this one.
+    #[must_use]
+    pub fn paragraphs_with_revisions(&self) -> Vec<usize> {
+        (0..self.paragraph_count())
+            .filter(|index| {
+                let Some(paragraph) = self.paragraph_element(*index) else { return false };
+                let mut count = 0usize;
+                count_revisions(paragraph, &mut count);
+                count > 0
+            })
+            .collect()
+    }
+
     /// Accepts or rejects every tracked change in the document.
     pub fn resolve_all_revisions(&mut self, decision: Decision) -> usize {
         let caret = self.caret();

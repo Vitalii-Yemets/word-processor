@@ -137,13 +137,19 @@ impl Editor {
     }
 
     /// Moves the paragraph one level deeper in its list, or back to the top.
-    pub(super) fn step_list_level(&mut self) -> Response {
+    pub(super) fn step_list_level(&mut self, deeper: bool) -> Response {
         let Some(reference) = self.document.list_here() else {
-            // Nothing is a list yet, so the button starts one.
+            // Nothing is a list yet, so this starts one.
             return self.toggle_list(wp_docx::BULLET_LIST, "Bulleted list");
         };
         let levels = u8::try_from(wp_docx::LIST_LEVELS).unwrap_or(3);
-        let next = if reference.level + 1 >= levels { 0 } else { reference.level + 1 };
+        // Word stops at the ends rather than wrapping round: a list indented
+        // once too often should stay where it is, not jump back to the margin.
+        let next = if deeper {
+            (reference.level + 1).min(levels - 1)
+        } else {
+            reference.level.saturating_sub(1)
+        };
         let changed = self
             .document
             .set_list_here(Some(wp_docx::model::NumberingReference { level: next, ..reference }));

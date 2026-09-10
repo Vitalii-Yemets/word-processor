@@ -74,7 +74,9 @@ impl Editor {
             }
             Command::GrowFont => self.step_size(true),
             Command::ShrinkFont => self.step_size(false),
-            Command::ChangeCase => self.cycle_case(),
+            // A pure dropdown on the ribbon, so the command means "ask which
+            // case", both from a keystroke and from a recorded macro.
+            Command::ChangeCase => self.open_list(Choice::LetterCase),
             Command::ClearFormatting => {
                 let changed = self.document.clear_formatting();
                 self.finish_character_change(changed, "Formatting cleared")
@@ -94,7 +96,7 @@ impl Editor {
             Command::Align(alignment) => self.apply_alignment(alignment, alignment_name(alignment)),
             Command::Bullets => self.toggle_list(wp_docx::BULLET_LIST, "Bulleted list"),
             Command::Numbering => self.toggle_list(wp_docx::NUMBERED_LIST, "Numbered list"),
-            Command::MultilevelList => self.step_list_level(),
+            Command::MultilevelList => self.open_list(Choice::MultilevelLibrary),
             Command::IndentMore => {
                 let changed = self.document.adjust_indent_here(INDENT_STEP);
                 self.edited(changed, "Indented")
@@ -104,7 +106,7 @@ impl Editor {
                 self.edited(changed, "Outdented")
             }
             Command::Sort => self.sort_selection(),
-            Command::LineSpacing => self.cycle_line_spacing(),
+            Command::LineSpacing => self.open_list(Choice::LineSpacing),
             Command::ShowMarks => {
                 self.show_marks = !self.show_marks;
                 self.needs_redraw = true;
@@ -372,17 +374,6 @@ impl Editor {
             Command::OnePage => self.zoom_to_fit(false),
             Command::PageWidth => self.zoom_to_fit(true),
         }
-    }
-
-    /// Steps the change-case button round its five choices.
-    fn cycle_case(&mut self) -> Response {
-        if self.document.selection().is_none() {
-            return self.report("Select some text first, then press Aa");
-        }
-        self.case_change = self.case_change.next();
-        let wanted = self.case_change;
-        let changed = self.document.change_case(wanted);
-        self.edited(changed, wanted.label())
     }
 
     /// Zooms so that a page fits the window, either its width or the whole of it.

@@ -28,6 +28,7 @@ mod links;
 mod macros;
 mod mailings;
 mod matching;
+mod menus;
 mod minibar;
 mod notes;
 mod numbering;
@@ -70,7 +71,7 @@ mod windows;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use wp_docx::model::{Alignment, LineRule, LineSpacing, NumberingReference};
+use wp_docx::model::{Alignment, NumberingReference};
 use wp_docx::page::CaseChange;
 use wp_docx::{CharacterFormat, Document, TextPosition};
 use wp_layout::{FontLibrary, LayoutEngine, Page, Renderer};
@@ -105,9 +106,6 @@ const POINTS_PER_INCH: f32 = 72.0;
 const TWIPS_PER_POINT: f32 = 20.0;
 /// How far one press of the indent button moves a paragraph: half an inch.
 const INDENT_STEP: i32 = 720;
-
-/// The line spacings the button cycles through.
-const SPACINGS: &[(f32, &str)] = &[(1.0, "Single"), (1.15, "1.15"), (1.5, "1.5"), (2.0, "Double")];
 
 /// Shows a document, and edits it.
 pub struct Editor {
@@ -1131,29 +1129,7 @@ impl Editor {
         self.edited(changed, &note)
     }
 
-    /// Cycles the line spacing of the paragraph through the usual values.
-    fn cycle_line_spacing(&mut self) -> Response {
-        // Line spacing is stored in 240ths of single spacing.
-        let current = self.document.line_spacing_here().map_or(1.0, |spacing| {
-            if spacing.rule == LineRule::Auto {
-                spacing.value as f32 / 240.0
-            } else {
-                1.0
-            }
-        });
-        let next = SPACINGS
-            .iter()
-            .find(|(value, _)| *value > current + 0.01)
-            .or_else(|| SPACINGS.first())
-            .copied()
-            .unwrap_or((1.0, "Single"));
-
-        let spacing = LineSpacing { value: (next.0 * 240.0).round() as i32, rule: LineRule::Auto };
-        let changed = self.document.set_line_spacing_here(Some(spacing));
-        self.edited(changed, &format!("Line spacing {}", next.1))
-    }
-
-    /// Finds the next occurrence of whatever is selected.
+    /// Magnifies the document, within the limits the slider allows.
     fn set_zoom(&mut self, zoom: f32) -> Response {
         let wanted = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
         if (wanted - self.zoom).abs() < 0.5 {

@@ -427,6 +427,27 @@ impl Editor {
                     self.set_zoom(wanted);
                     return Ok(());
                 }
+                // One of the menus a ribbon arrow drops. The tab it is on has
+                // to be open already, which is why this comes after `tab=`.
+                if let Some(name) = other.strip_prefix("menu=") {
+                    let choice = match name {
+                        "bullets" => crate::chrome::Choice::BulletLibrary,
+                        "numbers" => crate::chrome::Choice::NumberLibrary,
+                        "levels" => crate::chrome::Choice::MultilevelLibrary,
+                        "spacing" => crate::chrome::Choice::LineSpacing,
+                        "case" => crate::chrome::Choice::LetterCase,
+                        "pagenumber" => crate::chrome::Choice::PageNumberPlace,
+                        "select" => crate::chrome::Choice::Selecting,
+                        "notes" => crate::chrome::Choice::NoteJump,
+                        "accept" => crate::chrome::Choice::Accepting,
+                        "reject" => crate::chrome::Choice::Rejecting,
+                        "tracking" => crate::chrome::Choice::Tracking,
+                        unknown => return Err(format!("no menu called {unknown:?}")),
+                    };
+                    self.open_ribbon_menu(choice);
+                    return Ok(());
+                }
+
                 // The File tab is the backstage, and its places are the only
                 // part of the program a picture cannot otherwise reach: each
                 // of them fills the window, so only one can be photographed at

@@ -30,6 +30,30 @@ pub enum Choice {
     Watermark,
     /// The ways the thing just pasted could have been pasted instead.
     PasteOption,
+
+    // --- What the buttons with an arrow drop -------------------------------
+    /// The bullet shapes.
+    BulletLibrary,
+    /// The number formats.
+    NumberLibrary,
+    /// The shapes of a list with levels inside it.
+    MultilevelLibrary,
+    /// The spacings between lines, and the room above and below a paragraph.
+    LineSpacing,
+    /// Sentence case, lower, upper, each word, and the one that swaps them.
+    LetterCase,
+    /// Where a page number goes.
+    PageNumberPlace,
+    /// What Select selects.
+    Selecting,
+    /// Which note to go to.
+    NoteJump,
+    /// How much to accept.
+    Accepting,
+    /// And how much to reject.
+    Rejecting,
+    /// Whether changes are tracked, and whether that can be switched off.
+    Tracking,
     /// The cover page arrangements.
     Cover,
     /// The categories a table of authorities can gather.

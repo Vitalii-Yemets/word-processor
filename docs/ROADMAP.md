@@ -738,14 +738,54 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   same four. That is **C11**, which is about every split button at once. Paste
   Special — pasting as HTML, as RTF, as an embedded object — needs those
   formats on the clipboard first, which is **H2**.
-- [ ] **C11. The menus behind the buttons.** A dozen buttons do the common thing
+- [x] **C11. The menus behind the buttons.** A dozen buttons do the common thing
   where Word drops a menu: bullets and numbering (a library of shapes and
   formats), multilevel lists, line spacing (with space before and after),
   Change Case (five choices, not a cycle), Page Number (top, bottom, margins,
   current position), Select, Next Footnote, Accept and Reject, Bring Forward and
   Send Backward, Track Changes, Show Markup.
-  *Done when:* each of those drops what Word drops, and what it drops does what
-  it says.
+  *Done:* eleven of them, in `editor/menus.rs`, on new ribbon machinery that
+  knows the difference between Word's two kinds of button. A **split button**
+  runs a command from its face and drops a list from its arrow — Bullets puts
+  bullets on, the arrow beside it asks which bullet — and a **plain dropdown**
+  has no command of its own, because there is no such thing as "the case".
+  `ribbon::MENUS` is the table of which is which, `Ribbon::press_at` is the one
+  place the line between the two halves is drawn, and a large button is divided
+  across rather than down, as Word divides one.
+
+  The three buttons that used to cycle no longer do: Change Case, Line Spacing
+  and Multilevel List each ask once. A person who wants small capitals should
+  be able to ask for them rather than press a button five times, and a recorded
+  macro that said "Change Case" could not say which case it meant.
+
+  **Bullets** and **Numbering** are real libraries: picking a mark writes a list
+  definition into `word/numbering.xml` with that mark, and finds the one that is
+  there already rather than writing a second — two identities for one list is
+  two counters, and the second half of a numbered list would start again at one.
+  That is `Document::list_shaped`, and it is what the **Multilevel** gallery
+  uses too, with all three levels given at once. **Line Spacing** offers Word's
+  six spacings and the room above and below a paragraph, which say Add or Remove
+  depending on what is there. **Page Number** puts one at the top, at the foot
+  or where the caret is (as a `PAGE` field), formats them or takes them away.
+  **Select** has Select All and the Selection Pane. **Next Footnote** has all
+  four ways to step through the notes. **Accept** and **Reject** have Word's
+  four each, including "and Move to Next" — which needed
+  `Document::paragraphs_with_revisions`, because a count says whether there are
+  changes and not where the next one is. **Track Changes** has the switch and
+  Word's Lock Tracking, which is the document's own restriction to tracked
+  changes written down.
+
+  The style gallery now gives up tiles before any group is given up altogether:
+  it is the widest thing on the Home tab, and losing the whole Styles group on a
+  narrow window would take the styles off the tab they are used from.
+
+  Not done, and named rather than drawn as dead rows: **Bring Forward** and
+  **Send Backward** need an order among drawings that the model does not carry
+  (`wp:anchor relativeHeight` is written as one number for all of them), and
+  **Show Markup** needs comments and formatting revisions to be markable apart
+  from insertions and deletions — both are **C21** below. Word's **Select
+  Objects** and **Select Text with Similar Formatting** need a selection made of
+  several separate stretches, which is **C22**.
 - [ ] **C12. The boxes on the Layout tab.** The indent boxes are drawn and
   cannot be typed into — pressing them says to drag the ruler instead. Spacing
   before and after has no boxes at all. Both are measurements a person types.
@@ -815,6 +855,33 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* a command can be added to the toolbar and to a ribbon group, a
   group can be moved or hidden, the changes survive closing the program, and
   Reset puts it all back.
+- [ ] **C21. The order things are drawn in, and which marks are shown.** Two
+  gaps **C11** found, both of them a missing distinction rather than a missing
+  button.
+  Word's **Bring Forward** and **Send Backward** move one drawing in front of
+  or behind another. A drawing carries that order in `wp:anchor
+  relativeHeight`, which is read here as nothing and written as the same number
+  for every drawing, so two that overlap are drawn in the order they happen to
+  appear in the document. It needs the number on the anchor, the layout drawing
+  images and shapes in one sequence rather than all the images and then all the
+  shapes, and the four commands that move a drawing through it.
+  Word's **Show Markup** switches comments, insertions and deletions, and
+  formatting changes on and off one at a time. There is one switch here, and it
+  covers insertions and deletions: comments leave no mark in the text to hide,
+  and a formatting change (`w:rPrChange`) is neither recorded nor drawn.
+  *Done when:* two overlapping drawings can be reordered and stay that way
+  through a save, and each of Word's three kinds of markup can be shown or
+  hidden on its own.
+- [ ] **C22. A selection of more than one stretch.** Word can hold several
+  separate stretches of text selected at once: Ctrl and a drag adds to the
+  selection, and its Select menu uses it for "Select Objects" and "Select All
+  Text With Similar Formatting". Here a selection is one anchor and one caret,
+  so there is nowhere to put the second stretch.
+  It reaches further than the two menu entries: Find All, formatting applied to
+  every heading at once, and a column selection made with Alt all want it.
+  *Done when:* Ctrl and a drag adds a stretch, every command that works on the
+  selection works on all of them, and the two entries Word's Select menu is
+  missing here are on it.
 
 ## D — Pictures and drawings
 
