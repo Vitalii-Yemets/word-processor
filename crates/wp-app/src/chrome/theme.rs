@@ -223,6 +223,22 @@ impl Theme {
         }
     }
 
+    /// The blue Word gives the File tab and the backstage behind it.
+    ///
+    /// One colour for both, because in Word they are one thing: the tab is the
+    /// door and the rail down the left of the backstage is the room behind it.
+    /// It comes out the same in either theme, which is why the two arms look
+    /// like they are saying different things and are not — `accent` and
+    /// `emphasis` swap roles between the themes, and this is the dark one of
+    /// the pair in each.
+    #[must_use]
+    pub fn backstage(&self) -> Color {
+        match self.mode {
+            Mode::Dark => self.accent,
+            Mode::Light => self.emphasis,
+        }
+    }
+
     /// The colour a button that is switched on is filled with, and the text on
     /// it.
     #[must_use]

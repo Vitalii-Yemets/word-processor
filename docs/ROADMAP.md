@@ -466,7 +466,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   (new: `Group::launcher`, which **C3** to **C6** will use) and by Ctrl+D.
   Set As Default writes into `w:docDefaults`, the bottom of the inheritance
   chain, so it reaches every paragraph that never said otherwise — this document
-  only, because there is no template yet to write it into. That is **H4**.
+  only, because there is no template yet to write it into. That is **J6**.
 
   The arrangement is Word's too — Font, Font style and Size across the top,
   three colours under them, the effects in two columns inside a box, the
@@ -642,8 +642,43 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Not honoured and so not offered: **Save** (there is no autosave — **G2**),
   **Language** (**F6**), **Customize Ribbon** and **Quick Access Toolbar**
   (**C20** below), **Add-ins** and **Trust Center** (neither exists).
-- [ ] **C8. The File tab.** Word's backstage: Info, Recent, New from template,
+- [x] **C8. The File tab.** Word's backstage: Info, Recent, New from template,
   Open, Save As, Print, Share, Export, Close.
+  *Done:* `chrome/backstage.rs` draws it and `editor/backstage.rs` fills it in.
+  Pressing File no longer drops a page of buttons under the ribbon — the tab is
+  a blue button, as Word's is, and it opens a window of its own over everything
+  with the blue rail down the left and nine places on it: Info, New, Open, Save,
+  Save As, Print, Export, Close, Options. Escape and the arrow at the top go
+  back; the arrow keys walk the rail, over the places that have a page and past
+  the ones that do not, so no arrow key can save or close a document.
+
+  Four of them do their work and leave rather than drawing a page of their own:
+  **Print** opens the page built in **A3**, **Options** the dialog built in
+  **C7**, **Close** starts a new document after asking about unsaved changes,
+  and **Save** saves — staying in the backstage when it could save silently and
+  going back to the document when it had to ask where, which is what Word does.
+
+  **Info** is what the document is: where it lives, how big the file is, its
+  pages, words, characters and paragraphs, when it was made and last saved and
+  by whom — and under that the seven properties Word's Info panel holds, each a
+  line that opens the strip that takes one line of typing. The popup list that
+  used to stand in for that panel is gone.
+  **Open** is Browse and then the documents opened lately, most recent first;
+  the list is kept in the settings file (`recent.0`, `recent.1`, …, up to
+  Word's fifty), written whenever a document is opened or saved, and a document
+  opened again moves up the list rather than appearing on it twice.
+  **Save As** is Browse and then the folders those documents came from, each
+  named once.
+  **Export** writes the PDF — the same writer the Print page's "Save as PDF"
+  printer uses, so there is one PDF and not two.
+  **New** offers the blank document, which is the only thing there is to make.
+
+  Not here, and named rather than drawn as a dead page: **Share** (there is
+  nowhere to share to — no account, no service), **New** from a gallery of
+  templates (**J6**, which is where a template first has to exist), and Info's
+  **Protect Document**, **Inspect Document** and **Manage Document**, none of
+  which this program can do yet. Word's **Account** and **Feedback** are about
+  a subscription and a place to send it, and there is neither.
 - [x] **C9. Real dialogs rather than strips.** The strips stand in for dialogs
   because there was no dialog machinery. Build the machinery — a window, a
   focus ring, tab order, default and cancel buttons, keyboard everything — and

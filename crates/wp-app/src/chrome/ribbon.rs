@@ -363,14 +363,32 @@ impl Ribbon {
 
         for tab in &showing {
             let chosen = *tab == self.tab;
+            // File is not a tab like the others and Word does not draw it like
+            // one: it is a filled button in the accent colour, because it does
+            // not open a page under the strip but a window over everything.
+            let file = *tab == Tab::File;
             // An open tab is a notch cut out of the strip into the ribbon
             // below, so its name is written in the ribbon's text colour. The
             // rest sit on the strip, which is dark in both themes.
-            let color = if chosen { theme.text } else { theme.bar_dim_text() };
+            let color = if file {
+                theme.bar_text()
+            } else if chosen {
+                theme.text
+            } else {
+                theme.bar_dim_text()
+            };
             let measured = engine.simple_line(tab.label(), 0.0, 0.0, 9.0, color);
             let width = measured.width + 24.0;
 
-            if chosen {
+            if file {
+                canvas.fill_rect(
+                    x as i32,
+                    top as i32,
+                    width as i32,
+                    TAB_HEIGHT as i32,
+                    theme.backstage(),
+                );
+            } else if chosen {
                 canvas.fill_rect(
                     x as i32,
                     top as i32,
@@ -802,7 +820,6 @@ impl Ribbon {
                     | Choice::Column
                     | Choice::Break
                     | Choice::Watermark
-                    | Choice::Property
                     | Choice::Cover
                     | Choice::Authority
                     | Choice::Theme
@@ -995,34 +1012,13 @@ const UNDERLINE: TextStyle =
     TextStyle { bold: false, italic: false, underline: true, strike: false };
 const STRIKE: TextStyle = TextStyle { bold: false, italic: false, underline: false, strike: true };
 
-static FILE_GROUPS: &[Group] = &[
-    Group {
-        label: "Document",
-        items: &[
-            Item::Large(Command::New, Icon::New, "New"),
-            Item::Large(Command::Open, Icon::Open, "Open"),
-            Item::Large(Command::Save, Icon::Save, "Save"),
-            Item::Large(Command::SaveAs, Icon::Save, "Save As"),
-        ],
-        launcher: None,
-    },
-    Group {
-        label: "Print",
-        items: &[Item::Large(Command::Print, Icon::Print, "Print")],
-        launcher: None,
-    },
-    Group {
-        label: "Close",
-        items: &[
-            Item::Small(Command::DocumentProperties, Icon::Info, "Info"),
-            Item::Break,
-            Item::Small(Command::Options, Icon::Settings, "Options"),
-            Item::Break,
-            Item::Small(Command::CloseDocument, Icon::Close, "Close"),
-        ],
-        launcher: None,
-    },
-];
+/// The File tab has no groups, because it has no ribbon page.
+///
+/// Word's File tab opens the backstage over the whole window rather than
+/// dropping a page of buttons under the strip, and so does this one — see
+/// [`super::backstage`]. An empty page rather than no arm at all, because the
+/// tab is still on the strip and the ribbon may still be asked what is on it.
+static FILE_GROUPS: &[Group] = &[];
 
 static HOME_GROUPS: &[Group] = &[
     Group {
@@ -1667,6 +1663,23 @@ pub fn groups_of(tab: Tab) -> &'static [Group] {
     }
 }
 
+/// What the File tab's places are called.
+///
+/// They are not on any ribbon page — the File tab opens the backstage instead
+/// of one — but a macro that saves the document has to be able to write down
+/// that it saved the document. So they are named here, where everything else a
+/// macro can record is named.
+static BACKSTAGE_COMMANDS: &[(Command, &str)] = &[
+    (Command::New, "New"),
+    (Command::Open, "Open"),
+    (Command::Save, "Save"),
+    (Command::SaveAs, "Save As"),
+    (Command::Print, "Print"),
+    (Command::DocumentProperties, "Info"),
+    (Command::Options, "Options"),
+    (Command::CloseDocument, "Close"),
+];
+
 /// What a command is called, taken from the button that runs it.
 ///
 /// The ribbon is where every command already has a name in English, so it is
@@ -1674,6 +1687,9 @@ pub fn groups_of(tab: Tab) -> &'static [Group] {
 /// one only a keystroke reaches — has no name here and is not recorded.
 #[must_use]
 pub fn name_of(command: Command) -> Option<&'static str> {
+    if let Some((_, name)) = BACKSTAGE_COMMANDS.iter().find(|(found, _)| *found == command) {
+        return Some(name);
+    }
     for tab in Tab::ALL {
         for group in groups_of(*tab) {
             for item in group.items {
@@ -1698,6 +1714,9 @@ pub fn name_of(command: Command) -> Option<&'static str> {
 /// And back again: the command a name stands for.
 #[must_use]
 pub fn command_named(name: &str) -> Option<Command> {
+    if let Some((command, _)) = BACKSTAGE_COMMANDS.iter().find(|(_, found)| *found == name) {
+        return Some(*command);
+    }
     for tab in Tab::ALL {
         for group in groups_of(*tab) {
             for item in group.items {

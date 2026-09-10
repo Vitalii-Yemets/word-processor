@@ -556,6 +556,15 @@ impl Editor {
 
         self.canvas.clear(self.theme.desk);
 
+        // The File tab is a window of its own, as Word's is, and nothing of the
+        // document shows behind it.
+        if self.in_backstage() {
+            self.draw_title_bar();
+            self.draw_backstage();
+            self.draw_open_popup();
+            return;
+        }
+
         // The Print page is not a thing over the document: it is what the
         // window shows instead of it, as Word's is.
         if self.printing() {

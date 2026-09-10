@@ -432,13 +432,18 @@ impl Editor {
     /// Word has a printer of its own called "Microsoft Print to PDF", and a
     /// person looking for a PDF looks in the same place they look for paper.
     /// This is that: the same settings, the same pages, written to a file.
-    fn write_pdf(&mut self, chosen: &[usize]) -> Response {
+    ///
+    /// The File tab's Export page writes one too, and so calls this. It returns
+    /// whether a file was written rather than what to redraw, because what to
+    /// do afterwards is different in the two places: the Print page stays where
+    /// it is, and Export goes back to the document.
+    pub(super) fn write_pdf(&mut self, chosen: &[usize]) -> bool {
         let name = self.document_name();
         let suggested = std::path::PathBuf::from(format!("{name}.pdf"));
         let Some(path) = wp_shell::dialog::save_file("Save as PDF", PDF_FILTERS, Some(&suggested))
         else {
             self.status = String::from("Not saved");
-            return self.redrawn();
+            return false;
         };
 
         let all = self.layout_for_print(Device::paper());
@@ -451,12 +456,12 @@ impl Editor {
         match std::fs::write(&path, &bytes) {
             Ok(()) => {
                 self.status = format!("Saved {} pages to {}", pages.len(), path.display());
-                self.close_print()
+                true
             }
             Err(error) => {
                 wp_shell::dialog::show_error(&format!("Cannot write {}: {error}", path.display()));
                 self.status = String::from("Not saved");
-                self.redrawn()
+                false
             }
         }
     }
@@ -473,7 +478,7 @@ impl Editor {
             return self.redrawn();
         }
         if self.printer_name == TO_PDF {
-            return self.write_pdf(&chosen);
+            return if self.write_pdf(&chosen) { self.close_print() } else { self.redrawn() };
         }
 
         let opened = if self.printer_name.is_empty() {

@@ -32,7 +32,7 @@ pub(super) enum Field {
 
 impl Field {
     /// What the property is called, as Word calls it.
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
             Self::Title => "Title",
             Self::Subject => "Subject",
@@ -45,7 +45,7 @@ impl Field {
     }
 
     /// Reads it out of the properties.
-    fn read(self, properties: &Properties) -> String {
+    pub(super) fn read(self, properties: &Properties) -> String {
         match self {
             Self::Title => properties.title.clone(),
             Self::Subject => properties.subject.clone(),
@@ -71,7 +71,7 @@ impl Field {
     }
 
     /// The list, in the order Word's panel puts them.
-    const ALL: &'static [Self] = &[
+    pub(super) const ALL: &'static [Self] = &[
         Self::Title,
         Self::Subject,
         Self::Author,
@@ -83,33 +83,14 @@ impl Field {
 }
 
 impl Editor {
-    /// Drops open what the document says about itself.
+    /// Shows what the document says about itself, on the page that is about
+    /// the document.
+    ///
+    /// Word has one place for this and it is the Info page of the File tab.
+    /// Anything else that asks for the properties — the Insert tab's cover
+    /// page, a button that says Properties — opens that.
     pub(super) fn open_properties(&mut self) -> Response {
-        if self.popup.as_ref().is_some_and(|popup| popup.choice == Choice::Property) {
-            self.popup = None;
-            self.needs_redraw = true;
-            return Response::Redraw;
-        }
-        let Some((left, top, _)) = self.ribbon.command_rect(Command::DocumentProperties) else {
-            return Response::Ignored;
-        };
-
-        let properties = self.document.properties();
-        let items = Field::ALL
-            .iter()
-            .map(|field| {
-                let value = field.read(&properties);
-                if value.trim().is_empty() {
-                    format!("{}: —", field.label())
-                } else {
-                    format!("{}: {value}", field.label())
-                }
-            })
-            .collect();
-
-        self.popup = Some(Popup::new(Choice::Property, items, None, left, top, 320.0));
-        self.needs_redraw = true;
-        Response::Redraw
+        self.open_backstage(crate::chrome::backstage::Place::Info)
     }
 
     /// Opens the strip that takes a new value for the property chosen.

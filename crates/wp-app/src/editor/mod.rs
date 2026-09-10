@@ -3,6 +3,7 @@
 mod appearance;
 mod arrange;
 mod autoscroll;
+mod backstage;
 mod chart;
 mod citations;
 mod commands;
@@ -253,6 +254,11 @@ pub struct Editor {
     /// them has to hang under that box rather than under the ribbon button
     /// with the same name.
     popup_anchor: Option<(f32, f32, f32)>,
+    /// The File tab, while it is what the window is showing.
+    ///
+    /// Word's File tab is not a ribbon page: it is a window of its own about
+    /// the document rather than about the text in it.
+    backstage: Option<crate::chrome::backstage::Backstage>,
     /// The Print page, while it is what the window is showing.
     ///
     /// Word gives printing a page rather than a dialog: the settings down one
@@ -455,6 +461,7 @@ impl Editor {
             hovered: None,
             popup: None,
             popup_anchor: None,
+            backstage: None,
             print_pane: None,
             print_preview: Vec::new(),
             printer_name: String::new(),

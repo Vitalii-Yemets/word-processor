@@ -53,7 +53,8 @@ fn main() -> std::process::ExitCode {
 fn picture(arguments: &[String]) -> Result<(), String> {
     let [document_path, image_path, rest @ ..] = arguments else {
         return Err("usage: --picture <document.docx|-> <image.png> [width height] [option...]
-\n             options: light, tab=<file|home|insert|layout|view>, nonav, marks"
+\n             options: light, tab=<file|home|insert|layout|view>,
+             file=<info|new|open|saveas|export>, nonav, marks"
             .to_owned());
     };
     let width: usize = rest

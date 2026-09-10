@@ -411,6 +411,21 @@ impl Editor {
                     self.set_zoom(wanted);
                     return Ok(());
                 }
+                // The File tab is the backstage, and its places are the only
+                // part of the program a picture cannot otherwise reach: each
+                // of them fills the window, so only one can be photographed at
+                // a time.
+                if let Some(name) = other.strip_prefix("file=") {
+                    let place = crate::chrome::backstage::Place::ALL
+                        .iter()
+                        .find(|place| {
+                            place.has_a_page()
+                                && place.label().replace(' ', "").eq_ignore_ascii_case(name)
+                        })
+                        .ok_or_else(|| format!("no place called {name:?} has a page"))?;
+                    self.open_backstage(*place);
+                    return Ok(());
+                }
                 let Some(name) = other.strip_prefix("tab=") else {
                     return Err(format!("unknown option {other:?}"));
                 };
@@ -418,7 +433,9 @@ impl Editor {
                     .iter()
                     .find(|tab| tab.label().eq_ignore_ascii_case(name))
                     .ok_or_else(|| format!("no tab called {name:?}"))?;
-                self.ribbon.tab = *tab;
+                // Through the same door a press goes through, so that `tab=file`
+                // shows what pressing File shows rather than an empty ribbon.
+                self.choose_tab(*tab);
             }
         }
         // Every option changes what the window looks like, and the window only

@@ -78,6 +78,12 @@ impl Editor {
                 else {
                     return Response::Ignored;
                 };
+                // File opens the backstage rather than a ribbon page, and there
+                // are no key tips over a window that is not the ribbon.
+                if tab == crate::chrome::ribbon::Tab::File {
+                    self.key_tips = None;
+                    return self.choose_tab(tab);
+                }
                 self.ribbon.tab = tab;
                 self.key_tips = Some(Level::Commands);
                 self.needs_redraw = true;

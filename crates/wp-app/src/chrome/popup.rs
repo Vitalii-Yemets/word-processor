@@ -28,8 +28,6 @@ pub enum Choice {
     Source,
     /// The ready-made watermarks.
     Watermark,
-    /// What the document says about itself.
-    Property,
     /// The cover page arrangements.
     Cover,
     /// The categories a table of authorities can gather.

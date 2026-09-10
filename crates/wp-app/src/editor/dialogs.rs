@@ -288,7 +288,7 @@ impl Editor {
     /// Notes and text boxes are counted separately because Word counts them
     /// separately: they are not in the body, and a person asking how long the
     /// document is usually means the body.
-    fn counted_text(&self, edges: bool) -> String {
+    pub(super) fn counted_text(&self, edges: bool) -> String {
         let mut text = self.document.plain_text();
         if !edges {
             return text;

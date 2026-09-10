@@ -71,7 +71,19 @@ impl Editor {
         self.file = Some(path.to_path_buf());
         self.status = format!("Saved {}", path.display());
         self.update_title();
+        self.remember_recent(path);
         true
+    }
+
+    /// Puts a document at the top of the list the Open page shows.
+    ///
+    /// Word remembers a document both when it is opened and when it is saved,
+    /// which is why saving one under a new name puts the new name on the list
+    /// and not the old one.
+    pub(super) fn remember_recent(&mut self, path: &Path) {
+        if self.settings.remember(path) {
+            self.settings.save();
+        }
     }
 
     /// Saves where the document came from, asking where when it came from
@@ -86,7 +98,16 @@ impl Editor {
     pub(super) fn save_as_now(&mut self) -> bool {
         let suggested =
             self.file.clone().unwrap_or_else(|| PathBuf::from(format!("{UNTITLED}.docx")));
-        match wp_shell::dialog::save_file("Save as", DOCUMENT_FILTERS, Some(&suggested)) {
+        self.save_into(&suggested)
+    }
+
+    /// Asks where the document goes, starting at a path already worked out.
+    ///
+    /// The Save As page's recent folders come here: the folder is known, the
+    /// name is not, and the dialog opens where the folder is rather than
+    /// wherever it happened to be last.
+    pub(super) fn save_into(&mut self, suggested: &Path) -> bool {
+        match wp_shell::dialog::save_file("Save as", DOCUMENT_FILTERS, Some(suggested)) {
             Some(path) => self.write_document(&path),
             None => {
                 self.status = String::from("Not saved");
@@ -157,7 +178,18 @@ impl Editor {
         let Some(path) = wp_shell::dialog::open_file("Open", DOCUMENT_FILTERS) else {
             return Response::Ignored;
         };
+        self.open_path(&path)
+    }
 
+    /// Opens a document whose path is already known.
+    ///
+    /// The Open page's list of documents opened lately goes straight here: it
+    /// knows the path, so asking for it again through a file dialog would be
+    /// asking a question that has already been answered.
+    ///
+    /// Whoever calls this has already asked about unsaved changes.
+    pub(super) fn open_path(&mut self, path: &Path) -> Response {
+        let path = path.to_path_buf();
         let opened = std::fs::read(&path)
             .map_err(|error| format!("Cannot read {}: {error}", path.display()))
             .and_then(|bytes| {
@@ -169,6 +201,7 @@ impl Editor {
             Ok(document) => {
                 self.set_document(document, Some(path.clone()));
                 self.status = format!("Opened {}", path.display());
+                self.remember_recent(&path);
                 Response::Redraw
             }
             Err(message) => {

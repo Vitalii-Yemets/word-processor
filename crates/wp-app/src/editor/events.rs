@@ -49,6 +49,14 @@ impl App for Editor {
             }
         }
 
+        // The File tab covers everything under the caption bar, so what is
+        // under the pointer there is a line of it or nothing — never the
+        // document, and never an I-beam.
+        if self.in_backstage() && fy >= crate::chrome::TITLE_HEIGHT {
+            let over = self.backstage.as_ref().and_then(|open| open.at(x, y)).is_some();
+            return if over { Cursor::Hand } else { Cursor::Arrow };
+        }
+
         // The title bar: its buttons are buttons, the rest of it drags the
         // window, which the system already shows a cursor for.
         if fy < crate::chrome::TITLE_HEIGHT {
@@ -231,6 +239,16 @@ impl App for Editor {
                 }
                 if let Some(popup) = &mut self.popup {
                     return if popup.scroll_by(-lines.round() as i32 * 3) {
+                        self.needs_redraw = true;
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    };
+                }
+                // Over the File tab the wheel winds its list, and nothing of
+                // the document behind it moves.
+                if self.in_backstage() {
+                    return if self.backstage_scroll(-lines) {
                         self.needs_redraw = true;
                         Response::Redraw
                     } else {
@@ -422,6 +440,22 @@ impl App for Editor {
 }
 
 impl Editor {
+    /// A press in the caption bar, for the pages that fill the window.
+    ///
+    /// The Print page and the File tab cover everything under the caption bar,
+    /// but the three window buttons in it must still work: a window nobody can
+    /// close is not a window.
+    fn pressed_in_title_bar(&mut self, x: i32, y: i32) -> Response {
+        if let Some(button) = self.titlebar.window_button_at(x, y) {
+            wp_shell::window_command(match button {
+                chrome::WindowButton::Minimise => wp_shell::WindowCommand::Minimise,
+                chrome::WindowButton::Maximise => wp_shell::WindowCommand::ToggleMaximise,
+                chrome::WindowButton::Close => wp_shell::WindowCommand::Close,
+            });
+        }
+        Response::Ignored
+    }
+
     /// Reacts to a press, wherever in the window it landed.
     fn pressed(&mut self, x: i32, y: i32, modifiers: Modifiers) -> Response {
         // The mini toolbar takes a press before anything else, because it is
@@ -436,6 +470,15 @@ impl Editor {
         self.stop_autoscroll();
         self.tip = None;
 
+        // The File tab is what the window is showing, so a press belongs to it
+        // and to nothing behind it. The caption bar is still the caption bar.
+        if self.in_backstage() {
+            if (y as f32) < chrome::TITLE_HEIGHT {
+                return self.pressed_in_title_bar(x, y);
+            }
+            return self.backstage_press(x, y);
+        }
+
         // The Print page is what the window is showing, so a press belongs to
         // it and to nothing behind it — except a list it has dropped open,
         // which is in front of it.
@@ -449,14 +492,7 @@ impl Editor {
                 return Response::Redraw;
             }
             if (y as f32) < chrome::TITLE_HEIGHT {
-                if let Some(button) = self.titlebar.window_button_at(x, y) {
-                    wp_shell::window_command(match button {
-                        chrome::WindowButton::Minimise => wp_shell::WindowCommand::Minimise,
-                        chrome::WindowButton::Maximise => wp_shell::WindowCommand::ToggleMaximise,
-                        chrome::WindowButton::Close => wp_shell::WindowCommand::Close,
-                    });
-                }
-                return Response::Ignored;
+                return self.pressed_in_title_bar(x, y);
             }
             return self.print_pane_press(x, y);
         }
@@ -529,9 +565,7 @@ impl Editor {
         // the places its buttons were last drawn are no longer where they are.
         if (y as f32) < self.ribbon_bottom() && self.view.shows_furniture() {
             if let Some(tab) = self.ribbon.tab_at(x, y) {
-                self.ribbon.tab = tab;
-                self.needs_redraw = true;
-                return Response::Redraw;
+                return self.choose_tab(tab);
             }
             if let Some(command) = self.ribbon.command_at(x, y) {
                 return self.run(command);
@@ -896,6 +930,13 @@ impl Editor {
             };
         }
 
+        // Over the File tab, only the File tab lights up.
+        if self.in_backstage() {
+            let changed = self.backstage_hover(x, y);
+            self.needs_redraw |= changed;
+            return if changed { Response::Redraw } else { Response::Ignored };
+        }
+
         // Over the Print page, only the Print page lights up.
         if self.printing() {
             let changed = self.print_pane_hover(x, y);
@@ -978,7 +1019,6 @@ impl Editor {
             Choice::Citation => Command::InsertCitation,
             Choice::Source => Command::ManageSources,
             Choice::Watermark => Command::Watermark,
-            Choice::Property => Command::DocumentProperties,
             Choice::Cover => Command::CoverPage,
             Choice::Authority => Command::TableOfAuthorities,
             Choice::Shape => Command::InsertShape,
@@ -1078,7 +1118,6 @@ impl Editor {
             | Choice::Column
             | Choice::Break
             | Choice::Watermark
-            | Choice::Property
             | Choice::Cover
             | Choice::Authority
             | Choice::Theme
@@ -1152,7 +1191,6 @@ impl Editor {
             Choice::Citation => self.choose_citation(index),
             Choice::Source => self.choose_source(index),
             Choice::Watermark => self.choose_watermark(index),
-            Choice::Property => self.choose_property(index),
             Choice::Cover => self.choose_cover_page(index),
             Choice::Authority => self.choose_authorities(index),
             Choice::Shape => self.choose_shape(index),
@@ -1259,6 +1297,18 @@ impl Editor {
                 }
                 _ => {}
             }
+        }
+
+        // The File tab has the keyboard while it is showing. Escape goes back
+        // to the document, and the arrows walk the rail, which is how every
+        // list in the program is walked.
+        if self.in_backstage() && self.popup.is_none() && !modifiers.control {
+            return match key {
+                Key::Escape => self.close_backstage(),
+                Key::Up => self.walk_the_rail(false),
+                Key::Down => self.walk_the_rail(true),
+                _ => Response::Ignored,
+            };
         }
 
         // The Print page has the keyboard while it is showing: Escape goes

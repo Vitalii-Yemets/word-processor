@@ -25,6 +25,19 @@ const FOLDER: &str = "WordProcessor";
 const FILE: &str = "settings.txt";
 /// What a macro's key is called, so it can be told from a setting.
 const MACRO_PREFIX: &str = "macro.";
+/// What a remembered document's key is called.
+///
+/// Numbered rather than run together on one line, because a path may contain a
+/// comma and a list separated by commas would then be read back wrongly. The
+/// number is the position, so the order survives as well as the paths.
+const RECENT_PREFIX: &str = "recent.";
+
+/// How many documents are remembered.
+///
+/// Word's own setting is fifty, and its list scrolls; so does the one on the
+/// Open page. Fifty of them is four thousand characters of settings file, which
+/// is nothing.
+pub const RECENT_LIMIT: usize = 50;
 
 /// What was remembered, and what is to be remembered next time.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -55,6 +68,13 @@ pub struct Settings {
     pub white_space: Option<bool>,
     /// What unit measurements are shown in, by name. See [`crate::measure`].
     pub unit: Option<String>,
+    /// The documents opened lately, the most recent first.
+    ///
+    /// Kept as written rather than as paths, because a path that no longer
+    /// exists is still worth showing: Word shows it too, and says so when it is
+    /// pressed. Throwing the line away the moment a memory stick is unplugged
+    /// would lose the only record of where the document was.
+    pub recent: Vec<String>,
     /// Everything the file said that this version does not know about, so that
     /// saving does not throw away a later version's settings.
     unknown: BTreeMap<String, String>,
@@ -121,10 +141,31 @@ impl Settings {
     pub fn set_macro(&mut self, name: &str, steps: &str) {
         self.unknown.insert(format!("{MACRO_PREFIX}{name}"), steps.to_owned());
     }
+
+    /// Puts a document at the top of the list of the ones opened lately.
+    ///
+    /// A document that is already on the list moves to the top rather than
+    /// appearing twice — opening the same file three times must not fill the
+    /// list with it. Returns whether anything changed, so a caller need not
+    /// write the file when nothing did.
+    pub fn remember(&mut self, path: &std::path::Path) -> bool {
+        let Some(written) = path.to_str() else { return false };
+        if self.recent.first().is_some_and(|first| first == written) {
+            return false;
+        }
+        self.recent.retain(|found| found != written);
+        self.recent.insert(0, written.to_owned());
+        self.recent.truncate(RECENT_LIMIT);
+        true
+    }
     /// Reads the settings out of the text of the file.
     #[must_use]
     pub fn parse(text: &str) -> Self {
         let mut settings = Self::default();
+        // Gathered with their numbers and sorted afterwards, so a file whose
+        // lines have been moved about by hand still gives the list back in the
+        // order it was written in.
+        let mut recent: Vec<(usize, String)> = Vec::new();
         for line in text.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -153,10 +194,21 @@ impl Settings {
                         .collect();
                 }
                 other => {
-                    settings.unknown.insert(other.to_owned(), value.to_owned());
+                    match other.strip_prefix(RECENT_PREFIX).and_then(|at| at.parse::<usize>().ok())
+                    {
+                        Some(at) if !value.is_empty() => recent.push((at, value.to_owned())),
+                        // Anything else with that prefix is not a place in the
+                        // list, and is kept as it is rather than guessed at.
+                        _ => {
+                            settings.unknown.insert(other.to_owned(), value.to_owned());
+                        }
+                    }
                 }
             }
         }
+        recent.sort_by_key(|(at, _)| *at);
+        settings.recent = recent.into_iter().map(|(_, path)| path).collect();
+        settings.recent.truncate(RECENT_LIMIT);
         settings
     }
 
@@ -205,6 +257,9 @@ impl Settings {
         if !self.status_off.is_empty() {
             write("status-off", self.status_off.join(", "));
         }
+        for (at, path) in self.recent.iter().enumerate() {
+            write(&format!("{RECENT_PREFIX}{at}"), path.clone());
+        }
         for (key, value) in &self.unknown {
             write(key, value.clone());
         }
@@ -252,9 +307,37 @@ mod tests {
             gridlines: Some(true),
             white_space: Some(false),
             unit: Some("centimetres".to_owned()),
+            recent: vec![
+                "C:\\Documents\\Report, final.docx".to_owned(),
+                "/home/somebody/notes.docx".to_owned(),
+            ],
             unknown: BTreeMap::new(),
         };
         assert_eq!(Settings::parse(&settings.to_text()), settings);
+    }
+
+    #[test]
+    fn a_document_opened_again_moves_up_rather_than_appearing_twice() {
+        let mut settings = Settings::default();
+        assert!(settings.remember(std::path::Path::new("/one.docx")));
+        assert!(settings.remember(std::path::Path::new("/two.docx")));
+        assert!(settings.remember(std::path::Path::new("/one.docx")));
+        assert_eq!(settings.recent, vec!["/one.docx".to_owned(), "/two.docx".to_owned()]);
+
+        // And the one already at the top changes nothing at all, so the
+        // settings file is not written on every save.
+        assert!(!settings.remember(std::path::Path::new("/one.docx")));
+    }
+
+    #[test]
+    fn the_list_of_documents_stops_where_word_stops() {
+        let mut settings = Settings::default();
+        for number in 0..RECENT_LIMIT + 10 {
+            settings.remember(std::path::Path::new(&format!("/{number}.docx")));
+        }
+        assert_eq!(settings.recent.len(), RECENT_LIMIT);
+        // The most recent is the one at the top.
+        assert_eq!(settings.recent[0], format!("/{}.docx", RECENT_LIMIT + 9));
     }
 
     #[test]
