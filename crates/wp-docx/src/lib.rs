@@ -64,6 +64,7 @@ pub mod model;
 pub mod notes;
 pub mod numbering;
 pub mod page;
+pub mod pageborders;
 pub mod permissions;
 pub mod position;
 pub mod proofing;

@@ -571,6 +571,20 @@ pub(crate) fn properties_of(root: &Element, section: usize) -> Option<&Element> 
     }
 }
 
+/// The same, to be written into.
+///
+/// What "apply to the whole document" needs: every section's properties, one
+/// after another, rather than only the one the caret is in.
+pub(crate) fn properties_of_mut(root: &mut Element, section: usize) -> Option<&mut Element> {
+    let path = breaks(root).get(section).map(|(_, path)| path.clone());
+    match path {
+        Some(path) => crate::edit::element_at_path_mut(root, &path)
+            .and_then(|paragraph| paragraph.child_mut(Some(W), "pPr"))
+            .and_then(|properties| properties.child_mut(Some(W), "sectPr")),
+        None => crate::read::find_body_mut(root).and_then(|body| body.child_mut(Some(W), "sectPr")),
+    }
+}
+
 fn walk_breaks(
     element: &Element,
     path: &mut Vec<usize>,

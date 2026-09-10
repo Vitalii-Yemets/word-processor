@@ -833,9 +833,41 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Custom Paragraph Spacing opens the Paragraph dialog, which has Set As Default
   on it — the same job Word's ends in, through the dialog this program already
   has for it.
-- [ ] **C14. Page Borders.** Opens the same list of edges a paragraph border
+- [x] **C14. Page Borders.** Opens the same list of edges a paragraph border
   uses. Word opens Borders and Shading on its page tab: art borders, which pages
   they go on, and the distance from the edge.
+  *Done:* the button had `Command::Borders` on it — the paragraph one — so it
+  put a border round the paragraph the caret was in. It has a command of its
+  own now and opens Word's Borders and Shading on its Page Border tab.
+
+  A page border is written in a different place from a paragraph's and made of
+  different decisions, which is why it is a module of its own:
+  `wp_docx::pageborders` reads and writes `w:pgBorders` inside the section's
+  properties — the four edges, which pages of the section carry one
+  (`w:display`), whether the distance is measured from the paper or from the
+  text (`w:offsetFrom`), and how far in it sits (`w:space`, in whole points, as
+  far as thirty-one). The dialog holds all of that, with Word's Options folded
+  into it rather than hidden behind a second dialog: there are two fields in it.
+  Apply to offers the whole document or this section, and the whole document
+  writes into every section rather than only the caret's.
+
+  The layout draws it, which is the half that makes it real: it is measured
+  from the sheet rather than from anything laid out, it is the same on every
+  page the section asks for, and it is there on a page with no text at all.
+
+  Drawing it turned up a gap worth closing at the same time: a border's style
+  was written down faithfully and drawn as a plain line whatever it said, so a
+  list offering five styles would have been four rows of lie. `draw_border_edge`
+  draws a double as two lines with a gap, a dotted as a row of squares and a
+  dashed as a row of longer ones, out of the plain rectangles a decoration is —
+  and paragraph borders go through it too, so they gained their styles as well.
+
+  Not offered, and named rather than drawn as dead rows: Word's **Art** border
+  gallery, which is a hundred and sixty pictures Word ships and this program
+  does not have, and the **Shadow** and **3-D** settings, which are line effects
+  rather than lines. Word's longer list of line styles — `dotDash`,
+  `dashDotStroked`, the wavy and the three-line ones — is read and written
+  faithfully but drawn as the nearest of the five above. All three are **C23**.
 - [ ] **C15. The Table Design tab.** Header Row and Banded Rows do nothing and
   say so — the only two buttons in the program that do. The tab is also missing
   the table styles gallery, shading, the border styles and the border painter,
@@ -922,6 +954,22 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* Ctrl and a drag adds a stretch, every command that works on the
   selection works on all of them, and the two entries Word's Select menu is
   missing here are on it.
+- [ ] **C23. The rest of what a border can look like.** Three gaps **C14**
+  found, all of them about drawing rather than about the file.
+  Word's **Art** borders are a gallery of about a hundred and sixty repeating
+  pictures — apples, hearts, rope — written as `w:top w:val="apples"` and drawn
+  from artwork Word ships. Nothing here has the artwork, so the gallery is not
+  offered; a document that arrives with one keeps it, because an unknown style
+  is written back as it came.
+  Word's **Shadow** and **3-D** settings are the same box drawn with a drop
+  shadow or a bevel, which is a way of drawing a line this program does not have
+  yet.
+  And its **line styles** are longer than the five drawn here: `dotDash`,
+  `dashDotStroked`, `wave`, `doubleWave`, `triple` and the rest are read and
+  written faithfully and drawn as the nearest of the five.
+  *Done when:* every style Word lists is drawn as Word draws it, the two
+  settings are on the dialog, and a document with an art border round its pages
+  looks the same here as it does there.
 
 ## D — Pictures and drawings
 

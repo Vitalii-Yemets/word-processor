@@ -131,6 +131,8 @@ pub enum Command {
     DocumentSpacing,
     Shading,
     Borders,
+    /// The border round the pages, which is not the border round a paragraph.
+    PageBorders,
 
     /// Applies the style at this place in the gallery.
     ///

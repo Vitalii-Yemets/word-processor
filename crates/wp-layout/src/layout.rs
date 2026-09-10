@@ -1322,6 +1322,10 @@ impl<'a> LayoutEngine<'a> {
         self.keeping = false;
         self.number_lines(&mut pages, document);
 
+        // The border round the paper, which is about the sheet rather than
+        // about anything on it.
+        self.draw_page_borders(&mut pages, document);
+
         // The header and the footer go on afterwards, once there are pages to
         // put them on and a total for a page number to count towards.
         self.place_all_furniture(&mut pages, document, metrics);
@@ -1972,6 +1976,155 @@ impl<'a> LayoutEngine<'a> {
         *y += space_after;
     }
 
+    /// Draws one edge of a border, in whatever style it asks for.
+    ///
+    /// # Why a style is more than a name
+    ///
+    /// Because a dotted border and a solid one of the same width are the same
+    /// number of pixels of ink and a different thing entirely to look at. The
+    /// styles are drawn out of plain rectangles — the only thing a decoration
+    /// is — because that is enough for all of them: a double line is two lines
+    /// with a gap, a dotted one is a row of squares, a dashed one a row of
+    /// longer squares.
+    ///
+    /// `run` is how long the edge is; whether that is across or down is decided
+    /// by `sideways`.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_border_edge(
+        page: &mut Page,
+        style: &str,
+        x: f32,
+        y: f32,
+        run: f32,
+        thickness: f32,
+        sideways: bool,
+        colour: Color,
+    ) {
+        // One rectangle of the edge, given how far along it starts and how long
+        // it is. Everything below is written in terms of this, so that across
+        // and down are decided once.
+        let mut piece = |along: f32, length: f32, offset: f32, weight: f32| {
+            if length <= 0.0 || weight <= 0.0 {
+                return;
+            }
+            let (rect_x, rect_y, width, height) = if sideways {
+                (x + along, y + offset, length, weight)
+            } else {
+                (x + offset, y + along, weight, length)
+            };
+            page.decorations.push(Decoration {
+                x: rect_x,
+                y: rect_y,
+                width,
+                height,
+                color: colour,
+            });
+        };
+
+        match style {
+            // Two lines with a gap between them, each a third of the whole.
+            "double" => {
+                let line = (thickness / 3.0).max(1.0);
+                piece(0.0, run, -thickness / 2.0, line);
+                piece(0.0, run, thickness / 2.0 - line, line);
+            }
+            // A row of squares, each as long as the line is thick, with a gap
+            // of the same size — which is what a dot is at any width.
+            "dotted" | "dotDash" | "dotDotDash" => {
+                let step = (thickness * 2.0).max(2.0);
+                let mut along = 0.0;
+                while along < run {
+                    piece(along, thickness.min(run - along), -thickness / 2.0, thickness);
+                    along += step;
+                }
+            }
+            // The same, with the marks four times as long as they are thick.
+            "dashed" | "dashSmallGap" | "dashDotStroked" => {
+                let mark = (thickness * 4.0).max(3.0);
+                let step = mark + (thickness * 2.0).max(2.0);
+                let mut along = 0.0;
+                while along < run {
+                    piece(along, mark.min(run - along), -thickness / 2.0, thickness);
+                    along += step;
+                }
+            }
+            // Everything else is a line: `single`, `thick`, and every style
+            // this program does not draw differently. Its width is what makes
+            // it heavy or light, which is most of what the styles differ by.
+            _ => piece(0.0, run, -thickness / 2.0, thickness),
+        }
+    }
+
+    /// Draws the border round the pages of every section that asks for one.
+    ///
+    /// # Why it is not drawn with the paragraphs
+    ///
+    /// Because it belongs to the sheet. It is the same on every page of the
+    /// section whatever is on them, it is there on a page with no text at all,
+    /// and it is measured from the edge of the paper rather than from anything
+    /// that was laid out. See [`wp_docx::pageborders`].
+    fn draw_page_borders(&mut self, pages: &mut [Page], document: &Document) {
+        let sections = document.sections();
+        let borders: Vec<wp_docx::pageborders::PageBorders> =
+            (0..sections.len()).map(|section| document.page_borders_of(section)).collect();
+        if borders.iter().all(wp_docx::pageborders::PageBorders::is_empty) {
+            return;
+        }
+
+        let scale = self.pixels_per_point();
+        let automatic = self.automatic_line;
+        // Which page of its own section each page is, because a border can be
+        // asked for on the first page of a section or on all but the first.
+        let mut seen: Vec<usize> = vec![0; sections.len()];
+
+        for (index, page) in pages.iter_mut().enumerate() {
+            let section = self.page_sections.get(index).copied().unwrap_or(0);
+            let within = seen.get(section).copied().unwrap_or(0);
+            if let Some(count) = seen.get_mut(section) {
+                *count += 1;
+            }
+
+            let Some(border) = borders.get(section) else { continue };
+            if border.is_empty() || !border.display.covers(within) {
+                continue;
+            }
+
+            // The distance is in whole points from the edge of the paper, or
+            // from the text, which is the margin less the distance.
+            let inset = border.distance as f32 * scale;
+            let setup = sections.get(section).map(|section| &section.setup);
+            let (left, top, right, bottom) = if border.from_text {
+                let metrics = setup.map(PageMetrics::from_setup).unwrap_or_default();
+                (
+                    (metrics.margin_left - border.distance as f32).max(0.0) * scale,
+                    (metrics.margin_top - border.distance as f32).max(0.0) * scale,
+                    page.width - (metrics.margin_right - border.distance as f32).max(0.0) * scale,
+                    page.height - (metrics.margin_bottom - border.distance as f32).max(0.0) * scale,
+                )
+            } else {
+                (inset, inset, page.width - inset, page.height - inset)
+            };
+
+            let width = (right - left).max(1.0);
+            let height = (bottom - top).max(1.0);
+            let edges = [
+                (&border.top, left, top, width, 0.0),
+                (&border.bottom, left, bottom, width, 0.0),
+                (&border.start, left, top, 0.0, height),
+                (&border.end, right, top, 0.0, height),
+            ];
+
+            for (edge, x, y, run_width, run_height) in edges {
+                let Some(edge) = edge.as_ref().filter(|edge| edge.is_visible()) else { continue };
+                let thickness = (edge.width_points() * scale).max(1.0);
+                let colour = edge.color.as_deref().and_then(Color::from_hex).unwrap_or(automatic);
+                let sideways = run_width > 0.0;
+                let run = if sideways { run_width } else { run_height };
+                Self::draw_border_edge(page, &edge.style, x, y, run, thickness, sideways, colour);
+            }
+        }
+    }
+
     /// Draws one paragraph's shading and borders round the band it fills.
     #[allow(clippy::too_many_arguments)]
     fn decorate_paragraph(
@@ -2009,15 +2162,13 @@ impl<'a> LayoutEngine<'a> {
             }
             let thickness = (border.width_points() * scale).max(1.0);
             let colour = border.color.as_deref().and_then(Color::from_hex).unwrap_or(automatic);
-            page.decorations.push(Decoration {
-                // A vertical edge is as thick as the line and as tall as the
-                // band; a horizontal one the other way round.
-                x: if run_width > 0.0 { x } else { x - thickness / 2.0 },
-                y: if run_height > 0.0 { y } else { y - thickness / 2.0 },
-                width: if run_width > 0.0 { run_width } else { thickness },
-                height: if run_height > 0.0 { run_height } else { thickness },
-                color: colour,
-            });
+            // A horizontal edge runs across and is as thick as the line; a
+            // vertical one the other way round. Which style it is drawn in is
+            // the same question here as round a page, and is answered in one
+            // place for both.
+            let sideways = run_width > 0.0;
+            let run = if sideways { run_width } else { run_height };
+            Self::draw_border_edge(page, &border.style, x, y, run, thickness, sideways, colour);
         }
     }
 

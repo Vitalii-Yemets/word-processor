@@ -219,6 +219,18 @@ impl Editor {
                 }
                 self.print_preview = self.layout_for_print(wp_layout::Device::screen());
             }
+            "pageborder" => {
+                // A border round the pages, which is the one thing on the
+                // paper that is not put there by any of the text.
+                let line = wp_docx::model::Border {
+                    style: "double".to_owned(),
+                    size: 12,
+                    color: Some("2B579A".to_owned()),
+                };
+                let borders = wp_docx::pageborders::PageBorders::box_all(&line);
+                self.document.set_page_borders_everywhere(&borders);
+                self.relayout();
+            }
             "paste" => {
                 // A paragraph copied and put down again with the little button
                 // showing and its menu open, which is the only way to look at

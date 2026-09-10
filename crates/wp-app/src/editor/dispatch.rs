@@ -119,6 +119,7 @@ impl Editor {
             }
             Command::Shading => self.open_palette(PaletteKind::Shading),
             Command::Borders => self.open_borders(),
+            Command::PageBorders => self.open_page_borders(),
             Command::Style(index) => {
                 let style = self.style_gallery().get(index).and_then(|sample| sample.id.clone());
                 self.apply_style(style.as_deref())

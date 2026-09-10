@@ -57,6 +57,8 @@ pub(super) enum Asking {
     Table,
     /// What the program does, rather than what the document says.
     Options,
+    /// The border round the pages of a section.
+    PageBorders,
 }
 
 impl Editor {
@@ -126,6 +128,7 @@ impl Editor {
             Some(Asking::Style) => self.apply_style_dialog(&dialog),
             Some(Asking::Table) => self.apply_table_dialog(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),
+            Some(Asking::PageBorders) => self.apply_page_borders(&dialog),
             // Word's Symbol dialog is answered by its Insert button rather
             // than by OK, so there is nothing left to do when it shuts.
             Some(Asking::Symbol) | Some(Asking::Inspector) => {

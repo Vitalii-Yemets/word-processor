@@ -35,6 +35,7 @@ mod notes;
 mod numbering;
 mod optionsdialog;
 mod outline;
+mod pagebordersdialog;
 mod pagesetup;
 mod paragraphdialog;
 mod parts;

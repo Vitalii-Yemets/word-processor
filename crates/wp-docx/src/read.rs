@@ -230,7 +230,7 @@ fn read_paragraph_borders(element: &Element) -> ParagraphBorders {
     }
 }
 
-fn read_border(element: &Element) -> Border {
+pub(crate) fn read_border(element: &Element) -> Border {
     Border {
         style: value(element).unwrap_or("single").to_owned(),
         // Four eighths of a point is the line Word draws when asked for one

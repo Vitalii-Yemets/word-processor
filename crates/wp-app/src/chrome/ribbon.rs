@@ -1498,7 +1498,7 @@ static DESIGN_GROUPS: &[Group] = &[
         items: &[
             Item::Large(Command::Watermark, Icon::Watermark, "Watermark"),
             Item::Large(Command::PageColor, Icon::PageColor, "Page Color"),
-            Item::Large(Command::Borders, Icon::PageBorders, "Page Borders"),
+            Item::Large(Command::PageBorders, Icon::PageBorders, "Page Borders"),
         ],
         launcher: None,
     },
