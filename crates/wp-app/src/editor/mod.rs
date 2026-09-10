@@ -4,6 +4,7 @@ mod appearance;
 mod arrange;
 mod autoscroll;
 mod backstage;
+mod boxes;
 mod chart;
 mod citations;
 mod commands;
@@ -253,6 +254,11 @@ pub struct Editor {
     /// them has to hang under that box rather than under the ribbon button
     /// with the same name.
     popup_anchor: Option<(f32, f32, f32)>,
+    /// The measurement box on the ribbon that has the keyboard, and whether
+    /// what is in it is still the value it opened with. See [`boxes`].
+    ribbon_box: Option<(crate::chrome::Command, bool)>,
+    /// What has been typed into it.
+    box_text: String,
     /// What the last paste put down, while the little button that offers the
     /// other ways of pasting it is still showing. See [`paste`].
     pasted: Option<paste::Pasted>,
@@ -463,6 +469,8 @@ impl Editor {
             hovered: None,
             popup: None,
             popup_anchor: None,
+            ribbon_box: None,
+            box_text: String::new(),
             pasted: None,
             backstage: None,
             print_pane: None,

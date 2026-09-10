@@ -11,6 +11,16 @@ services:
     environment:
       CARGO_NET_OFFLINE: "true"
       CARGO_TERM_COLOR: "always"
+      # How many crates are compiled at once. Left alone, cargo takes every
+      # core the machine has, and a build then makes the machine unusable for
+      # anything else while it runs. Six is enough to keep a build quick and
+      # few enough to leave the machine to its owner.
+      CARGO_BUILD_JOBS: "6"
+    # And the same in the other direction: a limit the container cannot exceed
+    # however many jobs are asked for. Without these, one long build grows the
+    # Docker virtual machine to several gigabytes and it stays that size.
+    cpus: 6
+    mem_limit: 4g
     tty: true
     stdin_open: true
 

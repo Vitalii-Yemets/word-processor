@@ -159,9 +159,11 @@ pub enum Command {
     Columns,
     /// The page, column and section breaks, which drop open as a list.
     Breaks,
-    /// The two indent boxes on the Layout tab.
+    /// The four measurement boxes on the Layout tab.
     IndentLeftBox,
     IndentRightBox,
+    SpaceBeforeBox,
+    SpaceAfterBox,
 
     // Tables, on the two contextual tabs.
     InsertRowAbove,
@@ -424,6 +426,18 @@ pub struct ToolbarState {
     /// The indents of the paragraph at the caret, in twentieths of a point.
     pub indent_left: i32,
     pub indent_right: i32,
+    /// And the room above and below it, in the same unit.
+    pub space_before: i32,
+    pub space_after: i32,
+    /// What unit a measurement is shown in. See [`crate::measure`].
+    pub unit: crate::measure::Unit,
+    /// The box on the ribbon that has the keyboard, and what has been typed
+    /// into it so far.
+    ///
+    /// Kept here rather than in the ribbon because the ribbon is drawn afresh
+    /// from this every time: what is being typed is a fact about the editor,
+    /// like the caret in the document.
+    pub typing: Option<(Command, String)>,
     /// Whether the caret is in a table, which is what shows the two
     /// contextual tabs.
     pub in_table: bool,
@@ -441,12 +455,45 @@ impl ToolbarState {
     /// underlying unit — twentieths of a point — is meaningless to anyone.
     #[must_use]
     pub fn measure(&self, command: Command) -> String {
-        let twips = match command {
-            Command::IndentLeftBox => self.indent_left,
-            Command::IndentRightBox => self.indent_right,
-            _ => return String::new(),
-        };
-        format!("{:.2} cm", f64::from(twips) / 1440.0 * 2.54)
+        // What is being typed wins over what the document says: while a box has
+        // the keyboard it shows the keystrokes, not the paragraph.
+        if let Some((box_command, typed)) = &self.typing {
+            if *box_command == command {
+                return typed.clone();
+            }
+        }
+
+        match command {
+            // An indent is a length, and Word shows a length in whatever unit
+            // its Options were set to.
+            Command::IndentLeftBox => self.length(self.indent_left),
+            Command::IndentRightBox => self.length(self.indent_right),
+            // The room above and below a paragraph is in points whatever that
+            // setting says, because that is what Word does with it — a person
+            // who asked for centimetres did not ask for six-hundredths of one.
+            Command::SpaceBeforeBox => points(self.space_before),
+            Command::SpaceAfterBox => points(self.space_after),
+            _ => String::new(),
+        }
+    }
+
+    /// A length as its box shows it, with the mark for the unit.
+    fn length(&self, twips: i32) -> String {
+        format!("{}{}", crate::measure::format(twips, self.unit), self.unit.mark())
+    }
+}
+
+/// A measurement in points, as the boxes that are always in points show it.
+///
+/// Written without a fraction where there is none, because Word writes "6 pt"
+/// and not "6.0 pt", and a box of round numbers reads as round numbers.
+#[must_use]
+fn points(twips: i32) -> String {
+    let points = f64::from(twips) / 20.0;
+    if (points.fract()).abs() < 0.005 {
+        format!("{points:.0} pt")
+    } else {
+        format!("{points:.1} pt")
     }
 }
 

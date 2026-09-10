@@ -786,9 +786,33 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   from insertions and deletions — both are **C21** below. Word's **Select
   Objects** and **Select Text with Similar Formatting** need a selection made of
   several separate stretches, which is **C22**.
-- [ ] **C12. The boxes on the Layout tab.** The indent boxes are drawn and
+- [x] **C12. The boxes on the Layout tab.** The indent boxes are drawn and
   cannot be typed into — pressing them says to drag the ruler instead. Spacing
   before and after has no boxes at all. Both are measurements a person types.
+  *Done:* four boxes, in Word's arrangement — the indents in one column and the
+  room above and below beside them — and every one of them takes the keyboard.
+  `editor/boxes.rs` is what happens in one: pressing it puts the caret in with
+  the value ready to be replaced, typing replaces it, Backspace rubs out, Enter
+  applies and lets go, Escape lets go without applying, Tab applies and moves
+  to the next box, and a press anywhere else applies it — a number typed and
+  then left is a number meant. Only what a measurement is made of gets in at
+  all, so a stray letter cannot leave a box holding something unreadable.
+
+  Each box has Word's two little arrows as well, which step an indent by a
+  tenth of an inch and the room round a paragraph by six points, from whatever
+  is in force rather than from nothing. The up and down keys do the same while
+  the box has the keyboard.
+
+  An indent is shown and read in whatever unit Options was set to; the room
+  above and below is in points however that was set, which is Word's own
+  division and the one **C18**'s `measure` module was written round. Before
+  this the boxes said centimetres whatever the setting was.
+
+  The ribbon learned two things for it: `Item::NewColumn`, so a group can start
+  a second column outright rather than waiting to overflow into one (Word's
+  Paragraph group is two columns of two, and left to wrap it came out three and
+  one), and `Press::Type`/`Press::Step`, so a press can land in a box or on one
+  of its arrows.
 - [ ] **C13. Design ▸ Paragraph Spacing does the wrong thing.** It cycles the
   line spacing of the document. Word's sets a named spacing set — Compact,
   Tight, Open, Relaxed, Double — on the style set, changing space before and

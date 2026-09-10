@@ -14,6 +14,7 @@ impl Editor {
     pub(super) fn toolbar_state(&self) -> ToolbarState {
         use wp_docx::CharacterFormat;
         let indents = self.document.indents_here();
+        let room = self.document.paragraph_format_here();
         ToolbarState {
             bold: self.document.format_is_on(CharacterFormat::Bold),
             italic: self.document.format_is_on(CharacterFormat::Italic),
@@ -49,6 +50,10 @@ impl Editor {
             highlight_color: self.chosen_highlight_color,
             indent_left: indents.0,
             indent_right: indents.2,
+            space_before: room.space_before,
+            space_after: room.space_after,
+            unit: self.unit,
+            typing: self.ribbon_box.map(|(command, _)| (command, self.box_text.clone())),
             open: self.popup.as_ref().map(|popup| popup.choice),
         }
     }

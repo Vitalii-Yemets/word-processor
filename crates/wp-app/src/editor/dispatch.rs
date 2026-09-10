@@ -165,9 +165,13 @@ impl Editor {
             Command::PageSize => self.open_page_size(),
             Command::Columns => self.open_columns(),
             Command::Breaks => self.open_breaks(),
-            Command::IndentLeftBox | Command::IndentRightBox => {
-                self.report("Type an indent by dragging the markers on the ruler")
-            }
+            // The four measurement boxes take the keyboard rather than doing
+            // anything on their own. A command reaching here is one replayed
+            // from a macro or a keystroke, and it means "put the caret in it".
+            Command::IndentLeftBox
+            | Command::IndentRightBox
+            | Command::SpaceBeforeBox
+            | Command::SpaceAfterBox => self.type_in_box(command),
 
             // --- Tables -------------------------------------------------------
             Command::InsertRowAbove => {

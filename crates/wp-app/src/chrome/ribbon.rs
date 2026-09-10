@@ -180,6 +180,13 @@ pub enum Item {
     StyleGallery,
     /// Starts a new row within the group.
     Break,
+    /// Starts a new column of rows within the group.
+    ///
+    /// A row break wraps into a new column once the group is as tall as the
+    /// ribbon; this asks for one outright. Word's Paragraph group on the Layout
+    /// tab is two columns of two — the indents beside the spacing — and left to
+    /// wrap it would come out three and one.
+    NewColumn,
 }
 
 /// A button that drops a menu, and how much of it drops one.
@@ -204,6 +211,9 @@ pub struct Menu {
 
 /// How wide the arrow half of a button is.
 const ARROW_WIDTH: f32 = 10.0;
+
+/// How wide the two little arrows at the end of a measurement box are.
+const SPINNER_WIDTH: f32 = 13.0;
 
 /// How deep the arrow half of a large button is.
 ///
@@ -249,6 +259,10 @@ pub enum Press {
     Run(Command),
     /// Drop the menu it carries.
     Drop(Command, Choice),
+    /// Put the keyboard in a measurement box.
+    Type(Command),
+    /// Nudge a measurement up or down by one step.
+    Step(Command, bool),
 }
 
 /// A named set of commands.
@@ -270,6 +284,12 @@ struct Placed {
     top: f32,
     width: f32,
     height: f32,
+    /// Where the box of a measurement item starts, when the item has one.
+    ///
+    /// A measurement is a label and a box beside it, and only the box takes
+    /// the keyboard: pressing the word "Left:" should do nothing, as it does
+    /// nothing in Word.
+    field: Option<(f32, f32)>,
 }
 
 /// The ribbon, and which tab of it is open.
@@ -372,6 +392,24 @@ impl Ribbon {
     #[must_use]
     pub fn press_at(&self, x: i32, y: i32) -> Option<Press> {
         let command = self.command_at(x, y)?;
+
+        // A measurement is a label and a box, and only the box answers: its
+        // two little arrows nudge the number, and the rest of it takes the
+        // keyboard. Pressing the word "Left:" does nothing, as in Word.
+        if let Some(placed) = self.placed.iter().find(|item| item.command == command) {
+            if let Some((box_left, box_width)) = placed.field {
+                let (x, y) = (x as f32, y as f32);
+                if x < box_left {
+                    return None;
+                }
+                if x >= box_left + box_width - SPINNER_WIDTH {
+                    let up = y < placed.top + placed.height / 2.0;
+                    return Some(Press::Step(command, up));
+                }
+                return Some(Press::Type(command));
+            }
+        }
+
         let Some(menu) = menu_of(command) else { return Some(Press::Run(command)) };
         if !menu.split {
             return Some(Press::Drop(command, menu.choice));
@@ -578,13 +616,13 @@ impl Ribbon {
             let mut widest = 0.0f32;
 
             for item in group.items {
-                if matches!(item, Item::Break) {
+                if matches!(item, Item::Break | Item::NewColumn) {
                     widest = widest.max(cursor - start);
                     row += 1;
                     // A group with more rows than the ribbon is tall carries on
                     // in a second column, which is what Word does — the
                     // alternative is a button drawn over the group's name.
-                    if row >= rows {
+                    if row >= rows || matches!(item, Item::NewColumn) {
                         row = 0;
                         row_start = start + widest + COLUMN_GAP;
                     }
@@ -624,6 +662,7 @@ impl Ribbon {
                     top: arrow_y - 3.0,
                     width: size + 6.0,
                     height: size + 6.0,
+                    field: None,
                 });
             }
 
@@ -684,7 +723,7 @@ impl Ribbon {
                 }
                 Item::Field(_, _, width) => *width,
                 Item::StyleGallery => STYLE_TILE_WIDTH * self.style_tiles as f32,
-                Item::Break => 0.0,
+                Item::Break | Item::NewColumn => 0.0,
             }
     }
 
@@ -696,10 +735,10 @@ impl Ribbon {
         let mut widest = 0.0f32;
 
         for item in group.items {
-            if matches!(item, Item::Break) {
+            if matches!(item, Item::Break | Item::NewColumn) {
                 widest = widest.max(cursor);
                 row += 1;
-                if row >= rows {
+                if row >= rows || matches!(item, Item::NewColumn) {
                     row = 0;
                     row_start = widest + COLUMN_GAP;
                 }
@@ -814,7 +853,14 @@ impl Ribbon {
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
         chevron(canvas, x + COLLAPSED_WIDTH / 2.0, top + height - 6.0, theme.dim_text);
 
-        self.placed.push(Placed { command, left: x, top, width: COLLAPSED_WIDTH, height });
+        self.placed.push(Placed {
+            command,
+            left: x,
+            top,
+            width: COLLAPSED_WIDTH,
+            height,
+            field: None,
+        });
         x + COLLAPSED_WIDTH + GROUP_PADDING
     }
 
@@ -846,9 +892,10 @@ impl Ribbon {
             | Item::Letter(command, ..)
             | Item::Measure(command, ..)
             | Item::Field(command, ..) => *command,
-            Item::Break | Item::StyleGallery => return 0.0,
+            Item::Break | Item::NewColumn | Item::StyleGallery => return 0.0,
         };
 
+        let mut field: Option<(f32, f32)> = None;
         let enabled = super::is_enabled(command, state);
         let active = enabled && super::is_active(command, state);
         let color = if enabled { theme.text } else { theme.disabled_text };
@@ -976,11 +1023,35 @@ impl Ribbon {
                 let line = engine.simple_line(label, left, top + 17.0, 8.0, theme.dim_text);
                 let measured = line.width - left;
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
+
                 let box_left = left + measured + 8.0;
+                field = Some((box_left, *box_width));
                 field_box(canvas, box_left, top, *box_width, theme);
+
+                // A box with the keyboard is outlined in the accent colour, as
+                // every box that has it is.
+                let typing = state.typing.as_ref().is_some_and(|(found, _)| *found == command);
+                if typing {
+                    outline(canvas, box_left, top, *box_width, ROW_HEIGHT, theme.accent);
+                }
+
                 let value = state.measure(command);
                 let line = engine.simple_line(&value, box_left + 5.0, top + 17.0, 8.0, color);
+                let text_width = line.width - (box_left + 5.0);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
+
+                // The caret sits after what has been typed, so that a box being
+                // typed into looks like one.
+                if typing {
+                    canvas.fill_rect(
+                        (box_left + 6.0 + text_width) as i32,
+                        (top + 5.0) as i32,
+                        1,
+                        (ROW_HEIGHT - 10.0) as i32,
+                        theme.text,
+                    );
+                }
+                spinner(canvas, box_left + box_width - SPINNER_WIDTH, top, color);
             }
             Item::Field(_, choice, _) => {
                 field_box(canvas, left, top, width, theme);
@@ -1057,10 +1128,10 @@ impl Ribbon {
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
                 chevron(canvas, left + width - 12.0, top + ROW_HEIGHT / 2.0, color);
             }
-            Item::Break | Item::StyleGallery => {}
+            Item::Break | Item::NewColumn | Item::StyleGallery => {}
         }
 
-        self.placed.push(Placed { command, left, top, width, height });
+        self.placed.push(Placed { command, left, top, width, height, field });
         width
     }
 
@@ -1145,6 +1216,7 @@ impl Ribbon {
                 left: x,
                 top,
                 width: STYLE_TILE_WIDTH - 3.0,
+                field: None,
                 height,
             });
             x += STYLE_TILE_WIDTH;
@@ -1181,6 +1253,24 @@ fn outline(canvas: &mut Canvas, x: f32, y: f32, width: f32, height: f32, colour:
 /// down.
 fn item_is_large(height: f32) -> bool {
     height > ROW_HEIGHT + 1.0
+}
+
+/// The two little arrows at the right of a measurement box.
+///
+/// Word puts them on every box that holds a number, and they are how a
+/// measurement is nudged rather than typed — which is most of the time, because
+/// the answer is usually "a bit more than that".
+fn spinner(canvas: &mut Canvas, left: f32, top: f32, colour: Color) {
+    let middle = top + ROW_HEIGHT / 2.0;
+    let centre = left + SPINNER_WIDTH / 2.0;
+    for step in 0..3 {
+        let step = step as f32;
+        // Up in the top half, down in the bottom half.
+        canvas.fill_rect((centre - step) as i32, (middle - 4.0 + step) as i32, 1, 1, colour);
+        canvas.fill_rect((centre + step) as i32, (middle - 4.0 + step) as i32, 1, 1, colour);
+        canvas.fill_rect((centre - step) as i32, (middle + 4.0 - step) as i32, 1, 1, colour);
+        canvas.fill_rect((centre + step) as i32, (middle + 4.0 - step) as i32, 1, 1, colour);
+    }
 }
 
 /// The small triangle that says a list drops from here.
@@ -1431,9 +1521,15 @@ static LAYOUT_GROUPS: &[Group] = &[
     Group {
         label: "Paragraph",
         items: &[
-            Item::Measure(Command::IndentLeftBox, "Left:", 54.0),
+            Item::Measure(Command::IndentLeftBox, "Left:", 62.0),
             Item::Break,
-            Item::Measure(Command::IndentRightBox, "Right:", 54.0),
+            Item::Measure(Command::IndentRightBox, "Right:", 62.0),
+            Item::NewColumn,
+            // Word's Paragraph group is two columns: the indents and, beside
+            // them, the room above and below.
+            Item::Measure(Command::SpaceBeforeBox, "Before:", 62.0),
+            Item::Break,
+            Item::Measure(Command::SpaceAfterBox, "After:", 62.0),
         ],
         launcher: Some(Command::ParagraphDialog),
     },
@@ -1913,7 +2009,11 @@ pub fn name_of(command: Command) -> Option<&'static str> {
                     Item::Letter(found, label, _) | Item::Measure(found, label, _) => {
                         (*found, *label)
                     }
-                    Item::Button(..) | Item::Field(..) | Item::StyleGallery | Item::Break => {
+                    Item::Button(..)
+                    | Item::Field(..)
+                    | Item::StyleGallery
+                    | Item::Break
+                    | Item::NewColumn => {
                         continue;
                     }
                 };
@@ -1940,7 +2040,11 @@ pub fn command_named(name: &str) -> Option<Command> {
                     Item::Letter(found, label, _) | Item::Measure(found, label, _) => {
                         (*found, *label)
                     }
-                    Item::Button(..) | Item::Field(..) | Item::StyleGallery | Item::Break => {
+                    Item::Button(..)
+                    | Item::Field(..)
+                    | Item::StyleGallery
+                    | Item::Break
+                    | Item::NewColumn => {
                         continue;
                     }
                 };
@@ -1975,7 +2079,7 @@ pub fn group_commands(tab: Tab, index: usize) -> Vec<(Command, &'static str)> {
             // The gallery of styles is a group in itself; the list of them is
             // what opening it means.
             Item::StyleGallery => Some((Command::ChooseStyle, "Styles")),
-            Item::Break => None,
+            Item::Break | Item::NewColumn => None,
         })
         .collect()
 }
@@ -2005,7 +2109,7 @@ mod tests {
     /// Places one item by hand, the way a drawing pass would.
     fn placed(command: Command, left: f32, top: f32, width: f32, height: f32) -> Ribbon {
         let mut ribbon = Ribbon::new();
-        ribbon.placed.push(Placed { command, left, top, width, height });
+        ribbon.placed.push(Placed { command, left, top, width, height, field: None });
         ribbon
     }
 
@@ -2072,7 +2176,7 @@ mod tests {
                     | Item::Letter(command, ..)
                     | Item::Measure(command, ..)
                     | Item::Field(command, ..) => *command == menu.command,
-                    Item::Break | Item::StyleGallery => false,
+                    Item::Break | Item::NewColumn | Item::StyleGallery => false,
                 });
             assert!(on_a_tab, "{:?} drops a menu and is on no tab", menu.command);
         }

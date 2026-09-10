@@ -379,6 +379,11 @@ impl App for Editor {
             }
 
             Event::Char(character) => {
+                // A measurement box on the ribbon takes the keyboard while it
+                // has it, the way any box with a caret in it does.
+                if self.typing_in_box() {
+                    return self.type_into_box(character);
+                }
                 // The pane's search box takes the keyboard while it has it,
                 // the way any box with a caret in it does.
                 if self.find_has_keyboard() {
@@ -475,6 +480,14 @@ impl Editor {
         if let Some(response) = self.mini_bar_press(x, y) {
             return response;
         }
+        // A number typed into a box on the ribbon and then left is a number
+        // meant, so a press anywhere below the ribbon applies it. A press on
+        // the ribbon itself is left to the box, which can tell whether it
+        // landed on the same one.
+        if self.typing_in_box() && (y as f32) >= self.ribbon_bottom() {
+            self.finish_box();
+        }
+
         // A press anywhere else puts it away, and then goes on to mean whatever
         // it would have meant. A tip goes with it: the button has been found.
         self.hide_mini_bar();
@@ -594,6 +607,8 @@ impl Editor {
             return match self.ribbon.press_at(x, y) {
                 Some(chrome::ribbon::Press::Run(command)) => self.run(command),
                 Some(chrome::ribbon::Press::Drop(_, choice)) => self.open_list(choice),
+                Some(chrome::ribbon::Press::Type(command)) => self.type_in_box(command),
+                Some(chrome::ribbon::Press::Step(command, up)) => self.step_box(command, up),
                 None => Response::Ignored,
             };
         }
@@ -1345,6 +1360,23 @@ impl Editor {
 
     /// Reacts to a key that is not ordinary typing.
     fn key(&mut self, key: Key, modifiers: Modifiers) -> Response {
+        // A measurement box on the ribbon has the keyboard while the caret is
+        // in it: Enter applies what was typed, Escape gives it up, Tab moves to
+        // the next box, and the arrows nudge the number.
+        if self.typing_in_box() && !modifiers.control {
+            match key {
+                Key::Enter => return self.finish_box(),
+                Key::Escape => return self.leave_box(),
+                Key::Tab => return self.next_box(!modifiers.shift),
+                Key::Backspace => return self.rub_out_in_box(),
+                Key::Up | Key::Down => {
+                    let Some((command, _)) = self.ribbon_box else { return Response::Ignored };
+                    return self.step_box(command, key == Key::Up);
+                }
+                _ => return Response::Ignored,
+            }
+        }
+
         // An open list takes the keyboard while it is open: the arrows walk it,
         // Enter picks, Escape closes. Word's lists do the same, and a list that
         // could only be reached with the mouse would be half a list.
