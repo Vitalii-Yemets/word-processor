@@ -203,13 +203,19 @@ pub enum Icon {
     CellAlign = 185,
     HeaderRow = 186,
     BandedRows = 187,
-    /// The only icon here not from the Fluent set: it has no gear, and Word's
-    /// Options needs one. Drawn the same way as the rest, as filled paths.
-    Settings = 188,
+    AlignTopLeft = 188,
+    AlignTopCenter = 189,
+    AlignTopRight = 190,
+    AlignMiddleLeft = 191,
+    AlignMiddleCenter = 192,
+    AlignMiddleRight = 193,
+    AlignBottomLeft = 194,
+    AlignBottomCenter = 195,
+    AlignBottomRight = 196,
 }
 
 /// How many there are, so the drawings can be kept in a flat array.
-pub const COUNT: usize = 188;
+pub const COUNT: usize = 197;
 
 /// Every icon, in the order the catalogue declares them.
 ///
@@ -404,6 +410,15 @@ pub static ALL: [Icon; COUNT] = [
     Icon::CellAlign,
     Icon::HeaderRow,
     Icon::BandedRows,
+    Icon::AlignTopLeft,
+    Icon::AlignTopCenter,
+    Icon::AlignTopRight,
+    Icon::AlignMiddleLeft,
+    Icon::AlignMiddleCenter,
+    Icon::AlignMiddleRight,
+    Icon::AlignBottomLeft,
+    Icon::AlignBottomCenter,
+    Icon::AlignBottomRight,
 ];
 
 impl Icon {
@@ -491,13 +506,6 @@ impl Icon {
                     include_str!("../../assets/icons/ic_fluent_dismiss_24_regular.svg")
                 } else {
                     include_str!("../../assets/icons/ic_fluent_dismiss_20_regular.svg")
-                }
-            }
-            Self::Settings => {
-                if large {
-                    include_str!("../../assets/icons/settings_24_regular.svg")
-                } else {
-                    include_str!("../../assets/icons/settings_20_regular.svg")
                 }
             }
             Self::Info => {
@@ -1774,6 +1782,69 @@ impl Icon {
                     include_str!("../../assets/icons/ic_fluent_table_simple_24_regular.svg")
                 } else {
                     include_str!("../../assets/icons/ic_fluent_table_simple_20_regular.svg")
+                }
+            }
+            Self::AlignTopLeft => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_align_top_left_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_align_top_left_20_regular.svg")
+                }
+            }
+            Self::AlignTopCenter => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_align_top_center_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_align_top_center_20_regular.svg")
+                }
+            }
+            Self::AlignTopRight => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_align_top_right_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_align_top_right_20_regular.svg")
+                }
+            }
+            Self::AlignMiddleLeft => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_align_middle_left_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_align_middle_left_20_regular.svg")
+                }
+            }
+            Self::AlignMiddleCenter => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_align_middle_center_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_align_middle_center_20_regular.svg")
+                }
+            }
+            Self::AlignMiddleRight => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_align_middle_right_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_align_middle_right_20_regular.svg")
+                }
+            }
+            Self::AlignBottomLeft => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_align_bottom_left_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_align_bottom_left_20_regular.svg")
+                }
+            }
+            Self::AlignBottomCenter => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_align_bottom_center_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_align_bottom_center_20_regular.svg")
+                }
+            }
+            Self::AlignBottomRight => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_align_bottom_right_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_align_bottom_right_20_regular.svg")
                 }
             }
         }

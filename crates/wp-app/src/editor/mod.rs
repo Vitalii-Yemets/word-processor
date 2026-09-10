@@ -61,6 +61,7 @@ mod styledialog;
 mod styles;
 mod symboldialog;
 mod tabledialog;
+mod tablelayout;
 mod tablestyle;
 mod tabsdialog;
 mod theme_effects;
@@ -333,6 +334,10 @@ pub struct Editor {
     choosing_furniture: wp_docx::furniture::Furniture,
     /// Whether tracked changes are drawn as changes.
     show_markup: bool,
+    /// Whether the boundaries of a table with no borders are drawn.
+    ///
+    /// Word's View Gridlines: on the screen only, never printed.
+    show_table_gridlines: bool,
     /// Which kind of note the open strip is about.
     note_kind: wp_docx::notes::Kind,
     /// Which way the open list of references would point.
@@ -500,6 +505,7 @@ impl Editor {
             find_bar: None,
             choosing_furniture: wp_docx::furniture::Furniture::Header,
             show_markup: true,
+            show_table_gridlines: true,
             note_kind: wp_docx::notes::Kind::Footnote,
             reference_kind: wp_docx::captions::Reference::Text,
             painter: None,
@@ -992,6 +998,7 @@ impl Editor {
         self.engine.set_dpi(self.pixels_per_inch());
         self.engine.set_automatic_colors(self.theme.page_text, self.theme.table_line);
         self.engine.set_markup(self.show_markup);
+        self.engine.set_table_gridlines(self.show_table_gridlines);
         self.engine.set_marks(self.show_marks);
         self.engine.set_outline(self.outline_for_layout());
         // A letter being previewed shows one recipient's values in place of the

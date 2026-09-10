@@ -173,7 +173,9 @@ impl Editor {
             Command::IndentLeftBox
             | Command::IndentRightBox
             | Command::SpaceBeforeBox
-            | Command::SpaceAfterBox => self.type_in_box(command),
+            | Command::SpaceAfterBox
+            | Command::RowHeightBox
+            | Command::ColumnWidthBox => self.type_in_box(command),
 
             // --- Tables -------------------------------------------------------
             Command::InsertRowAbove => {
@@ -338,6 +340,11 @@ impl Editor {
             }
 
             Command::TableStyles => self.open_table_styles(),
+            Command::AlignCell(which) => self.align_cell(which as usize),
+            Command::SelectTablePart => self.open_table_select(),
+            Command::RepeatHeaderRow => self.toggle_repeat_header(),
+            Command::ViewGridlines => self.toggle_table_gridlines(),
+            Command::ConvertToText => self.convert_table_to_text(),
             Command::TableHeaderRow
             | Command::TableTotalRow
             | Command::TableFirstColumn

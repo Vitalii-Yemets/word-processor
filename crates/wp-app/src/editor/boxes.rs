@@ -34,6 +34,8 @@ use super::Editor;
 
 /// The four boxes, in the order Tab walks them.
 const BOXES: &[Command] = &[
+    Command::RowHeightBox,
+    Command::ColumnWidthBox,
     Command::IndentLeftBox,
     Command::IndentRightBox,
     Command::SpaceBeforeBox,
@@ -185,6 +187,8 @@ impl Editor {
             Command::IndentRightBox => indents.2,
             Command::SpaceBeforeBox => room.space_before,
             Command::SpaceAfterBox => room.space_after,
+            Command::RowHeightBox => self.document.table_row_height().unwrap_or(0),
+            Command::ColumnWidthBox => self.document.cell_width().unwrap_or(0),
             _ => 0,
         }
     }
@@ -213,8 +217,32 @@ impl Editor {
     fn apply_box(&mut self, command: Command, twips: i32) -> Response {
         // The room round a paragraph cannot be negative — there is no such
         // thing as less than no space — and Word clamps it at zero rather than
-        // refusing what was typed.
-        let twips = if is_indent(command) { twips } else { twips.max(0) };
+        // refusing what was typed. Nor can a row be less than no rows tall.
+        let twips = if matches!(command, Command::IndentLeftBox | Command::IndentRightBox) {
+            twips
+        } else {
+            twips.max(0)
+        };
+
+        // The two on the Table Layout tab are about the table rather than the
+        // paragraph, so they are set through the table and not through the
+        // paragraph formatting.
+        match command {
+            Command::RowHeightBox => {
+                let exact = self.document.table_row_height_is_exact();
+                let changed = self.document.set_table_row_height(Some(twips), exact);
+                self.relayout();
+                let shown = measure::format(twips, self.unit);
+                return self.edited(changed, &format!("Row height {shown}{}", self.unit.mark()));
+            }
+            Command::ColumnWidthBox => {
+                let changed = self.document.set_cell_width(Some(twips));
+                self.relayout();
+                let shown = measure::format(twips, self.unit);
+                return self.edited(changed, &format!("Column width {shown}{}", self.unit.mark()));
+            }
+            _ => {}
+        }
 
         let change = match command {
             Command::IndentLeftBox => {
@@ -244,7 +272,15 @@ impl Editor {
 
 /// Whether a box holds a length rather than an amount of room.
 fn is_indent(command: Command) -> bool {
-    matches!(command, Command::IndentLeftBox | Command::IndentRightBox)
+    // A row's height and a cell's width are lengths too, and follow the same
+    // unit as the indents.
+    matches!(
+        command,
+        Command::IndentLeftBox
+            | Command::IndentRightBox
+            | Command::RowHeightBox
+            | Command::ColumnWidthBox
+    )
 }
 
 /// What a box is called, for the strip along the bottom.
@@ -254,6 +290,8 @@ fn name_of(command: Command) -> &'static str {
         Command::IndentRightBox => "Indent right",
         Command::SpaceBeforeBox => "Space before",
         Command::SpaceAfterBox => "Space after",
+        Command::RowHeightBox => "Row height",
+        Command::ColumnWidthBox => "Column width",
         _ => "",
     }
 }

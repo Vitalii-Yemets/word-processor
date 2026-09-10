@@ -190,3 +190,14 @@ AutoFit arrow_autofit_width
 CellAlign table_cell_center
 HeaderRow table_freeze_row
 BandedRows table_simple
+# The nine cell alignments of Word's Table Layout tab. Drawn by hand — the
+# Fluent set has no picture of text sitting in one of nine places in a cell.
+AlignTopLeft align_top_left
+AlignTopCenter align_top_center
+AlignTopRight align_top_right
+AlignMiddleLeft align_middle_left
+AlignMiddleCenter align_middle_center
+AlignMiddleRight align_middle_right
+AlignBottomLeft align_bottom_left
+AlignBottomCenter align_bottom_center
+AlignBottomRight align_bottom_right

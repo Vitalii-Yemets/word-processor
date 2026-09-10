@@ -1083,6 +1083,7 @@ impl Ribbon {
                     | Choice::Watermark
                     | Choice::PasteOption
                     | Choice::TableStyle
+                    | Choice::TablePart
                     | Choice::DocumentSpacing
                     | Choice::BulletLibrary
                     | Choice::NumberLibrary
@@ -1919,6 +1920,17 @@ static HEADER_FOOTER_GROUPS: &[Group] = &[
 
 static TABLE_LAYOUT_GROUPS: &[Group] = &[
     Group {
+        label: "Table",
+        items: &[
+            Item::Small(Command::SelectTablePart, Icon::Select, "Select"),
+            Item::Break,
+            Item::Small(Command::ViewGridlines, Icon::Borders, "View Gridlines"),
+            Item::Break,
+            Item::Small(Command::TableProperties, Icon::TableProperties, "Properties"),
+        ],
+        launcher: Some(Command::TableProperties),
+    },
+    Group {
         label: "Rows & Columns",
         items: &[
             Item::Large(Command::InsertRowAbove, Icon::InsertRowAbove, "Above"),
@@ -1951,6 +1963,12 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
     Group {
         label: "Cell Size",
         items: &[
+            // Word's Cell Size group is the two measurements and the button
+            // that evens the columns out.
+            Item::Measure(Command::RowHeightBox, "Height:", 62.0),
+            Item::Break,
+            Item::Measure(Command::ColumnWidthBox, "Width:", 62.0),
+            Item::NewColumn,
             Item::Small(Command::DistributeColumns, Icon::AutoFit, "Distribute"),
             Item::Break,
             Item::Small(Command::TableProperties, Icon::TableProperties, "Properties"),
@@ -1960,9 +1978,28 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
     Group {
         label: "Alignment",
         items: &[
-            Item::Button(Command::Align(Alignment::Start), Icon::AlignStart),
-            Item::Button(Command::Align(Alignment::Center), Icon::AlignCenter),
-            Item::Button(Command::Align(Alignment::End), Icon::AlignEnd),
+            // Word's three by three: where the text sits across the cell and
+            // where it sits up and down it, answered in one press.
+            Item::Button(Command::AlignCell(0), Icon::AlignTopLeft),
+            Item::Button(Command::AlignCell(1), Icon::AlignTopCenter),
+            Item::Button(Command::AlignCell(2), Icon::AlignTopRight),
+            Item::Break,
+            Item::Button(Command::AlignCell(3), Icon::AlignMiddleLeft),
+            Item::Button(Command::AlignCell(4), Icon::AlignMiddleCenter),
+            Item::Button(Command::AlignCell(5), Icon::AlignMiddleRight),
+            Item::Break,
+            Item::Button(Command::AlignCell(6), Icon::AlignBottomLeft),
+            Item::Button(Command::AlignCell(7), Icon::AlignBottomCenter),
+            Item::Button(Command::AlignCell(8), Icon::AlignBottomRight),
+        ],
+        launcher: None,
+    },
+    Group {
+        label: "Data",
+        items: &[
+            Item::Small(Command::RepeatHeaderRow, Icon::HeaderRow, "Repeat Header Rows"),
+            Item::Break,
+            Item::Small(Command::ConvertToText, Icon::Letter, "Convert to Text"),
         ],
         launcher: None,
     },

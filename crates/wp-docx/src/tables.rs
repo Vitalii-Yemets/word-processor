@@ -94,6 +94,76 @@ impl Document {
         })
     }
 
+    /// The paragraphs one cell of the table at the caret covers.
+    ///
+    /// As a first and a last index into the document's paragraphs, because
+    /// that is what a selection is made of: a cell holds at least one paragraph
+    /// and may hold several, so a cell is a range and not a number.
+    #[must_use]
+    pub fn cell_paragraphs(&self, row: usize, column: usize) -> Option<(usize, usize)> {
+        let place = self.table_here()?;
+        let table = element_at(&self.tree().root, &place.table)?;
+
+        // The path to the cell: the table, then the row's place among its
+        // children, then the cell's among that row's.
+        let row_at = child_index_of(table, "tr", row)?;
+        let row_element = table.children_named(Some(read::W), "tr").nth(row)?;
+        let cell_at = child_index_of(row_element, "tc", column)?;
+
+        let mut path = place.table.clone();
+        path.push(row_at);
+        path.push(cell_at);
+        paragraphs_under(&self.tree().root, &path)
+    }
+
+    /// And the whole table at the caret.
+    #[must_use]
+    pub fn table_paragraphs(&self) -> Option<(usize, usize)> {
+        let place = self.table_here()?;
+        paragraphs_under(&self.tree().root, &place.table)
+    }
+
+    /// Turns the table at the caret back into ordinary paragraphs.
+    ///
+    /// Word's Convert to Text. Its default separator is a tab, so a row becomes
+    /// one paragraph with its cells tabbed apart — which is what makes the
+    /// result convertible back into a table, and what keeps a table of figures
+    /// readable after it stops being a table.
+    pub fn convert_table_to_text(&mut self) -> bool {
+        let Some(place) = self.table_here() else { return false };
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+
+        let Some(table) = element_at(&self.tree().root, &place.table) else { return false };
+        let rows: Vec<Element> = table
+            .children_named(Some(read::W), "tr")
+            .map(|row| row_as_paragraph(row, prefix.as_deref()))
+            .collect();
+        if rows.is_empty() {
+            return false;
+        }
+
+        // The table's place among its parent's children, which is where the
+        // paragraphs go.
+        let Some((parent_path, at)) = place.table.split_last().map(|(at, rest)| (rest, *at)) else {
+            return false;
+        };
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, parent_path) else {
+            return false;
+        };
+        if at >= parent.children.len() {
+            return false;
+        }
+        parent.children.remove(at);
+        for (offset, paragraph) in rows.into_iter().enumerate() {
+            parent.children.insert(at + offset, wp_xml::tree::Node::Element(paragraph));
+        }
+
+        self.clamp_caret();
+        self.mark_modified();
+        true
+    }
     /// Adds a row above or below the one the caret is in.
     pub fn insert_table_row(&mut self, below: bool) -> bool {
         let Some(place) = self.table_here() else { return false };
@@ -418,4 +488,89 @@ fn remove_grid_column(table: &mut Element, column: usize) {
     if let Some(position) = child_position(grid, "gridCol", column) {
         grid.children.remove(position);
     }
+}
+
+/// Which child of its parent the nth element of a kind is.
+///
+/// The rows of a table are its `w:tr` children, but they are not necessarily
+/// its only children — a `w:tblPr` and a `w:tblGrid` come first — so the third
+/// row is not the third child.
+fn child_index_of(parent: &Element, local: &str, wanted: usize) -> Option<usize> {
+    let mut seen = 0usize;
+    for (index, node) in parent.children.iter().enumerate() {
+        let Some(child) = node.as_element() else { continue };
+        if !child.is(Some(read::W), local) {
+            continue;
+        }
+        if seen == wanted {
+            return Some(index);
+        }
+        seen += 1;
+    }
+    None
+}
+
+/// The first and last paragraph, in document order, under a path.
+///
+/// Counted the same way every paragraph index in this program is counted: in
+/// reading order from the start of the part, tables included.
+fn paragraphs_under(root: &Element, prefix: &[usize]) -> Option<(usize, usize)> {
+    let mut counter = 0usize;
+    let mut path = Vec::new();
+    let mut found: Option<(usize, usize)> = None;
+    walk_counting(root, &mut path, &mut counter, prefix, &mut found);
+    found
+}
+
+fn walk_counting(
+    element: &Element,
+    path: &mut Vec<usize>,
+    counter: &mut usize,
+    prefix: &[usize],
+    found: &mut Option<(usize, usize)>,
+) {
+    for (index, node) in element.children.iter().enumerate() {
+        let Some(child) = node.as_element() else { continue };
+        if child.namespace.as_deref() != Some(read::W) {
+            continue;
+        }
+
+        path.push(index);
+        if child.is(Some(read::W), "p") {
+            if path.len() >= prefix.len() && path[..prefix.len()] == *prefix {
+                *found = Some(match *found {
+                    Some((first, _)) => (first, *counter),
+                    None => (*counter, *counter),
+                });
+            }
+            *counter += 1;
+        } else {
+            walk_counting(child, path, counter, prefix, found);
+        }
+        path.pop();
+    }
+}
+
+/// One row of a table as a single paragraph, its cells tabbed apart.
+fn row_as_paragraph(row: &Element, prefix: Option<&str>) -> Element {
+    let mut paragraph = Element::new(&edit::name_with(prefix, "p"), Some(read::W));
+
+    for (number, cell) in row.children_named(Some(read::W), "tc").enumerate() {
+        if number > 0 {
+            // A tab between one cell's words and the next, which is Word's own
+            // separator and what makes the result convertible back.
+            let mut run = Element::new(&edit::name_with(prefix, "r"), Some(read::W));
+            run.push_element(Element::new(&edit::name_with(prefix, "tab"), Some(read::W)));
+            paragraph.push_element(run);
+        }
+
+        // Every run of every paragraph of the cell, in order, so the words keep
+        // the formatting they were written with.
+        for inner in cell.children_named(Some(read::W), "p") {
+            for run in inner.children_named(Some(read::W), "r") {
+                paragraph.push_element(run.clone());
+            }
+        }
+    }
+    paragraph
 }

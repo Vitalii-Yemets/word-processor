@@ -1065,6 +1065,7 @@ impl Editor {
             // The gallery of table styles hangs under its own button, which
             // knows where it is.
             Choice::TableStyle => return self.open_table_styles(),
+            Choice::TablePart => return self.open_table_select(),
             // The menus the ribbon's arrows drop are filled in by the module
             // that owns them, which knows what is in each and which of its
             // entries is in force.
@@ -1193,6 +1194,7 @@ impl Editor {
             | Choice::TableStyle
             | Choice::BulletLibrary
             | Choice::NumberLibrary
+            | Choice::TablePart
             | Choice::MultilevelLibrary
             | Choice::LineSpacing
             | Choice::LetterCase
@@ -1295,6 +1297,7 @@ impl Editor {
             Choice::Cover => self.choose_cover_page(index),
             Choice::Authority => self.choose_authorities(index),
             Choice::Shape => self.choose_shape(index),
+            Choice::TablePart => self.choose_table_part(index),
             Choice::Wrap => self.choose_wrapping(index),
             Choice::Position => self.choose_position(index),
             Choice::QuickPart => self.choose_quick_part(index),

@@ -839,6 +839,11 @@ pub struct LayoutEngine<'a> {
     /// Whether tracked changes are shown as changes rather than as the text
     /// they would leave behind.
     show_markup: bool,
+    /// Whether the boundaries of a table with no lines of its own are drawn.
+    ///
+    /// Word's View Gridlines. Never printed: `wp-pdf` and the printer both lay
+    /// the document out with an engine of their own, and neither turns this on.
+    table_gridlines: bool,
     /// Whether the formatting marks are showing, which is the only time hidden
     /// text is drawn.
     show_marks: bool,
@@ -924,6 +929,7 @@ impl<'a> LayoutEngine<'a> {
             counters: ListCounters::new(),
             field_page: None,
             show_markup: true,
+            table_gridlines: false,
             show_marks: false,
             note_numbers: HashMap::new(),
             sequence_numbers: HashMap::new(),
@@ -961,6 +967,10 @@ impl<'a> LayoutEngine<'a> {
     ///
     /// Anything that changes how a paragraph is measured throws away what was
     /// measured before it changed — see [`Measured`].
+    pub fn set_table_gridlines(&mut self, shown: bool) {
+        self.table_gridlines = shown;
+    }
+
     pub fn set_markup(&mut self, shown: bool) {
         if self.show_markup != shown {
             self.show_markup = shown;
@@ -2313,6 +2323,7 @@ impl<'a> LayoutEngine<'a> {
                     table.rows.len(),
                     scale,
                     self.automatic_line,
+                    self.table_gridlines,
                 );
             }
             *y = row_bottom;
@@ -4342,12 +4353,19 @@ fn draw_row_borders(
     row_count: usize,
     scale: f32,
     automatic: Color,
+    gridlines: bool,
 ) {
+    // A table with no lines of its own is invisible, and a person editing one
+    // has to see where the cells are. Word draws faint boundaries for that and
+    // calls them gridlines; they are on the screen only and never printed,
+    // which is what makes them gridlines rather than borders.
+    let gridline = gridlines
+        .then(|| (1.0f32, Color::rgba(automatic.red, automatic.green, automatic.blue, 70)));
+
     let line = |border: &Option<Border>| -> Option<(f32, Color)> {
-        let border = border.as_ref()?;
-        if !border.is_visible() {
-            return None;
-        }
+        let Some(border) = border.as_ref().filter(|border| border.is_visible()) else {
+            return gridline;
+        };
         let color = border.color.as_deref().and_then(Color::from_hex).unwrap_or(automatic);
         Some(((border.width_points() * scale).max(1.0), color))
     };

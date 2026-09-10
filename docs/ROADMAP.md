@@ -906,10 +906,43 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   that paints a chosen line onto the edges it is dragged along. The painter is a
   mode rather than a command, like the format painter, and the gallery is the
   line styles of **C23** over again. Both are **C24**.
-- [ ] **C16. The rest of the Table Layout tab.** Select, View Gridlines, Draw
+- [x] **C16. The rest of the Table Layout tab.** Select, View Gridlines, Draw
   Table and Eraser, AutoFit, the height and width boxes, Text Direction, Cell
   Margins, Sort, Repeat Header Rows, Convert to Text, and Formula. And nine
   alignments where there are three.
+  *Done:* six of the twelve, and the nine alignments. The other six each need
+  something the program does not have yet and are **C25** below, named there
+  with what each of them wants.
+
+  **Nine alignments** where there were three. A cell has two questions to
+  answer — where the text sits across it and where it sits up and down it — and
+  three buttons could only answer the first: a person looking for "align middle
+  centre" found a tab that did not have it. Each of the nine answers both in one
+  press, and in one gesture, so one undo takes the whole answer back. The
+  pictures are drawn by hand, because the Fluent set has no drawing of text
+  sitting in one of nine places in a cell.
+
+  **Select** takes the cell, the column, the row or the whole table. What it
+  selects is text — a table is paragraphs like everything else — so it needed
+  `Document::cell_paragraphs` and `table_paragraphs`, which say which paragraphs
+  a part of a table covers.
+
+  **View Gridlines** draws the boundaries of a table that has no lines of its
+  own. They are faint, they are on the screen only, and they are never printed —
+  the printer and the PDF writer lay the document out with engines of their own
+  and neither turns them on. That is what makes them gridlines rather than
+  borders.
+
+  **The height and width boxes** are the Cell Size group, on the machinery
+  **C12** built: typed into, stepped by their arrows, and in the unit Options
+  was set to.
+
+  **Repeat Header Rows** writes `w:tblHeader`, which is what makes the first row
+  come back at the top of every page the table runs onto.
+
+  **Convert to Text** turns the table back into paragraphs, one per row with the
+  cells tabbed apart, which is Word's own separator and what makes the result
+  convertible back.
 - [ ] **C17. The rest of the Header & Footer tab.** Header from Top, Footer from
   Bottom, and Insert Alignment Tab.
 
@@ -1016,6 +1049,31 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   doing together.
   *Done when:* a line can be chosen from the gallery, the pen puts it on the
   edges it is dragged along, and pressing it again puts the pen down.
+- [ ] **C25. The six things the Table Layout tab still wants.** What **C16**
+  left, each because it needs something that does not exist yet rather than
+  because it was skipped.
+  **AutoFit** — fit to contents, fit to window, fixed column width. The last two
+  are a `w:tblW` and a `w:tblLayout` away; the first wants the layout to measure
+  what is in every cell without a width to break it against, which nothing does
+  yet. All three belong together: a menu with two live rows would be worse than
+  none.
+  **Draw Table** and the **Eraser** — the pen that draws cell edges and the
+  rubber that takes them away. Both are modes, like the Border Painter of
+  **C24**, and both need the same missing thing: which edge of which cell the
+  pointer is nearest.
+  **Text Direction** — `w:textDirection` on a cell, which turns its text
+  through a right angle. The model can carry it; the layout has no way to draw a
+  line of text rotated, and one that stored the property without turning the
+  text would be a button that does nothing.
+  **Cell Margins** — the room inside a cell, `w:tblCellMar`. Read already and
+  used by the layout; what is missing is Word's dialog for it, which also holds
+  cell spacing.
+  **Sort** — sorting the rows of a table by a column. The command exists and
+  sorts paragraphs; sorting rows means moving whole `w:tr` elements and knowing
+  which column to compare, with Word's three levels of key.
+  **Formula** — `=SUM(ABOVE)` and the rest, as a field. The field machinery is
+  there; the arithmetic over the cells around it is not.
+  *Done when:* each of the six does what Word's does.
 
 ## D — Pictures and drawings
 

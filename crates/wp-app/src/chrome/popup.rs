@@ -32,6 +32,8 @@ pub enum Choice {
     PasteOption,
 
     // --- What the buttons with an arrow drop -------------------------------
+    /// Which part of a table to select.
+    TablePart,
     /// The table styles a table can be given.
     TableStyle,
     /// The bullet shapes.

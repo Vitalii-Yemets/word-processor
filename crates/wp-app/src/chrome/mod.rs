@@ -181,6 +181,19 @@ pub enum Command {
     TableBorders(TableBorderChoice),
     /// The gallery of table styles.
     TableStyles,
+    /// The two measurement boxes of the Table Layout tab.
+    RowHeightBox,
+    ColumnWidthBox,
+    /// The nine alignments of a cell: across and down in one press.
+    AlignCell(u8),
+    /// Which part of a table to select.
+    SelectTablePart,
+    /// Whether the first row repeats at the top of every page.
+    RepeatHeaderRow,
+    /// Whether the boundaries of a borderless table are drawn.
+    ViewGridlines,
+    /// The table as ordinary paragraphs.
+    ConvertToText,
     TableHeaderRow,
     TableBandedRows,
     TableTotalRow,
@@ -437,6 +450,16 @@ pub struct ToolbarState {
     /// Which parts of the table at the caret its style may treat specially,
     /// so the six switches on the Table Design tab can show as pressed.
     pub table_look: wp_docx::model::TableLook,
+    /// Whether the boundaries of a borderless table are drawn.
+    pub show_table_gridlines: bool,
+    /// Whether the first row repeats on every page.
+    pub repeat_header_row: bool,
+    /// How tall the row at the caret is and how wide its cell, in twentieths
+    /// of a point. Zero where the table has not been told.
+    pub row_height: i32,
+    pub column_width: i32,
+    /// Which of the nine cell alignments is in force, if one of them is.
+    pub cell_alignment: Option<u8>,
     /// The indents of the paragraph at the caret, in twentieths of a point.
     pub indent_left: i32,
     pub indent_right: i32,
@@ -486,6 +509,10 @@ impl ToolbarState {
             // setting says, because that is what Word does with it — a person
             // who asked for centimetres did not ask for six-hundredths of one.
             Command::SpaceBeforeBox => points(self.space_before),
+            // A row and a column are lengths like an indent, so they follow
+            // the same unit.
+            Command::RowHeightBox => self.length(self.row_height),
+            Command::ColumnWidthBox => self.length(self.column_width),
             Command::SpaceAfterBox => points(self.space_after),
             _ => String::new(),
         }
@@ -540,6 +567,9 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
         Command::TableLastColumn => state.table_look.last_column,
         Command::TableBandedRows => state.table_look.banded_rows,
         Command::TableBandedColumns => state.table_look.banded_columns,
+        Command::ViewGridlines => state.show_table_gridlines,
+        Command::RepeatHeaderRow => state.repeat_header_row,
+        Command::AlignCell(which) => state.cell_alignment == Some(which),
         Command::ShowMarkup => state.show_markup,
         Command::ShowProofing => state.show_proofing,
         Command::ReviewingPane | Command::ShowComments => state.show_comments,
