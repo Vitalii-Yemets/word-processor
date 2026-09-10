@@ -1062,6 +1062,9 @@ impl Editor {
             // The paste options are not on the ribbon: they hang under the
             // little button at the end of the paste, which knows where it is.
             Choice::PasteOption => return self.open_paste_menu(),
+            // The gallery of table styles hangs under its own button, which
+            // knows where it is.
+            Choice::TableStyle => return self.open_table_styles(),
             // The menus the ribbon's arrows drop are filled in by the module
             // that owns them, which knows what is in each and which of its
             // entries is in force.
@@ -1187,6 +1190,7 @@ impl Editor {
             | Choice::Break
             | Choice::Watermark
             | Choice::PasteOption
+            | Choice::TableStyle
             | Choice::BulletLibrary
             | Choice::NumberLibrary
             | Choice::MultilevelLibrary
@@ -1287,6 +1291,7 @@ impl Editor {
             | Choice::Tracking
             | Choice::DocumentSpacing => self.choose_from_menu(choice, index),
             Choice::PasteOption => self.choose_paste_option(index),
+            Choice::TableStyle => self.choose_table_style(index),
             Choice::Cover => self.choose_cover_page(index),
             Choice::Authority => self.choose_authorities(index),
             Choice::Shape => self.choose_shape(index),

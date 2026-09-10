@@ -16,7 +16,7 @@
 use wp_xml::tree::Element;
 
 use crate::history::EditKind;
-use crate::model::Alignment;
+use crate::model::{Alignment, TableLook};
 use crate::{edit, read, Document};
 
 /// Where the text sits up and down inside a cell.
@@ -135,6 +135,87 @@ impl Document {
         })
     }
 
+    /// The style the table at the caret names, if it names one.
+    #[must_use]
+    pub fn table_style(&self) -> Option<String> {
+        let table = self.table_element_here()?;
+        table
+            .child(Some(read::W), "tblPr")?
+            .child(Some(read::W), "tblStyle")?
+            .attribute(Some(read::W), "val")
+            .map(str::to_owned)
+    }
+
+    /// Gives it one, or takes the one it has away.
+    pub fn set_table_style(&mut self, style: Option<&str>) -> bool {
+        let style = style.map(str::to_owned);
+        self.change_table(|table, prefix| {
+            let properties = table_properties(table, prefix);
+            properties.remove_children_named(Some(read::W), "tblStyle");
+            let Some(style) = &style else { return };
+            let mut element = Element::new(&edit::name_with(prefix, "tblStyle"), Some(read::W));
+            element.set_namespaced_attribute(&edit::name_with(prefix, "val"), read::W, style);
+            edit::insert_ordered(properties, element, TABLE_PROPERTY_ORDER);
+        })
+    }
+
+    /// Which parts of the table at the caret its style may treat specially.
+    ///
+    /// Word's Table Style Options. See [`TableLook`] for what the six mean and
+    /// why two of them are written the other way up in the file.
+    #[must_use]
+    pub fn table_look(&self) -> Option<TableLook> {
+        let table = self.table_element_here()?;
+        Some(
+            table
+                .child(Some(read::W), "tblPr")
+                .and_then(|properties| properties.child(Some(read::W), "tblLook"))
+                .map(read::read_table_look)
+                .unwrap_or_default(),
+        )
+    }
+
+    /// Says which of them it may.
+    pub fn set_table_look(&mut self, wanted: TableLook) -> bool {
+        self.change_table(|table, prefix| {
+            let properties = table_properties(table, prefix);
+            properties.remove_children_named(Some(read::W), "tblLook");
+
+            let name = |local: &str| edit::name_with(prefix, local);
+            let mut element = Element::new(&name("tblLook"), Some(read::W));
+
+            // The number as well as the attributes, because a reader that
+            // knows only the old form must see the same table as one that
+            // knows the new. Word writes both, for the same reason.
+            let mut bits = 0x0000u32;
+            for (mask, on) in [
+                (0x0020, wanted.first_row),
+                (0x0040, wanted.last_row),
+                (0x0080, wanted.first_column),
+                (0x0100, wanted.last_column),
+                (0x0200, !wanted.banded_rows),
+                (0x0400, !wanted.banded_columns),
+            ] {
+                if on {
+                    bits |= mask;
+                }
+            }
+            element.set_namespaced_attribute(&name("val"), read::W, &format!("{bits:04X}"));
+
+            for (local, on) in [
+                ("firstRow", wanted.first_row),
+                ("lastRow", wanted.last_row),
+                ("firstColumn", wanted.first_column),
+                ("lastColumn", wanted.last_column),
+                ("noHBand", !wanted.banded_rows),
+                ("noVBand", !wanted.banded_columns),
+            ] {
+                element.set_namespaced_attribute(&name(local), read::W, if on { "1" } else { "0" });
+            }
+            edit::insert_ordered(properties, element, TABLE_PROPERTY_ORDER);
+        })
+    }
+
     /// Whether the first row of the table at the caret is a header.
     #[must_use]
     pub fn table_header_row(&self) -> Option<bool> {
@@ -247,6 +328,46 @@ impl Document {
                 edit::insert_ordered(properties, element, CELL_PROPERTY_ORDER);
             }
         })
+    }
+
+    /// Colours the cell at the caret, or takes its colour off.
+    ///
+    /// Word's Shading, on the Table Design tab. It colours the cell rather than
+    /// the paragraph inside it: a cell is what a table is made of, and a colour
+    /// on the paragraph would stop at the ends of the text rather than filling
+    /// the cell.
+    pub fn set_cell_shading(&mut self, fill: Option<&str>) -> bool {
+        let Some(position) = self.table_here() else { return false };
+        let fill = fill.map(str::to_owned);
+        self.change_table(move |table, prefix| {
+            let Some(row) = rows_mut(table).nth(position.row) else { return };
+            let Some(cell) = cells_mut(row).nth(position.column) else { return };
+
+            let properties = cell_properties(cell, prefix);
+            properties.remove_children_named(Some(read::W), "shd");
+            let Some(fill) = &fill else { return };
+
+            let name = |local: &str| edit::name_with(prefix, local);
+            let mut element = Element::new(&name("shd"), Some(read::W));
+            element.set_namespaced_attribute(&name("val"), read::W, "clear");
+            element.set_namespaced_attribute(&name("color"), read::W, "auto");
+            element.set_namespaced_attribute(&name("fill"), read::W, fill);
+            edit::insert_ordered(properties, element, CELL_PROPERTY_ORDER);
+        })
+    }
+
+    /// The colour behind the cell at the caret, when it has one of its own.
+    #[must_use]
+    pub fn cell_shading(&self) -> Option<String> {
+        let position = self.table_here()?;
+        let table = self.table_element_here()?;
+        let row = table.children_named(Some(read::W), "tr").nth(position.row)?;
+        let cell = row.children_named(Some(read::W), "tc").nth(position.column)?;
+        cell.child(Some(read::W), "tcPr")?
+            .child(Some(read::W), "shd")?
+            .attribute(Some(read::W), "fill")
+            .filter(|fill| *fill != "auto")
+            .map(str::to_owned)
     }
 
     /// The `w:tbl` the caret is in, for reading.

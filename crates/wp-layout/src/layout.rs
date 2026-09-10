@@ -28,6 +28,7 @@ use wp_docx::model::{
     VerticalAlignment,
 };
 use wp_docx::sections::{NumberFormat, Start};
+use wp_docx::styles::Conditional;
 use wp_docx::{Document, ListCounters, TextPosition};
 use wp_font::{Font, GlyphId};
 use wp_image::Image;
@@ -2204,6 +2205,11 @@ impl<'a> LayoutEngine<'a> {
             .resolve_table_borders(table.style.as_deref())
             .overlaid_with(&table.borders);
 
+        // Which parts of the table its style is allowed to treat specially.
+        // The style says what a header row looks like; the table says whether
+        // it has one. See `wp_docx::table_properties::TableLook`.
+        let look = table.look;
+
         let margin_start = table.cell_margin_start.unwrap_or(DEFAULT_CELL_MARGIN_TWIPS) as f32
             / TWIPS_PER_POINT
             * scale;
@@ -2250,6 +2256,33 @@ impl<'a> LayoutEngine<'a> {
                 && !pages.last().is_some_and(|p| p.glyphs.is_empty())
             {
                 self.start_page(pages, y, column, area);
+            }
+
+            // The colour behind each cell, which is what a banded table is
+            // made of. It goes on before the text, because a decoration is
+            // drawn under the glyphs.
+            let row_bottom_edge = *y + height;
+            if let Some(page) = pages.last_mut() {
+                for (number, (cell, (left, width))) in row.cells.iter().zip(&spans).enumerate() {
+                    let parts =
+                        parts_of(look, row_number, table.rows.len(), number, row.cells.len());
+                    let from_style = document
+                        .styles()
+                        .resolve_table_cell(table.style.as_deref(), &parts)
+                        .shading;
+                    // What the cell itself says wins over what its style says,
+                    // the way direct formatting always does.
+                    let fill =
+                        cell.shading.as_deref().or(from_style.as_deref()).and_then(Color::from_hex);
+                    let Some(fill) = fill else { continue };
+                    page.decorations.push(Decoration {
+                        x: *left,
+                        y: *y,
+                        width: *width,
+                        height: row_bottom_edge - *y,
+                        color: fill,
+                    });
+                }
             }
 
             let row_top = *y;
@@ -4178,6 +4211,63 @@ struct Line {
 /// covers, not how wide it is. A table with no grid — which a hand-written
 /// document may well be — has one made for it from the widest row, so its cells
 /// still line up with each other.
+/// Which parts of the table one cell is in.
+///
+/// A cell can be in several at once — the first cell of the first row of a
+/// banded table is in three — and which of them the style may use at all is the
+/// table's own decision, carried in its `w:tblLook`. See
+/// [`wp_docx::model::TableLook`].
+///
+/// The bands count from the first row that is not the header, because Word
+/// counts them that way: a table with a header row has its first band on the
+/// row under it, not on the header.
+fn parts_of(
+    look: wp_docx::model::TableLook,
+    row: usize,
+    rows: usize,
+    column: usize,
+    columns: usize,
+) -> Vec<Conditional> {
+    let mut parts = Vec::new();
+
+    if look.first_row && row == 0 {
+        parts.push(Conditional::FirstRow);
+    }
+    if look.last_row && rows > 1 && row + 1 == rows {
+        parts.push(Conditional::LastRow);
+    }
+    if look.first_column && column == 0 {
+        parts.push(Conditional::FirstColumn);
+    }
+    if look.last_column && columns > 1 && column + 1 == columns {
+        parts.push(Conditional::LastColumn);
+    }
+
+    if look.banded_rows {
+        let first_banded = usize::from(look.first_row);
+        if row >= first_banded {
+            let band = row - first_banded;
+            parts.push(if band % 2 == 0 {
+                Conditional::Band1Horizontal
+            } else {
+                Conditional::Band2Horizontal
+            });
+        }
+    }
+    if look.banded_columns {
+        let first_banded = usize::from(look.first_column);
+        if column >= first_banded {
+            let band = column - first_banded;
+            parts.push(if band % 2 == 0 {
+                Conditional::Band1Vertical
+            } else {
+                Conditional::Band2Vertical
+            });
+        }
+    }
+    parts
+}
+
 fn column_widths(table: &Table, available: f32, scale: f32) -> Vec<f32> {
     let mut widths: Vec<f32> =
         table.grid.iter().map(|twips| (*twips).max(0) as f32 / TWIPS_PER_POINT * scale).collect();

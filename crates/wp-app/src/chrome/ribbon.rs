@@ -1082,6 +1082,7 @@ impl Ribbon {
                     | Choice::Break
                     | Choice::Watermark
                     | Choice::PasteOption
+                    | Choice::TableStyle
                     | Choice::DocumentSpacing
                     | Choice::BulletLibrary
                     | Choice::NumberLibrary
@@ -1823,10 +1824,25 @@ static TABLE_DESIGN_GROUPS: &[Group] = &[
     Group {
         label: "Table Style Options",
         items: &[
+            // Word's six, in Word's arrangement: the rows down one column and
+            // the columns down the other.
             Item::Small(Command::TableHeaderRow, Icon::HeaderRow, "Header Row"),
             Item::Break,
+            Item::Small(Command::TableTotalRow, Icon::HeaderRow, "Total Row"),
+            Item::Break,
             Item::Small(Command::TableBandedRows, Icon::BandedRows, "Banded Rows"),
+            Item::NewColumn,
+            Item::Small(Command::TableFirstColumn, Icon::HeaderRow, "First Column"),
+            Item::Break,
+            Item::Small(Command::TableLastColumn, Icon::HeaderRow, "Last Column"),
+            Item::Break,
+            Item::Small(Command::TableBandedColumns, Icon::BandedRows, "Banded Columns"),
         ],
+        launcher: None,
+    },
+    Group {
+        label: "Table Styles",
+        items: &[Item::Large(Command::TableStyles, Icon::Themes, "Table Styles")],
         launcher: None,
     },
     Group {

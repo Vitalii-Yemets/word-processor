@@ -946,6 +946,47 @@ impl Paragraph {
     }
 }
 
+/// Which parts of a table its style is allowed to treat specially.
+///
+/// # What it is for
+///
+/// A table style says more than one thing: what an ordinary cell looks like,
+/// and what the first row, the last row, the outer columns and the alternating
+/// bands look like. Which of those the style may use is not the style's
+/// decision but the table's, and this is where the table says so — Word's
+/// Design tab calls it Table Style Options and draws it as six tick boxes.
+///
+/// # Why two of them are written backwards
+///
+/// The file says `w:noHBand` and `w:noVBand`: whether the bands are *off*.
+/// Word writes it that way because a table that says nothing has bands, and a
+/// default of "on" has to be the absence of the attribute. This says what a
+/// person means, and the reading and the writing turn it round.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TableLook {
+    pub first_row: bool,
+    pub last_row: bool,
+    pub first_column: bool,
+    pub last_column: bool,
+    pub banded_rows: bool,
+    pub banded_columns: bool,
+}
+
+impl Default for TableLook {
+    /// What Word gives a table it has just made: a header row, a first column,
+    /// and banded rows.
+    fn default() -> Self {
+        Self {
+            first_row: true,
+            last_row: false,
+            first_column: true,
+            last_column: false,
+            banded_rows: true,
+            banded_columns: false,
+        }
+    }
+}
+
 /// One cell of a table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TableCell {
@@ -961,6 +1002,11 @@ pub struct TableCell {
     /// line is drawn between them.
     pub merged_upwards: bool,
     pub borders: TableBorders,
+    /// The colour behind the cell, as six hex digits.
+    ///
+    /// What a banded table is made of: the bands are cells shaded one way and
+    /// the other, and without this there is nothing for a band to be.
+    pub shading: Option<String>,
 }
 
 impl Default for TableCell {
@@ -973,6 +1019,7 @@ impl Default for TableCell {
             span: 1,
             merged_upwards: false,
             borders: TableBorders::default(),
+            shading: None,
         }
     }
 }
@@ -1068,6 +1115,8 @@ pub struct Table {
     pub rows: Vec<TableRow>,
     /// Identifier of the table style, if one is applied.
     pub style: Option<String>,
+    /// Which parts of the table its style is allowed to treat specially.
+    pub look: TableLook,
     /// Column widths in twentieths of a point, from `w:tblGrid`.
     ///
     /// A table is a grid first and a set of cells second: a cell says how many

@@ -32,6 +32,8 @@ pub enum Choice {
     PasteOption,
 
     // --- What the buttons with an arrow drop -------------------------------
+    /// The table styles a table can be given.
+    TableStyle,
     /// The bullet shapes.
     BulletLibrary,
     /// The number formats.

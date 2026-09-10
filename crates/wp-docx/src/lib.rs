@@ -81,6 +81,7 @@ pub mod stationery;
 pub mod styles;
 pub mod table_properties;
 pub mod tables;
+pub mod tablestyles;
 pub mod theme;
 pub mod translate;
 pub mod typography;
@@ -106,11 +107,11 @@ use model::{
 };
 
 /// Content type of the styles part.
-const STYLES_CONTENT_TYPE: &str =
+pub(crate) const STYLES_CONTENT_TYPE: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
 
 /// Relationship type of the styles part.
-const STYLES_RELATIONSHIP: &str =
+pub(crate) const STYLES_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 
 /// Content type of the settings part.

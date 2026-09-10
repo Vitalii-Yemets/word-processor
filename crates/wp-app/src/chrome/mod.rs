@@ -179,8 +179,14 @@ pub enum Command {
     DeleteColumn,
     DeleteTable,
     TableBorders(TableBorderChoice),
+    /// The gallery of table styles.
+    TableStyles,
     TableHeaderRow,
     TableBandedRows,
+    TableTotalRow,
+    TableFirstColumn,
+    TableLastColumn,
+    TableBandedColumns,
     MergeCells,
     SplitCells,
     DistributeColumns,
@@ -428,6 +434,9 @@ pub struct ToolbarState {
     /// The colours the two coloured buttons would apply.
     pub text_color: Color,
     pub highlight_color: Color,
+    /// Which parts of the table at the caret its style may treat specially,
+    /// so the six switches on the Table Design tab can show as pressed.
+    pub table_look: wp_docx::model::TableLook,
     /// The indents of the paragraph at the caret, in twentieths of a point.
     pub indent_left: i32,
     pub indent_right: i32,
@@ -524,6 +533,13 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
         Command::Gridlines => state.show_gridlines,
         Command::JoinPages => state.joined_pages,
         Command::TrackChanges => state.tracking_changes,
+        // The six Table Style Options show as pressed while they are on.
+        Command::TableHeaderRow => state.table_look.first_row,
+        Command::TableTotalRow => state.table_look.last_row,
+        Command::TableFirstColumn => state.table_look.first_column,
+        Command::TableLastColumn => state.table_look.last_column,
+        Command::TableBandedRows => state.table_look.banded_rows,
+        Command::TableBandedColumns => state.table_look.banded_columns,
         Command::ShowMarkup => state.show_markup,
         Command::ShowProofing => state.show_proofing,
         Command::ReviewingPane | Command::ShowComments => state.show_comments,

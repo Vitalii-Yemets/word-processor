@@ -252,6 +252,14 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            "styledtable" => {
+                // A table with one of Word's styles on it, which is the only
+                // way to look at what the Table Style Options do.
+                self.document.insert_table(4, 3);
+                self.choose_table_style(4);
+                self.ribbon.tab = crate::chrome::ribbon::Tab::TableDesign;
+                self.relayout();
+            }
             "furniture" => {
                 self.document
                     .set_furniture(

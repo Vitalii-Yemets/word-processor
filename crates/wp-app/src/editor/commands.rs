@@ -46,8 +46,20 @@ impl Editor {
         let Some((name, value)) = palette.entries().get(index).copied() else {
             return Response::Redraw;
         };
+        self.apply_color(palette.kind, value, name)
+    }
 
-        match palette.kind {
+    /// Applies one colour of one kind: what picking a swatch comes down to.
+    ///
+    /// Apart from the picking, so that a colour can be applied by anything that
+    /// knows which one it wants.
+    pub(super) fn apply_color(
+        &mut self,
+        kind: PaletteKind,
+        value: Option<&str>,
+        name: &str,
+    ) -> Response {
+        match kind {
             PaletteKind::Highlight => {
                 self.chosen_highlight_color = value
                     .and_then(crate::chrome::palette::highlight_color)
@@ -62,7 +74,16 @@ impl Editor {
                 self.finish_character_change(changed, name)
             }
             PaletteKind::Shading => {
-                let changed = self.document.set_shading_here(value);
+                // Inside a table, Word's Shading colours the cells rather than
+                // the paragraphs in them — which is what a person pressing it
+                // on the Table Design tab is asking for, and what a table style
+                // colours too.
+                let changed = if self.document.table_here().is_some() {
+                    self.document.set_cell_shading(value)
+                } else {
+                    self.document.set_shading_here(value)
+                };
+                self.relayout();
                 self.edited(changed, &format!("Shading: {name}"))
             }
             PaletteKind::Page => {

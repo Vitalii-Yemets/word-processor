@@ -61,6 +61,7 @@ mod styledialog;
 mod styles;
 mod symboldialog;
 mod tabledialog;
+mod tablestyle;
 mod tabsdialog;
 mod theme_effects;
 mod themes;

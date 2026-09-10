@@ -16,7 +16,7 @@ use crate::model::{
     Alignment, Block, Body, Border, BreakKind, LineRule, LineSpacing, NumberingReference,
     Paragraph, ParagraphBorders, ParagraphProperties, Picture, Revision, RevisionKind, Run,
     RunContent, RunProperties, TabAlignment, TabLeader, TabStop, Table, TableBorders, TableCell,
-    TableRow, Underline, VerticalAlignment,
+    TableLook, TableRow, Underline, VerticalAlignment,
 };
 
 /// The WordprocessingML namespace.
@@ -147,6 +147,10 @@ fn read_table(element: &Element) -> Table {
     Table {
         rows,
         style,
+        look: properties
+            .and_then(|properties| properties.child(Some(W), "tblLook"))
+            .map(read_table_look)
+            .unwrap_or_default(),
         grid,
         borders,
         indent,
@@ -201,7 +205,55 @@ fn read_table_cell(cell: &Element) -> TableCell {
         .map(read_table_borders)
         .unwrap_or_default();
 
-    TableCell { blocks: read_blocks(cell), width, span, merged_upwards, borders }
+    // The colour behind a cell, which is what a banded table is made of.
+    let shading = properties
+        .and_then(|properties| properties.child(Some(W), "shd"))
+        .and_then(|element| element.attribute(Some(W), "fill"))
+        .filter(|value| *value != "auto")
+        .map(str::to_owned);
+
+    TableCell { blocks: read_blocks(cell), width, span, merged_upwards, borders, shading }
+}
+
+/// Reads a `w:tblLook`.
+///
+/// Word 2007 wrote one hexadecimal number and nothing else; every version since
+/// writes the attributes as well. A file may have either, so the number is read
+/// where the attributes are missing. See [`TableLook`] on why two of the six are
+/// written the other way up.
+#[must_use]
+pub fn read_table_look(element: &Element) -> TableLook {
+    let bits = element
+        .attribute(Some(W), "val")
+        .and_then(|text| u32::from_str_radix(text.trim(), 16).ok());
+
+    let flag = |name: &str, mask: u32, backwards: bool| {
+        let stated =
+            element.attribute(Some(W), name).map(|value| matches!(value, "1" | "true" | "on"));
+        let set = match stated {
+            Some(on) => on,
+            None => match bits {
+                Some(bits) => bits & mask != 0,
+                // Nothing said at all: a table has bands and no special
+                // columns, which is what an absent `w:tblLook` means.
+                None => !backwards,
+            },
+        };
+        if backwards {
+            !set
+        } else {
+            set
+        }
+    };
+
+    TableLook {
+        first_row: flag("firstRow", 0x0020, false),
+        last_row: flag("lastRow", 0x0040, false),
+        first_column: flag("firstColumn", 0x0080, false),
+        last_column: flag("lastColumn", 0x0100, false),
+        banded_rows: flag("noHBand", 0x0200, true),
+        banded_columns: flag("noVBand", 0x0400, true),
+    }
 }
 
 /// Reads a `w:tblBorders` or `w:tcBorders`.

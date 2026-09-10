@@ -868,10 +868,44 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   rather than lines. Word's longer list of line styles — `dotDash`,
   `dashDotStroked`, the wavy and the three-line ones — is read and written
   faithfully but drawn as the nearest of the five above. All three are **C23**.
-- [ ] **C15. The Table Design tab.** Header Row and Banded Rows do nothing and
+- [x] **C15. The Table Design tab.** Header Row and Banded Rows do nothing and
   say so — the only two buttons in the program that do. The tab is also missing
   the table styles gallery, shading, the border styles and the border painter,
   and the first-column and banded-column switches.
+  *Done:* those two buttons could not have done anything on their own, and
+  saying so was the honest half of the answer. Ticking Header Row does not shade
+  the first row; it says the *style* may treat the first row specially, and a
+  style that says nothing about first rows changes nothing — in Word too. What
+  was missing was everything on the other side of that sentence, and it is here
+  now:
+
+  **The switches** are all six Word has, and they write `w:tblLook`
+  (`model::TableLook`) — including the two the file writes upside down, as
+  `w:noHBand` and `w:noVBand`. **The styles** carry conditional formatting:
+  `w:tblStylePr` per part, read into `styles::Conditional` and `TablePart`, and
+  resolved by `Styles::resolve_table_cell`, which applies the parts weakest
+  first so a header row still looks like one where it crosses the first column.
+  **The layout** works out which parts each cell is in — `parts_of`, which
+  counts the bands from the first row that is not the header, as Word counts
+  them — and draws the cell's colour behind it. Cells had no colour at all
+  before this: `w:shd` on a `w:tcPr` was neither read nor drawn, and a banded
+  table has nothing to be made of without it.
+
+  **The gallery** offers five of Word's own styles by Word's identifiers and
+  names, so a table given one here arrives in Word as the style it says it is.
+  A style is written into `styles.xml` when it is first used, because a table
+  can only name a definition that is there — and one the document already
+  carries is left exactly as it is, since a document from Word brings Word's own
+  and overwriting it would change how that document looks in the program it was
+  made in.
+
+  **Shading** colours the cell rather than the paragraph inside it when the
+  caret is in a table, which is what Word's does and what a table style does.
+
+  Not done: Word's **Border Styles** gallery and its **Border Painter**, the pen
+  that paints a chosen line onto the edges it is dragged along. The painter is a
+  mode rather than a command, like the format painter, and the gallery is the
+  line styles of **C23** over again. Both are **C24**.
 - [ ] **C16. The rest of the Table Layout tab.** Select, View Gridlines, Draw
   Table and Eraser, AutoFit, the height and width boxes, Text Direction, Cell
   Margins, Sort, Repeat Header Rows, Convert to Text, and Formula. And nine
@@ -970,6 +1004,18 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* every style Word lists is drawn as Word draws it, the two
   settings are on the dialog, and a document with an art border round its pages
   looks the same here as it does there.
+- [ ] **C24. The Border Styles gallery and the Border Painter.** The last two
+  things the Table Design tab is missing, and one job: Word's gallery picks a
+  line — a style, a width and a colour — and the painter is the pen that puts
+  that line on whichever edge it is dragged along.
+  The painter is a mode rather than a command, like the format painter: one
+  press arms it, and it stays armed until it is pressed again or Escape is
+  pressed. What it needs beyond that is a way to say which edge of which cell
+  the pointer is nearest, which nothing here works out yet.
+  The gallery is the line styles of **C23** over again, so the two are worth
+  doing together.
+  *Done when:* a line can be chosen from the gallery, the pen puts it on the
+  edges it is dragged along, and pressing it again puts the pen down.
 
 ## D — Pictures and drawings
 

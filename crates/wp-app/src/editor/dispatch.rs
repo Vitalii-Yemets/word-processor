@@ -337,8 +337,13 @@ impl Editor {
                 self.edited(changed, "Table of contents removed")
             }
 
-            Command::TableHeaderRow => self.report("A header row is not built yet"),
-            Command::TableBandedRows => self.report("Banded rows are not built yet"),
+            Command::TableStyles => self.open_table_styles(),
+            Command::TableHeaderRow
+            | Command::TableTotalRow
+            | Command::TableFirstColumn
+            | Command::TableLastColumn
+            | Command::TableBandedRows
+            | Command::TableBandedColumns => self.toggle_table_look(command),
 
             // --- Review -------------------------------------------------------
             Command::WordCount => self.open_word_count(),

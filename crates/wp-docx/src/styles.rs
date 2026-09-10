@@ -72,6 +72,115 @@ pub struct Style {
     /// This is where most real tables get their borders: the table itself says
     /// only "TableGrid", and the grid lines live in the style.
     pub table_borders: TableBorders,
+    /// The colour behind an ordinary cell of a table in this style.
+    pub table_shading: Option<String>,
+    /// What the style says about the parts of a table that are not ordinary
+    /// cells: the first row, the bands, the outer columns.
+    pub table_parts: Vec<(Conditional, TablePart)>,
+}
+
+/// Which part of a table a conditional format applies to.
+///
+/// Word's table styles say more than one thing: what an ordinary cell looks
+/// like, and what the first row, the last row, the outer columns and the
+/// alternating bands look like. Each of those is a `w:tblStylePr` with one of
+/// these as its `w:type`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Conditional {
+    FirstRow,
+    LastRow,
+    FirstColumn,
+    LastColumn,
+    /// The odd horizontal band, counting the first as one.
+    Band1Horizontal,
+    /// And the even one.
+    Band2Horizontal,
+    Band1Vertical,
+    Band2Vertical,
+}
+
+impl Conditional {
+    /// What the file calls it.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::FirstRow => "firstRow",
+            Self::LastRow => "lastRow",
+            Self::FirstColumn => "firstCol",
+            Self::LastColumn => "lastCol",
+            Self::Band1Horizontal => "band1Horz",
+            Self::Band2Horizontal => "band2Horz",
+            Self::Band1Vertical => "band1Vert",
+            Self::Band2Vertical => "band2Vert",
+        }
+    }
+
+    #[must_use]
+    pub fn from_word(text: &str) -> Option<Self> {
+        Some(match text {
+            "firstRow" => Self::FirstRow,
+            "lastRow" => Self::LastRow,
+            "firstCol" => Self::FirstColumn,
+            "lastCol" => Self::LastColumn,
+            "band1Horz" => Self::Band1Horizontal,
+            "band2Horz" => Self::Band2Horizontal,
+            "band1Vert" => Self::Band1Vertical,
+            "band2Vert" => Self::Band2Vertical,
+            _ => return None,
+        })
+    }
+
+    /// The order Word applies them in, weakest first.
+    ///
+    /// A cell can be in several at once — the first cell of the first row of a
+    /// banded table is in three — and the later ones win. Word's order is the
+    /// bands first, then the outer columns, then the outer rows, which is why a
+    /// header row looks like a header row even where it crosses the first
+    /// column.
+    pub const ORDER: &'static [Self] = &[
+        Self::Band2Vertical,
+        Self::Band1Vertical,
+        Self::Band2Horizontal,
+        Self::Band1Horizontal,
+        Self::LastColumn,
+        Self::FirstColumn,
+        Self::LastRow,
+        Self::FirstRow,
+    ];
+}
+
+/// What a table style says about one part of a table.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TablePart {
+    pub run: RunProperties,
+    /// The colour behind the cells, as six hex digits.
+    pub shading: Option<String>,
+    pub borders: TableBorders,
+}
+
+impl TablePart {
+    /// Whether it says anything at all.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Reads one `w:tblStylePr`.
+fn read_table_part(part: &Element) -> TablePart {
+    let properties = part.child(Some(W), "tcPr");
+    TablePart {
+        run: part.child(Some(W), "rPr").map(read_run_properties).unwrap_or_default(),
+        shading: properties
+            .and_then(|properties| properties.child(Some(W), "shd"))
+            .and_then(|element| element.attribute(Some(W), "fill"))
+            .filter(|fill| *fill != "auto")
+            .map(str::to_owned),
+        borders: properties
+            .and_then(|properties| properties.child(Some(W), "tcBorders"))
+            .map(read_table_borders)
+            .unwrap_or_default(),
+    }
 }
 
 /// Every style in a document, and the document defaults.
@@ -151,10 +260,68 @@ impl Styles {
                     .and_then(|properties| properties.child(Some(W), "tblBorders"))
                     .map(read_table_borders)
                     .unwrap_or_default(),
+                table_shading: definition
+                    .child(Some(W), "tblPr")
+                    .and_then(|properties| properties.child(Some(W), "shd"))
+                    .and_then(|element| element.attribute(Some(W), "fill"))
+                    .filter(|fill| *fill != "auto")
+                    .map(str::to_owned),
+                table_parts: definition
+                    .children_named(Some(W), "tblStylePr")
+                    .filter_map(|part| {
+                        let kind =
+                            Conditional::from_word(part.attribute(Some(W), "type").unwrap_or(""))?;
+                        Some((kind, read_table_part(part)))
+                    })
+                    .collect(),
             });
         }
 
         result
+    }
+
+    /// What a table style says about one cell of a table.
+    ///
+    /// # How a cell is worked out
+    ///
+    /// From the style's ordinary cell formatting, and then from every part it
+    /// is in — a cell can be in several at once, and the later ones win. Which
+    /// parts count is not the style's decision: the table says which of them
+    /// may be used at all, through its `w:tblLook`, which is what Word's Table
+    /// Style Options tick boxes set. A style with a header row and a table that
+    /// says it has none is a table with no header row.
+    #[must_use]
+    pub fn resolve_table_cell(&self, id: Option<&str>, parts: &[Conditional]) -> TablePart {
+        let mut accumulated = TablePart::default();
+        let Some(id) = id else { return accumulated };
+
+        for style in self.chain(id) {
+            accumulated.borders = accumulated.borders.overlaid_with(&style.table_borders);
+            if style.table_shading.is_some() {
+                accumulated.shading = style.table_shading.clone();
+            }
+            accumulated.run = accumulated.run.overlaid_with(&style.run);
+        }
+
+        // Weakest first, so that the strongest — the first row — is applied
+        // last and wins wherever two of them disagree.
+        for wanted in Conditional::ORDER {
+            if !parts.contains(wanted) {
+                continue;
+            }
+            for style in self.chain(id) {
+                let Some((_, part)) = style.table_parts.iter().find(|(kind, _)| kind == wanted)
+                else {
+                    continue;
+                };
+                accumulated.borders = accumulated.borders.overlaid_with(&part.borders);
+                if part.shading.is_some() {
+                    accumulated.shading = part.shading.clone();
+                }
+                accumulated.run = accumulated.run.overlaid_with(&part.run);
+            }
+        }
+        accumulated
     }
 
     /// The borders a table style asks for, following what it is based on.
