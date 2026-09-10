@@ -782,8 +782,7 @@ impl Ribbon {
                     Choice::Size => super::format_size(state.size),
                     Choice::Style => state.style.clone().unwrap_or_else(|| "Normal".to_owned()),
                     Choice::Zoom => format!("{}%", state.zoom.round() as i32),
-                    Choice::Symbol
-                    | Choice::Border
+                    Choice::Border
                     | Choice::Furniture
                     | Choice::Reference
                     | Choice::Citation

@@ -50,6 +50,8 @@ pub(super) enum Asking {
     Style,
     /// What the selection is formatted with, and where it came from.
     Inspector,
+    /// Which character to put in.
+    Symbol,
 }
 
 impl Editor {
@@ -117,8 +119,10 @@ impl Editor {
             ),
             Some(Asking::TabStops) => self.apply_tabs_dialog(&dialog),
             Some(Asking::Style) => self.apply_style_dialog(&dialog),
-            Some(Asking::Inspector) => {
-                // A dialog that tells rather than asks.
+            // Word's Symbol dialog is answered by its Insert button rather
+            // than by OK, so there is nothing left to do when it shuts.
+            Some(Asking::Symbol) | Some(Asking::Inspector) => {
+                // Dialogs that tell, or that have already done their work.
                 let _ = &dialog;
                 Response::Redraw
             }
@@ -144,6 +148,12 @@ impl Editor {
                 let dialog = self.dialog.take()?;
                 self.apply_paragraph_dialog(&dialog, false);
                 Some(self.open_tabs_dialog())
+            }
+            // Word's Insert puts the character in and leaves the dialog up: a
+            // person putting in three symbols should not open it three times.
+            (Some(Asking::Symbol), super::symboldialog::INSERT) => {
+                let dialog = self.dialog.clone()?;
+                Some(self.insert_symbol_from_dialog(&dialog))
             }
             // Set, Clear and Clear All change the list and leave the dialog up.
             (Some(Asking::TabStops), SET | CLEAR | CLEAR_ALL) => {
@@ -199,6 +209,8 @@ impl Editor {
                             self.dialog = Some(built);
                         }
                     }
+                    // The subset changing is the grid changing.
+                    Some(Asking::Symbol) => self.symbol_dialog_changed(),
                     // The same for the Paragraph dialog, whose preview is the
                     // shape its fields describe.
                     Some(Asking::Paragraph) => {

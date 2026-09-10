@@ -277,6 +277,13 @@ impl Editor {
             "inspector" => {
                 self.open_style_inspector();
             }
+            "symbols" => {
+                self.open_symbol_dialog();
+            }
+            "special" => {
+                self.open_symbol_dialog();
+                self.dialog_key(wp_shell::Key::Tab, false, true);
+            }
             "fontdialog" => {
                 self.open_font_dialog();
             }

@@ -13,46 +13,6 @@ use crate::chrome::{Choice, Command, Popup};
 
 use super::Editor;
 
-/// The symbols the Insert Symbol list offers.
-///
-/// Word's own short list, which is the one people actually reach for: the
-/// dashes and quotes that a keyboard has no key for, and the handful of signs
-/// that turn up in ordinary prose.
-pub(super) const SYMBOLS: &[(&str, &str)] = &[
-    ("…", "Ellipsis"),
-    ("—", "Em dash"),
-    ("–", "En dash"),
-    ("‘", "Left single quote"),
-    ("’", "Right single quote"),
-    ("“", "Left double quote"),
-    ("”", "Right double quote"),
-    ("«", "Left guillemet"),
-    ("»", "Right guillemet"),
-    ("©", "Copyright"),
-    ("®", "Registered"),
-    ("™", "Trade mark"),
-    ("°", "Degree"),
-    ("±", "Plus-minus"),
-    ("×", "Multiplication"),
-    ("÷", "Division"),
-    ("≠", "Not equal to"),
-    ("≤", "Less than or equal"),
-    ("≥", "Greater than or equal"),
-    ("≈", "Approximately"),
-    ("€", "Euro"),
-    ("£", "Pound"),
-    ("¥", "Yen"),
-    ("§", "Section"),
-    ("¶", "Pilcrow"),
-    ("†", "Dagger"),
-    ("•", "Bullet"),
-    ("→", "Right arrow"),
-    ("←", "Left arrow"),
-    ("½", "One half"),
-    ("¼", "One quarter"),
-    ("¾", "Three quarters"),
-];
-
 impl Editor {
     /// Drops open one of the three colour palettes under its button.
     pub(super) fn open_palette(&mut self, kind: PaletteKind) -> Response {
@@ -143,31 +103,6 @@ impl Editor {
         }
         self.needs_redraw = true;
         changed
-    }
-
-    /// Drops open the list of symbols.
-    pub(super) fn open_symbols(&mut self) -> Response {
-        if self.popup.as_ref().is_some_and(|popup| popup.choice == Choice::Symbol) {
-            self.popup = None;
-            self.needs_redraw = true;
-            return Response::Redraw;
-        }
-        let Some((left, top, _)) = self.ribbon.command_rect(Command::InsertSymbol) else {
-            return Response::Ignored;
-        };
-        let items =
-            SYMBOLS.iter().map(|(symbol, name)| format!("{symbol}   {name}")).collect::<Vec<_>>();
-        self.popup = Some(Popup::new(Choice::Symbol, items, None, left, top, 190.0));
-        self.needs_redraw = true;
-        Response::Redraw
-    }
-
-    /// Puts the chosen symbol into the document.
-    pub(super) fn choose_symbol(&mut self, index: usize) -> Response {
-        self.popup = None;
-        let Some((symbol, name)) = SYMBOLS.get(index).copied() else { return Response::Ignored };
-        let changed = self.document.type_text(symbol);
-        self.edited(changed, name)
     }
 
     /// Sorts the selected paragraphs into order.

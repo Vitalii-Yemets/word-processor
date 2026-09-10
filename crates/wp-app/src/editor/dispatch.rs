@@ -134,7 +134,7 @@ impl Editor {
             }
             Command::InsertTable => self.open_table_grid(),
             Command::InsertPicture => self.insert_picture(),
-            Command::InsertSymbol => self.open_symbols(),
+            Command::InsertSymbol => self.open_symbol_dialog(),
             Command::Header => self.open_furniture(wp_docx::furniture::Furniture::Header),
             Command::GoToHeader => self.go_to_furniture(wp_docx::furniture::Furniture::Header),
             Command::GoToFooter => self.go_to_furniture(wp_docx::furniture::Furniture::Footer),

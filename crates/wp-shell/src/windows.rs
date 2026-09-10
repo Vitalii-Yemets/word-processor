@@ -325,6 +325,7 @@ const PRINT_BAND_ROWS: usize = 256;
 // Virtual key codes for the keys the shell reports.
 const KEY_BACKSPACE: u32 = 0x08;
 const KEY_TAB: u32 = 0x09;
+const KEY_SPACE: u32 = 0x20;
 const KEY_ENTER: u32 = 0x0D;
 const KEY_ESCAPE: u32 = 0x1B;
 const KEY_PAGE_UP: u32 = 0x21;
@@ -1795,6 +1796,7 @@ fn key_from_code(code: u32) -> Option<Key> {
         KEY_DELETE => Key::Delete,
         KEY_ESCAPE => Key::Escape,
         KEY_TAB => Key::Tab,
+        KEY_SPACE => Key::Space,
         _ => return None,
     })
 }

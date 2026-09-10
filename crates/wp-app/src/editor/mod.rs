@@ -53,6 +53,7 @@ mod stationery;
 mod statusmenu;
 mod styledialog;
 mod styles;
+mod symboldialog;
 mod table_properties;
 mod tabsdialog;
 mod theme_effects;
@@ -353,6 +354,11 @@ pub struct Editor {
     /// Whether the Font or Paragraph dialog was opened from inside the style
     /// dialog, so that answering it comes back there rather than to the page.
     formatting_a_style: bool,
+    /// Which block of characters the Symbol dialog is showing.
+    symbol_subset: usize,
+    /// The characters most recently put in, newest first. Word remembers these
+    /// between openings and so does this.
+    recent_symbols: Vec<char>,
     show_marks: bool,
     /// Where the zoom slider was last drawn.
     slider: Option<status::SliderRect>,
@@ -491,6 +497,8 @@ impl Editor {
             styles_pane: crate::chrome::stylespane::StylesPane::new(),
             editing_style: None,
             formatting_a_style: false,
+            symbol_subset: 0,
+            recent_symbols: Vec::new(),
             show_marks: false,
             slider: None,
             status_buttons: Vec::new(),

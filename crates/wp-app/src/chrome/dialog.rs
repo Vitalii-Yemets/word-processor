@@ -70,6 +70,17 @@ const GROUP_INSET: f32 = 10.0;
 /// The room a group's caption takes above its first field.
 const GROUP_CAPTION: f32 = 20.0;
 
+/// How many characters a grid puts across a row.
+///
+/// Word's number, and the reason its Symbol dialog is the width it is.
+const GRID_COLUMNS: usize = 16;
+
+/// How many rows of it are shown at once; the rest is scrolled to.
+const GRID_ROWS: usize = 8;
+
+/// How big one cell of the grid is.
+const GRID_CELL: f32 = 26.0;
+
 /// One thing a dialog asks about.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Field {
@@ -113,6 +124,13 @@ pub enum Field {
     /// dialog. Fields that belong together are put together, and the eye finds
     /// them as a group instead of walking a column of twenty.
     Columns(u8),
+    /// A grid of characters, one of them chosen.
+    ///
+    /// Word's Symbol dialog is built round one, and nothing else in a dialog
+    /// looks anything like it: a hundred and twenty-eight cells that are picked
+    /// from with the arrows or the mouse, and that scroll when the subset is
+    /// longer than the grid.
+    Grid { label: String, items: Vec<char>, current: usize, scroll: usize },
     /// A rectangle round everything that follows, with a caption on its top
     /// edge, until the next group or the next tab.
     ///
@@ -165,6 +183,9 @@ impl Field {
             | Self::Shape(_)
             | Self::Columns(_)
             | Self::Group(_) => None,
+            // A grid's label stands above it rather than beside it, whatever
+            // row it is on: sixteen cells across leave no room for a column.
+            Self::Grid { .. } => None,
             Self::Said { label, .. }
             | Self::Text { label, .. }
             | Self::Number { label, .. }
@@ -193,6 +214,7 @@ impl Field {
             Self::Shape(_) => "a shape",
             Self::Columns(_) => "a row",
             Self::Group(_) => "a group",
+            Self::Grid { .. } => "a grid",
         }
     }
 
@@ -207,6 +229,7 @@ impl Field {
             Self::Group(_) => GROUP_CAPTION,
             Self::Preview(_) => PREVIEW_HEIGHT + PADDING,
             Self::Shape(_) => SHAPE_HEIGHT + PADDING,
+            Self::Grid { .. } => LABEL_HEIGHT + GRID_ROWS as f32 * GRID_CELL + PADDING,
             _ => ROW + 4.0,
         }
     }
@@ -412,6 +435,21 @@ impl Dialog {
         }
     }
 
+    /// Which tab is showing, counted from the first.
+    #[must_use]
+    pub fn showing_tab(&self) -> usize {
+        self.tab
+    }
+
+    /// Which cell of a grid is picked, as the character it stands for.
+    #[must_use]
+    pub fn picked(&self, index: usize) -> Option<char> {
+        match self.fields.get(index) {
+            Some(Field::Grid { items, current, .. }) => items.get(*current).copied(),
+            _ => None,
+        }
+    }
+
     /// Which of a list was chosen.
     #[must_use]
     pub fn chose(&self, index: usize) -> usize {
@@ -490,6 +528,20 @@ impl Dialog {
                 }
                 let default = self.buttons.iter().find(|button| button.default);
                 default.map_or(Reaction::Ignored, |button| Reaction::Closed(button.answer))
+            }
+            // A grid is walked in two directions, as Word's is: the arrows move
+            // from cell to cell and the grid scrolls to follow.
+            Key::Up | Key::Down | Key::Left | Key::Right
+                if matches!(self.fields.get(self.focus), Some(Field::Grid { .. })) =>
+            {
+                let step = match key {
+                    Key::Left => -1,
+                    Key::Right => 1,
+                    Key::Up => -(GRID_COLUMNS as i32),
+                    _ => GRID_COLUMNS as i32,
+                };
+                self.move_in_grid(self.focus, step);
+                Reaction::Changed
             }
             Key::Up | Key::Down => {
                 // The arrows walk a list without dropping it open, as they do
@@ -574,6 +626,16 @@ impl Dialog {
             }
             Some(Hit::Field(index)) => {
                 self.focus = index;
+                // A grid is picked from cell by cell, so where in it the press
+                // landed is the whole of what the press said.
+                if matches!(self.fields.get(index), Some(Field::Grid { .. })) {
+                    if let Some(cell) = self.grid_cell_at(index, x, y) {
+                        if let Some(Field::Grid { current, .. }) = self.fields.get_mut(index) {
+                            *current = cell;
+                        }
+                    }
+                    return Reaction::Changed;
+                }
                 match self.fields.get_mut(index) {
                     Some(Field::Check { on, .. }) => *on = !*on,
                     Some(Field::Choice { .. }) => self.open_list = Some(index),
@@ -608,6 +670,46 @@ impl Dialog {
 
     fn focused_button(&self) -> Option<usize> {
         self.focus.checked_sub(self.fields.len()).filter(|index| *index < self.buttons.len())
+    }
+
+    /// Moves the cell a grid has picked, and scrolls the grid to keep it in
+    /// sight.
+    ///
+    /// A grid that let the picked cell go off the top is a grid where the
+    /// arrows appear to do nothing.
+    fn move_in_grid(&mut self, index: usize, step: i32) {
+        let Some(Field::Grid { items, current, scroll, .. }) = self.fields.get_mut(index) else {
+            return;
+        };
+        if items.is_empty() {
+            return;
+        }
+        let last = items.len() as i32 - 1;
+        *current = (*current as i32 + step).clamp(0, last) as usize;
+
+        let row = *current / GRID_COLUMNS;
+        if row < *scroll {
+            *scroll = row;
+        } else if row >= *scroll + GRID_ROWS {
+            *scroll = row + 1 - GRID_ROWS;
+        }
+    }
+
+    /// Which cell of a grid a point is on.
+    fn grid_cell_at(&self, index: usize, x: i32, y: i32) -> Option<usize> {
+        let (left, top, width, _) = self.rect_of(Hit::Field(index))?;
+        let Some(Field::Grid { items, scroll, .. }) = self.fields.get(index) else { return None };
+        let cell = width / GRID_COLUMNS as f32;
+        if cell <= 0.0 {
+            return None;
+        }
+        let column = ((x as f32 - left) / cell).floor();
+        let row = ((y as f32 - top) / cell).floor();
+        if column < 0.0 || row < 0.0 || column >= GRID_COLUMNS as f32 || row >= GRID_ROWS as f32 {
+            return None;
+        }
+        let at = (scroll + row as usize) * GRID_COLUMNS + column as usize;
+        (at < items.len()).then_some(at)
     }
 
     fn move_choice(&mut self, index: usize, step: i32) {
@@ -1190,6 +1292,84 @@ impl Dialog {
                     box_y + PREVIEW_HEIGHT * 0.62,
                 );
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
+            }
+
+            Field::Grid { label, items, current, scroll } => {
+                let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+
+                let room = box_x + box_width - label_x;
+                let grid_top = box_y + LABEL_HEIGHT;
+                let cell = (room / GRID_COLUMNS as f32).min(GRID_CELL);
+                let grid_width = cell * GRID_COLUMNS as f32;
+                let grid_height = cell * GRID_ROWS as f32;
+
+                canvas.fill_rect(
+                    label_x as i32,
+                    grid_top as i32,
+                    grid_width as i32,
+                    grid_height as i32,
+                    theme.field,
+                );
+                outline(canvas, label_x, grid_top, grid_width, grid_height, theme.field_edge);
+
+                let first = scroll * GRID_COLUMNS;
+                for row in 0..GRID_ROWS {
+                    for column in 0..GRID_COLUMNS {
+                        let at = first + row * GRID_COLUMNS + column;
+                        let Some(character) = items.get(at) else { break };
+                        let cell_x = label_x + cell * column as f32;
+                        let cell_y = grid_top + cell * row as f32;
+
+                        if at == current {
+                            canvas.fill_rect(
+                                cell_x as i32,
+                                cell_y as i32,
+                                cell as i32,
+                                cell as i32,
+                                if focused { theme.accent } else { theme.hover },
+                            );
+                        }
+                        // Centred in its cell, which is the only way a grid of
+                        // characters of every width reads as a grid.
+                        let mut text = String::new();
+                        text.push(*character);
+                        let colour =
+                            if at == current && focused { theme.on_accent() } else { theme.text };
+                        let measured = engine.simple_line(&text, 0.0, 0.0, 11.0, colour).width;
+                        let line = engine.simple_line(
+                            &text,
+                            cell_x + (cell - measured) / 2.0,
+                            cell_y + cell * 0.72,
+                            11.0,
+                            colour,
+                        );
+                        renderer.draw_within(canvas, &line, cell_x, cell_y, cell, cell);
+                    }
+                }
+                // The lines between the cells, drawn over them so a cell that
+                // is picked keeps its own edges.
+                for column in 1..GRID_COLUMNS {
+                    let at = label_x + cell * column as f32;
+                    canvas.fill_rect(
+                        at as i32,
+                        grid_top as i32,
+                        1,
+                        grid_height as i32,
+                        theme.field_edge,
+                    );
+                }
+                for row in 1..GRID_ROWS {
+                    let at = grid_top + cell * row as f32;
+                    canvas.fill_rect(
+                        label_x as i32,
+                        at as i32,
+                        grid_width as i32,
+                        1,
+                        theme.field_edge,
+                    );
+                }
+                self.placed.push((Hit::Field(index), label_x, grid_top, grid_width, grid_height));
             }
 
             Field::Shape(sample) => {

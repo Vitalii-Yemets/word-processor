@@ -972,7 +972,6 @@ impl Editor {
             Choice::Size => Command::ChooseSize,
             Choice::Style => Command::ChooseStyle,
             Choice::Zoom => Command::ChooseZoom,
-            Choice::Symbol => Command::InsertSymbol,
             Choice::Border => Command::Borders,
             Choice::Furniture => Command::Header,
             Choice::Reference => Command::CrossReference,
@@ -1064,8 +1063,7 @@ impl Editor {
             }
             // The symbol list is opened by its own command, which fills it in.
             // These two are opened by their own commands, which fill them in.
-            Choice::Symbol
-            | Choice::Border
+            Choice::Border
             | Choice::Furniture
             | Choice::Reference
             | Choice::Citation
@@ -1150,7 +1148,6 @@ impl Editor {
                 let style = self.style_gallery().get(index).and_then(|sample| sample.id.clone());
                 self.apply_style(style.as_deref())
             }
-            Choice::Symbol => self.choose_symbol(index),
             Choice::Border => self.choose_border(index),
             Choice::Furniture => self.choose_furniture(index),
             Choice::Reference => self.choose_reference(index),
@@ -1302,7 +1299,9 @@ impl Editor {
         }
 
         if modifiers.control {
-            // Ctrl+Alt+1, 2, 3 apply the heading levels, as they do in Word.
+            // Ctrl+Alt+1, 2, 3 apply the heading levels, as they do in Word —
+            // and the rest of what Word puts on Ctrl+Alt is here too, because
+            // this returns before anything below it is looked at.
             if modifiers.alt {
                 return match key {
                     Key::Digit(level @ '1'..='3') => {
@@ -1313,12 +1312,41 @@ impl Editor {
                         };
                         self.apply_style(Some(style))
                     }
+                    // The characters Word gives keys of their own. Shown beside
+                    // each one in the Symbol dialog, and working — which is the
+                    // difference between a dialog that documents this program
+                    // and one that describes some other program.
+                    Key::Letter('c') => self.insert_special_character("Copyright"),
+                    Key::Letter('r') => self.insert_special_character("Registered"),
+                    Key::Letter('t') => self.insert_special_character("Trademark"),
+                    Key::Digit('.') => self.insert_special_character("Ellipsis"),
+                    Key::Digit('-') if modifiers.shift => self.insert_special_character("Em Dash"),
+                    Key::Digit('-') => self.insert_special_character("En Dash"),
                     _ => Response::Ignored,
                 };
             }
 
             return match key {
                 Key::Letter('n') if !modifiers.shift => self.run(Command::New),
+                // The characters Word gives keys of their own. Shown beside
+                // each one in the Symbol dialog, and working, which is the
+                // difference between a dialog that documents this program and
+                // one that describes some other program. First, because every
+                // one of these letters means something else without Alt.
+                Key::Letter('c') if modifiers.alt => self.insert_special_character("Copyright"),
+                Key::Letter('r') if modifiers.alt => self.insert_special_character("Registered"),
+                Key::Letter('t') if modifiers.alt => self.insert_special_character("Trademark"),
+                Key::Digit('.') if modifiers.alt => self.insert_special_character("Ellipsis"),
+                Key::Digit('-') if modifiers.alt && modifiers.shift => {
+                    self.insert_special_character("Em Dash")
+                }
+                Key::Digit('-') if modifiers.alt => self.insert_special_character("En Dash"),
+                Key::Digit('-') if modifiers.shift => {
+                    self.insert_special_character("Nonbreaking Hyphen")
+                }
+                Key::Digit('-') => self.insert_special_character("Optional Hyphen"),
+                Key::Space if modifiers.shift => self.insert_special_character("Nonbreaking Space"),
+
                 Key::Letter('o') => self.run(Command::Open),
                 Key::Letter('p') => self.run(Command::Print),
                 // Word's own shortcut for the styles pane, which has to come
@@ -1429,6 +1457,9 @@ impl Editor {
                 let changed = self.document.press_enter();
                 self.edited(changed, "")
             }
+            // A space with no modifier arrives as typing rather than as a key,
+            // so there is nothing to do here with one that got this far.
+            Key::Space => Response::Ignored,
             Key::Backspace => {
                 let changed = self.document.backspace();
                 self.edited(changed, "")

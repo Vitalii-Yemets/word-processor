@@ -544,8 +544,35 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Restrict are about which styles a person is allowed to use, which belongs
   with **F4** (protection); Set Defaults is what the two Set As Default buttons
   of **C2** and **C3** already do.
-- [ ] **C5. Insert Symbol and Special Characters.** The grid, the subsets, the
+- [x] **C5. Insert Symbol and Special Characters.** The grid, the subsets, the
   recently used, the shortcut keys, AutoCorrect from inside it.
+  *Done:* Word's dialog, both tabs, in place of the short popup list that had
+  been standing in for it.
+
+  **Symbols** — the font, the subset, a grid of sixteen across and eight down,
+  the character code, and the row of recently used ones. The grid is new
+  machinery in the dialogs (`Field::Grid`): the arrows walk it in two
+  directions and it scrolls to keep the picked cell in sight, a click picks a
+  cell, and Insert puts the character in and leaves the dialog standing — a
+  person putting in three symbols should not open the dialog three times.
+
+  **The subsets** are Unicode's own blocks by their own names, twenty-one of
+  them, which is what Word divides its grid by. A block is a range of numbers
+  rather than a list of characters, so the ones nothing on the machine can draw
+  are left out: a grid of empty boxes is worse than a short grid.
+
+  **Special Characters** is Word's list of the eighteen people ask for by name,
+  each with the keys that put it in. Those keys work — Ctrl+Alt+C, Ctrl+Alt+T,
+  Ctrl+Alt+. , the three dashes and Ctrl+Shift+Space — which is the difference
+  between a dialog that documents this program and one that describes some
+  other program. The space bar had to become a key the shell reports for the
+  last of them; an ordinary space still arrives as typing.
+
+  Not done: **AutoCorrect**. Word's dialog has a button that adds the chosen
+  character to the AutoCorrect list, and there is no AutoCorrect in this
+  program at all — no list, no replacement as you type, nothing to add to. A
+  button that opened an empty dialog would be worse than no button. It is
+  **C19** below, with what it would take.
 - [ ] **C6. Table properties.** Table, row, column, cell and alt text; borders
   and shading; autofit rules.
 - [ ] **C7. Options.** The dialog behind File → Options, and the settings in it
@@ -628,6 +655,20 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   paper under them inside "Paper". The rest follow as they are built.
   Also added: `Renderer::draw_within`, so a font with a long name stops at the
   edge of its box instead of running out over the field beside it.
+
+- [ ] **C19. AutoCorrect.** There is none at all: no list of replacements, no
+  replacing as you type, and so nothing for the button in **C5** to add to.
+  Word's is four tabs — AutoCorrect (the replacement list, plus the five tick
+  boxes: two initial capitals, first letter of a sentence, day names, the Caps
+  Lock fix), AutoFormat As You Type (straight quotes to curly, ordinals to
+  superscript, fractions, hyphens to dashes, automatic lists), AutoFormat, and
+  Actions.
+  Most of it is one mechanism: watch what was typed since the last word
+  boundary, and replace it. The mechanism is the item; the tables are what goes
+  on top.
+  *Done when:* typing "teh " gives "the ", a straight quote comes out curly, a
+  hyphen between words becomes a dash, the list can be edited, and every one of
+  those can be turned off.
 
 ## D — Pictures and drawings
 

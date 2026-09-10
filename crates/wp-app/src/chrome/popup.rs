@@ -17,7 +17,6 @@ pub enum Choice {
     Size,
     Style,
     Zoom,
-    Symbol,
     Border,
     /// The ready-made headers, footers and page numbers.
     Furniture,

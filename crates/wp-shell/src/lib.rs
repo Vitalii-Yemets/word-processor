@@ -50,6 +50,12 @@ pub enum Key {
     Delete,
     Escape,
     Tab,
+    /// The space bar, which is only reported as a key when a modifier is held.
+    ///
+    /// An ordinary space arrives as [`Event::Char`] like any other typing;
+    /// this is here for the shortcuts that use it — Word's non-breaking space
+    /// is Ctrl+Shift+Space, and there is no other way to reach it.
+    Space,
 }
 
 /// Which modifier keys were held down.

@@ -950,6 +950,12 @@ impl<'a> LayoutEngine<'a> {
         self
     }
 
+    /// The fonts this engine draws with.
+    #[must_use]
+    pub fn library(&self) -> &FontLibrary {
+        self.library
+    }
+
     /// The same, on an engine that is being kept and used again.
     ///
     /// Anything that changes how a paragraph is measured throws away what was

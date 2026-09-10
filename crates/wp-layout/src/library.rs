@@ -295,6 +295,18 @@ impl FontLibrary {
         None
     }
 
+    /// Whether anything on this machine can draw a character.
+    ///
+    /// What a grid of symbols has to know before it draws a cell: a cell that
+    /// comes out as an empty box is worse than no cell.
+    #[must_use]
+    pub fn can_draw(&self, character: char) -> bool {
+        self.faces
+            .iter()
+            .filter_map(Face::coverage)
+            .any(|coverage| coverage.glyph_for(character).is_some())
+    }
+
     /// The face at an index.
     #[must_use]
     pub fn face(&self, index: usize) -> Option<&Face> {
