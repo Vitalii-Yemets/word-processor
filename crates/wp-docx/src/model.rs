@@ -170,6 +170,35 @@ pub struct RunProperties {
     pub effect: Option<crate::effects::TextEffect>,
     /// And the theme slot the font is named after.
     pub font_theme: Option<crate::theme::FontSlot>,
+    /// A second line through the text, `w:dstrike`. The format keeps it apart
+    /// from `w:strike` rather than counting the lines, and so does Word's Font
+    /// dialog: they are two tick boxes, and ticking one unticks the other.
+    pub double_strike: Option<bool>,
+    /// Every letter drawn as a capital, `w:caps` — the text itself is not
+    /// changed, which is what makes it different from Change Case.
+    pub caps: Option<bool>,
+    /// Small letters drawn as small capitals, `w:smallCaps`.
+    pub small_caps: Option<bool>,
+    /// Text that is in the document but not shown, `w:vanish`. Word draws it
+    /// with a dotted underline while the marks are showing and not at all
+    /// otherwise.
+    pub hidden: Option<bool>,
+    /// The colour of the underline, when it differs from the text's.
+    pub underline_color: Option<String>,
+    /// How wide the letters are drawn, as a percentage, `w:w`.
+    pub scale: Option<u32>,
+    /// Room added between the letters in twentieths of a point, `w:spacing`.
+    /// Negative pulls them together.
+    pub spacing_twentieths: Option<i32>,
+    /// How far off the line the text rides in half-points, `w:position`.
+    /// Positive is up. Unlike a superscript this does not shrink the text.
+    pub position_half_points: Option<i32>,
+    /// The size at or above which the font's own kerning is used, in
+    /// half-points, `w:kern`. Zero means never.
+    pub kerning_half_points: Option<u32>,
+    /// Which of the font's alternate forms are asked for. See
+    /// [`crate::typography`].
+    pub open_type: Option<crate::typography::OpenType>,
 }
 
 impl RunProperties {
@@ -215,6 +244,16 @@ impl RunProperties {
             right_to_left: other.right_to_left.or(self.right_to_left),
             language: other.language.clone().or_else(|| self.language.clone()),
             effect: other.effect.clone().or_else(|| self.effect.clone()),
+            double_strike: other.double_strike.or(self.double_strike),
+            caps: other.caps.or(self.caps),
+            small_caps: other.small_caps.or(self.small_caps),
+            hidden: other.hidden.or(self.hidden),
+            underline_color: other.underline_color.clone().or_else(|| self.underline_color.clone()),
+            scale: other.scale.or(self.scale),
+            spacing_twentieths: other.spacing_twentieths.or(self.spacing_twentieths),
+            position_half_points: other.position_half_points.or(self.position_half_points),
+            kerning_half_points: other.kerning_half_points.or(self.kerning_half_points),
+            open_type: other.open_type.clone().or_else(|| self.open_type.clone()),
         }
     }
 }
@@ -235,6 +274,28 @@ pub struct ResolvedRunProperties {
     pub language: Option<String>,
     /// The effect the letters are drawn with, if any.
     pub effect: Option<crate::effects::TextEffect>,
+    pub double_strike: bool,
+    pub caps: bool,
+    pub small_caps: bool,
+    pub hidden: bool,
+    /// The colour of the underline, when it differs from the text's.
+    pub underline_color: Option<String>,
+    /// How wide the letters are drawn, as a percentage of their own width.
+    pub scale: u32,
+    /// Room added between the letters, in twentieths of a point.
+    pub spacing_twentieths: i32,
+    /// How far off the line the text rides, in half-points, positive upwards.
+    pub position_half_points: i32,
+    /// The size at or above which the font's own kerning is used, in
+    /// half-points; `Some(0)` turns it off altogether.
+    ///
+    /// `None` means the document never said, which is not the same as off: a
+    /// document that says nothing gets kerning here, because that is what this
+    /// program has always drawn and what most people expect of a word
+    /// processor. Only a document that names a size is held to it.
+    pub kerning_half_points: Option<u32>,
+    /// Which of the font's alternate forms are asked for.
+    pub open_type: crate::typography::OpenType,
 }
 
 impl Default for ResolvedRunProperties {
@@ -253,6 +314,16 @@ impl Default for ResolvedRunProperties {
             font: None,
             language: None,
             effect: None,
+            double_strike: false,
+            caps: false,
+            small_caps: false,
+            hidden: false,
+            underline_color: None,
+            scale: crate::typography::NORMAL_SCALE,
+            spacing_twentieths: 0,
+            position_half_points: 0,
+            kerning_half_points: None,
+            open_type: crate::typography::OpenType::default(),
         }
     }
 }

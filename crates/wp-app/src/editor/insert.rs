@@ -257,6 +257,15 @@ impl Editor {
             "bookmark" => {
                 self.start_bookmark();
             }
+            "fontdialog" => {
+                self.open_font_dialog();
+            }
+            "fontadvanced" => {
+                self.open_font_dialog();
+                // The second tab, so the half of the dialog that is not the
+                // first can be photographed too.
+                self.dialog_key(wp_shell::Key::Tab, false, true);
+            }
             "gridlines" => self.show_gridlines = true,
             "palette" => {
                 self.palette = Some(crate::chrome::palette::Palette::new(

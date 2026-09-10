@@ -72,7 +72,17 @@ impl Transform {
     /// it draws every letter upside down.
     #[must_use]
     pub const fn glyph(scale: f32, origin_x: f32, baseline_y: f32) -> Self {
-        Self { a: scale, b: 0.0, c: 0.0, d: -scale, e: origin_x, f: baseline_y }
+        Self::stretched_glyph(scale, 1.0, origin_x, baseline_y)
+    }
+
+    /// The same, drawn wider or narrower than it is tall.
+    ///
+    /// Word's Scale: a letter at 150 per cent is a wide letter, not a normal
+    /// letter with a gap after it, so the outline is stretched rather than only
+    /// the room it takes up.
+    #[must_use]
+    pub const fn stretched_glyph(scale: f32, stretch: f32, origin_x: f32, baseline_y: f32) -> Self {
+        Self { a: scale * stretch, b: 0.0, c: 0.0, d: -scale, e: origin_x, f: baseline_y }
     }
 
     #[must_use]

@@ -22,6 +22,7 @@
 //! cancel, and a click anywhere outside that does nothing at all — because a
 //! modal dialog is modal.
 
+use wp_docx::model::ResolvedRunProperties;
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::{Canvas, Color};
 use wp_shell::Key;
@@ -47,6 +48,12 @@ const TITLE_HEIGHT: f32 = 34.0;
 /// The bar along the bottom, where the buttons are.
 const FOOTER_HEIGHT: f32 = 48.0;
 
+/// The strip of tabs under the caption, when a dialog has them.
+const TAB_HEIGHT: f32 = 30.0;
+
+/// The box a preview is drawn inside.
+const PREVIEW_HEIGHT: f32 = 64.0;
+
 /// One thing a dialog asks about.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Field {
@@ -62,13 +69,32 @@ pub enum Field {
     Check { label: String, on: bool },
     /// One of several, shown as a list that drops open.
     Choice { label: String, items: Vec<String>, current: usize },
+    /// The start of a tab. Everything after it belongs to that tab until the
+    /// next one, and only the fields of the tab that is showing are drawn or
+    /// reachable.
+    ///
+    /// A marker in the one list rather than a list of lists, so that a field
+    /// keeps the same number whichever tab it is on: what a dialog is asked for
+    /// afterwards — "what does field six say" — must not change because
+    /// somebody clicked a tab.
+    Tab(String),
+    /// A sample of what is being asked about, drawn as the document would draw
+    /// it. See [`crate::editor`] for what fills it in.
+    Preview(Box<Sample>),
+}
+
+/// What a preview shows: some text, and the formatting to draw it with.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sample {
+    pub text: String,
+    pub properties: Box<ResolvedRunProperties>,
 }
 
 impl Field {
     /// Whether the keyboard can land on it.
     #[must_use]
     pub fn takes_focus(&self) -> bool {
-        !matches!(self, Self::Heading(_) | Self::Said { .. })
+        !matches!(self, Self::Heading(_) | Self::Said { .. } | Self::Tab(_) | Self::Preview(_))
     }
 
     /// The word down the left-hand column, for the fields that have one.
@@ -78,11 +104,23 @@ impl Field {
     #[must_use]
     pub fn label(&self) -> Option<&str> {
         match self {
-            Self::Heading(_) | Self::Check { .. } => None,
+            Self::Heading(_) | Self::Check { .. } | Self::Tab(_) | Self::Preview(_) => None,
             Self::Said { label, .. }
             | Self::Text { label, .. }
             | Self::Number { label, .. }
             | Self::Choice { label, .. } => Some(label),
+        }
+    }
+
+    /// How tall this field is drawn.
+    fn height(&self) -> f32 {
+        match self {
+            // The tabs are drawn once, along the top, rather than where the
+            // marker sits.
+            Self::Tab(_) => 0.0,
+            Self::Heading(_) => ROW,
+            Self::Preview(_) => PREVIEW_HEIGHT + PADDING,
+            _ => ROW + 4.0,
         }
     }
 }
@@ -94,6 +132,12 @@ pub enum Answer {
     Accept,
     /// Leave everything as it was.
     Cancel,
+    /// Take what the fields say, and do the further thing the button offered.
+    ///
+    /// Word's dialogs have a third button often enough to be worth a third
+    /// answer: the Font dialog's Set As Default applies the formatting and
+    /// then makes it the formatting everything else inherits.
+    Other,
 }
 
 /// A button along the bottom of the dialog.
@@ -121,6 +165,8 @@ pub enum Reaction {
 enum Hit {
     Field(usize),
     Button(usize),
+    /// One of the tabs along the top, counted from the first.
+    Tab(usize),
     Close,
 }
 
@@ -137,6 +183,8 @@ pub struct Dialog {
     placed: Vec<(Hit, f32, f32, f32, f32)>,
     hovered: Option<Hit>,
     width: f32,
+    /// Which tab is showing, for a dialog that has them.
+    tab: usize,
 }
 
 impl Dialog {
@@ -174,11 +222,45 @@ impl Dialog {
             placed: Vec::new(),
             hovered: None,
             width: WIDTH,
+            tab: 0,
         };
         // The keyboard starts on the first thing that can take it, which is
         // where a person expects to start typing.
         dialog.focus = dialog.first_focus();
         dialog
+    }
+
+    /// Carries over everything about a dialog that is not what it is asking:
+    /// which tab was showing, where the keyboard was, and what has been typed.
+    ///
+    /// A dialog whose preview follows its fields is built again whenever one
+    /// changes. Without this the rebuilt one would open on its first tab with
+    /// the keyboard at the top, and a person half-way through filling it in
+    /// would be thrown back to the beginning.
+    ///
+    /// The typing matters more than it looks. A box is built from a value, and
+    /// a value is what the box says once it has been read and made sense of —
+    /// so a box being typed into would be rewritten at every keystroke with
+    /// whatever the half-finished number came to. Typing 150 into a box that
+    /// allows at most 600 goes 100, 1001, 600: the second keystroke is read,
+    /// clamped, and written back, and the number can never be finished. What
+    /// has been typed belongs to the person typing it until they are done.
+    pub fn carry_typing_from(&mut self, previous: &Self) {
+        self.tab = previous.tab.min(self.tabs().len().saturating_sub(1));
+        if previous.focus < self.fields.len() + self.buttons.len() {
+            self.focus = previous.focus;
+        }
+        self.open_list = previous.open_list;
+
+        for (field, before) in self.fields.iter_mut().zip(previous.fields.iter()) {
+            if let (
+                Field::Text { value, .. } | Field::Number { value, .. },
+                Field::Text { value: typed, .. } | Field::Number { value: typed, .. },
+            ) = (field, before)
+            {
+                *value = typed.clone();
+            }
+        }
     }
 
     /// Whether a box is ticked.
@@ -210,14 +292,17 @@ impl Dialog {
 
     /// The first thing the keyboard can land on.
     fn first_focus(&self) -> usize {
-        self.fields.iter().position(Field::takes_focus).unwrap_or(self.fields.len())
+        self.stops().into_iter().next().unwrap_or(self.fields.len())
     }
 
     /// How many places the keyboard can be: the fields it can land on, and then
     /// the buttons.
     fn stops(&self) -> Vec<usize> {
-        let mut out: Vec<usize> =
-            (0..self.fields.len()).filter(|index| self.fields[*index].takes_focus()).collect();
+        // Only the tab that is showing: Tab must not walk the keyboard into
+        // fields nobody can see.
+        let mut out: Vec<usize> = (0..self.fields.len())
+            .filter(|index| self.fields[*index].takes_focus() && self.on_this_tab(*index))
+            .collect();
         out.extend(self.fields.len()..self.fields.len() + self.buttons.len());
         out
     }
@@ -235,7 +320,7 @@ impl Dialog {
     }
 
     /// A key pressed while the dialog is up.
-    pub fn key(&mut self, key: Key, shift: bool) -> Reaction {
+    pub fn key(&mut self, key: Key, shift: bool, control: bool) -> Reaction {
         // A list that is dropped open takes the keyboard until it is done with.
         if let Some(index) = self.open_list {
             return match key {
@@ -253,6 +338,14 @@ impl Dialog {
         }
 
         match key {
+            // Ctrl and Tab walk the tabs, as they do in every dialog Word has;
+            // Tab on its own walks the fields of the one showing.
+            Key::Tab if control && !self.tabs().is_empty() => {
+                let count = self.tabs().len();
+                let step = if shift { count - 1 } else { 1 };
+                self.show_tab((self.tab + step) % count);
+                Reaction::Changed
+            }
             Key::Tab => {
                 self.step_focus(!shift);
                 Reaction::Changed
@@ -344,6 +437,10 @@ impl Dialog {
         match self.at(x, y) {
             Some(Hit::Close) => Reaction::Closed(Answer::Cancel),
             Some(Hit::Button(index)) => Reaction::Closed(self.buttons[index].answer),
+            Some(Hit::Tab(index)) => {
+                self.show_tab(index);
+                Reaction::Changed
+            }
             Some(Hit::Field(index)) => {
                 self.focus = index;
                 match self.fields.get_mut(index) {
@@ -417,16 +514,75 @@ impl Dialog {
     }
 
     /// How tall the panel is, from what is in it.
+    ///
+    /// Only the tab that is showing counts, and the panel is at least as tall
+    /// as the tallest tab — a dialog whose height jumped as tabs were clicked
+    /// would move its own buttons out from under the pointer.
     fn height(&self) -> f32 {
-        let body: f32 = self
-            .fields
+        let strip = if self.tabs().is_empty() { 0.0 } else { TAB_HEIGHT };
+        TITLE_HEIGHT + strip + PADDING + self.tallest_page() + PADDING + FOOTER_HEIGHT
+    }
+
+    /// The body height of the tallest tab, or of the whole dialog when it has
+    /// no tabs.
+    fn tallest_page(&self) -> f32 {
+        if self.tabs().is_empty() {
+            return self.fields.iter().map(Field::height).sum();
+        }
+        let mut tallest = 0.0f32;
+        let mut running = 0.0f32;
+        for field in &self.fields {
+            if matches!(field, Field::Tab(_)) {
+                tallest = tallest.max(running);
+                running = 0.0;
+                continue;
+            }
+            running += field.height();
+        }
+        tallest.max(running)
+    }
+
+    /// The tabs this dialog has, in order.
+    fn tabs(&self) -> Vec<&str> {
+        self.fields
             .iter()
-            .map(|field| match field {
-                Field::Heading(_) => ROW,
-                _ => ROW + 4.0,
+            .filter_map(|field| match field {
+                Field::Tab(label) => Some(label.as_str()),
+                _ => None,
             })
-            .sum();
-        TITLE_HEIGHT + PADDING + body + PADDING + FOOTER_HEIGHT
+            .collect()
+    }
+
+    /// Which tab a field is on, counting from the first.
+    ///
+    /// Everything before the first marker is on every tab: a dialog with a
+    /// heading above its tabs is not what Word draws, but a dialog with nothing
+    /// before them is the common case and this costs nothing.
+    fn tab_of(&self, index: usize) -> Option<usize> {
+        let mut tab = None;
+        for (at, field) in self.fields.iter().enumerate() {
+            if let Field::Tab(_) = field {
+                tab = Some(tab.map_or(0, |seen: usize| seen + 1));
+            }
+            if at == index {
+                return tab;
+            }
+        }
+        None
+    }
+
+    /// Whether a field is on the tab that is showing.
+    fn on_this_tab(&self, index: usize) -> bool {
+        self.tabs().is_empty() || self.tab_of(index).is_none_or(|tab| tab == self.tab)
+    }
+
+    /// Shows one of the tabs, putting the keyboard on its first field.
+    fn show_tab(&mut self, tab: usize) {
+        if tab >= self.tabs().len() || tab == self.tab {
+            return;
+        }
+        self.tab = tab;
+        self.focus = self.first_focus();
     }
 
     /// Draws the dialog over the window, with everything behind it dimmed.
@@ -462,6 +618,7 @@ impl Dialog {
         outline(canvas, left, top, width, height, theme.pane_edge);
 
         self.draw_title(canvas, engine, renderer, left, top, width, theme);
+        self.draw_tabs(canvas, engine, renderer, left, top, width, theme);
         let after_body = self.draw_body(canvas, engine, renderer, left, top, width, theme);
         self.draw_buttons(canvas, engine, renderer, left, top + height, width, theme);
         let _ = after_body;
@@ -469,6 +626,87 @@ impl Dialog {
         // The open list goes over everything, including the buttons.
         if let Some(index) = self.open_list {
             self.draw_open_list(canvas, engine, renderer, index, theme);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// The strip of tabs under the caption, for a dialog that has them.
+    ///
+    /// Word's own: each as wide as its name needs, the one showing drawn as
+    /// part of the page below it, the rest set back.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_tabs(
+        &mut self,
+        canvas: &mut Canvas,
+        engine: &mut LayoutEngine<'_>,
+        renderer: &mut Renderer<'_>,
+        left: f32,
+        top: f32,
+        width: f32,
+        theme: &Theme,
+    ) {
+        let labels: Vec<String> = self.tabs().into_iter().map(str::to_owned).collect();
+        if labels.is_empty() {
+            return;
+        }
+
+        let strip_top = top + TITLE_HEIGHT;
+        canvas.fill_rect(
+            left as i32,
+            strip_top as i32,
+            width as i32,
+            TAB_HEIGHT as i32,
+            theme.pane,
+        );
+        // The line the tabs sit on, broken by whichever of them is showing.
+        canvas.fill_rect(
+            left as i32,
+            (strip_top + TAB_HEIGHT) as i32 - 1,
+            width as i32,
+            1,
+            theme.pane_edge,
+        );
+
+        let mut x = left + PADDING;
+        for (index, label) in labels.iter().enumerate() {
+            let measured = engine.simple_line(label, 0.0, 0.0, 9.0, theme.text).width;
+            let tab_width = measured + PADDING * 2.0;
+            let showing = index == self.tab;
+
+            if showing {
+                canvas.fill_rect(
+                    x as i32,
+                    strip_top as i32,
+                    tab_width as i32,
+                    TAB_HEIGHT as i32,
+                    theme.pane,
+                );
+                outline(canvas, x, strip_top, tab_width, TAB_HEIGHT, theme.pane_edge);
+                // The bottom edge is rubbed out, so the tab and the page under
+                // it read as one surface — which is what a tab is.
+                canvas.fill_rect(
+                    x as i32 + 1,
+                    (strip_top + TAB_HEIGHT) as i32 - 1,
+                    tab_width as i32 - 2,
+                    1,
+                    theme.pane,
+                );
+            } else if self.hovered == Some(Hit::Tab(index)) {
+                canvas.fill_rect(
+                    x as i32,
+                    strip_top as i32 + 2,
+                    tab_width as i32,
+                    TAB_HEIGHT as i32 - 3,
+                    theme.hover,
+                );
+            }
+
+            let colour = if showing { theme.text } else { theme.dim_text };
+            let line = engine.simple_line(label, x + PADDING, strip_top + 19.0, 9.0, colour);
+            renderer.draw_onto(canvas, &line, 0.0, 0.0);
+
+            self.placed.push((Hit::Tab(index), x, strip_top, tab_width, TAB_HEIGHT));
+            x += tab_width;
         }
     }
 
@@ -520,23 +758,67 @@ impl Dialog {
         // The labels line up in one column, as wide as the widest of them.
         // A fixed column would either waste room or — with a label as long as
         // "Characters (no spaces)" — run into what stands beside it.
-        let widest = self
-            .fields
-            .iter()
-            .filter_map(Field::label)
+        let widest = (0..self.fields.len())
+            .filter(|index| self.on_this_tab(*index))
+            .filter_map(|index| self.fields[index].label())
             .map(|label| engine.simple_line(label, 0.0, 0.0, 9.0, theme.text).width)
             .fold(0.0f32, f32::max);
         let room = width - PADDING * 2.0;
         let label_width = (widest + PADDING).clamp(130.0, (room - 120.0).max(130.0));
-        let mut y = top + TITLE_HEIGHT + PADDING;
+        let strip = if self.tabs().is_empty() { 0.0 } else { TAB_HEIGHT };
+        let mut y = top + TITLE_HEIGHT + strip + PADDING;
 
         for index in 0..self.fields.len() {
+            // A tab is drawn along the top rather than here, and the fields of
+            // the tabs that are not showing are not drawn at all.
+            if matches!(self.fields[index], Field::Tab(_)) || !self.on_this_tab(index) {
+                continue;
+            }
             let field = self.fields[index].clone();
             let focused = self.focus == index;
             let box_left = left + PADDING + label_width;
             let box_width = width - PADDING * 2.0 - label_width;
 
             match field {
+                Field::Tab(_) => continue,
+                Field::Preview(sample) => {
+                    // Word's Preview: a box with the text drawn in it as it
+                    // will be drawn on the page. Not an approximation — the
+                    // same engine, the same font choice, the same shaping.
+                    let box_top = y;
+                    canvas.fill_rect(
+                        (left + PADDING) as i32,
+                        box_top as i32,
+                        (width - PADDING * 2.0) as i32,
+                        PREVIEW_HEIGHT as i32,
+                        theme.field,
+                    );
+                    outline(
+                        canvas,
+                        left + PADDING,
+                        box_top,
+                        width - PADDING * 2.0,
+                        PREVIEW_HEIGHT,
+                        theme.field_edge,
+                    );
+
+                    // Measured first so it can be centred: a sample pushed
+                    // against the left edge reads as a mistake.
+                    let measured =
+                        engine.sample_line(&sample.text, &sample.properties, 0.0, 0.0).width;
+                    let room = width - PADDING * 2.0;
+                    let start = left + PADDING + ((room - measured) / 2.0).max(6.0);
+                    let line = engine.sample_line(
+                        &sample.text,
+                        &sample.properties,
+                        start,
+                        box_top + PREVIEW_HEIGHT * 0.62,
+                    );
+                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
+
+                    y += PREVIEW_HEIGHT + PADDING;
+                    continue;
+                }
                 Field::Heading(text) => {
                     let line = engine.simple_line(&text, left + PADDING, y + 16.0, 9.0, theme.text);
                     renderer.draw_onto(canvas, &line, 0.0, 0.0);
@@ -853,7 +1135,7 @@ mod tests {
         let mut dialog = dialog();
         let mut seen = vec![dialog.focus];
         for _ in 0..5 {
-            dialog.key(Key::Tab, false);
+            dialog.key(Key::Tab, false, false);
             seen.push(dialog.focus);
         }
         // Three fields, two buttons, and then back to the first field.
@@ -863,9 +1145,9 @@ mod tests {
     #[test]
     fn shift_and_tab_walk_the_other_way() {
         let mut dialog = dialog();
-        dialog.key(Key::Tab, true);
+        dialog.key(Key::Tab, true, false);
         assert_eq!(dialog.focus, 5, "the last button");
-        dialog.key(Key::Tab, true);
+        dialog.key(Key::Tab, true, false);
         assert_eq!(dialog.focus, 4);
     }
 
@@ -876,7 +1158,7 @@ mod tests {
             dialog.character(character);
         }
         assert_eq!(dialog.said(1), "Hello");
-        dialog.key(Key::Backspace, false);
+        dialog.key(Key::Backspace, false, false);
         assert_eq!(dialog.said(1), "Hell");
     }
 
@@ -895,7 +1177,7 @@ mod tests {
     #[test]
     fn space_ticks_the_box_the_keyboard_is_on() {
         let mut dialog = dialog();
-        dialog.key(Key::Tab, false);
+        dialog.key(Key::Tab, false, false);
         assert_eq!(dialog.focus, 2);
         assert!(!dialog.ticked(2));
         dialog.character(' ');
@@ -907,24 +1189,24 @@ mod tests {
     #[test]
     fn the_arrows_walk_a_list_without_dropping_it_open() {
         let mut dialog = dialog();
-        dialog.key(Key::Tab, false);
-        dialog.key(Key::Tab, false);
+        dialog.key(Key::Tab, false, false);
+        dialog.key(Key::Tab, false, false);
         assert_eq!(dialog.focus, 3);
         assert_eq!(dialog.chose(3), 0);
-        dialog.key(Key::Down, false);
+        dialog.key(Key::Down, false, false);
         assert_eq!(dialog.chose(3), 1);
         // And stops at the end rather than coming round, as a list does.
-        dialog.key(Key::Down, false);
+        dialog.key(Key::Down, false, false);
         assert_eq!(dialog.chose(3), 1);
-        dialog.key(Key::Up, false);
+        dialog.key(Key::Up, false, false);
         assert_eq!(dialog.chose(3), 0);
     }
 
     #[test]
     fn enter_presses_the_button_in_bold_and_escape_cancels() {
         let mut dialog = dialog();
-        assert_eq!(dialog.key(Key::Enter, false), Reaction::Closed(Answer::Accept));
-        assert_eq!(dialog.key(Key::Escape, false), Reaction::Closed(Answer::Cancel));
+        assert_eq!(dialog.key(Key::Enter, false, false), Reaction::Closed(Answer::Accept));
+        assert_eq!(dialog.key(Key::Escape, false, false), Reaction::Closed(Answer::Cancel));
     }
 
     #[test]
@@ -932,10 +1214,10 @@ mod tests {
         let mut dialog = dialog();
         // Walk to Cancel, which is the second button.
         for _ in 0..4 {
-            dialog.key(Key::Tab, false);
+            dialog.key(Key::Tab, false, false);
         }
         assert_eq!(dialog.focus, 5);
-        assert_eq!(dialog.key(Key::Enter, false), Reaction::Closed(Answer::Cancel));
+        assert_eq!(dialog.key(Key::Enter, false, false), Reaction::Closed(Answer::Cancel));
     }
 
     #[test]

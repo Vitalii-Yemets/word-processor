@@ -16,6 +16,7 @@ mod effects;
 mod equation;
 mod events;
 pub(crate) mod files;
+mod fontdialog;
 mod furnitureedit;
 mod groups;
 mod handles;
@@ -941,6 +942,7 @@ impl Editor {
         self.engine.set_dpi(self.pixels_per_inch());
         self.engine.set_automatic_colors(self.theme.page_text, self.theme.table_line);
         self.engine.set_markup(self.show_markup);
+        self.engine.set_marks(self.show_marks);
         self.engine.set_outline(self.outline_for_layout());
         // A letter being previewed shows one recipient's values in place of the
         // names of its merge fields.

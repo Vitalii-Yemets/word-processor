@@ -216,6 +216,28 @@ pub struct GlyphEffect {
     pub kind: wp_docx::effects::Effect,
     pub color: Color,
 }
+
+/// Whether a run's letters are drawn as capitals.
+///
+/// The text itself is not changed — that is what separates this from Change
+/// Case, and why turning it off gives the small letters back.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Caps {
+    #[default]
+    None,
+    /// Every letter a capital, all the same size.
+    All,
+    /// Every letter a capital, but the ones that were small drawn smaller —
+    /// which is what makes small capitals read as small capitals rather than as
+    /// shouting.
+    Small,
+}
+
+/// How tall a small capital is beside a full one.
+///
+/// Word synthesises small capitals by shrinking the capitals rather than by
+/// asking the font for its own, and this is the proportion it shrinks them to.
+const SMALL_CAPS_RATIO: f32 = 0.8;
 /// A glyph with a place on the page, in pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PositionedGlyph {
@@ -230,6 +252,11 @@ pub struct PositionedGlyph {
     pub advance: f32,
     /// Height of one em in pixels, which is what the outline is scaled by.
     pub size: f32,
+    /// How wide the glyph is drawn beside how tall: one for a letter at its own
+    /// proportions, which is nearly every letter. Word's Scale sets this, and
+    /// it stretches the outline rather than only the room after it — a letter
+    /// at 150 per cent is a wide letter, not a normal letter with a gap.
+    pub stretch: f32,
     pub color: Color,
     /// Where in the document this glyph came from.
     ///
@@ -561,8 +588,32 @@ struct RunStyle {
     /// The colour drawn behind the text, when the run asks for one.
     highlight: Option<Color>,
     underline: bool,
+    /// The colour of the underline, when the run asks for one of its own.
+    underline_color: Option<Color>,
     strike: bool,
+    /// A second line through the text, half a line's width above the first.
+    double_strike: bool,
     right_to_left: bool,
+    /// Whether the letters are drawn as capitals, and whether the ones that
+    /// were already small are drawn smaller. See [`Caps`].
+    caps: Caps,
+    /// How wide the letters are drawn, as a fraction of their own width.
+    /// One for text at its natural width, which is nearly all of it.
+    stretch: f32,
+    /// Room added after every glyph, in pixels. Negative pulls them together.
+    letter_spacing: f32,
+    /// Whether the font's own kerning is used. Word turns it off below a size
+    /// the document names, because kerning small text costs more than it is
+    /// worth.
+    kern: bool,
+    /// Text that is in the document but not shown. Word draws it only while the
+    /// formatting marks are showing, and gives it a dotted underline so it can
+    /// be told apart from text that will be printed.
+    hidden: bool,
+    /// The OpenType features the run asks the font for, as their tags. Empty
+    /// for the overwhelming majority of runs, which is what keeps the ordinary
+    /// path as fast as it was.
+    features: Rc<Vec<[u8; 4]>>,
     /// The shadow, outline, glow or reflection the run asks for.
     effect: Option<GlyphEffect>,
     /// How far off the line the run rides, positive upwards. Zero for text on
@@ -571,6 +622,108 @@ struct RunStyle {
     ascent: f32,
     descent: f32,
     line_height: f32,
+}
+
+/// What one stored character is drawn as, and at what size.
+///
+/// Nearly always itself at the run's size, which is why the common answer costs
+/// one comparison and no allocation. A run set in capitals draws the capital
+/// instead; a run set in small capitals draws it smaller when the letter it
+/// came from was small, which is the whole of what small capitals are.
+///
+/// Several characters can come back for one, because in a few languages a
+/// capital is longer than the letter it capitalises — ß becomes SS, ﬁ becomes
+/// FI. They are drawn one after another and all point back at the one
+/// character, which is what keeps a click landing where the text says.
+fn drawn_as(character: char, style: &RunStyle) -> SmallCaps {
+    match style.caps {
+        Caps::None => SmallCaps::One(character, style.size),
+        Caps::All => SmallCaps::of(character, style.size),
+        Caps::Small => {
+            // A letter that was already a capital — or is not a letter at all —
+            // stays the size it was. Only what was small is drawn small.
+            let size =
+                if character.is_lowercase() { style.size * SMALL_CAPS_RATIO } else { style.size };
+            SmallCaps::of(character, size)
+        }
+    }
+}
+
+/// The characters one character is drawn as, without an allocation for the
+/// overwhelmingly common case of exactly one.
+enum SmallCaps {
+    One(char, f32),
+    /// A capital that runs to several characters, walked through the iterator
+    /// the standard library gives for it.
+    Several(core::char::ToUppercase, f32),
+    Done,
+}
+
+impl SmallCaps {
+    /// The uppercase of a character at a given size, as one or several.
+    fn of(character: char, size: f32) -> Self {
+        let mut upper = character.to_uppercase();
+        // The first is peeled off so that the usual answer — one character —
+        // never touches the iterator again.
+        match (upper.next(), upper.len()) {
+            (Some(only), 0) => Self::One(only, size),
+            (Some(_), _) => Self::Several(character.to_uppercase(), size),
+            (None, _) => Self::One(character, size),
+        }
+    }
+}
+
+impl Iterator for SmallCaps {
+    type Item = (char, f32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(character, size) => {
+                let answer = (*character, *size);
+                *self = Self::Done;
+                Some(answer)
+            }
+            Self::Several(upper, size) => {
+                let size = *size;
+                upper.next().map(|character| (character, size))
+            }
+            Self::Done => None,
+        }
+    }
+}
+
+impl RunStyle {
+    /// Plain text of a given face, size and colour.
+    ///
+    /// Everything a document's own runs can ask for is off: this is for the
+    /// text the program itself puts on screen — a button's name, a label on a
+    /// ruler, a letter inside an equation — none of which is formatted by the
+    /// document and all of which would otherwise have to name a dozen fields
+    /// only to say "no" to each of them.
+    fn plain(face: usize, size: f32, color: Color) -> Self {
+        Self {
+            face,
+            size,
+            color,
+            highlight: None,
+            effect: None,
+            underline: false,
+            underline_color: None,
+            strike: false,
+            double_strike: false,
+            right_to_left: false,
+            caps: Caps::None,
+            stretch: 1.0,
+            letter_spacing: 0.0,
+            kern: true,
+            hidden: false,
+            features: Rc::new(Vec::new()),
+            raise: 0.0,
+            ascent: size * 0.8,
+            descent: size * 0.2,
+            line_height: size * 1.2,
+        }
+    }
 }
 
 /// A glyph that has been chosen but not yet placed.
@@ -587,6 +740,10 @@ struct ShapedGlyph {
     /// reads right to left is drawn as the other end of its pair and the glyph
     /// has to be chosen again.
     character: char,
+    /// How tall this glyph is drawn, which is the run's size for all but one
+    /// case: a small capital is a capital drawn smaller than the capitals
+    /// beside it, and so carries a size of its own.
+    size: f32,
 }
 
 /// What was worked out for one paragraph last time it was laid out.
@@ -681,6 +838,9 @@ pub struct LayoutEngine<'a> {
     /// Whether tracked changes are shown as changes rather than as the text
     /// they would leave behind.
     show_markup: bool,
+    /// Whether the formatting marks are showing, which is the only time hidden
+    /// text is drawn.
+    show_marks: bool,
     /// How much of each page is kept for the footnotes printed at its foot.
     reserved: Vec<f32>,
     /// What each paragraph of the main body measured to last time.
@@ -763,6 +923,7 @@ impl<'a> LayoutEngine<'a> {
             counters: ListCounters::new(),
             field_page: None,
             show_markup: true,
+            show_marks: false,
             note_numbers: HashMap::new(),
             sequence_numbers: HashMap::new(),
             bookmark_pages: HashMap::new(),
@@ -796,6 +957,18 @@ impl<'a> LayoutEngine<'a> {
     pub fn set_markup(&mut self, shown: bool) {
         if self.show_markup != shown {
             self.show_markup = shown;
+            self.measured.clear();
+        }
+    }
+
+    /// Whether the formatting marks are showing.
+    ///
+    /// It reaches the layout rather than only the drawing because of one
+    /// property: text marked hidden is drawn when they are showing and not at
+    /// all when they are not, and so takes up room only sometimes.
+    pub fn set_marks(&mut self, shown: bool) {
+        if self.show_marks != shown {
+            self.show_marks = shown;
             self.measured.clear();
         }
     }
@@ -912,18 +1085,12 @@ impl<'a> LayoutEngine<'a> {
             return page;
         };
         let style = RunStyle {
-            face,
-            size,
-            color,
-            highlight: None,
-            effect: None,
             underline: wanted.underline,
             strike: wanted.strike,
-            right_to_left: false,
-            raise: 0.0,
             ascent: size,
             descent: size * 0.25,
             line_height: size * 1.25,
+            ..RunStyle::plain(face, size, color)
         };
 
         // A line of interface text is one direction throughout — a button's
@@ -944,6 +1111,7 @@ impl<'a> LayoutEngine<'a> {
                 baseline,
                 advance: glyph.advance,
                 size,
+                stretch: 1.0,
                 color,
                 effect: style.effect,
                 source: TextPosition::default(),
@@ -970,6 +1138,95 @@ impl<'a> LayoutEngine<'a> {
                 height: (size * 0.06).max(1.0),
                 color,
             });
+        }
+
+        page.width = pen;
+        page.height = baseline + style.descent;
+        page
+    }
+
+    /// One line of text drawn exactly as a run of the document carrying this
+    /// formatting would be drawn.
+    ///
+    /// This is what a preview is for. Word's Font dialog shows a sample, and a
+    /// sample is only worth showing if it is the truth: the font that will
+    /// actually be found, the small capitals as they will actually be
+    /// synthesised, the letters at the width and spacing they will actually
+    /// have. Anything drawn a second way would drift from the first, and a
+    /// preview that lies is worse than no preview.
+    ///
+    /// So it goes through the same [`Self::style_for`] and the same shaping as
+    /// the document, and differs only in that there is no line to break and no
+    /// page to fill.
+    #[must_use]
+    pub fn sample_line(
+        &mut self,
+        text: &str,
+        properties: &ResolvedRunProperties,
+        x: f32,
+        baseline: f32,
+    ) -> Page {
+        let mut page = Page::default();
+        let Some(style) = self.style_for(properties) else { return page };
+
+        let mut glyphs = self.shape(text, &style, 0);
+        if wp_bidi::Direction::from_text(text).is_right_to_left() {
+            glyphs.reverse();
+        }
+
+        let mut pen = x;
+        let baseline = baseline - style.raise;
+        for glyph in glyphs {
+            page.glyphs.push(PositionedGlyph {
+                face: glyph.face,
+                glyph: glyph.glyph,
+                x: pen,
+                baseline,
+                advance: glyph.advance,
+                size: glyph.size,
+                stretch: style.stretch,
+                color: style.color,
+                effect: style.effect,
+                source: TextPosition::default(),
+                source_length: glyph.length,
+                invisible: style.hidden,
+            });
+            pen += glyph.advance;
+        }
+
+        let width = pen - x;
+        let thickness = (style.size * 0.06).max(1.0);
+        if let Some(colour) = style.highlight.filter(|_| width > 0.0) {
+            page.decorations.push(Decoration {
+                x,
+                y: baseline - style.ascent,
+                width,
+                height: style.ascent + style.descent,
+                color: colour,
+            });
+        }
+        if style.underline && width > 0.0 {
+            page.decorations.push(Decoration {
+                x,
+                y: baseline + style.size * 0.12,
+                width,
+                height: thickness,
+                color: style.underline_color.unwrap_or(style.color),
+            });
+        }
+        if (style.strike || style.double_strike) && width > 0.0 {
+            let middle = baseline - style.size * 0.28;
+            let offsets: &[f32] =
+                if style.double_strike { &[-thickness, thickness] } else { &[0.0] };
+            for offset in offsets {
+                page.decorations.push(Decoration {
+                    x,
+                    y: middle + offset,
+                    width,
+                    height: thickness,
+                    color: style.color,
+                });
+            }
         }
 
         page.width = pen;
@@ -1983,6 +2240,7 @@ impl<'a> LayoutEngine<'a> {
                 baseline,
                 advance: glyph.advance,
                 size: style.size,
+                stretch: 1.0,
                 color: style.color,
                 effect: style.effect,
                 // The mark is not part of the document's text, so it points at
@@ -2667,6 +2925,22 @@ impl<'a> LayoutEngine<'a> {
             color: wanted.color.as_deref().and_then(Color::from_hex).unwrap_or(color),
         });
 
+        // The Advanced tab of Word's Font dialog, in the units the layout works
+        // in. Each is stored differently; see [`wp_docx::typography`].
+        let stretch = properties.scale as f32 / 100.0;
+        let letter_spacing =
+            properties.spacing_twentieths as f32 / 20.0 * self.pixels_per_point() * stretch;
+        // Raised or lowered without being made smaller, which is what separates
+        // this from a superscript. It rides on top of whatever the vertical
+        // alignment already did.
+        let lifted = properties.position_half_points as f32 / 2.0 * self.pixels_per_point();
+        // A threshold rather than a switch: kerning is used at or above the
+        // size the document names. A document that names none gets kerning,
+        // because that is what this has always drawn.
+        let kern = properties
+            .kerning_half_points
+            .is_none_or(|from| from > 0 && properties.size_half_points >= from);
+
         Some(RunStyle {
             face,
             size,
@@ -2674,9 +2948,23 @@ impl<'a> LayoutEngine<'a> {
             effect,
             highlight: properties.highlight.as_deref().and_then(highlight_color),
             underline: properties.underline.is_visible(),
+            underline_color: properties.underline_color.as_deref().and_then(Color::from_hex),
             strike: properties.strike,
+            double_strike: properties.double_strike,
             right_to_left: properties.right_to_left,
-            raise: full_size * raise_fraction,
+            caps: if properties.small_caps {
+                Caps::Small
+            } else if properties.caps {
+                Caps::All
+            } else {
+                Caps::None
+            },
+            stretch,
+            letter_spacing,
+            kern,
+            hidden: properties.hidden && !self.show_marks,
+            features: Rc::new(properties.open_type.features()),
+            raise: full_size * raise_fraction + lifted,
             // The line keeps the height of full-sized text, so a superscript
             // does not make its line shorter than the ones around it.
             ascent: ascent.max(full_size * 0.8),
@@ -2743,20 +3031,7 @@ impl crate::charting::ChartShaper for LabelShaper<'_, '_> {
         size: f32,
         color: Color,
     ) -> (Vec<PositionedGlyph>, f32) {
-        let style = RunStyle {
-            face: self.face,
-            size,
-            color,
-            effect: None,
-            highlight: None,
-            underline: false,
-            strike: false,
-            right_to_left: false,
-            raise: 0.0,
-            ascent: size * 0.8,
-            descent: size * 0.2,
-            line_height: size * 1.2,
-        };
+        let style = RunStyle::plain(self.face, size, color);
 
         let shaped = self.engine.shape(text, &style, 0);
         let mut glyphs = Vec::with_capacity(shaped.len());
@@ -2769,6 +3044,7 @@ impl crate::charting::ChartShaper for LabelShaper<'_, '_> {
                 baseline,
                 advance: glyph.advance,
                 size,
+                stretch: 1.0,
                 color,
                 effect: None,
                 // A chart is one character of the document, so nothing inside
@@ -2817,20 +3093,7 @@ impl crate::math::MathShaper for EngineShaper<'_, '_> {
     ) -> (Vec<PositionedGlyph>, f32, f32, f32) {
         // A style of the right size, built here rather than passed in: every
         // level of an equation is set smaller than the one above it.
-        let style = RunStyle {
-            face: self.face,
-            size,
-            color,
-            effect: None,
-            highlight: None,
-            underline: false,
-            strike: false,
-            right_to_left: false,
-            raise: 0.0,
-            ascent: size * 0.8,
-            descent: size * 0.2,
-            line_height: size * 1.2,
-        };
+        let style = RunStyle::plain(self.face, size, color);
 
         let shaped = self.engine.shape(text, &style, 0);
         let mut glyphs = Vec::with_capacity(shaped.len());
@@ -2843,6 +3106,7 @@ impl crate::math::MathShaper for EngineShaper<'_, '_> {
                 baseline: 0.0,
                 advance: glyph.advance,
                 size,
+                stretch: 1.0,
                 color,
                 effect: None,
                 // An equation is one character of the document however many
@@ -2909,9 +3173,16 @@ impl<'a> LayoutEngine<'a> {
     fn shape(&mut self, text: &str, style: &RunStyle, base_offset: usize) -> Vec<ShapedGlyph> {
         // Text in a script that is written joined has to be shaped as a whole:
         // which glyph a letter takes depends on its neighbours, so it cannot be
-        // decided a character at a time.
-        if text.chars().any(wp_shape::is_joining_script) {
-            if let Some(glyphs) = self.shape_joined(text, style, base_offset) {
+        // decided a character at a time. So does a run that asked the font for
+        // one of its own alternate forms — a ligature is two letters becoming
+        // one, and one letter at a time cannot see the second.
+        //
+        // Not a run drawn in capitals, though: what is drawn there is not what
+        // is stored, and a ligature made of what is drawn would point at the
+        // wrong characters.
+        let joined = text.chars().any(wp_shape::is_joining_script);
+        if joined || (!style.features.is_empty() && style.caps == Caps::None) {
+            if let Some(glyphs) = self.shape_joined(text, style, base_offset, joined) {
                 return glyphs;
             }
         }
@@ -2919,45 +3190,63 @@ impl<'a> LayoutEngine<'a> {
         let mut glyphs = Vec::with_capacity(text.len());
         let mut previous: Option<GlyphId> = None;
 
-        for (local, character) in text.char_indices() {
-            let mut chosen = None;
+        for (local, source) in text.char_indices() {
+            // What is drawn is not always what is stored: `w:caps` and
+            // `w:smallCaps` draw a capital where the document holds a small
+            // letter, and leave the document alone. A letter whose capital is
+            // several characters — the German ß is SS — draws several glyphs,
+            // and every one of them points back at the one character it came
+            // from, so the caret still lands where the text says it should.
+            for (character, size) in drawn_as(source, style) {
+                let mut chosen = None;
 
-            if let Some(font) = self.font(style.face) {
-                if let Some(glyph) = font.glyph_for(character) {
-                    let units = f32::from(font.units_per_em());
-                    let mut advance = f32::from(font.advance(glyph)) * style.size / units;
-                    if let Some(previous) = previous {
-                        advance += f32::from(font.kerning(previous, glyph)) * style.size / units;
-                    }
-                    chosen = Some((style.face, glyph, advance));
-                }
-            }
-
-            if chosen.is_none() {
-                // The face cannot draw this character. Another one may be able
-                // to, and an empty box helps nobody.
-                if let Some((face, glyph)) = self.library.fallback_for(character, false, false) {
-                    if let Some(font) = self.font(face) {
+                if let Some(font) = self.font(style.face) {
+                    if let Some(glyph) = font.glyph_for(character) {
                         let units = f32::from(font.units_per_em());
-                        let advance = f32::from(font.advance(glyph)) * style.size / units;
-                        chosen = Some((face, glyph, advance));
+                        let mut advance = f32::from(font.advance(glyph)) * size / units;
+                        if let Some(previous) = previous.filter(|_| style.kern) {
+                            advance += f32::from(font.kerning(previous, glyph)) * size / units;
+                        }
+                        chosen = Some((style.face, glyph, advance));
                     }
                 }
-            }
 
-            match chosen {
-                Some((face, glyph, advance)) => {
-                    glyphs.push(ShapedGlyph {
-                        face,
-                        glyph,
-                        advance,
-                        offset: base_offset + local,
-                        character,
-                        length: character.len_utf8(),
-                    });
-                    previous = Some(glyph);
+                if chosen.is_none() {
+                    // The face cannot draw this character. Another one may be
+                    // able to, and an empty box helps nobody.
+                    if let Some((face, glyph)) = self.library.fallback_for(character, false, false)
+                    {
+                        if let Some(font) = self.font(face) {
+                            let units = f32::from(font.units_per_em());
+                            let advance = f32::from(font.advance(glyph)) * size / units;
+                            chosen = Some((face, glyph, advance));
+                        }
+                    }
                 }
-                None => previous = None,
+
+                match chosen {
+                    Some((face, glyph, advance)) => {
+                        glyphs.push(ShapedGlyph {
+                            face,
+                            glyph,
+                            // Letters drawn wider take up more room, and the
+                            // room asked for between them is the same width
+                            // wherever it is measured. Hidden text takes up
+                            // none: it is not on the page at all.
+                            advance: if style.hidden {
+                                0.0
+                            } else {
+                                advance * style.stretch + style.letter_spacing
+                            },
+                            offset: base_offset + local,
+                            character,
+                            length: source.len_utf8(),
+                            size,
+                        });
+                        previous = Some(glyph);
+                    }
+                    None => previous = None,
+                }
             }
         }
 
@@ -2977,6 +3266,7 @@ impl<'a> LayoutEngine<'a> {
         text: &str,
         style: &RunStyle,
         base_offset: usize,
+        joined: bool,
     ) -> Option<Vec<ShapedGlyph>> {
         // The run's own face first: a document that asks for a font gets it.
         // Failing that, whichever face can draw the first letter, because a
@@ -2985,7 +3275,14 @@ impl<'a> LayoutEngine<'a> {
         let font = self.font(face)?;
         let units = f32::from(font.units_per_em());
 
-        let shaped = wp_shape::shape(font, text);
+        let shaped = if joined {
+            wp_shape::shape(font, text)
+        } else {
+            // A Latin run gets only what the document asked the font for, and
+            // nothing else: a person who turned on tabular figures did not ask
+            // for ligatures as well.
+            wp_shape::shape_with(font, text, &style.features)
+        };
         if shaped.is_empty() {
             return Some(Vec::new());
         }
@@ -3008,10 +3305,11 @@ impl<'a> LayoutEngine<'a> {
             glyphs.push(ShapedGlyph {
                 face,
                 glyph: entry.glyph,
-                advance,
+                advance: advance * style.stretch + style.letter_spacing,
                 offset: base_offset + entry.cluster,
                 character: text[entry.cluster..].chars().next().unwrap_or('\u{FFFD}'),
                 length: length.max(1),
+                size: style.size,
             });
         }
 
@@ -3261,6 +3559,7 @@ impl LayoutEngine<'_> {
                 baseline,
                 advance: one.advance,
                 size: style.size,
+                stretch: 1.0,
                 color: style.color,
                 effect: style.effect,
                 // The dots are not text: they all point at the tab that made
@@ -3385,6 +3684,7 @@ impl LayoutEngine<'_> {
                     baseline,
                     advance,
                     size: style.size,
+                    stretch: 1.0,
                     color: style.color,
                     effect: style.effect,
                     source: TextPosition::new(placement.paragraph, item.start_offset),
@@ -3405,12 +3705,19 @@ impl LayoutEngine<'_> {
                     x,
                     baseline: glyph_baseline,
                     advance: glyph.advance,
-                    size: style.size,
+                    // The glyph's own size rather than the run's: a small
+                    // capital is drawn smaller than the capitals beside it.
+                    size: glyph.size,
+                    stretch: style.stretch,
                     color: style.color,
                     effect: style.effect,
                     source: TextPosition::new(placement.paragraph, glyph.offset),
                     source_length: glyph.length,
-                    invisible: false,
+                    // Hidden text is recorded where it sits and drawn nowhere,
+                    // so the caret can still be moved through it and a click
+                    // still lands in the right place — which is what happens in
+                    // Word when the marks are turned back on.
+                    invisible: style.hidden,
                 });
                 x += glyph.advance;
             }
@@ -3503,6 +3810,7 @@ impl LayoutEngine<'_> {
                     baseline,
                     advance: x - start_x,
                     size: style.size,
+                    stretch: 1.0,
                     color: style.color,
                     effect: style.effect,
                     source: TextPosition::new(placement.paragraph, item.start_offset),
@@ -3528,24 +3836,35 @@ impl LayoutEngine<'_> {
                     });
                 }
             }
+            let thickness = (style.size * 0.05).max(1.0);
             if style.underline && drawn_width > 0.0 {
                 page.decorations.push(Decoration {
                     x: start_x,
                     // Just below the baseline, scaled so it stays proportional.
                     y: baseline + placement.descent * 0.25,
                     width: drawn_width,
-                    height: (style.size * 0.05).max(1.0),
-                    color: style.color,
+                    height: thickness,
+                    // Word lets the line be a different colour from the letters
+                    // it is under, and most of the time it is not.
+                    color: style.underline_color.unwrap_or(style.color),
                 });
             }
-            if style.strike && drawn_width > 0.0 {
-                page.decorations.push(Decoration {
-                    x: start_x,
-                    y: baseline - style.ascent * 0.3,
-                    width: drawn_width,
-                    height: (style.size * 0.05).max(1.0),
-                    color: style.color,
-                });
+            // One line through the middle, or two straddling it. The format
+            // keeps them apart rather than counting lines, and so does Word's
+            // dialog: they are two tick boxes, and each unticks the other.
+            if (style.strike || style.double_strike) && drawn_width > 0.0 {
+                let middle = baseline - style.ascent * 0.3;
+                let offsets: &[f32] =
+                    if style.double_strike { &[-thickness, thickness] } else { &[0.0] };
+                for offset in offsets {
+                    page.decorations.push(Decoration {
+                        x: start_x,
+                        y: middle + offset,
+                        width: drawn_width,
+                        height: thickness,
+                        color: style.color,
+                    });
+                }
             }
         }
 
@@ -4029,6 +4348,7 @@ mod tests {
                     baseline,
                     advance: 10.0,
                     size: 12.0,
+                    stretch: 1.0,
                     color: Color::BLACK,
                     effect: None,
                     source: TextPosition::new(*paragraph, offset),

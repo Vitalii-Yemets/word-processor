@@ -322,6 +322,39 @@ fn run_satisfies(run: &Element, change: &RunProperties) -> bool {
             change.effect.is_some(),
             change.effect.as_ref().is_none_or(|wanted| effect_matches(&direct, wanted)),
         )
+        && same(change.double_strike.is_some(), direct.double_strike == change.double_strike)
+        && same(change.caps.is_some(), direct.caps == change.caps)
+        && same(change.small_caps.is_some(), direct.small_caps == change.small_caps)
+        && same(change.hidden.is_some(), direct.hidden == change.hidden)
+        && same(change.underline_color.is_some(), direct.underline_color == change.underline_color)
+        // The value that means "normal" is stored by writing nothing, so a run
+        // asked for a hundred per cent when it says nothing already has it.
+        && same(change.scale.is_some(), normal_or_equal(direct.scale, change.scale, 100))
+        && same(
+            change.spacing_twentieths.is_some(),
+            normal_or_equal(direct.spacing_twentieths, change.spacing_twentieths, 0),
+        )
+        && same(
+            change.position_half_points.is_some(),
+            normal_or_equal(direct.position_half_points, change.position_half_points, 0),
+        )
+        && same(
+            change.kerning_half_points.is_some(),
+            direct.kerning_half_points == change.kerning_half_points,
+        )
+        && same(change.open_type.is_some(), open_type_matches(&direct, change))
+}
+
+/// Whether a run already says what is being asked of it, counting the value
+/// that means "normal" as the same as saying nothing at all.
+fn normal_or_equal<T: Copy + PartialEq>(had: Option<T>, wanted: Option<T>, normal: T) -> bool {
+    had.unwrap_or(normal) == wanted.unwrap_or(normal)
+}
+
+/// Whether a run already asks the font for what is being asked of it.
+fn open_type_matches(direct: &RunProperties, change: &RunProperties) -> bool {
+    let wanted = change.open_type.clone().unwrap_or_default();
+    direct.open_type.clone().unwrap_or_default() == wanted
 }
 
 /// Whether a run already has the effect being asked for.
@@ -405,7 +438,21 @@ fn apply_to_run(run: &mut Element, change: &RunProperties, prefix: Option<&str>)
         run.insert_element(0, Element::new(&name_with(prefix, "rPr"), Some(W)));
     }
     let properties = run.child_mut(Some(W), "rPr").expect("just ensured");
+    write_run_properties(properties, change, prefix);
+}
 
+/// Writes authored properties into a `w:rPr`, wherever that `rPr` lives.
+///
+/// A run has one, and so does a style, and so does the document's own set of
+/// defaults. Word's Set As Default writes into the last of those, and it must
+/// write it exactly as a run would — a property spelt one way in one place and
+/// another way elsewhere is a document that formats differently depending on
+/// where the formatting came from.
+pub(crate) fn write_run_properties(
+    properties: &mut Element,
+    change: &RunProperties,
+    prefix: Option<&str>,
+) {
     if let Some(state) = change.bold {
         // Latin and complex-script weight are separate properties; setting one
         // without the other leaves Arabic and Hebrew text unbolded.
@@ -419,13 +466,61 @@ fn apply_to_run(run: &mut Element, change: &RunProperties, prefix: Option<&str>)
     if let Some(state) = change.strike {
         set_toggle(properties, "strike", state, prefix);
     }
+    if let Some(state) = change.double_strike {
+        set_toggle(properties, "dstrike", state, prefix);
+    }
+    if let Some(state) = change.caps {
+        set_toggle(properties, "caps", state, prefix);
+    }
+    if let Some(state) = change.small_caps {
+        set_toggle(properties, "smallCaps", state, prefix);
+    }
+    if let Some(state) = change.hidden {
+        set_toggle(properties, "vanish", state, prefix);
+    }
     if let Some(underline) = &change.underline {
         properties.remove_children_named(Some(W), "u");
+        let mut line = valued(prefix, "u", underline.to_attribute());
+        // The colour rides on the same element as the style, so it has to be
+        // written here rather than in an arm of its own — and a change that
+        // names a colour without naming a style would have nothing to ride on.
+        if let Some(color) = &change.underline_color {
+            line.set_namespaced_attribute(&name_with(prefix, "color"), W, color);
+        }
+        insert_ordered(properties, line, RUN_PROPERTY_ORDER);
+    }
+    // The four measured properties of the Advanced tab. Each is written as the
+    // number the format wants, and the value that means "normal" is written by
+    // taking the element away: a run that says 100 per cent and one that says
+    // nothing are the same run.
+    for (local, value, normal) in [
+        ("w", change.scale.map(i64::from), i64::from(crate::typography::NORMAL_SCALE)),
+        ("spacing", change.spacing_twentieths.map(i64::from), 0),
+        ("position", change.position_half_points.map(i64::from), 0),
+    ] {
+        let Some(value) = value else { continue };
+        properties.remove_children_named(Some(W), local);
+        if value != normal {
+            insert_ordered(
+                properties,
+                valued(prefix, local, &value.to_string()),
+                RUN_PROPERTY_ORDER,
+            );
+        }
+    }
+    if let Some(kerning) = change.kerning_half_points {
+        // Kerning is the exception: zero is not "nothing said", it is "never
+        // kern", and a run that means it has to say so.
+        properties.remove_children_named(Some(W), "kern");
         insert_ordered(
             properties,
-            valued(prefix, "u", underline.to_attribute()),
+            valued(prefix, "kern", &kerning.to_string()),
             RUN_PROPERTY_ORDER,
         );
+    }
+    if let Some(wanted) = &change.open_type {
+        crate::typography::remove_open_type(properties);
+        crate::typography::write_open_type(properties, wanted);
     }
     if let Some(color) = &change.color {
         properties.remove_children_named(Some(W), "color");

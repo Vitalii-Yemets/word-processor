@@ -302,6 +302,7 @@ mod tests {
                     baseline: 0.0,
                     advance: size,
                     size,
+                    stretch: 1.0,
                     color,
                     effect: None,
                     source: wp_docx::TextPosition::new(0, 0),

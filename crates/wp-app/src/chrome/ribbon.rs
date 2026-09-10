@@ -178,6 +178,10 @@ pub enum Item {
 pub struct Group {
     pub label: &'static str,
     pub items: &'static [Item],
+    /// The small arrow in the bottom right-hand corner, which opens the dialog
+    /// behind the group. Word puts one on every group that has more to offer
+    /// than the buttons show; a group with nothing more has none.
+    pub launcher: Option<Command>,
 }
 
 /// Where one item was placed, so a click can find it again.
@@ -464,6 +468,23 @@ impl Ribbon {
                 }
             }
             widest = widest.max(cursor - start);
+
+            // The small arrow in the corner, where a group has more behind it
+            // than its buttons show. Word's is a corner mark with an arrow
+            // through it, and pressing it opens the group's dialog.
+            if let Some(command) = group.launcher {
+                let size = 9.0;
+                let arrow_x = start + widest - size - 2.0;
+                let arrow_y = self.top + TAB_HEIGHT + RIBBON_HEIGHT - GROUP_LABEL_HEIGHT + 1.0;
+                launcher_mark(canvas, arrow_x, arrow_y, size, theme.dim_text);
+                self.placed.push(Placed {
+                    command,
+                    left: arrow_x - 3.0,
+                    top: arrow_y - 3.0,
+                    width: size + 6.0,
+                    height: size + 6.0,
+                });
+            }
 
             // The name of the group, centred under it: the thing that makes a
             // ribbon findable rather than a wall of icons.
@@ -986,8 +1007,13 @@ static FILE_GROUPS: &[Group] = &[
             Item::Large(Command::Save, Icon::Save, "Save"),
             Item::Large(Command::SaveAs, Icon::Save, "Save As"),
         ],
+        launcher: None,
     },
-    Group { label: "Print", items: &[Item::Large(Command::Print, Icon::Print, "Print")] },
+    Group {
+        label: "Print",
+        items: &[Item::Large(Command::Print, Icon::Print, "Print")],
+        launcher: None,
+    },
     Group {
         label: "Close",
         items: &[
@@ -995,6 +1021,7 @@ static FILE_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::CloseDocument, Icon::Close, "Close"),
         ],
+        launcher: None,
     },
 ];
 
@@ -1009,6 +1036,7 @@ static HOME_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::FormatPainter, Icon::Brush, "Format Painter"),
         ],
+        launcher: None,
     },
     Group {
         label: "Font",
@@ -1030,6 +1058,7 @@ static HOME_GROUPS: &[Group] = &[
             Item::Button(Command::Highlight, Icon::Highlight),
             Item::Button(Command::TextColor, Icon::TextColor),
         ],
+        launcher: Some(Command::FontDialog),
     },
     Group {
         label: "Paragraph",
@@ -1050,8 +1079,9 @@ static HOME_GROUPS: &[Group] = &[
             Item::Button(Command::Shading, Icon::Shading),
             Item::Button(Command::Borders, Icon::Borders),
         ],
+        launcher: None,
     },
-    Group { label: "Styles", items: &[Item::StyleGallery] },
+    Group { label: "Styles", items: &[Item::StyleGallery], launcher: None },
     Group {
         label: "Editing",
         items: &[
@@ -1061,6 +1091,7 @@ static HOME_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::SelectAll, Icon::Select, "Select"),
         ],
+        launcher: None,
     },
 ];
 
@@ -1074,8 +1105,13 @@ static INSERT_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::PageBreak, Icon::PageBreak, "Page Break"),
         ],
+        launcher: None,
     },
-    Group { label: "Tables", items: &[Item::Large(Command::InsertTable, Icon::Table, "Table")] },
+    Group {
+        label: "Tables",
+        items: &[Item::Large(Command::InsertTable, Icon::Table, "Table")],
+        launcher: None,
+    },
     Group {
         label: "Illustrations",
         items: &[
@@ -1085,8 +1121,13 @@ static INSERT_GROUPS: &[Group] = &[
             Item::Large(Command::Chart, Icon::Chart, "Chart"),
             Item::Large(Command::Screenshot, Icon::Screenshot, "Screenshot"),
         ],
+        launcher: None,
     },
-    Group { label: "Media", items: &[Item::Large(Command::OnlineVideo, Icon::Video, "Video")] },
+    Group {
+        label: "Media",
+        items: &[Item::Large(Command::OnlineVideo, Icon::Video, "Video")],
+        launcher: None,
+    },
     Group {
         label: "Links",
         items: &[
@@ -1098,10 +1139,12 @@ static INSERT_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::CrossReference, Icon::CrossReference, "Cross-reference"),
         ],
+        launcher: None,
     },
     Group {
         label: "Comments",
         items: &[Item::Large(Command::NewComment, Icon::Comment, "Comment")],
+        launcher: None,
     },
     Group {
         label: "Header & Footer",
@@ -1111,6 +1154,7 @@ static INSERT_GROUPS: &[Group] = &[
             Item::Large(Command::PageNumber, Icon::PageNumber, "Page Number"),
             Item::Small(Command::FormatPageNumbers, Icon::Numbering, "Format Page Numbers"),
         ],
+        launcher: None,
     },
     Group {
         label: "Text",
@@ -1124,6 +1168,7 @@ static INSERT_GROUPS: &[Group] = &[
             Item::Small(Command::WordArt, Icon::WordArt, "WordArt"),
             Item::Small(Command::TextFromFile, Icon::Object, "Text from File"),
         ],
+        launcher: None,
     },
     Group {
         label: "Symbols",
@@ -1131,6 +1176,7 @@ static INSERT_GROUPS: &[Group] = &[
             Item::Large(Command::Equation, Icon::Equation, "Equation"),
             Item::Large(Command::InsertSymbol, Icon::Symbol, "Symbol"),
         ],
+        launcher: None,
     },
 ];
 
@@ -1147,6 +1193,7 @@ static DESIGN_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::SetAsDefault, Icon::SetAsDefault, "Set as Default"),
         ],
+        launcher: None,
     },
     Group {
         label: "Page Background",
@@ -1155,6 +1202,7 @@ static DESIGN_GROUPS: &[Group] = &[
             Item::Large(Command::PageColor, Icon::PageColor, "Page Color"),
             Item::Large(Command::Borders, Icon::PageBorders, "Page Borders"),
         ],
+        launcher: None,
     },
 ];
 
@@ -1172,6 +1220,7 @@ static LAYOUT_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::Hyphenation, Icon::Hyphenation, "Hyphenation"),
         ],
+        launcher: None,
     },
     Group {
         label: "Paragraph",
@@ -1180,6 +1229,7 @@ static LAYOUT_GROUPS: &[Group] = &[
             Item::Break,
             Item::Measure(Command::IndentRightBox, "Right:", 54.0),
         ],
+        launcher: None,
     },
     Group {
         label: "Arrange",
@@ -1192,6 +1242,7 @@ static LAYOUT_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::SelectionPane, Icon::SelectionPane, "Selection Pane"),
         ],
+        launcher: None,
     },
 ];
 
@@ -1204,6 +1255,7 @@ static REFERENCES_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::RemoveContents, Icon::Close, "Remove Table"),
         ],
+        launcher: None,
     },
     Group {
         label: "Footnotes",
@@ -1215,6 +1267,7 @@ static REFERENCES_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::DeleteNote, Icon::Close, "Delete Note"),
         ],
+        launcher: None,
     },
     Group {
         label: "Citations & Bibliography",
@@ -1226,6 +1279,7 @@ static REFERENCES_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::InsertBibliography, Icon::Bibliography, "Bibliography"),
         ],
+        launcher: None,
     },
     Group {
         label: "Captions",
@@ -1237,6 +1291,7 @@ static REFERENCES_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::TableOfFigures, Icon::TableOfFigures, "Table of Figures"),
         ],
+        launcher: None,
     },
     Group {
         label: "Index",
@@ -1246,6 +1301,7 @@ static REFERENCES_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::InsertIndex, Icon::UpdateTable, "Update Index"),
         ],
+        launcher: None,
     },
     Group {
         label: "Table of Authorities",
@@ -1253,6 +1309,7 @@ static REFERENCES_GROUPS: &[Group] = &[
             Item::Large(Command::MarkCitation, Icon::MarkCitation, "Mark Citation"),
             Item::Small(Command::TableOfAuthorities, Icon::TableOfAuthorities, "Insert Table"),
         ],
+        launcher: None,
     },
 ];
 
@@ -1263,6 +1320,7 @@ static MAILINGS_GROUPS: &[Group] = &[
             Item::Large(Command::Envelopes, Icon::Envelope, "Envelopes"),
             Item::Large(Command::Labels, Icon::Labels, "Labels"),
         ],
+        launcher: None,
     },
     Group {
         label: "Start Mail Merge",
@@ -1271,6 +1329,7 @@ static MAILINGS_GROUPS: &[Group] = &[
             Item::Large(Command::SelectRecipients, Icon::Recipients, "Recipients"),
             Item::Large(Command::EditRecipientList, Icon::EditRecipients, "Edit List"),
         ],
+        launcher: None,
     },
     Group {
         label: "Write & Insert Fields",
@@ -1284,6 +1343,7 @@ static MAILINGS_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::MatchFields, Icon::MatchFields, "Match Fields"),
         ],
+        launcher: None,
     },
     Group {
         label: "Preview Results",
@@ -1295,10 +1355,12 @@ static MAILINGS_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::CheckMergeErrors, Icon::CheckErrors, "Check for Errors"),
         ],
+        launcher: None,
     },
     Group {
         label: "Finish",
         items: &[Item::Large(Command::FinishMerge, Icon::FinishMerge, "Finish")],
+        launcher: None,
     },
 ];
 
@@ -1311,10 +1373,12 @@ static REVIEW_GROUPS: &[Group] = &[
             Item::Large(Command::LoadDictionary, Icon::Thesaurus, "Word List"),
             Item::Large(Command::WordCount, Icon::WordCount, "Word Count"),
         ],
+        launcher: None,
     },
     Group {
         label: "Accessibility",
         items: &[Item::Large(Command::CheckAccessibility, Icon::Accessibility, "Check")],
+        launcher: None,
     },
     Group {
         label: "Language",
@@ -1322,6 +1386,7 @@ static REVIEW_GROUPS: &[Group] = &[
             Item::Large(Command::Translate, Icon::Translate, "Translate"),
             Item::Large(Command::Language, Icon::Language, "Language"),
         ],
+        launcher: None,
     },
     Group {
         label: "Comments",
@@ -1332,6 +1397,7 @@ static REVIEW_GROUPS: &[Group] = &[
             Item::Large(Command::NextComment, Icon::Next, "Next"),
             Item::Large(Command::ShowComments, Icon::ShowComments, "Show"),
         ],
+        launcher: None,
     },
     Group {
         label: "Tracking",
@@ -1341,6 +1407,7 @@ static REVIEW_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::ReviewingPane, Icon::ReviewingPane, "Reviewing Pane"),
         ],
+        launcher: None,
     },
     Group {
         label: "Changes",
@@ -1351,8 +1418,13 @@ static REVIEW_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::RejectAll, Icon::Close, "Reject All"),
         ],
+        launcher: None,
     },
-    Group { label: "Compare", items: &[Item::Large(Command::Compare, Icon::Compare, "Compare")] },
+    Group {
+        label: "Compare",
+        items: &[Item::Large(Command::Compare, Icon::Compare, "Compare")],
+        launcher: None,
+    },
     Group {
         label: "Protect",
         items: &[
@@ -1360,6 +1432,7 @@ static REVIEW_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::RestrictEditing, Icon::RestrictEditing, "Restrict Editing"),
         ],
+        launcher: None,
     },
 ];
 
@@ -1373,10 +1446,12 @@ static VIEW_GROUPS: &[Group] = &[
             Item::Large(Command::OutlineView, Icon::Outline, "Outline"),
             Item::Large(Command::DraftView, Icon::Draft, "Draft"),
         ],
+        launcher: None,
     },
     Group {
         label: "Dark Mode",
         items: &[Item::Large(Command::ToggleTheme, Icon::Theme, "Switch Modes")],
+        launcher: None,
     },
     Group {
         label: "Page Movement",
@@ -1385,6 +1460,7 @@ static VIEW_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::SideToSide, Icon::SideToSide, "Side to Side"),
         ],
+        launcher: None,
     },
     Group {
         label: "Show",
@@ -1395,6 +1471,7 @@ static VIEW_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::ToggleNavigation, Icon::SelectionPane, "Navigation Pane"),
         ],
+        launcher: None,
     },
     Group {
         label: "Zoom",
@@ -1407,6 +1484,7 @@ static VIEW_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::ShowMarks, Icon::Pilcrow, "Formatting Marks"),
         ],
+        launcher: None,
     },
     Group {
         label: "Window",
@@ -1417,8 +1495,13 @@ static VIEW_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::Split, Icon::Split, "Split"),
         ],
+        launcher: None,
     },
-    Group { label: "Macros", items: &[Item::Large(Command::Macros, Icon::Macros, "Macros")] },
+    Group {
+        label: "Macros",
+        items: &[Item::Large(Command::Macros, Icon::Macros, "Macros")],
+        launcher: None,
+    },
 ];
 
 static HELP_GROUPS: &[Group] = &[Group {
@@ -1429,6 +1512,7 @@ static HELP_GROUPS: &[Group] = &[Group {
         Item::Large(Command::ShowTraining, Icon::Training, "Training"),
         Item::Large(Command::WhatsNew, Icon::WhatsNew, "What's New"),
     ],
+    launcher: None,
 }];
 
 static TABLE_DESIGN_GROUPS: &[Group] = &[
@@ -1439,6 +1523,7 @@ static TABLE_DESIGN_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::TableBandedRows, Icon::BandedRows, "Banded Rows"),
         ],
+        launcher: None,
     },
     Group {
         label: "Borders",
@@ -1451,6 +1536,7 @@ static TABLE_DESIGN_GROUPS: &[Group] = &[
             ),
             Item::Large(Command::TableBorders(TableBorderChoice::None), Icon::BorderNone, "None"),
         ],
+        launcher: None,
     },
 ];
 
@@ -1467,6 +1553,7 @@ static HEADER_FOOTER_GROUPS: &[Group] = &[
             Item::Large(Command::PageNumber, Icon::PageNumber, "Page Number"),
             Item::Small(Command::FormatPageNumbers, Icon::Numbering, "Format Page Numbers"),
         ],
+        launcher: None,
     },
     Group {
         label: "Insert",
@@ -1477,6 +1564,7 @@ static HEADER_FOOTER_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::InsertPicture, Icon::Picture, "Pictures"),
         ],
+        launcher: None,
     },
     Group {
         label: "Navigation",
@@ -1487,6 +1575,7 @@ static HEADER_FOOTER_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::LinkToPrevious, Icon::Link, "Link to Previous"),
         ],
+        launcher: None,
     },
     Group {
         label: "Options",
@@ -1499,10 +1588,12 @@ static HEADER_FOOTER_GROUPS: &[Group] = &[
                 "Different Odd & Even Pages",
             ),
         ],
+        launcher: None,
     },
     Group {
         label: "Close",
         items: &[Item::Large(Command::CloseFurniture, Icon::Close, "Close Header and Footer")],
+        launcher: None,
     },
 ];
 
@@ -1515,6 +1606,7 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
             Item::Large(Command::InsertColumnLeft, Icon::InsertColumnLeft, "Left"),
             Item::Large(Command::InsertColumnRight, Icon::InsertColumnRight, "Right"),
         ],
+        launcher: None,
     },
     Group {
         label: "Delete",
@@ -1525,6 +1617,7 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::DeleteTable, Icon::DeleteTable, "Delete Table"),
         ],
+        launcher: None,
     },
     Group {
         label: "Merge",
@@ -1533,6 +1626,7 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::SplitCells, Icon::SplitCells, "Split Cells"),
         ],
+        launcher: None,
     },
     Group {
         label: "Cell Size",
@@ -1541,6 +1635,7 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::TableProperties, Icon::TableProperties, "Properties"),
         ],
+        launcher: None,
     },
     Group {
         label: "Alignment",
@@ -1549,6 +1644,7 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
             Item::Button(Command::Align(Alignment::Center), Icon::AlignCenter),
             Item::Button(Command::Align(Alignment::End), Icon::AlignEnd),
         ],
+        launcher: None,
     },
 ];
 
@@ -1649,4 +1745,22 @@ pub fn group_commands(tab: Tab, index: usize) -> Vec<(Command, &'static str)> {
             Item::Break => None,
         })
         .collect()
+}
+
+/// Word's dialog launcher: a corner and an arrow leaving it.
+///
+/// Small enough that it is a shape rather than a picture — a right angle open
+/// at the top right, with a short diagonal going out through the opening.
+fn launcher_mark(canvas: &mut Canvas, x: f32, y: f32, size: f32, colour: Color) {
+    let (x, y, size) = (x as i32, y as i32, size as i32);
+    // The corner: down the left-hand side and along the bottom.
+    canvas.fill_rect(x, y + size / 3, 1, size - size / 3, colour);
+    canvas.fill_rect(x, y + size - 1, size, 1, colour);
+    // The arrow leaving it, going up and to the right.
+    for step in 0..size - size / 3 {
+        canvas.fill_rect(x + 2 + step, y + size - 3 - step, 1, 1, colour);
+    }
+    // And its head.
+    canvas.fill_rect(x + size - 3, y + 1, 3, 1, colour);
+    canvas.fill_rect(x + size - 1, y + 1, 1, 3, colour);
 }

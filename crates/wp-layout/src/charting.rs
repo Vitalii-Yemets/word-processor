@@ -443,6 +443,7 @@ mod tests {
                     baseline,
                     advance: size,
                     size,
+                    stretch: 1.0,
                     color,
                     effect: None,
                     source: wp_docx::TextPosition::new(0, 0),

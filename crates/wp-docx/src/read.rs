@@ -573,6 +573,8 @@ pub fn read_run_properties(properties: &Element) -> RunProperties {
     // only looks at WordprocessingML — would never see them.
     let mut result = RunProperties {
         effect: crate::effects::read_effect(properties),
+        // The OpenType features are in that same namespace of their own.
+        open_type: crate::typography::read_open_type(properties),
         ..RunProperties::default()
     };
 
@@ -586,12 +588,31 @@ pub fn read_run_properties(properties: &Element) -> RunProperties {
             "i" => result.italic = Some(on_off(property)),
             "strike" => result.strike = Some(on_off(property)),
             "rtl" => result.right_to_left = Some(on_off(property)),
+            "dstrike" => result.double_strike = Some(on_off(property)),
+            "caps" => result.caps = Some(on_off(property)),
+            "smallCaps" => result.small_caps = Some(on_off(property)),
+            "vanish" => result.hidden = Some(on_off(property)),
+            // How wide the letters are drawn, how far apart, how far off the
+            // line, and from what size the font's own kerning is used. Each is
+            // measured differently; see [`crate::typography`].
+            "w" => result.scale = value(property).and_then(|v| v.parse().ok()),
+            "spacing" => result.spacing_twentieths = value(property).and_then(|v| v.parse().ok()),
+            "position" => {
+                result.position_half_points = value(property).and_then(|v| v.parse().ok());
+            }
+            "kern" => result.kerning_half_points = value(property).and_then(|v| v.parse().ok()),
             "u" => {
                 result.underline = Some(match value(property) {
                     // A bare <w:u/> with no value means a single underline.
                     None => Underline::Single,
                     Some(style) => Underline::from_attribute(style),
                 });
+                // The line may be a different colour from the text, which is
+                // written beside the style rather than as an element of its own.
+                result.underline_color = property
+                    .attribute(Some(W), "color")
+                    .filter(|text| *text != "auto")
+                    .map(str::to_owned);
             }
             "sz" => result.size_half_points = value(property).and_then(|v| v.parse().ok()),
             "color" => {

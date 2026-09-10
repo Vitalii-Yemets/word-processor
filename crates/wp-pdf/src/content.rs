@@ -152,6 +152,7 @@ fn write_text(
             let next = glyphs[end];
             let same = next.face == first.face
                 && (next.size - first.size).abs() < 0.01
+                && (next.stretch - first.stretch).abs() < 0.001
                 && next.color == first.color
                 && (next.baseline - first.baseline).abs() < 0.01
                 // Only forwards: a glyph drawn to the left of the one before it
@@ -173,8 +174,19 @@ fn write_text(
             number(first.x),
             number(height - first.baseline),
         ));
-        out.push_str(&positions(run, first.size));
-        out.push_str(" TJ ET\n");
+        // Letters drawn wider or narrower than they are tall. `Tz` is part of
+        // the text state and outlives the block that set it, so it is put back
+        // afterwards rather than left standing for whatever is drawn next.
+        let stretched = (first.stretch - 1.0).abs() > 0.001;
+        if stretched {
+            out.push_str(&format!("{} Tz\n", number(first.stretch * 100.0)));
+        }
+        out.push_str(&positions(run, first.size, first.stretch));
+        out.push_str(" TJ\n");
+        if stretched {
+            out.push_str("100 Tz\n");
+        }
+        out.push_str("ET\n");
         index = end;
     }
 }
@@ -186,13 +198,18 @@ fn write_text(
 /// the line, or a tab reached a stop — the difference is written between the
 /// two as a number, in thousandths of the text size, and negative because the
 /// number moves the pen back.
-fn positions(run: &[&PositionedGlyph], size: f32) -> String {
+///
+/// The horizontal scale is divided out of it: `Tz` scales these numbers along
+/// with everything else on the line, so a gap of a tenth of an em written into
+/// text set at half width would come out a twentieth.
+fn positions(run: &[&PositionedGlyph], size: f32, stretch: f32) -> String {
     let mut out = String::from("[");
     let mut hex = String::new();
     let mut pen = run[0].x;
+    let stretch = if stretch.abs() < 0.001 { 1.0 } else { stretch };
 
     for glyph in run {
-        let gap = glyph.x - pen;
+        let gap = (glyph.x - pen) / stretch;
         if gap.abs() > 0.01 && size > 0.0 {
             if !hex.is_empty() {
                 out.push_str(&format!("<{hex}>"));

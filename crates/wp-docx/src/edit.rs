@@ -67,6 +67,7 @@ pub(crate) const RUN_PROPERTY_ORDER: &[&str] = &[
     "smallCaps",
     "strike",
     "dstrike",
+    "vanish",
     "color",
     "spacing",
     "w",
@@ -717,6 +718,30 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
     if let Some(state) = properties.strike {
         element.push_element(toggle(prefix, "strike", state));
     }
+    if let Some(state) = properties.double_strike {
+        element.push_element(toggle(prefix, "dstrike", state));
+    }
+    if let Some(state) = properties.caps {
+        element.push_element(toggle(prefix, "caps", state));
+    }
+    if let Some(state) = properties.small_caps {
+        element.push_element(toggle(prefix, "smallCaps", state));
+    }
+    if let Some(state) = properties.hidden {
+        element.push_element(toggle(prefix, "vanish", state));
+    }
+    if let Some(scale) = properties.scale {
+        element.push_element(valued(prefix, "w", &scale.to_string()));
+    }
+    if let Some(spacing) = properties.spacing_twentieths {
+        element.push_element(valued(prefix, "spacing", &spacing.to_string()));
+    }
+    if let Some(position) = properties.position_half_points {
+        element.push_element(valued(prefix, "position", &position.to_string()));
+    }
+    if let Some(kerning) = properties.kerning_half_points {
+        element.push_element(valued(prefix, "kern", &kerning.to_string()));
+    }
     if let Some(color) = &properties.color {
         element.push_element(valued(prefix, "color", color));
     }
@@ -732,13 +757,24 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
         element.push_element(valued(prefix, "szCs", &size));
     }
     if let Some(underline) = &properties.underline {
-        element.push_element(valued(prefix, "u", underline.to_attribute()));
+        let mut line = valued(prefix, "u", underline.to_attribute());
+        // The colour of the line rides on the same element as its style: the
+        // format has no `w:uColor`.
+        if let Some(color) = &properties.underline_color {
+            line.set_namespaced_attribute(&name_with(prefix, "color"), W, color);
+        }
+        element.push_element(line);
     }
     if let Some(state) = properties.right_to_left {
         element.push_element(toggle(prefix, "rtl", state));
     }
     if let Some(language) = &properties.language {
         element.push_element(valued(prefix, "lang", language));
+    }
+    // Last, because it is in a namespace of its own and the schema wants the
+    // standard properties in their standard order before it.
+    if let Some(wanted) = &properties.open_type {
+        crate::typography::write_open_type(&mut element, wanted);
     }
 
     element

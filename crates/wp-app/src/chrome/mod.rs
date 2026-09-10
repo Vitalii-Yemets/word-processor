@@ -275,6 +275,10 @@ pub enum Command {
     OnePage,
     PageWidth,
 
+    /// Word's Font dialog, behind the launcher in the corner of the Font group
+    /// and behind Ctrl+D.
+    FontDialog,
+
     /// Opens one of the lists.
     ChooseFont,
     ChooseSize,

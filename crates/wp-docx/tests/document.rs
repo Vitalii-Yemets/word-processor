@@ -49,6 +49,26 @@ fn rich_body() -> Body {
                 color_theme: None,
                 effect: None,
                 font_theme: None,
+                // Everything Word's Font dialog sets that is not simply a
+                // weight or a colour: the two tabs of it, written out here so
+                // that a property forgotten in the reader or the writer shows
+                // as a document that does not come back as it went in.
+                double_strike: Some(true),
+                caps: Some(false),
+                small_caps: Some(true),
+                hidden: Some(false),
+                underline_color: Some("0070C0".to_owned()),
+                scale: Some(150),
+                spacing_twentieths: Some(-20),
+                position_half_points: Some(6),
+                kerning_half_points: Some(16),
+                open_type: Some(wp_docx::typography::OpenType {
+                    ligatures: wp_docx::typography::Ligatures::StandardContextual,
+                    number_spacing: wp_docx::typography::NumberSpacing::Tabular,
+                    number_forms: wp_docx::typography::NumberForms::OldStyle,
+                    stylistic_sets: vec![3],
+                    contextual_alternates: true,
+                }),
             },
             field: None,
             revision: None,

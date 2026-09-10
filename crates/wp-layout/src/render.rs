@@ -189,7 +189,8 @@ impl<'a> Renderer<'a> {
             // Font outlines are y-up on a design grid; the canvas is y-down in
             // pixels. This is the transform that reconciles the two.
             let scale = glyph.size / cached.units_per_em;
-            let transform = Transform::glyph(scale, glyph.x + offset_x, baseline);
+            let transform =
+                Transform::stretched_glyph(scale, glyph.stretch, glyph.x + offset_x, baseline);
             let path = cached.path.transformed(&transform);
 
             // The effect goes under the letter: a shadow behind it, an outline
@@ -221,7 +222,8 @@ impl<'a> Renderer<'a> {
                 continue;
             };
             let scale = glyph.size / cached.units_per_em;
-            let placed = Transform::glyph(scale, glyph.x, glyph.baseline).then(transform);
+            let placed = Transform::stretched_glyph(scale, glyph.stretch, glyph.x, glyph.baseline)
+                .then(transform);
             canvas.fill_path(&cached.path.transformed(&placed), glyph.color);
         }
     }

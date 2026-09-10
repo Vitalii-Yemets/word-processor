@@ -82,6 +82,7 @@ pub mod table_properties;
 pub mod tables;
 pub mod theme;
 pub mod translate;
+pub mod typography;
 pub mod watermark;
 pub mod words;
 
@@ -1457,6 +1458,90 @@ impl Document {
         }
         self.resolved_over_selection().effect.map_or(effects::Effect::None, |value| value.effect)
     }
+    /// Applies a whole set of character formatting at once.
+    ///
+    /// The Font dialog is answered all together rather than a property at a
+    /// time, and a change made in one go is one undo step and one pass over the
+    /// runs — which is what Word does, and what stops a dialog with a dozen
+    /// fields in it from filling the undo list with a dozen entries.
+    pub fn set_character_format(&mut self, change: &RunProperties) -> bool {
+        // The namespace has to be declared before anything in it is written,
+        // and there is nothing to declare for a change that asks the font for
+        // nothing.
+        if change.open_type.as_ref().is_some_and(|wanted| !wanted.is_empty()) {
+            typography::declare_namespace(&mut self.tree_mut().root);
+        }
+        self.apply_character_change(change)
+    }
+
+    /// Everything the text under the caret or across the selection is formatted
+    /// with, which is what the Font dialog opens showing.
+    #[must_use]
+    pub fn character_format_here(&self) -> ResolvedRunProperties {
+        self.resolved_over_selection()
+    }
+
+    /// Word's Set As Default: makes this the formatting everything inherits.
+    ///
+    /// It is written into `w:docDefaults`, which is the bottom of the
+    /// inheritance chain — under every style and under every run. So it reaches
+    /// every paragraph that never said otherwise, and nothing that did.
+    ///
+    /// Word offers to write it into the template as well, so that new documents
+    /// start with it. There is no template here yet, so it reaches this
+    /// document and no other; **H4** in the roadmap is where a template would
+    /// come from.
+    pub fn set_default_character_format(&mut self, change: &RunProperties) -> bool {
+        let Some(mut tree) = self.styles_tree() else { return false };
+
+        if change.open_type.as_ref().is_some_and(|wanted| !wanted.is_empty()) {
+            typography::declare_namespace(&mut tree.root);
+        }
+
+        // The chain is docDefaults > rPrDefault > rPr, and every link of it is
+        // made if it is not there: a styles part with no defaults at all is
+        // unusual but perfectly valid.
+        let prefix = edit::prefix_for(&tree.root, WORDPROCESSING_NAMESPACE);
+        let defaults = child_or_new(&mut tree.root, "docDefaults", prefix.as_deref());
+        let run_defaults = child_or_new(defaults, "rPrDefault", prefix.as_deref());
+        let properties = child_or_new(run_defaults, "rPr", prefix.as_deref());
+
+        let before = properties.clone();
+        format::write_run_properties(properties, change, prefix.as_deref());
+        if *properties == before {
+            return false;
+        }
+
+        // What the styles say has changed, so what every run resolves to has
+        // changed with it.
+        self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
+        self.save_styles_tree(&tree);
+        self.mark_modified();
+        true
+    }
+
+    /// The styles part as a tree, however the document points at it.
+    fn styles_tree(&self) -> Option<XmlTree> {
+        related_tree(self.package(), self.main_part(), STYLES_RELATIONSHIP, "word/styles.xml")
+            .or_else(|| XmlTree::parse(&default_styles()).ok())
+    }
+
+    /// Writes the styles part back where it came from.
+    fn save_styles_tree(&mut self, tree: &XmlTree) {
+        let Ok(xml) = tree.to_xml() else { return };
+        let main_part = self.main_part().to_owned();
+        let target = self
+            .package()
+            .relationships(&main_part)
+            .ok()
+            .and_then(|relationships| {
+                let found = relationships.single_by_type(STYLES_RELATIONSHIP)?;
+                found.resolved_target(&main_part)?.ok()
+            })
+            .unwrap_or_else(|| "word/styles.xml".to_owned());
+        self.package_mut().add_part(&target, STYLES_CONTENT_TYPE, xml.into_bytes());
+    }
+
     /// Everything the run at the caret is formatted with, for the format
     /// painter to carry to somewhere else.
     #[must_use]
@@ -1484,6 +1569,20 @@ impl Document {
             // carries "no effect" too, so that painting plain text over a
             // glowing word takes the glow off.
             effect: Some(resolved.effect.clone().unwrap_or_default()),
+            // Everything the Font dialog sets is part of the look as well, and
+            // is carried the same way: written out rather than left unsaid, so
+            // that painting plain text over expanded small capitals puts them
+            // back to normal instead of leaving them as they were.
+            double_strike: Some(resolved.double_strike),
+            caps: Some(resolved.caps),
+            small_caps: Some(resolved.small_caps),
+            hidden: Some(resolved.hidden),
+            underline_color: resolved.underline_color,
+            scale: Some(resolved.scale),
+            spacing_twentieths: Some(resolved.spacing_twentieths),
+            position_half_points: Some(resolved.position_half_points),
+            kerning_half_points: resolved.kerning_half_points,
+            open_type: Some(resolved.open_type),
         }
     }
 
@@ -2250,6 +2349,21 @@ impl Document {
     }
 }
 
+/// The named child of an element, made if it is not there.
+///
+/// Used where a chain of elements has to exist before something can be written
+/// at the bottom of it — `docDefaults`, then `rPrDefault`, then `rPr` — and
+/// where any of them may be missing in a document that never needed it.
+fn child_or_new<'a>(parent: &'a mut Element, local: &str, prefix: Option<&str>) -> &'a mut Element {
+    if parent.child(Some(WORDPROCESSING_NAMESPACE), local).is_none() {
+        parent.push_element(Element::new(
+            &edit::name_with(prefix, local),
+            Some(WORDPROCESSING_NAMESPACE),
+        ));
+    }
+    parent.child_mut(Some(WORDPROCESSING_NAMESPACE), local).expect("just ensured")
+}
+
 /// Reads the style definitions belonging to a document part.
 ///
 /// The part is found by following the styles relationship rather than by
@@ -2312,6 +2426,14 @@ fn build_document(body: &Body) -> XmlTree {
     body_element.push_element(section_properties());
     root.push_element(body_element);
 
+    // The text effects and the OpenType features are in a namespace of their
+    // own, and a prefix used but not declared is not XML at all. Declared only
+    // when something in the body actually uses one, so a plain document carries
+    // nothing it does not need. See [`effects`] and [`typography`].
+    if uses_extensions(&root) {
+        effects::declare_namespace(&mut root);
+    }
+
     XmlTree {
         standalone: Some(true),
         has_declaration: true,
@@ -2320,6 +2442,16 @@ fn build_document(body: &Body) -> XmlTree {
         root,
         after_root: Vec::new(),
     }
+}
+
+/// Whether anything under this element is in Microsoft's extension namespace.
+///
+/// Asked of the finished tree rather than of the model, because the model can
+/// carry a property that writes no element — "no effect", an empty set of
+/// features — and a declaration for a namespace nothing uses is clutter.
+fn uses_extensions(element: &Element) -> bool {
+    element.namespace.as_deref() == Some(effects::W14)
+        || element.child_elements().any(uses_extensions)
 }
 
 /// Page size and margins, which must be the last child of the body.

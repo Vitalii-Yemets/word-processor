@@ -306,6 +306,16 @@ impl Styles {
             // "No effect" is what a run says to overrule an effect its style
             // put on it, and it resolves to nothing rather than to itself.
             effect: accumulated.effect.filter(|value| value.effect != crate::effects::Effect::None),
+            double_strike: accumulated.double_strike.unwrap_or(false),
+            caps: accumulated.caps.unwrap_or(false),
+            small_caps: accumulated.small_caps.unwrap_or(false),
+            hidden: accumulated.hidden.unwrap_or(false),
+            underline_color: accumulated.underline_color,
+            scale: accumulated.scale.unwrap_or(crate::typography::NORMAL_SCALE),
+            spacing_twentieths: accumulated.spacing_twentieths.unwrap_or(0),
+            position_half_points: accumulated.position_half_points.unwrap_or(0),
+            kerning_half_points: accumulated.kerning_half_points,
+            open_type: accumulated.open_type.unwrap_or_default(),
         }
     }
 }

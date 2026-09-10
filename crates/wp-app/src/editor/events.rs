@@ -189,7 +189,9 @@ impl App for Editor {
                         Response::Ignored
                     }
                 }
-                Event::KeyDown { key, modifiers } => return self.dialog_key(key, modifiers.shift),
+                Event::KeyDown { key, modifiers } => {
+                    return self.dialog_key(key, modifiers.shift, modifiers.control)
+                }
                 Event::Char(character) => return self.dialog_character(character),
                 // Swallowed rather than passed through: the window behind a
                 // modal dialog does not answer these.
@@ -1321,6 +1323,8 @@ impl Editor {
                 Key::Letter('i') => self.run(Command::Format(CharacterFormat::Italic)),
                 Key::Letter('u') => self.run(Command::Format(CharacterFormat::Underline)),
                 Key::Letter('n') if modifiers.shift => self.apply_style(None),
+                // Word's own shortcut for the Font dialog.
+                Key::Letter('d') => self.run(Command::FontDialog),
 
                 Key::Letter('l') => self.run(Command::Align(Alignment::Start)),
                 Key::Letter('e') => self.run(Command::Align(Alignment::Center)),

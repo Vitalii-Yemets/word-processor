@@ -427,8 +427,51 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   here they are one action each: the common one, done straight away. Everything
   that falls short is now **C10** to **C17** below.
 
-- [ ] **C2. The Font dialog.** Every character format Word has, the two tabs,
+- [x] **C2. The Font dialog.** Every character format Word has, the two tabs,
   the preview, Set As Default.
+  *Done:* it took three layers, because most of what the dialog sets had
+  nowhere to go.
+
+  **The file.** Eleven character properties the model did not hold: `w:dstrike`,
+  `w:caps`, `w:smallCaps`, `w:vanish`, the underline's own colour, and the four
+  measurements of the Advanced tab — `w:w`, `w:spacing`, `w:position`, `w:kern`
+  — each stored in a different unit, plus the OpenType features, which are
+  newer than the standard and live in Microsoft's `w14` namespace beside the
+  text effects. `wp-docx/src/typography.rs` is the new module; the round-trip
+  test in `wp-docx/tests/document.rs` names every one of them, so a property
+  forgotten in the reader or the writer shows as a document that does not come
+  back as it went in.
+
+  **The drawing.** All of it is honoured rather than merely stored: capitals
+  and small capitals are drawn without changing the text (and a letter whose
+  capital is two letters — ß is SS — draws two glyphs that both point at the
+  one character, so a click still lands where the text says); hidden text takes
+  up no room and draws nothing, and comes back when the marks are shown; the
+  scale stretches the outline rather than only the room after it, in the window
+  and in a PDF alike (`Tz`, with the gaps divided out of it); the spacing is
+  added per letter; the position lifts without shrinking; kerning is used at or
+  above the size the document names. The OpenType features go through
+  `wp_shape::shape_with`, which asks the font for exactly the tags requested and
+  nothing else — a person who turned on tabular figures did not ask for
+  ligatures as well. `wp-layout/tests/character.rs` holds every one of these to
+  a difference that can only come from the property having been honoured.
+
+  **The dialog.** Tabs and a preview were added to the machinery of **C9**: a
+  `Field::Tab` marker rather than a list of lists, so a field keeps the same
+  number whichever tab is showing, and `LayoutEngine::sample_line`, which draws
+  the sample through the same style resolution and the same shaping as the
+  document — a preview drawn a second way would drift from the first, and a
+  preview that lies is worse than none. Ctrl+Tab walks the tabs, as it does in
+  every dialog Word has. Reached by the launcher in the corner of the Font group
+  (new: `Group::launcher`, which **C3** to **C6** will use) and by Ctrl+D.
+  Set As Default writes into `w:docDefaults`, the bottom of the inheritance
+  chain, so it reaches every paragraph that never said otherwise — this document
+  only, because there is no template yet to write it into. That is **H4**.
+
+  What it does not yet match is the *arrangement*: Word puts Font, Font style
+  and Size side by side with their labels above them, and this puts every field
+  in one column with its label beside it. Everything the dialog sets is there
+  and works; only the shape of it differs. **C18**.
 - [ ] **C3. The Paragraph dialog.** Indents and spacing, line and page breaks,
   the preview, tab stops from inside it.
 - [ ] **C4. The Styles pane and Manage Styles.** Applying, creating, modifying,
@@ -494,6 +537,18 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   alignments where there are three.
 - [ ] **C17. The rest of the Header & Footer tab.** Header from Top, Footer from
   Bottom, and Insert Alignment Tab.
+
+- [ ] **C18. The way a dialog is laid out.** Every dialog here puts one field
+  per row with its label down the left. Word's put related fields side by side
+  with their labels above them — Font, Font style and Size across the top of the
+  Font dialog; Left, Right and Special across the Paragraph dialog — and group
+  the rest inside boxes with a caption on the edge. It is the difference between
+  a dialog that holds what Word's holds and one that looks like Word's.
+  Wanted: fields that share a row, labels above as well as beside, and a group
+  box. Needed by **C2** (done otherwise), **C3**, **C4**, **C6** and **C7**,
+  which is why it is one item rather than five.
+  *Done when:* a picture of the Font dialog and a picture of Word's put side by
+  side differ in the letters, not in where anything is.
 
 ## D — Pictures and drawings
 

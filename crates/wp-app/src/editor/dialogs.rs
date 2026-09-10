@@ -27,6 +27,8 @@ pub(super) enum Asking {
     PageSetup,
     /// A name for this place in the document.
     Bookmark,
+    /// Every character format there is: Word's Font dialog.
+    Font,
 }
 
 impl Editor {
@@ -58,6 +60,7 @@ impl Editor {
             // asking.
             Some(Asking::PageSetup) => self.apply_page_setup(&dialog),
             Some(Asking::Bookmark) => self.apply_bookmark(&dialog),
+            Some(Asking::Font) => self.apply_font_dialog(&dialog, answer == Answer::Other),
             Some(Asking::WordCount) | None => {
                 let _ = dialog;
                 Response::Redraw
@@ -81,10 +84,25 @@ impl Editor {
         match reaction {
             Reaction::Closed(answer) => self.finish_dialog(answer),
             Reaction::Changed => {
-                if self.asking == Some(Asking::WordCount) {
-                    self.count_the_edges =
-                        self.dialog.as_ref().is_some_and(|dialog| dialog.ticked(EDGES));
-                    self.dialog = Some(self.word_count_dialog(self.count_the_edges));
+                match self.asking {
+                    Some(Asking::WordCount) => {
+                        self.count_the_edges =
+                            self.dialog.as_ref().is_some_and(|dialog| dialog.ticked(EDGES));
+                        self.dialog = Some(self.word_count_dialog(self.count_the_edges));
+                    }
+                    // The Font dialog's preview shows what its fields say, so
+                    // the dialog is built again from what they now say — with
+                    // the tab that was showing kept, or clicking a tab would
+                    // put it straight back.
+                    Some(Asking::Font) => {
+                        if let Some(dialog) = self.dialog.take() {
+                            let said = self.font_dialog_says(&dialog);
+                            let mut built = self.font_dialog(&said);
+                            built.carry_typing_from(&dialog);
+                            self.dialog = Some(built);
+                        }
+                    }
+                    _ => {}
                 }
                 self.needs_redraw = true;
                 Response::Redraw
@@ -99,9 +117,9 @@ impl Editor {
     }
 
     /// A key while a dialog is up.
-    pub(super) fn dialog_key(&mut self, key: Key, shift: bool) -> Response {
+    pub(super) fn dialog_key(&mut self, key: Key, shift: bool, control: bool) -> Response {
         let Some(dialog) = &mut self.dialog else { return Response::Ignored };
-        let reaction = dialog.key(key, shift);
+        let reaction = dialog.key(key, shift, control);
         self.reacted(reaction)
     }
 

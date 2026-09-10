@@ -71,6 +71,19 @@ pub fn script_of(text: &str) -> [u8; 4] {
 /// rule names glyphs, not characters.
 #[must_use]
 pub fn shape(font: &Font<'_>, text: &str) -> Vec<Shaped> {
+    // What a script written joined needs, applied whether or not anybody asked:
+    // in Arabic these are not an embellishment, they are the writing.
+    shape_with(font, text, &[*b"calt", *b"liga"])
+}
+
+/// The same, asking the font for exactly the features named.
+///
+/// This is what Word's Advanced tab reaches: ligatures, old-style figures,
+/// tabular figures, a stylistic set. Nothing is applied that was not asked for,
+/// with one exception — `rlig`, the required ligatures, which a font marks as
+/// required because the writing is wrong without them.
+#[must_use]
+pub fn shape_with(font: &Font<'_>, text: &str, features: &[[u8; 4]]) -> Vec<Shaped> {
     let characters: Vec<char> = text.chars().collect();
     let mut glyphs = Vec::with_capacity(characters.len());
     let mut clusters = Vec::with_capacity(characters.len());
@@ -99,9 +112,10 @@ pub fn shape(font: &Font<'_>, text: &str) -> Vec<Shaped> {
     }
 
     // Then the features that work on a whole run: required ligatures first,
-    // because a font may spell a required form as one.
-    for feature in [b"rlig", b"calt", b"liga"] {
-        for lookup in table.lookups_for(&script, feature) {
+    // because a font may spell a required form as one, and because a font that
+    // marks a ligature required means the writing is wrong without it.
+    for feature in core::iter::once(*b"rlig").chain(features.iter().copied()) {
+        for lookup in table.lookups_for(&script, &feature) {
             table.apply(lookup, &mut glyphs, &mut clusters);
         }
     }
