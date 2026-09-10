@@ -573,8 +573,36 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   program at all — no list, no replacement as you type, nothing to add to. A
   button that opened an empty dialog would be worse than no button. It is
   **C19** below, with what it would take.
-- [ ] **C6. Table properties.** Table, row, column, cell and alt text; borders
+- [x] **C6. Table properties.** Table, row, column, cell and alt text; borders
   and shading; autofit rules.
+  *Done:* Word's dialog, in place of the flat list that had been standing in
+  for it — a list whose own comment said Word had tabs and that a person would
+  have to guess which. That was true, and the answer was not to invent a
+  different dialog: somebody who knows Word knows the row settings are under
+  Row.
+
+  **Table** — preferred width as a percentage, indent from the left, alignment.
+  **Row** — height, whether that height is a floor or a ceiling (Word offers
+  both and they are not the same thing: text that does not fit an exact height
+  is cut off), whether the row may break across a page, and whether it repeats
+  as a header. **Cell** — preferred width and where the text sits up and down.
+  **Alt Text** — the title and the description, which is the only tab whose
+  absence is invisible to the person filling it in.
+
+  Six properties the model did not hold: the table's own width and indent, a
+  row's `w:cantSplit`, a cell's width, and the two halves of the alt text.
+
+  **Borders and shading** is Word's button at the foot, and it hands over to
+  the borders menu the ribbon already has — applying what the dialog said on
+  the way, so a border lands on the table the dialog was describing.
+
+  Two things are not here and are worth naming. Word has a fifth tab,
+  **Column**, which sets the preferred width of a whole column: the file has no
+  such property — a column's width is the widths of its cells — so it would
+  mean walking every row, and it is not what the item asked for. And Word's
+  **autofit rules** are under its Options button: fixed width, fit to contents,
+  fit to window. Those want the table layout to measure its contents, which is
+  **E3**.
 - [ ] **C7. Options.** The dialog behind File → Options, and the settings in it
   that this program actually honours.
 - [ ] **C8. The File tab.** Word's backstage: Info, Recent, New from template,

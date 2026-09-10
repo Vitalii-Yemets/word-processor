@@ -833,8 +833,7 @@ impl Ribbon {
                     | Choice::MatchColumn
                     | Choice::TextEffect
                     | Choice::Envelope
-                    | Choice::Label
-                    | Choice::TableProperty => String::new(),
+                    | Choice::Label => String::new(),
                 };
                 let line = engine.simple_line(&text, left + 6.0, top + 17.0, 8.5, color);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);

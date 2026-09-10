@@ -89,14 +89,14 @@ fn a_row_has_no_height_of_its_own_until_one_is_set() {
 #[test]
 fn a_row_height_is_written_and_reads_back() {
     let mut document = document();
-    assert!(document.set_table_row_height(Some(720)));
+    assert!(document.set_table_row_height(Some(720), false));
     assert_eq!(round_trip(&document).table_row_height(), Some(720));
 }
 
 #[test]
 fn a_row_height_is_a_least_rather_than_an_exact_measure() {
     let mut document = document();
-    document.set_table_row_height(Some(720));
+    document.set_table_row_height(Some(720), false);
 
     let part = round_trip(&document)
         .package()
@@ -112,9 +112,9 @@ fn a_row_height_is_a_least_rather_than_an_exact_measure() {
 #[test]
 fn a_row_can_be_let_find_its_own_height_again() {
     let mut document = document();
-    document.set_table_row_height(Some(720));
+    document.set_table_row_height(Some(720), false);
     let mut reopened = round_trip(&document);
-    assert!(reopened.set_table_row_height(None));
+    assert!(reopened.set_table_row_height(None, false));
     assert_eq!(round_trip(&reopened).table_row_height(), None);
 }
 
@@ -152,7 +152,7 @@ fn none_of_these_touch_a_single_character_of_the_text() {
     let mut document = document();
     document.set_table_alignment(Alignment::Center);
     document.set_table_header_row(true);
-    document.set_table_row_height(Some(720));
+    document.set_table_row_height(Some(720), false);
     document.set_cell_alignment(CellAlignment::Middle);
 
     // Cells of a row are separated by a tab, which is how a table reads as

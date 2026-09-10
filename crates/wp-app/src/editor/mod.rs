@@ -54,7 +54,7 @@ mod statusmenu;
 mod styledialog;
 mod styles;
 mod symboldialog;
-mod table_properties;
+mod tabledialog;
 mod tabsdialog;
 mod theme_effects;
 mod themes;

@@ -52,6 +52,9 @@ pub(super) enum Asking {
     Inspector,
     /// Which character to put in.
     Symbol,
+    /// The table, the row, the cell and what a reader who cannot see it is
+    /// told.
+    Table,
 }
 
 impl Editor {
@@ -119,6 +122,7 @@ impl Editor {
             ),
             Some(Asking::TabStops) => self.apply_tabs_dialog(&dialog),
             Some(Asking::Style) => self.apply_style_dialog(&dialog),
+            Some(Asking::Table) => self.apply_table_dialog(&dialog),
             // Word's Symbol dialog is answered by its Insert button rather
             // than by OK, so there is nothing left to do when it shuts.
             Some(Asking::Symbol) | Some(Asking::Inspector) => {
@@ -159,6 +163,15 @@ impl Editor {
             (Some(Asking::TabStops), SET | CLEAR | CLEAR_ALL) => {
                 let dialog = self.dialog.clone()?;
                 Some(self.tabs_dialog_button(&dialog, button))
+            }
+            // Word's Borders button hands over to the borders menu, and what
+            // the table dialog said is applied on the way so that a border
+            // lands on the table the dialog was describing.
+            (Some(Asking::Table), super::tabledialog::BORDERS) => {
+                let dialog = self.dialog.take()?;
+                self.apply_table_dialog(&dialog);
+                self.asking = None;
+                Some(self.run(crate::chrome::Command::Borders))
             }
             // The style dialog's Format menu hands over to the two dialogs that
             // hold every format there is, and comes back afterwards.

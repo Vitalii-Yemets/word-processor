@@ -284,6 +284,11 @@ impl Editor {
                 self.open_symbol_dialog();
                 self.dialog_key(wp_shell::Key::Tab, false, true);
             }
+            "tableprops" => {
+                self.document.insert_table(3, 3);
+                self.relayout();
+                self.open_table_properties();
+            }
             "fontdialog" => {
                 self.open_font_dialog();
             }

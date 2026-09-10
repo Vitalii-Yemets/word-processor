@@ -1007,7 +1007,6 @@ impl Editor {
             Choice::TextEffect => Command::TextEffects,
             Choice::Envelope => Command::Envelopes,
             Choice::Label => Command::Labels,
-            Choice::TableProperty => Command::TableProperties,
             Choice::Language => Command::Language,
             Choice::Theme => Command::Themes,
             Choice::ThemeColors => Command::ThemeColors,
@@ -1110,8 +1109,7 @@ impl Editor {
             | Choice::MatchColumn
             | Choice::TextEffect
             | Choice::Envelope
-            | Choice::Label
-            | Choice::TableProperty => (Vec::new(), None),
+            | Choice::Label => (Vec::new(), None),
             Choice::Zoom => {
                 let index = chrome::ZOOMS.iter().position(|value| (value - self.zoom).abs() < 0.5);
                 (chrome::ZOOMS.iter().map(|value| format!("{}%", *value as i32)).collect(), index)
@@ -1182,7 +1180,6 @@ impl Editor {
             Choice::TextEffect => self.choose_text_effect(index),
             Choice::Envelope => self.choose_envelope(index),
             Choice::Label => self.choose_label_sheet(index),
-            Choice::TableProperty => self.choose_table_property(index),
             Choice::Language => self.choose_language(index),
             Choice::Theme => self.choose_theme(index),
             Choice::ThemeColors => self.choose_theme_colors(index),

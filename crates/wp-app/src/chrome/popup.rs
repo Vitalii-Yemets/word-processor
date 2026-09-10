@@ -93,7 +93,6 @@ pub enum Choice {
     /// The sheets of labels that can be printed.
     Label,
     /// What can be changed about a table.
-    TableProperty,
     /// The languages a stretch of text can be marked as.
     Language,
     /// The document's themes, and the two halves of one.

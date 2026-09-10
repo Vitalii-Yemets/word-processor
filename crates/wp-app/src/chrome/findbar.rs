@@ -58,7 +58,6 @@ pub enum Purpose {
     /// Typing the words for a piece of WordArt.
     WordArt,
     /// Typing how tall a table row should be.
-    RowHeight,
     /// Typing the address to print on an envelope.
     Envelope,
     /// Typing the numbers a chart is drawn from.
@@ -231,7 +230,6 @@ impl FindBar {
             Purpose::Authority => "Citation",
             Purpose::TextBox => "Text box",
             Purpose::WordArt => "WordArt",
-            Purpose::RowHeight => "Height",
             Purpose::Chart => "Numbers",
             Purpose::Rule => "Rule",
             Purpose::Equation => "Equation",
@@ -372,7 +370,6 @@ impl FindBar {
             Purpose::Authority => return vec![(Hit::Add, Icon::MarkCitation, "Mark Citation")],
             Purpose::TextBox => return vec![(Hit::Add, Icon::TextBox, "Add Text Box")],
             Purpose::WordArt => return vec![(Hit::Add, Icon::WordArt, "Add WordArt")],
-            Purpose::RowHeight => return vec![(Hit::Add, Icon::TableProperties, "Set Height")],
             Purpose::Chart => return vec![(Hit::Add, Icon::Chart, "Draw Chart")],
             Purpose::Rule => return vec![(Hit::Add, Icon::Rules, "Add Rule")],
             Purpose::Equation => return vec![(Hit::Add, Icon::Equation, "Add Equation")],
