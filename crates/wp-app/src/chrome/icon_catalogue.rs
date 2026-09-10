@@ -203,6 +203,9 @@ pub enum Icon {
     CellAlign = 185,
     HeaderRow = 186,
     BandedRows = 187,
+    /// The only icon here not from the Fluent set: it has no gear, and Word's
+    /// Options needs one. Drawn the same way as the rest, as filled paths.
+    Settings = 188,
 }
 
 /// How many there are, so the drawings can be kept in a flat array.
@@ -488,6 +491,13 @@ impl Icon {
                     include_str!("../../assets/icons/ic_fluent_dismiss_24_regular.svg")
                 } else {
                     include_str!("../../assets/icons/ic_fluent_dismiss_20_regular.svg")
+                }
+            }
+            Self::Settings => {
+                if large {
+                    include_str!("../../assets/icons/settings_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/settings_20_regular.svg")
                 }
             }
             Self::Info => {

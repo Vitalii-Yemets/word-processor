@@ -285,6 +285,9 @@ pub enum Command {
     /// The styles pane down the right-hand side, behind the launcher in the
     /// corner of the Styles group and behind Ctrl+Alt+Shift+S.
     StylesPane,
+    /// What the program does rather than what the document says: Word's
+    /// Options, under the File tab.
+    Options,
 
     /// Opens one of the lists.
     ChooseFont,

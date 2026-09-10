@@ -17,6 +17,7 @@
 
 mod chrome;
 mod editor;
+mod measure;
 mod sample;
 mod settings;
 

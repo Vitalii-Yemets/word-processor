@@ -28,6 +28,7 @@ use wp_docx::model::{
 use wp_shell::Response;
 
 use crate::chrome::dialog::{Answer, Button, Dialog, Field, ParagraphSample};
+use crate::measure;
 
 use super::dialogs::Asking;
 use super::Editor;
@@ -145,22 +146,11 @@ fn spacing_of(row: usize, at: &str) -> Option<LineSpacing> {
     }
 }
 
-/// A measurement typed into a box, in the twentieths of a point the file uses.
+/// Points, for the spacing boxes.
 ///
-/// Word takes inches here and stores twips; a comma for a decimal point is what
-/// half the world types, and a box that refuses it looks broken.
-fn twips(said: &str, unit_per_inch: f64) -> i32 {
-    let typed: f64 = said.trim().replace(',', ".").parse().unwrap_or(0.0);
-    (typed.clamp(-22.0, 22.0) * unit_per_inch).round() as i32
-}
-
-/// The same, back the other way.
-fn inches(twips: i32) -> String {
-    format!("{:.2}", f64::from(twips) / 1440.0)
-}
-
-/// Points, for the spacing boxes, which Word measures in points rather than
-/// inches even though the file stores both the same way.
+/// Word measures these in points whatever the unit setting says, and so does
+/// this: somebody who asked for centimetres did not ask for the space above a
+/// paragraph in centimetres.
 fn points(twips: i32) -> String {
     format!("{:.0}", f64::from(twips) / 20.0)
 }
@@ -190,9 +180,9 @@ impl Editor {
         // in is a positive first-line indent, and a hanging indent a negative
         // one. Which of the three it is comes from the sign.
         let (special, special_by) = if now.indent_first_line > 0 {
-            (1, inches(now.indent_first_line))
+            (1, measure::format(now.indent_first_line, self.unit))
         } else if now.indent_first_line < 0 {
-            (2, inches(-now.indent_first_line))
+            (2, measure::format(-now.indent_first_line, self.unit))
         } else {
             (0, "0.00".to_owned())
         };
@@ -217,11 +207,11 @@ impl Editor {
             Field::Choice { label: "Outline level".to_owned(), items: levels, current: outline },
             Field::Group("Indentation".to_owned()),
             Field::Columns(2),
-            number("Left", inches(now.indent_start), "\""),
-            number("Right", inches(now.indent_end), "\""),
+            number("Left", measure::format(now.indent_start, self.unit), self.unit.mark()),
+            number("Right", measure::format(now.indent_end, self.unit), self.unit.mark()),
             Field::Columns(2),
             choice("Special", SPECIALS, special),
-            number("By", special_by, "\""),
+            number("By", special_by, self.unit.mark()),
             check("Mirror indents", now.mirror_indents),
             Field::Group("Spacing".to_owned()),
             Field::Columns(2),
@@ -274,7 +264,7 @@ impl Editor {
 
         // "Special" and "By" are one property between them: a first line pushed
         // in is positive, a hanging indent negative, and neither is zero.
-        let by = twips(&dialog.said(SPECIAL_BY), 1440.0).abs();
+        let by = measure::parse(&dialog.said(SPECIAL_BY), self.unit).unwrap_or(0).abs();
         let indent_first_line = match dialog.chose(SPECIAL) {
             1 => by,
             2 => -by,
@@ -291,12 +281,14 @@ impl Editor {
                 0 => None,
                 level => Some((level - 1) as u8),
             },
-            indent_start: twips(&dialog.said(INDENT_LEFT), 1440.0),
-            indent_end: twips(&dialog.said(INDENT_RIGHT), 1440.0),
+            indent_start: measure::parse(&dialog.said(INDENT_LEFT), self.unit).unwrap_or(0),
+            indent_end: measure::parse(&dialog.said(INDENT_RIGHT), self.unit).unwrap_or(0),
             indent_first_line,
             mirror_indents: dialog.ticked(MIRROR),
-            space_before: twips(&dialog.said(SPACE_BEFORE), 20.0),
-            space_after: twips(&dialog.said(SPACE_AFTER), 20.0),
+            space_before: measure::parse(&dialog.said(SPACE_BEFORE), measure::Unit::Points)
+                .unwrap_or(0),
+            space_after: measure::parse(&dialog.said(SPACE_AFTER), measure::Unit::Points)
+                .unwrap_or(0),
             line_spacing: spacing_of(dialog.chose(LINE_SPACING), &dialog.said(LINE_SPACING_AT)),
             contextual_spacing: dialog.ticked(CONTEXTUAL),
             widow_control: dialog.ticked(WIDOW_CONTROL),
@@ -449,20 +441,6 @@ mod tests {
         // is what Word does: they are the same spacing written the same way.
         let spacing = spacing_of(5, "2").expect("a spacing");
         assert_eq!(spacing_row(Some(spacing)).0, 2);
-    }
-
-    #[test]
-    fn a_measurement_typed_with_a_comma_is_still_a_measurement() {
-        assert_eq!(twips("1,5", 1440.0), 2160);
-        assert_eq!(twips("1.5", 1440.0), 2160);
-        // And something that is not a number at all is nothing, not a panic.
-        assert_eq!(twips("nonsense", 1440.0), 0);
-    }
-
-    #[test]
-    fn a_measurement_beyond_what_word_allows_is_brought_back_inside() {
-        assert_eq!(twips("99", 1440.0), 22 * 1440);
-        assert_eq!(twips("-99", 1440.0), -22 * 1440);
     }
 }
 

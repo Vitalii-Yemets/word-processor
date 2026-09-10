@@ -34,6 +34,21 @@ impl Editor {
             self.remembered_navigation = navigation;
         }
         self.status_shows = crate::chrome::status::Shows::with_switched_off(&settings.status_off);
+        if let Some(marks) = settings.marks {
+            self.show_marks = marks;
+        }
+        if let Some(proofing) = settings.proofing {
+            self.show_proofing = proofing;
+        }
+        if let Some(gridlines) = settings.gridlines {
+            self.show_gridlines = gridlines;
+        }
+        if let Some(white_space) = settings.white_space {
+            self.joined_pages = !white_space;
+        }
+        if let Some(unit) = &settings.unit {
+            self.unit = crate::measure::Unit::from_name(unit);
+        }
         if let Some(zoom) = settings.zoom {
             self.zoom =
                 zoom.clamp(crate::chrome::status::MIN_ZOOM, crate::chrome::status::MAX_ZOOM);

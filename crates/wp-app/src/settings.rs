@@ -42,6 +42,19 @@ pub struct Settings {
     /// The parts of the strip along the bottom that have been switched off,
     /// by name. Empty means the strip is as it comes.
     pub status_off: Vec<String>,
+    /// Whether the formatting marks are showing.
+    pub marks: Option<bool>,
+    /// Whether spelling is checked as you type.
+    pub proofing: Option<bool>,
+    /// Whether the grid behind the page is drawn.
+    pub gridlines: Option<bool>,
+    /// Whether the white space between one page and the next is shown.
+    ///
+    /// Word's wording, and the opposite of what the editor keeps: it remembers
+    /// whether the pages are joined.
+    pub white_space: Option<bool>,
+    /// What unit measurements are shown in, by name. See [`crate::measure`].
+    pub unit: Option<String>,
     /// Everything the file said that this version does not know about, so that
     /// saving does not throw away a later version's settings.
     unknown: BTreeMap<String, String>,
@@ -124,6 +137,11 @@ impl Settings {
                 "rulers" => settings.rulers = parse_flag(value),
                 "navigation" => settings.navigation = parse_flag(value),
                 "zoom" => settings.zoom = value.parse().ok(),
+                "marks" => settings.marks = parse_flag(value),
+                "proofing" => settings.proofing = parse_flag(value),
+                "gridlines" => settings.gridlines = parse_flag(value),
+                "white-space" => settings.white_space = parse_flag(value),
+                "unit" => settings.unit = Some(value.to_owned()),
                 "theme-colors" => settings.theme_colors = Some(value.to_owned()),
                 "theme-fonts" => settings.theme_fonts = Some(value.to_owned()),
                 "status-off" => {
@@ -164,6 +182,19 @@ impl Settings {
         }
         if let Some(zoom) = self.zoom {
             write("zoom", format!("{zoom:.0}"));
+        }
+        for (key, flagged) in [
+            ("marks", self.marks),
+            ("proofing", self.proofing),
+            ("gridlines", self.gridlines),
+            ("white-space", self.white_space),
+        ] {
+            if let Some(on) = flagged {
+                write(key, flag(on));
+            }
+        }
+        if let Some(unit) = &self.unit {
+            write("unit", unit.clone());
         }
         if let Some(name) = &self.theme_colors {
             write("theme-colors", name.clone());
@@ -216,6 +247,11 @@ mod tests {
             theme_colors: Some("Blue".to_owned()),
             theme_fonts: Some("Georgia".to_owned()),
             status_off: vec!["Language".to_owned(), "Zoom Slider".to_owned()],
+            marks: Some(true),
+            proofing: Some(false),
+            gridlines: Some(true),
+            white_space: Some(false),
+            unit: Some("centimetres".to_owned()),
             unknown: BTreeMap::new(),
         };
         assert_eq!(Settings::parse(&settings.to_text()), settings);

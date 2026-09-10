@@ -603,8 +603,45 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   **autofit rules** are under its Options button: fixed width, fit to contents,
   fit to window. Those want the table layout to measure its contents, which is
   **E3**.
-- [ ] **C7. Options.** The dialog behind File → Options, and the settings in it
+- [x] **C7. Options.** The dialog behind File → Options, and the settings in it
   that this program actually honours.
+  *Done:* three tabs — General, Display, Proofing — and every switch on them is
+  one the program obeys.
+
+  Word's Options has ten categories and several hundred settings, most about
+  things this program does not have. A dialog offering them all would be a
+  dialog where most of the switches do nothing, which is worse than a short
+  one: a switch that does nothing is a lie told once per person who tries it.
+  So what is missing is named here rather than drawn as a dead switch.
+
+  **General** — a dark window, the zoom documents open at, and the unit
+  measurements are shown in. **Display** — the formatting marks, the gridlines,
+  the rulers, the navigation pane, and the white space between pages (Word's
+  wording, and the opposite of what the editor keeps, which is whether the
+  pages are joined). **Proofing** — whether spelling is marked as you type.
+
+  All of them are written to the settings file and read back, so they follow
+  the person from one document to the next. Five of the nine were not
+  remembered before.
+
+  **The unit is the one with teeth.** Word's "Show measurements in units of"
+  has to reach every box in the program, and it could not while each dialog
+  converted for itself — the same two functions were written three times, all
+  of them assuming inches. They are now one module, `measure`, which knows the
+  five units Word offers and is asked for the unit once. Page Setup, the
+  Paragraph dialog, Table Properties and the Tabs dialog all go through it, and
+  the marks beside the boxes follow. Points stay points where Word keeps them
+  in points: the space above a paragraph, the size of type, the position of
+  text off its line. Somebody who asked for centimetres did not ask for their
+  type size in centimetres.
+
+  Also: one icon that is not from the Fluent set, because the set has no gear
+  and Word's Options needs one. Drawn the same way as the rest, as filled
+  paths, and said so where it is declared.
+
+  Not honoured and so not offered: **Save** (there is no autosave — **G2**),
+  **Language** (**F6**), **Customize Ribbon** and **Quick Access Toolbar**
+  (**C20** below), **Add-ins** and **Trust Center** (neither exists).
 - [ ] **C8. The File tab.** Word's backstage: Info, Recent, New from template,
   Open, Save As, Print, Share, Export, Close.
 - [x] **C9. Real dialogs rather than strips.** The strips stand in for dialogs
@@ -697,6 +734,18 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* typing "teh " gives "the ", a straight quote comes out curly, a
   hyphen between words becomes a dash, the list can be edited, and every one of
   those can be turned off.
+
+- [ ] **C20. Customize Ribbon and the Quick Access Toolbar.** Two of the
+  categories **C7** leaves out, and they are one job: both are a person saying
+  which commands go where.
+  The ribbon here is a static table — `RIBBON_GROUPS` and its neighbours — so
+  customising it means that table becoming a starting point rather than the
+  whole truth, with what a person changed kept beside it in the settings.
+  Word's Quick Access Toolbar is the row of small buttons in the title bar,
+  which exists here with three fixed commands on it.
+  *Done when:* a command can be added to the toolbar and to a ribbon group, a
+  group can be moved or hidden, the changes survive closing the program, and
+  Reset puts it all back.
 
 ## D — Pictures and drawings
 

@@ -20,6 +20,7 @@ use wp_docx::model::{TabAlignment, TabLeader, TabStop};
 use wp_shell::Response;
 
 use crate::chrome::dialog::{Answer, Button, Dialog, Field};
+use crate::measure;
 
 use super::dialogs::Asking;
 use super::Editor;
@@ -59,18 +60,6 @@ const LEADERS: &[(&str, TabLeader)] = &[
 /// opens when the paragraph has none.
 const NONE_CHOSEN: &str = "(none)";
 
-/// A position in the inches a person types.
-fn inches(twips: i32) -> String {
-    format!("{:.2}", f64::from(twips) / 1440.0)
-}
-
-/// And back, in the twentieths of a point the file stores.
-fn twips(said: &str) -> i32 {
-    let typed: f64 = said.trim().replace(',', ".").parse().unwrap_or(0.0);
-    // Word's own limits: a stop cannot be negative and cannot be off the page.
-    (typed.clamp(0.0, 22.0) * 1440.0).round() as i32
-}
-
 impl Editor {
     /// Opens Word's Tabs dialog on the paragraph the caret is in.
     pub(super) fn open_tabs_dialog(&mut self) -> Response {
@@ -83,7 +72,7 @@ impl Editor {
     /// worked on.
     pub(super) fn tabs_dialog(&self, stops: &[TabStop], chosen: Option<TabStop>) -> Dialog {
         let mut positions: Vec<String> = core::iter::once(NONE_CHOSEN.to_owned())
-            .chain(stops.iter().map(|stop| inches(stop.position)))
+            .chain(stops.iter().map(|stop| measure::format(stop.position, self.unit)))
             .collect();
         let current = chosen
             .and_then(|stop| stops.iter().position(|found| found.position == stop.position))
@@ -105,13 +94,13 @@ impl Editor {
             Field::Columns(2),
             Field::Number {
                 label: "Tab stop position".to_owned(),
-                value: inches(stop.position),
-                unit: "\"",
+                value: measure::format(stop.position, self.unit),
+                unit: self.unit.mark(),
             },
             Field::Number {
                 label: "Default tab stops".to_owned(),
-                value: inches(self.document.default_tab_width()),
-                unit: "\"",
+                value: measure::format(self.document.default_tab_width(), self.unit),
+                unit: self.unit.mark(),
             },
             Field::Columns(2),
             Field::Choice {
@@ -164,7 +153,7 @@ impl Editor {
     /// The stop the dialog's fields describe.
     fn tab_stop_said(&self, dialog: &Dialog) -> TabStop {
         TabStop {
-            position: twips(&dialog.said(POSITION)),
+            position: measure::parse(&dialog.said(POSITION), self.unit).unwrap_or(0).max(0),
             alignment: ALIGNMENTS
                 .get(dialog.chose(ALIGNMENT))
                 .map_or(TabAlignment::Start, |(_, kind)| *kind),
@@ -202,7 +191,7 @@ impl Editor {
     /// What OK does: the stops are already on the document, so the only thing
     /// left is the default grid.
     pub(super) fn apply_tabs_dialog(&mut self, dialog: &Dialog) -> Response {
-        let every = twips(&dialog.said(DEFAULT_EVERY));
+        let every = measure::parse(&dialog.said(DEFAULT_EVERY), self.unit).unwrap_or(720).max(1);
         let changed = self.document.set_default_tab_width(every);
         self.relayout();
         self.edited(changed, "Tab stops")
@@ -212,18 +201,6 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_position_typed_with_a_comma_is_still_a_position() {
-        assert_eq!(twips("1,5"), 2160);
-        assert_eq!(twips("1.5"), 2160);
-    }
-
-    #[test]
-    fn a_stop_cannot_be_put_off_the_page_or_behind_the_margin() {
-        assert_eq!(twips("-1"), 0);
-        assert_eq!(twips("99"), 22 * 1440);
-    }
 
     #[test]
     fn every_alignment_and_leader_word_offers_is_one_the_model_has() {

@@ -30,6 +30,7 @@ mod matching;
 mod minibar;
 mod notes;
 mod numbering;
+mod optionsdialog;
 mod outline;
 mod pagesetup;
 mod paragraphdialog;
@@ -359,6 +360,9 @@ pub struct Editor {
     /// The characters most recently put in, newest first. Word remembers these
     /// between openings and so does this.
     recent_symbols: Vec<char>,
+    /// What unit measurements are shown in. Word's Options sets it, and every
+    /// box in the program is in it. See [`crate::measure`].
+    unit: crate::measure::Unit,
     show_marks: bool,
     /// Where the zoom slider was last drawn.
     slider: Option<status::SliderRect>,
@@ -499,6 +503,7 @@ impl Editor {
             formatting_a_style: false,
             symbol_subset: 0,
             recent_symbols: Vec::new(),
+            unit: crate::measure::Unit::default(),
             show_marks: false,
             slider: None,
             status_buttons: Vec::new(),

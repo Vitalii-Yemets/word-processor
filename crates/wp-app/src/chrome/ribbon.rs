@@ -1016,6 +1016,8 @@ static FILE_GROUPS: &[Group] = &[
         items: &[
             Item::Small(Command::DocumentProperties, Icon::Info, "Info"),
             Item::Break,
+            Item::Small(Command::Options, Icon::Settings, "Options"),
+            Item::Break,
             Item::Small(Command::CloseDocument, Icon::Close, "Close"),
         ],
         launcher: None,

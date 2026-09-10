@@ -27,6 +27,7 @@ use wp_docx::table_properties::CellAlignment;
 use wp_shell::Response;
 
 use crate::chrome::dialog::{Answer, Button, Dialog, Field};
+use crate::measure;
 
 use super::dialogs::Asking;
 use super::Editor;
@@ -75,17 +76,6 @@ const CELL_ALIGNMENTS: &[(&str, CellAlignment)] = &[
 /// The two rules Word offers for a row's height.
 const HEIGHT_RULES: &[&str] = &["At least", "Exactly"];
 
-/// A measurement typed into a box, in the twentieths of a point the file uses.
-fn twips(said: &str) -> i32 {
-    let typed: f64 = said.trim().replace(',', ".").parse().unwrap_or(0.0);
-    (typed.clamp(0.0, 22.0) * 1440.0).round() as i32
-}
-
-/// And back, in the inches a person types.
-fn inches(twips: i32) -> String {
-    format!("{:.2}", f64::from(twips) / 1440.0)
-}
-
 impl Editor {
     /// Opens Word's Table Properties on the table the caret is in.
     pub(super) fn open_table_properties(&mut self) -> Response {
@@ -115,15 +105,21 @@ impl Editor {
         // rather than as a zero: a table nought per cent wide is not a table.
         let width =
             document.table_width_percent().map_or_else(String::new, |percent| percent.to_string());
-        let height = document.table_row_height().map_or_else(String::new, inches);
-        let cell_width = document.cell_width().map_or_else(String::new, inches);
+        let unit = self.unit;
+        let shown = |twips: i32| measure::format(twips, unit);
+        let height = document.table_row_height().map_or_else(String::new, shown);
+        let cell_width = document.cell_width().map_or_else(String::new, shown);
 
         let fields = vec![
             // --- Table -----------------------------------------------------
             Field::Tab("Table".to_owned()),
             Field::Columns(2),
             number("Preferred width", width, "%"),
-            number("Indent from left", inches(document.table_indent()), "\""),
+            number(
+                "Indent from left",
+                measure::format(document.table_indent(), self.unit),
+                self.unit.mark(),
+            ),
             choice(
                 "Alignment",
                 &ALIGNMENTS.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
@@ -135,7 +131,7 @@ impl Editor {
             // --- Row -------------------------------------------------------
             Field::Tab("Row".to_owned()),
             Field::Columns(2),
-            number("Specify height", height, "\""),
+            number("Specify height", height, self.unit.mark()),
             choice(
                 "Row height is",
                 HEIGHT_RULES,
@@ -152,7 +148,7 @@ impl Editor {
             // --- Cell ------------------------------------------------------
             Field::Tab("Cell".to_owned()),
             Field::Columns(2),
-            number("Preferred width", cell_width, "\""),
+            number("Preferred width", cell_width, self.unit.mark()),
             choice(
                 "Vertical alignment",
                 &CELL_ALIGNMENTS.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
@@ -214,13 +210,16 @@ impl Editor {
     pub(super) fn apply_table_dialog(&mut self, dialog: &Dialog) -> Response {
         // An empty box is Word's "auto" rather than a zero, on both widths.
         let percent = dialog.said(TABLE_WIDTH).trim().parse::<i32>().ok();
-        let height = dialog.said(ROW_HEIGHT);
-        let height = (!height.trim().is_empty()).then(|| twips(&height));
-        let cell = dialog.said(CELL_WIDTH);
-        let cell = (!cell.trim().is_empty()).then(|| twips(&cell));
+        // An empty box comes back as nothing rather than as a nought, which is
+        // how a width that is left to be worked out is told from one set to
+        // zero.
+        let height = measure::parse(&dialog.said(ROW_HEIGHT), self.unit);
+        let cell = measure::parse(&dialog.said(CELL_WIDTH), self.unit);
 
         let mut changed = self.document.set_table_width_percent(percent);
-        changed |= self.document.set_table_indent(twips(&dialog.said(TABLE_INDENT)));
+        changed |= self
+            .document
+            .set_table_indent(measure::parse(&dialog.said(TABLE_INDENT), self.unit).unwrap_or(0));
         if let Some((_, alignment)) = ALIGNMENTS.get(dialog.chose(TABLE_ALIGNMENT)) {
             changed |= self.document.set_table_alignment(*alignment);
         }
@@ -369,12 +368,5 @@ mod tests {
 
         assert!(!editor.in_dialog());
         assert_eq!(editor.document.table_indent(), before);
-    }
-
-    #[test]
-    fn a_measurement_typed_with_a_comma_is_still_a_measurement() {
-        assert_eq!(twips("1,5"), 2160);
-        assert_eq!(twips("1.5"), 2160);
-        assert_eq!(twips("nonsense"), 0);
     }
 }

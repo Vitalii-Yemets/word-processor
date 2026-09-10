@@ -23,7 +23,7 @@ const EDGES: usize = 6;
 /// dialog names its rows: the markers that arrange the fields take places in
 /// the list too, so a row moved without moving these applies the wrong margin
 /// to the wrong edge and never looks wrong doing it.
-const MARGIN_TOP: usize = 2;
+pub(super) const MARGIN_TOP: usize = 2;
 const MARGIN_BOTTOM: usize = 3;
 const MARGIN_LEFT: usize = 5;
 const MARGIN_RIGHT: usize = 6;
@@ -55,6 +55,8 @@ pub(super) enum Asking {
     /// The table, the row, the cell and what a reader who cannot see it is
     /// told.
     Table,
+    /// What the program does, rather than what the document says.
+    Options,
 }
 
 impl Editor {
@@ -123,6 +125,7 @@ impl Editor {
             Some(Asking::TabStops) => self.apply_tabs_dialog(&dialog),
             Some(Asking::Style) => self.apply_style_dialog(&dialog),
             Some(Asking::Table) => self.apply_table_dialog(&dialog),
+            Some(Asking::Options) => self.apply_options(&dialog),
             // Word's Symbol dialog is answered by its Insert button rather
             // than by OK, so there is nothing left to do when it shuts.
             Some(Asking::Symbol) | Some(Asking::Inspector) => {
@@ -337,10 +340,8 @@ impl Editor {
     /// and the way round it goes.
     pub(super) fn open_page_setup(&mut self) -> Response {
         let (top, right, bottom, left) = self.document.page_margins();
-        let inches = |twips: i32| {
-            let value = f64::from(twips) / 1440.0;
-            format!("{value:.2}")
-        };
+        let unit = self.unit;
+        let shown = |twips: i32| crate::measure::format(twips, unit);
 
         let papers: Vec<String> =
             wp_docx::page::PAGE_SIZES.iter().map(|(name, ..)| (*name).to_owned()).collect();
@@ -357,11 +358,27 @@ impl Editor {
                 // of their own, and the paper under them in a box of its own.
                 Field::Group("Margins".to_owned()),
                 Field::Columns(2),
-                Field::Number { label: "Top".to_owned(), value: inches(top), unit: "\"" },
-                Field::Number { label: "Bottom".to_owned(), value: inches(bottom), unit: "\"" },
+                Field::Number {
+                    label: "Top".to_owned(),
+                    value: shown(top),
+                    unit: self.unit.mark(),
+                },
+                Field::Number {
+                    label: "Bottom".to_owned(),
+                    value: shown(bottom),
+                    unit: self.unit.mark(),
+                },
                 Field::Columns(2),
-                Field::Number { label: "Left".to_owned(), value: inches(left), unit: "\"" },
-                Field::Number { label: "Right".to_owned(), value: inches(right), unit: "\"" },
+                Field::Number {
+                    label: "Left".to_owned(),
+                    value: shown(left),
+                    unit: self.unit.mark(),
+                },
+                Field::Number {
+                    label: "Right".to_owned(),
+                    value: shown(right),
+                    unit: self.unit.mark(),
+                },
                 Field::Group("Paper".to_owned()),
                 Field::Columns(2),
                 Field::Choice { label: "Paper size".to_owned(), items: papers, current: paper },
@@ -377,12 +394,11 @@ impl Editor {
 
     /// Takes what the Page Setup dialog says and puts it on the document.
     fn apply_page_setup(&mut self, dialog: &Dialog) -> Response {
-        let twips = |said: String| {
-            let inches: f64 = said.trim().parse().unwrap_or(1.0);
-            // Word's own limits: a margin cannot be negative, and cannot be so
-            // large that there is no page left.
-            (inches.clamp(0.0, 22.0) * 1440.0).round() as i32
-        };
+        // A margin cannot be negative and cannot be so large that there is no
+        // page left, which is what the measuring does about it; an empty box
+        // falls back to an inch rather than to nothing.
+        let unit = self.unit;
+        let twips = |said: String| crate::measure::parse(&said, unit).unwrap_or(1440).max(0);
         let top = twips(dialog.said(MARGIN_TOP));
         let bottom = twips(dialog.said(MARGIN_BOTTOM));
         let left = twips(dialog.said(MARGIN_LEFT));

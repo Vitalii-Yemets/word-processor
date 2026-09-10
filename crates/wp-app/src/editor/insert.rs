@@ -289,6 +289,9 @@ impl Editor {
                 self.relayout();
                 self.open_table_properties();
             }
+            "options" => {
+                self.open_options();
+            }
             "fontdialog" => {
                 self.open_font_dialog();
             }
