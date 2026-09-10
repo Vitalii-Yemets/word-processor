@@ -27,6 +27,7 @@ pub mod ribbon;
 pub mod rulers;
 pub mod scrollbar;
 pub mod status;
+pub mod stylespane;
 pub mod theme;
 pub mod tip;
 pub mod titlebar;
@@ -281,6 +282,9 @@ pub enum Command {
     /// Word's Paragraph dialog, behind the launcher in the corner of the
     /// Paragraph group.
     ParagraphDialog,
+    /// The styles pane down the right-hand side, behind the launcher in the
+    /// corner of the Styles group and behind Ctrl+Alt+Shift+S.
+    StylesPane,
 
     /// Opens one of the lists.
     ChooseFont,

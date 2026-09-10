@@ -46,6 +46,10 @@ pub(super) enum Asking {
     Paragraph,
     /// Where the tabs of a paragraph stop.
     TabStops,
+    /// A style being made or changed.
+    Style,
+    /// What the selection is formatted with, and where it came from.
+    Inspector,
 }
 
 impl Editor {
@@ -75,6 +79,22 @@ impl Editor {
                 return response;
             }
         }
+        // The Font and Paragraph dialogs opened from inside the style dialog
+        // go back there rather than to the page, taking what they put on the
+        // paragraph into the style with them.
+        if self.formatting_a_style && matches!(self.asking, Some(Asking::Font | Asking::Paragraph))
+        {
+            let applied = self.dialog.take().map(|dialog| match self.asking {
+                Some(Asking::Font) => self.apply_font_dialog(&dialog, false),
+                _ => self.apply_paragraph_dialog(&dialog, false),
+            });
+            let _ = applied;
+            self.asking = None;
+            if answer == Answer::Cancel {
+                self.formatting_a_style = false;
+            }
+            return self.back_to_style_dialog();
+        }
         let Some(dialog) = self.dialog.take() else { return Response::Ignored };
         let asking = self.asking.take();
         self.needs_redraw = true;
@@ -96,6 +116,12 @@ impl Editor {
                 answer == Answer::Named(super::paragraphdialog::SET_AS_DEFAULT),
             ),
             Some(Asking::TabStops) => self.apply_tabs_dialog(&dialog),
+            Some(Asking::Style) => self.apply_style_dialog(&dialog),
+            Some(Asking::Inspector) => {
+                // A dialog that tells rather than asks.
+                let _ = &dialog;
+                Response::Redraw
+            }
             Some(Asking::WordCount) | None => {
                 let _ = dialog;
                 Response::Redraw
@@ -123,6 +149,17 @@ impl Editor {
             (Some(Asking::TabStops), SET | CLEAR | CLEAR_ALL) => {
                 let dialog = self.dialog.clone()?;
                 Some(self.tabs_dialog_button(&dialog, button))
+            }
+            // The style dialog's Format menu hands over to the two dialogs that
+            // hold every format there is, and comes back afterwards.
+            (
+                Some(Asking::Style),
+                super::styledialog::FORMAT_FONT | super::styledialog::FORMAT_PARAGRAPH,
+            ) => {
+                let dialog = self.dialog.clone()?;
+                let said = self.style_dialog_says(&dialog);
+                self.editing_style = said;
+                Some(self.style_dialog_format(button))
             }
             _ => None,
         }

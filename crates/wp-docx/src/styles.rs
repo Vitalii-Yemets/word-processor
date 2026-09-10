@@ -618,3 +618,43 @@ mod tests {
         assert_eq!(properties.color, None);
     }
 }
+
+/// A style as a dialog describes it: its name, what it is built on, and the
+/// formatting it contributes.
+///
+/// Not the same thing as [`Style`], which is what a document holds. This is
+/// what somebody typed into Word's New Style or Modify Style, and it names only
+/// what those dialogs ask about — the rest of a style is left exactly as it was.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StyleDefinition {
+    /// The identifier the document refers to, such as `Heading1`.
+    pub id: String,
+    /// The name a person sees.
+    pub name: String,
+    /// The style this one starts from.
+    pub based_on: Option<String>,
+    /// The style applied to the next paragraph when Enter is pressed.
+    pub next: Option<String>,
+    pub paragraph: ParagraphProperties,
+    pub run: RunProperties,
+}
+
+impl StyleDefinition {
+    /// What a style already says, ready to be shown in a dialog.
+    ///
+    /// The style's own properties rather than the resolved ones: a dialog
+    /// modifying "Heading 2" must show what Heading 2 itself says, not what it
+    /// inherits — otherwise saving it would write every inherited property into
+    /// the style and cut it off from what it is based on.
+    #[must_use]
+    pub fn of(style: &Style) -> Self {
+        Self {
+            id: style.id.clone(),
+            name: style.name.clone().unwrap_or_else(|| style.id.clone()),
+            based_on: style.based_on.clone(),
+            next: style.next.clone(),
+            paragraph: style.paragraph.clone(),
+            run: style.run.clone(),
+        }
+    }
+}

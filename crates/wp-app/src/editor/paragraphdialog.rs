@@ -381,7 +381,7 @@ fn check_rows(fields: &[Field]) {
 /// Everything is written out rather than left unsaid: a dialog is answered all
 /// at once, and a property left unsaid would let a style put back the very
 /// thing that was just turned off.
-fn authored(wanted: &ResolvedParagraphProperties) -> ParagraphProperties {
+pub(super) fn authored(wanted: &ResolvedParagraphProperties) -> ParagraphProperties {
     ParagraphProperties {
         alignment: Some(wanted.alignment),
         outline_level: wanted.outline_level,

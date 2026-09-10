@@ -447,7 +447,7 @@ fn number(said: &str) -> Option<f64> {
 /// Everything is written out rather than left unsaid: a dialog is answered all
 /// at once, and a field left unsaid would let a style put back the very thing
 /// that was just turned off.
-fn authored(wanted: &ResolvedRunProperties) -> RunProperties {
+pub(super) fn authored(wanted: &ResolvedRunProperties) -> RunProperties {
     RunProperties {
         font: wanted.font.clone(),
         bold: Some(wanted.bold),

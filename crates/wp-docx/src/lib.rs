@@ -96,7 +96,7 @@ pub use model::Body;
 pub use numbering::{ListCounters, Numbering};
 pub use position::TextPosition;
 pub use read::W as WORDPROCESSING_NAMESPACE;
-pub use styles::{Style, StyleKind, Styles};
+pub use styles::{Style, StyleDefinition, StyleKind, Styles};
 
 use model::{
     nearest_stop, Alignment, Block, BreakKind, LineSpacing, NumberingReference, Paragraph,
@@ -1518,6 +1518,105 @@ impl Document {
         self.save_styles_tree(&tree);
         self.mark_modified();
         true
+    }
+
+    /// Writes a style definition, making it if the document has none by that
+    /// identifier.
+    ///
+    /// What Word's New Style and Modify Style do. Only what is named is
+    /// written: a style keeps everything this program does not model, because
+    /// its element is edited rather than replaced. A document is full of style
+    /// properties nobody here has heard of, and rewriting a style whole would
+    /// throw them away.
+    pub fn set_style(&mut self, wanted: &StyleDefinition) -> bool {
+        let id = wanted.id.trim();
+        if id.is_empty() {
+            return false;
+        }
+        let Some(mut tree) = self.styles_tree() else { return false };
+        let prefix = edit::prefix_for(&tree.root, WORDPROCESSING_NAMESPACE);
+        let before = tree.root.clone();
+
+        // The one whose identifier matches, or a new one at the end.
+        if !tree
+            .root
+            .children_named(Some(read::W), "style")
+            .any(|style| style.attribute(Some(read::W), "styleId").is_some_and(|found| found == id))
+        {
+            let mut element =
+                Element::new(&edit::name_with(prefix.as_deref(), "style"), Some(read::W));
+            element.set_namespaced_attribute(
+                &edit::name_with(prefix.as_deref(), "type"),
+                read::W,
+                "paragraph",
+            );
+            element.set_namespaced_attribute(
+                &edit::name_with(prefix.as_deref(), "styleId"),
+                read::W,
+                id,
+            );
+            tree.root.push_element(element);
+        }
+
+        let Some(element) = tree.root.child_elements_mut().find(|style| {
+            style.is(Some(read::W), "style")
+                && style.attribute(Some(read::W), "styleId").is_some_and(|found| found == id)
+        }) else {
+            return false;
+        };
+
+        let named = |local: &str, value: &str| {
+            let mut child = Element::new(&edit::name_with(prefix.as_deref(), local), Some(read::W));
+            child.set_namespaced_attribute(
+                &edit::name_with(prefix.as_deref(), "val"),
+                read::W,
+                value,
+            );
+            child
+        };
+        // The three names go at the front, in the order the schema wants them.
+        for (local, value) in [
+            ("next", wanted.next.as_deref()),
+            ("basedOn", wanted.based_on.as_deref()),
+            ("name", Some(wanted.name.as_str())),
+        ] {
+            element.remove_children_named(Some(read::W), local);
+            if let Some(value) = value.filter(|text| !text.trim().is_empty()) {
+                element.insert_element(0, named(local, value.trim()));
+            }
+        }
+
+        // And the formatting, into the style's own `pPr` and `rPr`.
+        let paragraph = child_or_new(element, "pPr", prefix.as_deref());
+        format::write_paragraph_properties(paragraph, &wanted.paragraph, prefix.as_deref());
+        let run = child_or_new(element, "rPr", prefix.as_deref());
+        format::write_run_properties(run, &wanted.run, prefix.as_deref());
+
+        if tree.root == before {
+            return false;
+        }
+        self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
+        self.save_styles_tree(&tree);
+        self.mark_modified();
+        true
+    }
+
+    /// Which styles the document actually uses, by identifier.
+    ///
+    /// What Word's Styles pane shows when it is set to "In current document":
+    /// a document made from a template carries a hundred styles and uses six,
+    /// and a list of the hundred is a list nobody reads.
+    #[must_use]
+    pub fn styles_in_use(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for index in 0..self.paragraph_count() {
+            if let Some(id) = self.style_of(index) {
+                if !out.iter().any(|found| found.eq_ignore_ascii_case(&id)) {
+                    out.push(id);
+                }
+            }
+        }
+        out
     }
 
     /// The styles part as a tree, however the document points at it.

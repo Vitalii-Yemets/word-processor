@@ -267,6 +267,16 @@ impl Editor {
             "tabsdialog" => {
                 self.open_tabs_dialog();
             }
+            "stylespane" => {
+                self.toggle_styles_pane();
+            }
+            "newstyle" => {
+                self.toggle_styles_pane();
+                self.open_new_style();
+            }
+            "inspector" => {
+                self.open_style_inspector();
+            }
             "fontdialog" => {
                 self.open_font_dialog();
             }

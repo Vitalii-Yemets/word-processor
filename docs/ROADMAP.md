@@ -505,8 +505,45 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   so in its own comment.
 
   **Set As Default** writes into `w:docDefaults`, as the Font dialog's does.
-- [ ] **C4. The Styles pane and Manage Styles.** Applying, creating, modifying,
+- [x] **C4. The Styles pane and Manage Styles.** Applying, creating, modifying,
   the style inspector, what is in use, and the whole style chain shown.
+  *Done:* a pane down the right-hand side, and three dialogs behind it.
+
+  **The pane** (`chrome/stylespane.rs`) lists every paragraph style, each drawn
+  in its own formatting — the same reason the gallery does it and the ribbon's
+  bold button is a bold letter B. The one in force is marked with a bar down
+  its left, the ones the document actually uses with a dot on the right. Under
+  the list: Word's "Show Preview" tick box, an Options row that switches
+  between all styles and the ones in use, and Word's three buttons — New,
+  Inspect, Manage. Clicking a style applies it. Opened by the launcher in the
+  corner of the Styles group and by Ctrl+Alt+Shift+S, and it takes its width
+  out of the page rather than covering it.
+
+  **New Style and Modify Style** are one dialog, as Word's two are: one begins
+  from the formatting where the caret is and the other from what the style
+  already says. It asks the name, what the style is based on and what follows
+  it, and hands the rest to the **Font** and **Paragraph** dialogs through
+  Word's Format menu — a second, smaller copy of those buttons would be a
+  second place to be wrong. Answering one of them comes back here, carrying
+  what it put on the paragraph into the style.
+
+  A style is written into `styles.xml` by editing its element rather than
+  replacing it, so everything this program does not model survives. And a style
+  is read into the dialog from its own properties rather than the resolved
+  ones: showing what it inherits would write all of that into the style and cut
+  it off from what it is based on.
+
+  **The Style Inspector** shows what the selection is formatted with, split the
+  way Word splits it — what the paragraph style gives and what the text says on
+  top of it — with the whole chain behind it named in order, "Normal ▸ Title".
+  That chain is the answer to "why is this bold?", which is the only question
+  the inspector exists for.
+
+  Not done, and not part of this item: Word's Manage Styles dialog has four
+  tabs of its own — Edit, Recommend, Restrict, Set Defaults. Recommend and
+  Restrict are about which styles a person is allowed to use, which belongs
+  with **F4** (protection); Set Defaults is what the two Set As Default buttons
+  of **C2** and **C3** already do.
 - [ ] **C5. Insert Symbol and Special Characters.** The grid, the subsets, the
   recently used, the shortcut keys, AutoCorrect from inside it.
 - [ ] **C6. Table properties.** Table, row, column, cell and alt text; borders

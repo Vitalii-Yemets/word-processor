@@ -588,6 +588,9 @@ impl Editor {
         // rather than showing through.
         self.draw_chrome();
         self.draw_scrollbar();
+        // The styles pane goes over the rulers rather than under them: it is a
+        // pane of its own, and Word's rulers stop at its edge.
+        self.draw_styles_pane();
         self.draw_drop_mark();
 
         // An open list goes over everything, which is what makes it a list

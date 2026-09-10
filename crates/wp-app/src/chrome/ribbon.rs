@@ -1080,7 +1080,7 @@ static HOME_GROUPS: &[Group] = &[
         ],
         launcher: Some(Command::ParagraphDialog),
     },
-    Group { label: "Styles", items: &[Item::StyleGallery], launcher: None },
+    Group { label: "Styles", items: &[Item::StyleGallery], launcher: Some(Command::StylesPane) },
     Group {
         label: "Editing",
         items: &[

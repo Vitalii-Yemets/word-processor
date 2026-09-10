@@ -238,6 +238,15 @@ impl App for Editor {
                     };
                 }
                 // Over the navigation pane the wheel scrolls the outline.
+                // The wheel over the styles pane scrolls its list.
+                if self.over_styles_pane(self.pointer_x as i32) {
+                    return if self.styles_pane_scroll(-lines.round() as i32 * 3) {
+                        self.needs_redraw = true;
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    };
+                }
                 if self.show_navigation && self.pointer_x < self.navigation.width() {
                     let total = self.headings().len();
                     return if self.navigation.scroll_by(-lines.round() as i32 * 3, total) {
@@ -548,6 +557,12 @@ impl Editor {
                 }
             }
             return Response::Ignored;
+        }
+
+        // The styles pane down the right, which is in front of the page and of
+        // the bar beside it.
+        if self.over_styles_pane(x) && (y as f32) > self.ribbon_bottom() {
+            return self.styles_pane_press(x, y);
         }
 
         if self.show_navigation {
@@ -884,6 +899,13 @@ impl Editor {
         // Over the Print page, only the Print page lights up.
         if self.printing() {
             let changed = self.print_pane_hover(x, y);
+            self.needs_redraw |= changed;
+            return if changed { Response::Redraw } else { Response::Ignored };
+        }
+
+        // And over the styles pane, only the styles pane.
+        if self.over_styles_pane(x) && (y as f32) > self.ribbon_bottom() {
+            let changed = self.styles_pane_hover(x, y);
             self.needs_redraw |= changed;
             return if changed { Response::Redraw } else { Response::Ignored };
         }
@@ -1299,6 +1321,11 @@ impl Editor {
                 Key::Letter('n') if !modifiers.shift => self.run(Command::New),
                 Key::Letter('o') => self.run(Command::Open),
                 Key::Letter('p') => self.run(Command::Print),
+                // Word's own shortcut for the styles pane, which has to come
+                // before the other two on this letter or they swallow it.
+                Key::Letter('s') if modifiers.shift && modifiers.alt => {
+                    self.run(Command::StylesPane)
+                }
                 Key::Letter('s') if modifiers.shift => self.run(Command::SaveAs),
                 Key::Letter('s') => self.run(Command::Save),
                 Key::Letter('a') => self.run(Command::SelectAll),

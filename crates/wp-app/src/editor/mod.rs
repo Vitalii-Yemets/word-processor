@@ -51,6 +51,8 @@ mod signature;
 mod split;
 mod stationery;
 mod statusmenu;
+mod styledialog;
+mod styles;
 mod table_properties;
 mod tabsdialog;
 mod theme_effects;
@@ -343,6 +345,14 @@ pub struct Editor {
     zoom: f32,
     show_rulers: bool,
     show_navigation: bool,
+    /// Whether the styles pane is showing, down the right-hand side.
+    show_styles: bool,
+    styles_pane: crate::chrome::stylespane::StylesPane,
+    /// The style being made or changed, while its dialog is up.
+    editing_style: Option<wp_docx::StyleDefinition>,
+    /// Whether the Font or Paragraph dialog was opened from inside the style
+    /// dialog, so that answering it comes back there rather than to the page.
+    formatting_a_style: bool,
     show_marks: bool,
     /// Where the zoom slider was last drawn.
     slider: Option<status::SliderRect>,
@@ -477,6 +487,10 @@ impl Editor {
             zoom: 100.0,
             show_rulers: true,
             show_navigation: true,
+            show_styles: false,
+            styles_pane: crate::chrome::stylespane::StylesPane::new(),
+            editing_style: None,
+            formatting_a_style: false,
             show_marks: false,
             slider: None,
             status_buttons: Vec::new(),
@@ -563,8 +577,13 @@ impl Editor {
 
     fn viewport_width(&self) -> f32 {
         // The bar down the right takes its width out of the page area, so the
-        // page is centred in what is left rather than under the bar.
-        (self.view_width as f32 - self.content_left() - crate::chrome::SCROLLBAR_THICKNESS).max(1.0)
+        // page is centred in what is left rather than under the bar. So does
+        // the styles pane, when it is open.
+        (self.view_width as f32
+            - self.content_left()
+            - self.styles_pane_width()
+            - crate::chrome::SCROLLBAR_THICKNESS)
+            .max(1.0)
     }
 
     /// Where a page's top-left corner sits, before scrolling is applied.
@@ -1077,7 +1096,7 @@ impl Editor {
         Response::Redraw
     }
 
-    fn apply_style(&mut self, style: Option<&str>) -> Response {
+    pub(super) fn apply_style(&mut self, style: Option<&str>) -> Response {
         let changed = self.document.set_paragraph_style_here(style);
         self.edited(changed, style.unwrap_or("Normal"))
     }
