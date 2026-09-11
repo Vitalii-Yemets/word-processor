@@ -230,6 +230,9 @@ pub enum Command {
     AlignObjects,
     /// Turns the chosen drawings, or mirrors them: Word's Rotate menu.
     RotateObjects,
+    /// Makes one drawing of several, takes it apart, or puts it back together:
+    /// Word's Group menu.
+    GroupObjects,
 
     // References.
     InsertContents,

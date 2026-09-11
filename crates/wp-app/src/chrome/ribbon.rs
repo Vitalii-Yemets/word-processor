@@ -272,6 +272,9 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::AlignObjects, choice: Choice::AlignObjects, split: false },
     // The same: pressing Rotate anywhere asks which way round.
     Menu { command: Command::RotateObjects, choice: Choice::RotateObjects, split: false },
+    // And Group, which asks whether to make one, take one apart, or put the
+    // last one back together.
+    Menu { command: Command::GroupObjects, choice: Choice::GroupObjects, split: false },
 ];
 
 /// The menu a command drops, if it drops one.
@@ -1142,6 +1145,7 @@ impl Ribbon {
                     | Choice::AutoFit
                     | Choice::AlignObjects
                     | Choice::RotateObjects
+                    | Choice::GroupObjects
                     | Choice::DocumentSpacing
                     | Choice::BulletLibrary
                     | Choice::NumberLibrary
@@ -1611,6 +1615,8 @@ static LAYOUT_GROUPS: &[Group] = &[
             Item::Small(Command::AlignObjects, Icon::AlignObjects, "Align"),
             Item::Break,
             Item::Small(Command::SelectionPane, Icon::SelectionPane, "Selection Pane"),
+            Item::Break,
+            Item::Small(Command::GroupObjects, Icon::Group, "Group"),
             Item::Break,
             Item::Small(Command::RotateObjects, Icon::Rotate, "Rotate"),
         ],

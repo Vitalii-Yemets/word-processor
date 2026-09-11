@@ -44,6 +44,8 @@ pub enum Choice {
     AlignObjects,
     /// How the chosen drawings are turned, or mirrored.
     RotateObjects,
+    /// Whether the chosen drawings are made one, taken apart or put back.
+    GroupObjects,
     /// The bullet shapes.
     BulletLibrary,
     /// The number formats.

@@ -667,7 +667,12 @@ pub(crate) fn read_run(element: &Element) -> Run {
                 // A chart, a shape and a picture are the same wrapper round
                 // different graphic data. Each reader is given the drawing in
                 // turn, and each says nothing when it is not the one.
-                if let Some(chart) = read_chart_reference(child) {
+                // A group is asked first of all, and has to be: it holds
+                // shapes and pictures, so every reader below would read a
+                // whole group as whatever it found inside it.
+                if let Some(group) = crate::group::read_group(child) {
+                    content.push(RunContent::Group(group));
+                } else if let Some(chart) = read_chart_reference(child) {
                     content.push(RunContent::Chart(chart));
                 } else if let Some(shape) = crate::shapes::read_shape(child) {
                     content.push(RunContent::Shape(shape));
@@ -707,7 +712,7 @@ pub(crate) const RELATIONSHIPS: &str =
 /// in four namespaces at once, two of which have both a 2006 and a 2010 form,
 /// and matching all of them exactly would reject perfectly ordinary documents
 /// for no gain: no other element in a drawing is called `blip` or `extent`.
-fn read_picture(drawing: &Element) -> Option<Picture> {
+pub(crate) fn read_picture(drawing: &Element) -> Option<Picture> {
     let reference = find_by_local_name(drawing, "blip")
         .and_then(|blip| blip.attribute(Some(RELATIONSHIPS), "embed"))
         .or_else(|| {

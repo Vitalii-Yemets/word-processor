@@ -254,6 +254,7 @@ impl Editor {
             Command::Formula => self.open_formula(),
             Command::AlignObjects => self.open_align(),
             Command::RotateObjects => self.open_rotate(),
+            Command::GroupObjects => self.open_grouping(),
 
             // --- References ---------------------------------------------------
             Command::InsertContents | Command::UpdateContents => self.write_contents(),

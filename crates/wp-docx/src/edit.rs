@@ -918,6 +918,11 @@ pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> El
             // Nor a chart: it is a part of the package, carried through in
             // its own element rather than rebuilt from the model.
             RunContent::Chart(_) => {}
+            // Nor a group. A group holds pictures, so rebuilding one from the
+            // model would throw away everything a picture's element says that
+            // this program does not model — see [`crate::group`]. Making and
+            // breaking groups moves the elements themselves instead.
+            RunContent::Group(_) => {}
             // An equation is not written from inside a run: it is a sibling
             // of the runs, and `paragraph_element` writes it there.
             RunContent::Math(_) => {}

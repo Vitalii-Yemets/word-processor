@@ -167,6 +167,13 @@ impl Shape {
 /// Reads a shape out of a `w:drawing`, if that is what it holds.
 #[must_use]
 pub fn read_shape(drawing: &Element) -> Option<Shape> {
+    // A group holds shapes, so a drawing that holds a group would answer here
+    // with the first shape in it — and every command that replaces a shape
+    // would then replace the whole group with that one member. A group is a
+    // group. See [`crate::group`].
+    if find(drawing, "wgp").is_some() {
+        return None;
+    }
     let wsp = find(drawing, "wsp")?;
     let mut shape = Shape { anchor: crate::anchor::read_anchor(drawing), ..Shape::default() };
 

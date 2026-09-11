@@ -292,12 +292,44 @@ impl Editor {
         self.document.drawing_place_here().into_iter().collect()
     }
 
-    /// Every drawing on the pages, the one nearest the reader first.
+    /// Every drawing on the pages, the one nearest the reader first, each as
+    /// one drawing however many pieces it is drawn in.
     ///
     /// That is the order a press asks them in: a drawing laid over another is
     /// the one that was pressed.
+    ///
+    /// A group is drawn as the several drawings inside it, all answering to the
+    /// one place in the text — so the several are folded back into the one
+    /// rectangle that holds them all. Everything above this asks "where is that
+    /// drawing", and for a group the answer is where the whole of it is: that is
+    /// what the handles go round, what Align lines up, and what Group measures.
     #[must_use]
     pub(super) fn drawings_facing(&self) -> Vec<OnPage> {
+        let mut out: Vec<OnPage> = Vec::new();
+        for drawing in self.placed_drawings() {
+            let Some(already) = out.iter_mut().find(|held| held.at == drawing.at) else {
+                out.push(drawing);
+                continue;
+            };
+            let left = already.left.min(drawing.left);
+            let top = already.top.min(drawing.top);
+            let right = (already.left + already.width).max(drawing.left + drawing.width);
+            let bottom = (already.top + already.height).max(drawing.top + drawing.height);
+            already.left = left;
+            already.top = top;
+            already.width = right - left;
+            already.height = bottom - top;
+        }
+        out
+    }
+
+    /// Every piece of every drawing, as the page holds them.
+    ///
+    /// The same list before a group's members are folded together, which is
+    /// what a press is asked against: clicking the paper inside a group and
+    /// beside everything in it is clicking the paper.
+    #[must_use]
+    fn placed_drawings(&self) -> Vec<OnPage> {
         let mut out = Vec::new();
         for index in 0..self.pages.len() {
             let (origin_x, origin_y) = self.page_origin(index);
@@ -346,7 +378,7 @@ impl Editor {
     #[must_use]
     pub(super) fn drawing_under(&self, x: i32, y: i32) -> Option<TextPosition> {
         let (px, py) = (x as f32, y as f32);
-        self.drawings_facing()
+        self.placed_drawings()
             .into_iter()
             .find(|drawing| {
                 px >= drawing.left

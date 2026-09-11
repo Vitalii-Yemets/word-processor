@@ -25,6 +25,7 @@ pub(crate) mod files;
 mod fontdialog;
 mod formuladialog;
 mod furnitureedit;
+mod grouping;
 mod groups;
 mod handles;
 mod help;
@@ -278,6 +279,10 @@ pub struct Editor {
     choosing_band: Option<(i32, i32, i32, i32)>,
     /// What the Align menu lines drawings up against.
     align_to: handles::AlignTo,
+    /// The drawings the last Ungroup let loose, which is what Regroup puts
+    /// back together. Word's Regroup remembers exactly this much and no more:
+    /// one group at a time, and only until something else is ungrouped.
+    ungrouped: Vec<TextPosition>,
     /// Whether the pointer is choosing drawings rather than text, which is
     /// Word's Select Objects.
     choosing_drawings: bool,
@@ -543,6 +548,7 @@ impl Editor {
             chosen_drawings: Vec::new(),
             choosing_band: None,
             align_to: handles::AlignTo::EachOther,
+            ungrouped: Vec::new(),
             page_border_lists: (0, 0),
             choosing_drawings: false,
             editing_property: None,

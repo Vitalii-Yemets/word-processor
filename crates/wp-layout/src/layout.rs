@@ -1111,6 +1111,8 @@ pub(crate) struct Item {
     chart: Option<(Box<crate::charting::ChartDrawing>, f32)>,
     /// A shape drawn in the line, with the height it takes up.
     shape: Option<(Box<wp_docx::shapes::Shape>, f32)>,
+    /// A group of drawings in the line, with the height it takes up.
+    group: Option<(Box<wp_docx::group::Group>, f32)>,
     /// Forces the rest of the paragraph onto a new line, or a new page.
     hard_break: Option<BreakKind>,
     pub(crate) style: usize,
@@ -2757,6 +2759,32 @@ impl<'a> LayoutEngine<'a> {
         decoded
     }
 
+    /// A picture already decoded, by the relationship it is embedded through.
+    ///
+    /// Placing a page has no document to hand, so anything that needs a
+    /// picture there has to have asked for it while one was. See
+    /// [`Self::decode_group`].
+    fn decoded(&self, relationship: &str) -> Option<Rc<Image>> {
+        self.pictures.get(relationship).cloned().flatten()
+    }
+
+    /// Decodes every picture in a group, and in the groups inside it.
+    ///
+    /// Done while the item is built, because that is the last place the
+    /// document is to hand: a group is placed long afterwards, when all that
+    /// is left is the page.
+    fn decode_group(&mut self, group: &wp_docx::group::Group, document: &Document) {
+        for member in &group.members {
+            match &member.what {
+                wp_docx::group::Inside::Picture(picture) => {
+                    self.picture(picture, document);
+                }
+                wp_docx::group::Inside::Group(inner) => self.decode_group(inner, document),
+                wp_docx::group::Inside::Shape(_) => {}
+            }
+        }
+    }
+
     /// The mark a list paragraph carries, and what its level asks for.
     ///
     /// Returns the mark, the level's indent and its hanging indent, all in
@@ -3012,6 +3040,7 @@ impl<'a> LayoutEngine<'a> {
                             picture_anchor: None,
                             picture_name: None,
                             picture_turn: wp_docx::floating::Turned::default(),
+                            group: None,
                             shape: None,
                             math: None,
                             chart: None,
@@ -3040,6 +3069,7 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        group: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -3070,6 +3100,7 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        group: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -3100,6 +3131,7 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        group: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -3133,6 +3165,7 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        group: None,
                         math: None,
                         chart: drawn.map(|drawing| (Box::new(drawing), height)),
                         shape: None,
@@ -3165,6 +3198,7 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        group: None,
                         shape: None,
                         math: Some((Box::new(laid), height)),
                         chart: None,
@@ -3202,9 +3236,48 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        group: None,
                         math: None,
                         chart: None,
                         shape: Some((Box::new(shape.clone()), height)),
+                        hard_break: None,
+                        style: style_index,
+                        start_offset: start,
+                        end_offset: *offset,
+                    });
+                }
+                RunContent::Group(group) => {
+                    paragraph_text.push(' ');
+                    // A group takes one character, the same as the drawings
+                    // inside it would have taken one each: it is one drawing
+                    // as far as the text is concerned.
+                    let start = *offset;
+                    *offset += 1;
+
+                    let scale = self.pixels_per_point();
+                    let width = if group.anchor.is_some() {
+                        0.0
+                    } else {
+                        group.width_points() as f32 * scale
+                    };
+                    let height = group.height_points() as f32 * scale;
+                    self.decode_group(group, document);
+
+                    items.push(Item {
+                        glyphs: Vec::new(),
+                        width,
+                        is_space: false,
+                        breaks_before: true,
+                        is_tab: false,
+                        aligned_tab: None,
+                        picture: None,
+                        picture_anchor: None,
+                        picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
+                        group: Some((Box::new(group.clone()), height)),
+                        math: None,
+                        chart: None,
+                        shape: None,
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -3245,6 +3318,7 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: picture.anchor.clone(),
                         picture_name: picture.description.clone(),
                         picture_turn: picture.turned,
+                        group: None,
                         shape: None,
                         math: None,
                         chart: None,
@@ -3269,6 +3343,7 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        group: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -3432,6 +3507,138 @@ impl<'a> LayoutEngine<'a> {
             flipped_across: turned.flipped_across,
             flipped_down: turned.flipped_down,
         });
+    }
+
+    /// Puts everything a group holds onto the page.
+    ///
+    /// The group itself draws nothing: it is a rectangle with a world inside
+    /// it, and what is drawn is the drawings in that world, each at its own
+    /// fraction of the rectangle. A group inside a group is the same thing
+    /// again, one rectangle further in.
+    ///
+    /// Everything in a group shares the group's place in the pile: they were
+    /// made one drawing, and one drawing is at one depth.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "a group has a place, a size, a depth and a where"
+    )]
+    fn place_group(
+        &mut self,
+        page: &mut Page,
+        group: &wp_docx::group::Group,
+        rect: (f32, f32, f32, f32),
+        at: Option<TextPosition>,
+        depth: u32,
+        over_text: bool,
+    ) {
+        self.place_group_turned(
+            page,
+            group,
+            rect,
+            at,
+            depth,
+            over_text,
+            wp_docx::floating::Turned::default(),
+        );
+    }
+
+    /// The same, inside a group that is itself turned.
+    ///
+    /// `outer` is the turn already in force round this one, which the group's
+    /// own turn is composed with. At the top there is none.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "a group has a place, a size, a depth and a where"
+    )]
+    fn place_group_turned(
+        &mut self,
+        page: &mut Page,
+        group: &wp_docx::group::Group,
+        rect: (f32, f32, f32, f32),
+        at: Option<TextPosition>,
+        depth: u32,
+        over_text: bool,
+        outer: wp_docx::floating::Turned,
+    ) {
+        let (left, top, width, height) = rect;
+        // The whole group's turn: its own, seen from inside whatever is round
+        // it. Every member is turned by this as well as by its own.
+        let turned = group.turned.inside(outer);
+        let (middle_x, middle_y) = (left + width / 2.0, top + height / 2.0);
+        let scale = self.pixels_per_point();
+
+        for member in &group.members {
+            let (fraction_x, fraction_y, fraction_width, fraction_height) = group.fractions(member);
+            let member_width = fraction_width * width;
+            let member_height = fraction_height * height;
+            // Where the member's own middle lands once the group is turned: a
+            // turn moves the members as well as turning each of them.
+            let (from_x, from_y) = (
+                left + fraction_x * width + member_width / 2.0 - middle_x,
+                top + fraction_y * height + member_height / 2.0 - middle_y,
+            );
+            let (to_x, to_y) = turned.moves(from_x, from_y);
+            let member_left = middle_x + to_x - member_width / 2.0;
+            let member_top = middle_y + to_y - member_height / 2.0;
+            let member_rect = (member_left, member_top, member_width, member_height);
+
+            match &member.what {
+                wp_docx::group::Inside::Shape(shape) => {
+                    let inside = wp_docx::floating::Turned::of_shape(shape).inside(turned);
+                    page.shapes.push(PlacedShape {
+                        x: member_left,
+                        y: member_top,
+                        width: member_width,
+                        height: member_height,
+                        preset: crate::geometry::Preset::from_word(&shape.preset),
+                        fill: shape.fill.as_deref().and_then(Color::from_hex),
+                        outline: shape.outline.as_deref().and_then(Color::from_hex),
+                        outline_weight: (shape.outline_points() * scale).max(1.0),
+                        shadow: self.shape_shadow(scale),
+                        text: Vec::new(),
+                        name: shape.name.clone(),
+                        // The group's place and not the member's: a member has
+                        // no place of its own in the text, and a press on one
+                        // takes hold of the group, which is what a group is for.
+                        at,
+                        depth,
+                        over_text,
+                        source: Some(Box::new(shape.clone())),
+                        turn: inside.radians(),
+                        flipped_across: inside.flipped_across,
+                        flipped_down: inside.flipped_down,
+                    });
+                }
+                wp_docx::group::Inside::Picture(picture) => {
+                    // Decoded when the item was built, where the document was
+                    // to hand; here it is only fetched. A picture that would
+                    // not decode is drawn as nothing, as one in the line is.
+                    let Some(image) = self.decoded(&picture.relationship) else { continue };
+                    let inside = picture.turned.inside(turned);
+                    page.images.push(PlacedImage {
+                        x: member_left,
+                        y: member_top,
+                        width: member_width,
+                        height: member_height,
+                        image,
+                        depth,
+                        over_text,
+                        at,
+                        turn: inside.radians(),
+                        flipped_across: inside.flipped_across,
+                        flipped_down: inside.flipped_down,
+                        name: if picture.description.as_deref().unwrap_or_default().is_empty() {
+                            "Picture".to_owned()
+                        } else {
+                            picture.description.clone().unwrap_or_default()
+                        },
+                    });
+                }
+                wp_docx::group::Inside::Group(inner) => {
+                    self.place_group_turned(page, inner, member_rect, at, depth, over_text, turned);
+                }
+            }
+        }
     }
 
     /// Works out where a floating drawing sits and reserves the room round it.
@@ -4452,6 +4659,47 @@ impl LayoutEngine<'_> {
                     flipped_down: shape.flipped_down,
                 });
                 x += item.width;
+            } else if let Some((group, height)) = &item.group {
+                let at = Some(TextPosition::new(placement.paragraph, item.start_offset));
+                // A group that floats goes where its anchor says, exactly as
+                // one drawing would: a group is one drawing.
+                if let Some(anchor) = group.anchor.clone() {
+                    let line_top = baseline - placement.ascent;
+                    let width =
+                        item.width.max(group.width_points() as f32 * self.pixels_per_point());
+                    let (at_x, at_y) = self.float_box(
+                        &anchor,
+                        placement.page,
+                        &placement.area,
+                        line_top,
+                        width,
+                        *height,
+                        // The box and not the outline: what a group's edge is
+                        // for tight wrapping is the edge of everything in it,
+                        // which is the box it covers.
+                        None,
+                    );
+                    let group = group.as_ref().clone();
+                    self.place_group(
+                        page,
+                        &group,
+                        (at_x, at_y, width, *height),
+                        at,
+                        anchor.depth,
+                        !anchor.behind_text,
+                    );
+                    continue;
+                }
+                let group = group.as_ref().clone();
+                self.place_group(
+                    page,
+                    &group,
+                    (x, baseline - height, item.width, *height),
+                    at,
+                    0,
+                    false,
+                );
+                x += item.width;
             } else if let Some((drawing, _)) = &item.chart {
                 // A chart is laid out already, in a box of its own; putting it
                 // on the line is moving that box to where the line is. It hangs
@@ -5156,6 +5404,16 @@ fn line_metrics(line: &Line, items: &[Item], styles: &[RunStyle]) -> (f32, f32, 
         if let Some((_, picture_height)) = &items[index].picture {
             ascent = ascent.max(*picture_height);
             height = height.max(*picture_height + descent);
+        }
+        // A shape and a group stand on the baseline too, and a group is as
+        // tall as the box it covers however much or little is drawn in it.
+        for standing in [
+            &items[index].shape.as_ref().map(|(_, height)| *height),
+            &items[index].group.as_ref().map(|(_, height)| *height),
+        ] {
+            let Some(standing) = standing else { continue };
+            ascent = ascent.max(*standing);
+            height = height.max(*standing + descent);
         }
     }
 

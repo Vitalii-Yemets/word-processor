@@ -89,6 +89,45 @@ impl Turned {
         }
     }
 
+    /// This turn seen from inside another: the one turn that draws a drawing
+    /// turned by `self` sitting in a group turned by `outer`.
+    ///
+    /// # Why the angles are not simply added
+    ///
+    /// Because a mirror reverses the turn it is applied to. Turning a shape
+    /// right and then holding the whole group up to a mirror is the same as
+    /// mirroring the shape and turning it *left*: the two do not commute, and
+    /// adding the angles would draw the members of a mirrored group leaning the
+    /// wrong way.
+    ///
+    /// Mirroring both ways at once is a half turn rather than a mirror, and a
+    /// half turn commutes with everything — so that case adds after all. The
+    /// mirrors themselves always simply combine: doing one twice undoes it.
+    #[must_use]
+    pub fn inside(self, outer: Self) -> Self {
+        let reversed = outer.flipped_across != outer.flipped_down;
+        let rotation =
+            if reversed { outer.rotation - self.rotation } else { outer.rotation + self.rotation };
+        Self {
+            rotation: rotation.rem_euclid(Self::WHOLE),
+            flipped_across: self.flipped_across != outer.flipped_across,
+            flipped_down: self.flipped_down != outer.flipped_down,
+        }
+    }
+
+    /// Where a point of a group lands once the group itself is turned.
+    ///
+    /// Given how far the point is from the group's middle, across and down,
+    /// this is how far it is from that middle afterwards. What turns a member's
+    /// place; [`Self::inside`] turns the member itself.
+    #[must_use]
+    pub fn moves(self, across: f32, down: f32) -> (f32, f32) {
+        let across = if self.flipped_across { -across } else { across };
+        let down = if self.flipped_down { -down } else { down };
+        let (sin, cos) = self.radians().sin_cos();
+        (across * cos - down * sin, across * sin + down * cos)
+    }
+
     /// How a shape of the model is turned.
     #[must_use]
     pub fn of_shape(shape: &crate::shapes::Shape) -> Self {
@@ -200,13 +239,22 @@ impl Document {
         Some((number(extent, "cx"), number(extent, "cy")))
     }
 
-    /// The `w:drawing` element at one place, when a shape is not what is there.
-    fn picture_drawing_at(&self, at: TextPosition) -> Option<&Element> {
+    /// The `w:drawing` element at one place, whatever kind of drawing it holds.
+    ///
+    /// The element and not the model: this is what every command that changes a
+    /// drawing where it stands works on, and the reason a picture keeps
+    /// everything about it this program does not understand.
+    pub(crate) fn drawing_element_at(&self, at: TextPosition) -> Option<&Element> {
         let paragraph = self.paragraph_element(at.paragraph)?;
         let mut offset = 0usize;
         let mut found = None;
         walk_drawings(paragraph, &mut offset, at.offset, &mut found);
         found
+    }
+
+    /// The same, named for the one caller that wants a picture's.
+    fn picture_drawing_at(&self, at: TextPosition) -> Option<&Element> {
+        self.drawing_element_at(at)
     }
 
     /// How far round the drawing at one place is turned, and whether it is
@@ -554,6 +602,13 @@ fn turn(drawing: &mut Element, turned: Turned) -> bool {
             return;
         }
         for child in element.child_elements_mut() {
+            // The first transform and no other. A shape and a picture have
+            // only one, so this never mattered until a group arrived: a group
+            // holds a transform of its own and one for every drawing in it,
+            // and turning the lot would turn each member as well as the whole.
+            if *done {
+                return;
+            }
             write(child, turned, done);
         }
     }
@@ -587,6 +642,9 @@ fn turn(drawing: &mut Element, turned: Turned) -> bool {
             return;
         }
         for child in element.child_elements_mut() {
+            if *done {
+                return;
+            }
             give_one(child, turned, done);
         }
     }
@@ -612,6 +670,9 @@ fn turn(drawing: &mut Element, turned: Turned) -> bool {
             return;
         }
         for child in element.child_elements_mut() {
+            if *done {
+                return;
+            }
             give_properties(child, turned, done);
         }
     }
@@ -647,7 +708,17 @@ fn resize(drawing: &mut Element, width_emu: i64, height_emu: i64) -> bool {
             element.set_attribute("cy", &height_emu.to_string());
             *done = true;
         }
+        // Everything below a group but the drawings in it. A group states the
+        // rectangle it is drawn in and, separately, the one its members are
+        // measured in; resizing the first and leaving the second is exactly
+        // how a group scales what is inside it. Writing the new size onto
+        // every member as well would make them all the size of the group.
+        // See [`crate::group`].
+        let members_below = element.local_name() == "wgp";
         for child in element.child_elements_mut() {
+            if members_below && matches!(child.local_name(), "wsp" | "pic" | "grpSp") {
+                continue;
+            }
             write(child, width_emu, height_emu, done);
         }
     }

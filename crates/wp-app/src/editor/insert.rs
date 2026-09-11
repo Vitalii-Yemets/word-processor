@@ -785,6 +785,72 @@ impl Editor {
                     self.open_rotate();
                 }
             }
+            "grouped" | "groupmenu" => {
+                // Three drawings made one: the handles round the group and not
+                // round each of them is the whole of what a group looks like.
+                // "groupmenu" drops the menu open over the same page.
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                use wp_docx::group::Rect;
+                for (name, fill, across, down) in [
+                    ("One", "4472C4", 0i64, 0i64),
+                    ("Two", "ED7D31", 1_143_000, 457_200),
+                    ("Three", "70AD47", 2_286_000, 0),
+                ] {
+                    let shape = wp_docx::shapes::Shape {
+                        name: name.to_owned(),
+                        width_emu: 914_400,
+                        height_emu: 685_800,
+                        fill: Some(fill.to_owned()),
+                        text: vec![wp_docx::model::Paragraph::text(name)],
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset(across),
+                            vertical: Placement::Offset(down),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+                self.relayout();
+
+                // Grouped through the document rather than through the command,
+                // so the scene does not depend on what happens to be chosen.
+                let places: Vec<(wp_docx::TextPosition, Rect)> = self
+                    .drawings_facing()
+                    .into_iter()
+                    .map(|drawing| {
+                        let scale = self.pixels_per_inch() / 72.0;
+                        let emu = |pixels: f32| {
+                            (f64::from(pixels) / f64::from(scale)
+                                * wp_docx::shapes::EMU_PER_POINT as f64)
+                                .round() as i64
+                        };
+                        (
+                            drawing.at,
+                            Rect {
+                                x: emu(drawing.left),
+                                y: emu(drawing.top),
+                                width: emu(drawing.width),
+                                height: emu(drawing.height),
+                            },
+                        )
+                    })
+                    .collect();
+                if let Some(at) = self.document.group_drawings(&places) {
+                    self.relayout();
+                    self.choose_drawing_at(at);
+                }
+                self.ribbon.tab = crate::chrome::ribbon::Tab::Layout;
+                if option == "groupmenu" {
+                    // The menu hangs under its button, and where the button is
+                    // is only known once the tab it is on has been drawn.
+                    let (width, height) = (self.view_width, self.view_height);
+                    self.draw(width, height);
+                    self.open_grouping();
+                }
+            }
             "customised" => {
                 // A ribbon somebody has changed: a group switched off, a group
                 // moved to the front, a command added to another, and a fourth

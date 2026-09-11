@@ -58,6 +58,7 @@ mod format;
 pub mod formula;
 pub mod furniture;
 pub mod gallery;
+pub mod group;
 mod history;
 pub mod languages;
 pub mod links;

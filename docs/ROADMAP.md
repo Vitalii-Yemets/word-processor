@@ -1537,16 +1537,43 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* every box in the three tabs reads what the chosen drawing says
   and changes it, and the drawing on the page agrees.
 
-- [ ] **C37. Group.** `wpg:wgp`: several drawings written as one, with a
+- [x] **C37. Group.** `wpg:wgp`: several drawings written as one, with a
   coordinate space of its own — the group states the rectangle it covers and the
   rectangle its children are measured in, and every child is placed through that
   mapping. It is not a command on a selection but a kind of drawing the model has
   never held, which is why it is here rather than beside Align.
   Word's Group, Ungroup and Regroup are the three commands, and a group holds
   shapes, pictures and other groups.
-  *Done when:* several drawings can be made one and taken apart again, a group
-  from Word is laid out where Word puts it, and one made here survives being
-  saved and reopened.
+  *Done:* a group is read into a model of its own and laid out through **both
+  rectangles**, so a group Word resized draws its members at the proportion Word
+  drew them: where a member sits in the inner rectangle is where it sits in the
+  outer one, as a fraction of each. A group inside a group is the same thing one
+  rectangle further in, and recurses. Everything in a group answers to the
+  group's one place in the text, so a press anywhere on it takes hold of the
+  whole, and the handles go round all of it: a drawing drawn in several pieces is
+  folded back into the one rectangle that holds them.
+  A group's element is **carried through and never rebuilt** — a group holds
+  pictures, and a picture rebuilt from what is modelled would lose its crop, its
+  effects and its recolouring. So Group and Ungroup move the members' elements
+  themselves: into a `wpg:wgp` whose inner and outer rectangles start out the
+  same, and back out again with the place each one had. The rectangles are
+  measured on the page and handed down, because a drawing's anchor counts from
+  the text, the paper or the paragraph and which of those is its own business —
+  the same reasoning **C34**'s Align follows.
+  Because it is a drawing like any other, Wrap Text, Position, the two pile
+  menus, Align and **C36**'s Rotate act on a group without knowing it is one, and
+  dragging a size handle scales what is inside it the way Word's does: the
+  rectangle it is drawn in changes and the one its members are measured in does
+  not. Two bugs that only a group could show were fixed on the way — turning a
+  drawing wrote the angle onto every transform under it rather than the
+  outermost, and a drawing that held a group was read as the first shape in it.
+  *Not done:* Word lets a second click reach into a group and choose one drawing
+  inside it; here a press on a group takes the group. A `wpg:graphicFrame` — a
+  chart or a table inside a group — is not read as a member and is passed over.
+  Drawings on two pages are not grouped, because there is no origin to measure
+  both from. Regroup remembers one group at a time and forgets it when the
+  document is closed, which is Word's behaviour, but Word also offers it greyed
+  out rather than saying so afterwards.
 
 ## D — Pictures and drawings
 

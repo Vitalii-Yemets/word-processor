@@ -692,6 +692,12 @@ pub enum RunContent {
     Picture(Picture),
     /// A shape or a text box sitting in the line of text.
     Shape(crate::shapes::Shape),
+    /// Several drawings written as one.
+    ///
+    /// Read but not written from here: a group's element is carried through
+    /// whole, the way a picture's is, because a group holds pictures. See
+    /// [`crate::group`].
+    Group(crate::group::Group),
     /// A chart drawn in the line of text.
     ///
     /// Only the reference: the chart lives in a part of its own, the same way
@@ -912,6 +918,7 @@ impl Run {
                 // plain-text editor.
                 RunContent::Picture(_)
                 | RunContent::Shape(_)
+                | RunContent::Group(_)
                 | RunContent::Chart(_)
                 | RunContent::NoteReference { .. } => {}
                 // An equation reads as the line it was typed on, which is
