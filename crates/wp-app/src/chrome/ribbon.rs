@@ -1990,6 +1990,18 @@ static HEADER_FOOTER_GROUPS: &[Group] = &[
 
 static TABLE_LAYOUT_GROUPS: &[Group] = &[
     Group {
+        label: "Draw",
+        items: &[
+            // Word puts these two at the far end of the tab; they are here at
+            // the near one, beside the table they act on, because a tab whose
+            // last group is the one used first reads backwards.
+            Item::Small(Command::DrawTable, Icon::Brush, "Draw Table"),
+            Item::Break,
+            Item::Small(Command::Eraser, Icon::LetterClear, "Eraser"),
+        ],
+        launcher: None,
+    },
+    Group {
         label: "Table",
         items: &[
             Item::Small(Command::SelectTablePart, Icon::Select, "Select"),

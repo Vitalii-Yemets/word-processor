@@ -276,6 +276,10 @@ pub enum Command {
     Envelopes,
     Labels,
     TableProperties,
+    /// Word's two table pens: the one that draws a line between cells and the
+    /// one that rubs a line out. See [`crate::editor`]'s `borderpainter` module.
+    DrawTable,
+    Eraser,
     /// Word's Border Styles gallery and the pen that draws with what it
     /// offers. See [`crate::editor`]'s `borderpainter` module.
     BorderStyles,
@@ -468,6 +472,9 @@ pub struct ToolbarState {
     /// Whether the border painter is in hand, which lights its button the way
     /// the format painter's is lit.
     pub painting_borders: bool,
+    /// And which of the two table pens is, which lights one of their buttons.
+    pub drawing_table: bool,
+    pub erasing: bool,
     /// Whether the comments are listed in the pane.
     pub show_comments: bool,
     /// The colours the two coloured buttons would apply.
@@ -604,6 +611,8 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
         Command::AlignCell(which) => state.cell_alignment == Some(which),
         Command::ShowMarkup => state.show_markup,
         Command::BorderPainter => state.painting_borders,
+        Command::DrawTable => state.drawing_table,
+        Command::Eraser => state.erasing,
         Command::ShowProofing => state.show_proofing,
         Command::ReviewingPane | Command::ShowComments => state.show_comments,
         Command::WebLayout => state.view_is("Web layout"),

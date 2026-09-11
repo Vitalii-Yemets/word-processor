@@ -1161,31 +1161,26 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   gallery would have offered double, triple and wave and drawn all three as one
   thick line. They go through the same code a paragraph's and a page's do now,
   which is what **C23** wrote.
-- [ ] **C25. The six things the Table Layout tab still wants.** What **C16**
-  left, each because it needs something that does not exist yet rather than
-  because it was skipped.
-  **AutoFit** — fit to contents, fit to window, fixed column width. The last two
-  are a `w:tblW` and a `w:tblLayout` away; the first wants the layout to measure
-  what is in every cell without a width to break it against, which nothing does
-  yet. All three belong together: a menu with two live rows would be worse than
-  none.
-  **Draw Table** and the **Eraser** — the pen that draws cell edges and the
-  rubber that takes them away. Both are modes, like the Border Painter of
-  **C24**, and both need the same missing thing: which edge of which cell the
-  pointer is nearest.
-  **Text Direction** — `w:textDirection` on a cell, which turns its text
-  through a right angle. The model can carry it; the layout has no way to draw a
-  line of text rotated, and one that stored the property without turning the
-  text would be a button that does nothing.
-  **Cell Margins** — the room inside a cell, `w:tblCellMar`. Read already and
-  used by the layout; what is missing is Word's dialog for it, which also holds
-  cell spacing.
-  **Sort** — sorting the rows of a table by a column. The command exists and
-  sorts paragraphs; sorting rows means moving whole `w:tr` elements and knowing
-  which column to compare, with Word's three levels of key.
-  **Formula** — `=SUM(ABOVE)` and the rest, as a field. The field machinery is
-  there; the arithmetic over the cells around it is not.
-  *Done when:* each of the six does what Word's does.
+- [x] **C25. Draw Table and the Eraser.** Word's two table pens: the one that
+  draws a line through a cell and the one that rubs a line out. Both are modes,
+  like the Border Painter of **C24**, and both needed the same missing thing —
+  which edge of which cell the pointer is nearest — which **C24** built.
+  *Done:* a line drawn down a cell makes two cells of it, a line drawn across it
+  makes two rows, and the eraser joins the cells either side of whatever line it
+  is pressed on. The first needed `split_cell_across`, which widens the table's
+  grid and gives every other row's cell one column more so that nothing but the
+  drawn cell looks different; the second needed `split_cell_down`, which is a
+  whole new row with every other column merged down across the two, because a
+  table has no way to say that one cell is two rows tall. The eraser is
+  `merge_cells` on the two cells either side, because rubbing out the line
+  between two cells and merging them are the same thing.
+  A tap draws nothing, a pen at the edge of the table says so rather than doing
+  something surprising, only one pen is in hand at a time, and Escape puts
+  whichever it is down.
+  *The rest of what the Table Layout tab wants* was listed here as though it
+  were one item and is five: **C29** AutoFit, **C30** Text Direction, **C31**
+  Cell Margins, **C32** Sort, **C33** Formula. Each needs something different
+  and none of them is the others' work.
 
 - [ ] **C26. A picture that floats.** `Picture` carries no anchor, so only a
   shape can float. A picture read from a Word document where it floats keeps its
@@ -1217,6 +1212,51 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   resizes it, and every command in Arrange asking that rather than the caret.
   *Done when:* a drawing can be clicked, is drawn with handles, can be dragged
   and resized, and Select Objects and the Selection Pane both choose one.
+
+- [ ] **C29. AutoFit.** Word's three: fit to contents, fit to window, fixed
+  column width. The last two are a `w:tblW` and a `w:tblLayout` away; the first
+  wants the layout to measure what is in every cell with no width to break it
+  against, which nothing does yet — every measuring pass this program has is
+  given a width first. All three belong together: a menu with two live rows
+  would be worse than none.
+  *Done when:* each of the three does what Word's does, and a table set to fit
+  its contents changes width as the text in it is typed.
+
+- [ ] **C30. Text Direction in a cell.** `w:textDirection`, which turns a cell's
+  text through a right angle — what the headings of a narrow column are set in.
+  The model can carry it; the layout has no way to lay a line of text into a box
+  whose height is its length, and the renderer turns glyphs only for a watermark
+  (`draw_transformed`). One that stored the property and drew the text the way
+  up it always was would be a button that does nothing.
+  *Done when:* a cell's text can be turned either way, the row is as tall as the
+  turned text is long, and a document written here opens in Word the same way
+  up.
+
+- [ ] **C31. Cell Margins, and the room between cells.** Word's dialog holds
+  four margins and a tick box for spacing between cells. Two of the margins —
+  `w:tblCellMar` start and end — are read and used already; the top and the
+  bottom are two constants in the layout, and the spacing (`w:tblCellSpacing`)
+  is neither read nor laid out. Spacing is the expensive half: cells with room
+  between them are a different geometry, not a different number.
+  *Done when:* all four margins are the document's and not the layout's, cells
+  can be given room between them, and Word's dialog says so.
+
+- [ ] **C32. Sorting the rows of a table.** The Sort command exists and sorts
+  paragraphs. Sorting a table means moving whole `w:tr` elements, knowing which
+  column to compare and how — as text, as a number, as a date — and Word's
+  dialog offers three levels of key, each with its own column and its own
+  direction, and a tick for whether the first row is a heading.
+  *Done when:* a table can be sorted on up to three columns at once, and a
+  header row stays where it is.
+
+- [ ] **C33. Formula.** `=SUM(ABOVE)` and its kin, as a field. The field
+  machinery is there and works out its own answers; what is missing is the
+  arithmetic over the cells around it — which cells `ABOVE`, `BELOW`, `LEFT` and
+  `RIGHT` mean, how a cell's text becomes a number, and Word's functions:
+  `SUM`, `AVERAGE`, `COUNT`, `MIN`, `MAX`, `PRODUCT` and the rest, with the
+  number formats its dialog offers.
+  *Done when:* a formula in a cell shows the right answer, is worked out again
+  when the cells it reads are changed, and survives being saved and reopened.
 
 ## D — Pictures and drawings
 

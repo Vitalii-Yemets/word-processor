@@ -213,6 +213,142 @@ impl Document {
         true
     }
 
+    /// Draws a line down through one cell, making two cells of it.
+    ///
+    /// What Word's Draw Table does when a line is drawn from the top of a cell
+    /// to the bottom of it. The table gains a column of the grid, the cell
+    /// becomes two, and every other row's cell that crossed the new line covers
+    /// one column more than it did — so nothing but this cell looks any
+    /// different.
+    pub fn split_cell_across(&mut self, at: TextPosition) -> bool {
+        let Some(place) = self.table_at(at) else { return false };
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+            return false;
+        };
+
+        for (number, row_position) in positions_of(table, "tr").into_iter().enumerate() {
+            let Some(row) = table.children.get_mut(row_position).and_then(Node::as_element_mut)
+            else {
+                continue;
+            };
+            let Some(cell_position) = positions_of(row, "tc").get(place.column).copied() else {
+                continue;
+            };
+
+            if number == place.row {
+                // The cell the line was drawn through becomes two.
+                let Some(model) =
+                    row.children.get(cell_position).and_then(Node::as_element).cloned()
+                else {
+                    continue;
+                };
+                let fresh = empty_cell(&model, prefix.as_deref());
+                row.insert_element(cell_position + 1, fresh);
+                continue;
+            }
+
+            // Every other row's cell simply covers one column more.
+            let Some(cell) = row.children.get_mut(cell_position).and_then(Node::as_element_mut)
+            else {
+                continue;
+            };
+            let span = span_of(cell) + 1;
+            let properties = properties_of(cell, prefix.as_deref());
+            properties.remove_children_named(Some(read::W), "gridSpan");
+            properties_insert(properties, prefix.as_deref(), "gridSpan", Some(&span.to_string()));
+        }
+
+        crate::tables::widen_grid(table, prefix.as_deref(), place.column);
+        self.mark_modified();
+        true
+    }
+
+    /// Draws a line across through one cell, making two rows of it.
+    ///
+    /// The other half of Word's Draw Table. A table has no way to say that one
+    /// cell is two rows tall while its neighbours are one, so the table gains a
+    /// whole row and every other column is merged down across the two — which
+    /// is how Word writes it, and why a table drawn this way is full of
+    /// `w:vMerge`.
+    pub fn split_cell_down(&mut self, at: TextPosition) -> bool {
+        let Some(place) = self.table_at(at) else { return false };
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+            return false;
+        };
+        let Some(row_position) = positions_of(table, "tr").get(place.row).copied() else {
+            return false;
+        };
+        let Some(row) = table.children.get_mut(row_position).and_then(Node::as_element_mut) else {
+            return false;
+        };
+
+        // The row below: the split cell's other half, and a continuation of
+        // every cell beside it.
+        let mut below = Element::new(&edit::name_with(prefix.as_deref(), "tr"), Some(read::W));
+        let cells = positions_of(row, "tc");
+        for (number, position) in cells.iter().copied().enumerate() {
+            let Some(model) = row.children.get(position).and_then(Node::as_element).cloned() else {
+                continue;
+            };
+            let mut fresh = empty_cell(&model, prefix.as_deref());
+            if number != place.column {
+                let properties = properties_of(&mut fresh, prefix.as_deref());
+                properties.remove_children_named(Some(read::W), "vMerge");
+                properties_insert(properties, prefix.as_deref(), "vMerge", None);
+            }
+            below.push_element(fresh);
+        }
+
+        // And the row above: every cell but the split one now starts a merge.
+        for (number, position) in cells.into_iter().enumerate() {
+            if number == place.column {
+                continue;
+            }
+            let Some(cell) = row.children.get_mut(position).and_then(Node::as_element_mut) else {
+                continue;
+            };
+            let properties = properties_of(cell, prefix.as_deref());
+            properties.remove_children_named(Some(read::W), "vMerge");
+            properties_insert(properties, prefix.as_deref(), "vMerge", Some("restart"));
+        }
+
+        table.insert_element(row_position + 1, below);
+        self.mark_modified();
+        true
+    }
+
+    /// Rubs out the line between two cells, making one cell of them.
+    ///
+    /// Word's Eraser. The two cells are named by a place inside each, which is
+    /// what the pointer can say: it is over an edge, and there is a cell either
+    /// side of it.
+    pub fn erase_between(&mut self, one: TextPosition, other: TextPosition) -> bool {
+        let Some(here) = self.table_at(one) else { return false };
+        let Some(there) = self.table_at(other) else { return false };
+        if here.table != there.table {
+            return false;
+        }
+
+        // Merging works on what is selected, so the two cells are selected and
+        // then merged: one mechanism rather than two that have to agree.
+        let kept = (self.caret(), self.selections());
+        self.set_caret(one);
+        self.extend_selection_to(other);
+        let merged = self.merge_cells();
+        if !merged {
+            self.set_caret(kept.0);
+        }
+        merged
+    }
+
     /// Splits the cell the caret is in back into separate cells.
     pub fn split_cell(&mut self) -> bool {
         let Some(place) = self.table_here() else { return false };

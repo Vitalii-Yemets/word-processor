@@ -454,6 +454,11 @@ fn empty_cell(model: &Element, prefix: Option<&str>) -> Element {
 }
 
 /// Widens the grid by one column, copying the width beside it.
+pub(crate) fn widen_grid(table: &mut Element, prefix: Option<&str>, column: usize) {
+    add_grid_column(table, prefix, column, true);
+}
+
+/// The same, saying which side the new column goes.
 fn add_grid_column(table: &mut Element, prefix: Option<&str>, column: usize, after: bool) {
     let Some(grid) = table.child_mut(Some(read::W), "tblGrid") else { return };
     let Some(position) = child_position(grid, "gridCol", column) else { return };

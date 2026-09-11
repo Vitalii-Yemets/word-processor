@@ -337,6 +337,27 @@ impl Editor {
                     });
                 }
             }
+            "drawtable" => {
+                // A table with a line drawn down one cell and another rubbed
+                // out between two. The only way to see that the two pens act
+                // on the cells and not on the text.
+                use super::borderpainter::TablePen;
+                self.document.insert_table(3, 3);
+                self.ribbon.tab = Tab::TableLayout;
+                self.relayout();
+                wp_shell::App::draw(self, 1400, 900);
+
+                self.toggle_table_pen(TablePen::Draw);
+                if let Some((x, y)) = self.middle_of_cell(4) {
+                    self.table_pen_press(x, y);
+                    self.table_pen_release(x, y + 40);
+                }
+                self.toggle_table_pen(TablePen::Erase);
+                if let Some((x, y)) = self.left_edge_of_cell(7) {
+                    self.table_pen_press(x, y);
+                }
+                self.relayout();
+            }
             "borderpen" => {
                 // A table with three of its edges ruled by the pen, and the
                 // gallery open over it. The only way to see that the pen puts

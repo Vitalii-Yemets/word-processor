@@ -142,6 +142,11 @@ pub struct Editor {
     view_height: usize,
     /// Whether the left button is down and dragging out a selection.
     dragging: bool,
+    /// Which of Word's two table pens is in hand: the one that draws lines
+    /// between cells, or the one that rubs them out. See [`borderpainter`].
+    table_pen: Option<borderpainter::TablePen>,
+    /// Where the table pen went down, while a line is being drawn.
+    drawing_from: Option<(i32, i32)>,
     /// The line the border painter is carrying, while it is in hand.
     ///
     /// A mode rather than a command, the way the format painter is: a person
@@ -456,6 +461,8 @@ impl Editor {
             view_width: 0,
             view_height: 0,
             dragging: false,
+            table_pen: None,
+            drawing_from: None,
             border_pen: None,
             adding_selection: false,
             column_drag: None,

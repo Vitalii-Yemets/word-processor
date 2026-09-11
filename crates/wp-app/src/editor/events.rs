@@ -301,6 +301,11 @@ impl App for Editor {
                 self.sliding = false;
                 self.resizing_pane = false;
 
+                // The table pen draws its line when the drag that made it ends.
+                if self.table_pen_release(x, y) {
+                    return Response::Redraw;
+                }
+
                 // Ctrl and a drag adds a stretch to the selection; Ctrl and a
                 // click takes the sentence. Which of the two it was is only
                 // known when the button comes up: a drag that never moved never
@@ -740,6 +745,12 @@ impl Editor {
             self.dragging = true;
             self.status.clear();
             self.needs_redraw = true;
+            return Response::Redraw;
+        }
+
+        // A table pen in hand takes the press before anything else: while one
+        // is out, a press in a table is drawing rather than typing.
+        if self.table_pen_press(x, y) {
             return Response::Redraw;
         }
 
@@ -1726,6 +1737,9 @@ impl Editor {
                 // A pen in hand is something being carried too.
                 if self.painting_borders() {
                     return self.toggle_border_painter();
+                }
+                if let Some(pen) = self.table_pen {
+                    return self.toggle_table_pen(pen);
                 }
                 // Reading mode is left the way it is left in every reader.
                 if !self.view.shows_furniture() {
