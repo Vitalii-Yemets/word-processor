@@ -387,6 +387,7 @@ pub(crate) fn heading_run(text: &str, instruction: &str) -> Run {
         content: vec![crate::model::RunContent::Text(text.to_owned())],
         field: Some(instruction.to_owned()),
         revision: None,
+        format_change: None,
     }
 }
 

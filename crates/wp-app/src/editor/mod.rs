@@ -352,6 +352,11 @@ pub struct Editor {
     choosing_furniture: wp_docx::furniture::Furniture,
     /// Whether tracked changes are drawn as changes.
     show_markup: bool,
+    /// And whether a run whose formatting somebody changed is marked as such,
+    /// which Word switches apart from it. The third of Word's three kinds —
+    /// the comments — is the pane being open, and is not kept twice. See
+    /// [`review::MarkupKind`].
+    show_formatting_markup: bool,
     /// Whether the boundaries of a table with no borders are drawn.
     ///
     /// Word's View Gridlines: on the screen only, never printed.
@@ -527,6 +532,7 @@ impl Editor {
             find_bar: None,
             choosing_furniture: wp_docx::furniture::Furniture::Header,
             show_markup: true,
+            show_formatting_markup: true,
             show_table_gridlines: true,
             note_kind: wp_docx::notes::Kind::Footnote,
             reference_kind: wp_docx::captions::Reference::Text,
@@ -1020,6 +1026,7 @@ impl Editor {
         self.engine.set_dpi(self.pixels_per_inch());
         self.engine.set_automatic_colors(self.theme.page_text, self.theme.table_line);
         self.engine.set_markup(self.show_markup);
+        self.engine.set_formatting_markup(self.show_formatting_markup);
         self.engine.set_table_gridlines(self.show_table_gridlines);
         self.engine.set_marks(self.show_marks);
         self.engine.set_outline(self.outline_for_layout());

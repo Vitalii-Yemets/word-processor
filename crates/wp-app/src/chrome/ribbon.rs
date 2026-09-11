@@ -254,6 +254,9 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::AcceptChange, choice: Choice::Accepting, split: true },
     Menu { command: Command::RejectChange, choice: Choice::Rejecting, split: true },
     Menu { command: Command::TrackChanges, choice: Choice::Tracking, split: true },
+    // Word's Show Markup is a plain dropdown: there is no such thing as "the
+    // markup", only the three kinds of it, and each is switched on its own.
+    Menu { command: Command::ShowMarkup, choice: Choice::Markup, split: false },
     // Word's two Arrange buttons: the face moves the drawing one place through
     // the pile, and the arrow beside it offers the two longer moves.
     Menu { command: Command::BringForward, choice: Choice::Forward, split: true },
@@ -1148,6 +1151,7 @@ impl Ribbon {
                     | Choice::Position
                     | Choice::Forward
                     | Choice::Backward
+                    | Choice::Markup
                     | Choice::QuickPart
                     | Choice::WordArt
                     | Choice::Drawing

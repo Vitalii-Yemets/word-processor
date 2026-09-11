@@ -213,6 +213,7 @@ fn address_line_paragraph(
             content: vec![crate::model::RunContent::Text(text.to_owned())],
             field: None,
             revision: None,
+            format_change: None,
         }],
     }
 }

@@ -153,7 +153,7 @@ impl Document {
 fn count_revisions(element: &Element, count: &mut usize) {
     for child in element.child_elements() {
         if child.namespace.as_deref() == Some(read::W)
-            && matches!(child.local_name(), "ins" | "del")
+            && matches!(child.local_name(), "ins" | "del" | "rPrChange")
         {
             *count += 1;
         }
@@ -176,6 +176,19 @@ fn resolve_within(
             continue;
         };
         if child.namespace.as_deref() != Some(read::W) {
+            index += 1;
+            continue;
+        }
+
+        // A formatting change is not a wrapper round anything: it is a record
+        // inside a run's properties of what they said before. Accepting one
+        // takes the record away and leaves the formatting; rejecting it puts
+        // the old properties back.
+        if child.local_name() == "rPr" && child.child(Some(read::W), "rPrChange").is_some() {
+            if let Some(properties) = element.children[index].as_element_mut() {
+                resolve_format_change(properties, decision, prefix);
+                *resolved += 1;
+            }
             index += 1;
             continue;
         }
@@ -223,6 +236,29 @@ fn resolve_within(
         }
         index += count;
     }
+}
+
+/// Accepts or rejects one run's recorded formatting change.
+///
+/// Accepting: the record goes and the formatting stays, which is what the run
+/// already says. Rejecting: everything the run's properties say is thrown away
+/// and replaced by what the record kept.
+fn resolve_format_change(properties: &mut Element, decision: Decision, prefix: Option<&str>) {
+    let Some(change) = properties.child(Some(read::W), "rPrChange") else { return };
+    if decision == Decision::Accept {
+        properties.remove_children_named(Some(read::W), "rPrChange");
+        return;
+    }
+
+    // What the run said before, which the record holds as a `w:rPr` of its own.
+    // A record with nothing in it means the run had no properties at all, and
+    // putting none back is exactly right.
+    let before = change
+        .child(Some(read::W), "rPr")
+        .map(|element| element.children.clone())
+        .unwrap_or_default();
+    properties.children = before;
+    let _ = prefix;
 }
 
 /// Turns `w:delText` back into `w:t` throughout a run.
@@ -360,8 +396,17 @@ impl Document {
         true
     }
 
+    /// Who is formatting, and under what number, when formatting is to be
+    /// recorded as a change.
+    ///
+    /// `None` when changes are not being tracked, which is what tells the
+    /// formatting code to write the new properties and keep nothing.
+    pub(crate) fn recording_formatting(&self) -> Option<(Reviser, i32)> {
+        self.tracking_changes().then(|| (self.reviser.clone(), self.next_revision_id()))
+    }
+
     /// A number no tracked change in the document is using.
-    fn next_revision_id(&self) -> i32 {
+    pub(crate) fn next_revision_id(&self) -> i32 {
         let mut highest = 0i32;
         highest_revision_id(&self.tree().root, &mut highest);
         highest + 1
@@ -383,7 +428,7 @@ fn wrap(
 }
 
 /// Writes who made a change and when onto its wrapper.
-fn stamp(wrapper: &mut Element, id: i32, reviser: &Reviser, prefix: Option<&str>) {
+pub(crate) fn stamp(wrapper: &mut Element, id: i32, reviser: &Reviser, prefix: Option<&str>) {
     wrapper.set_namespaced_attribute(&edit::name_with(prefix, "id"), read::W, &id.to_string());
     wrapper.set_namespaced_attribute(&edit::name_with(prefix, "author"), read::W, &reviser.author);
     wrapper.set_namespaced_attribute(&edit::name_with(prefix, "date"), read::W, &reviser.date);

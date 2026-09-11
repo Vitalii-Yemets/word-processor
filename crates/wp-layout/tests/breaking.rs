@@ -110,7 +110,13 @@ fn a_full_stop_in_a_run_of_its_own_stays_with_its_sentence() {
     let bold = RunProperties { bold: Some(true), ..RunProperties::default() };
     let runs = vec![
         Run::text(&format!("{}{}", filler(5), "a".repeat(150))),
-        Run { properties: bold, content: Run::text(".").content, field: None, revision: None },
+        Run {
+            properties: bold,
+            content: Run::text(".").content,
+            field: None,
+            revision: None,
+            format_change: None,
+        },
         Run::text(" and more text after it"),
     ];
 

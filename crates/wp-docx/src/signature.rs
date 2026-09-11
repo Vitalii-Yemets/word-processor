@@ -136,6 +136,7 @@ fn name_paragraph(name: &str) -> Paragraph {
             content: vec![RunContent::Text(name.to_owned())],
             field: None,
             revision: None,
+            format_change: None,
         }],
     }
 }
@@ -154,6 +155,7 @@ fn title_paragraph(title: &str) -> Paragraph {
             content: vec![RunContent::Text(title.to_owned())],
             field: None,
             revision: None,
+            format_change: None,
         }],
     }
 }

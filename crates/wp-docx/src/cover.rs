@@ -197,6 +197,7 @@ fn line(
             content: vec![crate::model::RunContent::Text(text.to_owned())],
             field: None,
             revision: None,
+            format_change: None,
         }],
     })
 }
@@ -233,6 +234,7 @@ fn break_paragraph() -> Block {
             content: vec![crate::model::RunContent::Break(crate::model::BreakKind::Page)],
             field: None,
             revision: None,
+            format_change: None,
         }],
     })
 }

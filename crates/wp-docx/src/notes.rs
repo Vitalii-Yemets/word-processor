@@ -270,6 +270,7 @@ impl Document {
                         content: vec![RunContent::NoteReference { id, endnote: kind.is_endnote() }],
                         field: None,
                         revision: None,
+                        format_change: None,
                     },
                 );
                 paragraph.runs.insert(1, Run::text(" "));

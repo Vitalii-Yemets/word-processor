@@ -410,6 +410,7 @@ fn a_tab_counts_as_one_character_of_the_paragraph() {
             properties: RunProperties::default(),
             field: None,
             revision: None,
+            format_change: None,
             content: vec![RunContent::Tab],
         }],
         ..Paragraph::default()

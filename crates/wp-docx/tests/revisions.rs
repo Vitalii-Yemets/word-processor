@@ -225,3 +225,95 @@ fn the_caret_still_points_at_something_after_a_rejection() {
     let length = document.paragraph_text(caret.paragraph).map_or(0, |text| text.len());
     assert!(caret.offset <= length, "the caret is past the end of its paragraph");
 }
+
+// --- Formatting changes -----------------------------------------------------
+
+/// The formatting changes recorded on the first paragraph's runs, as the author
+/// of each.
+fn format_changes(document: &Document) -> Vec<String> {
+    let Block::Paragraph(paragraph) = &document.body().blocks[0] else { panic!("a paragraph") };
+    paragraph
+        .runs
+        .iter()
+        .filter_map(|run| run.format_change.as_ref())
+        .map(|change| change.author.clone())
+        .collect()
+}
+
+/// Makes the first word bold with changes being recorded.
+fn embolden(document: &mut Document) {
+    document.set_caret(TextPosition::new(0, 0));
+    document.move_caret(TextPosition::new(0, 3), true);
+    assert!(document.set_format(wp_docx::CharacterFormat::Bold, true));
+}
+
+#[test]
+fn formatting_while_changes_are_tracked_is_recorded_as_one() {
+    let mut document = document("one two");
+    document.set_tracking_changes(true);
+    embolden(&mut document);
+
+    assert_eq!(format_changes(&document), vec!["Ada Lovelace".to_owned()]);
+    // And it survives the file, which is the whole point of writing it down.
+    assert_eq!(format_changes(&round_trip(&document)), vec!["Ada Lovelace".to_owned()]);
+}
+
+#[test]
+fn formatting_with_changes_untracked_is_recorded_as_nothing() {
+    let mut document = document("one two");
+    embolden(&mut document);
+    assert!(format_changes(&document).is_empty());
+}
+
+#[test]
+fn accepting_a_formatting_change_keeps_the_formatting() {
+    let mut document = document("one two");
+    document.set_tracking_changes(true);
+    embolden(&mut document);
+
+    assert_eq!(document.resolve_all_revisions(Decision::Accept), 1);
+    assert!(format_changes(&document).is_empty(), "the record is still there");
+
+    let Block::Paragraph(paragraph) = &document.body().blocks[0] else { panic!("a paragraph") };
+    assert_eq!(paragraph.runs[0].properties.bold, Some(true), "the bold went with it");
+}
+
+#[test]
+fn rejecting_one_puts_the_formatting_back_as_it_was() {
+    let mut document = document("one two");
+    document.set_tracking_changes(true);
+    embolden(&mut document);
+
+    assert_eq!(document.resolve_all_revisions(Decision::Reject), 1);
+    assert!(format_changes(&document).is_empty());
+
+    let Block::Paragraph(paragraph) = &document.body().blocks[0] else { panic!("a paragraph") };
+    assert_ne!(paragraph.runs[0].properties.bold, Some(true), "the bold stayed");
+}
+
+#[test]
+fn formatting_the_same_run_twice_keeps_what_it_first_said() {
+    // The record is of what nobody has touched, not of the last state before
+    // the last keystroke: two presses of Bold and Italic are one change as far
+    // as anybody reviewing the document is concerned.
+    let mut document = document("one two");
+    document.set_tracking_changes(true);
+    embolden(&mut document);
+    document.set_caret(TextPosition::new(0, 0));
+    document.move_caret(TextPosition::new(0, 3), true);
+    document.set_format(wp_docx::CharacterFormat::Italic, true);
+
+    assert_eq!(format_changes(&document).len(), 1);
+    document.resolve_all_revisions(Decision::Reject);
+    let Block::Paragraph(paragraph) = &document.body().blocks[0] else { panic!("a paragraph") };
+    assert_ne!(paragraph.runs[0].properties.bold, Some(true));
+    assert_ne!(paragraph.runs[0].properties.italic, Some(true));
+}
+
+#[test]
+fn a_formatting_change_counts_as_a_change() {
+    let mut document = document("one two");
+    document.set_tracking_changes(true);
+    embolden(&mut document);
+    assert_eq!(document.revision_count(), 1);
+}

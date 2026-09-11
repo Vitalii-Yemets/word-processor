@@ -72,12 +72,14 @@ fn rich_body() -> Body {
             },
             field: None,
             revision: None,
+            format_change: None,
             content: vec![RunContent::Text("formatted".to_owned())],
         },
         Run {
             properties: RunProperties::default(),
             field: None,
             revision: None,
+            format_change: None,
             content: vec![
                 RunContent::Tab,
                 RunContent::Break(BreakKind::Line),

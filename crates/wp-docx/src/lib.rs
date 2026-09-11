@@ -829,6 +829,7 @@ impl Document {
         }
         let change = self.pending.clone();
         let prefix = self.prefix();
+        let recording = self.recording_formatting();
 
         let Some(path) = position::paragraph_path(&self.tree.root, start.paragraph) else {
             return;
@@ -836,7 +837,14 @@ impl Document {
         let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
             return;
         };
-        format::apply_to_range(paragraph, start.offset, end.offset, &change, prefix.as_deref());
+        format::apply_to_range(
+            paragraph,
+            start.offset,
+            end.offset,
+            &change,
+            prefix.as_deref(),
+            recording.as_ref().map(|(reviser, id)| (reviser, *id)),
+        );
     }
 
     /// Removes the character before the caret, or joins onto the last paragraph.
@@ -1354,6 +1362,7 @@ impl Document {
 
         self.record(EditKind::Structural, start, false);
         let prefix = self.prefix();
+        let recording = self.recording_formatting();
         let mut changed = false;
 
         for index in start.paragraph..=end.paragraph {
@@ -1362,7 +1371,14 @@ impl Document {
             let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
                 continue;
             };
-            changed |= format::apply_to_range(paragraph, from, to, &change, prefix.as_deref());
+            changed |= format::apply_to_range(
+                paragraph,
+                from,
+                to,
+                &change,
+                prefix.as_deref(),
+                recording.as_ref().map(|(reviser, id)| (reviser, *id)),
+            );
         }
 
         if changed {
@@ -1749,6 +1765,7 @@ impl Document {
 
         self.record(EditKind::Structural, start, false);
         let prefix = self.prefix();
+        let recording = self.recording_formatting();
         let mut changed = false;
 
         for index in start.paragraph..=end.paragraph {
@@ -1757,7 +1774,14 @@ impl Document {
             let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
                 continue;
             };
-            changed |= format::apply_to_range(paragraph, from, to, change, prefix.as_deref());
+            changed |= format::apply_to_range(
+                paragraph,
+                from,
+                to,
+                change,
+                prefix.as_deref(),
+                recording.as_ref().map(|(reviser, id)| (reviser, *id)),
+            );
         }
 
         if changed {

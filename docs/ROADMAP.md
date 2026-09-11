@@ -778,13 +778,12 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   it is the widest thing on the Home tab, and losing the whole Styles group on a
   narrow window would take the styles off the tab they are used from.
 
-  Not done, and named rather than drawn as dead rows: **Bring Forward** and
-  **Send Backward** need an order among drawings that the model does not carry
-  (`wp:anchor relativeHeight` is written as one number for all of them), and
-  **Show Markup** needs comments and formatting revisions to be markable apart
-  from insertions and deletions — both are **C21** below. Word's **Select
-  Objects** and **Select Text with Similar Formatting** need a selection made of
-  several separate stretches, which is **C22**.
+  **Bring Forward**, **Send Backward** and **Show Markup** were drawn here and
+  did not do what their names said: the first two needed an order among drawings
+  that the model did not carry, and the third needed comments and formatting
+  revisions to be markable apart from insertions and deletions. **C21** did
+  both. Word's **Select Objects** and **Select Text with Similar Formatting**
+  still need a selection made of several separate stretches, which is **C22**.
 - [x] **C12. The boxes on the Layout tab.** The indent boxes are drawn and
   cannot be typed into — pressing them says to drag the ruler instead. Spacing
   before and after has no boxes at all. Both are measurements a person types.
@@ -1036,7 +1035,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   `chrome::ribbon` no longer describing the ribbon, and there is nowhere yet to
   say "this button of Word's is not shown". Word's Import/Export of a
   customisation file is missing too.
-- [ ] **C21. The order things are drawn in, and which marks are shown.** Two
+- [x] **C21. The order things are drawn in, and which marks are shown.** Two
   gaps **C11** found, both of them a missing distinction rather than a missing
   button.
   Word's **Bring Forward** and **Send Backward** move one drawing in front of
@@ -1050,9 +1049,28 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   formatting changes on and off one at a time. There is one switch here, and it
   covers insertions and deletions: comments leave no mark in the text to hide,
   and a formatting change (`w:rPrChange`) is neither recorded nor drawn.
-  *Done when:* two overlapping drawings can be reordered and stay that way
-  through a save, and each of Word's three kinds of markup can be shown or
-  hidden on its own.
+  *Done:* the number is read, written and counted up as drawings are added, so
+  a new one goes on top the way Word's does. A page hands out its drawings in
+  one sequence — pictures and shapes together, ordered by what their anchors
+  say — and both the screen and the PDF draw that sequence. `behindDoc` is
+  honoured as well, which it was not: a drawing in front of the text is drawn in
+  front of it, with the words inside a shape drawn after its fill. Bring Forward
+  and Send Backward are Word's two split buttons: the face moves the drawing one
+  place through the pile, and the arrow offers to move it the whole way or out
+  of the pile altogether.
+  Show Markup is Word's menu, with a tick against each of the three kinds.
+  Formatting changes needed the whole of `w:rPrChange` behind them — recording
+  one when a person formats text while changes are being tracked, writing it,
+  reading it back, marking the text in its author's colour, and accepting or
+  rejecting it. Rejecting puts back exactly what the run's properties said
+  before, which is what the record holds.
+  *Not done, and named here rather than drawn as a dead switch:* Word's
+  balloons, which say down the margin what each change was — the marks here say
+  that something changed and not what; `w:pPrChange`, the same record for a
+  paragraph's own formatting rather than a run's; and the Ink line of Word's
+  menu, which needs a pen. A picture still cannot float — `Picture` carries no
+  anchor, so a picture read from Word keeps its position in the file and is laid
+  out in the line of text. That is **C26**.
 - [ ] **C22. A selection of more than one stretch.** Word can hold several
   separate stretches of text selected at once: Ctrl and a drag adds to the
   selection, and its Select menu uses it for "Select Objects" and "Select All
@@ -1116,6 +1134,22 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   **Formula** — `=SUM(ABOVE)` and the rest, as a field. The field machinery is
   there; the arithmetic over the cells around it is not.
   *Done when:* each of the six does what Word's does.
+
+- [ ] **C26. A picture that floats.** `Picture` carries no anchor, so only a
+  shape can float. A picture read from a Word document where it floats keeps its
+  anchor in the file — nothing is lost on saving — but it is laid out in the
+  line of text, which is the wrong place, and the whole Arrange group is about
+  a drawing it cannot act on. **C21** made the order among drawings work and
+  found this while doing it: a picture and a shape cannot be overlapped, because
+  a picture cannot be anywhere but in the line.
+  The pieces are all there: `anchor::read_anchor` reads one, `place_float` lays
+  one out and reserves the room round it, and `Wrap` is honoured. What is
+  missing is the field on `Picture`, the reader filling it in, the writer
+  putting it back, and the layout sending a picture down the same path a shape
+  goes down.
+  *Done when:* a picture can be given any of Word's wrappings, moved through the
+  pile of drawings and put in front of or behind the text, and stays that way
+  through a save.
 
 ## D — Pictures and drawings
 

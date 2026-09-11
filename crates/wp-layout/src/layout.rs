@@ -894,9 +894,14 @@ pub struct LayoutEngine<'a> {
     /// only known once the body has been laid out and the pages counted — so
     /// the footer is laid out afterwards, once per page, with this set.
     field_page: Option<(usize, usize, NumberFormat)>,
-    /// Whether tracked changes are shown as changes rather than as the text
-    /// they would leave behind.
+    /// Whether insertions and deletions are shown as changes rather than as
+    /// the text they would leave behind.
     show_markup: bool,
+    /// And whether a run whose formatting somebody changed is marked as such.
+    ///
+    /// Apart from the one above because Word switches them apart: its Show
+    /// Markup menu has a line for each. See [`wp_docx::model::FormatChange`].
+    show_formatting: bool,
     /// Whether the boundaries of a table with no lines of its own are drawn.
     ///
     /// Word's View Gridlines. Never printed: `wp-pdf` and the printer both lay
@@ -987,6 +992,7 @@ impl<'a> LayoutEngine<'a> {
             counters: ListCounters::new(),
             field_page: None,
             show_markup: true,
+            show_formatting: true,
             table_gridlines: false,
             show_marks: false,
             note_numbers: HashMap::new(),
@@ -1029,9 +1035,23 @@ impl<'a> LayoutEngine<'a> {
         self.table_gridlines = shown;
     }
 
+    /// Whether insertions and deletions are shown as changes.
     pub fn set_markup(&mut self, shown: bool) {
         if self.show_markup != shown {
             self.show_markup = shown;
+            self.measured.clear();
+        }
+    }
+
+    /// And whether changed formatting is marked.
+    ///
+    /// What was measured is thrown away, as above. The mark is only a colour
+    /// and a colour cannot move a line break, but the colour is decided while a
+    /// paragraph is measured and kept with the measurement — so a paragraph
+    /// measured with the mark on would keep it after the switch.
+    pub fn set_formatting_markup(&mut self, shown: bool) {
+        if self.show_formatting != shown {
+            self.show_formatting = shown;
             self.measured.clear();
         }
     }
@@ -2591,6 +2611,15 @@ impl<'a> LayoutEngine<'a> {
                 match change.kind {
                     wp_docx::model::RevisionKind::Inserted => style.underline = true,
                     wp_docx::model::RevisionKind::Deleted => style.strike = true,
+                }
+            }
+            // Text somebody reformatted is marked in their colour and nothing
+            // else: the words are unchanged, only the way they are set. Word
+            // says what changed in a balloon down the margin, which this has
+            // nowhere to put yet.
+            if self.show_formatting && run.revision.is_none() {
+                if let Some(change) = &run.format_change {
+                    style.color = author_color(&change.author);
                 }
             }
             let style_index = styles.len();

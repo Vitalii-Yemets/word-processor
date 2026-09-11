@@ -399,12 +399,15 @@ pub(crate) fn range_needs_change(
 ///
 /// Only the fields the change actually names are touched, so turning on bold
 /// leaves the colour, the font and everything else exactly as it was.
+/// `recording` is who is making the change and under what number, when changes
+/// are being tracked. It is what turns formatting into a `w:rPrChange`.
 pub(crate) fn apply_to_range(
     paragraph: &mut Element,
     start: usize,
     end: usize,
     change: &RunProperties,
     prefix: Option<&str>,
+    recording: Option<(&crate::revisions::Reviser, i32)>,
 ) -> bool {
     if !range_needs_change(paragraph, start, end, change) {
         return false;
@@ -423,7 +426,7 @@ pub(crate) fn apply_to_range(
             continue;
         }
         if let Some(run) = element_at_path_mut(paragraph, &span.path) {
-            apply_to_run(run, change, prefix);
+            apply_to_run(run, change, prefix, recording);
             changed = true;
         }
     }
@@ -432,13 +435,54 @@ pub(crate) fn apply_to_range(
 }
 
 /// Writes authored properties onto one run, replacing what it said before.
-fn apply_to_run(run: &mut Element, change: &RunProperties, prefix: Option<&str>) {
+fn apply_to_run(
+    run: &mut Element,
+    change: &RunProperties,
+    prefix: Option<&str>,
+    recording: Option<(&crate::revisions::Reviser, i32)>,
+) {
     if run.child(Some(W), "rPr").is_none() {
         // Run properties must be the first child of the run.
         run.insert_element(0, Element::new(&name_with(prefix, "rPr"), Some(W)));
     }
     let properties = run.child_mut(Some(W), "rPr").expect("just ensured");
+    if let Some((reviser, id)) = recording {
+        record_format_change(properties, reviser, id, prefix);
+    }
     write_run_properties(properties, change, prefix);
+}
+
+/// Keeps what a run's properties said before they were changed.
+///
+/// `w:rPrChange` holds a copy of the `w:rPr` as it was, which is what rejecting
+/// the change puts back. It goes in before the new properties are written, and
+/// only where there is not one already: a run formatted twice by the same
+/// person was formatted once as far as anybody reviewing it is concerned, and
+/// the properties worth keeping are the ones nobody has touched.
+fn record_format_change(
+    properties: &mut Element,
+    reviser: &crate::revisions::Reviser,
+    id: i32,
+    prefix: Option<&str>,
+) {
+    if properties.child(Some(W), "rPrChange").is_some() {
+        return;
+    }
+
+    // The copy goes in before the marker is added to the original, so that the
+    // marker is not inside its own copy.
+    let mut before = properties.clone();
+    before.name = name_with(prefix, "rPr");
+    before.children.clear();
+    for node in &properties.children {
+        before.children.push(node.clone());
+    }
+
+    let mut change = Element::new(&name_with(prefix, "rPrChange"), Some(W));
+    crate::revisions::stamp(&mut change, id, reviser, prefix);
+    change.push_element(before);
+    // Word writes it last inside the properties, after everything it is about.
+    properties.push_element(change);
 }
 
 /// Writes authored properties into a `w:rPr`, wherever that `rPr` lives.

@@ -24,6 +24,7 @@ fn document(anchor: Option<Anchor>) -> Document {
             content: vec![RunContent::Shape(shape)],
             field: None,
             revision: None,
+            format_change: None,
         });
     }
     runs.push(Run::text(&words));
@@ -145,6 +146,7 @@ fn a_drawing_in_the_line_does_take_room() {
                 content: vec![RunContent::Shape(Shape::preset("rect", 144.0, 108.0))],
                 field: None,
                 revision: None,
+                format_change: None,
             });
         }
         runs.push(Run::text(&words));
@@ -185,6 +187,7 @@ fn shaped(preset: &str, wrap: Wrap) -> Document {
             content: vec![RunContent::Shape(shape)],
             field: None,
             revision: None,
+            format_change: None,
         },
         Run::text(&words),
     ])));

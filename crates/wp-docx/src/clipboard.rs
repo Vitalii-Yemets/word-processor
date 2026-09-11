@@ -214,6 +214,7 @@ fn merged(run: &Run) -> Run {
         content: run.content.clone(),
         field: run.field.clone(),
         revision: run.revision.clone(),
+        format_change: None,
     }
 }
 
@@ -230,6 +231,7 @@ fn slice(paragraph: &Paragraph, from: usize, to: usize) -> Paragraph {
             content: Vec::new(),
             field: run.field.clone(),
             revision: run.revision.clone(),
+            format_change: None,
         };
 
         for piece in &run.content {
@@ -285,6 +287,7 @@ mod tests {
                     content: vec![RunContent::Text("bold".to_owned())],
                     field: None,
                     revision: None,
+                    format_change: None,
                 },
                 Run::text(" after"),
             ],
@@ -341,6 +344,7 @@ mod tests {
             content: vec![RunContent::Picture(crate::model::Picture::default())],
             field: None,
             revision: None,
+            format_change: None,
         });
         // "plain bold after" is sixteen characters, and the picture is the
         // seventeenth.
@@ -362,6 +366,7 @@ mod tests {
             content: vec![RunContent::Picture(crate::model::Picture::default())],
             field: None,
             revision: None,
+            format_change: None,
         });
         let copied = slice(&whole, 0, 5);
         assert!(copied

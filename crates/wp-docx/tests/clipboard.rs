@@ -16,6 +16,7 @@ fn document() -> Document {
                 content: vec![RunContent::Text("bold".to_owned())],
                 field: None,
                 revision: None,
+                format_change: None,
             },
             Run::text(" after"),
         ],
@@ -189,6 +190,7 @@ fn heading_and_body() -> Document {
         content: vec![RunContent::Text(text.to_owned())],
         field: None,
         revision: None,
+        format_change: None,
     };
 
     let mut body = Body::default();

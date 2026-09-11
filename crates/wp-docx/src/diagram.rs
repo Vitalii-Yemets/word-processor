@@ -217,6 +217,7 @@ fn caption(text: &str) -> Paragraph {
             content: vec![RunContent::Text(text.to_owned())],
             field: None,
             revision: None,
+            format_change: None,
         }],
     }
 }

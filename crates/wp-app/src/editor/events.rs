@@ -1086,6 +1086,7 @@ impl Editor {
             // way they move a drawing.
             Choice::Forward => return self.open_arrange(true),
             Choice::Backward => return self.open_arrange(false),
+            Choice::Markup => return self.open_markup_menu(),
             Choice::Font => Command::ChooseFont,
             Choice::Size => Command::ChooseSize,
             Choice::Style => Command::ChooseStyle,
@@ -1222,6 +1223,7 @@ impl Editor {
             | Choice::Position
             | Choice::Forward
             | Choice::Backward
+            | Choice::Markup
             | Choice::QuickPart
             | Choice::WordArt
             | Choice::Drawing
@@ -1311,6 +1313,7 @@ impl Editor {
             Choice::Position => self.choose_position(index),
             Choice::Forward => self.choose_arrange(true, index),
             Choice::Backward => self.choose_arrange(false, index),
+            Choice::Markup => self.choose_markup(index),
             Choice::QuickPart => self.choose_quick_part(index),
             Choice::WordArt => self.choose_word_art(index),
             Choice::Drawing => self.choose_drawing(index),

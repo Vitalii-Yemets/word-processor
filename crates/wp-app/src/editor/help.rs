@@ -89,6 +89,7 @@ fn step(keys: &str, what: &str) -> Block {
                 content: vec![wp_docx::model::RunContent::Text(format!("{keys}  "))],
                 field: None,
                 revision: None,
+                format_change: None,
             },
             Run::text(what),
         ],

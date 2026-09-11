@@ -341,6 +341,23 @@ impl Editor {
                     });
                 }
             }
+            "showmarkup" => {
+                // A document where somebody reformatted a line while changes
+                // were being recorded, with Word's Show Markup menu open over
+                // it. The only way to see both the mark and the three switches.
+                self.document.set_tracking_changes(true);
+                self.document.set_caret(wp_docx::TextPosition::new(4, 0));
+                let end = self.document.paragraph_text(4).unwrap_or_default().len();
+                self.document.move_caret(wp_docx::TextPosition::new(4, end), true);
+                self.document.set_format(wp_docx::CharacterFormat::Bold, true);
+                self.document.set_caret(wp_docx::TextPosition::new(0, 0));
+                self.ribbon.tab = Tab::Review;
+                self.relayout();
+                // Drawn before the menu is opened, because a menu hangs under a
+                // button and a button that has never been drawn is nowhere.
+                wp_shell::App::draw(self, 1400, 900);
+                self.open_markup_menu();
+            }
             "overlap" => {
                 // Two drawings on top of one another, the second brought in
                 // front of the text. The only way to see that the order the

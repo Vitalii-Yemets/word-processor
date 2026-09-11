@@ -769,6 +769,12 @@ pub struct Run {
     /// deleted kind still holds its text, because a deletion that has not been
     /// accepted has not happened yet.
     pub revision: Option<Revision>,
+    /// Who changed this run's formatting while changes were being recorded.
+    ///
+    /// Apart from [`Run::revision`] because it is a different thing in a
+    /// different place: this run's words are nobody's insertion or deletion,
+    /// only the way they are set has been changed. See [`FormatChange`].
+    pub format_change: Option<FormatChange>,
     /// The field instruction this run is the result of, when it is inside one.
     ///
     /// A field is a `w:fldSimple` wrapped round the runs that show its last
@@ -787,6 +793,7 @@ impl Run {
             content: vec![RunContent::Text(text.to_owned())],
             field: None,
             revision: None,
+            format_change: None,
         }
     }
 
@@ -798,6 +805,7 @@ impl Run {
             content: vec![RunContent::Text(cached.to_owned())],
             field: Some(instruction.to_owned()),
             revision: None,
+            format_change: None,
         }
     }
 
@@ -1315,6 +1323,23 @@ pub struct Revision {
     /// The date the file records, which is an ISO 8601 timestamp.
     pub date: String,
     /// The number the file gives it, which is what accepting one names.
+    pub id: i32,
+}
+
+/// Who changed a run's formatting, and when.
+///
+/// `w:rPrChange`, which Word records when a person makes text bold while
+/// changes are being tracked. Not a [`Revision`], and deliberately a type of
+/// its own: a revision is an element wrapped round a run, and this is a child
+/// of the run's properties holding what those properties said before. They are
+/// read, written, accepted and rejected in different places, and one type for
+/// both would mean every one of those places beginning by saying which it had.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FormatChange {
+    pub author: String,
+    /// The date the file records, which is an ISO 8601 timestamp.
+    pub date: String,
+    /// The number the file gives it.
     pub id: i32,
 }
 

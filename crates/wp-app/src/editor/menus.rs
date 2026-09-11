@@ -479,6 +479,7 @@ impl Editor {
             content: vec![RunContent::PositionTab(alignment)],
             field: None,
             revision: None,
+            format_change: None,
         };
         let changed = self.document.insert_runs(&[run]);
         self.relayout();

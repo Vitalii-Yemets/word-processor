@@ -229,7 +229,7 @@ impl Editor {
             Command::NextComment => self.step_comment(true),
             Command::ShowComments | Command::ReviewingPane => self.show_comment_pane(),
             Command::TrackChanges => self.toggle_track_changes(),
-            Command::ShowMarkup => self.toggle_markup(),
+            Command::ShowMarkup => self.open_markup_menu(),
             Command::AcceptChange => self.resolve_here(Decision::Accept),
             Command::RejectChange => self.resolve_here(Decision::Reject),
             Command::AcceptAll => self.resolve_all(Decision::Accept),

@@ -76,6 +76,8 @@ pub enum Choice {
     /// back: Word's two Arrange menus.
     Forward,
     Backward,
+    /// Which kinds of mark on a reviewed document are shown.
+    Markup,
     /// The fields that can be dropped into the text.
     QuickPart,
     /// The looks WordArt comes in.
