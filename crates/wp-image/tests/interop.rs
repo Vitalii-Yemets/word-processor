@@ -63,6 +63,27 @@ fn read_manifest() -> Vec<Sample> {
 }
 
 #[test]
+fn every_form_of_bitmap_is_among_the_fixtures() {
+    // A bitmap is not one format but several, and the ones a decoder is most
+    // likely to be wrong about are the ones an encoder will not write for it.
+    // Each of these is assembled by the tool and read back through GDI+, so
+    // what is checked is a second reader's answer and not this one's.
+    let names: Vec<String> = read_manifest().into_iter().map(|sample| sample.name).collect();
+    for wanted in [
+        "square24.bmp", // Twenty-four bits, as any encoder writes them.
+        "core24.bmp",   // The oldest header, twelve bytes of it.
+        "bits1.bmp",    // One bit to the pixel, out of a palette of two.
+        "bits4.bmp",    // Four bits, out of a palette of sixteen.
+        "rle8.bmp",     // Runs of one colour, eight bits to the pixel.
+        "rle4.bmp",     // The same, four bits.
+        "rgb565.bmp",   // Sixteen bits divided up by masks the file states.
+        "topdown.bmp",  // The rows the way they are read.
+    ] {
+        assert!(names.iter().any(|name| name == wanted), "{wanted} is not among the fixtures");
+    }
+}
+
+#[test]
 fn the_fixtures_are_there() {
     let samples = read_manifest();
     assert!(
@@ -110,7 +131,11 @@ fn every_picture_decodes_to_the_colours_its_encoder_wrote() {
 fn each_fixture_is_recognised_from_its_own_bytes() {
     for sample in read_manifest() {
         let bytes = std::fs::read(fixtures_dir().join(&sample.name)).expect("a fixture");
-        let wanted = if sample.name.ends_with(".png") { Format::Png } else { Format::Jpeg };
+        let wanted = match sample.name.rsplit_once('.').map(|(_, suffix)| suffix) {
+            Some("png") => Format::Png,
+            Some("bmp") => Format::Bmp,
+            _ => Format::Jpeg,
+        };
         assert_eq!(Format::detect(&bytes), Some(wanted), "{}", sample.name);
     }
 }

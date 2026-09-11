@@ -1577,11 +1577,53 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
 ## D — Pictures and drawings
 
-- [ ] **D1. The image formats a document carries.** PNG is done. JPEG baseline
-  and progressive, GIF including animation's first frame, TIFF, BMP in its
-  several forms.
-  *Done when:* each decodes to the same pixels as an independent decoder for a
-  set of test images.
+- [x] **D1. BMP, in its several forms.** The first of the four formats the
+  original **D1** asked for, split out because each is a decoder of its own and
+  because only some of them can be proved the way that item demanded. That proof
+  is the point: every fixture is read back through GDI+, and the manifest says
+  what GDI+ found rather than what this program computed. BMP is the format that
+  proof is most thorough for, which is why it went first — see **D7**, **D8**
+  and **D9** for the rest.
+  *Done:* all five headers, from the twelve-byte one that says only the size and
+  the depth to the hundred-and-eight-byte one that states its own colour masks;
+  one, four, eight, sixteen, twenty-four and thirty-two bits to the pixel;
+  palettes of three bytes an entry and of four; runs of one colour at eight bits
+  and at four, including the jump, the absolute run and the rule that what a run
+  never reaches is left as it was; colour masks of any width, with the channels
+  widened by repeating their own top bits, which is what every other reader does
+  and is the difference between agreeing with Windows and being one off; rows
+  written upwards and rows written downwards; and a bitmap whose pixels are a
+  whole PNG or a whole JPEG, which is handed to that decoder.
+  Eight fixtures, seven of them assembled byte by byte because no encoder to
+  hand writes them, every one read back through GDI+ and matched exactly — no
+  tolerance at all, because nothing here is lossy.
+  *Not done:* two bits to the pixel, which Windows CE wrote and nothing else;
+  the colour space and gamma the fourth and fifth headers can carry, which
+  Word ignores as well; and `BI_CMYK`, which is a printer's format and never
+  appears in a document.
+
+- [ ] **D7. GIF.** The palette, LZW, transparency, interlacing, and the first
+  frame of an animation — which is what Word draws for one.
+  *Done when:* it decodes to the same pixels as an independent decoder, on
+  fixtures made the way **D1**'s were.
+
+- [ ] **D8. JPEG, the rest of it.** Baseline is done. Progressive — the
+  coefficients spread over several scans, by spectral selection and by
+  successive approximation — and the four-component pictures Adobe writes, where
+  the colour is CMYK or YCCK and stored inverted.
+  The fixtures for this one cannot come from an encoder to hand: GDI+ writes
+  baseline only. They have to be assembled by hand, as **D1**'s were, and read
+  back through GDI+ — which does read progressive, so the proof still comes from
+  outside.
+  *Done when:* a progressive picture and a baseline picture of the same image
+  decode alike, and both match what an independent decoder reads.
+
+- [ ] **D9. TIFF.** The tag directory, strips and tiles, the compressions a
+  document carries — none, PackBits, LZW, deflate, and the two CCITT fax codings
+  — the photometric interpretations, the predictors, and planar configuration.
+  The largest of the four by a distance, which is why it is last.
+  *Done when:* it decodes to the same pixels as an independent decoder, on
+  fixtures made the way **D1**'s were.
 - [ ] **D2. WMF and EMF.** The metafile formats Word documents still carry:
   a record interpreter drawing through the rasterizer.
 - [ ] **D3. The rest of DrawingML.** The preset shape geometries that are not
