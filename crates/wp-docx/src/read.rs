@@ -644,7 +644,13 @@ fn read_picture(drawing: &Element) -> Option<Picture> {
         .filter(|text| !text.is_empty())
         .map(str::to_owned);
 
-    Some(Picture { relationship: reference.to_owned(), width_emu, height_emu, description })
+    Some(Picture {
+        relationship: reference.to_owned(),
+        width_emu,
+        height_emu,
+        description,
+        anchor: crate::anchor::read_anchor(drawing),
+    })
 }
 
 /// The first descendant with a given local name, whatever namespace it is in.

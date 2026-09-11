@@ -24,9 +24,9 @@ impl Editor {
     /// A drawing that starts floating goes on top of the ones already there,
     /// which is what Word does and what anybody who has just made a drawing
     /// float expects: they want to see it.
-    fn anchor_of(&self, shape: &wp_docx::shapes::Shape) -> Anchor {
-        match &shape.anchor {
-            Some(anchor) => anchor.clone(),
+    fn anchor_of(&self) -> Anchor {
+        match self.document.anchor_here() {
+            Some(anchor) => anchor,
             None => Anchor { depth: self.document.next_drawing_depth(), ..Anchor::default() },
         }
     }
@@ -38,14 +38,14 @@ impl Editor {
             self.needs_redraw = true;
             return Response::Redraw;
         }
-        if self.document.shape_here().is_none() {
+        if !self.document.drawing_here() {
             return self.report("Put the caret beside a shape or a picture first");
         }
         let Some((left, top, _)) = self.ribbon.command_rect(Command::WrapText) else {
             return Response::Ignored;
         };
 
-        let here = self.document.shape_here().and_then(|shape| shape.anchor);
+        let here = self.document.anchor_here();
         let mut items = vec!["In Line with Text".to_owned()];
         items.extend(Wrap::ALL.iter().map(|wrap| wrap.label().to_owned()));
 
@@ -61,7 +61,6 @@ impl Editor {
     /// Sets what the text does about the drawing at the caret.
     pub(super) fn choose_wrapping(&mut self, index: usize) -> Response {
         self.popup = None;
-        let Some(mut shape) = self.document.shape_here() else { return Response::Ignored };
 
         // The first line puts the drawing back in the line of text; the rest
         // are the ways of floating.
@@ -74,14 +73,13 @@ impl Editor {
                     // Behind and in front are the same wrapping — none — and
                     // differ only in which is drawn over which.
                     behind_text: wrap == Wrap::None,
-                    ..self.anchor_of(&shape)
+                    ..self.anchor_of()
                 };
                 (Some(anchor), format!("Wrap: {}", wrap.label()))
             }
         };
 
-        shape.anchor = anchor;
-        let changed = self.document.replace_shape_here(&shape);
+        let changed = self.document.set_anchor_here(anchor.as_ref());
         self.relayout();
         self.edited(changed, &note)
     }
@@ -93,7 +91,7 @@ impl Editor {
             self.needs_redraw = true;
             return Response::Redraw;
         }
-        if self.document.shape_here().is_none() {
+        if !self.document.drawing_here() {
             return self.report("Put the caret beside a shape or a picture first");
         }
         let Some((left, top, _)) = self.ribbon.command_rect(Command::Position) else {
@@ -109,16 +107,14 @@ impl Editor {
     /// Moves the drawing at the caret across the page.
     pub(super) fn choose_position(&mut self, index: usize) -> Response {
         self.popup = None;
-        let Some(mut shape) = self.document.shape_here() else { return Response::Ignored };
         let Some((label, edge)) = POSITIONS.get(index).copied() else { return Response::Ignored };
 
         // A drawing has to float before it can be put anywhere, so one that was
         // in the line starts floating with the wrapping Word gives it.
-        let mut anchor = self.anchor_of(&shape);
+        let mut anchor = self.anchor_of();
         anchor.horizontal = Placement::Aligned(edge.to_owned());
-        shape.anchor = Some(anchor);
 
-        let changed = self.document.replace_shape_here(&shape);
+        let changed = self.document.set_anchor_here(Some(&anchor));
         self.relayout();
         self.edited(changed, &format!("Position: {label}"))
     }
@@ -129,15 +125,14 @@ impl Editor {
     /// takes a drawing out of the pile altogether: the text no longer keeps out
     /// of its way, and it is drawn over the words or under them.
     pub(super) fn set_shape_depth(&mut self, behind: bool) -> Response {
-        let Some(mut shape) = self.document.shape_here() else {
+        if !self.document.drawing_here() {
             return self.report("Put the caret beside a shape or a picture first");
-        };
-        let mut anchor = self.anchor_of(&shape);
+        }
+        let mut anchor = self.anchor_of();
         anchor.wrap = Wrap::None;
         anchor.behind_text = behind;
-        shape.anchor = Some(anchor);
 
-        let changed = self.document.replace_shape_here(&shape);
+        let changed = self.document.set_anchor_here(Some(&anchor));
         self.relayout();
         self.edited(changed, if behind { "Behind text" } else { "In front of text" })
     }
@@ -152,7 +147,7 @@ impl Editor {
         if self.close_popup_if(choice) {
             return Response::Redraw;
         }
-        if self.document.shape_here().is_none() {
+        if !self.document.drawing_here() {
             return self.report("Put the caret beside a shape or a picture first");
         }
         let Some((left, top, _)) = self.ribbon.command_rect(command) else {
@@ -185,23 +180,17 @@ impl Editor {
     /// float: a drawing in the line of text is part of the text, and there is
     /// nothing for it to be in front of.
     pub(super) fn move_shape_depth(&mut self, forwards: bool, all_the_way: bool) -> Response {
-        let Some(mut shape) = self.document.shape_here() else {
+        if !self.document.drawing_here() {
             return self.report("Put the caret beside a shape or a picture first");
-        };
-        let Some(mut anchor) = shape.anchor.clone() else {
+        }
+        let Some(mut anchor) = self.document.anchor_here() else {
             return self.report("A drawing in the line of text is not in front of anything");
         };
 
-        // Every other floating drawing's depth. The one at the caret is among
-        // them, and comparing against itself is harmless: nothing is strictly
-        // above or below its own number.
-        let others: Vec<u32> = self
-            .document
-            .shapes()
-            .iter()
-            .filter_map(|found| found.anchor.as_ref())
-            .map(|found| found.depth)
-            .collect();
+        // Every floating drawing's depth, pictures and shapes alike. The one at
+        // the caret is among them, and comparing against itself is harmless:
+        // nothing is strictly above or below its own number.
+        let others = self.document.drawing_depths();
 
         let wanted = if forwards {
             let above = others.iter().copied().filter(|depth| *depth > anchor.depth);
@@ -219,8 +208,7 @@ impl Editor {
         };
 
         anchor.depth = wanted;
-        shape.anchor = Some(anchor);
-        let changed = self.document.replace_shape_here(&shape);
+        let changed = self.document.set_anchor_here(Some(&anchor));
         self.relayout();
         self.edited(
             changed,
@@ -402,6 +390,39 @@ mod tests {
 
         editor.move_shape_depth(true, false);
         assert!(editor.document.shape_here().expect("a shape").anchor.is_none());
+    }
+
+    #[test]
+    fn a_picture_answers_the_arrange_commands_too() {
+        // The whole of C26: Wrap Text, Position and the pile are about a
+        // drawing, and a picture is a drawing.
+        let mut editor = editor();
+        let canvas = wp_raster::Canvas::filled(20, 20, wp_raster::Color::BLACK);
+        let bytes = wp_raster::encode_png(&canvas);
+        // At the end of the paragraph, past the two shapes: the caret stands in
+        // for choosing a drawing, so a picture put between them would be a
+        // picture the caret cannot be beside without also being beside a shape.
+        let end = editor.document.paragraph_text(0).map_or(0, |text| text.len());
+        editor.document.set_caret(wp_docx::TextPosition::new(0, end));
+        editor.document.insert_picture(&bytes, "png", 914_400, 914_400).expect("a picture");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, end + 1));
+        assert!(editor.document.drawing_here(), "the caret is not beside the picture");
+        assert!(editor.document.shape_here().is_none(), "the caret is beside a shape as well");
+
+        // Wrapped square, which puts it off the line.
+        editor.choose_wrapping(1);
+        let anchor = editor.document.anchor_here().expect("an anchor");
+        assert_eq!(anchor.wrap, wp_docx::anchor::Wrap::Square);
+
+        // And in front of the two shapes, which are in the same pile.
+        editor.move_shape_depth(true, true);
+        let depths = depths(&editor);
+        let picture = editor.document.anchor_here().expect("an anchor").depth;
+        assert!(depths.iter().all(|shape| *shape < picture), "got {depths:?} against {picture}");
+
+        // Back in the line, which is where it started.
+        editor.choose_wrapping(0);
+        assert!(editor.document.anchor_here().is_none());
     }
 
     #[test]

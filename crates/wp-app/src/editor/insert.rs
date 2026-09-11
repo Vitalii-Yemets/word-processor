@@ -337,6 +337,35 @@ impl Editor {
                     });
                 }
             }
+            "floatingpicture" => {
+                // A picture off the line with the text flowing round it, which
+                // is the one thing a picture could not do until now. The
+                // picture is made here rather than read from a file: a proof
+                // should need nothing beside the program.
+                let mut canvas = wp_raster::Canvas::filled(120, 90, wp_raster::Color::WHITE);
+                for y in 0..90i32 {
+                    for x in 0..120i32 {
+                        let shade = (x * 2) as u8;
+                        canvas.fill_rect(x, y, 1, 1, wp_raster::Color::rgb(shade, 0x70, 0xC0));
+                    }
+                }
+                let bytes = wp_raster::encode_png(&canvas);
+                self.document.set_caret(wp_docx::TextPosition::new(4, 0));
+                let _ = self.document.insert_picture(&bytes, "png", 1_143_000, 857_250);
+
+                // Beside the picture, and then floated with the text wrapped
+                // square round it.
+                self.document.set_caret(wp_docx::TextPosition::new(4, 1));
+                let anchor = wp_docx::anchor::Anchor {
+                    wrap: wp_docx::anchor::Wrap::Square,
+                    horizontal: wp_docx::anchor::Placement::Aligned("right".to_owned()),
+                    vertical: wp_docx::anchor::Placement::Offset(0),
+                    ..wp_docx::anchor::Anchor::default()
+                };
+                self.document.set_anchor_here(Some(&anchor));
+                self.document.set_caret(wp_docx::TextPosition::new(0, 0));
+                self.relayout();
+            }
             "drawtable" => {
                 // A table with a line drawn down one cell and another rubbed
                 // out between two. The only way to see that the two pens act

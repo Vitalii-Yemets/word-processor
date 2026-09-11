@@ -906,8 +906,14 @@ struct Item {
     ///
     /// An ordinary tab looks its target up among the stops; this one is told.
     aligned_tab: Option<wp_docx::model::TabAlignment>,
-    /// A picture drawn in the line, with the height it takes up.
+    /// A picture, with the height it takes up.
+    ///
+    /// Drawn in the line unless it carries an anchor, in which case the item
+    /// holds its place in the text and the drawing goes where the anchor says.
     picture: Option<(Rc<Image>, f32)>,
+    /// Where the picture floats, when it does. A shape carries its own inside
+    /// the shape; a picture has nowhere else to put it.
+    picture_anchor: Option<wp_docx::anchor::Anchor>,
     /// An equation drawn in the line, with the height it takes up.
     math: Option<(Box<crate::math::MathBox>, f32)>,
     /// A chart drawn in the line, with the height it takes up.
@@ -2712,6 +2718,7 @@ impl<'a> LayoutEngine<'a> {
                             is_tab: false,
                             aligned_tab: None,
                             picture: None,
+                            picture_anchor: None,
                             shape: None,
                             math: None,
                             chart: None,
@@ -2737,6 +2744,7 @@ impl<'a> LayoutEngine<'a> {
                         is_tab: true,
                         aligned_tab: Some(*alignment),
                         picture: None,
+                        picture_anchor: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -2764,6 +2772,7 @@ impl<'a> LayoutEngine<'a> {
                         is_tab: true,
                         aligned_tab: None,
                         picture: None,
+                        picture_anchor: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -2791,6 +2800,7 @@ impl<'a> LayoutEngine<'a> {
                         is_tab: false,
                         aligned_tab: None,
                         picture: None,
+                        picture_anchor: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -2821,6 +2831,7 @@ impl<'a> LayoutEngine<'a> {
                         is_tab: false,
                         aligned_tab: None,
                         picture: None,
+                        picture_anchor: None,
                         math: None,
                         chart: drawn.map(|drawing| (Box::new(drawing), height)),
                         shape: None,
@@ -2850,6 +2861,7 @@ impl<'a> LayoutEngine<'a> {
                         is_tab: false,
                         aligned_tab: None,
                         picture: None,
+                        picture_anchor: None,
                         shape: None,
                         math: Some((Box::new(laid), height)),
                         chart: None,
@@ -2884,6 +2896,7 @@ impl<'a> LayoutEngine<'a> {
                         is_tab: false,
                         aligned_tab: None,
                         picture: None,
+                        picture_anchor: None,
                         math: None,
                         chart: None,
                         shape: Some((Box::new(shape.clone()), height)),
@@ -2924,6 +2937,7 @@ impl<'a> LayoutEngine<'a> {
                         is_tab: false,
                         aligned_tab: None,
                         picture: decoded.map(|image| (image, height)),
+                        picture_anchor: picture.anchor.clone(),
                         shape: None,
                         math: None,
                         chart: None,
@@ -2945,6 +2959,7 @@ impl<'a> LayoutEngine<'a> {
                         is_tab: false,
                         aligned_tab: None,
                         picture: None,
+                        picture_anchor: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -3071,6 +3086,58 @@ impl<'a> LayoutEngine<'a> {
         shape: &wp_docx::shapes::Shape,
         at: Option<TextPosition>,
     ) {
+        let scale = self.pixels_per_point();
+        let (x, y) = self.float_box(
+            anchor,
+            page_index,
+            area,
+            line_top,
+            width,
+            height,
+            Some(crate::geometry::Preset::from_word(&shape.preset)),
+        );
+
+        page.shapes.push(PlacedShape {
+            x,
+            y,
+            width,
+            height,
+            preset: crate::geometry::Preset::from_word(&shape.preset),
+            fill: shape.fill.as_deref().and_then(Color::from_hex),
+            outline: shape.outline.as_deref().and_then(Color::from_hex),
+            outline_weight: (shape.outline_points() * scale).max(1.0),
+            shadow: self.shape_shadow(scale),
+            text: Vec::new(),
+            name: shape.name.clone(),
+            at,
+            depth: anchor.depth,
+            // Word's rule, and the only thing `behindDoc` decides: a floating
+            // drawing is drawn over the text unless it says otherwise. Where
+            // the wrapping keeps the text out of its way it makes no visible
+            // difference; where it does not — a drawing laid over a table —
+            // it is the difference between reading the words and not.
+            over_text: !anchor.behind_text,
+            source: Some(Box::new(shape.clone())),
+        });
+    }
+
+    /// Works out where a floating drawing sits and reserves the room round it.
+    ///
+    /// Everything a shape and a picture have in common, which is all of it but
+    /// the drawing itself: where a drawing goes does not depend on what it is a
+    /// drawing of. `outline` is the shape to follow for tight wrapping, and is
+    /// nothing for a picture — a picture is the box it fills.
+    #[allow(clippy::too_many_arguments)]
+    fn float_box(
+        &mut self,
+        anchor: &wp_docx::anchor::Anchor,
+        page_index: usize,
+        area: &Placement,
+        line_top: f32,
+        width: f32,
+        height: f32,
+        outline: Option<crate::geometry::Preset>,
+    ) -> (f32, f32) {
         use wp_docx::anchor::{Placement as Where, Relative};
 
         let scale = self.pixels_per_point();
@@ -3128,31 +3195,10 @@ impl<'a> LayoutEngine<'a> {
             wrap: anchor.wrap,
             // The shape itself, so that tight wrapping can follow its outline
             // rather than the box round it.
-            outline: Some((crate::geometry::Preset::from_word(&shape.preset), x, y, width, height)),
+            outline: outline.map(|preset| (preset, x, y, width, height)),
         });
 
-        page.shapes.push(PlacedShape {
-            x,
-            y,
-            width,
-            height,
-            preset: crate::geometry::Preset::from_word(&shape.preset),
-            fill: shape.fill.as_deref().and_then(Color::from_hex),
-            outline: shape.outline.as_deref().and_then(Color::from_hex),
-            outline_weight: (shape.outline_points() * scale).max(1.0),
-            shadow: self.shape_shadow(scale),
-            text: Vec::new(),
-            name: shape.name.clone(),
-            at,
-            depth: anchor.depth,
-            // Word's rule, and the only thing `behindDoc` decides: a floating
-            // drawing is drawn over the text unless it says otherwise. Where
-            // the wrapping keeps the text out of its way it makes no visible
-            // difference; where it does not — a drawing laid over a table —
-            // it is the difference between reading the words and not.
-            over_text: !anchor.behind_text,
-            source: Some(Box::new(shape.clone())),
-        });
+        (x, y)
     }
 
     /// The shadow the theme puts under a shape, in pixels.
@@ -4109,7 +4155,34 @@ impl LayoutEngine<'_> {
                 page.decorations.extend(rules);
                 x += item.width;
             } else if let Some((image, height)) = &item.picture {
-                // A picture sits on the baseline, like a very tall letter.
+                // A picture that floats is not on the line at all: it is put
+                // where its anchor says and the text keeps out of its way, the
+                // same as a shape that floats.
+                if let Some(anchor) = item.picture_anchor.clone() {
+                    let line_top = baseline - placement.ascent;
+                    let (at_x, at_y) = self.float_box(
+                        &anchor,
+                        placement.page,
+                        &placement.area,
+                        line_top,
+                        item.width,
+                        *height,
+                        // A picture is the box it fills: there is no outline for
+                        // tight wrapping to follow.
+                        None,
+                    );
+                    page.images.push(PlacedImage {
+                        x: at_x,
+                        y: at_y,
+                        width: item.width,
+                        height: *height,
+                        image: Rc::clone(image),
+                        depth: anchor.depth,
+                        over_text: !anchor.behind_text,
+                    });
+                    continue;
+                }
+                // One in the line sits on the baseline, like a very tall letter.
                 page.images.push(PlacedImage {
                     x,
                     y: baseline - height,

@@ -751,6 +751,12 @@ pub struct Picture {
     pub height_emu: i64,
     /// What the picture shows, for anyone who cannot see it.
     pub description: Option<String>,
+    /// Where it floats, or `None` when it sits in the line of text.
+    ///
+    /// The same thing a shape carries, and for the same reason: Word's Wrap
+    /// Text, Position and Arrange are about drawings, and a picture is a
+    /// drawing. See [`crate::anchor::Anchor`].
+    pub anchor: Option<crate::anchor::Anchor>,
 }
 
 /// English Metric Units per inch, the unit drawings are measured in.

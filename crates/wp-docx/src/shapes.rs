@@ -424,10 +424,8 @@ impl Document {
     /// are none. See [`crate::anchor::Anchor::depth`].
     #[must_use]
     pub fn next_drawing_depth(&self) -> u32 {
-        self.shapes()
-            .iter()
-            .filter_map(|shape| shape.anchor.as_ref())
-            .map(|anchor| anchor.depth)
+        self.drawing_depths()
+            .into_iter()
             .max()
             .map_or(crate::anchor::USUAL_DEPTH, |highest| highest.saturating_add(1))
     }

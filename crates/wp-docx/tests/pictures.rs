@@ -191,3 +191,115 @@ fn write_a_document_with_a_picture() {
     let bytes = document_with_picture(&drawing("rId1", 1_828_800, 1_828_800), &fixture());
     std::fs::write("/work/dist/picture.docx", bytes).unwrap();
 }
+
+// --- A picture that floats ---------------------------------------------------
+
+/// The same drawing, anchored the way Word writes a floating one.
+fn floating_drawing(relationship: &str, width: i64, height: i64) -> String {
+    format!(
+        r#"<w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300"
+ simplePos="0" relativeHeight="251658250" behindDoc="1" locked="0" layoutInCell="1"
+ allowOverlap="1">
+<wp:simplePos x="0" y="0"/>
+<wp:positionH relativeFrom="column"><wp:posOffset>457200</wp:posOffset></wp:positionH>
+<wp:positionV relativeFrom="paragraph"><wp:posOffset>228600</wp:posOffset></wp:positionV>
+<wp:extent cx="{width}" cy="{height}"/>
+<wp:wrapSquare wrapText="bothSides"/>
+<wp:docPr id="1" name="Picture 1" descr="a gradient"/>
+<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+<pic:pic><pic:blipFill><a:blip r:embed="{relationship}"/></pic:blipFill></pic:pic>
+</a:graphicData></a:graphic>
+</wp:anchor></w:drawing>"#
+    )
+}
+
+/// A document whose one picture floats.
+fn floating_document() -> Document {
+    let bytes = document_with_picture(&floating_drawing("rId1", 914_400, 914_400), &fixture());
+    Document::open(&bytes).expect("opening")
+}
+
+#[test]
+fn a_floating_picture_is_read_as_floating() {
+    let picture = picture_of(&floating_document());
+    let anchor = picture.anchor.expect("an anchor");
+    assert_eq!(anchor.wrap, wp_docx::anchor::Wrap::Square);
+    assert!(anchor.behind_text);
+    assert_eq!(anchor.depth, 251_658_250);
+}
+
+#[test]
+fn a_picture_in_the_line_has_no_anchor() {
+    let bytes = document_with_picture(&drawing("rId1", 914_400, 914_400), &fixture());
+    let document = Document::open(&bytes).expect("opening");
+    assert!(picture_of(&document).anchor.is_none());
+}
+
+#[test]
+fn a_picture_can_be_made_to_float_and_put_back() {
+    let bytes = document_with_picture(&drawing("rId1", 914_400, 914_400), &fixture());
+    let mut document = Document::open(&bytes).expect("opening");
+    // The caret beside the picture: "before" is six characters, and the
+    // drawing is the seventh.
+    document.set_caret(wp_docx::TextPosition::new(0, 7));
+    assert!(document.drawing_here(), "the caret is not beside the picture");
+
+    let anchor = wp_docx::anchor::Anchor {
+        wrap: wp_docx::anchor::Wrap::Tight,
+        ..wp_docx::anchor::Anchor::default()
+    };
+    assert!(document.set_anchor_here(Some(&anchor)));
+    assert_eq!(picture_of(&document).anchor.map(|found| found.wrap), Some(anchor.wrap));
+
+    assert!(document.set_anchor_here(None));
+    assert!(picture_of(&document).anchor.is_none(), "the picture is still floating");
+}
+
+#[test]
+fn floating_survives_being_saved_and_opened_again() {
+    let bytes = document_with_picture(&drawing("rId1", 914_400, 914_400), &fixture());
+    let mut document = Document::open(&bytes).expect("opening");
+    document.set_caret(wp_docx::TextPosition::new(0, 7));
+
+    let anchor = wp_docx::anchor::Anchor {
+        wrap: wp_docx::anchor::Wrap::TopAndBottom,
+        behind_text: true,
+        depth: wp_docx::anchor::USUAL_DEPTH + 3,
+        ..wp_docx::anchor::Anchor::default()
+    };
+    document.set_anchor_here(Some(&anchor));
+
+    let saved = document.save().expect("saving");
+    let reopened = Document::open(&saved).expect("reopening");
+    let found = picture_of(&reopened).anchor.expect("an anchor");
+    assert_eq!(found.wrap, wp_docx::anchor::Wrap::TopAndBottom);
+    assert!(found.behind_text);
+    assert_eq!(found.depth, wp_docx::anchor::USUAL_DEPTH + 3);
+}
+
+#[test]
+fn making_a_picture_float_keeps_everything_under_the_drawing() {
+    // The graphic is never touched: that is the whole reason the anchor is
+    // changed where it stands rather than the element being rebuilt.
+    let mut document = floating_document();
+    document.set_caret(wp_docx::TextPosition::new(0, 7));
+    document.set_anchor_here(None);
+
+    let saved = document.save().expect("saving");
+    let text = String::from_utf8_lossy(&saved).to_string();
+    let _ = text;
+    let reopened = Document::open(&saved).expect("reopening");
+    let picture = picture_of(&reopened);
+    assert_eq!(picture.relationship, "rId1", "the picture lost what it points at");
+    assert_eq!(picture.width_emu, 914_400, "the picture lost its size");
+    assert_eq!(picture.description.as_deref(), Some("a gradient"));
+}
+
+#[test]
+fn a_floating_picture_is_in_the_same_pile_as_a_shape() {
+    // A picture laid over a shape is over it or under it; a count that saw
+    // only one kind would put a new drawing among the others.
+    let document = floating_document();
+    assert_eq!(document.drawing_depths(), vec![251_658_250]);
+    assert_eq!(document.next_drawing_depth(), 251_658_251);
+}

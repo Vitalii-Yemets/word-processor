@@ -1182,7 +1182,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Cell Margins, **C32** Sort, **C33** Formula. Each needs something different
   and none of them is the others' work.
 
-- [ ] **C26. A picture that floats.** `Picture` carries no anchor, so only a
+- [x] **C26. A picture that floats.** `Picture` carried no anchor, so only a
   shape can float. A picture read from a Word document where it floats keeps its
   anchor in the file — nothing is lost on saving — but it is laid out in the
   line of text, which is the wrong place, and the whole Arrange group is about
@@ -1194,9 +1194,24 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   missing is the field on `Picture`, the reader filling it in, the writer
   putting it back, and the layout sending a picture down the same path a shape
   goes down.
-  *Done when:* a picture can be given any of Word's wrappings, moved through the
-  pile of drawings and put in front of or behind the text, and stays that way
-  through a save.
+  *Done:* `Picture` carries an anchor, the reader fills it in, and a floating
+  picture goes down the same path a floating shape does — `place_float` was
+  split into the part that works out where a drawing goes, which is the same
+  for both, and the part that draws it, which is not.
+  Changing a picture's anchor is surgery rather than a rewrite, in
+  `wp-docx/src/floating.rs`. A shape is read into the model and written back out
+  of it; a picture's element holds a great deal the model does not — the crop,
+  the effects, the colour it was recoloured to — and rebuilding it would throw
+  all of that away. The wrapper is renamed between `wp:inline` and `wp:anchor`
+  and its own attributes and children changed, and the graphic below it is never
+  touched.
+  Both kinds go through one door now: `anchor_here` and `set_anchor_here` answer
+  for a shape and for a picture, so every command in Arrange stopped having to
+  ask which it was. The pile is one pile, so a picture laid over a shape is over
+  it or under it.
+  *The one thing that is still the caret's doing:* which drawing a command acts
+  on. A caret between a picture and a shape is beside both, and the shape
+  answers. That is the same limit `arrange.rs` has always had and is **C27**.
 
 - [ ] **C27. A drawing that can be selected.** Every command in the Arrange
   group acts on the drawing nearest the caret, because there is no other way to
