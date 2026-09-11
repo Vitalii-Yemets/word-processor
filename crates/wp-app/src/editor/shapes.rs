@@ -62,6 +62,7 @@ impl Editor {
         }
 
         let changed = self.document.insert_shape(&shape);
+        self.choose_drawing_here();
         self.relayout();
         self.reveal_caret();
         self.edited(changed, &format!("{} added", preset.label()))
@@ -89,6 +90,7 @@ impl Editor {
 
         let shape = Shape::text_box(BOX_WIDTH, BOX_HEIGHT, &text);
         let changed = self.document.insert_shape(&shape);
+        self.choose_drawing_here();
         self.relayout();
         self.reveal_caret();
         self.edited(changed, "Text box added")

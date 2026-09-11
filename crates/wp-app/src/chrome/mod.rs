@@ -151,6 +151,10 @@ pub enum Command {
     /// Select All Text With Similar Formatting, and the reason a selection has
     /// to be able to hold more than one stretch.
     SelectSimilar,
+    /// Turns the pointer into one that chooses drawings rather than putting the
+    /// caret in text. A mode, like the format painter: see
+    /// [`crate::editor::handles`].
+    SelectObjects,
 
     // Insert.
     PageBreak,

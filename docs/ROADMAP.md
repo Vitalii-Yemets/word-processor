@@ -1213,20 +1213,44 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   on. A caret between a picture and a shape is beside both, and the shape
   answers. That is the same limit `arrange.rs` has always had and is **C27**.
 
-- [ ] **C27. A drawing that can be selected.** Every command in the Arrange
-  group acts on the drawing nearest the caret, because there is no other way to
-  say which drawing is meant: a drawing cannot be selected here at all. Word
-  selects one by clicking it, draws eight handles round it, and lets it be
-  dragged and resized by them. Its **Select Objects** turns the pointer into one
-  that does that to a drawing rather than putting a caret in text, and its
-  Selection Pane lists the drawings so one can be picked by name.
+- [x] **C27. A drawing that can be selected.** Every command in the Arrange
+  group acted on the drawing nearest the caret, because there was no other way
+  to say which drawing was meant: a drawing could not be selected here at all.
   **C22** found this while making a selection able to hold several stretches:
-  that is a selection of *text*, and a drawing is not text. What is needed is a
-  second kind of selection beside it — which drawings are chosen — with the
-  handles drawn round them, a drag that moves one and a drag on a handle that
-  resizes it, and every command in Arrange asking that rather than the caret.
-  *Done when:* a drawing can be clicked, is drawn with handles, can be dragged
-  and resized, and Select Objects and the Selection Pane both choose one.
+  that is a selection of *text*, and a drawing is not text.
+  *Done:* the second kind of selection, in `editor/handles.rs`. `chosen_drawing`
+  is the place one drawing is at — one thing, chosen or not, beside the stretches
+  of text rather than among them. Clicking a drawing chooses it, the eight
+  handles are drawn round it, dragging its body moves it and dragging a handle
+  resizes it. A drawing in the line of text starts floating when it is dragged,
+  because a drawing in the line has no position of its own to change; resizing
+  one leaves it in the line, because it has a size there. One drag is one thing
+  to undo however many moves it is made of. A drawing just inserted comes up
+  chosen, which is what Word does and what anybody who has just made a shape
+  wants.
+  Choosing and the caret give each other up: moving the caret or typing drops
+  the drawing, and a press in the text does too. They are the same choice made
+  twice — what the next command is about — and both drawn at once would be the
+  program saying two things.
+  **Select Objects** is on the Select menu and is a mode, like the format
+  painter: while it is in hand a press chooses a drawing and never puts the
+  caret in the text, the menu shows it as on, and Escape puts it down.
+  The **Selection Pane** lists pictures as well as shapes now — it listed only
+  shapes — and picking one out of it chooses the drawing rather than merely
+  moving the caret near it.
+  The model learned to name a drawing exactly rather than "the one beside the
+  caret": `drawing_place_here` settles which of two neighbours is meant, and
+  `shape_at`, `anchor_at`, `drawing_size_at`, `set_anchor_at`,
+  `set_drawing_size_at` and `replace_shape_at` all take that place. That closes
+  the limit **C26** left behind: a caret between a picture and a shape no longer
+  always answers for the shape, because a drawing clicked is one drawing.
+  *Not done:* more than one drawing at a time — shift-clicking a second, and the
+  rubber band Word's Select Objects drags round several — which is **C34**,
+  together with the Align, Group and Rotate buttons that are what having several
+  is for. A corner handle shows the sideways resize pointer rather than a
+  diagonal one, because the shell offers no diagonal. The pane shows the name
+  the file gives a picture, which for a picture carrying a description is the
+  description: the model keeps one field where the format has two.
 
 - [ ] **C29. AutoFit.** Word's three: fit to contents, fit to window, fixed
   column width. The last two are a `w:tblW` and a `w:tblLayout` away; the first
@@ -1272,6 +1296,26 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   number formats its dialog offers.
   *Done when:* a formula in a cell shows the right answer, is worked out again
   when the cells it reads are changed, and survives being saved and reopened.
+
+- [ ] **C34. The rest of the Arrange group: Align, Group and Rotate.** Word's
+  Arrange group has three buttons this one does not, and **C27** is why they
+  were left: two of them are about more than one drawing, and the selection it
+  built holds one.
+  **Align** lines drawings up with each other or with the page — left, centre,
+  right, top, middle, bottom, and the two distribute commands — which is no use
+  at all until several can be chosen. **Group** makes several into one drawing,
+  which is `wpg:wgp` in the file and a thing the model has never held. Both want
+  shift-clicking a second drawing, and the rubber band Word's Select Objects
+  drags round a handful of them, and a selection that is a list rather than one
+  place.
+  **Rotate** is the odd one out: it is about a single drawing, and what it needs
+  is `a:xfrm/@rot` read and written, the geometry turned through the angle as it
+  is drawn, and Word's rotation handle above the drawing's top edge. A button
+  that stored an angle and drew the shape the way up it always was would be a
+  button that does nothing.
+  *Done when:* several drawings can be chosen at once and each of the three
+  buttons does what Word's does to them, a group survives being saved and
+  reopened, and a rotated drawing is drawn rotated.
 
 ## D — Pictures and drawings
 

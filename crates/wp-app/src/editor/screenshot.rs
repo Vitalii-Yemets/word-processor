@@ -79,6 +79,7 @@ impl Editor {
         match self.document.insert_picture(&bytes, "png", width, height) {
             Ok(inserted) => {
                 let (across, down) = (shot.width, shot.height);
+                self.choose_drawing_here();
                 self.edited(inserted, &format!("Screenshot, {across} by {down}"))
             }
             Err(error) => self.report(&format!("The picture could not be inserted: {error}")),

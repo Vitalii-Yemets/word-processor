@@ -272,15 +272,18 @@ impl Editor {
             Choice::Selecting => {
                 let items = vec![
                     "Select All".to_owned(),
+                    "Select Objects".to_owned(),
                     "Select All Text With Similar Formatting".to_owned(),
                     "Selection Pane…".to_owned(),
                 ];
                 let rows = vec![
                     Row::new(Kind::Choice, Icon::Select),
                     Row::new(Kind::Choice, Icon::Select),
+                    Row::new(Kind::Choice, Icon::Select),
                     Row::new(Kind::Choice, Icon::SelectionPane),
                 ];
-                (items, rows, None, 300.0)
+                // Select Objects is a mode, so the menu says whether it is on.
+                (items, rows, self.choosing_drawings().then_some(1), 300.0)
             }
             Choice::NoteJump => {
                 let items = vec![
@@ -593,8 +596,9 @@ impl Editor {
     fn choose_selecting(&mut self, index: usize) -> Response {
         match index {
             0 => self.run(crate::chrome::Command::SelectAll),
-            1 => self.run(crate::chrome::Command::SelectSimilar),
-            2 => self.run(crate::chrome::Command::SelectionPane),
+            1 => self.run(crate::chrome::Command::SelectObjects),
+            2 => self.run(crate::chrome::Command::SelectSimilar),
+            3 => self.run(crate::chrome::Command::SelectionPane),
             _ => Response::Ignored,
         }
     }

@@ -374,12 +374,13 @@ impl Editor {
         );
     }
 
-    /// Draws the frame and the eight handles round the drawing at the caret.
+    /// Draws the frame and the eight handles round the chosen drawing.
     ///
     /// Drawn over the page rather than on it, because they are not part of the
     /// document: they are what says the drawing can be taken hold of.
     pub(super) fn draw_shape_handles(&mut self) {
-        let Some((left, top, width, height)) = self.selected_shape_box() else { return };
+        let Some(chosen) = self.chosen_drawing_box() else { return };
+        let (left, top, width, height) = (chosen.left, chosen.top, chosen.width, chosen.height);
         let colour = self.theme.accent;
         let handle = super::handles::HANDLE;
 

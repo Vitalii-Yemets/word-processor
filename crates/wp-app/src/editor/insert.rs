@@ -80,7 +80,10 @@ impl Editor {
             path.extension().and_then(|value| value.to_str()).unwrap_or("png").to_owned();
 
         match self.document.insert_picture(&bytes, &extension, width, height) {
-            Ok(inserted) => self.edited(inserted, "Picture"),
+            Ok(inserted) => {
+                self.choose_drawing_here();
+                self.edited(inserted, "Picture")
+            }
             Err(error) => {
                 wp_shell::dialog::show_error(&format!("Cannot insert the picture: {error}"));
                 Response::Ignored
@@ -473,6 +476,32 @@ impl Editor {
                     self.document.insert_shape(&shape);
                     self.document.set_caret(wp_docx::TextPosition::new(2, 0));
                 }
+                self.relayout();
+            }
+            "chosendrawing" => {
+                // A drawing chosen, which is the only way to see the eight
+                // handles: they are drawn round the drawing that is selected
+                // and round nothing else. The picture beside it is there to
+                // show that the handles belong to one drawing and not to
+                // whatever the caret happens to be near.
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                let shape = wp_docx::shapes::Shape {
+                    name: "Rectangle".to_owned(),
+                    width_emu: 1_828_800,
+                    height_emu: 1_143_000,
+                    fill: Some("4472C4".to_owned()),
+                    text: vec![wp_docx::model::Paragraph::text("Chosen")],
+                    anchor: Some(Anchor {
+                        wrap: Wrap::Square,
+                        horizontal: Placement::Offset(457_200),
+                        vertical: Placement::Offset(228_600),
+                        ..Anchor::default()
+                    }),
+                    ..wp_docx::shapes::Shape::default()
+                };
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.insert_shape(&shape);
+                self.choose_drawing_here();
                 self.relayout();
             }
             "customised" => {

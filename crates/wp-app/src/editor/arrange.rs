@@ -2,13 +2,13 @@
 //!
 //! # What these commands act on
 //!
-//! The drawing nearest the caret. Word acts on the one that is selected, and
-//! selecting a drawing means clicking it — which needs handles, a selection
-//! that is not a stretch of text, and a way to drag. None of that is here yet,
-//! so the caret stands in for it: put the caret beside a drawing and these
-//! commands are about that drawing.
+//! The drawing that is chosen — clicked, drawn with handles — and the one the
+//! caret is beside when none is. See [`super::handles`], which is where a
+//! drawing is chosen and what makes the difference matter: a caret between two
+//! drawings is beside both, and a drawing clicked is one drawing.
 
 use wp_docx::anchor::{Anchor, Placement, Wrap};
+use wp_docx::TextPosition;
 use wp_shell::Response;
 
 use crate::chrome::{Choice, Command, Popup};
@@ -18,14 +18,17 @@ use super::Editor;
 /// Where a drawing can be put across the page.
 const POSITIONS: &[(&str, &str)] = &[("Left", "left"), ("Centre", "center"), ("Right", "right")];
 
+/// What to say when a command about a drawing is given with none in hand.
+const NOTHING: &str = "Click a shape or a picture first";
+
 impl Editor {
     /// The anchor a drawing has, or the one it gets when it begins to float.
     ///
     /// A drawing that starts floating goes on top of the ones already there,
     /// which is what Word does and what anybody who has just made a drawing
     /// float expects: they want to see it.
-    fn anchor_of(&self) -> Anchor {
-        match self.document.anchor_here() {
+    fn anchor_of(&self, at: TextPosition) -> Anchor {
+        match self.document.anchor_at(at) {
             Some(anchor) => anchor,
             None => Anchor { depth: self.document.next_drawing_depth(), ..Anchor::default() },
         }
@@ -38,14 +41,12 @@ impl Editor {
             self.needs_redraw = true;
             return Response::Redraw;
         }
-        if !self.document.drawing_here() {
-            return self.report("Put the caret beside a shape or a picture first");
-        }
+        let Some(at) = self.drawing_in_hand() else { return self.report(NOTHING) };
         let Some((left, top, _)) = self.ribbon.command_rect(Command::WrapText) else {
             return Response::Ignored;
         };
 
-        let here = self.document.anchor_here();
+        let here = self.document.anchor_at(at);
         let mut items = vec!["In Line with Text".to_owned()];
         items.extend(Wrap::ALL.iter().map(|wrap| wrap.label().to_owned()));
 
@@ -58,28 +59,29 @@ impl Editor {
         Response::Redraw
     }
 
-    /// Sets what the text does about the drawing at the caret.
+    /// Sets what the text does about the drawing in hand.
     pub(super) fn choose_wrapping(&mut self, index: usize) -> Response {
         self.popup = None;
+        let Some(at) = self.drawing_in_hand() else { return self.report(NOTHING) };
 
         // The first line puts the drawing back in the line of text; the rest
         // are the ways of floating.
         let (anchor, note) = match index.checked_sub(1) {
             None => (None, "In line with text".to_owned()),
-            Some(at) => {
-                let Some(wrap) = Wrap::ALL.get(at).copied() else { return Response::Ignored };
+            Some(which) => {
+                let Some(wrap) = Wrap::ALL.get(which).copied() else { return Response::Ignored };
                 let anchor = Anchor {
                     wrap,
                     // Behind and in front are the same wrapping — none — and
                     // differ only in which is drawn over which.
                     behind_text: wrap == Wrap::None,
-                    ..self.anchor_of()
+                    ..self.anchor_of(at)
                 };
                 (Some(anchor), format!("Wrap: {}", wrap.label()))
             }
         };
 
-        let changed = self.document.set_anchor_here(anchor.as_ref());
+        let changed = self.document.set_anchor_at(at, anchor.as_ref());
         self.relayout();
         self.edited(changed, &note)
     }
@@ -91,8 +93,8 @@ impl Editor {
             self.needs_redraw = true;
             return Response::Redraw;
         }
-        if !self.document.drawing_here() {
-            return self.report("Put the caret beside a shape or a picture first");
+        if self.drawing_in_hand().is_none() {
+            return self.report(NOTHING);
         }
         let Some((left, top, _)) = self.ribbon.command_rect(Command::Position) else {
             return Response::Ignored;
@@ -104,35 +106,34 @@ impl Editor {
         Response::Redraw
     }
 
-    /// Moves the drawing at the caret across the page.
+    /// Moves the drawing in hand across the page.
     pub(super) fn choose_position(&mut self, index: usize) -> Response {
         self.popup = None;
         let Some((label, edge)) = POSITIONS.get(index).copied() else { return Response::Ignored };
+        let Some(at) = self.drawing_in_hand() else { return self.report(NOTHING) };
 
         // A drawing has to float before it can be put anywhere, so one that was
         // in the line starts floating with the wrapping Word gives it.
-        let mut anchor = self.anchor_of();
+        let mut anchor = self.anchor_of(at);
         anchor.horizontal = Placement::Aligned(edge.to_owned());
 
-        let changed = self.document.set_anchor_here(Some(&anchor));
+        let changed = self.document.set_anchor_at(at, Some(&anchor));
         self.relayout();
         self.edited(changed, &format!("Position: {label}"))
     }
 
-    /// Puts the drawing at the caret in front of the text, or behind it.
+    /// Puts the drawing in hand in front of the text, or behind it.
     ///
     /// Word's last entry on each of the two Arrange menus, and the one that
     /// takes a drawing out of the pile altogether: the text no longer keeps out
     /// of its way, and it is drawn over the words or under them.
     pub(super) fn set_shape_depth(&mut self, behind: bool) -> Response {
-        if !self.document.drawing_here() {
-            return self.report("Put the caret beside a shape or a picture first");
-        }
-        let mut anchor = self.anchor_of();
+        let Some(at) = self.drawing_in_hand() else { return self.report(NOTHING) };
+        let mut anchor = self.anchor_of(at);
         anchor.wrap = Wrap::None;
         anchor.behind_text = behind;
 
-        let changed = self.document.set_anchor_here(Some(&anchor));
+        let changed = self.document.set_anchor_at(at, Some(&anchor));
         self.relayout();
         self.edited(changed, if behind { "Behind text" } else { "In front of text" })
     }
@@ -147,8 +148,8 @@ impl Editor {
         if self.close_popup_if(choice) {
             return Response::Redraw;
         }
-        if !self.document.drawing_here() {
-            return self.report("Put the caret beside a shape or a picture first");
+        if self.drawing_in_hand().is_none() {
+            return self.report(NOTHING);
         }
         let Some((left, top, _)) = self.ribbon.command_rect(command) else {
             return Response::Ignored;
@@ -170,7 +171,7 @@ impl Editor {
         self.run(command)
     }
 
-    /// Moves the drawing at the caret through the pile of drawings.
+    /// Moves the drawing in hand through the pile of drawings.
     ///
     /// The pile is every floating drawing in the document, ordered by the
     /// number its anchor carries. One step puts this drawing just past its
@@ -180,15 +181,13 @@ impl Editor {
     /// float: a drawing in the line of text is part of the text, and there is
     /// nothing for it to be in front of.
     pub(super) fn move_shape_depth(&mut self, forwards: bool, all_the_way: bool) -> Response {
-        if !self.document.drawing_here() {
-            return self.report("Put the caret beside a shape or a picture first");
-        }
-        let Some(mut anchor) = self.document.anchor_here() else {
+        let Some(at) = self.drawing_in_hand() else { return self.report(NOTHING) };
+        let Some(mut anchor) = self.document.anchor_at(at) else {
             return self.report("A drawing in the line of text is not in front of anything");
         };
 
-        // Every floating drawing's depth, pictures and shapes alike. The one at
-        // the caret is among them, and comparing against itself is harmless:
+        // Every floating drawing's depth, pictures and shapes alike. The one in
+        // hand is among them, and comparing against itself is harmless:
         // nothing is strictly above or below its own number.
         let others = self.document.drawing_depths();
 
@@ -208,7 +207,7 @@ impl Editor {
         };
 
         anchor.depth = wanted;
-        let changed = self.document.set_anchor_here(Some(&anchor));
+        let changed = self.document.set_anchor_at(at, Some(&anchor));
         self.relayout();
         self.edited(
             changed,

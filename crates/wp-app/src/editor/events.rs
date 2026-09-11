@@ -412,9 +412,12 @@ impl App for Editor {
                     return self.refuse_locked();
                 }
                 // Typing is somebody saying they were not after the bar — nor
-                // after the other ways of pasting what was just pasted.
+                // after the other ways of pasting what was just pasted, nor
+                // after the drawing that was chosen: the letter goes in the
+                // text, so the text is what is being worked on.
                 self.hide_mini_bar();
                 self.forget_paste();
+                self.drop_chosen_drawing();
                 self.type_character(character)
             }
 
@@ -1740,6 +1743,15 @@ impl Editor {
                 }
                 if let Some(pen) = self.table_pen {
                     return self.toggle_table_pen(pen);
+                }
+                // A drawing chosen is given up before Select Objects is put
+                // down: the two are one gesture undone in the order it was
+                // made, and Word gives them up in that order as well.
+                if self.drop_chosen_drawing() {
+                    return Response::Redraw;
+                }
+                if self.choosing_drawings() {
+                    return self.toggle_choosing_drawings();
                 }
                 // Reading mode is left the way it is left in every reader.
                 if !self.view.shows_furniture() {

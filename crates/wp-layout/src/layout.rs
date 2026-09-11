@@ -341,6 +341,12 @@ pub struct PlacedImage {
     /// over the text. See [`Page::drawings_under`].
     pub depth: u32,
     pub over_text: bool,
+    /// Where in the document it is, so a press on it can say which picture was
+    /// pressed. A shape carries the same. See [`PlacedShape::at`].
+    pub at: Option<TextPosition>,
+    /// What it is called in a list of the document's drawings: the name the
+    /// file gives it, and "Picture" for one that carries none.
+    pub name: String,
 }
 
 /// One cell of a table, as the page holds it.
@@ -914,6 +920,10 @@ struct Item {
     /// Where the picture floats, when it does. A shape carries its own inside
     /// the shape; a picture has nowhere else to put it.
     picture_anchor: Option<wp_docx::anchor::Anchor>,
+    /// What the picture is called, for a list of the drawings in a document.
+    /// The same reason `picture_anchor` is here: a shape carries its name and a
+    /// picture has nowhere else to put one.
+    picture_name: Option<String>,
     /// An equation drawn in the line, with the height it takes up.
     math: Option<(Box<crate::math::MathBox>, f32)>,
     /// A chart drawn in the line, with the height it takes up.
@@ -2719,6 +2729,7 @@ impl<'a> LayoutEngine<'a> {
                             aligned_tab: None,
                             picture: None,
                             picture_anchor: None,
+                            picture_name: None,
                             shape: None,
                             math: None,
                             chart: None,
@@ -2745,6 +2756,7 @@ impl<'a> LayoutEngine<'a> {
                         aligned_tab: Some(*alignment),
                         picture: None,
                         picture_anchor: None,
+                        picture_name: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -2773,6 +2785,7 @@ impl<'a> LayoutEngine<'a> {
                         aligned_tab: None,
                         picture: None,
                         picture_anchor: None,
+                        picture_name: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -2801,6 +2814,7 @@ impl<'a> LayoutEngine<'a> {
                         aligned_tab: None,
                         picture: None,
                         picture_anchor: None,
+                        picture_name: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -2832,6 +2846,7 @@ impl<'a> LayoutEngine<'a> {
                         aligned_tab: None,
                         picture: None,
                         picture_anchor: None,
+                        picture_name: None,
                         math: None,
                         chart: drawn.map(|drawing| (Box::new(drawing), height)),
                         shape: None,
@@ -2862,6 +2877,7 @@ impl<'a> LayoutEngine<'a> {
                         aligned_tab: None,
                         picture: None,
                         picture_anchor: None,
+                        picture_name: None,
                         shape: None,
                         math: Some((Box::new(laid), height)),
                         chart: None,
@@ -2897,6 +2913,7 @@ impl<'a> LayoutEngine<'a> {
                         aligned_tab: None,
                         picture: None,
                         picture_anchor: None,
+                        picture_name: None,
                         math: None,
                         chart: None,
                         shape: Some((Box::new(shape.clone()), height)),
@@ -2938,6 +2955,7 @@ impl<'a> LayoutEngine<'a> {
                         aligned_tab: None,
                         picture: decoded.map(|image| (image, height)),
                         picture_anchor: picture.anchor.clone(),
+                        picture_name: picture.description.clone(),
                         shape: None,
                         math: None,
                         chart: None,
@@ -2960,6 +2978,7 @@ impl<'a> LayoutEngine<'a> {
                         aligned_tab: None,
                         picture: None,
                         picture_anchor: None,
+                        picture_name: None,
                         math: None,
                         chart: None,
                         shape: None,
@@ -4179,6 +4198,8 @@ impl LayoutEngine<'_> {
                         image: Rc::clone(image),
                         depth: anchor.depth,
                         over_text: !anchor.behind_text,
+                        at: Some(TextPosition::new(placement.paragraph, item.start_offset)),
+                        name: picture_name(item),
                     });
                     continue;
                 }
@@ -4191,6 +4212,8 @@ impl LayoutEngine<'_> {
                     image: Rc::clone(image),
                     depth: 0,
                     over_text: false,
+                    at: Some(TextPosition::new(placement.paragraph, item.start_offset)),
+                    name: picture_name(item),
                 });
                 x += item.width;
             } else if item.is_tab {
@@ -4429,6 +4452,18 @@ struct Line {
 /// covers, not how wide it is. A table with no grid — which a hand-written
 /// document may well be — has one made for it from the widest row, so its cells
 /// still line up with each other.
+/// What to call a picture in a list of the document's drawings.
+///
+/// The name the file gives it, which is Word's `wp:docPr` — the same place its
+/// description comes from. A picture carrying neither is called "Picture",
+/// because a row with nothing in it would be a row nobody could read.
+fn picture_name(item: &Item) -> String {
+    match &item.picture_name {
+        Some(name) if !name.is_empty() => name.clone(),
+        _ => "Picture".to_owned(),
+    }
+}
+
 /// Which parts of the table one cell is in.
 ///
 /// A cell can be in several at once — the first cell of the first row of a

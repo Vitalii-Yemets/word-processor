@@ -124,7 +124,7 @@ impl Editor {
     fn context_entries(&self, x: i32, y: i32) -> Vec<Entry> {
         // A drawing first: a right-click on a picture is about the picture,
         // whatever the text round it is doing.
-        if self.shape_at(x, y).is_some() {
+        if self.drawing_under(x, y).is_some() {
             return vec![
                 Entry::item(Command::Cut, "Cut", Icon::Scissors),
                 Entry::item(Command::Copy, "Copy", Icon::Copy),

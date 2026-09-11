@@ -3,7 +3,7 @@
 //! Three small things from the Insert and Layout tabs that only became possible
 //! once fields and shapes were there: a quick part is a field, WordArt is a
 //! shape with no fill and large text in it, and the selection pane is a list of
-//! the shapes on the page.
+//! the drawings in the document, which picks one out by name.
 
 use wp_docx::shapes::Shape;
 use wp_docx::TextPosition;
@@ -167,6 +167,7 @@ impl Editor {
         }
 
         let changed = self.document.insert_shape(&shape);
+        self.choose_drawing_here();
         self.relayout();
         self.reveal_caret();
         self.edited(changed, &format!("WordArt: {label}"))
@@ -193,25 +194,37 @@ impl Editor {
         Response::Redraw
     }
 
-    /// Goes to the drawing that was chosen and selects it.
+    /// Chooses the drawing that was picked out of the list.
+    ///
+    /// Chosen, not merely gone to: the handles come up round it and every
+    /// command in Arrange is then about it, which is the whole point of picking
+    /// one by name. See [`super::handles`].
     pub(super) fn choose_drawing(&mut self, index: usize) -> Response {
         self.popup = None;
         let drawings = self.drawings();
         let Some((at, name)) = drawings.get(index).cloned() else { return Response::Ignored };
 
-        self.document.set_caret(TextPosition::new(at.paragraph, at.offset + 1));
+        self.choose_drawing_at(at);
         self.reveal_caret();
-        self.needs_redraw = true;
         self.report(&format!("Selected {name}"))
     }
 
     /// Every drawing in the document, with where it is and what to call it.
+    ///
+    /// Pictures as well as shapes, because Word's pane lists both and a pane
+    /// that showed half of them would be a pane that could not reach the other
+    /// half. They are listed in the order they are drawn, nearest the reader
+    /// last, which is the order the pane shows them in.
     fn drawings(&self) -> Vec<(TextPosition, String)> {
         let mut out = Vec::new();
         for page in &self.pages {
-            for shape in &page.shapes {
-                let Some(at) = shape.at else { continue };
-                out.push((at, shape.name.clone()));
+            for drawing in page.drawings_under().into_iter().chain(page.drawings_over()) {
+                let (at, name) = match drawing {
+                    wp_layout::Drawing::Shape(shape) => (shape.at, shape.name.clone()),
+                    wp_layout::Drawing::Picture(picture) => (picture.at, picture.name.clone()),
+                };
+                let Some(at) = at else { continue };
+                out.push((at, name));
             }
         }
         out
@@ -221,4 +234,55 @@ impl Editor {
 /// The day out of a timestamp.
 fn day_of(stamp: &str) -> String {
     stamp.split('T').next().unwrap_or_default().to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Event};
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    /// A document with one shape and one picture in it.
+    fn editor() -> Editor {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Words")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+
+        editor.document.set_caret(TextPosition::new(0, 0));
+        let shape = Shape { name: "Rectangle".to_owned(), ..Shape::preset("rect", 72.0, 72.0) };
+        assert!(editor.document.insert_shape(&shape), "the shape went nowhere");
+
+        let canvas = wp_raster::Canvas::filled(20, 20, wp_raster::Color::BLACK);
+        let png = wp_raster::encode_png(&canvas);
+        let end = editor.document.paragraph_text(0).map_or(0, |text| text.len());
+        editor.document.set_caret(TextPosition::new(0, end));
+        editor.document.insert_picture(&png, "png", 914_400, 914_400).expect("a picture");
+        editor.relayout();
+        editor
+    }
+
+    #[test]
+    fn the_pane_lists_pictures_as_well_as_shapes() {
+        let editor = editor();
+        let names: Vec<String> = editor.drawings().into_iter().map(|(_, name)| name).collect();
+        assert!(names.iter().any(|name| name == "Rectangle"), "no shape: {names:?}");
+        assert!(names.len() == 2, "the picture is missing: {names:?}");
+    }
+
+    #[test]
+    fn picking_one_out_of_the_pane_chooses_it() {
+        let mut editor = editor();
+        let at = editor.drawings().first().map(|(at, _)| *at).expect("a drawing");
+        editor.choose_drawing(0);
+        assert_eq!(editor.chosen_drawing, Some(at), "the pane did not choose it");
+    }
 }

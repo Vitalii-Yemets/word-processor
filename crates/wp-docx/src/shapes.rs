@@ -468,29 +468,47 @@ fn gather_shapes(block: &crate::model::Block, out: &mut Vec<crate::shapes::Shape
 impl Document {
     /// The shape the caret is beside, if it is beside one.
     ///
-    /// Beside means the character before the caret or the character after it,
-    /// because a drawing takes one character and a person putting the caret
-    /// "on" it means either side.
+    /// Which drawing that is, when there are two of them and the caret is
+    /// between them, is [`Document::drawing_place_here`]'s answer rather than
+    /// this one's: a shape does not come before a picture any more.
     #[must_use]
     pub fn shape_here(&self) -> Option<crate::shapes::Shape> {
-        let caret = self.caret();
-        let paragraph = self.paragraph_element(caret.paragraph)?;
+        self.shape_at(self.drawing_place_here()?)
+    }
+
+    /// The shape at one place in the text, if a shape is what is there.
+    ///
+    /// The place is the drawing's own: the offset of the character it takes,
+    /// not a caret beside it. Two drawings next to each other are two places.
+    #[must_use]
+    pub fn shape_at(&self, at: crate::TextPosition) -> Option<crate::shapes::Shape> {
+        let paragraph = self.paragraph_element(at.paragraph)?;
         let mut found = None;
         let mut offset = 0usize;
-        walk_shapes(paragraph, &mut offset, caret.offset, &mut found);
+        walk_shapes(paragraph, &mut offset, at.offset, &mut found);
         found
     }
 
     /// Replaces the shape the caret is beside.
     pub fn replace_shape_here(&mut self, shape: &crate::shapes::Shape) -> bool {
+        let Some(at) = self.drawing_place_here() else { return false };
+        self.replace_shape_at(at, shape)
+    }
+
+    /// Replaces the shape at one place in the text.
+    pub fn replace_shape_at(
+        &mut self,
+        at: crate::TextPosition,
+        shape: &crate::shapes::Shape,
+    ) -> bool {
         let caret = self.caret();
-        if self.shape_here().is_none() {
+        if self.shape_at(at).is_none() {
             return false;
         }
         self.record(crate::history::EditKind::Structural, caret, false);
 
         let prefix = self.prefix();
-        let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
+        let Some(path) = crate::position::paragraph_path(&self.tree().root, at.paragraph) else {
             return false;
         };
         let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
@@ -499,7 +517,7 @@ impl Document {
 
         let replacement = shape_element(shape, prefix.as_deref());
         let mut offset = 0usize;
-        let replaced = replace_shape(paragraph, &mut offset, caret.offset, replacement);
+        let replaced = replace_shape(paragraph, &mut offset, at.offset, replacement);
         if replaced {
             self.mark_modified();
         }
@@ -507,7 +525,7 @@ impl Document {
     }
 }
 
-/// Finds the shape beside an offset, if there is one.
+/// Finds the shape at an offset, if there is one.
 fn walk_shapes(
     element: &Element,
     offset: &mut usize,
@@ -519,9 +537,9 @@ fn walk_shapes(
         if child.namespace.as_deref() == Some(read::W)
             && matches!(child.local_name(), "drawing" | "pict" | "object")
         {
-            // The drawing covers one character, so the caret is beside it when
-            // it is at either end of that character.
-            if *offset == wanted || *offset + 1 == wanted {
+            // The offset wanted is the drawing's own, not a caret beside it:
+            // which of two neighbours is meant is settled before this.
+            if *offset == wanted {
                 if let Some(shape) = read_shape(child) {
                     *found = Some(shape);
                 }
@@ -537,7 +555,7 @@ fn walk_shapes(
     }
 }
 
-/// Puts a new drawing in the place of the one beside an offset.
+/// Puts a new drawing in the place of the one at an offset.
 fn replace_shape(
     element: &mut Element,
     offset: &mut usize,
@@ -550,7 +568,7 @@ fn replace_shape(
         if child.namespace.as_deref() == Some(read::W)
             && matches!(child.local_name(), "drawing" | "pict" | "object")
         {
-            if (*offset == wanted || *offset + 1 == wanted) && read_shape(child).is_some() {
+            if *offset == wanted && read_shape(child).is_some() {
                 at = Some(index);
                 break;
             }

@@ -262,6 +262,15 @@ pub struct Editor {
     stationery_choice: usize,
     /// The drawing being dragged, and what it was when the drag began.
     shape_drag: Option<handles::ShapeDrag>,
+    /// Which drawing is selected, named by the place it is at.
+    ///
+    /// The second kind of selection: a stretch of text is one thing and a
+    /// drawing is another, and a command is about one or the other. See
+    /// [`handles`].
+    chosen_drawing: Option<TextPosition>,
+    /// Whether the pointer is choosing drawings rather than text, which is
+    /// Word's Select Objects.
+    choosing_drawings: bool,
     /// Which document property the strip is taking a new value for.
     editing_property: Option<properties::Field>,
     /// Which way round the desktop was last told the window's colours go.
@@ -516,6 +525,8 @@ impl Editor {
             stationery_choice: 0,
             settings: crate::settings::Settings::default(),
             shape_drag: None,
+            chosen_drawing: None,
+            choosing_drawings: false,
             editing_property: None,
             frame_told: None,
             titlebar: crate::chrome::TitleBar::new(),
@@ -1030,7 +1041,13 @@ impl Editor {
     }
 
     /// Reacts to a caret move: shows it, and repaints.
+    ///
+    /// The caret moving gives up the drawing that was chosen. The two are the
+    /// same choice made twice — what the next command is about — and a drawing
+    /// still drawn with handles while the caret was three pages away would be
+    /// the program saying two things at once. See [`handles`].
     fn moved(&mut self) -> Response {
+        self.drop_chosen_drawing();
         self.reveal_caret();
         self.needs_redraw = true;
         Response::Redraw

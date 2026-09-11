@@ -131,6 +131,7 @@ impl Editor {
             Command::Replace => self.open_find(true),
             Command::SelectAll => self.select_all(),
             Command::SelectSimilar => self.select_similar(),
+            Command::SelectObjects => self.toggle_choosing_drawings(),
 
             // --- Insert -------------------------------------------------------
             Command::PageBreak => {
