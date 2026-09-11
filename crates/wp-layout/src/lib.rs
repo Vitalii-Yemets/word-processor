@@ -25,6 +25,7 @@
 
 #![forbid(unsafe_code)]
 
+mod borders;
 pub mod charting;
 mod device;
 pub mod geometry;

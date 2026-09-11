@@ -102,11 +102,7 @@ fn signature_blocks(signer: &Signer) -> Vec<Block> {
         Block::Paragraph(Paragraph {
             properties: ParagraphProperties {
                 borders: ParagraphBorders {
-                    bottom: Some(Border {
-                        style: "single".to_owned(),
-                        size: 6,
-                        color: Some("000000".to_owned()),
-                    }),
+                    bottom: Some(Border::line("single", 6, Some("000000"))),
                     ..ParagraphBorders::default()
                 },
                 space_after: Some(0),

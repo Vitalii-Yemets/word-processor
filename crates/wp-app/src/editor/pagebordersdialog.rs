@@ -14,11 +14,15 @@
 //!
 //! Word's tab has Setting (None, Box, Shadow, 3-D, Custom), a list of line
 //! styles, a colour, a width, an Art gallery, Apply to, and an Options button
-//! for the distance. The settings that are line effects rather than lines —
-//! Shadow and 3-D — are not offered, because nothing here draws them; nor is
-//! Art, whose borders are pictures Word ships. Both are named in the roadmap.
-//! Everything else is here, with Word's own Options folded into the dialog
-//! rather than hidden behind a second one: there are two fields in it.
+//! for the distance. All of it is here but the Art gallery, whose borders are
+//! about a hundred and sixty pictures Word ships and which is named in the
+//! roadmap. Word's own Options is folded into the dialog rather than hidden
+//! behind a second one: there are two fields in it.
+//!
+//! Shadow and 3-D are not other kinds of box. They are the same box with
+//! something else said about how its lines are drawn, which is how the format
+//! has it too — `w:shadow` and `w:frame` on each edge — and why picking one of
+//! them here ticks the same four edges Box does.
 
 use wp_docx::model::Border;
 use wp_docx::pageborders::{Display, PageBorders, FURTHEST, USUAL_DISTANCE};
@@ -47,21 +51,43 @@ const DISPLAY: usize = 14;
 const MEASURED: usize = 15;
 const DISTANCE: usize = 16;
 
-/// Word's Setting column, less the two that are line effects.
-const SETTINGS: &[&str] = &["None", "Box", "Custom"];
+/// Word's Setting column.
+const SETTINGS: &[&str] = &["None", "Box", "Shadow", "3-D", "Custom"];
 const SETTING_NONE: usize = 0;
 const SETTING_BOX: usize = 1;
+const SETTING_SHADOW: usize = 2;
+const SETTING_3D: usize = 3;
 
 /// The line styles Word lists, by the names the file uses for them.
 ///
-/// Word's list is longer, and most of it is the same line drawn with a pattern
-/// this program's rasterizer does not have — see the roadmap. These are the
-/// ones it draws.
+/// Word's own list, in Word's own order, and all of it: its dialog shows each
+/// as a picture of the line rather than by name, and the names here are what
+/// those pictures are called elsewhere in Word's own interface.
 const STYLES: &[(&str, &str)] = &[
     ("Solid", "single"),
     ("Dotted", "dotted"),
     ("Dashed", "dashed"),
+    ("Dashed, small gap", "dashSmallGap"),
+    ("Dash dot", "dotDash"),
+    ("Dash dot dot", "dotDotDash"),
+    ("Dash dot, stroked", "dashDotStroked"),
     ("Double", "double"),
+    ("Triple", "triple"),
+    ("Thin thick, small gap", "thinThickSmallGap"),
+    ("Thick thin, small gap", "thickThinSmallGap"),
+    ("Thin thick thin, small gap", "thinThickThinSmallGap"),
+    ("Thin thick, medium gap", "thinThickMediumGap"),
+    ("Thick thin, medium gap", "thickThinMediumGap"),
+    ("Thin thick thin, medium gap", "thinThickThinMediumGap"),
+    ("Thin thick, large gap", "thinThickLargeGap"),
+    ("Thick thin, large gap", "thickThinLargeGap"),
+    ("Thin thick thin, large gap", "thinThickThinLargeGap"),
+    ("Wave", "wave"),
+    ("Double wave", "doubleWave"),
+    ("Emboss", "threeDEmboss"),
+    ("Engrave", "threeDEngrave"),
+    ("Outset", "outset"),
+    ("Inset", "inset"),
     ("Thick", "thick"),
 ];
 
@@ -123,7 +149,15 @@ impl Editor {
             && borders.start.is_some()
             && borders.end.is_some()
         {
-            SETTING_BOX
+            // A box all the way round, and which of the three it is depends on
+            // what its lines say about themselves.
+            if line.shadow {
+                SETTING_SHADOW
+            } else if line.frame {
+                SETTING_3D
+            } else {
+                SETTING_BOX
+            }
         } else {
             SETTINGS.len() - 1
         };
@@ -220,22 +254,24 @@ impl Editor {
 
     /// Takes what the dialog says and puts it round the pages.
     pub(super) fn apply_page_borders(&mut self, dialog: &Dialog) -> Response {
-        let line = Border {
-            style: STYLES.get(dialog.chose(STYLE)).map_or("single", |(_, kind)| kind).to_owned(),
-            size: WIDTHS.get(dialog.chose(WIDTH)).map_or(4, |(_, size)| *size),
-            color: COLOURS
-                .get(dialog.chose(COLOUR))
-                .and_then(|(_, value)| *value)
-                .map(str::to_owned),
-        };
+        let setting = dialog.chose(SETTING);
+        let line = Border::line(
+            STYLES.get(dialog.chose(STYLE)).map_or("single", |(_, kind)| kind),
+            WIDTHS.get(dialog.chose(WIDTH)).map_or(4, |(_, size)| *size),
+            COLOURS.get(dialog.chose(COLOUR)).and_then(|(_, value)| *value),
+        )
+        // Shadow and 3-D are not other kinds of box: they are the same box with
+        // something else said about how its lines are drawn, which is exactly
+        // how the format has it — an attribute on each edge.
+        .with_effect(setting == SETTING_SHADOW, setting == SETTING_3D);
 
         // Word's Setting column and its four edges say the same thing two ways,
         // and the one that was touched last is the one that means it. None
-        // clears everything and Box ticks everything; Custom leaves the ticks
-        // as they are, which is what makes it custom.
-        let (top, bottom, left, right) = match dialog.chose(SETTING) {
+        // clears everything; Box, Shadow and 3-D tick everything; Custom leaves
+        // the ticks as they are, which is what makes it custom.
+        let (top, bottom, left, right) = match setting {
             SETTING_NONE => (false, false, false, false),
-            SETTING_BOX => (true, true, true, true),
+            SETTING_BOX | SETTING_SHADOW | SETTING_3D => (true, true, true, true),
             _ => (
                 dialog.ticked(TOP),
                 dialog.ticked(BOTTOM),
@@ -284,7 +320,7 @@ fn first_line(borders: &PageBorders) -> Border {
         .flatten()
         .find(|border| border.is_visible())
         .cloned()
-        .unwrap_or(Border { style: "single".to_owned(), size: 4, color: None })
+        .unwrap_or(Border::line("single", 4, None))
 }
 
 #[cfg(test)]
@@ -294,6 +330,14 @@ mod tests {
     use wp_docx::Document;
     use wp_layout::FontLibrary;
     use wp_shell::{App, Event};
+
+    /// Where a style sits on the list, found by the name the file uses.
+    ///
+    /// By name rather than by number, so that a style added to the list does
+    /// not quietly make a test about double borders a test about dashed ones.
+    fn style_row(kind: &str) -> usize {
+        STYLES.iter().position(|(_, found)| *found == kind).expect("a style")
+    }
 
     fn library() -> &'static FontLibrary {
         Box::leak(Box::new(FontLibrary::scan_system()))
@@ -397,7 +441,7 @@ mod tests {
         let mut editor = editor();
         editor.open_page_borders();
         choose(&mut editor, SETTING, SETTING_BOX);
-        choose(&mut editor, STYLE, 3);
+        choose(&mut editor, STYLE, style_row("double"));
         choose(&mut editor, COLOUR, 4);
         choose(&mut editor, WIDTH, 5);
         accept(&mut editor);
@@ -477,16 +521,75 @@ mod tests {
 
         editor.open_page_borders();
         choose(&mut editor, SETTING, SETTING_BOX);
-        choose(&mut editor, STYLE, 1);
+        choose(&mut editor, STYLE, style_row("dotted"));
         accept(&mut editor);
         let dotted = editor.pages.first().map_or(0, |page| page.decorations.len());
         assert!(dotted > solid, "a dotted border came out as four solid lines");
 
         editor.open_page_borders();
         choose(&mut editor, SETTING, SETTING_BOX);
-        choose(&mut editor, STYLE, 3);
+        choose(&mut editor, STYLE, style_row("double"));
         accept(&mut editor);
         let double = editor.pages.first().map_or(0, |page| page.decorations.len());
         assert_eq!(double, solid * 2, "a double border is two lines an edge");
+    }
+
+    #[test]
+    fn every_style_word_lists_is_one_the_file_knows() {
+        // A name the format does not have would be written into the document
+        // and come back drawn as a plain line, which is a row of the list that
+        // looks like a choice and is not one.
+        for (label, kind) in STYLES {
+            assert!(!kind.is_empty(), "{label} has no name in the file");
+            assert!(
+                kind.chars().all(char::is_alphanumeric),
+                "{label} is written as {kind}, which is not one of the format's names"
+            );
+        }
+    }
+
+    #[test]
+    fn a_shadow_and_a_frame_reach_the_file_and_come_back() {
+        for (setting, shadow, frame) in
+            [(SETTING_BOX, false, false), (SETTING_SHADOW, true, false), (SETTING_3D, false, true)]
+        {
+            let mut editor = editor();
+            editor.open_page_borders();
+            choose(&mut editor, SETTING, setting);
+            accept(&mut editor);
+
+            let saved = editor.document.save().expect("saving");
+            let reopened = Document::open(&saved).expect("reopening");
+            let top = reopened.page_borders().top.expect("a top border");
+            assert_eq!(top.shadow, shadow, "setting {setting}");
+            assert_eq!(top.frame, frame, "setting {setting}");
+        }
+    }
+
+    #[test]
+    fn the_dialog_opens_on_the_setting_the_border_is() {
+        let mut editor = editor();
+        editor.open_page_borders();
+        choose(&mut editor, SETTING, SETTING_SHADOW);
+        accept(&mut editor);
+
+        editor.open_page_borders();
+        let dialog = editor.dialog.as_ref().expect("a dialog");
+        assert_eq!(dialog.chose(SETTING), SETTING_SHADOW, "a shadowed box opened as a plain one");
+    }
+
+    #[test]
+    fn a_shadowed_box_draws_more_than_a_plain_one() {
+        let mut editor = editor();
+        editor.open_page_borders();
+        choose(&mut editor, SETTING, SETTING_BOX);
+        accept(&mut editor);
+        let plain = editor.pages.first().map_or(0, |page| page.decorations.len());
+
+        editor.open_page_borders();
+        choose(&mut editor, SETTING, SETTING_SHADOW);
+        accept(&mut editor);
+        let shadowed = editor.pages.first().map_or(0, |page| page.decorations.len());
+        assert!(shadowed > plain, "the shadow was written down and not drawn");
     }
 }

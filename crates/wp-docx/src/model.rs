@@ -607,7 +607,7 @@ impl ParagraphBorders {
     /// A single line on every edge: what Word's "All Borders" draws.
     #[must_use]
     pub fn box_all() -> Self {
-        let line = Border { style: "single".to_owned(), size: 4, color: Some("auto".to_owned()) };
+        let line = Border::line("single", 4, Some("auto"));
         Self {
             top: Some(line.clone()),
             start: Some(line.clone()),
@@ -617,11 +617,22 @@ impl ParagraphBorders {
         }
     }
 
+    /// The same, out of a line said in full rather than the plain one.
+    #[must_use]
+    pub fn box_all_of(line: &Border) -> Self {
+        Self {
+            top: Some(line.clone()),
+            start: Some(line.clone()),
+            bottom: Some(line.clone()),
+            end: Some(line.clone()),
+            between: Some(line.clone()),
+        }
+    }
+
     /// One edge only, which is how Word's menu is mostly used.
     #[must_use]
     pub fn only(edge: BorderEdge) -> Self {
-        let line =
-            Some(Border { style: "single".to_owned(), size: 4, color: Some("auto".to_owned()) });
+        let line = Some(Border::line("single", 4, Some("auto")));
         let mut borders = Self::default();
         match edge {
             BorderEdge::Top => borders.top = line,
@@ -1061,9 +1072,44 @@ pub struct Border {
     pub size: u32,
     /// Colour as six hex digits, or `auto`.
     pub color: Option<String>,
+    /// Whether the line is drawn with a shadow falling away from it.
+    ///
+    /// `w:shadow`, and Word's Shadow setting on the Borders dialog. A property
+    /// of each edge rather than of the box, which is how the format has it:
+    /// Word's Setting column is four buttons that write particular combinations
+    /// of these, not a fifth thing the file records.
+    pub shadow: bool,
+    /// And whether it is drawn as a frame standing off the page.
+    ///
+    /// `w:frame`, and Word's 3-D setting.
+    pub frame: bool,
 }
 
 impl Border {
+    /// A plain line: a style, a width in eighths of a point, and a colour.
+    ///
+    /// Neither a shadow nor a frame, which is what almost every border is —
+    /// and why the two that are not have a constructor of their own rather
+    /// than every caller having to say it is not one of them.
+    #[must_use]
+    pub fn line(style: &str, size: u32, color: Option<&str>) -> Self {
+        Self {
+            style: style.to_owned(),
+            size,
+            color: color.map(str::to_owned),
+            shadow: false,
+            frame: false,
+        }
+    }
+
+    /// The same, with a shadow falling away from it or drawn as a frame.
+    #[must_use]
+    pub fn with_effect(mut self, shadow: bool, frame: bool) -> Self {
+        self.shadow = shadow;
+        self.frame = frame;
+        self
+    }
+
     /// Whether anything is actually drawn.
     #[must_use]
     pub fn is_visible(&self) -> bool {
@@ -1095,7 +1141,7 @@ impl TableBorders {
     /// A single line everywhere: what Word's "Table Grid" draws.
     #[must_use]
     pub fn grid() -> Self {
-        let line = || Some(Border { style: "single".to_owned(), size: 4, color: None });
+        let line = || Some(Border::line("single", 4, None));
         Self {
             top: line(),
             start: line(),

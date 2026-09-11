@@ -233,6 +233,14 @@ fn write_page_borders(section: &mut Element, wanted: &PageBorders, prefix: Optio
             &wanted.distance.min(FURTHEST).to_string(),
         );
         edge.set_namespaced_attribute(&name("color"), W, border.color.as_deref().unwrap_or("auto"));
+        // Word's Shadow and 3-D settings, which are properties of each edge and
+        // not of the box. Written only when they are on, as Word writes them.
+        if border.shadow {
+            edge.set_namespaced_attribute(&name("shadow"), W, "1");
+        }
+        if border.frame {
+            edge.set_namespaced_attribute(&name("frame"), W, "1");
+        }
         element.push_element(edge);
     }
 }
@@ -269,10 +277,10 @@ mod tests {
 
         // An edge written as "none" is an edge that draws nothing, and a
         // document full of those has no border round its pages.
-        let nothing = Border { style: "none".to_owned(), size: 4, color: None };
+        let nothing = Border::line("none", 4, None);
         assert!(PageBorders::box_all(&nothing).is_empty());
 
-        let line = Border { style: "single".to_owned(), size: 4, color: None };
+        let line = Border::line("single", 4, None);
         assert!(!PageBorders::box_all(&line).is_empty());
     }
 }

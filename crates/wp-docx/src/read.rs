@@ -27,6 +27,14 @@ pub(crate) fn value(element: &Element) -> Option<&str> {
     element.attribute(Some(W), "val")
 }
 
+/// Whether an on/off attribute's value means on.
+///
+/// The format writes these four ways and means the same thing by two of them:
+/// `1` and `true` are on, `0` and `false` are off.
+pub(crate) fn on_off_value(value: &str) -> bool {
+    matches!(value, "1" | "true" | "on")
+}
+
 /// Reads an on/off property.
 ///
 /// `<w:b/>` means bold. So does `<w:b w:val="1"/>`. But `<w:b w:val="0"/>` means
@@ -292,6 +300,8 @@ pub(crate) fn read_border(element: &Element) -> Border {
             .attribute(Some(W), "color")
             .filter(|text| *text != "auto")
             .map(str::to_owned),
+        shadow: element.attribute(Some(W), "shadow").is_some_and(on_off_value),
+        frame: element.attribute(Some(W), "frame").is_some_and(on_off_value),
     }
 }
 

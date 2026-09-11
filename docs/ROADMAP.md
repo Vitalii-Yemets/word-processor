@@ -861,12 +861,10 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   dashed as a row of longer ones, out of the plain rectangles a decoration is —
   and paragraph borders go through it too, so they gained their styles as well.
 
-  Not offered, and named rather than drawn as dead rows: Word's **Art** border
-  gallery, which is a hundred and sixty pictures Word ships and this program
-  does not have, and the **Shadow** and **3-D** settings, which are line effects
-  rather than lines. Word's longer list of line styles — `dotDash`,
-  `dashDotStroked`, the wavy and the three-line ones — is read and written
-  faithfully but drawn as the nearest of the five above. All three are **C23**.
+  **C23** finished the job: every one of Word's twenty-five line styles is drawn
+  as itself, and the **Shadow** and **3-D** settings are on the dialog and
+  drawn. Word's **Art** border gallery is a hundred and sixty pictures Word
+  ships, and what of it can be drawn from shapes rather than copied is **C28**.
 - [x] **C15. The Table Design tab.** Header Row and Banded Rows do nothing and
   say so — the only two buttons in the program that do. The tab is also missing
   the table styles gallery, shading, the border styles and the border painter,
@@ -1100,22 +1098,44 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   than text, and it needs a selection that is not text at all — handles, a drag
   that moves a drawing, and the Arrange commands acting on what is selected
   rather than on what the caret is beside. That is **C27**.
-- [ ] **C23. The rest of what a border can look like.** Three gaps **C14**
+- [x] **C23. The rest of what a border can look like.** Three gaps **C14**
   found, all of them about drawing rather than about the file.
-  Word's **Art** borders are a gallery of about a hundred and sixty repeating
-  pictures — apples, hearts, rope — written as `w:top w:val="apples"` and drawn
-  from artwork Word ships. Nothing here has the artwork, so the gallery is not
-  offered; a document that arrives with one keeps it, because an unknown style
-  is written back as it came.
-  Word's **Shadow** and **3-D** settings are the same box drawn with a drop
-  shadow or a bevel, which is a way of drawing a line this program does not have
-  yet.
-  And its **line styles** are longer than the five drawn here: `dotDash`,
-  `dashDotStroked`, `wave`, `doubleWave`, `triple` and the rest are read and
-  written faithfully and drawn as the nearest of the five.
-  *Done when:* every style Word lists is drawn as Word draws it, the two
-  settings are on the dialog, and a document with an art border round its pages
-  looks the same here as it does there.
+  Word's **Shadow** and **3-D** settings were the same box drawn with a drop
+  shadow or a bevel, which was a way of drawing a line this program did not
+  have; and its **line styles** are longer than the five that were drawn —
+  `dotDash`, `dashDotStroked`, `wave`, `doubleWave`, `triple` and the rest were
+  read and written faithfully and drawn as the nearest of the five.
+  *Done:* `wp-layout/src/borders.rs` draws every one of Word's twenty-five line
+  styles as itself, out of plain rectangles: the layered ones share the band out
+  between lines and gaps, the broken ones repeat a pattern of marks, a wave is a
+  column of marks whose height follows a sine, and the bevelled ones are two
+  half-bands, one lighter than the border's colour and one darker. Which edge of
+  the box a line is now reaches the drawing, because a raised box is lit from
+  the top left and an edge that did not know which it was would look flat.
+  Shadow and 3-D are `w:shadow` and `w:frame` on each edge, read, written and
+  drawn, and Word's Setting column has them back — they are not other kinds of
+  box, which is why picking one ticks the same four edges Box does.
+  *Not done:* **Art** borders, which are **C28** below.
+
+- [ ] **C28. The art borders, as far as they can be drawn.** Word's Art gallery
+  is about a hundred and sixty repeating pictures — apples, hearts, rope,
+  people — written as `w:top w:val="apples"` and drawn from artwork Word ships.
+  That artwork is Microsoft's, it is not licensed for reuse, and this program
+  draws nothing it did not make: see the note at the top of `chrome/icons.rs`,
+  which says the same thing about Word's button art. So "a document with an art
+  border looks the same here as it does there" is not a thing this project can
+  promise, and **C23** was wrong to say it would.
+  What *can* be done is the part of the gallery that is geometry rather than
+  pictures. Perhaps thirty of Word's names describe a pattern outright —
+  `basicBlackDashes`, `basicBlackDots`, `basicBlackSquares`, `basicThinLines`,
+  `basicWideOutline`, `checkerBoard`, `triangles`, `zigZag` and their kin — and
+  a row of black squares drawn from rectangles is a row of black squares,
+  copying nothing. Those are worth drawing and worth offering.
+  A document carrying any of the others keeps it, because an unknown style is
+  written back as it came, and is drawn as a plain line of its width.
+  *Done when:* the gallery offers the patterns that can be drawn from shapes,
+  each is drawn as its name describes, and the rest are named as not offered
+  rather than drawn wrongly.
 - [ ] **C24. The Border Styles gallery and the Border Painter.** The last two
   things the Table Design tab is missing, and one job: Word's gallery picks a
   line — a style, a width and a colour — and the painter is the pen that puts

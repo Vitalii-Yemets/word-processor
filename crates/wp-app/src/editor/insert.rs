@@ -222,11 +222,7 @@ impl Editor {
             "pageborder" => {
                 // A border round the pages, which is the one thing on the
                 // paper that is not put there by any of the text.
-                let line = wp_docx::model::Border {
-                    style: "double".to_owned(),
-                    size: 12,
-                    color: Some("2B579A".to_owned()),
-                };
+                let line = wp_docx::model::Border::line("double", 12, Some("2B579A"));
                 let borders = wp_docx::pageborders::PageBorders::box_all(&line);
                 self.document.set_page_borders_everywhere(&borders);
                 self.relayout();
@@ -340,6 +336,25 @@ impl Editor {
                         super::ribbondialog::RIBBON_PAGE
                     });
                 }
+            }
+            "borderstyles" => {
+                // A paragraph for each of the kinds of line Word lists, and a
+                // shadowed box round the pages. The only way to see that the
+                // list of styles is a list of choices rather than one line
+                // written down twenty-five ways.
+                use wp_docx::model::{Border, ParagraphBorders};
+                for (at, style) in
+                    ["double", "triple", "dotDash", "wave", "threeDEmboss"].into_iter().enumerate()
+                {
+                    self.document.set_caret(wp_docx::TextPosition::new(at * 2 + 3, 0));
+                    let line = Border::line(style, 12, Some("2B579A"));
+                    self.document.set_borders_here(&ParagraphBorders::box_all_of(&line));
+                }
+                let line = Border::line("single", 12, Some("C00000")).with_effect(true, false);
+                self.document.set_page_borders_everywhere(
+                    &wp_docx::pageborders::PageBorders::box_all(&line),
+                );
+                self.relayout();
             }
             "similar" => {
                 // Every stretch set the way the first heading is set, all

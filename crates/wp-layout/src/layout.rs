@@ -34,6 +34,7 @@ use wp_font::{Font, GlyphId};
 use wp_image::Image;
 use wp_raster::Color;
 
+use crate::borders::Side;
 use crate::library::FontLibrary;
 
 /// Twentieths of a point, the unit the format measures almost everything in.
@@ -2065,85 +2066,6 @@ impl<'a> LayoutEngine<'a> {
         *y += space_after;
     }
 
-    /// Draws one edge of a border, in whatever style it asks for.
-    ///
-    /// # Why a style is more than a name
-    ///
-    /// Because a dotted border and a solid one of the same width are the same
-    /// number of pixels of ink and a different thing entirely to look at. The
-    /// styles are drawn out of plain rectangles — the only thing a decoration
-    /// is — because that is enough for all of them: a double line is two lines
-    /// with a gap, a dotted one is a row of squares, a dashed one a row of
-    /// longer squares.
-    ///
-    /// `run` is how long the edge is; whether that is across or down is decided
-    /// by `sideways`.
-    #[allow(clippy::too_many_arguments)]
-    fn draw_border_edge(
-        page: &mut Page,
-        style: &str,
-        x: f32,
-        y: f32,
-        run: f32,
-        thickness: f32,
-        sideways: bool,
-        colour: Color,
-    ) {
-        // One rectangle of the edge, given how far along it starts and how long
-        // it is. Everything below is written in terms of this, so that across
-        // and down are decided once.
-        let mut piece = |along: f32, length: f32, offset: f32, weight: f32| {
-            if length <= 0.0 || weight <= 0.0 {
-                return;
-            }
-            let (rect_x, rect_y, width, height) = if sideways {
-                (x + along, y + offset, length, weight)
-            } else {
-                (x + offset, y + along, weight, length)
-            };
-            page.decorations.push(Decoration {
-                x: rect_x,
-                y: rect_y,
-                width,
-                height,
-                color: colour,
-            });
-        };
-
-        match style {
-            // Two lines with a gap between them, each a third of the whole.
-            "double" => {
-                let line = (thickness / 3.0).max(1.0);
-                piece(0.0, run, -thickness / 2.0, line);
-                piece(0.0, run, thickness / 2.0 - line, line);
-            }
-            // A row of squares, each as long as the line is thick, with a gap
-            // of the same size — which is what a dot is at any width.
-            "dotted" | "dotDash" | "dotDotDash" => {
-                let step = (thickness * 2.0).max(2.0);
-                let mut along = 0.0;
-                while along < run {
-                    piece(along, thickness.min(run - along), -thickness / 2.0, thickness);
-                    along += step;
-                }
-            }
-            // The same, with the marks four times as long as they are thick.
-            "dashed" | "dashSmallGap" | "dashDotStroked" => {
-                let mark = (thickness * 4.0).max(3.0);
-                let step = mark + (thickness * 2.0).max(2.0);
-                let mut along = 0.0;
-                while along < run {
-                    piece(along, mark.min(run - along), -thickness / 2.0, thickness);
-                    along += step;
-                }
-            }
-            // Everything else is a line: `single`, `thick`, and every style
-            // this program does not draw differently. Its width is what makes
-            // it heavy or light, which is most of what the styles differ by.
-            _ => piece(0.0, run, -thickness / 2.0, thickness),
-        }
-    }
-
     /// Draws the border round the pages of every section that asks for one.
     ///
     /// # Why it is not drawn with the paragraphs
@@ -2197,19 +2119,17 @@ impl<'a> LayoutEngine<'a> {
             let width = (right - left).max(1.0);
             let height = (bottom - top).max(1.0);
             let edges = [
-                (&border.top, left, top, width, 0.0),
-                (&border.bottom, left, bottom, width, 0.0),
-                (&border.start, left, top, 0.0, height),
-                (&border.end, right, top, 0.0, height),
+                (&border.top, Side::Top, left, top, width),
+                (&border.bottom, Side::Bottom, left, bottom, width),
+                (&border.start, Side::Start, left, top, height),
+                (&border.end, Side::End, right, top, height),
             ];
 
-            for (edge, x, y, run_width, run_height) in edges {
+            for (edge, side, x, y, run) in edges {
                 let Some(edge) = edge.as_ref().filter(|edge| edge.is_visible()) else { continue };
                 let thickness = (edge.width_points() * scale).max(1.0);
                 let colour = edge.color.as_deref().and_then(Color::from_hex).unwrap_or(automatic);
-                let sideways = run_width > 0.0;
-                let run = if sideways { run_width } else { run_height };
-                Self::draw_border_edge(page, &edge.style, x, y, run, thickness, sideways, colour);
+                crate::borders::draw_edge(page, edge, side, x, y, run, thickness, colour);
             }
         }
     }
@@ -2238,26 +2158,21 @@ impl<'a> LayoutEngine<'a> {
             page.decorations.push(Decoration { x: left, y: top, width, height, color: fill });
         }
 
+        // Which style an edge is drawn in is the same question here as round a
+        // page, and is answered in one place for both.
         let edges = [
-            (&resolved.borders.top, left, top, width, 0.0),
-            (&resolved.borders.bottom, left, bottom, width, 0.0),
-            (&resolved.borders.start, left, top, 0.0, height),
-            (&resolved.borders.end, right, top, 0.0, height),
+            (&resolved.borders.top, Side::Top, left, top, width),
+            (&resolved.borders.bottom, Side::Bottom, left, bottom, width),
+            (&resolved.borders.start, Side::Start, left, top, height),
+            (&resolved.borders.end, Side::End, right, top, height),
         ];
-        for (border, x, y, run_width, run_height) in edges {
-            let Some(border) = border else { continue };
-            if !border.is_visible() {
+        for (border, side, x, y, run) in edges {
+            let Some(border) = border.as_ref().filter(|border| border.is_visible()) else {
                 continue;
-            }
+            };
             let thickness = (border.width_points() * scale).max(1.0);
             let colour = border.color.as_deref().and_then(Color::from_hex).unwrap_or(automatic);
-            // A horizontal edge runs across and is as thick as the line; a
-            // vertical one the other way round. Which style it is drawn in is
-            // the same question here as round a page, and is answered in one
-            // place for both.
-            let sideways = run_width > 0.0;
-            let run = if sideways { run_width } else { run_height };
-            Self::draw_border_edge(page, &border.style, x, y, run, thickness, sideways, colour);
+            crate::borders::draw_edge(page, border, side, x, y, run, thickness, colour);
         }
     }
 

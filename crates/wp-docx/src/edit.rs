@@ -955,6 +955,14 @@ fn border_element(name: &str, border: &Border, prefix: Option<&str>) -> Element 
         W,
         border.color.as_deref().unwrap_or("auto"),
     );
+    // Written only when they are on. Word leaves them out otherwise, and a
+    // document full of `w:shadow="0"` is a document that says nothing twice.
+    if border.shadow {
+        side.set_namespaced_attribute(&name_with(prefix, "shadow"), W, "1");
+    }
+    if border.frame {
+        side.set_namespaced_attribute(&name_with(prefix, "frame"), W, "1");
+    }
     side
 }
 

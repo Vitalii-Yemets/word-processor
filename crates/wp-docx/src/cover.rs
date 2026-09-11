@@ -211,11 +211,7 @@ fn rule() -> Block {
     Block::Paragraph(Paragraph {
         properties: ParagraphProperties {
             borders: ParagraphBorders {
-                bottom: Some(Border {
-                    style: "single".to_owned(),
-                    size: 12,
-                    color: Some("2E74B5".to_owned()),
-                }),
+                bottom: Some(Border::line("single", 12, Some("2E74B5"))),
                 ..ParagraphBorders::default()
             },
             space_after: Some(240),
