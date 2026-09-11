@@ -66,6 +66,8 @@ pub(super) enum Asking {
     Exceptions,
     /// Which column to put the rows of a table in order by, and how.
     Sort,
+    /// Arithmetic over the cells of a table.
+    Formula,
 }
 
 impl Editor {
@@ -143,6 +145,7 @@ impl Editor {
             Some(Asking::Style) => self.apply_style_dialog(&dialog),
             Some(Asking::Table) => self.apply_table_dialog(&dialog),
             Some(Asking::Sort) => self.apply_sort(&dialog),
+            Some(Asking::Formula) => self.apply_formula(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),
             Some(Asking::AutoCorrect) => self.apply_autocorrect_dialog(&dialog),
             Some(Asking::PageBorders) => self.apply_page_borders(&dialog),
@@ -287,6 +290,9 @@ impl Editor {
                     }
                     // The subset changing is the grid changing.
                     Some(Asking::Symbol) => self.symbol_dialog_changed(),
+                    // Its list of functions types into its formula rather than
+                    // deciding anything of its own.
+                    Some(Asking::Formula) => self.formula_dialog_changed(),
                     // Its Style list and its Art gallery both say what the
                     // border is, and its widths are in one unit or the other
                     // depending on which of them was picked.

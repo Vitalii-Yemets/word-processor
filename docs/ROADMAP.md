@@ -1425,14 +1425,36 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the sorting language, and "sort column only". Each of those is a row in a
   dialog behind the dialog, and none of them is what sorting a table is for.
 
-- [ ] **C33. Formula.** `=SUM(ABOVE)` and its kin, as a field. The field
-  machinery is there and works out its own answers; what is missing is the
-  arithmetic over the cells around it — which cells `ABOVE`, `BELOW`, `LEFT` and
-  `RIGHT` mean, how a cell's text becomes a number, and Word's functions:
-  `SUM`, `AVERAGE`, `COUNT`, `MIN`, `MAX`, `PRODUCT` and the rest, with the
-  number formats its dialog offers.
-  *Done when:* a formula in a cell shows the right answer, is worked out again
-  when the cells it reads are changed, and survives being saved and reopened.
+- [x] **C33. Formula.** `=SUM(ABOVE)` and its kin, as a field.
+  *Done:* `wp-docx/src/formula.rs` reads the instruction and does the
+  arithmetic. An expression is an expression — brackets, `+ - * /`, a per cent
+  sign, comparisons — over numbers, cells named the way a spreadsheet names them
+  (`B2`, `A1:C3`), and Word's four words for the cells around this one:
+  `ABOVE`, `BELOW`, `LEFT` and `RIGHT`, each running until the first blank cell,
+  which is where a column of figures starts. The functions are `SUM`, `AVERAGE`,
+  `COUNT`, `MIN`, `MAX`, `PRODUCT`, `ABS`, `INT`, `ROUND`, `MOD`, `SIGN`, `IF`,
+  `AND`, `OR`, `NOT`, `TRUE` and `FALSE`.
+  A cell holds words and a formula wants a number, so the number is **read out of
+  whatever the cell says** — the same reading a column sorted as numbers gets
+  (**C32**), because a cell must not mean one thing to sorting and another to
+  adding up. The `\#` picture is applied to the answer, and the seven formats
+  Word's dialog offers are in the list beside the box.
+  **The answer is worked out at every layout and never read back from the file.**
+  A formula that answered with what it said last time would be wrong the moment
+  a figure above it changed, and a person who has just corrected a number should
+  not have to know that a field needs updating.
+  Word's **Formula dialog** is on the Data group of the Table Layout tab where
+  Word's is: the formula, guessed at the way Word guesses — `=SUM(ABOVE)` under a
+  column of figures, `=SUM(LEFT)` beside a row of them — a list of number
+  formats, and a list of functions that types into the formula rather than
+  deciding anything of its own.
+  *Not done:* a formula that answers with **text**. Word's `IF` can choose
+  between two pieces of writing as well as between two numbers, and one that
+  asks for that is answered with nothing. **Bookmarks** as operands, and the
+  `DEFINED` that asks about one, which is the "Paste bookmark" list beside the
+  functions. And the answer **kept in the file** is the one from when the formula
+  was put there: what is shown is worked out afresh, but a program that cannot do
+  arithmetic reads the older one, exactly as it reads Word's.
 
 - [ ] **C34. The rest of the Arrange group: Align, Group and Rotate.** Word's
   Arrange group has three buttons this one does not, and **C27** is why they

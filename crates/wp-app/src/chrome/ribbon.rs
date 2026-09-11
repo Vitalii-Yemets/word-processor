@@ -2098,6 +2098,8 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
             Item::Small(Command::RepeatHeaderRow, Icon::HeaderRow, "Repeat Header Rows"),
             Item::Break,
             Item::Small(Command::ConvertToText, Icon::Letter, "Convert to Text"),
+            Item::Break,
+            Item::Small(Command::Formula, Icon::Equation, "Formula"),
         ],
         launcher: None,
     },

@@ -55,7 +55,15 @@ impl Document {
     /// Where the caret is in a table, if it is in one at all.
     #[must_use]
     pub fn table_here(&self) -> Option<TablePosition> {
-        let path = position::paragraph_path(&self.tree().root, self.caret().paragraph)?;
+        self.table_at(self.caret().paragraph)
+    }
+
+    /// And where any paragraph is, which is what something reading the document
+    /// rather than following the caret asks — a formula being worked out, for
+    /// one. See [`crate::formula`].
+    #[must_use]
+    pub fn table_at(&self, paragraph: usize) -> Option<TablePosition> {
+        let path = position::paragraph_path(&self.tree().root, paragraph)?;
 
         // Walk back up the path looking for the row and the table. A table
         // inside a table means the innermost one wins, which is what the caret

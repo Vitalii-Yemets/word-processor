@@ -22,6 +22,7 @@ mod equation;
 mod events;
 pub(crate) mod files;
 mod fontdialog;
+mod formuladialog;
 mod furnitureedit;
 mod groups;
 mod handles;

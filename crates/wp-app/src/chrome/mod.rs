@@ -224,6 +224,8 @@ pub enum Command {
     /// Turns the text in the cell at the caret a right angle. Word's Text
     /// Direction, which is a button that cycles rather than a menu.
     TextDirection,
+    /// Arithmetic over the cells of a table: Word's Formula.
+    Formula,
 
     // References.
     InsertContents,

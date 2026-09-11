@@ -5962,6 +5962,13 @@ impl LayoutEngine<'_> {
                 .map(|(_, value)| value.clone());
         }
 
+        // A formula reads the cells round it and does arithmetic on them. Worked
+        // out here and never read back from the file, so a figure changed above
+        // it changes the total under it. See [`wp_docx::formula`].
+        if wp_docx::formula::is_formula(instruction) {
+            return Some(document.formula_answer(instruction, paragraph));
+        }
+
         // The fields that ask the document about itself. Worked out every time
         // rather than read from the file, so changing the title changes every
         // place that names it.

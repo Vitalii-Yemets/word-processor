@@ -251,6 +251,7 @@ impl Editor {
             }
             Command::AutoFit => self.open_list(Choice::AutoFit),
             Command::TextDirection => self.turn_cell_text(),
+            Command::Formula => self.open_formula(),
 
             // --- References ---------------------------------------------------
             Command::InsertContents | Command::UpdateContents => self.write_contents(),

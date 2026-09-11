@@ -387,7 +387,14 @@ impl Document {
     /// needs to see that they moved.
     #[must_use]
     pub fn table_rows_text(&self) -> Vec<Vec<String>> {
-        let Some(place) = self.table_here() else { return Vec::new() };
+        self.table_rows_text_at(self.caret().paragraph)
+    }
+
+    /// And the same for the table round any paragraph, which is what a formula
+    /// being worked out asks. See [`crate::formula`].
+    #[must_use]
+    pub fn table_rows_text_at(&self, paragraph: usize) -> Vec<Vec<String>> {
+        let Some(place) = self.table_at(paragraph) else { return Vec::new() };
         let Some(table) = edit::element_at_path(&self.tree().root, &place.table) else {
             return Vec::new();
         };

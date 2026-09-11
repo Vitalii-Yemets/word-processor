@@ -16,7 +16,6 @@
 use wp_xml::tree::{Element, Node};
 
 use crate::history::EditKind;
-use crate::tables::TablePosition;
 use crate::{edit, read, Document, TextPosition};
 
 /// One edge of one cell.
@@ -69,8 +68,8 @@ impl Document {
         };
 
         // Both ends have to be in the same table, or there is no rectangle.
-        let at_start = self.table_at(start)?;
-        let at_end = self.table_at(end)?;
+        let at_start = self.table_at(start.paragraph)?;
+        let at_end = self.table_at(end.paragraph)?;
         if at_start.table != here.table || at_end.table != here.table {
             return None;
         }
@@ -80,13 +79,6 @@ impl Document {
             rows: (at_start.row.min(at_end.row), at_start.row.max(at_end.row)),
             columns: (at_start.column.min(at_end.column), at_start.column.max(at_end.column)),
         })
-    }
-
-    /// Where a position sits in a table, if it is in one.
-    pub(crate) fn table_at(&self, position: TextPosition) -> Option<TablePosition> {
-        let mut probe = self.clone();
-        probe.set_caret(position);
-        probe.table_here()
     }
 
     /// Puts a line on one edge of the cell a place in the document is inside,
@@ -102,7 +94,7 @@ impl Document {
         edge: CellEdge,
         border: Option<&crate::model::Border>,
     ) -> bool {
-        let Some(place) = self.table_at(at) else { return false };
+        let Some(place) = self.table_at(at.paragraph) else { return false };
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
@@ -221,7 +213,7 @@ impl Document {
     /// one column more than it did — so nothing but this cell looks any
     /// different.
     pub fn split_cell_across(&mut self, at: TextPosition) -> bool {
-        let Some(place) = self.table_at(at) else { return false };
+        let Some(place) = self.table_at(at.paragraph) else { return false };
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
@@ -275,7 +267,7 @@ impl Document {
     /// is how Word writes it, and why a table drawn this way is full of
     /// `w:vMerge`.
     pub fn split_cell_down(&mut self, at: TextPosition) -> bool {
-        let Some(place) = self.table_at(at) else { return false };
+        let Some(place) = self.table_at(at.paragraph) else { return false };
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
@@ -331,8 +323,8 @@ impl Document {
     /// what the pointer can say: it is over an edge, and there is a cell either
     /// side of it.
     pub fn erase_between(&mut self, one: TextPosition, other: TextPosition) -> bool {
-        let Some(here) = self.table_at(one) else { return false };
-        let Some(there) = self.table_at(other) else { return false };
+        let Some(here) = self.table_at(one.paragraph) else { return false };
+        let Some(there) = self.table_at(other.paragraph) else { return false };
         if here.table != there.table {
             return false;
         }

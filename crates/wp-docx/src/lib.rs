@@ -55,6 +55,7 @@ pub mod fields;
 pub mod figures;
 mod floating;
 mod format;
+pub mod formula;
 pub mod furniture;
 pub mod gallery;
 mod history;

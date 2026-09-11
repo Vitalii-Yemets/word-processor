@@ -268,6 +268,36 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            "formula" => {
+                // A table with a total under a column of figures, which is what
+                // a formula is for, and the dialog that puts one there.
+                self.document.insert_table(4, 2);
+                for (paragraph, text) in [
+                    (1, "Item"),
+                    (2, "Cost"),
+                    (3, "Pens"),
+                    (4, "3.00"),
+                    (5, "Paper"),
+                    (6, "4.50"),
+                    (7, "Total"),
+                ] {
+                    self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                    self.document.type_text(text);
+                }
+                self.document.set_caret(wp_docx::TextPosition::new(8, 0));
+                self.relayout();
+                self.open_formula();
+            }
+            "formulaanswer" => {
+                // The same table with the formula put in, which is the only way
+                // to see the total drawn in the cell.
+                self.set_view_option("formula")?;
+                if let Some(dialog) = self.dialog.take() {
+                    self.asking = None;
+                    self.apply_formula(&dialog);
+                }
+                self.relayout();
+            }
             "sort" => {
                 // Word's Sort on a table of names and figures, which is what
                 // it is for. The dialog cannot be photographed without one.
