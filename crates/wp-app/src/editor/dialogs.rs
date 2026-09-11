@@ -284,6 +284,10 @@ impl Editor {
                     }
                     // The subset changing is the grid changing.
                     Some(Asking::Symbol) => self.symbol_dialog_changed(),
+                    // Its Style list and its Art gallery both say what the
+                    // border is, and its widths are in one unit or the other
+                    // depending on which of them was picked.
+                    Some(Asking::PageBorders) => self.page_borders_changed(),
                     // The same for the Paragraph dialog, whose preview is the
                     // shape its fields describe.
                     Some(Asking::Paragraph) => {

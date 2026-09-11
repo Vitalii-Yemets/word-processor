@@ -97,6 +97,15 @@ pub(crate) fn draw_edge(
 
     let mut ink = Ink { page, x, y, sideways: side.sideways(), colour };
 
+    // An art border is a pattern repeated along the edge rather than a line,
+    // and it is asked first: it is what the border *is*, where a frame is
+    // something said about how a line is drawn. One of Word's pictures answers
+    // no and falls through to the plain line below, which is what keeps a
+    // document bordered with apples looking bordered. See [`crate::artborders`].
+    if border.is_art() && crate::artborders::draw(&mut ink, &border.style, run, thickness) {
+        return;
+    }
+
     // A frame is drawn as a bevel whatever style the line names, because that
     // is what asking for one means: Word's 3-D setting keeps the style for the
     // list and draws the box standing off the page.
@@ -159,23 +168,26 @@ pub(crate) fn draw_edge(
 }
 
 /// Somewhere to put rectangles, with across and down decided once.
-struct Ink<'a> {
-    page: &'a mut Page,
-    x: f32,
-    y: f32,
-    sideways: bool,
-    colour: Color,
+///
+/// Shared with [`crate::artborders`], which draws Word's patterned borders out
+/// of the same rectangles and needs the same two axes.
+pub(crate) struct Ink<'a> {
+    pub page: &'a mut Page,
+    pub x: f32,
+    pub y: f32,
+    pub sideways: bool,
+    pub colour: Color,
 }
 
 impl Ink<'_> {
     /// One rectangle of the edge: how far along it starts, how long it is, how
     /// far across the band it sits, and how thick it is there.
-    fn piece(&mut self, along: f32, length: f32, offset: f32, weight: f32) {
+    pub fn piece(&mut self, along: f32, length: f32, offset: f32, weight: f32) {
         self.coloured(along, length, offset, weight, self.colour);
     }
 
     /// The same, in a colour of its own.
-    fn coloured(&mut self, along: f32, length: f32, offset: f32, weight: f32, colour: Color) {
+    pub fn coloured(&mut self, along: f32, length: f32, offset: f32, weight: f32, colour: Color) {
         if length <= 0.0 || weight <= 0.0 {
             return;
         }
@@ -193,7 +205,7 @@ impl Ink<'_> {
 /// The odd entries are lines and the even ones gaps, starting and ending with a
 /// line: `[1, 1, 1]` is a line, a gap and a line of the same width, which is
 /// what a double border is.
-fn parallel(ink: &mut Ink<'_>, run: f32, thickness: f32, weights: &[f32]) {
+pub(crate) fn parallel(ink: &mut Ink<'_>, run: f32, thickness: f32, weights: &[f32]) {
     let total: f32 = weights.iter().sum();
     if total <= 0.0 {
         return;
@@ -303,7 +315,7 @@ fn draw_shadow(
 }
 
 /// A colour moved towards white.
-fn lightened(colour: Color, amount: f32) -> Color {
+pub(crate) fn lightened(colour: Color, amount: f32) -> Color {
     let shift = |value: u8| value as f32 + (255.0 - value as f32) * amount;
     Color::rgba(
         shift(colour.red) as u8,
@@ -314,7 +326,7 @@ fn lightened(colour: Color, amount: f32) -> Color {
 }
 
 /// And one moved towards black.
-fn darkened(colour: Color, amount: f32) -> Color {
+pub(crate) fn darkened(colour: Color, amount: f32) -> Color {
     let shift = |value: u8| value as f32 * (1.0 - amount);
     Color::rgba(
         shift(colour.red) as u8,

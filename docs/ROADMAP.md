@@ -1117,7 +1117,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   box, which is why picking one ticks the same four edges Box does.
   *Not done:* **Art** borders, which are **C28** below.
 
-- [ ] **C28. The art borders, as far as they can be drawn.** Word's Art gallery
+- [x] **C28. The art borders, as far as they can be drawn.** Word's Art gallery
   is about a hundred and sixty repeating pictures — apples, hearts, rope,
   people — written as `w:top w:val="apples"` and drawn from artwork Word ships.
   That artwork is Microsoft's, it is not licensed for reuse, and this program
@@ -1125,17 +1125,41 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   which says the same thing about Word's button art. So "a document with an art
   border looks the same here as it does there" is not a thing this project can
   promise, and **C23** was wrong to say it would.
-  What *can* be done is the part of the gallery that is geometry rather than
-  pictures. Perhaps thirty of Word's names describe a pattern outright —
-  `basicBlackDashes`, `basicBlackDots`, `basicBlackSquares`, `basicThinLines`,
-  `basicWideOutline`, `checkerBoard`, `triangles`, `zigZag` and their kin — and
-  a row of black squares drawn from rectangles is a row of black squares,
-  copying nothing. Those are worth drawing and worth offering.
-  A document carrying any of the others keeps it, because an unknown style is
-  written back as it came, and is drawn as a plain line of its width.
-  *Done when:* the gallery offers the patterns that can be drawn from shapes,
-  each is drawn as its name describes, and the rest are named as not offered
-  rather than drawn wrongly.
+  *Done:* the part of the gallery that is geometry rather than pictures.
+  `wp-layout/src/artborders.rs` draws twenty-nine of Word's names as what they
+  say they are, out of the same rectangles every line style is made of: rows of
+  black dashes, dots and squares; the white ones, which are a bar with the marks
+  cut out of it, so that "white" is whatever colour the paper is and stays right
+  in a dark window; the wide ones, which are bands of lines; a checkerboard, a
+  checked bar and quadrants; triangles, shark's teeth and grey diamonds; a
+  sawtooth, a zigzag, a zigzag of stitches, a wave, and the Greek wave, which is
+  the one of them that is exactly rails and risers; crosses, hatching that leans
+  either way, squares eclipsing and nested and shadowed, and a gradient. Grey is
+  the ink at half its opacity, because grey is halfway to a paper whose colour
+  nothing here knows.
+  `wp-docx/src/art.rs` holds the whole enumeration, not only the part drawn,
+  because **an art border says its width in whole points where a line says it in
+  eighths of one** — the same attribute, two units, and a program that read them
+  the same way would draw a twenty-point border of apples two and a half points
+  wide. `Border::width_points` knows the difference.
+  The **Art gallery is on the Page Border tab**, beside the line styles. Both
+  lists write `w:val`, so they are kept in step: picking a pattern is picking a
+  border and the line style stops being what is drawn, picking a line style puts
+  the art back to none, and the widths beside them change to the unit that
+  belongs to whichever kind is chosen — keeping the width in front of a person's
+  eyes and moving only the unit under it.
+  A document carrying one of Word's pictures **keeps it**: the gallery shows it
+  and says it is kept, so that opening the dialog and pressing OK cannot quietly
+  turn somebody's border of apples into a plain line, and it is drawn as a plain
+  line of its width rather than as some other picture.
+  *Fixed on the way:* a page border asked for on a document that had none was
+  put zero points from the edge of the paper, because nothing filled in the
+  distance Word uses when it is not told one. `PageBorders::default` is now
+  twenty-four points, as Word's is.
+  *Not done:* the corner motif. Word turns a corner with a piece drawn for the
+  purpose; here the two edges simply meet, and at a wide border the pattern
+  doubles up in the corner square. And the pictures, which are not this
+  project's to draw.
 - [x] **C24. The Border Styles gallery and the Border Painter.** The last two
   things the Table Design tab is missing, and one job: Word's gallery picks a
   line — a style, a width and a colour — and the painter is the pen that puts

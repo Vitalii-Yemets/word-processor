@@ -283,6 +283,28 @@ impl Editor {
                 self.document.set_shading_here(Some("2B579A"));
                 self.relayout();
             }
+            "pagebordersdialog" => {
+                self.open_page_borders();
+            }
+            "pagebordersart" => {
+                // The same dialog with a pattern picked out of the Art gallery,
+                // which is the only way to see that the widths beside it have
+                // changed to the unit art is measured in.
+                self.open_page_borders();
+                let row = wp_docx::art::DRAWN
+                    .iter()
+                    .position(|(_, name)| *name == "checkered")
+                    .unwrap_or_default()
+                    + 1;
+                if let Some(dialog) = &mut self.dialog {
+                    if let Some(crate::chrome::dialog::Field::Choice { current, .. }) =
+                        dialog.fields.get_mut(super::pagebordersdialog::ART)
+                    {
+                        *current = row;
+                    }
+                }
+                self.page_borders_changed();
+            }
             "wordcount" => {
                 self.open_word_count();
             }
@@ -659,6 +681,21 @@ impl Editor {
                     self.set_zoom(wanted);
                     return Ok(());
                 }
+                // One of Word's art borders round the pages, by the name the
+                // file uses for it. The only way to look at a pattern without a
+                // screen, and the only way to look at more than one of them
+                // without opening the dialog twenty-nine times.
+                if let Some(name) = other.strip_prefix("artborder=") {
+                    if !wp_docx::art::is_art(name) {
+                        return Err(format!("{name:?} is not one of Word's art borders"));
+                    }
+                    let line = wp_docx::model::Border::line(name, 20, None);
+                    let borders = wp_docx::pageborders::PageBorders::box_all(&line);
+                    self.document.set_page_borders_everywhere(&borders);
+                    self.relayout();
+                    return Ok(());
+                }
+
                 // One of the menus a ribbon arrow drops. The tab it is on has
                 // to be open already, which is why this comes after `tab=`.
                 if let Some(name) = other.strip_prefix("menu=") {

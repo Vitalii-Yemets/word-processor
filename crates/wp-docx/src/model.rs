@@ -1122,10 +1122,25 @@ impl Border {
         !matches!(self.style.as_str(), "" | "none" | "nil")
     }
 
+    /// Whether the style names one of Word's art borders rather than a line.
+    ///
+    /// Which changes what [`Border::size`] means. See [`crate::art`].
+    #[must_use]
+    pub fn is_art(&self) -> bool {
+        crate::art::is_art(&self.style)
+    }
+
     /// Thickness in points. Never zero for a visible border: a line the format
     /// says is there has to be seen.
+    ///
+    /// An art border says its width in whole points and a line in eighths of
+    /// one. Reading the two the same way would draw a twenty-point border of
+    /// apples as a two-and-a-half-point one.
     #[must_use]
     pub fn width_points(&self) -> f32 {
+        if self.is_art() {
+            return self.size.clamp(1, crate::art::WIDEST) as f32;
+        }
         (self.size as f32 / 8.0).max(0.5)
     }
 }

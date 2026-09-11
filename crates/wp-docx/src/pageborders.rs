@@ -66,7 +66,7 @@ impl Display {
 }
 
 /// The border round the pages of one section.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PageBorders {
     pub top: Option<Border>,
     pub start: Option<Border>,
@@ -90,6 +90,26 @@ pub const FURTHEST: u32 = 31;
 
 /// Where Word puts one when it is first asked for.
 pub const USUAL_DISTANCE: u32 = 24;
+
+/// No border at all, ready to have one put round it.
+///
+/// The distance is Word's own rather than nothing, because this is what a
+/// document with no border answers with and it is what a dialog opened on one
+/// shows: a border asked for and put nowhere in particular goes twenty-four
+/// points in from the paper, as Word's does. Zero would sit it on the edge.
+impl Default for PageBorders {
+    fn default() -> Self {
+        Self {
+            top: None,
+            start: None,
+            bottom: None,
+            end: None,
+            display: Display::default(),
+            from_text: false,
+            distance: USUAL_DISTANCE,
+        }
+    }
+}
 
 impl PageBorders {
     /// Whether any edge is drawn at all.

@@ -271,6 +271,11 @@ pub struct Editor {
     /// Whether the pointer is choosing drawings rather than text, which is
     /// Word's Select Objects.
     choosing_drawings: bool,
+    /// What the Page Borders dialog's two lists of border styles were showing
+    /// when it was built: the line style and the art. Both write the same
+    /// attribute, so the one that has changed since is the one just touched.
+    /// See [`pagebordersdialog`].
+    page_border_lists: (usize, usize),
     /// Which document property the strip is taking a new value for.
     editing_property: Option<properties::Field>,
     /// Which way round the desktop was last told the window's colours go.
@@ -526,6 +531,7 @@ impl Editor {
             settings: crate::settings::Settings::default(),
             shape_drag: None,
             chosen_drawing: None,
+            page_border_lists: (0, 0),
             choosing_drawings: false,
             editing_property: None,
             frame_told: None,

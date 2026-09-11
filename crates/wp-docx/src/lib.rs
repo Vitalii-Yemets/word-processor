@@ -36,6 +36,7 @@
 pub mod accessibility;
 pub mod anchor;
 pub mod appearance;
+pub mod art;
 pub mod authorities;
 pub mod bibliography;
 pub mod bookmarks;

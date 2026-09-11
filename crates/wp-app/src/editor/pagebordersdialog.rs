@@ -14,16 +14,31 @@
 //!
 //! Word's tab has Setting (None, Box, Shadow, 3-D, Custom), a list of line
 //! styles, a colour, a width, an Art gallery, Apply to, and an Options button
-//! for the distance. All of it is here but the Art gallery, whose borders are
-//! about a hundred and sixty pictures Word ships and which is named in the
-//! roadmap. Word's own Options is folded into the dialog rather than hidden
-//! behind a second one: there are two fields in it.
+//! for the distance. All of it is here. Word's own Options is folded into the
+//! dialog rather than hidden behind a second one: there are two fields in it.
+//!
+//! The Art gallery offers the part of Word's list that is a pattern rather than
+//! a picture — a row of black squares, a checkerboard, a Greek wave — because
+//! the pictures are artwork Word ships and this program draws nothing it did
+//! not make. See [`wp_docx::art`]. A document that arrives carrying one of the
+//! pictures keeps it: the list shows it, says it is kept, and drawing it is a
+//! plain line of its width.
+//!
+//! # Why the width list changes under it
+//!
+//! Because `w:sz` means eighths of a point for a line and whole points for a
+//! border of art — the same attribute, two units. A list that said "1 pt" and
+//! wrote a border eight times that is a list that lies, so picking a pattern
+//! swaps the widths for the ones art is measured in, and picking a line style
+//! swaps them back. The width in front of a person's eyes stays the width they
+//! chose: only the unit under it moves.
 //!
 //! Shadow and 3-D are not other kinds of box. They are the same box with
 //! something else said about how its lines are drawn, which is how the format
 //! has it too — `w:shadow` and `w:frame` on each edge — and why picking one of
 //! them here ticks the same four edges Box does.
 
+use wp_docx::art;
 use wp_docx::model::Border;
 use wp_docx::pageborders::{Display, PageBorders, FURTHEST, USUAL_DISTANCE};
 use wp_shell::Response;
@@ -45,11 +60,15 @@ const LINE: usize = 8;
 const STYLE: usize = 9;
 const COLOUR: usize = 10;
 const WIDTH: usize = 11;
-const WHERE: usize = 12;
-const APPLIES: usize = 13;
-const DISPLAY: usize = 14;
-const MEASURED: usize = 15;
-const DISTANCE: usize = 16;
+pub(super) const ART: usize = 12;
+const WHERE: usize = 13;
+const APPLIES: usize = 14;
+const DISPLAY: usize = 15;
+const MEASURED: usize = 16;
+const DISTANCE: usize = 17;
+
+/// The first row of the Art list, which is no art at all.
+const ART_NONE: usize = 0;
 
 /// Word's Setting column.
 const SETTINGS: &[&str] = &["None", "Box", "Shadow", "3-D", "Custom"];
@@ -105,6 +124,20 @@ const WIDTHS: &[(&str, u32)] = &[
     ("6 pt", 48),
 ];
 
+/// And the widths an art border comes in, in whole points — the unit `w:sz`
+/// uses for one, and as far as it goes.
+const ART_WIDTHS: &[(&str, u32)] = &[
+    ("4 pt", 4),
+    ("6 pt", 6),
+    ("8 pt", 8),
+    ("10 pt", 10),
+    ("12 pt", 12),
+    ("15 pt", 15),
+    ("20 pt", art::USUAL_WIDTH),
+    ("25 pt", 25),
+    ("31 pt", art::WIDEST),
+];
+
 /// The colours, by the names Word's list uses.
 const COLOURS: &[(&str, Option<&str>)] = &[
     ("Automatic", None),
@@ -138,7 +171,7 @@ impl Editor {
     }
 
     /// The dialog itself, filled in from what the section says now.
-    pub(super) fn page_borders_dialog(&self, borders: &PageBorders) -> Dialog {
+    pub(super) fn page_borders_dialog(&mut self, borders: &PageBorders) -> Dialog {
         let line = first_line(borders);
         let tick = |label: &str, on: bool| Field::Check { label: label.to_owned(), on };
 
@@ -193,11 +226,16 @@ impl Editor {
             },
             Field::Choice {
                 label: "Width".to_owned(),
-                items: WIDTHS.iter().map(|(name, _)| (*name).to_owned()).collect(),
-                current: WIDTHS
+                items: widths_for(line.is_art())
                     .iter()
-                    .position(|(_, size)| *size >= line.size)
-                    .unwrap_or(WIDTHS.len() - 1),
+                    .map(|(name, _)| (*name).to_owned())
+                    .collect(),
+                current: width_row(line.is_art(), line.size),
+            },
+            Field::Choice {
+                label: "Art".to_owned(),
+                items: art_items(&line),
+                current: art_row(&line),
             },
             Field::Group("Where it goes".to_owned()),
             Field::Choice {
@@ -241,6 +279,7 @@ impl Editor {
                 (STYLE, "a list"),
                 (COLOUR, "a list"),
                 (WIDTH, "a list"),
+                (ART, "a list"),
                 (WHERE, "a group"),
                 (APPLIES, "a list"),
                 (DISPLAY, "a list"),
@@ -249,15 +288,70 @@ impl Editor {
             ],
         );
 
+        // What the two lists that both write `w:val` were showing when the
+        // dialog was built, so that a change to one can be told from a change
+        // to the other.
+        self.page_border_lists =
+            (STYLES.iter().position(|(_, kind)| *kind == line.style).unwrap_or(0), art_row(&line));
+
         Dialog::new("Borders and Shading", fields).wide(460.0)
+    }
+
+    /// Keeps the Style list, the Art list and the widths agreeing.
+    ///
+    /// They are three ways of saying two attributes, and Word keeps them in
+    /// step as they are touched: picking a pattern is picking a border, so the
+    /// line style stops being what is drawn, and picking a line style puts the
+    /// art back to none. The width list follows, because its unit belongs to
+    /// whichever kind is now chosen.
+    pub(super) fn page_borders_changed(&mut self) {
+        let (was_style, was_art) = self.page_border_lists;
+        let Some(dialog) = self.dialog.as_mut() else { return };
+        let (style_now, art_now) = (dialog.chose(STYLE), dialog.chose(ART));
+        if style_now == was_style && art_now == was_art {
+            // Something else on the dialog: an edge ticked, a distance typed.
+            return;
+        }
+
+        // The one just touched is the one meant.
+        let art_row = if art_now != was_art { art_now } else { ART_NONE };
+        if art_row != art_now {
+            if let Some(Field::Choice { current, .. }) = dialog.fields.get_mut(ART) {
+                *current = art_row;
+            }
+        }
+
+        // The width keeps the size it is showing and changes the unit under it,
+        // so that picking a pattern does not quietly make the border eight
+        // times what it said.
+        let (was_art_kind, is_art_kind) = (was_art != ART_NONE, art_row != ART_NONE);
+        if was_art_kind != is_art_kind {
+            let chosen = widths_for(was_art_kind)
+                .get(dialog.chose(WIDTH))
+                .map_or(art::USUAL_WIDTH, |(_, size)| *size);
+            let size = if is_art_kind { (chosen / 8).max(1) } else { chosen * 8 };
+            if let Some(Field::Choice { items, current, .. }) = dialog.fields.get_mut(WIDTH) {
+                *items =
+                    widths_for(is_art_kind).iter().map(|(name, _)| (*name).to_owned()).collect();
+                *current = width_row(is_art_kind, size);
+            }
+        }
+
+        self.page_border_lists = (style_now, art_row);
     }
 
     /// Takes what the dialog says and puts it round the pages.
     pub(super) fn apply_page_borders(&mut self, dialog: &Dialog) -> Response {
         let setting = dialog.chose(SETTING);
+        // A pattern picked out of the Art gallery is the border: it and the line
+        // style are the same attribute, and the gallery is the one that has
+        // something to say when it is not at "(none)".
+        let held = first_line(&self.document.page_borders());
+        let art = art_style(dialog.chose(ART), &held);
         let line = Border::line(
-            STYLES.get(dialog.chose(STYLE)).map_or("single", |(_, kind)| kind),
-            WIDTHS.get(dialog.chose(WIDTH)).map_or(4, |(_, size)| *size),
+            art.as_deref()
+                .unwrap_or_else(|| STYLES.get(dialog.chose(STYLE)).map_or("single", |(_, k)| k)),
+            widths_for(art.is_some()).get(dialog.chose(WIDTH)).map_or(4, |(_, size)| *size),
             COLOURS.get(dialog.chose(COLOUR)).and_then(|(_, value)| *value),
         )
         // Shadow and 3-D are not other kinds of box: they are the same box with
@@ -306,6 +400,58 @@ impl Editor {
 
         self.relayout();
         self.edited(changed, if wanted.is_empty() { "Page border removed" } else { "Page border" })
+    }
+}
+
+/// Which widths belong to a border of art, and which to a line.
+fn widths_for(art: bool) -> &'static [(&'static str, u32)] {
+    if art {
+        ART_WIDTHS
+    } else {
+        WIDTHS
+    }
+}
+
+/// Which row of that list a width is on: the first that is at least as wide.
+fn width_row(art: bool, size: u32) -> usize {
+    let widths = widths_for(art);
+    widths.iter().position(|(_, offered)| *offered >= size).unwrap_or(widths.len() - 1)
+}
+
+/// The Art list: nothing, then the patterns, and then — only for a document
+/// that already carries one — the picture it came with.
+///
+/// The last row is what keeps such a document safe. Without it the list would
+/// say "(none)", and pressing OK would quietly turn somebody's border of apples
+/// into a plain line.
+fn art_items(line: &Border) -> Vec<String> {
+    let mut items = vec!["(none)".to_owned()];
+    items.extend(art::DRAWN.iter().map(|(label, _)| (*label).to_owned()));
+    if line.is_art() && !art::is_drawn(&line.style) {
+        items.push(format!("{} (kept, drawn as a line)", line.style));
+    }
+    items
+}
+
+/// Which row of it a border is on.
+fn art_row(line: &Border) -> usize {
+    if !line.is_art() {
+        return ART_NONE;
+    }
+    art::DRAWN
+        .iter()
+        .position(|(_, name)| *name == line.style)
+        .map_or(art::DRAWN.len() + 1, |at| at + 1)
+}
+
+/// And which art a row means, if it means one at all.
+fn art_style(row: usize, held: &Border) -> Option<String> {
+    let at = row.checked_sub(1)?;
+    match art::DRAWN.get(at) {
+        Some((_, name)) => Some((*name).to_owned()),
+        // Past the end of the patterns is the row that says "kept", and what it
+        // keeps is whatever the document already had.
+        None => held.is_art().then(|| held.style.clone()),
     }
 }
 
@@ -576,6 +722,126 @@ mod tests {
         editor.open_page_borders();
         let dialog = editor.dialog.as_ref().expect("a dialog");
         assert_eq!(dialog.chose(SETTING), SETTING_SHADOW, "a shadowed box opened as a plain one");
+    }
+
+    /// Which row of the Art list a pattern is on, found by the name the file
+    /// uses — the same reason `style_row` looks its own up by name.
+    fn art_list_row(name: &str) -> usize {
+        art::DRAWN.iter().position(|(_, found)| *found == name).expect("a pattern") + 1
+    }
+
+    /// What the Width list is showing now.
+    fn width_items(editor: &Editor) -> Vec<String> {
+        match editor.dialog.as_ref().and_then(|dialog| dialog.fields.get(WIDTH)) {
+            Some(Field::Choice { items, .. }) => items.clone(),
+            _ => panic!("the width is not a list"),
+        }
+    }
+
+    #[test]
+    fn a_pattern_picked_out_of_the_gallery_goes_round_the_pages() {
+        let mut editor = editor();
+        editor.open_page_borders();
+        choose(&mut editor, SETTING, SETTING_BOX);
+        choose(&mut editor, ART, art_list_row("triangles"));
+        editor.page_borders_changed();
+        accept(&mut editor);
+
+        let top = editor.document.page_borders().top.expect("a top border");
+        assert_eq!(top.style, "triangles");
+        assert!(top.is_art(), "it was not written as art");
+        // And it is drawn as itself: a row of triangles is a great many
+        // rectangles, where a line is one.
+        let drawn = editor.pages.first().map_or(0, |page| page.decorations.len());
+        assert!(drawn > 20, "the pattern came out as {drawn} rectangles");
+    }
+
+    #[test]
+    fn an_art_border_is_measured_in_points_and_a_line_in_eighths() {
+        let mut editor = editor();
+        editor.open_page_borders();
+        choose(&mut editor, SETTING, SETTING_BOX);
+        choose(&mut editor, ART, art_list_row("checkered"));
+        editor.page_borders_changed();
+
+        // The list swapped to the widths art is measured in.
+        assert_eq!(
+            width_items(&editor),
+            ART_WIDTHS.iter().map(|(name, _)| *name).collect::<Vec<_>>()
+        );
+        choose(&mut editor, WIDTH, ART_WIDTHS.len() - 1);
+        accept(&mut editor);
+
+        let top = editor.document.page_borders().top.expect("a top border");
+        assert_eq!(top.size, art::WIDEST, "the width was written in the wrong unit");
+        assert_eq!(top.width_points(), art::WIDEST as f32, "thirty-one points came out as inches");
+    }
+
+    #[test]
+    fn picking_a_line_style_puts_the_gallery_back_to_none() {
+        let mut editor = editor();
+        editor.open_page_borders();
+        choose(&mut editor, SETTING, SETTING_BOX);
+        choose(&mut editor, ART, art_list_row("zigZag"));
+        editor.page_borders_changed();
+
+        choose(&mut editor, STYLE, style_row("double"));
+        editor.page_borders_changed();
+        assert_eq!(
+            editor.dialog.as_ref().expect("a dialog").chose(ART),
+            ART_NONE,
+            "the gallery still says a pattern is in force"
+        );
+        assert_eq!(width_items(&editor), WIDTHS.iter().map(|(name, _)| *name).collect::<Vec<_>>());
+
+        accept(&mut editor);
+        assert_eq!(editor.document.page_borders().top.expect("a border").style, "double");
+    }
+
+    #[test]
+    fn the_width_in_front_of_you_stays_the_width_you_chose() {
+        let mut editor = editor();
+        editor.open_page_borders();
+        choose(&mut editor, SETTING, SETTING_BOX);
+        // Six points as a line, which is 48 eighths.
+        choose(&mut editor, WIDTH, WIDTHS.iter().position(|(_, size)| *size == 48).expect("6 pt"));
+        choose(&mut editor, ART, art_list_row("triangles"));
+        editor.page_borders_changed();
+        accept(&mut editor);
+
+        let top = editor.document.page_borders().top.expect("a border");
+        assert_eq!(top.size, 6, "six points of line became {} points of art", top.size);
+    }
+
+    #[test]
+    fn one_of_words_pictures_is_kept_rather_than_thrown_away() {
+        // A document made in Word with a border of apples. This program cannot
+        // draw apples and does not pretend to — but opening the dialog and
+        // pressing OK must not turn them into a plain line.
+        let mut editor = editor();
+        let apples = Border::line("apples", 20, None);
+        editor.document.set_page_borders_everywhere(&PageBorders::box_all(&apples));
+
+        editor.open_page_borders();
+        let dialog = editor.dialog.as_ref().expect("a dialog");
+        assert_ne!(dialog.chose(ART), ART_NONE, "the gallery says there is no art");
+        accept(&mut editor);
+
+        let top = editor.document.page_borders().top.expect("a border");
+        assert_eq!(top.style, "apples", "the apples were thrown away");
+        assert_eq!(top.size, 20, "and its width changed under it");
+    }
+
+    #[test]
+    fn a_picture_word_ships_is_drawn_as_a_line_of_its_width() {
+        let mut editor = editor();
+        let apples = Border::line("apples", 20, None);
+        editor.document.set_page_borders_everywhere(&PageBorders::box_all(&apples));
+        editor.relayout();
+
+        // Four edges, four rectangles: a plain line each, and nothing invented.
+        let drawn = editor.pages.first().map_or(0, |page| page.decorations.len());
+        assert_eq!(drawn, 4, "a picture was drawn as {drawn} rectangles");
     }
 
     #[test]
