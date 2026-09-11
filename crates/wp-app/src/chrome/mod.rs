@@ -226,6 +226,8 @@ pub enum Command {
     TextDirection,
     /// Arithmetic over the cells of a table: Word's Formula.
     Formula,
+    /// Lines the chosen drawings up with each other, the page or the margins.
+    AlignObjects,
 
     // References.
     InsertContents,

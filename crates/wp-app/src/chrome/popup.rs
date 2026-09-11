@@ -40,6 +40,8 @@ pub enum Choice {
     TableStyle,
     /// Word's three AutoFits: to the contents, to the window, or fixed.
     AutoFit,
+    /// How the chosen drawings are lined up.
+    AlignObjects,
     /// The bullet shapes.
     BulletLibrary,
     /// The number formats.

@@ -379,7 +379,42 @@ impl Editor {
     /// Drawn over the page rather than on it, because they are not part of the
     /// document: they are what says the drawing can be taken hold of.
     pub(super) fn draw_shape_handles(&mut self) {
-        let Some(chosen) = self.chosen_drawing_box() else { return };
+        // Every drawing chosen carries its own, because each of them can be
+        // taken hold of and resized on its own even while all of them move
+        // together.
+        for chosen in self.chosen_drawing_boxes() {
+            self.draw_handles_round(chosen);
+        }
+        self.draw_choosing_band();
+    }
+
+    /// The band being swept round a handful of drawings.
+    ///
+    /// A dashed rectangle, which is what every program draws for one: a solid
+    /// one would look like something that had been put on the page.
+    fn draw_choosing_band(&mut self) {
+        let Some((left, top, width, height)) = self.band_rect() else { return };
+        let colour = self.theme.accent;
+        let dash = 4i32;
+
+        let mut x = left;
+        while x < left + width {
+            let run = dash.min(left + width - x);
+            self.canvas.fill_rect(x, top, run, 1, colour);
+            self.canvas.fill_rect(x, top + height, run, 1, colour);
+            x += dash * 2;
+        }
+        let mut y = top;
+        while y < top + height {
+            let run = dash.min(top + height - y);
+            self.canvas.fill_rect(left, y, 1, run, colour);
+            self.canvas.fill_rect(left + width, y, 1, run, colour);
+            y += dash * 2;
+        }
+    }
+
+    /// The frame and the eight handles round one drawing.
+    fn draw_handles_round(&mut self, chosen: super::handles::OnPage) {
         let (left, top, width, height) = (chosen.left, chosen.top, chosen.width, chosen.height);
         let colour = self.theme.accent;
         let handle = super::handles::HANDLE;

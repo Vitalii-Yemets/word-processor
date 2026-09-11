@@ -1,5 +1,6 @@
 //! The editor: what the window shows, and what every command does to it.
 
+pub(crate) mod align;
 mod appearance;
 mod arrange;
 mod autocorrectdialog;
@@ -264,12 +265,18 @@ pub struct Editor {
     stationery_choice: usize,
     /// The drawing being dragged, and what it was when the drag began.
     shape_drag: Option<handles::ShapeDrag>,
-    /// Which drawing is selected, named by the place it is at.
+    /// Which drawings are selected, named by the places they are at.
     ///
     /// The second kind of selection: a stretch of text is one thing and a
-    /// drawing is another, and a command is about one or the other. See
-    /// [`handles`].
-    chosen_drawing: Option<TextPosition>,
+    /// drawing is another, and a command is about one or the other. A list
+    /// rather than one place, because Align lines drawings up with each other
+    /// and one drawing has nothing to line up with. See [`handles`].
+    chosen_drawings: Vec<TextPosition>,
+    /// The rectangle being dragged round a handful of drawings, while it is
+    /// being dragged. Word's Select Objects draws one; see [`handles`].
+    choosing_band: Option<(i32, i32, i32, i32)>,
+    /// What the Align menu lines drawings up against.
+    align_to: handles::AlignTo,
     /// Whether the pointer is choosing drawings rather than text, which is
     /// Word's Select Objects.
     choosing_drawings: bool,
@@ -532,7 +539,9 @@ impl Editor {
             stationery_choice: 0,
             settings: crate::settings::Settings::default(),
             shape_drag: None,
-            chosen_drawing: None,
+            chosen_drawings: Vec::new(),
+            choosing_band: None,
+            align_to: handles::AlignTo::EachOther,
             page_border_lists: (0, 0),
             choosing_drawings: false,
             editing_property: None,

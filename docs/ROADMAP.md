@@ -1465,25 +1465,52 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   was put there: what is shown is worked out afresh, but a program that cannot do
   arithmetic reads the older one, exactly as it reads Word's.
 
-- [ ] **C34. The rest of the Arrange group: Align, Group and Rotate.** Word's
-  Arrange group has three buttons this one does not, and **C27** is why they
-  were left: two of them are about more than one drawing, and the selection it
-  built holds one.
-  **Align** lines drawings up with each other or with the page — left, centre,
-  right, top, middle, bottom, and the two distribute commands — which is no use
-  at all until several can be chosen. **Group** makes several into one drawing,
-  which is `wpg:wgp` in the file and a thing the model has never held. Both want
-  shift-clicking a second drawing, and the rubber band Word's Select Objects
-  drags round a handful of them, and a selection that is a list rather than one
-  place.
-  **Rotate** is the odd one out: it is about a single drawing, and what it needs
-  is `a:xfrm/@rot` read and written, the geometry turned through the angle as it
-  is drawn, and Word's rotation handle above the drawing's top edge. A button
-  that stored an angle and drew the shape the way up it always was would be a
-  button that does nothing.
-  *Done when:* several drawings can be chosen at once and each of the three
-  buttons does what Word's does to them, a group survives being saved and
-  reopened, and a rotated drawing is drawn rotated.
+- [x] **C34. More than one drawing at a time, and Align.** Word's Arrange group
+  had three buttons this one did not, and **C27** is why: two of them are about
+  more than one drawing, and the selection it built held one. This is that
+  selection widened, and the one of the three that needed nothing else.
+  *Done:* `chosen_drawings` is a list. **Shift and a click** adds one to it or
+  takes it out again; a **band** swept round a handful under Select Objects
+  takes every drawing it touches; each of them carries its own eight handles; a
+  **drag on any of them moves all of them**, as one thing to undo; and every
+  command in Arrange — Wrap Text, Position, the two pile menus — acts on all of
+  them while each keeps where it sits.
+  **Align** is a menu of eleven on the Arrange group, which is Word's: the six
+  alignments, the two that spread them out at even gaps, and the three at the
+  foot that say what the eight are measured against. Those three are a mode and
+  not commands: picking one changes nothing until an alignment is pressed, and
+  the menu shows which is in force.
+  Lining a drawing up is done by **moving it by a difference** rather than by
+  working out a position: a drawing's anchor counts from the text, the paper or
+  the paragraph, and which of those is its own business — but a distance is the
+  same distance whatever it is measured from, and the layout has already worked
+  out where every drawing is on the page. One drawing has nothing to line up
+  with, and is told so rather than left wondering.
+  *Not done:* Word also lets the arrow keys nudge the drawings that are chosen,
+  which is the keyboard's half of the same gesture; and its band takes only the
+  drawings it wholly encloses when Ctrl is held, where this one always takes
+  what it touches.
+
+- [ ] **C36. Rotate.** `a:xfrm/@rot`, in sixtieths of a thousandth of a degree,
+  read and written; the geometry turned through the angle as it is drawn and the
+  pixels of a picture turned with it; Word's Rotate menu — right ninety, left
+  ninety, flip vertically, flip horizontally — and the rotation handle above the
+  drawing's top edge. A button that stored an angle and drew the shape the way up
+  it always was would be a button that does nothing, which is why the drawing
+  and the file are one item and not two.
+  *Done when:* a drawing can be turned by the menu and by its handle, a picture
+  turns with it, and the angle survives being saved and reopened.
+
+- [ ] **C37. Group.** `wpg:wgp`: several drawings written as one, with a
+  coordinate space of its own — the group states the rectangle it covers and the
+  rectangle its children are measured in, and every child is placed through that
+  mapping. It is not a command on a selection but a kind of drawing the model has
+  never held, which is why it is here rather than beside Align.
+  Word's Group, Ungroup and Regroup are the three commands, and a group holds
+  shapes, pictures and other groups.
+  *Done when:* several drawings can be made one and taken apart again, a group
+  from Word is laid out where Word puts it, and one made here survives being
+  saved and reopened.
 
 ## D — Pictures and drawings
 

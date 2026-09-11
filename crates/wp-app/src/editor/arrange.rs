@@ -2,10 +2,15 @@
 //!
 //! # What these commands act on
 //!
-//! The drawing that is chosen — clicked, drawn with handles — and the one the
+//! Every drawing that is chosen — clicked, drawn with handles — and the one the
 //! caret is beside when none is. See [`super::handles`], which is where a
 //! drawing is chosen and what makes the difference matter: a caret between two
 //! drawings is beside both, and a drawing clicked is one drawing.
+//!
+//! Each of them keeps where it sits. What the text does about a drawing, and
+//! which side of the page it is put on, are the same decision for all of them;
+//! where each of them is, is its own, and a command that moved them all to one
+//! place would be a command nobody could use twice.
 
 use wp_docx::anchor::{Anchor, Placement, Wrap};
 use wp_docx::TextPosition;
@@ -62,26 +67,33 @@ impl Editor {
     /// Sets what the text does about the drawing in hand.
     pub(super) fn choose_wrapping(&mut self, index: usize) -> Response {
         self.popup = None;
-        let Some(at) = self.drawing_in_hand() else { return self.report(NOTHING) };
-
         // The first line puts the drawing back in the line of text; the rest
         // are the ways of floating.
-        let (anchor, note) = match index.checked_sub(1) {
+        let (wrap, note) = match index.checked_sub(1) {
             None => (None, "In line with text".to_owned()),
             Some(which) => {
                 let Some(wrap) = Wrap::ALL.get(which).copied() else { return Response::Ignored };
-                let anchor = Anchor {
-                    wrap,
-                    // Behind and in front are the same wrapping — none — and
-                    // differ only in which is drawn over which.
-                    behind_text: wrap == Wrap::None,
-                    ..self.anchor_of(at)
-                };
-                (Some(anchor), format!("Wrap: {}", wrap.label()))
+                (Some(wrap), format!("Wrap: {}", wrap.label()))
             }
         };
 
-        let changed = self.document.set_anchor_at(at, anchor.as_ref());
+        // Every drawing chosen, each keeping where it is: what the text does
+        // about a drawing is the same decision for all of them, but where each
+        // of them sits is its own. One command is one thing to undo.
+        self.document.begin_gesture();
+        let mut changed = false;
+        for at in self.drawings_in_hand() {
+            let anchor = wrap.map(|wrap| Anchor {
+                wrap,
+                // Behind and in front are the same wrapping — none — and
+                // differ only in which is drawn over which.
+                behind_text: wrap == Wrap::None,
+                ..self.anchor_of(at)
+            });
+            changed |= self.document.set_anchor_at(at, anchor.as_ref());
+        }
+        self.document.end_gesture();
+
         self.relayout();
         self.edited(changed, &note)
     }
@@ -110,14 +122,20 @@ impl Editor {
     pub(super) fn choose_position(&mut self, index: usize) -> Response {
         self.popup = None;
         let Some((label, edge)) = POSITIONS.get(index).copied() else { return Response::Ignored };
-        let Some(at) = self.drawing_in_hand() else { return self.report(NOTHING) };
+        if self.drawings_in_hand().is_empty() {
+            return self.report(NOTHING);
+        }
 
         // A drawing has to float before it can be put anywhere, so one that was
         // in the line starts floating with the wrapping Word gives it.
-        let mut anchor = self.anchor_of(at);
-        anchor.horizontal = Placement::Aligned(edge.to_owned());
-
-        let changed = self.document.set_anchor_at(at, Some(&anchor));
+        self.document.begin_gesture();
+        let mut changed = false;
+        for at in self.drawings_in_hand() {
+            let mut anchor = self.anchor_of(at);
+            anchor.horizontal = Placement::Aligned(edge.to_owned());
+            changed |= self.document.set_anchor_at(at, Some(&anchor));
+        }
+        self.document.end_gesture();
         self.relayout();
         self.edited(changed, &format!("Position: {label}"))
     }
@@ -128,12 +146,18 @@ impl Editor {
     /// takes a drawing out of the pile altogether: the text no longer keeps out
     /// of its way, and it is drawn over the words or under them.
     pub(super) fn set_shape_depth(&mut self, behind: bool) -> Response {
-        let Some(at) = self.drawing_in_hand() else { return self.report(NOTHING) };
-        let mut anchor = self.anchor_of(at);
-        anchor.wrap = Wrap::None;
-        anchor.behind_text = behind;
-
-        let changed = self.document.set_anchor_at(at, Some(&anchor));
+        if self.drawings_in_hand().is_empty() {
+            return self.report(NOTHING);
+        }
+        self.document.begin_gesture();
+        let mut changed = false;
+        for at in self.drawings_in_hand() {
+            let mut anchor = self.anchor_of(at);
+            anchor.wrap = Wrap::None;
+            anchor.behind_text = behind;
+            changed |= self.document.set_anchor_at(at, Some(&anchor));
+        }
+        self.document.end_gesture();
         self.relayout();
         self.edited(changed, if behind { "Behind text" } else { "In front of text" })
     }
@@ -181,33 +205,52 @@ impl Editor {
     /// float: a drawing in the line of text is part of the text, and there is
     /// nothing for it to be in front of.
     pub(super) fn move_shape_depth(&mut self, forwards: bool, all_the_way: bool) -> Response {
-        let Some(at) = self.drawing_in_hand() else { return self.report(NOTHING) };
-        let Some(mut anchor) = self.document.anchor_at(at) else {
+        let chosen = self.drawings_in_hand();
+        if chosen.is_empty() {
+            return self.report(NOTHING);
+        }
+        // A drawing in the line of text is part of the text and has nothing to
+        // be in front of. Said once, about the first of them, because a handful
+        // that are all in the line would otherwise say it a handful of times.
+        if chosen.iter().all(|at| self.document.anchor_at(*at).is_none()) {
             return self.report("A drawing in the line of text is not in front of anything");
-        };
+        }
 
-        // Every floating drawing's depth, pictures and shapes alike. The one in
-        // hand is among them, and comparing against itself is harmless:
-        // nothing is strictly above or below its own number.
-        let others = self.document.drawing_depths();
+        self.document.begin_gesture();
+        let mut changed = false;
+        let mut stuck = true;
+        for at in chosen {
+            let Some(mut anchor) = self.document.anchor_at(at) else { continue };
 
-        let wanted = if forwards {
-            let above = others.iter().copied().filter(|depth| *depth > anchor.depth);
-            if all_the_way { above.max() } else { above.min() }.map(|depth| depth.saturating_add(1))
-        } else {
-            let below = others.iter().copied().filter(|depth| *depth < anchor.depth);
-            if all_the_way { below.min() } else { below.max() }.map(|depth| depth.saturating_sub(1))
-        };
-        let Some(wanted) = wanted else {
+            // Every floating drawing's depth, pictures and shapes alike, read
+            // again for each: moving one changes what the next is moving past.
+            // The one in hand is among them, and comparing against itself is
+            // harmless — nothing is strictly above or below its own number.
+            let others = self.document.drawing_depths();
+            let wanted = if forwards {
+                let above = others.iter().copied().filter(|depth| *depth > anchor.depth);
+                if all_the_way { above.max() } else { above.min() }
+                    .map(|depth| depth.saturating_add(1))
+            } else {
+                let below = others.iter().copied().filter(|depth| *depth < anchor.depth);
+                if all_the_way { below.min() } else { below.max() }
+                    .map(|depth| depth.saturating_sub(1))
+            };
+            let Some(wanted) = wanted else { continue };
+
+            stuck = false;
+            anchor.depth = wanted;
+            changed |= self.document.set_anchor_at(at, Some(&anchor));
+        }
+        self.document.end_gesture();
+
+        if stuck {
             return self.report(if forwards {
                 "This drawing is already in front of the others"
             } else {
                 "This drawing is already behind the others"
             });
-        };
-
-        anchor.depth = wanted;
-        let changed = self.document.set_anchor_at(at, Some(&anchor));
+        }
         self.relayout();
         self.edited(
             changed,

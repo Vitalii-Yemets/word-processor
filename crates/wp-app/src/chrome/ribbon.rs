@@ -267,6 +267,9 @@ static MENUS: &[Menu] = &[
     // Word's AutoFit is a plain dropdown: there is no such thing as "autofit",
     // only the three ways of arriving at a width, and one of them is in force.
     Menu { command: Command::AutoFit, choice: Choice::AutoFit, split: false },
+    // A gallery of alignments, with no alignment of its own to be: pressing it
+    // anywhere asks which.
+    Menu { command: Command::AlignObjects, choice: Choice::AlignObjects, split: false },
 ];
 
 /// The menu a command drops, if it drops one.
@@ -1135,6 +1138,7 @@ impl Ribbon {
                     | Choice::AlignmentTab
                     | Choice::TablePart
                     | Choice::AutoFit
+                    | Choice::AlignObjects
                     | Choice::DocumentSpacing
                     | Choice::BulletLibrary
                     | Choice::NumberLibrary
@@ -1600,6 +1604,8 @@ static LAYOUT_GROUPS: &[Group] = &[
             Item::Small(Command::BringForward, Icon::BringForward, "Bring Forward"),
             Item::Break,
             Item::Small(Command::SendBackward, Icon::SendBackward, "Send Backward"),
+            Item::Break,
+            Item::Small(Command::AlignObjects, Icon::AlignObjects, "Align"),
             Item::Break,
             Item::Small(Command::SelectionPane, Icon::SelectionPane, "Selection Pane"),
         ],

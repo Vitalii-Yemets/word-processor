@@ -690,7 +690,7 @@ impl Editor {
 
         // A drawing is taken hold of before the page underneath it is asked
         // about the press: a press on a picture is about the picture.
-        if self.press_on_shape(x, y) {
+        if self.press_on_shape(x, y, modifiers.shift) {
             return Response::Redraw;
         }
 
@@ -953,6 +953,16 @@ impl Editor {
             return self.drag_text(x, y);
         }
 
+        // The band being swept round a handful of drawings, while Select
+        // Objects is in hand.
+        if self.dragging_band() {
+            if !held {
+                self.release_band();
+                return Response::Redraw;
+            }
+            return self.drag_band(x, y);
+        }
+
         if self.dragging_shape() {
             if !held {
                 self.release_shape();
@@ -1128,6 +1138,7 @@ impl Editor {
             // knows where it is.
             Choice::TableStyle => return self.open_table_styles(),
             Choice::TablePart => return self.open_table_select(),
+            Choice::AlignObjects => return self.open_align(),
             // The menus the ribbon's arrows drop are filled in by the module
             // that owns them, which knows what is in each and which of its
             // entries is in force.
@@ -1266,6 +1277,7 @@ impl Editor {
             | Choice::NumberLibrary
             | Choice::TablePart
             | Choice::AutoFit
+            | Choice::AlignObjects
             | Choice::AlignmentTab
             | Choice::MultilevelLibrary
             | Choice::LineSpacing
@@ -1376,6 +1388,7 @@ impl Editor {
             Choice::Shape => self.choose_shape(index),
             Choice::TablePart => self.choose_table_part(index),
             Choice::AutoFit => self.choose_autofit(index),
+            Choice::AlignObjects => self.choose_align(index),
             Choice::Wrap => self.choose_wrapping(index),
             Choice::Position => self.choose_position(index),
             Choice::Forward => self.choose_arrange(true, index),

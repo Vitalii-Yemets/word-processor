@@ -283,6 +283,6 @@ mod tests {
         let mut editor = editor();
         let at = editor.drawings().first().map(|(at, _)| *at).expect("a drawing");
         editor.choose_drawing(0);
-        assert_eq!(editor.chosen_drawing, Some(at), "the pane did not choose it");
+        assert_eq!(editor.chosen_drawings, vec![at], "the pane did not choose it");
     }
 }

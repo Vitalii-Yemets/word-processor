@@ -1,6 +1,7 @@
 //! Putting a table or a picture into the document, and switching the theme.
 
 use wp_docx::EMU_PER_INCH;
+use wp_shell::App;
 use wp_shell::Response;
 
 use crate::chrome::{Mode, StyleSample, TableGrid, Theme};
@@ -639,6 +640,60 @@ impl Editor {
                     self.document.set_caret(wp_docx::TextPosition::new(2, 0));
                 }
                 self.relayout();
+            }
+            "severaldrawings" | "aligned" | "alignmenu" => {
+                // Three drawings chosen at once, which is what Align is for.
+                // "aligned" lines them up; "alignmenu" drops the menu open.
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                for (name, across, down) in [
+                    ("One", 0i64, 0i64),
+                    ("Two", 1_371_600, 685_800),
+                    ("Three", 2_743_200, 1_371_600),
+                ] {
+                    let shape = wp_docx::shapes::Shape {
+                        name: name.to_owned(),
+                        width_emu: 914_400,
+                        height_emu: 548_640,
+                        fill: Some("4472C4".to_owned()),
+                        text: vec![wp_docx::model::Paragraph::text(name)],
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset(across),
+                            vertical: Placement::Offset(down),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+                self.relayout();
+
+                let all: Vec<wp_docx::TextPosition> =
+                    self.drawings_facing().into_iter().map(|drawing| drawing.at).collect();
+                for (at, place) in all.into_iter().enumerate() {
+                    if at == 0 {
+                        self.choose_drawing_at(place);
+                    } else {
+                        self.also_choose_drawing_at(place);
+                    }
+                }
+                self.ribbon.tab = crate::chrome::ribbon::Tab::Layout;
+                if option == "aligned" {
+                    let row = crate::editor::align::ROWS
+                        .iter()
+                        .position(|(label, _)| *label == "Align Left")
+                        .unwrap_or_default();
+                    self.choose_align(row);
+                }
+                self.relayout();
+                if option == "alignmenu" {
+                    // The menu hangs under its button, and where the button is
+                    // is only known once the tab it is on has been drawn.
+                    let (width, height) = (self.view_width, self.view_height);
+                    self.draw(width, height);
+                    self.open_align();
+                }
             }
             "chosendrawing" => {
                 // A drawing chosen, which is the only way to see the eight

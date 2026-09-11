@@ -4,8 +4,14 @@
 //!
 //! A selection of text is a stretch of the document, or several of them since
 //! **C22**. A drawing is not a stretch of anything: it is one thing, chosen or
-//! not. So it is kept beside the other: [`Editor::chosen_drawing`] is the place
-//! one drawing is at, and every command that acts on a drawing asks it.
+//! not. So it is kept beside the other: [`Editor::chosen_drawings`] is the list
+//! of places those drawings are at, and every command that acts on a drawing
+//! asks it.
+//!
+//! A list rather than one place, because Align lines drawings up with each other
+//! and one drawing has nothing to line up with. Shift and a click adds one to
+//! the list or takes it out again; a band swept round a handful takes all of
+//! them; and a drag on any of them moves every one.
 //!
 //! The two cannot both be what a command is about — Bold with a picture chosen
 //! would have nothing to embolden — so choosing a drawing puts the caret beside
@@ -116,21 +122,29 @@ impl Grip {
     }
 }
 
-/// A drag of a drawing that is under way.
+/// One drawing being dragged, as it was when the drag began.
+///
+/// Kept so that every move is measured from the start rather than from the last
+/// move, which would drift.
+#[derive(Clone, Debug)]
+pub(super) struct Held {
+    pub at: TextPosition,
+    pub width_emu: i64,
+    pub height_emu: i64,
+    pub anchor: Option<Anchor>,
+}
+
+/// A drag of one drawing or of several that is under way.
 #[derive(Clone, Debug)]
 pub(super) struct ShapeDrag {
     pub grip: Grip,
     /// Where the pointer was when it began.
     pub from_x: f32,
     pub from_y: f32,
-    /// Which drawing is being dragged.
-    pub at: TextPosition,
-    /// What it was when the drag began, so every move is measured from the
-    /// start rather than from the last move — which would drift.
-    pub width_emu: i64,
-    pub height_emu: i64,
-    pub anchor: Option<Anchor>,
-    /// Where in the pile it goes if this drag is what makes it float.
+    /// Which drawings are being dragged: all of the chosen ones when the body
+    /// was taken hold of, and only the one whose handle it is otherwise.
+    pub held: Vec<Held>,
+    /// Where in the pile a drawing goes if this drag is what makes it float.
     pub depth: u32,
 }
 
@@ -138,6 +152,8 @@ pub(super) struct ShapeDrag {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct OnPage {
     pub at: TextPosition,
+    /// Which page it is on, which is what lining it up with the paper asks.
+    pub page: usize,
     /// On the screen, not on the page: the scroll and the page's corner are
     /// already taken into account.
     pub left: f32,
@@ -146,15 +162,50 @@ pub(super) struct OnPage {
     pub height: f32,
 }
 
+/// What the Align menu lines drawings up against.
+///
+/// Word's own three, at the foot of the same menu as the alignments themselves:
+/// they are not more commands but what the commands are measured from, which is
+/// why they are a mode and not eight more rows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum AlignTo {
+    /// The drawings chosen, lined up with each other. Word's own default, and
+    /// the only one of the three that needs more than one drawing.
+    #[default]
+    EachOther,
+    /// The edges of the paper.
+    Page,
+    /// The edges of the text.
+    Margin,
+}
+
 impl Editor {
-    /// Chooses one, and puts the caret beside it.
+    /// Chooses one drawing, giving up whatever was chosen before, and puts the
+    /// caret beside it.
     ///
     /// The caret follows so that everything which asks the caret — the ribbon
     /// showing what is in force, Backspace, the scroll that keeps the caret in
-    /// view — still gets a sensible answer. Which drawing the Arrange commands
+    /// view — still gets a sensible answer. Which drawings the Arrange commands
     /// act on is the selection's doing, not the caret's.
     pub(super) fn choose_drawing_at(&mut self, at: TextPosition) {
-        self.chosen_drawing = Some(at);
+        self.chosen_drawings = vec![at];
+        self.document.set_caret(TextPosition::new(at.paragraph, at.offset + 1));
+        self.needs_redraw = true;
+    }
+
+    /// Adds one to the drawings already chosen, or takes it out again.
+    ///
+    /// Shift and a click, which is how a second drawing joins the first
+    /// everywhere. Clicking a chosen drawing again with Shift down lets go of
+    /// that one and keeps the rest, because a selection you cannot subtract
+    /// from is one you have to start again.
+    pub(super) fn also_choose_drawing_at(&mut self, at: TextPosition) {
+        match self.chosen_drawings.iter().position(|held| *held == at) {
+            Some(index) => {
+                self.chosen_drawings.remove(index);
+            }
+            None => self.chosen_drawings.push(at),
+        }
         self.document.set_caret(TextPosition::new(at.paragraph, at.offset + 1));
         self.needs_redraw = true;
     }
@@ -166,32 +217,46 @@ impl Editor {
     /// shape they have just made is move it.
     pub(super) fn choose_drawing_here(&mut self) {
         if let Some(at) = self.document.drawing_place_here() {
-            self.chosen_drawing = Some(at);
+            self.chosen_drawings = vec![at];
             self.needs_redraw = true;
         }
     }
 
-    /// Gives up the drawing that was chosen, if one was.
+    /// Gives up every drawing that was chosen, if any was.
     ///
     /// Returns whether anything was given up, so a press that let go of a
     /// drawing can be told from one that did nothing.
     pub(super) fn drop_chosen_drawing(&mut self) -> bool {
-        if self.chosen_drawing.take().is_none() {
+        if self.chosen_drawings.is_empty() {
             return false;
         }
+        self.chosen_drawings.clear();
         self.needs_redraw = true;
         true
     }
 
-    /// Which drawing the commands are about: the one chosen, else the one the
-    /// caret is beside.
+    /// Which drawing the commands that act on one are about: the first chosen,
+    /// else the one the caret is beside.
     ///
     /// The caret is still an answer because the keyboard has to be able to
     /// reach a drawing: a picture typed in and then wrapped never went near the
     /// mouse.
     #[must_use]
     pub(super) fn drawing_in_hand(&self) -> Option<TextPosition> {
-        self.chosen_drawing.or_else(|| self.document.drawing_place_here())
+        self.chosen_drawings.first().copied().or_else(|| self.document.drawing_place_here())
+    }
+
+    /// And which drawings the commands that act on several are about.
+    ///
+    /// Every one chosen, in the order they were chosen; failing that the one
+    /// the caret is beside, so that a command given from the keyboard still has
+    /// something to work on.
+    #[must_use]
+    pub(super) fn drawings_in_hand(&self) -> Vec<TextPosition> {
+        if !self.chosen_drawings.is_empty() {
+            return self.chosen_drawings.clone();
+        }
+        self.document.drawing_place_here().into_iter().collect()
     }
 
     /// Every drawing on the pages, the one nearest the reader first.
@@ -219,16 +284,29 @@ impl Editor {
                     }
                 };
                 let Some(at) = at else { continue };
-                out.push(OnPage { at, left: origin_x + x, top: top + y, width, height });
+                out.push(OnPage {
+                    at,
+                    page: index,
+                    left: origin_x + x,
+                    top: top + y,
+                    width,
+                    height,
+                });
             }
         }
         out
     }
 
-    /// Where on the screen the chosen drawing is, if it is on a page.
-    pub(super) fn chosen_drawing_box(&self) -> Option<OnPage> {
-        let at = self.chosen_drawing?;
-        self.drawings_facing().into_iter().find(|drawing| drawing.at == at)
+    /// Where on the screen each chosen drawing is, of those on a page.
+    pub(super) fn chosen_drawing_boxes(&self) -> Vec<OnPage> {
+        if self.chosen_drawings.is_empty() {
+            return Vec::new();
+        }
+        let facing = self.drawings_facing();
+        self.chosen_drawings
+            .iter()
+            .filter_map(|at| facing.iter().find(|drawing| drawing.at == *at).copied())
+            .collect()
     }
 
     /// The drawing at a point on the screen, if there is one.
@@ -246,32 +324,36 @@ impl Editor {
             .map(|drawing| drawing.at)
     }
 
-    /// Which handle of the chosen drawing a point is on, if any.
-    pub(super) fn grip_at(&self, x: i32, y: i32) -> Option<Grip> {
-        let drawing = self.chosen_drawing_box()?;
+    /// Which handle of which chosen drawing a point is on, if any.
+    ///
+    /// Every chosen drawing carries its own handles, so a point is asked of
+    /// each in turn: dragging one drawing's corner resizes that drawing, and
+    /// dragging any of their bodies moves all of them together.
+    pub(super) fn grip_at(&self, x: i32, y: i32) -> Option<(TextPosition, Grip)> {
         let (px, py) = (x as f32, y as f32);
-
-        for grip in Grip::EDGES {
-            let (fx, fy) = grip.at();
-            let cx = drawing.left + drawing.width * fx;
-            let cy = drawing.top + drawing.height * fy;
-            if (px - cx).abs() <= HANDLE && (py - cy).abs() <= HANDLE {
-                return Some(*grip);
+        for drawing in self.chosen_drawing_boxes() {
+            for grip in Grip::EDGES {
+                let (fx, fy) = grip.at();
+                let cx = drawing.left + drawing.width * fx;
+                let cy = drawing.top + drawing.height * fy;
+                if (px - cx).abs() <= HANDLE && (py - cy).abs() <= HANDLE {
+                    return Some((drawing.at, *grip));
+                }
             }
-        }
-        if px >= drawing.left
-            && px < drawing.left + drawing.width
-            && py >= drawing.top
-            && py < drawing.top + drawing.height
-        {
-            return Some(Grip::Body);
+            if px >= drawing.left
+                && px < drawing.left + drawing.width
+                && py >= drawing.top
+                && py < drawing.top + drawing.height
+            {
+                return Some((drawing.at, Grip::Body));
+            }
         }
         None
     }
 
     /// Which pointer belongs over a point, when a drawing is chosen.
     pub(super) fn shape_cursor(&self, x: i32, y: i32) -> Option<Cursor> {
-        match self.grip_at(x, y)? {
+        match self.grip_at(x, y)?.1 {
             Grip::Body => Some(Cursor::Arrow),
             grip => Some(grip.cursor()),
         }
@@ -282,43 +364,130 @@ impl Editor {
     /// Returns whether it took hold of anything. A press that lands on no
     /// drawing gives up the one that was chosen and answers no, so that it goes
     /// on to mean whatever it would have meant in the text.
-    pub(super) fn press_on_shape(&mut self, x: i32, y: i32) -> bool {
-        // A handle of the drawing already chosen comes first: it lies on the
+    pub(super) fn press_on_shape(&mut self, x: i32, y: i32, adding: bool) -> bool {
+        // A handle of a drawing already chosen comes first: it lies on the
         // drawing's edge, and outside it at the corners.
-        if let Some(grip) = self.grip_at(x, y) {
-            if let Some(at) = self.chosen_drawing {
+        if !adding {
+            if let Some((at, grip)) = self.grip_at(x, y) {
                 return self.take_hold_of(at, grip, x, y);
             }
         }
 
         let Some(at) = self.drawing_under(x, y) else {
-            // Word gives the drawing up when the next press lands somewhere
+            // Word gives the drawings up when the next press lands somewhere
             // else. While Select Objects is in hand the press stops there: it
             // is about drawings and nothing else, so one that finds none of
-            // them puts the caret nowhere.
+            // them puts the caret nowhere — and a drag from there is the band
+            // that gathers up whatever it is drawn round.
             self.drop_chosen_drawing();
-            return self.choosing_drawings;
+            if self.choosing_drawings {
+                self.choosing_band = Some((x, y, x, y));
+                return true;
+            }
+            return false;
         };
 
-        self.choose_drawing_at(at);
+        if adding {
+            self.also_choose_drawing_at(at);
+            // Shift and a click is about choosing rather than about moving, so
+            // nothing is taken hold of: a drag from here would be a surprise.
+            return true;
+        }
+
+        // A drawing already among the chosen keeps the rest of them, so that a
+        // handful can be dragged by any one of it.
+        if !self.chosen_drawings.contains(&at) {
+            self.choose_drawing_at(at);
+        }
         self.take_hold_of(at, Grip::Body, x, y)
     }
 
-    /// Remembers what the drawing was, so the drag can be measured from it.
+    /// Carries on the band being dragged round a handful of drawings.
+    pub(super) fn drag_band(&mut self, x: i32, y: i32) -> Response {
+        let Some((from_x, from_y, _, _)) = self.choosing_band else { return Response::Ignored };
+        self.choosing_band = Some((from_x, from_y, x, y));
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// Lets the band go, choosing every drawing it was drawn round.
+    ///
+    /// Round rather than over: Word takes a drawing the band touches at all,
+    /// which is what anybody sweeping a rectangle over a group of them means.
+    pub(super) fn release_band(&mut self) -> bool {
+        let Some((from_x, from_y, to_x, to_y)) = self.choosing_band.take() else { return false };
+        let (left, right) = (from_x.min(to_x) as f32, from_x.max(to_x) as f32);
+        let (top, bottom) = (from_y.min(to_y) as f32, from_y.max(to_y) as f32);
+
+        self.chosen_drawings = self
+            .drawings_facing()
+            .into_iter()
+            .filter(|drawing| {
+                drawing.left < right
+                    && drawing.left + drawing.width > left
+                    && drawing.top < bottom
+                    && drawing.top + drawing.height > top
+            })
+            .map(|drawing| drawing.at)
+            .collect();
+        // The last one chosen is the one the caret goes beside, so that
+        // everything asking the caret has an answer inside the selection.
+        if let Some(at) = self.chosen_drawings.first().copied() {
+            self.document.set_caret(TextPosition::new(at.paragraph, at.offset + 1));
+        }
+        self.needs_redraw = true;
+        true
+    }
+
+    /// Whether a band is being dragged.
+    #[must_use]
+    pub(super) fn dragging_band(&self) -> bool {
+        self.choosing_band.is_some()
+    }
+
+    /// Where the band is on the screen, for drawing it.
+    #[must_use]
+    pub(super) fn band_rect(&self) -> Option<(i32, i32, i32, i32)> {
+        let (from_x, from_y, to_x, to_y) = self.choosing_band?;
+        Some((from_x.min(to_x), from_y.min(to_y), (from_x - to_x).abs(), (from_y - to_y).abs()))
+    }
+
+    /// Remembers what the drawings were, so the drag can be measured from them.
+    ///
+    /// A handle belongs to one drawing and moves only that one; the body moves
+    /// everything chosen, which is what makes a handful of drawings something
+    /// that can be arranged rather than something that has to be moved one at a
+    /// time.
     fn take_hold_of(&mut self, at: TextPosition, grip: Grip, x: i32, y: i32) -> bool {
-        let Some((width_emu, height_emu)) = self.document.drawing_size_at(at) else {
-            return false;
+        let dragging: Vec<TextPosition> = if grip == Grip::Body {
+            let mut all = self.drawings_in_hand();
+            if !all.contains(&at) {
+                all.push(at);
+            }
+            all
+        } else {
+            vec![at]
         };
-        // One drag is one thing to undo, however many moves it is made of.
+
+        let held: Vec<Held> = dragging
+            .into_iter()
+            .filter_map(|at| {
+                let (width_emu, height_emu) = self.document.drawing_size_at(at)?;
+                Some(Held { at, width_emu, height_emu, anchor: self.document.anchor_at(at) })
+            })
+            .collect();
+        if held.is_empty() {
+            return false;
+        }
+
+        // One drag is one thing to undo, however many moves and however many
+        // drawings it is made of.
         self.document.begin_gesture();
         self.shape_drag = Some(ShapeDrag {
             grip,
             from_x: x as f32,
             from_y: y as f32,
-            at,
-            width_emu,
-            height_emu,
-            anchor: self.document.anchor_at(at),
+            held,
             depth: self.document.next_drawing_depth(),
         });
         self.needs_redraw = true;
@@ -341,29 +510,32 @@ impl Editor {
         let (left, top, right, bottom) = drag.grip.moves();
 
         let mut changed = false;
-        if drag.grip != Grip::Body {
-            let width = emu_to_points(drag.width_emu) + (right - left) * dx;
-            let height = emu_to_points(drag.height_emu) + (bottom - top) * dy;
-            changed |= self.document.set_drawing_size_at(
-                drag.at,
-                points_to_emu(width.max(LEAST)),
-                points_to_emu(height.max(LEAST)),
-            );
-        }
+        for held in &drag.held {
+            if drag.grip != Grip::Body {
+                let width = emu_to_points(held.width_emu) + (right - left) * dx;
+                let height = emu_to_points(held.height_emu) + (bottom - top) * dy;
+                changed |= self.document.set_drawing_size_at(
+                    held.at,
+                    points_to_emu(width.max(LEAST)),
+                    points_to_emu(height.max(LEAST)),
+                );
+            }
 
-        // The body moves the drawing. So does a left or top handle, because the
-        // opposite edge is the one staying put — but only for a drawing that
-        // already floats: one in the line has nowhere to be moved to, and
-        // making it float because it was made wider would be a surprise.
-        let floats = drag.anchor.is_some();
-        let (across, down) = match drag.grip {
-            Grip::Body => (dx, dy),
-            _ if floats => (dx * left, dy * top),
-            _ => (0.0, 0.0),
-        };
-        if drag.grip == Grip::Body || across != 0.0 || down != 0.0 {
-            let anchor = moved(drag.anchor.clone(), across, down, drag.depth);
-            changed |= self.document.set_anchor_at(drag.at, Some(&anchor));
+            // The body moves the drawing. So does a left or top handle, because
+            // the opposite edge is the one staying put — but only for a drawing
+            // that already floats: one in the line has nowhere to be moved to,
+            // and making it float because it was made wider would be a
+            // surprise.
+            let floats = held.anchor.is_some();
+            let (across, down) = match drag.grip {
+                Grip::Body => (dx, dy),
+                _ if floats => (dx * left, dy * top),
+                _ => (0.0, 0.0),
+            };
+            if drag.grip == Grip::Body || across != 0.0 || down != 0.0 {
+                let anchor = moved(held.anchor.clone(), across, down, drag.depth);
+                changed |= self.document.set_anchor_at(held.at, Some(&anchor));
+            }
         }
 
         if !changed {
@@ -490,7 +662,7 @@ mod tests {
 
     /// One of its handles, on the screen.
     fn handle(editor: &Editor, grip: Grip) -> (i32, i32) {
-        let drawing = editor.chosen_drawing_box().expect("a chosen drawing");
+        let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
         let (fx, fy) = grip.at();
         ((drawing.left + drawing.width * fx) as i32, (drawing.top + drawing.height * fy) as i32)
     }
@@ -498,10 +670,10 @@ mod tests {
     #[test]
     fn a_press_inside_a_drawing_chooses_it() {
         let mut editor = editor();
-        assert!(editor.chosen_drawing.is_none());
+        assert!(editor.chosen_drawings.is_empty());
         let (x, y) = middle(&editor);
-        assert!(editor.press_on_shape(x, y), "the press found no drawing");
-        assert!(editor.chosen_drawing.is_some());
+        assert!(editor.press_on_shape(x, y, false), "the press found no drawing");
+        assert!(!editor.chosen_drawings.is_empty());
         editor.release_shape();
     }
 
@@ -509,22 +681,25 @@ mod tests {
     fn a_press_away_from_every_drawing_gives_it_up() {
         let mut editor = editor();
         let (x, y) = middle(&editor);
-        editor.press_on_shape(x, y);
+        editor.press_on_shape(x, y, false);
         editor.release_shape();
 
-        assert!(!editor.press_on_shape(x + 500, y + 250), "the press took hold of something");
-        assert!(editor.chosen_drawing.is_none());
+        assert!(
+            !editor.press_on_shape(x + 500, y + 250, false),
+            "the press took hold of something"
+        );
+        assert!(editor.chosen_drawings.is_empty());
     }
 
     #[test]
     fn a_drag_moves_the_drawing() {
         let mut editor = editor();
         let (x, y) = middle(&editor);
-        editor.press_on_shape(x, y);
+        editor.press_on_shape(x, y, false);
         editor.drag_shape(x + 60, y + 40);
         editor.release_shape();
 
-        let at = editor.chosen_drawing.expect("a chosen drawing");
+        let at = editor.chosen_drawings.first().copied().expect("a chosen drawing");
         let anchor = editor.document.anchor_at(at).expect("an anchor");
         let Placement::Offset(across) = anchor.horizontal else { panic!("not an offset") };
         let Placement::Offset(down) = anchor.vertical else { panic!("not an offset") };
@@ -536,13 +711,13 @@ mod tests {
     fn a_drag_on_a_handle_resizes_it() {
         let mut editor = editor();
         let (x, y) = middle(&editor);
-        editor.press_on_shape(x, y);
+        editor.press_on_shape(x, y, false);
         editor.release_shape();
-        let at = editor.chosen_drawing.expect("a chosen drawing");
+        let at = editor.chosen_drawings.first().copied().expect("a chosen drawing");
         let (before, _) = editor.document.drawing_size_at(at).expect("a size");
 
         let (hx, hy) = handle(&editor, Grip::Right);
-        assert!(editor.press_on_shape(hx, hy), "the handle was not found");
+        assert!(editor.press_on_shape(hx, hy, false), "the handle was not found");
         editor.drag_shape(hx + 40, hy);
         editor.release_shape();
 
@@ -554,12 +729,12 @@ mod tests {
     fn a_drawing_cannot_be_dragged_away_to_nothing() {
         let mut editor = editor();
         let (x, y) = middle(&editor);
-        editor.press_on_shape(x, y);
+        editor.press_on_shape(x, y, false);
         editor.release_shape();
-        let at = editor.chosen_drawing.expect("a chosen drawing");
+        let at = editor.chosen_drawings.first().copied().expect("a chosen drawing");
 
         let (hx, hy) = handle(&editor, Grip::Right);
-        editor.press_on_shape(hx, hy);
+        editor.press_on_shape(hx, hy, false);
         editor.drag_shape(hx - 5000, hy);
         editor.release_shape();
 
@@ -571,13 +746,13 @@ mod tests {
     fn one_undo_takes_back_one_drag() {
         let mut editor = editor();
         let (x, y) = middle(&editor);
-        editor.press_on_shape(x, y);
+        editor.press_on_shape(x, y, false);
         for step in 1..=4 {
             editor.drag_shape(x + step * 15, y);
         }
         editor.release_shape();
 
-        let at = editor.chosen_drawing.expect("a chosen drawing");
+        let at = editor.chosen_drawings.first().copied().expect("a chosen drawing");
         editor.document.undo();
         assert_eq!(
             editor.document.anchor_at(at).expect("an anchor").horizontal,
@@ -608,8 +783,8 @@ mod tests {
             (drawing.top + drawing.height / 2.0) as i32,
         );
 
-        assert!(editor.press_on_shape(x, y), "the picture was not pressed");
-        assert_eq!(editor.chosen_drawing, Some(at));
+        assert!(editor.press_on_shape(x, y, false), "the picture was not pressed");
+        assert_eq!(editor.chosen_drawings, vec![at]);
         editor.drag_shape(x + 40, y + 30);
         editor.release_shape();
 
@@ -622,12 +797,12 @@ mod tests {
     fn the_drawing_chosen_is_the_one_the_commands_act_on() {
         let mut editor = editor();
         let (x, y) = middle(&editor);
-        editor.press_on_shape(x, y);
+        editor.press_on_shape(x, y, false);
         editor.release_shape();
         // The caret sits after the drawing, which in a paragraph of text is
         // somewhere the caret alone would find no drawing at all.
         editor.document.set_caret(TextPosition::new(0, 6));
-        assert_eq!(editor.drawing_in_hand(), editor.chosen_drawing);
+        assert_eq!(editor.drawing_in_hand(), editor.chosen_drawings.first().copied());
     }
 
     #[test]
