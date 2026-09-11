@@ -1043,6 +1043,9 @@ pub struct TableCell {
     pub shading: Option<String>,
     /// Which way up the text in it is set. See [`TextDirection`].
     pub direction: TextDirection,
+    /// Room kept clear inside this cell, where it states any of its own.
+    /// `w:tcMar`, which overrides the table's side by side.
+    pub margins: CellMargins,
 }
 
 impl Default for TableCell {
@@ -1057,6 +1060,7 @@ impl Default for TableCell {
             borders: TableBorders::default(),
             shading: None,
             direction: TextDirection::Horizontal,
+            margins: CellMargins::default(),
         }
     }
 }
@@ -1196,6 +1200,61 @@ impl TableBorders {
     }
 }
 
+/// The room kept clear inside a cell, in twentieths of a point.
+///
+/// `w:tblCellMar` on a table, which every cell of it follows, and `w:tcMar` on
+/// one cell, which overrides the table's for that cell. Each side is asked
+/// separately, because a cell may state one and leave the other three to the
+/// table.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CellMargins {
+    pub top: Option<i32>,
+    pub start: Option<i32>,
+    pub bottom: Option<i32>,
+    pub end: Option<i32>,
+}
+
+impl CellMargins {
+    /// What Word leaves at the sides of a cell when nothing says otherwise.
+    pub const USUAL_SIDE: i32 = 108;
+
+    /// And above and below it, which is nothing at all: Word's tables put their
+    /// text against the top line of the cell.
+    pub const USUAL_UP_AND_DOWN: i32 = 0;
+
+    /// The four, with anything unsaid filled in from Word's own defaults.
+    #[must_use]
+    pub fn or_usual(&self) -> (i32, i32, i32, i32) {
+        (
+            self.top.unwrap_or(Self::USUAL_UP_AND_DOWN),
+            self.start.unwrap_or(Self::USUAL_SIDE),
+            self.bottom.unwrap_or(Self::USUAL_UP_AND_DOWN),
+            self.end.unwrap_or(Self::USUAL_SIDE),
+        )
+    }
+
+    /// The same four, with anything unsaid taken from another set rather than
+    /// from the defaults.
+    ///
+    /// What a cell does with the table's: `w:tcMar` may state one side and say
+    /// nothing about the other three, and the three are the table's.
+    #[must_use]
+    pub fn over(&self, under: Self) -> Self {
+        Self {
+            top: self.top.or(under.top),
+            start: self.start.or(under.start),
+            bottom: self.bottom.or(under.bottom),
+            end: self.end.or(under.end),
+        }
+    }
+
+    /// Whether anything is stated at all.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.top.is_none() && self.start.is_none() && self.bottom.is_none() && self.end.is_none()
+    }
+}
+
 /// Which way up the text in a cell is set: Word's Text Direction.
 ///
 /// `w:textDirection`, and what the headings of a narrow column are set in. The
@@ -1306,9 +1365,15 @@ pub struct Table {
     pub borders: TableBorders,
     /// Indent from the text margin, in twentieths of a point.
     pub indent: i32,
-    /// Space kept clear inside a cell, in twentieths of a point.
-    pub cell_margin_start: Option<i32>,
-    pub cell_margin_end: Option<i32>,
+    /// Space kept clear inside every cell of it, in twentieths of a point.
+    /// `w:tblCellMar`. A cell may state its own; see [`TableCell::margins`].
+    pub cell_margins: CellMargins,
+    /// Room left between one cell and the next, in twentieths of a point.
+    ///
+    /// `w:tblCellSpacing`, and Word's "Allow spacing between cells". A table
+    /// with it is a different geometry rather than a different number: the cells
+    /// stop touching, and each is drawn with a border of its own.
+    pub cell_spacing: Option<i32>,
     /// How the width of the table and of its columns is arrived at.
     pub fit: TableFit,
 }

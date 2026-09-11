@@ -483,6 +483,58 @@ impl Document {
         })
     }
 
+    /// The room the table at the caret keeps clear inside every one of its
+    /// cells, in twentieths of a point.
+    ///
+    /// What the table states, which is not the same as what is used: a side it
+    /// says nothing about is Word's own default, and a cell may state its own.
+    /// See [`crate::model::CellMargins`].
+    #[must_use]
+    pub fn table_cell_margins(&self) -> crate::model::CellMargins {
+        self.table_element_here()
+            .and_then(|table| table.child(Some(read::W), "tblPr"))
+            .and_then(|properties| properties.child(Some(read::W), "tblCellMar"))
+            .map(read::read_cell_margins)
+            .unwrap_or_default()
+    }
+
+    /// Sets it.
+    pub fn set_table_cell_margins(&mut self, margins: crate::model::CellMargins) -> bool {
+        self.change_table(move |table, prefix| {
+            let properties = table_properties(table, prefix);
+            properties.remove_children_named(Some(read::W), "tblCellMar");
+            if margins.is_empty() {
+                return;
+            }
+            let element = edit::cell_margins_element("tblCellMar", &margins, prefix);
+            edit::insert_ordered(properties, element, TABLE_PROPERTY_ORDER);
+        })
+    }
+
+    /// How much room the table at the caret leaves between its cells, in
+    /// twentieths of a point, or `None` where it leaves none.
+    #[must_use]
+    pub fn table_cell_spacing(&self) -> Option<i32> {
+        self.table_element_here()?
+            .child(Some(read::W), "tblPr")?
+            .child(Some(read::W), "tblCellSpacing")
+            .filter(|spacing| spacing.attribute(Some(read::W), "type") != Some("pct"))
+            .and_then(|spacing| spacing.attribute(Some(read::W), "w"))
+            .and_then(|text| text.parse::<i32>().ok())
+            .filter(|twips| *twips > 0)
+    }
+
+    /// Sets it, or takes it away so the cells touch again.
+    pub fn set_table_cell_spacing(&mut self, twips: Option<i32>) -> bool {
+        self.change_table(move |table, prefix| {
+            let properties = table_properties(table, prefix);
+            properties.remove_children_named(Some(read::W), "tblCellSpacing");
+            let Some(twips) = twips.filter(|twips| *twips > 0) else { return };
+            let element = edit::measured(prefix, "tblCellSpacing", twips);
+            edit::insert_ordered(properties, element, TABLE_PROPERTY_ORDER);
+        })
+    }
+
     /// Which way up the text in the cell at the caret is set.
     #[must_use]
     pub fn cell_direction(&self) -> Option<crate::model::TextDirection> {

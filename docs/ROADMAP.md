@@ -1363,14 +1363,33 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* each of the nine puts the text where it says, and a cell in a
   tall row shows it.
 
-- [ ] **C31. Cell Margins, and the room between cells.** Word's dialog holds
-  four margins and a tick box for spacing between cells. Two of the margins —
-  `w:tblCellMar` start and end — are read and used already; the top and the
-  bottom are two constants in the layout, and the spacing (`w:tblCellSpacing`)
-  is neither read nor laid out. Spacing is the expensive half: cells with room
-  between them are a different geometry, not a different number.
-  *Done when:* all four margins are the document's and not the layout's, cells
-  can be given room between them, and Word's dialog says so.
+- [x] **C31. Cell Margins, and the room between cells.** Word's dialog holds
+  four margins and a tick box for spacing between cells. Two of the margins were
+  read and used; the top and the bottom were two constants in the layout, and
+  the spacing was neither read nor laid out.
+  *Done:* all four are the document's. `w:tblCellMar` is read and written whole,
+  a side nobody states is Word's own default — a little at each side and nothing
+  above or below — and the two constants are gone. A cell's own `w:tcMar` is
+  honoured as well, side by side: a cell that states one margin and says nothing
+  about the other three gets its own for the one and the table's for the rest,
+  which is what the format means by a preference.
+  **The room between cells is a geometry and not a number**, which was the
+  expensive half. Half of `w:tblCellSpacing` goes on each side of every cell, so
+  the gap between two of them is the whole of it and the gap between a cell and
+  the edge of the table is half — the grid stays the table's geometry rather
+  than something the spacing has moved. The cells stop touching, each is drawn
+  with a border of its own, the paper shows between them, and the row is taller
+  by the spacing while the cells inside it are not.
+  Word's **Table Options** is folded into the Table tab of Table Properties
+  rather than hidden behind a button, the way its page-border Options already
+  is: the four margins, and "Space between cells" with the measurement beside
+  it. Ticking it with nothing typed leaves the room Word's own dialog starts
+  at, so the tick always does something.
+  *Not done:* Word's **Cell Options**, which sets one cell's margins rather than
+  the table's. A document that arrives with `w:tcMar` on a cell is laid out with
+  it, but there is no way to put one there from here. And a spacing written as a
+  percentage of the table is read as none: the model keeps twips, and Word's own
+  dialog cannot ask for a percentage either.
 
 - [ ] **C32. Sorting the rows of a table.** The Sort command exists and sorts
   paragraphs. Sorting a table means moving whole `w:tr` elements, knowing which

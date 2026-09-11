@@ -131,13 +131,20 @@ fn read_table(element: &Element) -> Table {
         })
         .unwrap_or(0);
 
-    let margins = properties.and_then(|properties| properties.child(Some(W), "tblCellMar"));
-    let cell_margin = |side: &str| {
-        margins
-            .and_then(|margins| margins.child(Some(W), side))
-            .and_then(|element| element.attribute(Some(W), "w"))
-            .and_then(|text| text.parse().ok())
-    };
+    let cell_margins = properties
+        .and_then(|properties| properties.child(Some(W), "tblCellMar"))
+        .map(read_cell_margins)
+        .unwrap_or_default();
+
+    // How much room is left between one cell and the next. Word writes it in
+    // twips like everything else here; a percentage of the table would be a
+    // different unit and is not something its dialog can ask for.
+    let cell_spacing = properties
+        .and_then(|properties| properties.child(Some(W), "tblCellSpacing"))
+        .filter(|spacing| spacing.attribute(Some(W), "type") != Some("pct"))
+        .and_then(|spacing| spacing.attribute(Some(W), "w"))
+        .and_then(|text| text.parse::<i32>().ok())
+        .filter(|twips| *twips > 0);
 
     let grid = element
         .child(Some(W), "tblGrid")
@@ -163,8 +170,30 @@ fn read_table(element: &Element) -> Table {
         grid,
         borders,
         indent,
-        cell_margin_start: cell_margin("start").or_else(|| cell_margin("left")),
-        cell_margin_end: cell_margin("end").or_else(|| cell_margin("right")),
+        cell_margins,
+        cell_spacing,
+    }
+}
+
+/// Reads a `w:tblCellMar` or a `w:tcMar`: the room kept clear inside a cell.
+///
+/// The two elements are the same four children with the same meanings, one on a
+/// table and one on a cell, so they are read by one reader. A side that says
+/// nothing is left unsaid rather than filled in, because a cell that says
+/// nothing follows its table and a table that says nothing follows Word.
+pub(crate) fn read_cell_margins(element: &Element) -> crate::model::CellMargins {
+    let side = |name: &str, older: &str| {
+        element
+            .child(Some(W), name)
+            .or_else(|| element.child(Some(W), older))
+            .and_then(|side| side.attribute(Some(W), "w"))
+            .and_then(|text| text.parse().ok())
+    };
+    crate::model::CellMargins {
+        top: side("top", "top"),
+        start: side("start", "left"),
+        bottom: side("bottom", "bottom"),
+        end: side("end", "right"),
     }
 }
 
@@ -270,6 +299,10 @@ fn read_table_cell(cell: &Element) -> TableCell {
         borders,
         shading,
         direction,
+        margins: properties
+            .and_then(|properties| properties.child(Some(W), "tcMar"))
+            .map(read_cell_margins)
+            .unwrap_or_default(),
     }
 }
 

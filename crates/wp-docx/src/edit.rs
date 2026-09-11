@@ -499,6 +499,39 @@ pub(crate) fn valued(prefix: Option<&str>, local: &str, value: &str) -> Element 
     element
 }
 
+/// A measurement in twentieths of a point, as the format writes one: a width
+/// and the unit it is in.
+pub(crate) fn measured(prefix: Option<&str>, local: &str, twips: i32) -> Element {
+    let mut element = Element::new(&name_with(prefix, local), Some(W));
+    element.set_namespaced_attribute(&name_with(prefix, "w"), W, &twips.to_string());
+    element.set_namespaced_attribute(&name_with(prefix, "type"), W, "dxa");
+    element
+}
+
+/// The four sides of a `w:tblCellMar` or a `w:tcMar`.
+///
+/// A side nobody stated is left out rather than written as nothing: leaving it
+/// out is how a cell says "whatever the table says", and writing a zero would
+/// be saying something else.
+pub(crate) fn cell_margins_element(
+    local: &str,
+    margins: &crate::model::CellMargins,
+    prefix: Option<&str>,
+) -> Element {
+    let mut element = Element::new(&name_with(prefix, local), Some(W));
+    for (side, twips) in [
+        ("top", margins.top),
+        ("start", margins.start),
+        ("bottom", margins.bottom),
+        ("end", margins.end),
+    ] {
+        if let Some(twips) = twips {
+            element.push_element(measured(prefix, side, twips));
+        }
+    }
+    element
+}
+
 /// An on/off element, written only when it says something.
 pub(crate) fn toggle(prefix: Option<&str>, local: &str, state: bool) -> Element {
     if state {
@@ -1093,6 +1126,14 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
         layout.set_namespaced_attribute(&name_with(prefix, "type"), W, "fixed");
         properties.push_element(layout);
     }
+    // The room inside every cell, and the room between them. Written only when
+    // the table asks for something other than what Word does by itself.
+    if let Some(spacing) = table.cell_spacing.filter(|twips| *twips > 0) {
+        properties.push_element(measured(prefix, "tblCellSpacing", spacing));
+    }
+    if !table.cell_margins.is_empty() {
+        properties.push_element(cell_margins_element("tblCellMar", &table.cell_margins, prefix));
+    }
     element.push_element(properties);
 
     // The grid decides the geometry, so it is written even when every column is
@@ -1131,6 +1172,11 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
             cell_properties.push_element(cell_width);
             if cell.span > 1 {
                 cell_properties.push_element(valued(prefix, "gridSpan", &cell.span.to_string()));
+            }
+            // Room this cell keeps clear inside itself, where it asks for
+            // something other than the table's.
+            if !cell.margins.is_empty() {
+                cell_properties.push_element(cell_margins_element("tcMar", &cell.margins, prefix));
             }
             // Written only when the text is turned, because the ordinary way up
             // is what a cell that says nothing means.

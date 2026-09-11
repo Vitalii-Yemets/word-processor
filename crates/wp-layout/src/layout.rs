@@ -61,13 +61,6 @@ const BREAK_HIGHLIGHT_WIDTH: f32 = 5.0;
 /// stops of its own — and what Word uses.
 const DEFAULT_TAB_TWIPS: i32 = 720;
 
-/// Space kept clear at the sides of a table cell when the table says nothing.
-/// Word's own default, in twentieths of a point.
-const DEFAULT_CELL_MARGIN_TWIPS: i32 = 108;
-/// Space above and below the content of a cell, in pixels.
-const CELL_PADDING_TOP: f32 = 2.0;
-const CELL_PADDING_BOTTOM: f32 = 2.0;
-
 /// A4, the default when a document does not say.
 const DEFAULT_PAGE_WIDTH_TWIPS: f32 = 11906.0;
 const DEFAULT_PAGE_HEIGHT_TWIPS: f32 = 16838.0;
@@ -2456,13 +2449,16 @@ impl<'a> LayoutEngine<'a> {
         // it has one. See `wp_docx::table_properties::TableLook`.
         let look = table.look;
 
-        let (margin_start, margin_end) = cell_margins(table, scale);
+        // Half the room between cells goes on each side of every one of them,
+        // so a cell sits inside its slot of the grid rather than filling it.
+        let spacing = cell_spacing(table, scale);
+        let half = spacing / 2.0;
         // A table sits in whichever column the flow has reached.
         let table_left =
             area.in_column(*column).left + table.indent as f32 / TWIPS_PER_POINT * scale;
 
         for (row_number, row) in table.rows.iter().enumerate() {
-            let spans = cell_spans(row, &columns, table_left);
+            let spans = cell_spans(row, &columns, table_left, half);
 
             // Measured first, on a page of its own that is then thrown away.
             let saved_counters = self.counters.clone();
@@ -2470,23 +2466,24 @@ impl<'a> LayoutEngine<'a> {
                 vec![Page { width: area.page_width, height: area.page_height, ..Page::default() }];
             let mut scratch_index = *index;
             let mut height = 0.0f32;
-            // The tallest this row could be: what is left of the page under it.
-            // A cell whose text is turned is as long as the row is tall, so
-            // this is the longest its line can be.
-            let room = (self.limit(pages.len().saturating_sub(1), area)
-                - *y
-                - CELL_PADDING_TOP
-                - CELL_PADDING_BOTTOM)
-                .max(1.0);
             for (cell, (left, width)) in row.cells.iter().zip(&spans) {
-                let across = (*width - margin_start - margin_end).max(1.0);
+                let margins = margins_of_cell(cell, table, scale);
+                let across = (*width - margins.across()).max(1.0);
                 if cell.direction.is_turned() {
+                    // The tallest this row could be: what is left of the page
+                    // under it. A cell whose text is turned is as long as the
+                    // row is tall, so this is the longest its line can be.
+                    let room = (self.limit(pages.len().saturating_sub(1), area)
+                        - *y
+                        - spacing
+                        - margins.down())
+                    .max(1.0);
                     // Turned text is measured the other way round: what it
                     // needs is how *long* it came out, because that is what the
                     // row has to be tall enough for.
                     let laid =
                         self.turned_cell(cell, &mut scratch_index, document, area, room, across);
-                    height = height.max(text_length(&laid));
+                    height = height.max(text_length(&laid) + margins.down());
                     continue;
                 }
                 let mut cell_y = 0.0f32;
@@ -2497,17 +2494,19 @@ impl<'a> LayoutEngine<'a> {
                     &mut scratch,
                     &mut cell_y,
                     area,
-                    *left + margin_start,
+                    *left + margins.start,
                     across,
                 );
-                height = height.max(cell_y);
+                height = height.max(cell_y + margins.down());
             }
             self.counters = saved_counters;
 
+            // The room between the cells is part of the row: half of it above
+            // them and half below.
+            height += spacing;
             if let Some(wanted) = row.height {
                 height = height.max(wanted as f32 / TWIPS_PER_POINT * scale);
             }
-            height += CELL_PADDING_TOP + CELL_PADDING_BOTTOM;
 
             // A row that will not fit starts a page, unless it would not fit on
             // an empty one either — in which case it has to overflow somewhere.
@@ -2519,8 +2518,11 @@ impl<'a> LayoutEngine<'a> {
 
             // The colour behind each cell, which is what a banded table is
             // made of. It goes on before the text, because a decoration is
-            // drawn under the glyphs.
-            let row_bottom_edge = *y + height;
+            // drawn under the glyphs. The band is the cells' own, inside the
+            // room left round them: a table with spacing shows the paper
+            // between one cell and the next, not the colour of either.
+            let cells_top = *y + half;
+            let cells_bottom = *y + height - half;
             if let Some(page) = pages.last_mut() {
                 for (number, (cell, (left, width))) in row.cells.iter().zip(&spans).enumerate() {
                     let parts =
@@ -2536,9 +2538,9 @@ impl<'a> LayoutEngine<'a> {
                     let Some(fill) = fill else { continue };
                     page.decorations.push(Decoration {
                         x: *left,
-                        y: *y,
+                        y: cells_top,
                         width: *width,
-                        height: row_bottom_edge - *y,
+                        height: (cells_bottom - cells_top).max(0.0),
                         color: fill,
                     });
                 }
@@ -2551,25 +2553,26 @@ impl<'a> LayoutEngine<'a> {
             let mut placed: Vec<(TextPosition, f32, f32)> = Vec::with_capacity(row.cells.len());
             for (cell, (left, width)) in row.cells.iter().zip(&spans) {
                 placed.push((TextPosition::new(*index, 0), *left, *width));
-                let across = (*width - margin_start - margin_end).max(1.0);
+                let margins = margins_of_cell(cell, table, scale);
+                let across = (*width - margins.across()).max(1.0);
 
                 if cell.direction.is_turned() {
                     // Laid out straight into a box as long as the row is tall,
                     // and then turned onto the page. The first line goes against
                     // the edge the reader starts from: the right for text that
                     // reads downwards, the left for text that reads upwards.
-                    let length = (height - CELL_PADDING_TOP - CELL_PADDING_BOTTOM).max(1.0);
+                    let length = (height - spacing - margins.down()).max(1.0);
                     let laid = self.turned_cell(cell, index, document, area, length, across);
                     let frame = match cell.direction {
                         wp_docx::model::TextDirection::Up => Frame {
                             turn: Turn::Up,
-                            x: *left + margin_start,
-                            y: row_top + height - CELL_PADDING_BOTTOM,
+                            x: *left + margins.start,
+                            y: cells_bottom - margins.bottom,
                         },
                         _ => Frame {
                             turn: Turn::Down,
-                            x: *left + *width - margin_end,
-                            y: row_top + CELL_PADDING_TOP,
+                            x: *left + *width - margins.end,
+                            y: cells_top + margins.top,
                         },
                     };
                     if let Some(page) = pages.last_mut() {
@@ -2578,7 +2581,7 @@ impl<'a> LayoutEngine<'a> {
                     continue;
                 }
 
-                let mut cell_y = row_top + CELL_PADDING_TOP;
+                let mut cell_y = cells_top + margins.top;
                 self.place_cell(
                     cell,
                     index,
@@ -2586,7 +2589,7 @@ impl<'a> LayoutEngine<'a> {
                     pages,
                     &mut cell_y,
                     area,
-                    *left + margin_start,
+                    *left + margins.start,
                     across,
                 );
             }
@@ -2596,9 +2599,9 @@ impl<'a> LayoutEngine<'a> {
                 for (at, left, width) in placed {
                     page.cells.push(PlacedCell {
                         x: left,
-                        y: row_top,
+                        y: cells_top,
                         width,
-                        height: row_bottom - row_top,
+                        height: (cells_bottom - cells_top).max(0.0),
                         at,
                     });
                 }
@@ -2609,8 +2612,8 @@ impl<'a> LayoutEngine<'a> {
                     &borders,
                     row,
                     &spans,
-                    row_top,
-                    row_bottom,
+                    cells_top,
+                    cells_bottom,
                     row_number,
                     table.rows.len(),
                     scale,
@@ -4861,19 +4864,56 @@ fn lay_turned(page: &mut Page, laid: Page, frame: Frame) {
     }
 }
 
-/// How much room is kept clear inside a cell, left and right, in pixels.
-pub(crate) fn cell_margins(table: &Table, scale: f32) -> (f32, f32) {
-    let margin = |twips: Option<i32>| {
-        twips.unwrap_or(DEFAULT_CELL_MARGIN_TWIPS) as f32 / TWIPS_PER_POINT * scale
-    };
-    (margin(table.cell_margin_start), margin(table.cell_margin_end))
+/// How much room is kept clear inside one cell, in pixels.
+///
+/// What the cell states, then what its table states, then Word's own defaults —
+/// which are a little at each side and nothing above or below.
+pub(crate) fn margins_of_cell(cell: &TableCell, table: &Table, scale: f32) -> Margins {
+    Margins::of(cell.margins.over(table.cell_margins), scale)
+}
+
+/// Room kept clear on the four sides of a cell, in pixels.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Margins {
+    pub top: f32,
+    pub start: f32,
+    pub bottom: f32,
+    pub end: f32,
+}
+
+impl Margins {
+    fn of(margins: wp_docx::model::CellMargins, scale: f32) -> Self {
+        let (top, start, bottom, end) = margins.or_usual();
+        let pixels = |twips: i32| twips.max(0) as f32 / TWIPS_PER_POINT * scale;
+        Self { top: pixels(top), start: pixels(start), bottom: pixels(bottom), end: pixels(end) }
+    }
+
+    /// How much of a cell's width the two side margins take.
+    fn across(&self) -> f32 {
+        self.start + self.end
+    }
+
+    /// And how much of its height.
+    fn down(&self) -> f32 {
+        self.top + self.bottom
+    }
+}
+
+/// How much room a table leaves between one cell and the next, in pixels.
+///
+/// Half of it goes on each side of every cell, so the gap between two of them
+/// is the whole of it and the gap between a cell and the edge of the table is
+/// half — which is what the number means and what keeps the grid the table's
+/// geometry rather than something the spacing has moved.
+pub(crate) fn cell_spacing(table: &Table, scale: f32) -> f32 {
+    table.cell_spacing.unwrap_or(0).max(0) as f32 / TWIPS_PER_POINT * scale
 }
 
 /// Where each cell of a row sits, as a left edge and a width.
 ///
 /// A cell covering several columns takes their widths together, which is what
 /// makes a merged heading line up with the columns under it.
-fn cell_spans(row: &TableRow, columns: &[f32], left: f32) -> Vec<(f32, f32)> {
+fn cell_spans(row: &TableRow, columns: &[f32], left: f32, inset: f32) -> Vec<(f32, f32)> {
     let mut spans = Vec::with_capacity(row.cells.len());
     let mut x = left;
     let mut column = 0usize;
@@ -4884,7 +4924,9 @@ fn cell_spans(row: &TableRow, columns: &[f32], left: f32) -> Vec<(f32, f32)> {
         // A row with more cells than the grid has columns still has to put them
         // somewhere, so anything past the end gets the last column's width.
         let width = if width > 0.0 { width } else { columns.last().copied().unwrap_or(0.0) };
-        spans.push((x, width));
+        // The cell sits inside its slot by half the room the table leaves
+        // between cells, which is none at all unless it asks for some.
+        spans.push((x + inset, (width - inset * 2.0).max(1.0)));
         x += width;
         column += span;
     }

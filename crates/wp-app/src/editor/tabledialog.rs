@@ -38,25 +38,37 @@ const ROW_TABLE: usize = 1;
 const TABLE_WIDTH: usize = 2;
 const TABLE_INDENT: usize = 3;
 const TABLE_ALIGNMENT: usize = 4;
+// Word's Options button, folded into the tab rather than hidden behind a
+// second dialog: there are five fields in it.
+const MARGINS: usize = 5;
+const ROW_MARGINS_UP_AND_DOWN: usize = 6;
+const MARGIN_TOP: usize = 7;
+const MARGIN_BOTTOM: usize = 8;
+const ROW_MARGINS_SIDES: usize = 9;
+const MARGIN_LEFT: usize = 10;
+const MARGIN_RIGHT: usize = 11;
+const ROW_SPACING: usize = 12;
+const SPACING_ON: usize = 13;
+const SPACING_AMOUNT: usize = 14;
 
 // Row.
-const TAB_ROW: usize = 5;
-const ROW_ROW: usize = 6;
-const ROW_HEIGHT: usize = 7;
-const ROW_HEIGHT_RULE: usize = 8;
-const ROW_BREAK: usize = 9;
-const ROW_HEADER: usize = 10;
+const TAB_ROW: usize = 15;
+const ROW_ROW: usize = 16;
+const ROW_HEIGHT: usize = 17;
+const ROW_HEIGHT_RULE: usize = 18;
+const ROW_BREAK: usize = 19;
+const ROW_HEADER: usize = 20;
 
 // Cell.
-const TAB_CELL: usize = 11;
-const ROW_CELL: usize = 12;
-const CELL_WIDTH: usize = 13;
-const CELL_ALIGNMENT: usize = 14;
+const TAB_CELL: usize = 21;
+const ROW_CELL: usize = 22;
+const CELL_WIDTH: usize = 23;
+const CELL_ALIGNMENT: usize = 24;
 
 // Alt Text.
-const TAB_ALT: usize = 15;
-const ALT_TITLE: usize = 16;
-const ALT_DESCRIPTION: usize = 17;
+const TAB_ALT: usize = 25;
+const ALT_TITLE: usize = 26;
+const ALT_DESCRIPTION: usize = 27;
 
 /// The button that hands over to Borders and Shading, as Word's does.
 pub(super) const BORDERS: &str = "Borders…";
@@ -72,6 +84,9 @@ const CELL_ALIGNMENTS: &[(&str, CellAlignment)] = &[
     ("Center", CellAlignment::Middle),
     ("Bottom", CellAlignment::Bottom),
 ];
+
+/// What Word's dialog starts the room between cells at: a twentieth of an inch.
+const USUAL_SPACING_TWIPS: i32 = 72;
 
 /// The two rules Word offers for a row's height.
 const HEIGHT_RULES: &[&str] = &["At least", "Exactly"];
@@ -109,6 +124,11 @@ impl Editor {
         let shown = |twips: i32| measure::format(twips, unit);
         let height = document.table_row_height().map_or_else(String::new, shown);
         let cell_width = document.cell_width().map_or_else(String::new, shown);
+        // The four sides as they are used rather than as they are written: a
+        // side the table says nothing about is Word's own default, and a box
+        // showing nothing would say the margin was nothing.
+        let margins = document.table_cell_margins().or_usual();
+        let spacing = document.table_cell_spacing();
 
         let fields = vec![
             // --- Table -----------------------------------------------------
@@ -128,6 +148,20 @@ impl Editor {
                     .and_then(|wanted| ALIGNMENTS.iter().position(|(_, found)| *found == wanted))
                     .unwrap_or(0),
             ),
+            // Word's Table Options, which its dialog hides behind a button.
+            // The four are what every cell of the table keeps clear inside
+            // itself; the fifth is the room between one cell and the next,
+            // which is a different geometry rather than a different number.
+            Field::Group("Cell margins".to_owned()),
+            Field::Columns(2),
+            number("Top", shown(margins.0), self.unit.mark()),
+            number("Bottom", shown(margins.2), self.unit.mark()),
+            Field::Columns(2),
+            number("Left", shown(margins.1), self.unit.mark()),
+            number("Right", shown(margins.3), self.unit.mark()),
+            Field::Columns(2),
+            Field::Check { label: "Space between cells".to_owned(), on: spacing.is_some() },
+            number("Space", shown(spacing.unwrap_or(0)), self.unit.mark()),
             // --- Row -------------------------------------------------------
             Field::Tab("Row".to_owned()),
             Field::Columns(2),
@@ -174,6 +208,16 @@ impl Editor {
                 (TABLE_WIDTH, "a number"),
                 (TABLE_INDENT, "a number"),
                 (TABLE_ALIGNMENT, "a list"),
+                (MARGINS, "a group"),
+                (ROW_MARGINS_UP_AND_DOWN, "a row"),
+                (MARGIN_TOP, "a number"),
+                (MARGIN_BOTTOM, "a number"),
+                (ROW_MARGINS_SIDES, "a row"),
+                (MARGIN_LEFT, "a number"),
+                (MARGIN_RIGHT, "a number"),
+                (ROW_SPACING, "a row"),
+                (SPACING_ON, "a tick box"),
+                (SPACING_AMOUNT, "a number"),
                 (TAB_ROW, "a tab"),
                 (ROW_ROW, "a row"),
                 (ROW_HEIGHT, "a number"),
@@ -223,6 +267,24 @@ impl Editor {
         if let Some((_, alignment)) = ALIGNMENTS.get(dialog.chose(TABLE_ALIGNMENT)) {
             changed |= self.document.set_table_alignment(*alignment);
         }
+
+        // The four margins and the room between the cells. A side is written
+        // down whatever it says, because the boxes were filled in with what is
+        // in force rather than with what the file happened to state: leaving one
+        // out would make it Word's default again the moment it was changed.
+        let side = |row: usize| measure::parse(&dialog.said(row), self.unit);
+        changed |= self.document.set_table_cell_margins(wp_docx::model::CellMargins {
+            top: side(MARGIN_TOP),
+            start: side(MARGIN_LEFT),
+            bottom: side(MARGIN_BOTTOM),
+            end: side(MARGIN_RIGHT),
+        });
+        // Ticked with nothing in the box means the room Word's own dialog
+        // starts at, so that ticking it always does something.
+        let spacing = dialog.ticked(SPACING_ON).then(|| {
+            side(SPACING_AMOUNT).filter(|twips| *twips > 0).unwrap_or(USUAL_SPACING_TWIPS)
+        });
+        changed |= self.document.set_table_cell_spacing(spacing);
 
         changed |= self.document.set_table_row_height(height, dialog.chose(ROW_HEIGHT_RULE) == 1);
         changed |= self.document.set_row_can_break(dialog.ticked(ROW_BREAK));
@@ -356,6 +418,97 @@ mod tests {
         .into_owned();
         assert!(text.contains("Quarterly figures"), "the title did not reach the file");
         assert!(text.contains("Sales by region"), "the description did not reach the file");
+    }
+
+    fn tick(editor: &mut Editor, row: usize, state: bool) {
+        if let Some(dialog) = &mut editor.dialog {
+            if let Some(Field::Check { on, .. }) = dialog.fields.get_mut(row) {
+                *on = state;
+            }
+        }
+    }
+
+    #[test]
+    fn the_dialog_opens_showing_the_room_that_is_in_force() {
+        // Word's own defaults, which the file need not state: a little at each
+        // side and nothing above or below.
+        let mut editor = editor();
+        editor.open_table_properties();
+        let dialog = editor.dialog.as_ref().expect("a dialog");
+        assert_eq!(dialog.said(MARGIN_LEFT), measure::format(108, editor.unit));
+        assert_eq!(dialog.said(MARGIN_TOP), measure::format(0, editor.unit));
+        assert!(!dialog.ticked(SPACING_ON), "a new table holds its cells apart");
+    }
+
+    #[test]
+    fn the_four_margins_reach_the_table() {
+        let mut editor = editor();
+        editor.open_table_properties();
+        type_number(&mut editor, MARGIN_TOP, "0.2");
+        type_number(&mut editor, MARGIN_BOTTOM, "0.3");
+        type_number(&mut editor, MARGIN_LEFT, "0.4");
+        type_number(&mut editor, MARGIN_RIGHT, "0.5");
+        accept(&mut editor);
+
+        let margins = editor.document.table_cell_margins();
+        let inch = |part: f32| Some((part * 1440.0) as i32);
+        assert_eq!(margins.top, inch(0.2));
+        assert_eq!(margins.bottom, inch(0.3));
+        assert_eq!(margins.start, inch(0.4));
+        assert_eq!(margins.end, inch(0.5));
+    }
+
+    #[test]
+    fn the_room_between_the_cells_reaches_the_table_and_holds_them_apart() {
+        let mut editor = editor();
+        let together = editor
+            .pages
+            .iter()
+            .flat_map(|page| &page.cells)
+            .map(|cell| cell.width)
+            .fold(0.0f32, f32::max);
+
+        editor.open_table_properties();
+        tick(&mut editor, SPACING_ON, true);
+        type_number(&mut editor, SPACING_AMOUNT, "0.1");
+        accept(&mut editor);
+
+        assert_eq!(editor.document.table_cell_spacing(), Some(144));
+        let apart = editor
+            .pages
+            .iter()
+            .flat_map(|page| &page.cells)
+            .map(|cell| cell.width)
+            .fold(0.0f32, f32::max);
+        assert!(apart < together, "the cells did not make room between them");
+    }
+
+    #[test]
+    fn ticking_the_box_with_nothing_in_it_still_leaves_room() {
+        // A tick that did nothing until a number was typed beside it would be
+        // a tick that does nothing.
+        let mut editor = editor();
+        editor.open_table_properties();
+        tick(&mut editor, SPACING_ON, true);
+        type_number(&mut editor, SPACING_AMOUNT, "");
+        accept(&mut editor);
+
+        assert_eq!(editor.document.table_cell_spacing(), Some(USUAL_SPACING_TWIPS));
+    }
+
+    #[test]
+    fn unticking_it_puts_the_cells_back_together() {
+        let mut editor = editor();
+        editor.open_table_properties();
+        tick(&mut editor, SPACING_ON, true);
+        type_number(&mut editor, SPACING_AMOUNT, "0.1");
+        accept(&mut editor);
+
+        editor.open_table_properties();
+        assert!(editor.dialog.as_ref().expect("a dialog").ticked(SPACING_ON));
+        tick(&mut editor, SPACING_ON, false);
+        accept(&mut editor);
+        assert_eq!(editor.document.table_cell_spacing(), None);
     }
 
     #[test]

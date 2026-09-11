@@ -268,6 +268,28 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            "spacedtable" => {
+                // A table whose cells are held apart, with a good deal of room
+                // inside them as well. The only way to see that the spacing is
+                // a geometry and not a number: each cell is drawn with a border
+                // of its own and the paper shows between them.
+                self.document.insert_table(3, 3);
+                for (paragraph, word) in
+                    [(1, "One"), (2, "Two"), (3, "Three"), (4, "Four"), (5, "Five"), (6, "Six")]
+                {
+                    self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                    self.document.type_text(word);
+                }
+                self.document.set_caret(wp_docx::TextPosition::new(1, 0));
+                self.document.set_table_cell_spacing(Some(120));
+                self.document.set_table_cell_margins(wp_docx::model::CellMargins {
+                    top: Some(120),
+                    start: Some(160),
+                    bottom: Some(120),
+                    end: Some(160),
+                });
+                self.relayout();
+            }
             "turnedtable" => {
                 // A table with its headings turned, which is what a narrow
                 // column is for. One turned each way, so both are in the

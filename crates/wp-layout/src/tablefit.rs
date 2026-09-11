@@ -145,8 +145,9 @@ impl LayoutEngine<'_> {
         scale: f32,
     ) -> Vec<Need> {
         let mut needs = vec![Need::default(); columns];
-        let (margin_start, margin_end) = crate::layout::cell_margins(table, scale);
-        let margins = margin_start + margin_end;
+        // The room between the cells, which every column loses as well as the
+        // room inside them.
+        let spacing = crate::layout::cell_spacing(table, scale);
 
         for row in &table.rows {
             let mut at = 0usize;
@@ -171,8 +172,14 @@ impl LayoutEngine<'_> {
                         let depth = self.blocks_depth(&cell.blocks, document);
                         need = Need { least: depth, wanted: depth };
                     }
-                    need.least += margins;
-                    need.wanted += margins;
+                    // The room inside the cell and the room round it are both
+                    // room the column needs and the text cannot use.
+                    let taken = cell.margins.over(table.cell_margins);
+                    let (_, start, _, end) = taken.or_usual();
+                    let inside =
+                        (start.max(0) + end.max(0)) as f32 / crate::layout::TWIPS_PER_POINT * scale;
+                    need.least += inside + spacing;
+                    need.wanted += inside + spacing;
                     need
                 };
 
