@@ -2079,6 +2079,11 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
             Item::Button(Command::AlignCell(6), Icon::AlignBottomLeft),
             Item::Button(Command::AlignCell(7), Icon::AlignBottomCenter),
             Item::Button(Command::AlignCell(8), Icon::AlignBottomRight),
+            Item::NewColumn,
+            // Word puts Text Direction beside the nine, because which way up
+            // the text is and where it sits in the cell are the same question
+            // asked twice.
+            Item::Small(Command::TextDirection, Icon::Rotate, "Text Direction"),
         ],
         launcher: None,
     },

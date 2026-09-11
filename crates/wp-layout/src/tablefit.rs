@@ -162,6 +162,15 @@ impl LayoutEngine<'_> {
                     Need::default()
                 } else {
                     let mut need = self.blocks_need(&cell.blocks, document, available, scale);
+                    // A cell whose text is turned asks the other way round: what
+                    // the column has to hold is how deep its lines stack, not
+                    // how long the text is. Asking for the length would make the
+                    // column as wide as the heading is long, which is the whole
+                    // thing a turned heading is there to avoid.
+                    if cell.direction.is_turned() {
+                        let depth = self.blocks_depth(&cell.blocks, document);
+                        need = Need { least: depth, wanted: depth };
+                    }
                     need.least += margins;
                     need.wanted += margins;
                     need
@@ -227,6 +236,44 @@ impl LayoutEngine<'_> {
             need = need.beside(of_block);
         }
         need
+    }
+
+    /// How deep a run of blocks stacks: the sum of their line heights.
+    ///
+    /// What a cell whose text is turned needs across its column. One line of it
+    /// where there is one paragraph, which is what a turned heading is.
+    fn blocks_depth(&mut self, blocks: &[Block], document: &Document) -> f32 {
+        let mut depth = 0.0f32;
+        for block in blocks {
+            depth += match block {
+                Block::Paragraph(paragraph) => self.paragraph_depth(paragraph, document),
+                // A table inside a turned cell is a corner too far: it asks for
+                // nothing rather than for something wrong.
+                Block::Table(_) => 0.0,
+            };
+        }
+        depth.max(1.0)
+    }
+
+    /// How tall one line of a paragraph is.
+    fn paragraph_depth(
+        &mut self,
+        paragraph: &wp_docx::model::Paragraph,
+        document: &Document,
+    ) -> f32 {
+        let counters = self.saved_counters();
+        let mut styles = Vec::new();
+        let mut text = String::new();
+        let items = self.build_items(paragraph, document, &mut styles, 0, &mut text);
+        self.restore_counters(counters);
+
+        items
+            .iter()
+            .filter_map(|item| styles.get(item.style))
+            .map(|style| style.line_height)
+            .fold(0.0f32, f32::max)
+            // A paragraph with nothing in it still takes a line.
+            .max(self.empty_line_height(paragraph, document))
     }
 
     /// And what one paragraph needs, from its items alone.

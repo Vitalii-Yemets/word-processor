@@ -1132,6 +1132,15 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
             if cell.span > 1 {
                 cell_properties.push_element(valued(prefix, "gridSpan", &cell.span.to_string()));
             }
+            // Written only when the text is turned, because the ordinary way up
+            // is what a cell that says nothing means.
+            if cell.direction.is_turned() {
+                cell_properties.push_element(valued(
+                    prefix,
+                    "textDirection",
+                    cell.direction.word(),
+                ));
+            }
             cell_element.push_element(cell_properties);
 
             if cell.blocks.is_empty() {

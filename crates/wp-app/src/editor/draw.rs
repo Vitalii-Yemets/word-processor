@@ -7,7 +7,7 @@ use crate::chrome::rulers::{Indents, Measurements};
 use crate::chrome::status::StatusState;
 use crate::chrome::{rulers, status, ToolbarState};
 
-use super::{Editor, CARET_WIDTH, DPI, POINTS_PER_INCH, TWIPS_PER_POINT};
+use super::{Editor, DPI, POINTS_PER_INCH, TWIPS_PER_POINT};
 
 impl Editor {
     /// What the ribbon needs to know about the document to draw itself.
@@ -471,7 +471,7 @@ impl Editor {
 
     /// Draws the caret, if it is inside the pane being drawn.
     pub(super) fn draw_caret(&mut self) {
-        let Some((x, y, caret_height)) = self.caret_rect() else {
+        let Some((x, y, caret_width, caret_height)) = self.caret_rect() else {
             self.under_caret = None;
             return;
         };
@@ -484,12 +484,16 @@ impl Editor {
 
         // What is under it is kept whether it is drawn or not, so that either
         // half of the next blink can be done without drawing the window again.
-        let (x, y, height) = (x as i32, y as i32, caret_height.ceil() as i32);
-        let under = self.canvas.copy_rect(x, y, CARET_WIDTH, height);
+        // Its width as well as its height, because a caret in a turned cell
+        // lies the other way and putting back a tall thin rectangle over a
+        // short wide one would leave a smear.
+        let (x, y) = (x as i32, y as i32);
+        let (width, height) = (caret_width.ceil().max(1.0) as i32, caret_height.ceil() as i32);
+        let under = self.canvas.copy_rect(x, y, width, height);
         if self.caret_on {
-            self.canvas.fill_rect(x, y, CARET_WIDTH, height, self.theme.caret);
+            self.canvas.fill_rect(x, y, width, height, self.theme.caret);
         }
-        self.under_caret = Some((x, y, under));
+        self.under_caret = Some((x, y, width, height, under));
     }
 
     /// Draws the caret's half of a blink, and nothing else.
@@ -516,20 +520,19 @@ impl Editor {
             return false;
         }
 
-        let Some((x, y, under)) = self.under_caret.take() else {
+        let Some((x, y, width, height, under)) = self.under_caret.take() else {
             // Nothing was kept, which means the caret was not drawn last time.
             // Then this is not a blink but a first drawing, and the caller
             // paints the window.
             return false;
         };
-        let height = (under.len() / (CARET_WIDTH.max(1) as usize * 4)) as i32;
-        self.canvas.paste_rect(x, y, CARET_WIDTH, height, &under);
+        self.canvas.paste_rect(x, y, width, height, &under);
         if self.caret_on {
-            self.canvas.fill_rect(x, y, CARET_WIDTH, height, self.theme.caret);
+            self.canvas.fill_rect(x, y, width, height, self.theme.caret);
         }
         // The pixels kept are the ones under the caret, not the caret itself,
         // so they serve both halves of every blink after this one.
-        self.under_caret = Some((x, y, under));
+        self.under_caret = Some((x, y, width, height, under));
         true
     }
 
@@ -541,12 +544,18 @@ impl Editor {
     /// has decided anything.
     pub(super) fn draw_drop_mark(&mut self) {
         let Some(onto) = self.text_drop_target() else { return };
-        let Some((x, y, height)) = self.caret_rect_at(onto) else { return };
+        let Some((x, y, width, height)) = self.caret_rect_at(onto) else { return };
         if y < self.content_top() || y + height > self.content_bottom() {
             return;
         }
         let colour = self.theme.accent;
-        self.canvas.fill_rect(x as i32, y as i32, 2, height.ceil() as i32, colour);
+        self.canvas.fill_rect(
+            x as i32,
+            y as i32,
+            width.ceil().max(2.0) as i32,
+            height.ceil() as i32,
+            colour,
+        );
     }
     /// Draws everything, in the order it has to go down in.
     pub(super) fn paint(&mut self, width: usize, height: usize) {

@@ -23,7 +23,7 @@ fn caret_x(text: &str, offset: usize) -> f32 {
     let mut engine = LayoutEngine::new(library());
     let pages = engine.layout_document_with(&document, PageMetrics::default());
     let page = pages.first().expect("a page");
-    page.caret_at(TextPosition::new(0, offset)).expect("a caret").0
+    page.caret_at(TextPosition::new(0, offset), 2.0).expect("a caret").0
 }
 
 #[test]

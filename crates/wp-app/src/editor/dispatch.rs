@@ -250,6 +250,7 @@ impl Editor {
                 self.edited(changed, "Columns distributed")
             }
             Command::AutoFit => self.open_list(Choice::AutoFit),
+            Command::TextDirection => self.turn_cell_text(),
 
             // --- References ---------------------------------------------------
             Command::InsertContents | Command::UpdateContents => self.write_contents(),

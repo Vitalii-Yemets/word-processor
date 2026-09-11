@@ -281,7 +281,7 @@ impl Editor {
     /// of those and wrong afterwards.
     pub(super) fn paste_badge(&self) -> Option<PasteBadge> {
         let pasted = self.pasted.as_ref()?;
-        let (x, y, height) = self.caret_rect_at(pasted.end)?;
+        let (x, y, _, height) = self.caret_rect_at(pasted.end)?;
         let mut badge = PasteBadge::new(x, y + height + pastebadge::DROP);
         badge.hot = pasted.hot;
 
@@ -529,7 +529,7 @@ mod tests {
 
         assert!(editor.offering_paste_options());
         let badge = editor.paste_badge().expect("a button");
-        let (_, y, height) = editor
+        let (_, y, _, height) = editor
             .caret_rect_at(TextPosition::new(1, "pasted".len()))
             .expect("the end of the paste");
         assert!(

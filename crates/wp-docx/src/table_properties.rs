@@ -483,6 +483,51 @@ impl Document {
         })
     }
 
+    /// Which way up the text in the cell at the caret is set.
+    #[must_use]
+    pub fn cell_direction(&self) -> Option<crate::model::TextDirection> {
+        let position = self.table_here()?;
+        let table = self.table_element_here()?;
+        let row = table.children_named(Some(read::W), "tr").nth(position.row)?;
+        let cell = row.children_named(Some(read::W), "tc").nth(position.column)?;
+        Some(
+            cell.child(Some(read::W), "tcPr")
+                .and_then(|properties| properties.child(Some(read::W), "textDirection"))
+                .and_then(|element| element.attribute(Some(read::W), "val"))
+                .map(crate::model::TextDirection::from_word)
+                .unwrap_or_default(),
+        )
+    }
+
+    /// Turns it, which is what Word's Text Direction button does.
+    ///
+    /// The one cell the caret is in, rather than the whole row: which way up a
+    /// heading is set is a decision about that heading, and a row of headings
+    /// turned together is several presses in Word too.
+    pub fn set_cell_direction(&mut self, direction: crate::model::TextDirection) -> bool {
+        let Some(position) = self.table_here() else { return false };
+        self.change_table(move |table, prefix| {
+            let Some(row) = rows_mut(table).nth(position.row) else { return };
+            let Some(cell) = cells_mut(row).nth(position.column) else { return };
+
+            let properties = cell_properties(cell, prefix);
+            properties.remove_children_named(Some(read::W), "textDirection");
+            // The ordinary way up is what a cell that says nothing means, so it
+            // is said by saying nothing.
+            if !direction.is_turned() {
+                return;
+            }
+            let mut element =
+                Element::new(&edit::name_with(prefix, "textDirection"), Some(read::W));
+            element.set_namespaced_attribute(
+                &edit::name_with(prefix, "val"),
+                read::W,
+                direction.word(),
+            );
+            edit::insert_ordered(properties, element, CELL_PROPERTY_ORDER);
+        })
+    }
+
     /// Which of Word's three AutoFits the table at the caret is set to.
     #[must_use]
     pub fn table_fit(&self) -> crate::model::TableFit {

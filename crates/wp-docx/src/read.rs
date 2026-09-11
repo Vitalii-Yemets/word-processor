@@ -16,7 +16,7 @@ use crate::model::{
     Alignment, Block, Body, Border, BreakKind, LineRule, LineSpacing, NumberingReference,
     Paragraph, ParagraphBorders, ParagraphProperties, Picture, Revision, RevisionKind, Run,
     RunContent, RunProperties, TabAlignment, TabLeader, TabStop, Table, TableBorders, TableCell,
-    TableFit, TableLook, TableRow, Underline, VerticalAlignment,
+    TableFit, TableLook, TableRow, TextDirection, Underline, VerticalAlignment,
 };
 
 /// The WordprocessingML namespace.
@@ -253,7 +253,24 @@ fn read_table_cell(cell: &Element) -> TableCell {
         .filter(|value| *value != "auto")
         .map(str::to_owned);
 
-    TableCell { blocks: read_blocks(cell), width, span, merged_upwards, borders, shading }
+    // Which way up the text in it is set. A value this program does not turn —
+    // the vertical East Asian ones — reads as the ordinary way up and stays in
+    // the file as it came.
+    let direction = properties
+        .and_then(|properties| properties.child(Some(W), "textDirection"))
+        .and_then(value)
+        .map(TextDirection::from_word)
+        .unwrap_or_default();
+
+    TableCell {
+        blocks: read_blocks(cell),
+        width,
+        span,
+        merged_upwards,
+        borders,
+        shading,
+        direction,
+    }
 }
 
 /// Reads a `w:tblLook`.

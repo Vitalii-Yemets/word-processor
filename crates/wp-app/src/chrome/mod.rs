@@ -221,6 +221,9 @@ pub enum Command {
     DistributeColumns,
     /// Word's AutoFit menu: how a table decides how wide it is.
     AutoFit,
+    /// Turns the text in the cell at the caret a right angle. Word's Text
+    /// Direction, which is a button that cycles rather than a menu.
+    TextDirection,
 
     // References.
     InsertContents,

@@ -1041,6 +1041,8 @@ pub struct TableCell {
     /// What a banded table is made of: the bands are cells shaded one way and
     /// the other, and without this there is nothing for a band to be.
     pub shading: Option<String>,
+    /// Which way up the text in it is set. See [`TextDirection`].
+    pub direction: TextDirection,
 }
 
 impl Default for TableCell {
@@ -1054,6 +1056,7 @@ impl Default for TableCell {
             merged_upwards: false,
             borders: TableBorders::default(),
             shading: None,
+            direction: TextDirection::Horizontal,
         }
     }
 }
@@ -1191,6 +1194,74 @@ impl TableBorders {
             inside_vertical: pick(&self.inside_vertical, &other.inside_vertical),
         }
     }
+}
+
+/// Which way up the text in a cell is set: Word's Text Direction.
+///
+/// `w:textDirection`, and what the headings of a narrow column are set in. The
+/// format has six values, three of which are for vertical East Asian text and
+/// are not turns at all; these are the three Word's button offers, and a value
+/// this program does not know is left in the file exactly as it came.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextDirection {
+    /// `lrTb`: the way every other line of text goes.
+    #[default]
+    Horizontal,
+    /// `tbRl`: turned a right angle clockwise, so it reads downwards.
+    Down,
+    /// `btLr`: turned a right angle the other way, so it reads upwards.
+    Up,
+}
+
+impl TextDirection {
+    /// What the file calls it.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Horizontal => "lrTb",
+            Self::Down => "tbRl",
+            Self::Up => "btLr",
+        }
+    }
+
+    /// And back. Anything else is text the ordinary way up, which is what a
+    /// program that cannot turn it that way should draw.
+    #[must_use]
+    pub fn from_word(word: &str) -> Self {
+        match word {
+            "tbRl" => Self::Down,
+            "btLr" => Self::Up,
+            _ => Self::Horizontal,
+        }
+    }
+
+    /// What Word's button calls it.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Horizontal => "Text direction: across",
+            Self::Down => "Text direction: turned down",
+            Self::Up => "Text direction: turned up",
+        }
+    }
+
+    /// The next one round, which is what pressing Word's button does.
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Horizontal => Self::Down,
+            Self::Down => Self::Up,
+            Self::Up => Self::Horizontal,
+        }
+    }
+
+    /// Whether the text is turned at all.
+    #[must_use]
+    pub fn is_turned(self) -> bool {
+        !matches!(self, Self::Horizontal)
+    }
+
+    pub const ALL: &'static [Self] = &[Self::Horizontal, Self::Down, Self::Up];
 }
 
 /// How a table decides how wide it and its columns are: Word's AutoFit.

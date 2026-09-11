@@ -118,6 +118,21 @@ impl Editor {
         )
     }
 
+    /// Turns the text in the cell at the caret a right angle.
+    ///
+    /// A button that cycles rather than a menu, which is what Word's is: across,
+    /// then down, then up, then across again. Three presses and it is back where
+    /// it started, so nothing is stranded.
+    pub(super) fn turn_cell_text(&mut self) -> Response {
+        let Some(direction) = self.document.cell_direction() else {
+            return self.report("Put the caret in a table first");
+        };
+        let wanted = direction.next();
+        let changed = self.document.set_cell_direction(wanted);
+        self.relayout();
+        self.edited(changed, wanted.label())
+    }
+
     /// Sets the table to whichever of the three was picked.
     pub(super) fn choose_autofit(&mut self, index: usize) -> Response {
         self.popup = None;
@@ -281,7 +296,7 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::model::{Block, Body, Paragraph, TextDirection};
     use wp_docx::Document;
     use wp_layout::FontLibrary;
     use wp_shell::{App, Event};
@@ -488,6 +503,53 @@ mod tests {
         assert!(same_fit(TableFit::Window(100), TableFit::Window(80)));
         assert!(!same_fit(TableFit::Window(100), TableFit::Fixed));
         assert!(!same_fit(TableFit::Contents, TableFit::Fixed));
+    }
+
+    #[test]
+    fn the_text_direction_button_goes_round_the_three() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(1, 0));
+        assert_eq!(editor.document.cell_direction(), Some(TextDirection::Horizontal));
+
+        editor.turn_cell_text();
+        assert_eq!(editor.document.cell_direction(), Some(TextDirection::Down));
+        editor.turn_cell_text();
+        assert_eq!(editor.document.cell_direction(), Some(TextDirection::Up));
+        editor.turn_cell_text();
+        assert_eq!(editor.document.cell_direction(), Some(TextDirection::Horizontal));
+    }
+
+    #[test]
+    fn turning_one_cell_leaves_the_others_alone() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(1, 0));
+        editor.turn_cell_text();
+
+        editor.document.set_caret(wp_docx::TextPosition::new(2, 0));
+        assert_eq!(editor.document.cell_direction(), Some(TextDirection::Horizontal));
+    }
+
+    #[test]
+    fn turning_the_text_makes_the_row_taller() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(1, 0));
+        editor.document.type_text("A heading long enough to see");
+        editor.relayout();
+        let before = editor
+            .pages
+            .iter()
+            .flat_map(|page| &page.cells)
+            .map(|cell| cell.height)
+            .fold(0.0f32, f32::max);
+
+        editor.turn_cell_text();
+        let after = editor
+            .pages
+            .iter()
+            .flat_map(|page| &page.cells)
+            .map(|cell| cell.height)
+            .fold(0.0f32, f32::max);
+        assert!(after > before * 2.0, "the row did not grow: {before} then {after}");
     }
 
     #[test]

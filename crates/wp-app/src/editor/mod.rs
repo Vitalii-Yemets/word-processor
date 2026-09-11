@@ -334,7 +334,7 @@ pub struct Editor {
     print_device: wp_layout::Device,
     /// The pixels the caret was drawn over, so a blink can put them back
     /// rather than drawing the whole window again.
-    under_caret: Option<(i32, i32, Vec<u8>)>,
+    under_caret: Option<(i32, i32, i32, i32, Vec<u8>)>,
     /// The dialog that is up, if any. While one is, it has the window.
     dialog: Option<crate::chrome::dialog::Dialog>,
     /// What that dialog is asking, so its answer can be acted on.
@@ -939,14 +939,15 @@ impl Editor {
         TextPosition::new(position.paragraph, nearest)
     }
 
-    /// Where the caret should be drawn, in window coordinates.
-    fn caret_rect(&self) -> Option<(f32, f32, f32)> {
+    /// Where the caret should be drawn, in window coordinates: a rectangle,
+    /// because a caret in a cell whose text is turned lies the other way.
+    fn caret_rect(&self) -> Option<(f32, f32, f32, f32)> {
         self.caret_rect_at(self.caret())
     }
 
     /// The same for any position, which is what the mark showing where carried
     /// text would land needs.
-    pub(super) fn caret_rect_at(&self, at: TextPosition) -> Option<(f32, f32, f32)> {
+    pub(super) fn caret_rect_at(&self, at: TextPosition) -> Option<(f32, f32, f32, f32)> {
         let page_index = self.pages.iter().position(|page| {
             page.lines.iter().any(|line| {
                 line.paragraph == at.paragraph
@@ -956,8 +957,8 @@ impl Editor {
         })?;
         let page = self.pages.get(page_index)?;
         let (origin_x, origin_y) = self.page_origin(page_index);
-        let (x, y, height) = page.caret_at(at)?;
-        Some((origin_x + x, self.content_top() + origin_y + y - self.scroll_down(), height))
+        let (x, y, width, height) = page.caret_at(at, CARET_WIDTH as f32)?;
+        Some((origin_x + x, self.content_top() + origin_y + y - self.scroll_down(), width, height))
     }
 
     /// Scrolls so the caret is on screen, if it is not already.
@@ -965,7 +966,7 @@ impl Editor {
         // Shown at once, and the blink counted from here.
         self.caret_on = true;
         self.caret_flipped = Instant::now();
-        let Some((x, y, height)) = self.caret_rect() else { return };
+        let Some((x, y, _, height)) = self.caret_rect() else { return };
 
         if self.is_side_to_side() {
             // Sideways, the caret goes off the side rather than off the foot.
@@ -1016,8 +1017,8 @@ impl Editor {
         let wanted_x = self
             .pages
             .get(current.0)
-            .and_then(|page| page.caret_at(self.caret()))
-            .map_or(0.0, |(x, _, _)| x);
+            .and_then(|page| page.caret_at(self.caret(), CARET_WIDTH as f32))
+            .map_or(0.0, |(x, _, _, _)| x);
 
         let page = &self.pages[page_index];
         let line = &page.lines[line_index];
@@ -1943,7 +1944,7 @@ mod tests {
     /// Where on screen a position in the text is, for a test to press there.
     fn point_at(editor: &Editor, paragraph: usize, offset: usize) -> (i32, i32) {
         let at = wp_docx::TextPosition::new(paragraph, offset);
-        let (x, y, height) = editor.caret_rect_at(at).expect("a place on screen");
+        let (x, y, _, height) = editor.caret_rect_at(at).expect("a place on screen");
         (x as i32 + 1, (y + height / 2.0) as i32)
     }
 

@@ -15,7 +15,7 @@ use wp_raster::{Canvas, Color, Path, Point, Transform};
 use wp_docx::effects::Effect;
 
 use crate::device::Device;
-use crate::layout::{Drawing, GlyphEffect, Page, PositionedGlyph};
+use crate::layout::{Drawing, GlyphEffect, Page, PositionedGlyph, Turn};
 use crate::library::FontLibrary;
 
 /// Draws pages, keeping the outlines it has already read.
@@ -167,7 +167,12 @@ impl<'a> Renderer<'a> {
             .filter(|shape| !shape.over_text)
             .flat_map(|shape| &shape.text)
             .collect();
-        self.draw_glyphs(canvas, page.glyphs.iter().chain(inside), offset_x, offset_y);
+        // Which of the page's own letters are turned is kept as spans rather
+        // than on every letter, so it is looked up here; a shape's text is
+        // never turned.
+        let own = page.glyphs.iter().enumerate().map(|(at, glyph)| (glyph, page.turn_of(at)));
+        let inside = inside.into_iter().map(|glyph| (glyph, Turn::None));
+        self.draw_glyphs(canvas, own.chain(inside), offset_x, offset_y);
 
         // And last, the drawings a person put in front of the text. Word's
         // "In Front of Text", which until now was a command that said it had
@@ -175,7 +180,8 @@ impl<'a> Renderer<'a> {
         for drawing in page.drawings_over() {
             draw_drawing(canvas, drawing, offset_x, offset_y);
             if let Drawing::Shape(shape) = drawing {
-                self.draw_glyphs(canvas, shape.text.iter(), offset_x, offset_y);
+                let text = shape.text.iter().map(|glyph| (glyph, Turn::None));
+                self.draw_glyphs(canvas, text, offset_x, offset_y);
             }
         }
     }
@@ -184,18 +190,20 @@ impl<'a> Renderer<'a> {
     fn draw_glyphs<'glyphs>(
         &mut self,
         canvas: &mut Canvas,
-        glyphs: impl Iterator<Item = &'glyphs PositionedGlyph>,
+        glyphs: impl Iterator<Item = (&'glyphs PositionedGlyph, Turn)>,
         offset_x: f32,
         offset_y: f32,
     ) {
-        for glyph in glyphs {
+        for (glyph, turn) in glyphs {
             // A tab or a break takes up room and carries a position, but there
             // is nothing to draw for it.
             if glyph.invisible {
                 continue;
             }
             let baseline = glyph.baseline + offset_y;
-            // Skip anything entirely off the canvas before doing any work for it.
+            // Skip anything entirely off the canvas before doing any work for
+            // it. A turned letter reaches as far along the page as it is tall,
+            // so the band it could be in is the same one either way.
             if baseline + glyph.size < 0.0 || baseline - glyph.size * 2.0 > canvas.height() as f32 {
                 continue;
             }
@@ -206,8 +214,13 @@ impl<'a> Renderer<'a> {
             // Font outlines are y-up on a design grid; the canvas is y-down in
             // pixels. This is the transform that reconciles the two.
             let scale = glyph.size / cached.units_per_em;
-            let transform =
-                Transform::stretched_glyph(scale, glyph.stretch, glyph.x + offset_x, baseline);
+            let x = glyph.x + offset_x;
+            let mut transform = Transform::stretched_glyph(scale, glyph.stretch, x, baseline);
+            // A letter in a turned cell is turned about its own origin, which
+            // is already where it belongs on the page.
+            if let Some(angle) = Self::quarter_turn(turn) {
+                transform = transform.then(&Transform::rotate_about(angle, x, baseline));
+            }
             let path = cached.path.transformed(&transform);
 
             // The effect goes under the letter: a shadow behind it, an outline
@@ -217,6 +230,19 @@ impl<'a> Renderer<'a> {
                 draw_effect(canvas, &path, &effect, glyph.size, baseline);
             }
             canvas.fill_path(&path, glyph.color);
+        }
+    }
+
+    /// How far round a turned letter goes, in radians.
+    ///
+    /// Clockwise on a canvas for text that reads downwards, the other way for
+    /// text that reads upwards. Nothing at all for the ordinary way up, which
+    /// is what almost every letter of almost every document is.
+    fn quarter_turn(turn: Turn) -> Option<f32> {
+        match turn {
+            Turn::None => None,
+            Turn::Down => Some(core::f32::consts::FRAC_PI_2),
+            Turn::Up => Some(-core::f32::consts::FRAC_PI_2),
         }
     }
 

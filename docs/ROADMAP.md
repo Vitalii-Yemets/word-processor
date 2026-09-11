@@ -1317,15 +1317,51 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   not free. Nothing is cached; that is **B6**'s business when a large document
   turns up to measure it against.
 
-- [ ] **C30. Text Direction in a cell.** `w:textDirection`, which turns a cell's
+- [x] **C30. Text Direction in a cell.** `w:textDirection`, which turns a cell's
   text through a right angle — what the headings of a narrow column are set in.
-  The model can carry it; the layout has no way to lay a line of text into a box
-  whose height is its length, and the renderer turns glyphs only for a watermark
-  (`draw_transformed`). One that stored the property and drew the text the way
-  up it always was would be a button that does nothing.
-  *Done when:* a cell's text can be turned either way, the row is as tall as the
-  turned text is long, and a document written here opens in Word the same way
-  up.
+  *Done:* Word's button is on the Table Layout tab beside the nine alignments,
+  and it cycles the way Word's does: across, then reading downwards, then
+  reading upwards, then across again.
+  **The text is laid out straight and turned afterwards.** A turned cell is laid
+  out into a box as long as the row is tall, on a page of its own, and that page
+  is then mapped onto the real one a right angle over. Breaking a line, spacing
+  it, aligning it and numbering it are the same work whichever way up the text
+  is, so the layout never learns about angles at all: `Frame` in
+  `wp-layout/src/layout.rs` is the whole of the turn, and only the drawing and
+  the questions a line is asked about the page go through it.
+  The row is **as tall as the turned text is long**, which is the measuring pass
+  asking a turned cell the other question: not how tall it came out but how far
+  along. A column of turned headings comes out as narrow as one line is deep
+  rather than as long as the heading is, which is the whole reason a heading is
+  turned — so **C29**'s fitting had to learn the same distinction.
+  A **click lands where it is aimed** inside a turned cell, the **caret lies the
+  other way** there, and so does a **selection band**: a line keeps its own
+  coordinates and carries the frame that maps them onto the page, so everything
+  that asks a line a question about the page — a click, a caret, a band — goes
+  through one place. The letters themselves are turned about their own origins
+  as they are drawn, which is what `draw_transformed` did for a watermark and
+  now does per glyph.
+  Which glyphs are turned is kept as spans on the page rather than as a field on
+  every letter: a document is mostly text the ordinary way up, and a hundred
+  thousand words should not each carry a field saying so.
+  *Not done:* a picture inside a turned cell is put in the right place and drawn
+  the way up it was, where Word turns it too. The three vertical East Asian
+  values — `lrTbV`, `tbRlV`, `tbLrV` — are not turns this program makes: they
+  read as the ordinary way up and stay in the file exactly as they came. And the
+  up and down arrow keys inside a turned cell step by the page's idea of up and
+  down rather than the cell's.
+
+- [ ] **C35. Where the text sits down a cell.** Found while doing **C30**: the
+  Alignment group's nine buttons answer two questions — where the text sits
+  across the cell and where it sits up and down it — and only the first of them
+  is drawn. `w:vAlign` is written faithfully and Word shows it; here the text
+  stays at the top of the cell whichever of the nine was pressed, so six of the
+  nine look like the three above them.
+  What it needs is the row's height known before its cells are placed, which it
+  now is — the measuring pass settles it — and each cell's text shifted down by
+  the room left over, half of it for the middle and all of it for the bottom.
+  *Done when:* each of the nine puts the text where it says, and a cell in a
+  tall row shows it.
 
 - [ ] **C31. Cell Margins, and the room between cells.** Word's dialog holds
   four margins and a tick box for spacing between cells. Two of the margins —

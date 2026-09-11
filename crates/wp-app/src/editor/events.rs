@@ -916,7 +916,7 @@ impl Editor {
         }
         // A caret that is not on the screen is not worth a repaint: scrolled
         // away, or in a part of the window the pages do not reach.
-        let Some((_, y, height)) = self.caret_rect() else { return Response::Ignored };
+        let Some((_, y, _, height)) = self.caret_rect() else { return Response::Ignored };
         if y < self.content_top() || y + height > self.content_bottom() {
             return Response::Ignored;
         }

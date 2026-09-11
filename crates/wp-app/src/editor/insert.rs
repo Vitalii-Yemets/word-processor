@@ -268,6 +268,36 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            "turnedtable" => {
+                // A table with its headings turned, which is what a narrow
+                // column is for. One turned each way, so both are in the
+                // picture, and a row of ordinary text under them to show the
+                // row is as tall as the turned text is long.
+                self.document.insert_table(2, 3);
+                for (paragraph, word) in [
+                    (1, "Turned down"),
+                    (2, "Turned up"),
+                    (3, "Across"),
+                    (4, "One"),
+                    (5, "Two"),
+                    (6, "Three"),
+                ] {
+                    self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                    self.document.type_text(word);
+                }
+                self.document.set_caret(wp_docx::TextPosition::new(1, 0));
+                self.turn_cell_text();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.turn_cell_text();
+                self.turn_cell_text();
+                self.document.set_caret(wp_docx::TextPosition::new(1, 0));
+                // Fitted to its contents as well, which is what a table of
+                // turned headings is for: the columns come out as narrow as the
+                // headings are deep rather than as long as they are.
+                self.choose_autofit(0);
+                self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
+                self.relayout();
+            }
             "styledtable" => {
                 // A table with one of Word's styles on it, which is the only
                 // way to look at what the Table Style Options do.

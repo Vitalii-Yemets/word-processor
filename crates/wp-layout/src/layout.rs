@@ -279,6 +279,107 @@ pub struct PositionedGlyph {
     pub invisible: bool,
 }
 
+/// Which way a run of text is turned on the page.
+///
+/// Word's Text Direction in a table cell, and nothing else so far. See
+/// [`Frame`], which is how a turn becomes coordinates.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Turn {
+    #[default]
+    None,
+    /// A right angle clockwise: the text reads downwards.
+    Down,
+    /// A right angle the other way: the text reads upwards.
+    Up,
+}
+
+/// Where a line's own coordinates sit on the page.
+///
+/// # Why the text is laid out straight and turned afterwards
+///
+/// Because breaking a line, spacing it, aligning it and numbering it are the
+/// same work whichever way up the text is. Turned text is laid out into a box
+/// as long as the cell is tall, and this is what maps that box onto the page:
+/// the layout never learns about angles, and only the drawing does.
+///
+/// The origin is the corner the box's own origin lands on — the cell's top
+/// right for text reading downwards, its bottom left for text reading upwards —
+/// so that the first letter of the first line is where a reader would start.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Frame {
+    pub turn: Turn,
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Frame {
+    /// A point of the box, as a point of the page.
+    #[must_use]
+    pub fn on_page(self, x: f32, y: f32) -> (f32, f32) {
+        match self.turn {
+            Turn::None => (self.x + x, self.y + y),
+            Turn::Down => (self.x - y, self.y + x),
+            Turn::Up => (self.x + y, self.y - x),
+        }
+    }
+
+    /// And back, which is what a click on the page asks.
+    #[must_use]
+    pub fn in_frame(self, x: f32, y: f32) -> (f32, f32) {
+        match self.turn {
+            Turn::None => (x - self.x, y - self.y),
+            Turn::Down => (y - self.y, self.x - x),
+            Turn::Up => (self.y - y, x - self.x),
+        }
+    }
+
+    /// A rectangle of the box, as a rectangle of the page.
+    ///
+    /// A right angle turns a rectangle into a rectangle, which is why a
+    /// selection band and a caret need nothing cleverer than this.
+    #[must_use]
+    pub fn rect(&self, x: f32, y: f32, width: f32, height: f32) -> (f32, f32, f32, f32) {
+        match self.turn {
+            Turn::None => (self.x + x, self.y + y, width, height),
+            // The far corner of the rectangle is the near one after a turn, so
+            // both corners are mapped and the lesser of each is taken.
+            _ => {
+                let (one_x, one_y) = self.on_page(x, y);
+                let (other_x, other_y) = self.on_page(x + width, y + height);
+                (
+                    one_x.min(other_x),
+                    one_y.min(other_y),
+                    (other_x - one_x).abs(),
+                    (other_y - one_y).abs(),
+                )
+            }
+        }
+    }
+
+    /// Whether the text is turned at all.
+    #[must_use]
+    pub fn is_turned(&self) -> bool {
+        self.turn != Turn::None
+    }
+
+    /// The same mapping, as a transform — for the things that are drawn from
+    /// outlines rather than from rectangles.
+    #[must_use]
+    pub fn transform(&self) -> wp_raster::Transform {
+        match self.turn {
+            Turn::None => wp_raster::Transform::translate(self.x, self.y),
+            // x' = fx − y, y' = fy + x, which is a quarter turn clockwise on a
+            // canvas and the corner it turns about.
+            Turn::Down => {
+                wp_raster::Transform { a: 0.0, b: 1.0, c: -1.0, d: 0.0, e: self.x, f: self.y }
+            }
+            Turn::Up => {
+                wp_raster::Transform { a: 0.0, b: -1.0, c: 1.0, d: 0.0, e: self.x, f: self.y }
+            }
+        }
+    }
+}
+
 /// One line of text on a page.
 ///
 /// Kept because a caret and a mouse click are line-shaped questions: which line
@@ -297,10 +398,17 @@ pub struct PageLine {
     /// The stretch of the paragraph's text this line covers.
     pub start_offset: usize,
     pub end_offset: usize,
+    /// Where the numbers above sit on the page.
+    ///
+    /// They are the line's own, measured along the text and across it, which
+    /// for a line in a turned cell is not the same as along the page and down
+    /// it. Everything that asks a line a question about the page — a click, a
+    /// caret, a selection band — goes through here. See [`Frame`].
+    pub frame: Frame,
 }
 
 impl PageLine {
-    /// The vertical band the line occupies.
+    /// The vertical band the line occupies, in the line's own coordinates.
     #[must_use]
     pub fn top(&self) -> f32 {
         self.baseline - self.ascent
@@ -309,6 +417,15 @@ impl PageLine {
     #[must_use]
     pub fn bottom(&self) -> f32 {
         self.baseline + self.descent
+    }
+
+    /// A stretch of the line, as a rectangle of the page.
+    ///
+    /// `from` and `to` are along the text, which is across the page for an
+    /// ordinary line and down it for a turned one.
+    #[must_use]
+    pub fn band(&self, from: f32, to: f32) -> (f32, f32, f32, f32) {
+        self.frame.rect(from, self.top(), (to - from).max(0.0), self.ascent + self.descent)
     }
 }
 
@@ -473,6 +590,12 @@ pub struct Page {
     /// chart. Already in page coordinates, and drawn over the decorations.
     pub paths: Vec<PlacedPath>,
     pub lines: Vec<PageLine>,
+    /// Which glyphs of the page are turned, and which way.
+    ///
+    /// Kept as spans rather than on every glyph because a document is mostly
+    /// text the ordinary way up, and a word of it should not have to carry a
+    /// field that says so a hundred thousand times. See [`Page::turn_of`].
+    pub turned: Vec<(core::ops::Range<usize>, Turn)>,
 }
 
 /// One drawing on a page, whatever kind it is.
@@ -488,6 +611,17 @@ pub enum Drawing<'a> {
 }
 
 impl Page {
+    /// Which way one of the page's glyphs is turned.
+    #[must_use]
+    pub fn turn_of(&self, glyph: usize) -> Turn {
+        // A page has one span per turned cell and most pages have none, so this
+        // is a walk over nothing at all in the ordinary case.
+        self.turned
+            .iter()
+            .find(|(span, _)| span.contains(&glyph))
+            .map_or(Turn::None, |(_, turn)| *turn)
+    }
+
     /// The drawings that go under the text, in the order they are drawn.
     #[must_use]
     pub fn drawings_under(&self) -> Vec<Drawing<'_>> {
@@ -533,35 +667,49 @@ impl Page {
             return None;
         }
 
-        // The line the point is on, or the nearest one above or below it.
-        let line =
-            self.lines.iter().find(|line| y >= line.top() && y <= line.bottom()).or_else(|| {
+        // The line the point is on, or the nearest one above or below it. Each
+        // line is asked in its own coordinates, so a point inside a turned cell
+        // lands on the turned line it is really on rather than on whichever
+        // ordinary line happens to share its height.
+        let across = |line: &PageLine| line.frame.in_frame(x, y).1;
+        let line = self
+            .lines
+            .iter()
+            .find(|line| {
+                let across = across(line);
+                across >= line.top() && across <= line.bottom()
+            })
+            .or_else(|| {
                 self.lines.iter().min_by(|first, second| {
                     let distance = |line: &PageLine| {
-                        if y < line.top() {
-                            line.top() - y
+                        let across = across(line);
+                        if across < line.top() {
+                            line.top() - across
                         } else {
-                            y - line.bottom()
+                            across - line.bottom()
                         }
                     };
                     distance(first).total_cmp(&distance(second))
                 })
             })?;
 
+        let (along, _) = line.frame.in_frame(x, y);
+
         // Before the first glyph or after the last, the answer is one end.
-        if x <= line.left {
+        if along <= line.left {
             return Some(TextPosition::new(line.paragraph, line.start_offset));
         }
-        if x >= line.right {
+        if along >= line.right {
             return Some(TextPosition::new(line.paragraph, line.end_offset));
         }
 
         for index in line.glyphs.clone() {
             let glyph = &self.glyphs[index];
-            if x < glyph.x + glyph.advance {
+            let at = self.along_line(line, glyph);
+            if along < at + glyph.advance {
                 // Past the middle of a letter means the caret goes after it,
                 // which is what makes clicking feel like it lands where aimed.
-                let offset = if x > glyph.x + glyph.advance / 2.0 {
+                let offset = if along > at + glyph.advance / 2.0 {
                     glyph.source.offset + glyph.source_length
                 } else {
                     glyph.source.offset
@@ -573,26 +721,31 @@ impl Page {
         Some(TextPosition::new(line.paragraph, line.end_offset))
     }
 
-    /// Where a caret at a position should be drawn: its left edge, top, and
-    /// height.
+    /// Where a caret at a position should be drawn, as a rectangle.
+    ///
+    /// A rectangle rather than a left edge and a height, because a caret in a
+    /// cell whose text is turned lies the other way: it is as long as the line
+    /// is tall and as thick as `thickness`, and only the page knows which way
+    /// round that comes out. See [`Frame`].
     #[must_use]
-    pub fn caret_at(&self, position: TextPosition) -> Option<(f32, f32, f32)> {
+    pub fn caret_at(&self, position: TextPosition, thickness: f32) -> Option<(f32, f32, f32, f32)> {
         let line = self.line_of(position)?;
 
-        let mut x = line.left;
+        let mut along = line.left;
         for index in line.glyphs.clone() {
             let glyph = &self.glyphs[index];
+            let at = self.along_line(line, glyph);
             if glyph.source.offset >= position.offset {
-                x = glyph.x;
+                along = at;
                 break;
             }
-            x = glyph.x + glyph.advance;
+            along = at + glyph.advance;
         }
         if position.offset >= line.end_offset {
-            x = line.right;
+            along = line.right;
         }
 
-        Some((x, line.top(), line.ascent + line.descent))
+        Some(line.band(along, along + thickness.max(1.0)))
     }
 
     /// The line a position falls on.
@@ -669,13 +822,17 @@ impl Page {
             if right <= left {
                 continue;
             }
-            rects.push((left, line.top(), right - left, line.ascent + line.descent));
+            rects.push(line.band(left, right));
         }
 
         rects
     }
 
-    /// Where an offset sits horizontally on one line.
+    /// Where an offset sits along one line.
+    ///
+    /// Along the text rather than across the page: for a line in a turned cell
+    /// the two are not the same, and every answer a line gives is in the line's
+    /// own coordinates. See [`Frame`].
     fn offset_x(&self, line: &PageLine, offset: usize) -> f32 {
         if offset >= line.end_offset {
             return line.right;
@@ -683,12 +840,26 @@ impl Page {
         let mut x = line.left;
         for index in line.glyphs.clone() {
             let glyph = &self.glyphs[index];
+            let along = self.along_line(line, glyph);
             if glyph.source.offset >= offset {
-                return glyph.x;
+                return along;
             }
-            x = glyph.x + glyph.advance;
+            x = along + glyph.advance;
         }
         x
+    }
+
+    /// How far along its line a glyph's origin is.
+    ///
+    /// A glyph carries where it is *on the page*, because that is what drawing
+    /// it needs. A line is asked questions in its own coordinates, so the one
+    /// is turned into the other here — which for an untouched line is a
+    /// subtraction and nothing more.
+    fn along_line(&self, line: &PageLine, glyph: &PositionedGlyph) -> f32 {
+        if !line.frame.is_turned() {
+            return glyph.x;
+        }
+        line.frame.in_frame(glyph.x, glyph.baseline).0
     }
 }
 
@@ -734,7 +905,7 @@ pub(crate) struct RunStyle {
     raise: f32,
     ascent: f32,
     descent: f32,
-    line_height: f32,
+    pub(crate) line_height: f32,
 }
 
 /// What one stored character is drawn as, and at what size.
@@ -936,7 +1107,7 @@ pub(crate) struct Item {
     shape: Option<(Box<wp_docx::shapes::Shape>, f32)>,
     /// Forces the rest of the paragraph onto a new line, or a new page.
     hard_break: Option<BreakKind>,
-    style: usize,
+    pub(crate) style: usize,
     /// Where this item sits in the paragraph text, so a line knows the stretch
     /// of the document it covers.
     start_offset: usize,
@@ -1900,6 +2071,7 @@ impl<'a> LayoutEngine<'a> {
                     paragraph: index,
                     start_offset: 0,
                     end_offset: 0,
+                    frame: Frame::default(),
                 });
             }
             *y += height;
@@ -2298,7 +2470,25 @@ impl<'a> LayoutEngine<'a> {
                 vec![Page { width: area.page_width, height: area.page_height, ..Page::default() }];
             let mut scratch_index = *index;
             let mut height = 0.0f32;
+            // The tallest this row could be: what is left of the page under it.
+            // A cell whose text is turned is as long as the row is tall, so
+            // this is the longest its line can be.
+            let room = (self.limit(pages.len().saturating_sub(1), area)
+                - *y
+                - CELL_PADDING_TOP
+                - CELL_PADDING_BOTTOM)
+                .max(1.0);
             for (cell, (left, width)) in row.cells.iter().zip(&spans) {
+                let across = (*width - margin_start - margin_end).max(1.0);
+                if cell.direction.is_turned() {
+                    // Turned text is measured the other way round: what it
+                    // needs is how *long* it came out, because that is what the
+                    // row has to be tall enough for.
+                    let laid =
+                        self.turned_cell(cell, &mut scratch_index, document, area, room, across);
+                    height = height.max(text_length(&laid));
+                    continue;
+                }
                 let mut cell_y = 0.0f32;
                 self.place_cell(
                     cell,
@@ -2308,7 +2498,7 @@ impl<'a> LayoutEngine<'a> {
                     &mut cell_y,
                     area,
                     *left + margin_start,
-                    (*width - margin_start - margin_end).max(1.0),
+                    across,
                 );
                 height = height.max(cell_y);
             }
@@ -2361,6 +2551,33 @@ impl<'a> LayoutEngine<'a> {
             let mut placed: Vec<(TextPosition, f32, f32)> = Vec::with_capacity(row.cells.len());
             for (cell, (left, width)) in row.cells.iter().zip(&spans) {
                 placed.push((TextPosition::new(*index, 0), *left, *width));
+                let across = (*width - margin_start - margin_end).max(1.0);
+
+                if cell.direction.is_turned() {
+                    // Laid out straight into a box as long as the row is tall,
+                    // and then turned onto the page. The first line goes against
+                    // the edge the reader starts from: the right for text that
+                    // reads downwards, the left for text that reads upwards.
+                    let length = (height - CELL_PADDING_TOP - CELL_PADDING_BOTTOM).max(1.0);
+                    let laid = self.turned_cell(cell, index, document, area, length, across);
+                    let frame = match cell.direction {
+                        wp_docx::model::TextDirection::Up => Frame {
+                            turn: Turn::Up,
+                            x: *left + margin_start,
+                            y: row_top + height - CELL_PADDING_BOTTOM,
+                        },
+                        _ => Frame {
+                            turn: Turn::Down,
+                            x: *left + *width - margin_end,
+                            y: row_top + CELL_PADDING_TOP,
+                        },
+                    };
+                    if let Some(page) = pages.last_mut() {
+                        lay_turned(page, laid, frame);
+                    }
+                    continue;
+                }
+
                 let mut cell_y = row_top + CELL_PADDING_TOP;
                 self.place_cell(
                     cell,
@@ -2370,7 +2587,7 @@ impl<'a> LayoutEngine<'a> {
                     &mut cell_y,
                     area,
                     *left + margin_start,
-                    (*width - margin_start - margin_end).max(1.0),
+                    across,
                 );
             }
 
@@ -2403,6 +2620,33 @@ impl<'a> LayoutEngine<'a> {
             }
             *y = row_bottom;
         }
+    }
+
+    /// Lays a cell whose text is turned out straight, onto a page of its own.
+    ///
+    /// `length` is how long a line may be, which for turned text is how tall
+    /// the row is; `across` is how much room there is for the lines to stack
+    /// into, which is the column's width. The page that comes back is in the
+    /// cell's own coordinates and is turned onto the real one by [`lay_turned`].
+    ///
+    /// Nothing here knows about angles, which is the point: breaking a line,
+    /// aligning it, numbering it and measuring it are the same work whichever
+    /// way up the text ends up.
+    fn turned_cell(
+        &mut self,
+        cell: &TableCell,
+        index: &mut usize,
+        document: &Document,
+        area: Placement,
+        length: f32,
+        across: f32,
+    ) -> Page {
+        let mut pages = vec![Page { width: length, height: across, ..Page::default() }];
+        let mut y = 0.0f32;
+        self.place_cell(cell, index, document, &mut pages, &mut y, area, 0.0, length);
+        // A cell has no bottom limit of its own, so it is never broken across
+        // pages and there is exactly one page to take back.
+        pages.remove(0)
     }
 
     /// Lays one cell's blocks into its own column.
@@ -2550,7 +2794,7 @@ impl<'a> LayoutEngine<'a> {
     }
 
     /// The height an empty paragraph occupies.
-    fn empty_line_height(&mut self, paragraph: &Paragraph, document: &Document) -> f32 {
+    pub(crate) fn empty_line_height(&mut self, paragraph: &Paragraph, document: &Document) -> f32 {
         let properties = document.styles().resolve_run(paragraph.style(), &Default::default());
         match self.style_for(&properties) {
             Some(style) => style.line_height,
@@ -4335,6 +4579,7 @@ impl LayoutEngine<'_> {
             paragraph: placement.paragraph,
             start_offset,
             end_offset,
+            frame: Frame::default(),
         });
     }
 }
@@ -4534,6 +4779,85 @@ impl LayoutEngine<'_> {
     /// And puts them back.
     pub(crate) fn restore_counters(&mut self, counters: ListCounters) {
         self.counters = counters;
+    }
+}
+
+/// How long the text on a page came out: the end of its longest line.
+///
+/// What a turned cell needs is a row tall enough for this, which is the one
+/// question a cell laid out straight cannot answer about itself.
+///
+/// A whisker more than the text measured, because a row exactly as long as its
+/// text is a row the line breaker may decide the last word does not fit in —
+/// and the word would go round onto a second line nobody asked for.
+fn text_length(page: &Page) -> f32 {
+    page.lines.iter().map(|line| line.right).fold(0.0f32, f32::max) + 1.0
+}
+
+/// Puts a cell laid out straight onto the page, turned a right angle.
+///
+/// Everything the cell produced is moved: its letters, its lines, the bands and
+/// rules that were drawn behind them, and whatever was placed inside it. A
+/// right angle turns a rectangle into a rectangle, so nothing here needs more
+/// than [`Frame::rect`] — except a path, which is turned properly, and a
+/// picture, which is put in the right place and drawn the way up it was.
+fn lay_turned(page: &mut Page, laid: Page, frame: Frame) {
+    let first = page.glyphs.len();
+    for mut glyph in laid.glyphs {
+        let (x, y) = frame.on_page(glyph.x, glyph.baseline);
+        glyph.x = x;
+        glyph.baseline = y;
+        page.glyphs.push(glyph);
+    }
+    if page.glyphs.len() > first {
+        page.turned.push((first..page.glyphs.len(), frame.turn));
+    }
+
+    for mut line in laid.lines {
+        // The lines keep their own numbers and are told where they sit, which
+        // is what makes a click and a caret land in the right place.
+        line.glyphs = (line.glyphs.start + first)..(line.glyphs.end + first);
+        line.frame = frame;
+        page.lines.push(line);
+    }
+
+    for decoration in laid.decorations {
+        let (x, y, width, height) =
+            frame.rect(decoration.x, decoration.y, decoration.width, decoration.height);
+        page.decorations.push(Decoration { x, y, width, height, color: decoration.color });
+    }
+
+    for cell in laid.cells {
+        let (x, y, width, height) = frame.rect(cell.x, cell.y, cell.width, cell.height);
+        page.cells.push(PlacedCell { x, y, width, height, at: cell.at });
+    }
+
+    for mut picture in laid.images {
+        let (x, y, width, height) = frame.rect(picture.x, picture.y, picture.width, picture.height);
+        picture.x = x;
+        picture.y = y;
+        picture.width = width;
+        picture.height = height;
+        page.images.push(picture);
+    }
+
+    for mut shape in laid.shapes {
+        let (x, y, width, height) = frame.rect(shape.x, shape.y, shape.width, shape.height);
+        shape.x = x;
+        shape.y = y;
+        shape.width = width;
+        shape.height = height;
+        for glyph in &mut shape.text {
+            let (gx, gy) = frame.on_page(glyph.x, glyph.baseline);
+            glyph.x = gx;
+            glyph.baseline = gy;
+        }
+        page.shapes.push(shape);
+    }
+
+    for mut path in laid.paths {
+        path.path = path.path.transformed(&frame.transform());
+        page.paths.push(path);
     }
 }
 
@@ -4896,6 +5220,7 @@ mod tests {
                 paragraph: *paragraph,
                 start_offset: 0,
                 end_offset: offset,
+                frame: Frame::default(),
             });
         }
 
