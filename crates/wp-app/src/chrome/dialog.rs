@@ -81,6 +81,16 @@ const GRID_ROWS: usize = 8;
 /// How big one cell of the grid is.
 const GRID_CELL: f32 = 26.0;
 
+/// How many rows of a list of pairs are shown at once.
+///
+/// Word's AutoCorrect dialog shows seven of its nine hundred replacements and
+/// scrolls the rest, which is as many as fit without the dialog growing taller
+/// than the screen it has to stand on.
+pub const PAIR_ROWS: usize = 7;
+
+/// How tall one of those rows is.
+const PAIR_ROW: f32 = 20.0;
+
 /// One thing a dialog asks about.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Field {
@@ -131,6 +141,24 @@ pub enum Field {
     /// from with the arrows or the mouse, and that scroll when the subset is
     /// longer than the grid.
     Grid { label: String, items: Vec<char>, current: usize, scroll: usize },
+    /// Two columns of words, one row of them chosen, scrolling.
+    ///
+    /// Word's AutoCorrect dialog is built round one: what is typed on the left,
+    /// what goes in its place on the right. A `Choice` will not do — that drops
+    /// open, holds one column, and is for picking one of a few. This stands
+    /// open, holds a pair on every row, and is for looking through a list that
+    /// is added to and deleted from.
+    ///
+    /// `label` heads the left column and `second` the right. A list with no
+    /// second heading is a list of single words — Word's AutoCorrect
+    /// exceptions — and is drawn as one column across the whole width.
+    Pairs {
+        label: String,
+        second: String,
+        rows: Vec<(String, String)>,
+        current: usize,
+        scroll: usize,
+    },
     /// A rectangle round everything that follows, with a caption on its top
     /// edge, until the next group or the next tab.
     ///
@@ -185,7 +213,8 @@ impl Field {
             | Self::Group(_) => None,
             // A grid's label stands above it rather than beside it, whatever
             // row it is on: sixteen cells across leave no room for a column.
-            Self::Grid { .. } => None,
+            // So does a list of pairs, for the same reason.
+            Self::Grid { .. } | Self::Pairs { .. } => None,
             Self::Said { label, .. }
             | Self::Text { label, .. }
             | Self::Number { label, .. }
@@ -215,6 +244,7 @@ impl Field {
             Self::Columns(_) => "a row",
             Self::Group(_) => "a group",
             Self::Grid { .. } => "a grid",
+            Self::Pairs { .. } => "a list of pairs",
         }
     }
 
@@ -230,6 +260,7 @@ impl Field {
             Self::Preview(_) => PREVIEW_HEIGHT + PADDING,
             Self::Shape(_) => SHAPE_HEIGHT + PADDING,
             Self::Grid { .. } => LABEL_HEIGHT + GRID_ROWS as f32 * GRID_CELL + PADDING,
+            Self::Pairs { .. } => LABEL_HEIGHT + PAIR_ROWS as f32 * PAIR_ROW + PADDING,
             _ => ROW + 4.0,
         }
     }
@@ -328,6 +359,14 @@ pub struct Dialog {
     width: f32,
     /// Which tab is showing, for a dialog that has them.
     tab: usize,
+    /// The buttons that belong to one tab, and which.
+    ///
+    /// Word puts Add and Delete beside the list they work on, which is on one
+    /// tab of the AutoCorrect dialog and not the other. Here every button is
+    /// along the bottom, so a button that works on something another tab does
+    /// not show says which tab it is for and is drawn on that one alone: a
+    /// button that changes what nobody can see is worse than no button.
+    button_tabs: Vec<(Answer, usize)>,
 }
 
 impl Dialog {
@@ -366,6 +405,7 @@ impl Dialog {
             hovered: None,
             width: WIDTH,
             tab: 0,
+            button_tabs: Vec::new(),
         };
         // The keyboard starts on the first thing that can take it, which is
         // where a person expects to start typing.
@@ -390,7 +430,10 @@ impl Dialog {
     /// has been typed belongs to the person typing it until they are done.
     pub fn carry_typing_from(&mut self, previous: &Self) {
         self.tab = previous.tab.min(self.tabs().len().saturating_sub(1));
-        if previous.focus < self.fields.len() + self.buttons.len() {
+        // Only where the keyboard can actually land: a rebuilt dialog may have
+        // fewer fields than the one before it, and a button that belongs to
+        // another tab is not drawn on this one.
+        if self.stops().contains(&previous.focus) {
             self.focus = previous.focus;
         }
         self.open_list = previous.open_list;
@@ -404,6 +447,13 @@ impl Dialog {
                 *value = typed.clone();
             }
         }
+    }
+
+    /// The same dialog, with one of its buttons kept to one tab.
+    #[must_use]
+    pub fn button_on_tab(mut self, answer: Answer, tab: usize) -> Self {
+        self.button_tabs.push((answer, tab));
+        self
     }
 
     /// The same dialog, drawn wider.
@@ -450,6 +500,26 @@ impl Dialog {
         }
     }
 
+    /// Which row of a list of pairs is chosen, as the pair itself.
+    #[must_use]
+    pub fn pair(&self, index: usize) -> Option<(&str, &str)> {
+        match self.fields.get(index) {
+            Some(Field::Pairs { rows, current, .. }) => {
+                rows.get(*current).map(|(what, with)| (what.as_str(), with.as_str()))
+            }
+            _ => None,
+        }
+    }
+
+    /// Which row of a list of pairs is chosen, as its place on the list.
+    #[must_use]
+    pub fn chose_pair(&self, index: usize) -> usize {
+        match self.fields.get(index) {
+            Some(Field::Pairs { current, .. }) => *current,
+            _ => 0,
+        }
+    }
+
     /// Which of a list was chosen.
     #[must_use]
     pub fn chose(&self, index: usize) -> usize {
@@ -472,8 +542,21 @@ impl Dialog {
         let mut out: Vec<usize> = (0..self.fields.len())
             .filter(|index| self.fields[*index].takes_focus() && self.on_this_tab(*index))
             .collect();
-        out.extend(self.fields.len()..self.fields.len() + self.buttons.len());
+        out.extend(
+            (0..self.buttons.len())
+                .filter(|index| self.button_showing(*index))
+                .map(|index| self.fields.len() + index),
+        );
         out
+    }
+
+    /// Whether a button is drawn on the tab that is showing.
+    fn button_showing(&self, index: usize) -> bool {
+        let Some(button) = self.buttons.get(index) else { return false };
+        self.button_tabs
+            .iter()
+            .find(|(answer, _)| *answer == button.answer)
+            .is_none_or(|(_, tab)| *tab == self.tab)
     }
 
     /// Moves the keyboard on, or back.
@@ -541,6 +624,13 @@ impl Dialog {
                     _ => GRID_COLUMNS as i32,
                 };
                 self.move_in_grid(self.focus, step);
+                Reaction::Changed
+            }
+            // A list of pairs is walked a row at a time, like any list.
+            Key::Up | Key::Down
+                if matches!(self.fields.get(self.focus), Some(Field::Pairs { .. })) =>
+            {
+                self.move_in_pairs(self.focus, if key == Key::Up { -1 } else { 1 });
                 Reaction::Changed
             }
             Key::Up | Key::Down => {
@@ -636,6 +726,15 @@ impl Dialog {
                     }
                     return Reaction::Changed;
                 }
+                // And a list of pairs row by row.
+                if matches!(self.fields.get(index), Some(Field::Pairs { .. })) {
+                    if let Some(row) = self.pair_row_at(index, y) {
+                        if let Some(Field::Pairs { current, .. }) = self.fields.get_mut(index) {
+                            *current = row;
+                        }
+                    }
+                    return Reaction::Changed;
+                }
                 match self.fields.get_mut(index) {
                     Some(Field::Check { on, .. }) => *on = !*on,
                     Some(Field::Choice { .. }) => self.open_list = Some(index),
@@ -710,6 +809,35 @@ impl Dialog {
         }
         let at = (scroll + row as usize) * GRID_COLUMNS + column as usize;
         (at < items.len()).then_some(at)
+    }
+
+    /// Moves the row a list of pairs has chosen, scrolling to keep it in sight.
+    fn move_in_pairs(&mut self, index: usize, step: i32) {
+        let Some(Field::Pairs { rows, current, scroll, .. }) = self.fields.get_mut(index) else {
+            return;
+        };
+        if rows.is_empty() {
+            return;
+        }
+        let last = rows.len() as i32 - 1;
+        *current = (*current as i32 + step).clamp(0, last) as usize;
+        if *current < *scroll {
+            *scroll = *current;
+        } else if *current >= *scroll + PAIR_ROWS {
+            *scroll = *current + 1 - PAIR_ROWS;
+        }
+    }
+
+    /// Which row of a list of pairs a point is on.
+    fn pair_row_at(&self, index: usize, y: i32) -> Option<usize> {
+        let (_, top, _, _) = self.rect_of(Hit::Field(index))?;
+        let Some(Field::Pairs { rows, scroll, .. }) = self.fields.get(index) else { return None };
+        let row = ((y as f32 - top) / PAIR_ROW).floor();
+        if row < 0.0 || row >= PAIR_ROWS as f32 {
+            return None;
+        }
+        let at = scroll + row as usize;
+        (at < rows.len()).then_some(at)
     }
 
     fn move_choice(&mut self, index: usize, step: i32) {
@@ -906,7 +1034,7 @@ impl Dialog {
     }
 
     /// Shows one of the tabs, putting the keyboard on its first field.
-    fn show_tab(&mut self, tab: usize) {
+    pub fn show_tab(&mut self, tab: usize) {
         if tab >= self.tabs().len() || tab == self.tab {
             return;
         }
@@ -1372,6 +1500,89 @@ impl Dialog {
                 self.placed.push((Hit::Field(index), label_x, grid_top, grid_width, grid_height));
             }
 
+            Field::Pairs { label, second, rows, current, scroll } => {
+                let room = box_x + box_width - label_x;
+                // The two columns are equal, which is how Word divides them:
+                // what is typed is short and what replaces it is not much
+                // longer, and a line between them says where one ends.
+                let two = !second.is_empty();
+                let column = if two { room / 2.0 } else { room };
+
+                let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                if two {
+                    let line = engine.simple_line(
+                        &second,
+                        label_x + column + 5.0,
+                        label_y,
+                        9.0,
+                        theme.text,
+                    );
+                    renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                }
+
+                let list_top = box_y + LABEL_HEIGHT;
+                let list_height = PAIR_ROWS as f32 * PAIR_ROW;
+                canvas.fill_rect(
+                    label_x as i32,
+                    list_top as i32,
+                    room as i32,
+                    list_height as i32,
+                    theme.field,
+                );
+                outline(canvas, label_x, list_top, room, list_height, theme.field_edge);
+
+                if two {
+                    canvas.fill_rect(
+                        (label_x + column) as i32,
+                        list_top as i32,
+                        1,
+                        list_height as i32,
+                        theme.field_edge,
+                    );
+                }
+
+                for showing in 0..PAIR_ROWS {
+                    let at = scroll + showing;
+                    let Some((what, with)) = rows.get(at) else { break };
+                    let row_y = list_top + PAIR_ROW * showing as f32;
+                    let picked = at == current;
+                    if picked {
+                        canvas.fill_rect(
+                            (label_x + 1.0) as i32,
+                            row_y as i32,
+                            (room - 2.0) as i32,
+                            PAIR_ROW as i32,
+                            if focused { theme.accent } else { theme.hover },
+                        );
+                    }
+                    let colour = if picked && focused { theme.on_accent() } else { theme.text };
+                    // Each half is clipped to its own column, so a long
+                    // replacement stops at the divider instead of running
+                    // across the one beside it.
+                    let halves: &[(&String, f32)] =
+                        if two { &[(what, 0.0), (with, column)] } else { &[(what, 0.0)] };
+                    for (text, from) in halves.iter().copied() {
+                        let line = engine.simple_line(
+                            text,
+                            label_x + from + 5.0,
+                            row_y + PAIR_ROW * 0.72,
+                            9.0,
+                            colour,
+                        );
+                        renderer.draw_within(
+                            canvas,
+                            &line,
+                            label_x + from,
+                            row_y,
+                            column - 2.0,
+                            PAIR_ROW,
+                        );
+                    }
+                }
+                self.placed.push((Hit::Field(index), label_x, list_top, room, list_height));
+            }
+
             Field::Shape(sample) => {
                 let room = box_x + box_width - label_x;
                 canvas.fill_rect(
@@ -1519,6 +1730,9 @@ impl Dialog {
         // Right to left, so that the first button in the list ends up nearest
         // the right-hand edge — which is where OK goes.
         for index in (0..self.buttons.len()).rev() {
+            if !self.button_showing(index) {
+                continue;
+            }
             let button = self.buttons[index].clone();
             let measured =
                 engine.simple_line(&button.label, 0.0, 0.0, 9.0, theme.text).width + 32.0;

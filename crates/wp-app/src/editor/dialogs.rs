@@ -59,6 +59,11 @@ pub(super) enum Asking {
     Options,
     /// The border round the pages of a section.
     PageBorders,
+    /// Which corrections are made as text is typed.
+    AutoCorrect,
+    /// The words those corrections must leave alone, which is a dialog of its
+    /// own behind the one above.
+    Exceptions,
 }
 
 impl Editor {
@@ -108,6 +113,14 @@ impl Editor {
         let asking = self.asking.take();
         self.needs_redraw = true;
 
+        // The Exceptions dialog goes back to the one it was opened from
+        // whichever button shut it. Cancelling the exceptions is not
+        // cancelling the dialog behind them, and Word does the same.
+        if asking == Some(Asking::Exceptions) {
+            let _ = dialog;
+            return self.close_exceptions(answer != Answer::Cancel);
+        }
+
         if answer == Answer::Cancel {
             return Response::Redraw;
         }
@@ -128,6 +141,7 @@ impl Editor {
             Some(Asking::Style) => self.apply_style_dialog(&dialog),
             Some(Asking::Table) => self.apply_table_dialog(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),
+            Some(Asking::AutoCorrect) => self.apply_autocorrect_dialog(&dialog),
             Some(Asking::PageBorders) => self.apply_page_borders(&dialog),
             // Word's Symbol dialog is answered by its Insert button rather
             // than by OK, so there is nothing left to do when it shuts.
@@ -136,6 +150,8 @@ impl Editor {
                 let _ = &dialog;
                 Response::Redraw
             }
+            // Answered on the way out, above.
+            Some(Asking::Exceptions) => Response::Redraw,
             Some(Asking::WordCount) | None => {
                 let _ = dialog;
                 Response::Redraw
@@ -148,9 +164,25 @@ impl Editor {
     /// `None` when the button is not one of them, and the caller goes on to
     /// treat it as an answer.
     fn pressed_without_answering(&mut self, button: &str) -> Option<Response> {
+        use super::autocorrectdialog::{ADD, DELETE, EXCEPTIONS};
         use super::tabsdialog::{CLEAR, CLEAR_ALL, SET};
 
         match (self.asking, button) {
+            // Add and Delete change a list and leave the dialog standing;
+            // Exceptions hands over to a dialog of its own and comes back.
+            (Some(Asking::AutoCorrect), ADD | DELETE | EXCEPTIONS) => {
+                Some(self.autocorrect_dialog_button(button))
+            }
+            (Some(Asking::Exceptions), ADD | DELETE) => Some(self.exceptions_dialog_button(button)),
+            // Word's Proofing page hands over to the AutoCorrect dialog. What
+            // Options said is applied on the way, so that nothing typed into it
+            // is lost by going to look at the corrections.
+            (Some(Asking::Options), super::optionsdialog::AUTOCORRECT_OPTIONS) => {
+                let dialog = self.dialog.take()?;
+                self.apply_options(&dialog);
+                self.asking = None;
+                Some(self.open_autocorrect())
+            }
             // Word's Tabs button hands over to the Tabs dialog. What the
             // Paragraph dialog said is applied first, so that a stop set from
             // inside it lands on the paragraph the dialog was describing.
@@ -164,6 +196,14 @@ impl Editor {
             (Some(Asking::Symbol), super::symboldialog::INSERT) => {
                 let dialog = self.dialog.clone()?;
                 Some(self.insert_symbol_from_dialog(&dialog))
+            }
+            // And its AutoCorrect button hands the chosen character over to the
+            // AutoCorrect dialog, already in the box that says what to put in.
+            (Some(Asking::Symbol), super::symboldialog::AUTOCORRECT) => {
+                let dialog = self.dialog.take()?;
+                let character = self.symbol_dialog_says(&dialog)?;
+                self.asking = None;
+                Some(self.open_autocorrect_with(&character.to_string()))
             }
             // Set, Clear and Clear All change the list and leave the dialog up.
             (Some(Asking::TabStops), SET | CLEAR | CLEAR_ALL) => {

@@ -49,6 +49,12 @@ const SPECIAL: usize = 9;
 /// dialog three times.
 pub(super) const INSERT: &str = "Insert";
 
+/// The button that puts the chosen character on the AutoCorrect list.
+///
+/// Word's: the way a person makes "(c)" come out as "©" without hunting through
+/// a grid of a hundred and twenty-eight cells every time.
+pub(super) const AUTOCORRECT: &str = "AutoCorrect...";
+
 /// How many characters are remembered as recently used.
 ///
 /// Word shows sixteen, which is one row of its grid.
@@ -202,6 +208,11 @@ impl Editor {
             fields,
             vec![
                 Button { label: INSERT.to_owned(), answer: Answer::Named(INSERT), default: true },
+                Button {
+                    label: AUTOCORRECT.to_owned(),
+                    answer: Answer::Named(AUTOCORRECT),
+                    default: false,
+                },
                 Button { label: "Close".to_owned(), answer: Answer::Cancel, default: false },
             ],
         )

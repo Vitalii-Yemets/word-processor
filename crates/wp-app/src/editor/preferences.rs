@@ -46,6 +46,9 @@ impl Editor {
         if let Some(white_space) = settings.white_space {
             self.joined_pages = !white_space;
         }
+        if let Some(rules) = &settings.autocorrect {
+            self.autocorrect = rules.clone();
+        }
         if let Some(unit) = &settings.unit {
             self.unit = crate::measure::Unit::from_name(unit);
         }

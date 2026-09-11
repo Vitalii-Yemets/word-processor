@@ -2,6 +2,7 @@
 
 mod appearance;
 mod arrange;
+mod autocorrectdialog;
 mod autoscroll;
 mod backstage;
 mod boxes;
@@ -9,6 +10,7 @@ mod chart;
 mod citations;
 mod commands;
 mod context;
+mod correcting;
 mod diagram;
 mod dialogs;
 mod dispatch;
@@ -257,6 +259,18 @@ pub struct Editor {
     /// them has to hang under that box rather than under the ribbon button
     /// with the same name.
     popup_anchor: Option<(f32, f32, f32)>,
+    /// What is corrected as it is typed. See [`crate::autocorrect`].
+    pub(super) autocorrect: crate::autocorrect::AutoCorrect,
+    /// The corrections being changed while the AutoCorrect dialog is up.
+    ///
+    /// A working copy, because that dialog is built again every time one of its
+    /// buttons adds to a list, and because the Exceptions dialog takes it away
+    /// and puts it back. Nothing reaches `autocorrect` until OK is pressed.
+    pub(super) editing_rules: crate::autocorrect::AutoCorrect,
+    /// What the two exception lists held when the Exceptions dialog opened, so
+    /// that its Cancel can put them back.
+    pub(super) exceptions_stash:
+        Option<(std::collections::BTreeSet<String>, std::collections::BTreeSet<String>)>,
     /// The measurement box on the ribbon that has the keyboard, and whether
     /// what is in it is still the value it opened with. See [`boxes`].
     ribbon_box: Option<(crate::chrome::Command, bool)>,
@@ -476,6 +490,9 @@ impl Editor {
             hovered: None,
             popup: None,
             popup_anchor: None,
+            autocorrect: crate::autocorrect::AutoCorrect::default(),
+            editing_rules: crate::autocorrect::AutoCorrect::default(),
+            exceptions_stash: None,
             ribbon_box: None,
             box_text: String::new(),
             pasted: None,

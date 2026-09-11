@@ -15,6 +15,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 
+mod autocorrect;
 mod chrome;
 mod editor;
 mod measure;

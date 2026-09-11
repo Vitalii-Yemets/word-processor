@@ -17,7 +17,7 @@
 //! A line nobody here understands is left alone rather than thrown away, so a
 //! file written by a later version survives being opened by an earlier one.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// The name of the folder and the file inside it.
@@ -68,6 +68,13 @@ pub struct Settings {
     pub white_space: Option<bool>,
     /// What unit measurements are shown in, by name. See [`crate::measure`].
     pub unit: Option<String>,
+    /// Which corrections are made as text is typed, and the replacements.
+    ///
+    /// Kept here because it is about the person and not about the document:
+    /// Word keeps the same thing in a file of its own beside the program, for
+    /// the same reason. Nothing means it has never been said, and the usual
+    /// corrections are made.
+    pub autocorrect: Option<crate::autocorrect::AutoCorrect>,
     /// The documents opened lately, the most recent first.
     ///
     /// Kept as written rather than as paths, because a path that no longer
@@ -166,6 +173,14 @@ impl Settings {
         // lines have been moved about by hand still gives the list back in the
         // order it was written in.
         let mut recent: Vec<(usize, String)> = Vec::new();
+        // The corrections, gathered as they are met and put together at the
+        // end: the switches fall back on the usual ones, and the replacements
+        // replace them wholesale.
+        let mut switches: BTreeMap<String, bool> = BTreeMap::new();
+        let mut replacements: BTreeMap<String, String> = BTreeMap::new();
+        let mut listed = false;
+        let mut first_letter: Option<BTreeSet<String>> = None;
+        let mut initial_caps: Option<BTreeSet<String>> = None;
         for line in text.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -183,17 +198,40 @@ impl Settings {
                 "gridlines" => settings.gridlines = parse_flag(value),
                 "white-space" => settings.white_space = parse_flag(value),
                 "unit" => settings.unit = Some(value.to_owned()),
+                // Says that the replacements below are the whole list. It has
+                // to be said out loud, because a person who deletes the last
+                // replacement leaves a file with nothing to read, and nothing
+                // to read is how a file that never mentioned them looks.
+                "replacements" => listed |= parse_flag(value) == Some(true),
+                // The two lists of exceptions, written on one line each,
+                // because an exception is a single word with no spaces in it
+                // and no commas either.
+                "except-first" => {
+                    first_letter = Some(words(value));
+                }
+                "except-caps" => {
+                    initial_caps = Some(words(value));
+                }
                 "theme-colors" => settings.theme_colors = Some(value.to_owned()),
                 "theme-fonts" => settings.theme_fonts = Some(value.to_owned()),
-                "status-off" => {
-                    settings.status_off = value
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|name| !name.is_empty())
-                        .map(str::to_owned)
-                        .collect();
-                }
+                "status-off" => settings.status_off = words(value),
                 other => {
+                    if let Some(name) = other.strip_prefix(CORRECT_PREFIX) {
+                        if let Some(on) = parse_flag(value) {
+                            switches.insert(name.to_owned(), on);
+                        }
+                        continue;
+                    }
+                    // A replacement's key is what is typed, which may be
+                    // anything at all except an empty string.
+                    if let Some(what) = other.strip_prefix(REPLACE_PREFIX) {
+                        listed = true;
+                        if !what.is_empty() {
+                            replacements.insert(what.to_owned(), value.to_owned());
+                        }
+                        continue;
+                    }
+
                     match other.strip_prefix(RECENT_PREFIX).and_then(|at| at.parse::<usize>().ok())
                     {
                         Some(at) if !value.is_empty() => recent.push((at, value.to_owned())),
@@ -206,6 +244,17 @@ impl Settings {
                 }
             }
         }
+        if !switches.is_empty() || listed || first_letter.is_some() || initial_caps.is_some() {
+            let mut rules = Self::read_autocorrect(&switches, &replacements, listed);
+            if let Some(words) = first_letter {
+                rules.first_letter = words;
+            }
+            if let Some(words) = initial_caps {
+                rules.initial_caps = words;
+            }
+            settings.autocorrect = Some(rules);
+        }
+
         recent.sort_by_key(|(at, _)| *at);
         settings.recent = recent.into_iter().map(|(_, path)| path).collect();
         settings.recent.truncate(RECENT_LIMIT);
@@ -263,8 +312,98 @@ impl Settings {
         for (key, value) in &self.unknown {
             write(key, value.clone());
         }
+        // The corrections go last, and are written straight into the text
+        // rather than through `write`, because one of them is a whole list of
+        // its own. Last, because `write` holds the text until it is done with.
+        if let Some(rules) = &self.autocorrect {
+            Self::write_autocorrect(rules, &mut out);
+        }
         out
     }
+}
+
+/// What a correction switch is called in the settings file.
+const CORRECT_PREFIX: &str = "correct.";
+/// And a replacement, whose key is what is typed.
+const REPLACE_PREFIX: &str = "replace.";
+
+impl Settings {
+    /// The corrections, as the file has them.
+    ///
+    /// The switches are read one at a time onto the usual set, so a file
+    /// written by an earlier version keeps the corrections it never mentioned.
+    /// The replacements are different: a file that lists any is listing all of
+    /// them, because a person who took one off the list would otherwise find it
+    /// back the next time.
+    fn read_autocorrect(
+        switches: &BTreeMap<String, bool>,
+        replacements: &BTreeMap<String, String>,
+        listed: bool,
+    ) -> crate::autocorrect::AutoCorrect {
+        let mut rules = crate::autocorrect::AutoCorrect::default();
+        let on = |name: &str, fallback: bool| switches.get(name).copied().unwrap_or(fallback);
+
+        rules.two_initials = on("two-initials", rules.two_initials);
+        rules.sentence_case = on("sentence-case", rules.sentence_case);
+        rules.day_names = on("day-names", rules.day_names);
+        rules.caps_lock = on("caps-lock", rules.caps_lock);
+        rules.replace_text = on("replace-text", rules.replace_text);
+        rules.curly_quotes = on("curly-quotes", rules.curly_quotes);
+        rules.ordinals = on("ordinals", rules.ordinals);
+        rules.fractions = on("fractions", rules.fractions);
+        rules.dashes = on("dashes", rules.dashes);
+        rules.automatic_lists = on("automatic-lists", rules.automatic_lists);
+
+        if listed {
+            rules.replacements = replacements.clone();
+        }
+        rules
+    }
+
+    /// Writes them out.
+    fn write_autocorrect(rules: &crate::autocorrect::AutoCorrect, out: &mut String) {
+        for (name, on) in [
+            ("two-initials", rules.two_initials),
+            ("sentence-case", rules.sentence_case),
+            ("day-names", rules.day_names),
+            ("caps-lock", rules.caps_lock),
+            ("replace-text", rules.replace_text),
+            ("curly-quotes", rules.curly_quotes),
+            ("ordinals", rules.ordinals),
+            ("fractions", rules.fractions),
+            ("dashes", rules.dashes),
+            ("automatic-lists", rules.automatic_lists),
+        ] {
+            out.push_str(CORRECT_PREFIX);
+            out.push_str(name);
+            out.push_str(" = ");
+            out.push_str(&flag(on));
+            out.push('\n');
+        }
+
+        out.push_str("except-first = ");
+        out.push_str(&rules.first_letter.iter().cloned().collect::<Vec<_>>().join(", "));
+        out.push_str("\nexcept-caps = ");
+        out.push_str(&rules.initial_caps.iter().cloned().collect::<Vec<_>>().join(", "));
+        out.push('\n');
+
+        out.push_str("replacements = yes\n");
+        for (what, with) in &rules.replacements {
+            out.push_str(REPLACE_PREFIX);
+            out.push_str(what);
+            out.push_str(" = ");
+            out.push_str(with);
+            out.push('\n');
+        }
+    }
+}
+
+/// A comma-separated list, as the words on it.
+///
+/// Empty entries are dropped, so a trailing comma and a line with nothing after
+/// the equals sign both give an empty list rather than a list of one nothing.
+fn words<Held: FromIterator<String>>(value: &str) -> Held {
+    value.split(',').map(str::trim).filter(|word| !word.is_empty()).map(str::to_owned).collect()
 }
 
 fn parse_flag(value: &str) -> Option<bool> {
@@ -307,6 +446,7 @@ mod tests {
             gridlines: Some(true),
             white_space: Some(false),
             unit: Some("centimetres".to_owned()),
+            autocorrect: Some(crate::autocorrect::AutoCorrect::default()),
             recent: vec![
                 "C:\\Documents\\Report, final.docx".to_owned(),
                 "/home/somebody/notes.docx".to_owned(),
@@ -374,6 +514,59 @@ mod tests {
     fn a_line_that_is_not_a_setting_at_all_is_ignored() {
         let settings = Settings::parse("this line has no equals sign\ndark = yes\n");
         assert_eq!(settings.dark, Some(true));
+    }
+
+    #[test]
+    fn a_file_that_says_nothing_about_corrections_leaves_them_as_they_come() {
+        assert_eq!(Settings::parse("dark = yes\n").autocorrect, None);
+    }
+
+    #[test]
+    fn a_correction_switched_off_stays_off_and_the_others_stay_on() {
+        let rules = crate::autocorrect::AutoCorrect {
+            curly_quotes: false,
+            ..crate::autocorrect::AutoCorrect::default()
+        };
+        let settings = Settings { autocorrect: Some(rules.clone()), ..Settings::default() };
+        let read = Settings::parse(&settings.to_text()).autocorrect.expect("the corrections");
+        assert!(!read.curly_quotes);
+        assert!(read.replace_text);
+        assert_eq!(read, rules);
+    }
+
+    #[test]
+    fn a_replacement_taken_off_the_list_does_not_come_back() {
+        // The whole point of writing the list rather than only the changes: a
+        // person who deletes a replacement must not find it again next time.
+        let mut rules = crate::autocorrect::AutoCorrect::default();
+        let taken = rules.replacements.keys().next().expect("a replacement").clone();
+        rules.replacements.remove(&taken);
+
+        let settings = Settings { autocorrect: Some(rules), ..Settings::default() };
+        let read = Settings::parse(&settings.to_text()).autocorrect.expect("the corrections");
+        assert!(!read.replacements.contains_key(&taken), "{taken} came back");
+    }
+
+    #[test]
+    fn a_list_emptied_altogether_is_still_a_list() {
+        // Nothing is written under `replace.`, so the file has to say somewhere
+        // that the emptiness was meant. It says it with the switches.
+        let rules = crate::autocorrect::AutoCorrect {
+            replacements: BTreeMap::new(),
+            ..crate::autocorrect::AutoCorrect::default()
+        };
+        let settings = Settings { autocorrect: Some(rules), ..Settings::default() };
+        let read = Settings::parse(&settings.to_text()).autocorrect.expect("the corrections");
+        assert!(read.replacements.is_empty(), "got {:?}", read.replacements);
+    }
+
+    #[test]
+    fn a_replacement_added_by_hand_is_read() {
+        let settings = Settings::parse("replace.brb = be right back\n");
+        let rules = settings.autocorrect.expect("the corrections");
+        assert_eq!(rules.replacements.get("brb").map(String::as_str), Some("be right back"));
+        // And a file that lists one lists all, so nothing else is on it.
+        assert_eq!(rules.replacements.len(), 1);
     }
 
     #[test]

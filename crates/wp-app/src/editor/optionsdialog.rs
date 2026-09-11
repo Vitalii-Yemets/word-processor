@@ -20,7 +20,7 @@
 
 use wp_shell::Response;
 
-use crate::chrome::dialog::{Dialog, Field};
+use crate::chrome::dialog::{Answer, Button, Dialog, Field};
 use crate::chrome::theme::{Mode, Theme};
 use crate::measure::Unit;
 
@@ -47,8 +47,13 @@ const WHITE_SPACE: usize = 13;
 
 // Proofing.
 const TAB_PROOFING: usize = 14;
-const CORRECTING: usize = 15;
-const PROOFING: usize = 16;
+const AUTOCORRECT: usize = 15;
+const AUTOCORRECT_SAID: usize = 16;
+const CORRECTING: usize = 17;
+const PROOFING: usize = 18;
+
+/// Word's button for the dialog behind this one.
+pub(super) const AUTOCORRECT_OPTIONS: &str = "AutoCorrect Options...";
 
 impl Editor {
     /// Opens Word's Options.
@@ -88,6 +93,11 @@ impl Editor {
             check("White space between pages", !self.joined_pages),
             // --- Proofing --------------------------------------------------
             Field::Tab("Proofing".to_owned()),
+            Field::Group("AutoCorrect options".to_owned()),
+            Field::Said {
+                label: "Change how the text is corrected as you type".to_owned(),
+                value: String::new(),
+            },
             Field::Group("When correcting spelling".to_owned()),
             check("Mark spelling mistakes as you type", self.show_proofing),
         ];
@@ -111,12 +121,27 @@ impl Editor {
                 (NAVIGATION, "a tick box"),
                 (WHITE_SPACE, "a tick box"),
                 (TAB_PROOFING, "a tab"),
+                (AUTOCORRECT, "a group"),
+                (AUTOCORRECT_SAID, "a line"),
                 (CORRECTING, "a group"),
                 (PROOFING, "a tick box"),
             ],
         );
 
-        Dialog::new("Options", fields).wide(520.0)
+        Dialog::with_buttons(
+            "Options",
+            fields,
+            vec![
+                Button { label: "OK".to_owned(), answer: Answer::Accept, default: true },
+                Button {
+                    label: AUTOCORRECT_OPTIONS.to_owned(),
+                    answer: Answer::Named(AUTOCORRECT_OPTIONS),
+                    default: false,
+                },
+                Button { label: "Cancel".to_owned(), answer: Answer::Cancel, default: false },
+            ],
+        )
+        .wide(560.0)
     }
 
     /// Takes what the dialog says and does it, then writes it down.

@@ -328,6 +328,18 @@ impl Editor {
             "options" => {
                 self.open_options();
             }
+            "autocorrect" => {
+                self.open_autocorrect();
+            }
+            "autoformat" => {
+                self.open_autocorrect();
+                // The second tab, so the other half can be photographed too.
+                self.dialog_key(wp_shell::Key::Tab, false, true);
+            }
+            "exceptions" => {
+                self.open_autocorrect();
+                self.autocorrect_dialog_button(super::autocorrectdialog::EXCEPTIONS);
+            }
             "fontdialog" => {
                 self.open_font_dialog();
             }

@@ -1368,7 +1368,11 @@ impl Editor {
     /// no path can type without being seen.
     pub(super) fn type_character(&mut self, character: char) -> Response {
         self.record_typing(character);
+        // What was typed may not be what goes in, and the word before it may
+        // not stay as it was. See [`super::correcting`].
+        let character = self.correct_character(character);
         let changed = self.document.type_text(&character.to_string());
+        self.correct_word(character);
         self.edited(changed, "")
     }
 

@@ -568,11 +568,10 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   other program. The space bar had to become a key the shell reports for the
   last of them; an ordinary space still arrives as typing.
 
-  Not done: **AutoCorrect**. Word's dialog has a button that adds the chosen
-  character to the AutoCorrect list, and there is no AutoCorrect in this
-  program at all — no list, no replacement as you type, nothing to add to. A
-  button that opened an empty dialog would be worse than no button. It is
-  **C19** below, with what it would take.
+  The **AutoCorrect** button waited on there being an AutoCorrect list to add
+  to — a button that opened an empty dialog would have been worse than no
+  button. **C19** made the list, and the button is there now: it opens the
+  AutoCorrect dialog with the chosen character already in the "With" box.
 - [x] **C6. Table properties.** Table, row, column, cell and alt text; borders
   and shading; autofit rules.
   *Done:* Word's dialog, in place of the flat list that had been standing in
@@ -986,7 +985,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Also added: `Renderer::draw_within`, so a font with a long name stops at the
   edge of its box instead of running out over the field beside it.
 
-- [ ] **C19. AutoCorrect.** There is none at all: no list of replacements, no
+- [x] **C19. AutoCorrect.** There was none at all: no list of replacements, no
   replacing as you type, and so nothing for the button in **C5** to add to.
   Word's is four tabs — AutoCorrect (the replacement list, plus the five tick
   boxes: two initial capitals, first letter of a sentence, day names, the Caps
@@ -996,9 +995,21 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Most of it is one mechanism: watch what was typed since the last word
   boundary, and replace it. The mechanism is the item; the tables are what goes
   on top.
-  *Done when:* typing "teh " gives "the ", a straight quote comes out curly, a
-  hyphen between words becomes a dash, the list can be edited, and every one of
-  those can be turned off.
+  *Done:* the rules are in `autocorrect`, where they are decided about text and
+  nothing else; `editor/correcting` is where they meet a document with a caret
+  in it, and wraps each correction in a gesture of its own so that one undo
+  takes it back and leaves what was typed. Both of Word's tabs that have
+  anything behind them are drawn, reached from Options ▸ Proofing, with the
+  Exceptions dialog behind them; the lists and the switches are kept in the
+  settings file. The replacement list is ours and not Microsoft's — twenty-two
+  misspellings, none of which could be a surname.
+  *Not done, and named here rather than drawn as a dead switch:* Word's two
+  "Automatically add words to list" boxes, which put a word on an exception
+  list when a correction is undone straight after it is made; its Math
+  AutoCorrect tab, which needs the equation editor; its AutoFormat tab, which
+  reformats a whole document at once; and its Actions tab, which offers to look
+  a name up in an address book. Numbered lists begun by typing start at one,
+  because the numbering model has no other starting number yet.
 
 - [ ] **C20. Customize Ribbon and the Quick Access Toolbar.** Two of the
   categories **C7** leaves out, and they are one job: both are a person saying
