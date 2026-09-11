@@ -1046,6 +1046,12 @@ pub struct TableCell {
     /// Room kept clear inside this cell, where it states any of its own.
     /// `w:tcMar`, which overrides the table's side by side.
     pub margins: CellMargins,
+    /// Where the text sits up and down the cell: `w:vAlign`.
+    ///
+    /// The other half of the question Word's nine alignment buttons answer. The
+    /// first half — where it sits across the cell — is the paragraph's own
+    /// alignment and is not here, because it is not a property of the cell.
+    pub vertical: crate::table_properties::CellAlignment,
 }
 
 impl Default for TableCell {
@@ -1061,6 +1067,7 @@ impl Default for TableCell {
             shading: None,
             direction: TextDirection::Horizontal,
             margins: CellMargins::default(),
+            vertical: crate::table_properties::CellAlignment::Top,
         }
     }
 }

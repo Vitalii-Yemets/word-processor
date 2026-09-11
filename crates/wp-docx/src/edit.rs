@@ -1178,6 +1178,11 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
             if !cell.margins.is_empty() {
                 cell_properties.push_element(cell_margins_element("tcMar", &cell.margins, prefix));
             }
+            // Written only when the text does not sit where a cell that says
+            // nothing puts it, which is at the top.
+            if cell.vertical != crate::table_properties::CellAlignment::Top {
+                cell_properties.push_element(valued(prefix, "vAlign", cell.vertical.word()));
+            }
             // Written only when the text is turned, because the ordinary way up
             // is what a cell that says nothing means.
             if cell.direction.is_turned() {

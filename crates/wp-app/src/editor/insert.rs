@@ -268,6 +268,26 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            "cellalignment" => {
+                // A tall row with its three cells sitting at the top, in the
+                // middle and at the foot of it — the other half of the question
+                // Word's nine alignment buttons answer.
+                self.document.insert_table(1, 3);
+                for (paragraph, text, which) in [
+                    (1, "Top", wp_docx::table_properties::CellAlignment::Top),
+                    (2, "Middle", wp_docx::table_properties::CellAlignment::Middle),
+                    (3, "Bottom", wp_docx::table_properties::CellAlignment::Bottom),
+                ] {
+                    self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                    self.document.type_text(text);
+                    // One cell at a time: the button sets the whole row, and a
+                    // picture of three rows alike would show nothing.
+                    self.document.set_cell_alignment(which);
+                }
+                self.document.set_caret(wp_docx::TextPosition::new(1, 0));
+                self.document.set_table_row_height(Some(1400), true);
+                self.relayout();
+            }
             "formula" => {
                 // A table with a total under a column of figures, which is what
                 // a formula is for, and the dialog that puts one there.

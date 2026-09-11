@@ -506,6 +506,38 @@ mod tests {
     }
 
     #[test]
+    fn one_of_the_nine_puts_the_text_where_it_says() {
+        let mut editor = editor();
+        // A row with room to spare in it, so there is somewhere for the text to
+        // sit other than the top.
+        editor.document.set_caret(wp_docx::TextPosition::new(1, 0));
+        editor.document.type_text("Here");
+        editor.document.set_table_row_height(Some(1400), true);
+        editor.relayout();
+
+        let where_it_sits = |editor: &Editor| {
+            editor
+                .pages
+                .iter()
+                .flat_map(|page| &page.lines)
+                .find(|line| line.paragraph == 1)
+                .map(|line| line.baseline)
+                .expect("a line in the first cell")
+        };
+        let at_top = where_it_sits(&editor);
+
+        // "Align Center Left", which is the fourth of the nine.
+        editor.align_cell(3);
+        let in_middle = where_it_sits(&editor);
+        assert!(in_middle > at_top + 5.0, "the middle is where the top is");
+
+        // And "Align Bottom Left", which is the seventh.
+        editor.align_cell(6);
+        let at_bottom = where_it_sits(&editor);
+        assert!(at_bottom > in_middle + 5.0, "the bottom is where the middle is");
+    }
+
+    #[test]
     fn the_text_direction_button_goes_round_the_three() {
         let mut editor = editor();
         editor.document.set_caret(wp_docx::TextPosition::new(1, 0));

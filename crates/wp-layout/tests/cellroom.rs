@@ -1,6 +1,7 @@
 //! The room inside a cell and the room between cells: Word's Table Options.
 
 use wp_docx::model::{Block, Body, CellMargins, Paragraph, Table, TableCell, TableFit, TableRow};
+use wp_docx::table_properties::CellAlignment;
 use wp_docx::Document;
 use wp_layout::{FontLibrary, LayoutEngine, Page, PageMetrics};
 
@@ -166,6 +167,84 @@ fn the_room_survives_being_saved_and_opened_again() {
     assert_eq!(table.cell_spacing, Some(240));
     assert_eq!(table.rows[0].cells[0].margins.top, Some(50));
     assert_eq!(table.rows[0].cells[1].margins, CellMargins::default());
+}
+
+/// A two-cell row where the first cell is one line and the second is three, so
+/// that the first has room left over to sit in.
+fn tall_row(vertical: CellAlignment) -> Vec<Page> {
+    let mut body = Body::default();
+    body.blocks.push(Block::Paragraph(Paragraph::text("Before")));
+
+    let mut short = TableCell::text("First");
+    short.vertical = vertical;
+    let tall = TableCell::from_blocks(vec![
+        Block::Paragraph(Paragraph::text("One")),
+        Block::Paragraph(Paragraph::text("Two")),
+        Block::Paragraph(Paragraph::text("Three")),
+    ]);
+    let mut table =
+        Table::from_rows(vec![TableRow::from_cells(vec![short, tall])]).with_grid(vec![4000, 4000]);
+    table.fit = TableFit::Fixed;
+    body.blocks.push(Block::Table(Box::new(table)));
+
+    let bytes = Document::create(&body).expect("a document").save().expect("saving");
+    let document = Document::open(&bytes).expect("reopening");
+    let mut engine = LayoutEngine::new(library());
+    engine.layout_document_with(&document, PageMetrics::default())
+}
+
+#[test]
+fn the_text_sits_where_the_cell_says_it_does() {
+    let top = tall_row(CellAlignment::Top);
+    let middle = tall_row(CellAlignment::Middle);
+    let bottom = tall_row(CellAlignment::Bottom);
+
+    let (_, at_top) = first_letter(&top[0], "First");
+    let (_, in_middle) = first_letter(&middle[0], "First");
+    let (_, at_bottom) = first_letter(&bottom[0], "First");
+
+    assert!(in_middle > at_top + 5.0, "the middle is where the top is");
+    assert!(at_bottom > in_middle + 5.0, "the bottom is where the middle is");
+
+    // And none of it leaves the cell.
+    let cell = bottom[0].cells.first().copied().expect("a cell");
+    assert!(at_bottom <= cell.y + cell.height + 1.0, "the text fell out of the bottom");
+}
+
+#[test]
+fn a_cell_that_fills_its_row_does_not_move() {
+    // The tall cell has no room left over, so it sits where it always did
+    // whatever it says about itself.
+    let top = tall_row(CellAlignment::Top);
+    let bottom = tall_row(CellAlignment::Bottom);
+    let (_, one) = first_letter(&top[0], "One");
+    let (_, other) = first_letter(&bottom[0], "One");
+    assert!((one - other).abs() < 0.51, "the cell that fills the row moved");
+}
+
+#[test]
+fn where_the_text_sits_survives_being_saved_and_opened_again() {
+    let mut body = Body::default();
+    let mut cell = TableCell::text("Bottom");
+    cell.vertical = CellAlignment::Bottom;
+    body.blocks.push(Block::Table(Box::new(
+        Table::from_rows(vec![TableRow::from_cells(vec![cell, TableCell::text("Other")])])
+            .with_grid(vec![4000, 4000]),
+    )));
+
+    let bytes = Document::create(&body).expect("a document").save().expect("saving");
+    let reopened = Document::open(&bytes).expect("reopening");
+    let table = reopened
+        .body()
+        .blocks
+        .into_iter()
+        .find_map(|block| match block {
+            Block::Table(table) => Some(*table),
+            Block::Paragraph(_) => None,
+        })
+        .expect("a table");
+    assert_eq!(table.rows[0].cells[0].vertical, CellAlignment::Bottom);
+    assert_eq!(table.rows[0].cells[1].vertical, CellAlignment::Top);
 }
 
 #[test]

@@ -2466,6 +2466,11 @@ impl<'a> LayoutEngine<'a> {
                 vec![Page { width: area.page_width, height: area.page_height, ..Page::default() }];
             let mut scratch_index = *index;
             let mut height = 0.0f32;
+            // How tall each cell's own content came out, so that a cell whose
+            // text sits in the middle or at the foot of the row can be told how
+            // much room is left over. The row is as tall as its tallest cell,
+            // and every other cell has some.
+            let mut measured: Vec<f32> = Vec::with_capacity(row.cells.len());
             for (cell, (left, width)) in row.cells.iter().zip(&spans) {
                 let margins = margins_of_cell(cell, table, scale);
                 let across = (*width - margins.across()).max(1.0);
@@ -2483,7 +2488,11 @@ impl<'a> LayoutEngine<'a> {
                     // row has to be tall enough for.
                     let laid =
                         self.turned_cell(cell, &mut scratch_index, document, area, room, across);
-                    height = height.max(text_length(&laid) + margins.down());
+                    let length = text_length(&laid);
+                    // A turned cell fills the length it asked for, so it has no
+                    // room left over and nowhere to be moved to.
+                    measured.push(f32::INFINITY);
+                    height = height.max(length + margins.down());
                     continue;
                 }
                 let mut cell_y = 0.0f32;
@@ -2497,6 +2506,7 @@ impl<'a> LayoutEngine<'a> {
                     *left + margins.start,
                     across,
                 );
+                measured.push(cell_y);
                 height = height.max(cell_y + margins.down());
             }
             self.counters = saved_counters;
@@ -2551,7 +2561,7 @@ impl<'a> LayoutEngine<'a> {
             // out: the running paragraph number is the cell's first paragraph
             // until the cell has been walked.
             let mut placed: Vec<(TextPosition, f32, f32)> = Vec::with_capacity(row.cells.len());
-            for (cell, (left, width)) in row.cells.iter().zip(&spans) {
+            for (at, (cell, (left, width))) in row.cells.iter().zip(&spans).enumerate() {
                 placed.push((TextPosition::new(*index, 0), *left, *width));
                 let margins = margins_of_cell(cell, table, scale);
                 let across = (*width - margins.across()).max(1.0);
@@ -2581,7 +2591,19 @@ impl<'a> LayoutEngine<'a> {
                     continue;
                 }
 
-                let mut cell_y = cells_top + margins.top;
+                // Where the text sits down the cell: at the top, in the middle
+                // of what is left over, or at the foot of it. The room left
+                // over is what the row gained from a taller cell beside this
+                // one, and a cell that fills the row has none.
+                let room = (height - spacing - margins.down()).max(0.0);
+                let spare = (room - measured.get(at).copied().unwrap_or(room)).max(0.0);
+                let down = match cell.vertical {
+                    wp_docx::table_properties::CellAlignment::Top => 0.0,
+                    wp_docx::table_properties::CellAlignment::Middle => spare / 2.0,
+                    wp_docx::table_properties::CellAlignment::Bottom => spare,
+                };
+
+                let mut cell_y = cells_top + margins.top + down;
                 self.place_cell(
                     cell,
                     index,

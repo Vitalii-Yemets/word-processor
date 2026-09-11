@@ -308,16 +308,21 @@ impl Document {
         Some(CellAlignment::from_word(value))
     }
 
-    /// Sets where the text sits in every cell of the row at the caret.
+    /// Sets where the text sits up and down the cell at the caret.
+    ///
+    /// The one cell, as Word's buttons do with no selection — and as the other
+    /// half of the same question already did: which way up the text is set is
+    /// [`Document::set_cell_direction`], and it would be strange for one of the
+    /// two to change a row and the other a cell.
     pub fn set_cell_alignment(&mut self, alignment: CellAlignment) -> bool {
         let Some(position) = self.table_here() else { return false };
         self.change_table(move |table, prefix| {
             let Some(row) = rows_mut(table).nth(position.row) else { return };
-            for cell in cells_mut(row) {
+            if let Some(cell) = cells_mut(row).nth(position.column) {
                 let properties = cell_properties(cell, prefix);
                 properties.remove_children_named(Some(read::W), "vAlign");
                 if alignment == CellAlignment::Top {
-                    continue;
+                    return;
                 }
                 let mut element = Element::new(&edit::name_with(prefix, "vAlign"), Some(read::W));
                 element.set_namespaced_attribute(

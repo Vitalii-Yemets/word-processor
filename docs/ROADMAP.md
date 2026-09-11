@@ -1351,17 +1351,26 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   up and down arrow keys inside a turned cell step by the page's idea of up and
   down rather than the cell's.
 
-- [ ] **C35. Where the text sits down a cell.** Found while doing **C30**: the
+- [x] **C35. Where the text sits down a cell.** Found while doing **C30**: the
   Alignment group's nine buttons answer two questions — where the text sits
   across the cell and where it sits up and down it — and only the first of them
-  is drawn. `w:vAlign` is written faithfully and Word shows it; here the text
-  stays at the top of the cell whichever of the nine was pressed, so six of the
-  nine look like the three above them.
-  What it needs is the row's height known before its cells are placed, which it
-  now is — the measuring pass settles it — and each cell's text shifted down by
-  the room left over, half of it for the middle and all of it for the bottom.
-  *Done when:* each of the nine puts the text where it says, and a cell in a
-  tall row shows it.
+  was drawn. `w:vAlign` was written faithfully and Word showed it; here the text
+  stayed at the top of the cell whichever of the nine was pressed, so six of the
+  nine looked like the three above them.
+  *Done:* the model carries `w:vAlign` on the cell, and the measuring pass — the
+  one **C29** and **C30** already needed — hands the placing pass each cell's own
+  height as well as the row's. The room left over is the difference, and the
+  text is moved down by half of it for the middle and all of it for the bottom.
+  A cell that fills its row has none and does not move, which is why a table
+  where every cell is the same height looks exactly as it did.
+  *Changed on the way:* the button set the whole row's cells and now sets the one
+  the caret is in, which is what Word does with no selection — and what the
+  other half of the same question, Text Direction, already did. One of the two
+  changing a row and the other a cell was a difference nobody could have
+  guessed.
+  *Not done:* where the text sits in a cell whose text is **turned**. It fills
+  the length it asked for, so there is nothing left over to move it in; Word
+  moves it along the line instead, which is a different question from this one.
 
 - [x] **C31. Cell Margins, and the room between cells.** Word's dialog holds
   four margins and a tick box for spacing between cells. Two of the margins were

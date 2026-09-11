@@ -303,6 +303,11 @@ fn read_table_cell(cell: &Element) -> TableCell {
             .and_then(|properties| properties.child(Some(W), "tcMar"))
             .map(read_cell_margins)
             .unwrap_or_default(),
+        vertical: properties
+            .and_then(|properties| properties.child(Some(W), "vAlign"))
+            .and_then(value)
+            .map(crate::table_properties::CellAlignment::from_word)
+            .unwrap_or_default(),
     }
 }
 
