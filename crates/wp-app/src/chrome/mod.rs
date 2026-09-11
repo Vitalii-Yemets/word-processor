@@ -147,6 +147,10 @@ pub enum Command {
     Find,
     Replace,
     SelectAll,
+    /// Every stretch of text set the way the one at the caret is set. Word's
+    /// Select All Text With Similar Formatting, and the reason a selection has
+    /// to be able to hold more than one stretch.
+    SelectSimilar,
 
     // Insert.
     PageBreak,

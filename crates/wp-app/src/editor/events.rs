@@ -297,8 +297,19 @@ impl App for Editor {
                 self.release_ruler();
                 let was_dragging = self.dragging;
                 self.dragging = false;
+                self.column_drag = None;
                 self.sliding = false;
                 self.resizing_pane = false;
+
+                // Ctrl and a drag adds a stretch to the selection; Ctrl and a
+                // click takes the sentence. Which of the two it was is only
+                // known when the button comes up: a drag that never moved never
+                // set an anchor, and that is the one that meant the sentence.
+                if std::mem::take(&mut self.adding_selection)
+                    && self.document.selection_anchor().is_none()
+                {
+                    return self.select_sentence_at(x, y);
+                }
                 // The format painter puts its formatting down when the drag
                 // that chose the text ends, which is when Word applies it.
                 if was_dragging && self.apply_format_painter() {
@@ -708,14 +719,38 @@ impl Editor {
         };
 
         // Ctrl and a click follows a link, which is Word's arrangement: a link
-        // in a document being written is text first and a link second. Where
-        // there is no link, it takes the sentence, as Word's does.
+        // in a document being written is text first and a link second.
         if modifiers.control {
-            self.document.move_caret(position, false);
+            // The stretch being dragged is put away before anything else,
+            // because everything below moves the caret and moving the caret is
+            // what drops a selection.
+            self.document.add_selection_at(position);
             if self.document.hyperlink_here().is_some() {
+                self.document.clear_selection();
                 return self.follow_link();
             }
-            return self.select_sentence_at(x, y);
+
+            // Where there is no link, Ctrl and a drag begins another stretch of
+            // the selection without losing the ones already made, and Ctrl and
+            // a click takes the sentence. The two are told apart when the
+            // button comes up, above: until then this is a drag that has not
+            // moved yet.
+            self.adding_selection = true;
+            self.drag_by = super::selecting::Granularity::Character;
+            self.dragging = true;
+            self.status.clear();
+            self.needs_redraw = true;
+            return Response::Redraw;
+        }
+
+        // Alt and a drag takes a rectangle of text rather than a stretch of it.
+        if modifiers.alt {
+            self.document.set_caret(position);
+            self.column_drag = Some((x, y));
+            self.dragging = true;
+            self.status.clear();
+            self.needs_redraw = true;
+            return Response::Redraw;
         }
 
         // Shift+click reaches from where the caret already is, which is how a
@@ -1038,6 +1073,12 @@ impl Editor {
             }
             self.needs_redraw = true;
             return Response::Redraw;
+        }
+
+        // A drag begun with Alt takes a rectangle, which is worked out from the
+        // two corners rather than grown from one end.
+        if self.column_drag.is_some() {
+            return self.extend_column_drag(x, y);
         }
 
         // How much the drag takes at a time depends on the click that started

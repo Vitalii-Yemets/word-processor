@@ -681,6 +681,34 @@ pub(crate) fn resolved_in_range(
     out
 }
 
+/// The same, but saying where each run is as well as how it is set.
+///
+/// What Select All Text With Similar Formatting needs: the resolved formatting
+/// alone says what the paragraph holds, and this says which letters hold it.
+/// Each entry is where the run starts, and where it ends with how it is set.
+pub(crate) fn runs_in_range(
+    paragraph: &Element,
+    start: usize,
+    end: usize,
+    styles: &Styles,
+) -> Vec<(usize, (usize, ResolvedRunProperties))> {
+    let paragraph_style = paragraph_style_of(paragraph);
+    let mut out = Vec::new();
+
+    for span in collect_run_spans(paragraph) {
+        if span.length == 0 || span.start + span.length <= start || span.start >= end {
+            continue;
+        }
+        let Some(run) = path_to_element(paragraph, &span.path) else { continue };
+        let direct = run.child(Some(W), "rPr").map(read::read_run_properties).unwrap_or_default();
+        let from = span.start.max(start);
+        let to = (span.start + span.length).min(end);
+        out.push((from, (to, styles.resolve_run(paragraph_style.as_deref(), &direct))));
+    }
+
+    out
+}
+
 /// What a paragraph's text would look like with no run properties of its own.
 ///
 /// The answer for an empty paragraph: a new heading is bold before anything has

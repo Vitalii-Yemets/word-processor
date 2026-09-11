@@ -130,6 +130,7 @@ impl Editor {
             Command::Find => self.open_find(false),
             Command::Replace => self.open_find(true),
             Command::SelectAll => self.select_all(),
+            Command::SelectSimilar => self.select_similar(),
 
             // --- Insert -------------------------------------------------------
             Command::PageBreak => {

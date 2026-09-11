@@ -341,6 +341,14 @@ impl Editor {
                     });
                 }
             }
+            "similar" => {
+                // Every stretch set the way the first heading is set, all
+                // selected at once. The only way to see that a selection can
+                // now be made of more than one piece.
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.select_similar();
+                self.relayout();
+            }
             "showmarkup" => {
                 // A document where somebody reformatted a line while changes
                 // were being recorded, with Word's Show Markup menu open over

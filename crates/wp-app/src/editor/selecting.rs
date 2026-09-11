@@ -137,6 +137,61 @@ impl Editor {
         Response::Redraw
     }
 
+    /// Selects a rectangle of text: Word's Alt and a drag.
+    ///
+    /// A column selection is not one stretch of the text. The words down the
+    /// left of a table typed with tabs are not next to each other in the
+    /// document at all, and selecting them means one stretch per line — which
+    /// is the thing a selection could not hold until now.
+    ///
+    /// Worked out afresh on every movement rather than grown, because dragging
+    /// sideways changes every line of the rectangle at once and not only the
+    /// last.
+    pub(super) fn extend_column_drag(&mut self, x: i32, y: i32) -> Response {
+        let Some((from_x, from_y)) = self.column_drag else { return Response::Ignored };
+        let (left, right) = (from_x.min(x), from_x.max(x));
+
+        let mut stretches = Vec::new();
+        for middle in self.line_middles_between(from_y.min(y), from_y.max(y)) {
+            let (Some(start), Some(end)) =
+                (self.position_at(left, middle), self.position_at(right, middle))
+            else {
+                continue;
+            };
+            if start.paragraph == end.paragraph && start.offset != end.offset {
+                stretches.push(if start <= end { (start, end) } else { (end, start) });
+            }
+        }
+
+        if stretches.is_empty() {
+            self.document.clear_selection();
+        } else {
+            self.document.set_selections(&stretches);
+        }
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// The middle of every line of text between two heights on the screen.
+    ///
+    /// The middle rather than the top, so that asking what is at a height lands
+    /// inside the line rather than on the boundary between two.
+    fn line_middles_between(&self, top: i32, bottom: i32) -> Vec<i32> {
+        let mut out = Vec::new();
+        for index in 0..self.pages.len() {
+            let (_, origin_y) = self.page_origin(index);
+            let page_top = self.content_top() + origin_y - self.scroll_down();
+            for line in &self.pages[index].lines {
+                let (line_top, line_bottom) = (page_top + line.top(), page_top + line.bottom());
+                if line_bottom < top as f32 || line_top > bottom as f32 {
+                    continue;
+                }
+                out.push(((line_top + line_bottom) / 2.0) as i32);
+            }
+        }
+        out
+    }
+
     /// Grows the selection to whole words or paragraphs while a drag runs.
     ///
     /// A plain drag needs none of this: the caret goes where the pointer is.
@@ -154,7 +209,7 @@ impl Editor {
                 let (start, end) = word_around(&text, at.offset);
                 // Whichever end of the word is further from where the drag
                 // began is the one to reach to.
-                let anchor = self.document.selection().map_or(at, |(from, _)| from);
+                let anchor = self.document.selection_anchor().unwrap_or(at);
                 let wanted =
                     if TextPosition::new(at.paragraph, end) > anchor { end } else { start };
                 self.document.move_caret(TextPosition::new(at.paragraph, wanted), true);
@@ -293,5 +348,121 @@ mod tests {
     fn a_paragraph_with_no_full_stop_is_one_sentence() {
         let text = "no punctuation here";
         assert_eq!(sentence_around(text, 5), (0, text.len()));
+    }
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Event, Modifiers};
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    fn editor() -> Editor {
+        let mut body = Body::default();
+        for line in ["alpha beta gamma", "delta epsilon zeta", "eta theta iota"] {
+            body.blocks.push(Block::Paragraph(Paragraph::text(line)));
+        }
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor.draw(1400, 900);
+        editor
+    }
+
+    /// Where on the screen a place in the text is, near enough to click on.
+    fn point_of(editor: &Editor, paragraph: usize, offset: usize) -> (i32, i32) {
+        let page = editor.pages.first().expect("a page");
+        let line = page
+            .lines
+            .iter()
+            .find(|line| line.paragraph == paragraph)
+            .expect("a line of that paragraph");
+        let (origin_x, origin_y) = editor.page_origin(0);
+        let top = editor.content_top() + origin_y - editor.scroll_down();
+        // Along the line by however many characters, at the width the layout
+        // gave them.
+        let across = page
+            .glyphs
+            .iter()
+            .filter(|glyph| glyph.baseline == line.baseline)
+            .nth(offset)
+            .map_or(line.left, |glyph| glyph.x);
+        ((origin_x + across) as i32, (top + (line.top() + line.bottom()) / 2.0) as i32)
+    }
+
+    fn ctrl() -> Modifiers {
+        Modifiers { control: true, shift: false, alt: false }
+    }
+
+    fn alt() -> Modifiers {
+        Modifiers { control: false, shift: false, alt: true }
+    }
+
+    #[test]
+    fn ctrl_and_a_drag_adds_a_stretch_instead_of_replacing_one() {
+        let mut editor = editor();
+        // An ordinary drag over the first word.
+        let (from_x, from_y) = point_of(&editor, 0, 0);
+        let (to_x, to_y) = point_of(&editor, 0, 5);
+        editor.handle(Event::MouseDown { x: from_x, y: from_y, modifiers: Modifiers::default() });
+        editor.handle(Event::MouseMove {
+            x: to_x,
+            y: to_y,
+            held: true,
+            modifiers: Modifiers::default(),
+        });
+        editor.handle(Event::MouseUp { x: to_x, y: to_y });
+        assert_eq!(editor.document.selections().len(), 1);
+
+        // And another with Ctrl held, on the line below.
+        let (from_x, from_y) = point_of(&editor, 1, 0);
+        let (to_x, to_y) = point_of(&editor, 1, 5);
+        editor.handle(Event::MouseDown { x: from_x, y: from_y, modifiers: ctrl() });
+        editor.handle(Event::MouseMove { x: to_x, y: to_y, held: true, modifiers: ctrl() });
+        editor.handle(Event::MouseUp { x: to_x, y: to_y });
+
+        let stretches = editor.document.selections();
+        assert_eq!(stretches.len(), 2, "the first stretch was thrown away");
+        assert_eq!(stretches[0].0.paragraph, 0);
+        assert_eq!(stretches[1].0.paragraph, 1);
+    }
+
+    #[test]
+    fn ctrl_and_a_click_still_takes_the_sentence() {
+        // The two are told apart by whether the drag moved, and a click that
+        // did not move has to go on meaning what it always meant.
+        let mut editor = editor();
+        let (x, y) = point_of(&editor, 0, 2);
+        editor.handle(Event::MouseDown { x, y, modifiers: ctrl() });
+        editor.handle(Event::MouseUp { x, y });
+
+        let stretches = editor.document.selections();
+        assert_eq!(stretches.len(), 1, "a Ctrl click added a stretch");
+        assert_eq!(editor.document.selected_text(), "alpha beta gamma");
+    }
+
+    #[test]
+    fn alt_and_a_drag_takes_a_rectangle() {
+        let mut editor = editor();
+        let (from_x, from_y) = point_of(&editor, 0, 0);
+        let (to_x, to_y) = point_of(&editor, 2, 5);
+        editor.handle(Event::MouseDown { x: from_x, y: from_y, modifiers: alt() });
+        editor.handle(Event::MouseMove { x: to_x, y: to_y, held: true, modifiers: alt() });
+        editor.handle(Event::MouseUp { x: to_x, y: to_y });
+
+        let stretches = editor.document.selections();
+        assert_eq!(stretches.len(), 3, "a rectangle over three lines is three stretches");
+        for (at, (start, end)) in stretches.iter().enumerate() {
+            assert_eq!(start.paragraph, at);
+            assert_eq!(end.paragraph, at, "a stretch ran into the next paragraph");
+            assert_eq!(start.offset, 0);
+        }
     }
 }

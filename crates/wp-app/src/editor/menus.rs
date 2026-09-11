@@ -270,12 +270,17 @@ impl Editor {
                 (items, rows, None, WIDTH)
             }
             Choice::Selecting => {
-                let items = vec!["Select All".to_owned(), "Selection Pane…".to_owned()];
+                let items = vec![
+                    "Select All".to_owned(),
+                    "Select All Text With Similar Formatting".to_owned(),
+                    "Selection Pane…".to_owned(),
+                ];
                 let rows = vec![
+                    Row::new(Kind::Choice, Icon::Select),
                     Row::new(Kind::Choice, Icon::Select),
                     Row::new(Kind::Choice, Icon::SelectionPane),
                 ];
-                (items, rows, None, WIDTH)
+                (items, rows, None, 300.0)
             }
             Choice::NoteJump => {
                 let items = vec![
@@ -588,7 +593,8 @@ impl Editor {
     fn choose_selecting(&mut self, index: usize) -> Response {
         match index {
             0 => self.run(crate::chrome::Command::SelectAll),
-            1 => self.run(crate::chrome::Command::SelectionPane),
+            1 => self.run(crate::chrome::Command::SelectSimilar),
+            2 => self.run(crate::chrome::Command::SelectionPane),
             _ => Response::Ignored,
         }
     }

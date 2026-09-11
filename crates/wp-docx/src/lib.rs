@@ -201,6 +201,18 @@ pub struct Document {
     /// somewhere the user did not leave it.
     caret: TextPosition,
     anchor: Option<TextPosition>,
+    /// The stretches selected besides the one the caret is in.
+    ///
+    /// Word lets a person hold Ctrl and drag out another stretch without losing
+    /// the ones already chosen, which is how the same word is made bold in nine
+    /// places at once. The caret and its anchor are the stretch being dragged
+    /// now; these are the ones dragged before it.
+    ///
+    /// Not kept by undo. What is selected is where a person is looking, not
+    /// what the document says, and an undo that put back a selection made three
+    /// edits ago would be an undo that moved the view somewhere nobody asked
+    /// for.
+    extra: Vec<(TextPosition, TextPosition)>,
     /// Formatting chosen with nothing selected, waiting for the next thing
     /// typed.
     ///
@@ -258,6 +270,7 @@ impl Document {
             numbering,
             caret: TextPosition::default(),
             anchor: None,
+            extra: Vec::new(),
             pending: RunProperties::default(),
             history: History::default(),
             modified: false,
@@ -315,6 +328,7 @@ impl Document {
             numbering,
             caret: TextPosition::default(),
             anchor: None,
+            extra: Vec::new(),
             pending: RunProperties::default(),
             history: History::default(),
             modified: false,
@@ -635,8 +649,59 @@ impl Document {
     pub fn set_caret(&mut self, position: TextPosition) {
         self.caret = self.clamp(position);
         self.anchor = None;
+        self.extra.clear();
         self.pending = RunProperties::default();
         self.history.break_merge();
+    }
+
+    /// Keeps whatever is selected and begins another stretch.
+    ///
+    /// Word's Ctrl and a drag. The stretch being dragged now is put away with
+    /// the others, and a new one starts where the pointer went down. An empty
+    /// one is not put away: a Ctrl click that selects nothing has nothing to
+    /// keep.
+    pub fn add_selection_at(&mut self, position: TextPosition) {
+        if let Some(stretch) = self.selection() {
+            self.extra.push(stretch);
+        }
+        self.caret = self.clamp(position);
+        self.anchor = None;
+        self.pending = RunProperties::default();
+        self.history.break_merge();
+    }
+
+    /// Replaces the selection with a list of stretches.
+    ///
+    /// What a column selection is made of, and why it is a setter rather than
+    /// a series of adds: the shape of a rectangle changes everywhere at once as
+    /// it is dragged, so every stretch is worked out again on every movement.
+    pub fn set_selections(&mut self, stretches: &[(TextPosition, TextPosition)]) {
+        self.anchor = None;
+        self.extra.clear();
+        self.pending = RunProperties::default();
+        self.history.break_merge();
+
+        let Some((last_start, last_end)) = stretches.last().copied() else { return };
+        for (start, end) in &stretches[..stretches.len() - 1] {
+            self.add_selection(*start, *end);
+        }
+        // The last one is the live stretch, so the caret is in it and a
+        // keystroke goes where a person is looking.
+        self.anchor = Some(self.clamp(last_start));
+        self.caret = self.clamp(last_end);
+    }
+
+    /// Adds a stretch outright, without moving the caret into it.
+    ///
+    /// What Select All Text With Similar Formatting and a search for every
+    /// occurrence of a word are made of: many stretches at once, none of them
+    /// dragged out by hand.
+    pub fn add_selection(&mut self, start: TextPosition, end: TextPosition) {
+        let (start, end) = (self.clamp(start), self.clamp(end));
+        if start == end {
+            return;
+        }
+        self.extra.push(if start <= end { (start, end) } else { (end, start) });
     }
 
     /// Extends the selection to a position, keeping the other end where it is.
@@ -661,25 +726,90 @@ impl Document {
     /// Drops the selection, leaving the caret where it is.
     pub fn clear_selection(&mut self) {
         self.anchor = None;
+        self.extra.clear();
     }
 
     /// The selected range, in document order, if anything is selected.
+    ///
+    /// The stretch the caret is in, or — when the caret is in none — the first
+    /// of the others. What a command that can work on only one stretch should
+    /// use: a comment is about one piece of text, and so is a hyperlink.
+    /// Everything that can work on all of them uses [`Self::selections`].
     #[must_use]
     pub fn selection(&self) -> Option<(TextPosition, TextPosition)> {
-        let anchor = self.anchor?;
-        if anchor == self.caret {
-            return None;
+        match self.anchor {
+            Some(anchor) if anchor != self.caret => {
+                Some(if anchor <= self.caret { (anchor, self.caret) } else { (self.caret, anchor) })
+            }
+            _ => self.selections().into_iter().next(),
         }
-        Some(if anchor <= self.caret { (anchor, self.caret) } else { (self.caret, anchor) })
+    }
+
+    /// Every selected stretch, in document order, with none of them touching.
+    ///
+    /// Two stretches that overlap are one stretch: a person who dragged over
+    /// the same words twice selected them once, and a command that ran over
+    /// them twice would bold what was already bold and delete what was already
+    /// gone.
+    #[must_use]
+    pub fn selections(&self) -> Vec<(TextPosition, TextPosition)> {
+        let mut out = self.extra.clone();
+        if let Some(anchor) = self.anchor {
+            if anchor != self.caret {
+                out.push(if anchor <= self.caret {
+                    (anchor, self.caret)
+                } else {
+                    (self.caret, anchor)
+                });
+            }
+        }
+        if out.len() < 2 {
+            return out;
+        }
+
+        out.sort();
+        let mut merged: Vec<(TextPosition, TextPosition)> = Vec::with_capacity(out.len());
+        for (start, end) in out {
+            match merged.last_mut() {
+                Some((_, last_end)) if start <= *last_end => *last_end = (*last_end).max(end),
+                _ => merged.push((start, end)),
+            }
+        }
+        merged
+    }
+
+    /// Where the stretch being dragged began, which is not where it starts.
+    ///
+    /// A drag that went backwards has its anchor at the end. What the code that
+    /// grows a drag to whole words needs, and the one thing
+    /// [`Self::selection`] cannot say because it puts the two in order.
+    #[must_use]
+    pub fn selection_anchor(&self) -> Option<TextPosition> {
+        self.anchor
     }
 
     /// The selected text, with a line break between paragraphs.
+    ///
+    /// A selection of several stretches gives them all, one after another with
+    /// a line break between: Word joins them the same way, because what a
+    /// person pastes has to be one piece of text whatever it was taken from.
     #[must_use]
     pub fn selected_text(&self) -> String {
-        let Some((start, end)) = self.selection() else {
-            return String::new();
-        };
+        let stretches = self.selections();
+        if stretches.len() > 1 {
+            let pieces: Vec<String> =
+                stretches.iter().map(|(start, end)| self.text_between(*start, *end)).collect();
+            return pieces.join("\n");
+        }
+        match stretches.first() {
+            Some((start, end)) => self.text_between(*start, *end),
+            None => String::new(),
+        }
+    }
 
+    /// The text between two positions.
+    #[must_use]
+    fn text_between(&self, start: TextPosition, end: TextPosition) -> String {
         if start.paragraph == end.paragraph {
             let text = self.paragraph_text(start.paragraph).unwrap_or_default();
             return slice(&text, start.offset, end.offset).to_owned();
@@ -709,14 +839,23 @@ impl Document {
     /// ones between, and the head of the last, and then joins what remains —
     /// which is what deleting a stretch of text across a paragraph break means.
     pub fn delete_selection(&mut self) -> bool {
-        let Some((start, end)) = self.selection() else {
+        let stretches = self.selections();
+        let Some((first, _)) = stretches.first().copied() else {
             return false;
         };
-        self.record(EditKind::Structural, start, false);
-        let removed = self.remove_range(start, end);
+        self.record(EditKind::Structural, first, false);
+
+        // Last first. Removing a stretch shortens the text after it and moves
+        // every position past it; taking the last one out first means the ones
+        // still to go are where they were when they were found.
+        let mut removed = false;
+        for (start, end) in stretches.into_iter().rev() {
+            removed |= self.remove_range(start, end);
+        }
         if removed {
-            self.caret = start;
+            self.caret = first;
             self.anchor = None;
+            self.extra.clear();
             self.modified = true;
         }
         removed
@@ -1309,8 +1448,11 @@ impl Document {
             return state;
         }
 
-        if let Some((start, end)) = self.selection() {
-            let mut seen = false;
+        // Throughout every stretch, not only the one the caret is in: a button
+        // that lit up because one of nine selected words was bold would be a
+        // button that lied about the other eight.
+        let mut seen = false;
+        for (start, end) in self.selections() {
             for index in start.paragraph..=end.paragraph {
                 let Some(paragraph) = self.paragraph_element(index) else { continue };
                 let (from, to) = self.range_within(index, start, end);
@@ -1321,9 +1463,9 @@ impl Document {
                     }
                 }
             }
-            if seen {
-                return true;
-            }
+        }
+        if seen {
+            return true;
         }
 
         format.is_on(&self.resolved_at_caret())
@@ -1337,7 +1479,7 @@ impl Document {
     pub fn set_format(&mut self, format: CharacterFormat, on: bool) -> bool {
         let change = format.change(on);
 
-        let Some((start, end)) = self.selection() else {
+        if self.selection().is_none() {
             if format.is_on(&self.resolved_at_caret()) == on {
                 // Asking for what the text here already is: nothing needs
                 // remembering, and the next thing typed simply inherits it.
@@ -1346,45 +1488,8 @@ impl Document {
                 self.pending = self.pending.overlaid_with(&change);
             }
             return true;
-        };
-
-        // An undo step is only worth recording when there is something to take
-        // back. Bolding text that is already bold changes nothing, and should
-        // leave nothing behind either.
-        let anything_to_do = (start.paragraph..=end.paragraph).any(|index| {
-            let (from, to) = self.range_within(index, start, end);
-            self.paragraph_element(index)
-                .is_some_and(|paragraph| format::range_needs_change(paragraph, from, to, &change))
-        });
-        if !anything_to_do {
-            return false;
         }
-
-        self.record(EditKind::Structural, start, false);
-        let prefix = self.prefix();
-        let recording = self.recording_formatting();
-        let mut changed = false;
-
-        for index in start.paragraph..=end.paragraph {
-            let (from, to) = self.range_within(index, start, end);
-            let Some(path) = position::paragraph_path(&self.tree.root, index) else { continue };
-            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
-                continue;
-            };
-            changed |= format::apply_to_range(
-                paragraph,
-                from,
-                to,
-                &change,
-                prefix.as_deref(),
-                recording.as_ref().map(|(reviser, id)| (reviser, *id)),
-            );
-        }
-
-        if changed {
-            self.modified = true;
-        }
-        changed
+        self.format_selection(&change)
     }
 
     /// Turns a format on if any of the selection lacks it, off if all of it has
@@ -1749,39 +1854,60 @@ impl Document {
     /// Applies a character change to the selection, or remembers it for the
     /// next thing typed.
     fn apply_character_change(&mut self, change: &RunProperties) -> bool {
-        let Some((start, end)) = self.selection() else {
+        if self.selection().is_none() {
             self.pending = self.pending.overlaid_with(change);
             return true;
-        };
+        }
+        self.format_selection(change)
+    }
 
-        let anything_to_do = (start.paragraph..=end.paragraph).any(|index| {
-            let (from, to) = self.range_within(index, start, end);
-            self.paragraph_element(index)
-                .is_some_and(|paragraph| format::range_needs_change(paragraph, from, to, change))
+    /// Writes a character change over every selected stretch, as one step.
+    ///
+    /// Every stretch, and not only the one the caret is in: that is the whole
+    /// point of being able to select more than one. One undo takes the lot
+    /// back, because one press of the button put it there.
+    fn format_selection(&mut self, change: &RunProperties) -> bool {
+        let stretches = self.selections();
+        let Some((first, _)) = stretches.first().copied() else { return false };
+
+        // An undo step is only worth recording when there is something to take
+        // back. Bolding text that is already bold changes nothing, and should
+        // leave nothing behind either.
+        let anything_to_do = stretches.iter().any(|(start, end)| {
+            (start.paragraph..=end.paragraph).any(|index| {
+                let (from, to) = self.range_within(index, *start, *end);
+                self.paragraph_element(index).is_some_and(|paragraph| {
+                    format::range_needs_change(paragraph, from, to, change)
+                })
+            })
         });
         if !anything_to_do {
             return false;
         }
 
-        self.record(EditKind::Structural, start, false);
+        self.record(EditKind::Structural, first, false);
         let prefix = self.prefix();
+        // One number for all of them: one press of Bold is one change to
+        // review, however many stretches it landed on.
         let recording = self.recording_formatting();
         let mut changed = false;
 
-        for index in start.paragraph..=end.paragraph {
-            let (from, to) = self.range_within(index, start, end);
-            let Some(path) = position::paragraph_path(&self.tree.root, index) else { continue };
-            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
-                continue;
-            };
-            changed |= format::apply_to_range(
-                paragraph,
-                from,
-                to,
-                change,
-                prefix.as_deref(),
-                recording.as_ref().map(|(reviser, id)| (reviser, *id)),
-            );
+        for (start, end) in stretches {
+            for index in start.paragraph..=end.paragraph {
+                let (from, to) = self.range_within(index, start, end);
+                let Some(path) = position::paragraph_path(&self.tree.root, index) else { continue };
+                let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
+                    continue;
+                };
+                changed |= format::apply_to_range(
+                    paragraph,
+                    from,
+                    to,
+                    change,
+                    prefix.as_deref(),
+                    recording.as_ref().map(|(reviser, id)| (reviser, *id)),
+                );
+            }
         }
 
         if changed {
@@ -1960,26 +2086,90 @@ impl Document {
     /// stays, because clearing formatting means undoing what was applied by
     /// hand, not turning a heading into body text.
     pub fn clear_formatting(&mut self) -> bool {
-        let Some((start, end)) = self.selection() else {
+        let stretches = self.selections();
+        let Some((first, _)) = stretches.first().copied() else {
             self.pending = RunProperties::default();
             return true;
         };
 
-        self.record(EditKind::Structural, start, false);
+        self.record(EditKind::Structural, first, false);
         let mut changed = false;
-        for index in start.paragraph..=end.paragraph {
-            let (from, to) = self.range_within(index, start, end);
-            let Some(path) = position::paragraph_path(&self.tree.root, index) else { continue };
-            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
-                continue;
-            };
-            changed |= format::clear_run_properties(paragraph, from, to);
+        for (start, end) in stretches {
+            for index in start.paragraph..=end.paragraph {
+                let (from, to) = self.range_within(index, start, end);
+                let Some(path) = position::paragraph_path(&self.tree.root, index) else { continue };
+                let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
+                    continue;
+                };
+                changed |= format::clear_run_properties(paragraph, from, to);
+            }
         }
 
         if changed {
             self.modified = true;
         }
         changed
+    }
+
+    /// What two pieces of text have to share to count as set the same way.
+    ///
+    /// Kept apart from [`ResolvedRunProperties`] because that holds everything
+    /// the format can say and this holds what a person can see. Two runs that
+    /// differ only in which dictionary proofs them look identical, and Word's
+    /// Select All Text With Similar Formatting picks up both.
+    fn look_of(resolved: &ResolvedRunProperties) -> Look {
+        Look {
+            font: resolved.font.clone(),
+            size_half_points: resolved.size_half_points,
+            color: resolved.color.clone(),
+            bold: resolved.bold,
+            italic: resolved.italic,
+            underlined: resolved.underline.is_visible(),
+        }
+    }
+
+    /// Selects every stretch of text set the way the one at the caret is set.
+    ///
+    /// Word's Select All Text With Similar Formatting. "Similar" is Word's own
+    /// word and its own vagueness; what is compared here is what a person can
+    /// see and would call the same look — the typeface, the size, the colour,
+    /// and whether it is bold, italic or underlined. Not the language, not the
+    /// kerning, not which style it came from: two pieces of text that look
+    /// identical are similar, whatever the file says about them.
+    ///
+    /// Returns how many stretches were found, the one at the caret included.
+    pub fn select_similar(&mut self) -> usize {
+        let wanted = Self::look_of(&self.resolved_over_selection());
+
+        let mut found: Vec<(TextPosition, TextPosition)> = Vec::new();
+        for index in 0..self.paragraph_count() {
+            let Some(paragraph) = self.paragraph_element(index) else { continue };
+            let length = self.paragraph_text(index).unwrap_or_default().len();
+            for (from, to) in format::runs_in_range(paragraph, 0, length, &self.styles) {
+                if Self::look_of(&to.1) != wanted {
+                    continue;
+                }
+                let (start, end) = (TextPosition::new(index, from), TextPosition::new(index, to.0));
+                // Runs that are next to each other and look the same are one
+                // stretch: the file's run boundaries are not something anybody
+                // put there on purpose.
+                match found.last_mut() {
+                    Some((_, last_end)) if *last_end == start => *last_end = end,
+                    _ => found.push((start, end)),
+                }
+            }
+        }
+
+        if found.is_empty() {
+            return 0;
+        }
+        let (first_start, first_end) = found[0];
+        self.caret = first_end;
+        self.anchor = Some(first_start);
+        self.extra = found[1..].to_vec();
+        self.pending = RunProperties::default();
+        self.history.break_merge();
+        found.len()
     }
 
     /// Every place a string appears in the document, in reading order.
@@ -2374,10 +2564,20 @@ impl Document {
 
     /// Applies a change to every paragraph the selection touches, as one step.
     fn change_paragraphs(&mut self, change: impl Fn(&mut Element, Option<&str>)) -> bool {
-        let (first, last) = match self.selection() {
-            Some((start, end)) => (start.paragraph, end.paragraph),
-            None => (self.caret.paragraph, self.caret.paragraph),
-        };
+        // Every paragraph any stretch touches, each of them once: two stretches
+        // in the same paragraph are one paragraph, and indenting it twice would
+        // indent it twice as far.
+        let mut wanted: Vec<usize> = self
+            .selections()
+            .into_iter()
+            .flat_map(|(start, end)| start.paragraph..=end.paragraph)
+            .collect();
+        if wanted.is_empty() {
+            wanted.push(self.caret.paragraph);
+        }
+        wanted.sort_unstable();
+        wanted.dedup();
+
         if self.paragraph_count() == 0 {
             return false;
         }
@@ -2386,7 +2586,7 @@ impl Document {
         let prefix = self.prefix();
         let mut changed = false;
 
-        for index in first..=last {
+        for index in wanted {
             let Some(path) = position::paragraph_path(&self.tree.root, index) else { continue };
             let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
                 continue;
@@ -2871,4 +3071,18 @@ impl Document {
         self.mark_modified();
         true
     }
+}
+
+/// What a person sees when they look at a piece of text.
+///
+/// The comparison behind Select All Text With Similar Formatting. See
+/// [`Document::look_of`] for why it is not simply the resolved properties.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Look {
+    font: Option<String>,
+    size_half_points: u32,
+    color: Option<String>,
+    bold: bool,
+    italic: bool,
+    underlined: bool,
 }

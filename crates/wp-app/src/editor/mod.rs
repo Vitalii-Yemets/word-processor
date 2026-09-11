@@ -141,6 +141,15 @@ pub struct Editor {
     view_height: usize,
     /// Whether the left button is down and dragging out a selection.
     dragging: bool,
+    /// Whether the drag that is running began with Ctrl held, and so is adding
+    /// a stretch to the selection rather than replacing it. See
+    /// [`wp_docx::Document::add_selection_at`].
+    adding_selection: bool,
+    /// Where a drag held with Alt began, while one is running.
+    ///
+    /// Word's column selection: a rectangle of text rather than a stretch of
+    /// it. See [`selecting::extend_column_drag`].
+    column_drag: Option<(i32, i32)>,
     /// Where the bar between two views of the document sits, as a share of the
     /// window, and how the second view is scrolled. See [`split`].
     split: Option<f32>,
@@ -441,6 +450,8 @@ impl Editor {
             view_width: 0,
             view_height: 0,
             dragging: false,
+            adding_selection: false,
+            column_drag: None,
             editing_furniture: None,
             tab_before_furniture: None,
             dimmed: Vec::new(),
@@ -1115,6 +1126,18 @@ impl Editor {
         self.document.select_all();
         self.needs_redraw = true;
         Response::Redraw
+    }
+
+    /// Selects every stretch of text set the way the one at the caret is set.
+    fn select_similar(&mut self) -> Response {
+        let found = self.document.select_similar();
+        self.reveal_caret();
+        self.needs_redraw = true;
+        self.report(&match found {
+            0 => "There is no text here to match".to_owned(),
+            1 => "One stretch is set this way".to_owned(),
+            many => format!("{many} stretches are set this way"),
+        })
     }
 
     /// Turns a character format on or off.

@@ -68,7 +68,7 @@ impl Editor {
 
     /// Draws the pages, and everything on them.
     pub(super) fn draw_pages(&mut self) {
-        let selection = self.document.selection();
+        let selections = self.document.selections();
 
         for index in 0..self.pages.len() {
             let (origin_x, origin_y) = self.page_origin(index);
@@ -113,10 +113,12 @@ impl Editor {
             }
 
             // The selection goes under the text, not over it, so the letters
-            // stay the colour they were written in.
-            if let Some((start, end)) = selection {
+            // stay the colour they were written in. Every stretch of it: a
+            // person who held Ctrl and dragged out a second one has to see
+            // both, or the next thing they press will surprise them.
+            for (start, end) in &selections {
                 for (rect_x, rect_y, rect_width, rect_height) in
-                    self.pages[index].selection_rects(start, end)
+                    self.pages[index].selection_rects(*start, *end)
                 {
                     self.canvas.fill_rect(
                         (origin_x + rect_x) as i32,

@@ -55,14 +55,20 @@ impl Document {
     /// Empty when nothing is selected.
     #[must_use]
     pub fn copy_selection(&self) -> Vec<Block> {
-        let Some((start, end)) = self.selection() else { return Vec::new() };
         let mut out = Vec::new();
 
-        for index in start.paragraph..=end.paragraph {
-            let Some(element) = self.paragraph_element(index) else { continue };
-            let (from, to) = self.range_within(index, start, end);
-            let whole = read::read_paragraph(element);
-            out.push(Block::Paragraph(slice(&whole, from, to)));
+        // Every stretch, one after another. Two stretches taken from the same
+        // paragraph come out as two paragraphs, which is what Word does too:
+        // there is nothing between them in the copy to say they were once side
+        // by side, and running them together would join words that were never
+        // next to each other.
+        for (start, end) in self.selections() {
+            for index in start.paragraph..=end.paragraph {
+                let Some(element) = self.paragraph_element(index) else { continue };
+                let (from, to) = self.range_within(index, start, end);
+                let whole = read::read_paragraph(element);
+                out.push(Block::Paragraph(slice(&whole, from, to)));
+            }
         }
         out
     }

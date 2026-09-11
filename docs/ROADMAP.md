@@ -782,8 +782,9 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   did not do what their names said: the first two needed an order among drawings
   that the model did not carry, and the third needed comments and formatting
   revisions to be markable apart from insertions and deletions. **C21** did
-  both. Word's **Select Objects** and **Select Text with Similar Formatting**
-  still need a selection made of several separate stretches, which is **C22**.
+  both. **C22** put **Select Text with Similar Formatting** on the Select menu
+  with the selection it needed behind it; **Select Objects** turned out to need
+  something else again — a drawing that can be selected — which is **C27**.
 - [x] **C12. The boxes on the Layout tab.** The indent boxes are drawn and
   cannot be typed into — pressing them says to drag the ruler instead. Spacing
   before and after has no boxes at all. Both are measurements a person types.
@@ -1071,16 +1072,34 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   menu, which needs a pen. A picture still cannot float — `Picture` carries no
   anchor, so a picture read from Word keeps its position in the file and is laid
   out in the line of text. That is **C26**.
-- [ ] **C22. A selection of more than one stretch.** Word can hold several
+- [x] **C22. A selection of more than one stretch.** Word can hold several
   separate stretches of text selected at once: Ctrl and a drag adds to the
   selection, and its Select menu uses it for "Select Objects" and "Select All
   Text With Similar Formatting". Here a selection is one anchor and one caret,
   so there is nowhere to put the second stretch.
   It reaches further than the two menu entries: Find All, formatting applied to
   every heading at once, and a column selection made with Alt all want it.
-  *Done when:* Ctrl and a drag adds a stretch, every command that works on the
-  selection works on all of them, and the two entries Word's Select menu is
-  missing here are on it.
+  *Done:* a selection is the stretch being dragged now plus the ones dragged
+  before it. Ctrl and a drag adds one; Ctrl and a click goes on taking the
+  sentence, the two told apart by whether the drag ever moved. Everything that
+  works on a selection works on all of them at once and as one undo step:
+  character formatting, whether a format reads as on, clearing formatting,
+  deleting — last stretch first, so that taking one out does not move the ones
+  still to go — copying, and the paragraph commands, which touch a paragraph
+  once however many stretches land in it. Two stretches that overlap are one.
+  **Select All Text With Similar Formatting** is on the Select menu, and is the
+  payoff: it finds every run set the way the one at the caret is set — the
+  typeface, the size, the colour, and whether it is bold, italic or underlined —
+  and selects them all, ready to be changed in one press. Runs that touch and
+  look alike are one stretch, because a document's run boundaries are not
+  something anybody put there on purpose.
+  **Alt and a drag** takes a rectangle of text, which is one stretch per line
+  and could not be held at all before this.
+  *Not done:* **Select Objects**, which the entry above assumed was the same
+  problem and is not. It is a mode in which a click selects a drawing rather
+  than text, and it needs a selection that is not text at all — handles, a drag
+  that moves a drawing, and the Arrange commands acting on what is selected
+  rather than on what the caret is beside. That is **C27**.
 - [ ] **C23. The rest of what a border can look like.** Three gaps **C14**
   found, all of them about drawing rather than about the file.
   Word's **Art** borders are a gallery of about a hundred and sixty repeating
@@ -1150,6 +1169,21 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* a picture can be given any of Word's wrappings, moved through the
   pile of drawings and put in front of or behind the text, and stays that way
   through a save.
+
+- [ ] **C27. A drawing that can be selected.** Every command in the Arrange
+  group acts on the drawing nearest the caret, because there is no other way to
+  say which drawing is meant: a drawing cannot be selected here at all. Word
+  selects one by clicking it, draws eight handles round it, and lets it be
+  dragged and resized by them. Its **Select Objects** turns the pointer into one
+  that does that to a drawing rather than putting a caret in text, and its
+  Selection Pane lists the drawings so one can be picked by name.
+  **C22** found this while making a selection able to hold several stretches:
+  that is a selection of *text*, and a drawing is not text. What is needed is a
+  second kind of selection beside it — which drawings are chosen — with the
+  handles drawn round them, a drag that moves one and a drag on a handle that
+  resizes it, and every command in Arrange asking that rather than the caret.
+  *Done when:* a drawing can be clicked, is drawn with handles, can be dragged
+  and resized, and Select Objects and the Selection Pane both choose one.
 
 ## D — Pictures and drawings
 
