@@ -174,6 +174,20 @@ impl Editor {
                 Some(self.autocorrect_dialog_button(button))
             }
             (Some(Asking::Exceptions), ADD | DELETE) => Some(self.exceptions_dialog_button(button)),
+            // The two customising pages change a list and leave the dialog
+            // standing, as the Tabs dialog's three do.
+            (Some(Asking::Options), button)
+                if matches!(
+                    button,
+                    super::ribbondialog::ADD
+                        | super::ribbondialog::REMOVE
+                        | super::ribbondialog::MOVE_UP
+                        | super::ribbondialog::MOVE_DOWN
+                        | super::ribbondialog::RESET
+                ) =>
+            {
+                Some(self.customise_button(button))
+            }
             // Word's Proofing page hands over to the AutoCorrect dialog. What
             // Options said is applied on the way, so that nothing typed into it
             // is lost by going to look at the corrections.

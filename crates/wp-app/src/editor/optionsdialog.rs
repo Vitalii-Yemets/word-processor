@@ -25,6 +25,7 @@ use crate::chrome::theme::{Mode, Theme};
 use crate::measure::Unit;
 
 use super::dialogs::Asking;
+use super::ribbondialog;
 use super::Editor;
 
 // General.
@@ -52,12 +53,18 @@ const AUTOCORRECT_SAID: usize = 16;
 const CORRECTING: usize = 17;
 const PROOFING: usize = 18;
 
+/// Which tab of the dialog Proofing is, so its button is drawn on that one.
+const TAB_PROOFING_PAGE: usize = 2;
+
 /// Word's button for the dialog behind this one.
 pub(super) const AUTOCORRECT_OPTIONS: &str = "AutoCorrect Options...";
 
 impl Editor {
     /// Opens Word's Options.
     pub(super) fn open_options(&mut self) -> Response {
+        // A working copy of what a person may change about the ribbon, which
+        // nothing but OK puts back. See [`super::ribbondialog`].
+        self.editing_chrome = self.ribbon.custom.clone();
         let dialog = self.options_dialog();
         self.ask(Asking::Options, dialog)
     }
@@ -101,47 +108,72 @@ impl Editor {
             Field::Group("When correcting spelling".to_owned()),
             check("Mark spelling mistakes as you type", self.show_proofing),
         ];
+        // --- Quick Access Toolbar, and Customize Ribbon --------------------
+        // Built elsewhere because they are two pages of lists rather than a
+        // column of switches. See [`super::ribbondialog`].
+        let mut fields = fields;
+        fields.extend(self.customise_fields());
 
-        crate::chrome::dialog::check_rows(
-            "Options",
-            &fields,
-            &[
-                (TAB_GENERAL, "a tab"),
-                (APPEARANCE, "a group"),
-                (DARK, "a tick box"),
-                (ROW_START, "a row"),
-                (ZOOM, "a number"),
-                (UNIT, "a list"),
-                (TAB_DISPLAY, "a tab"),
-                (ALWAYS_SHOW, "a group"),
-                (MARKS, "a tick box"),
-                (GRIDLINES, "a tick box"),
-                (PAGE_DISPLAY, "a group"),
-                (RULERS, "a tick box"),
-                (NAVIGATION, "a tick box"),
-                (WHITE_SPACE, "a tick box"),
-                (TAB_PROOFING, "a tab"),
-                (AUTOCORRECT, "a group"),
-                (AUTOCORRECT_SAID, "a line"),
-                (CORRECTING, "a group"),
-                (PROOFING, "a tick box"),
-            ],
-        );
+        let mut kinds = vec![
+            (TAB_GENERAL, "a tab"),
+            (APPEARANCE, "a group"),
+            (DARK, "a tick box"),
+            (ROW_START, "a row"),
+            (ZOOM, "a number"),
+            (UNIT, "a list"),
+            (TAB_DISPLAY, "a tab"),
+            (ALWAYS_SHOW, "a group"),
+            (MARKS, "a tick box"),
+            (GRIDLINES, "a tick box"),
+            (PAGE_DISPLAY, "a group"),
+            (RULERS, "a tick box"),
+            (NAVIGATION, "a tick box"),
+            (WHITE_SPACE, "a tick box"),
+            (TAB_PROOFING, "a tab"),
+            (AUTOCORRECT, "a group"),
+            (AUTOCORRECT_SAID, "a line"),
+            (CORRECTING, "a group"),
+            (PROOFING, "a tick box"),
+        ];
+        kinds.extend(Self::customise_kinds());
+        crate::chrome::dialog::check_rows("Options", &fields, &kinds);
 
-        Dialog::with_buttons(
+        let named = |label: &'static str| Button {
+            label: label.to_owned(),
+            answer: Answer::Named(label),
+            default: false,
+        };
+        let mut dialog = Dialog::with_buttons(
             "Options",
             fields,
             vec![
                 Button { label: "OK".to_owned(), answer: Answer::Accept, default: true },
-                Button {
-                    label: AUTOCORRECT_OPTIONS.to_owned(),
-                    answer: Answer::Named(AUTOCORRECT_OPTIONS),
-                    default: false,
-                },
+                named(AUTOCORRECT_OPTIONS),
+                named(ribbondialog::ADD),
+                named(ribbondialog::REMOVE),
+                named(ribbondialog::MOVE_UP),
+                named(ribbondialog::MOVE_DOWN),
+                named(ribbondialog::RESET),
                 Button { label: "Cancel".to_owned(), answer: Answer::Cancel, default: false },
             ],
         )
-        .wide(560.0)
+        // Word's dialog is this wide because it holds two lists side by side,
+        // and a dialog that changed size when a tab was pressed would jump
+        // about under the pointer.
+        .wide(760.0)
+        .button_on_tab(Answer::Named(AUTOCORRECT_OPTIONS), TAB_PROOFING_PAGE);
+        for label in [
+            ribbondialog::ADD,
+            ribbondialog::REMOVE,
+            ribbondialog::MOVE_UP,
+            ribbondialog::MOVE_DOWN,
+            ribbondialog::RESET,
+        ] {
+            dialog = dialog
+                .button_on_tab(Answer::Named(label), ribbondialog::QUICK_PAGE)
+                .button_on_tab(Answer::Named(label), ribbondialog::RIBBON_PAGE);
+        }
+        dialog
     }
 
     /// Takes what the dialog says and does it, then writes it down.
@@ -163,6 +195,13 @@ impl Editor {
         // pages are joined, which is the other way round.
         self.joined_pages = !dialog.ticked(WHITE_SPACE);
         self.show_proofing = dialog.ticked(PROOFING);
+
+        // The ribbon and the toolbar: the ticks are read out of the tree here,
+        // and everything else was already put on the working copy by the
+        // buttons that did it.
+        self.read_customise_dialog(dialog);
+        self.ribbon.custom = self.editing_chrome.clone();
+        self.settings.chrome = self.editing_chrome.clone();
 
         // Remembered as well as done: these follow the person from one document
         // to the next, which is the whole difference between a setting and a

@@ -7,7 +7,7 @@
 
 use wp_shell::Response;
 
-use crate::chrome::{ribbon, Choice, Command, Popup};
+use crate::chrome::{Choice, Command, Popup};
 
 use super::Editor;
 
@@ -22,7 +22,7 @@ impl Editor {
             return Response::Ignored;
         };
 
-        let inside = ribbon::group_commands(self.ribbon.tab, index);
+        let inside = self.ribbon.group_commands(index);
         if inside.is_empty() {
             return Response::Ignored;
         }

@@ -75,6 +75,13 @@ pub struct Settings {
     /// the same reason. Nothing means it has never been said, and the usual
     /// corrections are made.
     pub autocorrect: Option<crate::autocorrect::AutoCorrect>,
+    /// What was changed about the ribbon and the Quick Access Toolbar.
+    ///
+    /// Kept whole rather than as an option, because it describes itself: one
+    /// that has been changed in no way writes nothing, so an absent line and a
+    /// line saying "as it comes" are the same thing. See
+    /// [`crate::chrome::customise`].
+    pub chrome: crate::chrome::Customisation,
     /// The documents opened lately, the most recent first.
     ///
     /// Kept as written rather than as paths, because a path that no longer
@@ -216,6 +223,12 @@ impl Settings {
                 "theme-fonts" => settings.theme_fonts = Some(value.to_owned()),
                 "status-off" => settings.status_off = words(value),
                 other => {
+                    // The ribbon and the toolbar read their own lines, because
+                    // what is on them is a matter for the chrome and not for
+                    // this file. See [`crate::chrome::customise`].
+                    if settings.chrome.read_line(other, value) {
+                        continue;
+                    }
                     if let Some(name) = other.strip_prefix(CORRECT_PREFIX) {
                         if let Some(on) = parse_flag(value) {
                             switches.insert(name.to_owned(), on);
@@ -315,6 +328,7 @@ impl Settings {
         // The corrections go last, and are written straight into the text
         // rather than through `write`, because one of them is a whole list of
         // its own. Last, because `write` holds the text until it is done with.
+        self.chrome.write_lines(&mut out);
         if let Some(rules) = &self.autocorrect {
             Self::write_autocorrect(rules, &mut out);
         }
@@ -451,6 +465,7 @@ mod tests {
                 "C:\\Documents\\Report, final.docx".to_owned(),
                 "/home/somebody/notes.docx".to_owned(),
             ],
+            chrome: crate::chrome::Customisation::default(),
             unknown: BTreeMap::new(),
         };
         assert_eq!(Settings::parse(&settings.to_text()), settings);
@@ -567,6 +582,25 @@ mod tests {
         assert_eq!(rules.replacements.get("brb").map(String::as_str), Some("be right back"));
         // And a file that lists one lists all, so nothing else is on it.
         assert_eq!(rules.replacements.len(), 1);
+    }
+
+    #[test]
+    fn what_was_changed_about_the_ribbon_survives_the_file() {
+        // The lines belong to [`crate::chrome::customise`], which reads and
+        // writes them itself; what is checked here is that this file hands them
+        // over rather than putting them in the pile of what it does not know.
+        let mut chrome = crate::chrome::Customisation::default();
+        chrome.add_to_quick(crate::chrome::Command::Print);
+        chrome.set_hidden(crate::chrome::ribbon::Tab::Home, "Clipboard", true);
+
+        let settings = Settings { chrome: chrome.clone(), ..Settings::default() };
+        let read = Settings::parse(&settings.to_text());
+        assert_eq!(read.chrome, chrome);
+        assert!(
+            read.unknown.is_empty(),
+            "a line was taken for one nobody knows: {:?}",
+            read.unknown
+        );
     }
 
     #[test]

@@ -49,6 +49,7 @@ impl Editor {
         if let Some(rules) = &settings.autocorrect {
             self.autocorrect = rules.clone();
         }
+        self.ribbon.custom = settings.chrome.clone();
         if let Some(unit) = &settings.unit {
             self.unit = crate::measure::Unit::from_name(unit);
         }

@@ -181,41 +181,42 @@ pub enum Icon {
     ResetWindow = 163,
     Macros = 164,
     Properties = 165,
-    Help = 166,
-    Feedback = 167,
-    Training = 168,
-    WhatsNew = 169,
-    InsertRowAbove = 170,
-    InsertRowBelow = 171,
-    InsertColumnLeft = 172,
-    InsertColumnRight = 173,
-    DeleteRow = 174,
-    DeleteColumn = 175,
-    DeleteTable = 176,
-    MergeCells = 177,
-    SplitCells = 178,
-    TableProperties = 179,
-    BorderNone = 180,
-    BorderOutside = 181,
-    BorderBottom = 182,
-    BorderTop = 183,
-    AutoFit = 184,
-    CellAlign = 185,
-    HeaderRow = 186,
-    BandedRows = 187,
-    AlignTopLeft = 188,
-    AlignTopCenter = 189,
-    AlignTopRight = 190,
-    AlignMiddleLeft = 191,
-    AlignMiddleCenter = 192,
-    AlignMiddleRight = 193,
-    AlignBottomLeft = 194,
-    AlignBottomCenter = 195,
-    AlignBottomRight = 196,
+    Settings = 166,
+    Help = 167,
+    Feedback = 168,
+    Training = 169,
+    WhatsNew = 170,
+    InsertRowAbove = 171,
+    InsertRowBelow = 172,
+    InsertColumnLeft = 173,
+    InsertColumnRight = 174,
+    DeleteRow = 175,
+    DeleteColumn = 176,
+    DeleteTable = 177,
+    MergeCells = 178,
+    SplitCells = 179,
+    TableProperties = 180,
+    BorderNone = 181,
+    BorderOutside = 182,
+    BorderBottom = 183,
+    BorderTop = 184,
+    AutoFit = 185,
+    CellAlign = 186,
+    HeaderRow = 187,
+    BandedRows = 188,
+    AlignTopLeft = 189,
+    AlignTopCenter = 190,
+    AlignTopRight = 191,
+    AlignMiddleLeft = 192,
+    AlignMiddleCenter = 193,
+    AlignMiddleRight = 194,
+    AlignBottomLeft = 195,
+    AlignBottomCenter = 196,
+    AlignBottomRight = 197,
 }
 
 /// How many there are, so the drawings can be kept in a flat array.
-pub const COUNT: usize = 197;
+pub const COUNT: usize = 198;
 
 /// Every icon, in the order the catalogue declares them.
 ///
@@ -388,6 +389,7 @@ pub static ALL: [Icon; COUNT] = [
     Icon::ResetWindow,
     Icon::Macros,
     Icon::Properties,
+    Icon::Settings,
     Icon::Help,
     Icon::Feedback,
     Icon::Training,
@@ -1628,6 +1630,13 @@ impl Icon {
                     include_str!(
                         "../../assets/icons/ic_fluent_document_bullet_list_clock_20_regular.svg"
                     )
+                }
+            }
+            Self::Settings => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_settings_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_settings_20_regular.svg")
                 }
             }
             Self::Help => {

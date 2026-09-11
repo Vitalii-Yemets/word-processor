@@ -26,6 +26,7 @@ use wp_docx::CharacterFormat;
 use wp_layout::{LayoutEngine, Renderer, TextStyle};
 use wp_raster::{Canvas, Color};
 
+use super::customise::Showing;
 use super::icons::{self, Icon};
 use super::theme::Theme;
 use super::{Choice, Command, TableBorderChoice, ToolbarState};
@@ -63,7 +64,11 @@ const STYLE_TILES_LEAST: usize = 3;
 const SPECIMEN: &str = "AaBbCcDdEe";
 
 /// Which tab of the ribbon is showing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Ordered, and ordered in the order Word shows them, because a tab is the key
+/// of what a person changed about it — and a list of changes that came back in
+/// a different order every time would make the settings file churn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tab {
     File,
     Home,
@@ -118,6 +123,15 @@ impl Tab {
             Self::TableLayout => "Table Layout",
             Self::HeaderFooter => "Header & Footer",
         }
+    }
+
+    /// And back: the tab a name stands for.
+    ///
+    /// What reads the settings file, where a tab is written by its name so that
+    /// the file can be read by a person.
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.iter().chain(Self::CONTEXTUAL.iter()).copied().find(|tab| tab.label() == name)
     }
 
     /// The letter Alt puts over the tab.
@@ -298,6 +312,8 @@ struct Placed {
 #[derive(Debug)]
 pub struct Ribbon {
     pub tab: Tab,
+    /// What a person changed about it. See [`super::customise`].
+    pub custom: super::customise::Customisation,
     /// Where the ribbon was last drawn, so a hit test knows where to look.
     top: f32,
     /// Where everything ended up when it was last drawn.
@@ -320,6 +336,7 @@ impl Ribbon {
     pub fn new() -> Self {
         Self {
             tab: Tab::Home,
+            custom: super::customise::Customisation::default(),
             top: 0.0,
             placed: Vec::new(),
             tabs: Vec::new(),
@@ -328,24 +345,27 @@ impl Ribbon {
         }
     }
 
-    /// The groups of the tab currently open.
+    /// The groups of the tab currently open, as they are shown.
+    ///
+    /// Built rather than borrowed, because what is shown is the table put
+    /// through whatever a person changed — groups reordered, groups switched
+    /// off, commands added. See [`super::customise`].
     #[must_use]
-    pub fn groups(&self) -> &'static [Group] {
-        match self.tab {
-            Tab::File => FILE_GROUPS,
-            Tab::Home => HOME_GROUPS,
-            Tab::Insert => INSERT_GROUPS,
-            Tab::Design => DESIGN_GROUPS,
-            Tab::Layout => LAYOUT_GROUPS,
-            Tab::References => REFERENCES_GROUPS,
-            Tab::Mailings => MAILINGS_GROUPS,
-            Tab::Review => REVIEW_GROUPS,
-            Tab::View => VIEW_GROUPS,
-            Tab::Help => HELP_GROUPS,
-            Tab::TableDesign => TABLE_DESIGN_GROUPS,
-            Tab::TableLayout => TABLE_LAYOUT_GROUPS,
-            Tab::HeaderFooter => HEADER_FOOTER_GROUPS,
-        }
+    pub fn groups(&self) -> Vec<Showing> {
+        self.custom.groups_shown(self.tab)
+    }
+
+    /// What is inside one group of the tab currently open, by the numbering the
+    /// ribbon itself uses.
+    ///
+    /// Which is the shown numbering and not the table's: a group switched off
+    /// is not there to be counted, and the button that expands a collapsed
+    /// group carries the place it was drawn in.
+    #[must_use]
+    pub fn group_commands(&self, index: usize) -> Vec<(Command, &'static str)> {
+        let groups = self.groups();
+        let Some(group) = groups.get(index) else { return Vec::new() };
+        commands_in(&group.items)
     }
 
     /// The tab at a point in the tab strip, if there is one.
@@ -592,17 +612,22 @@ impl Ribbon {
         // How many rows of small buttons the ribbon is tall enough for.
         let rows = ((body / ROW_HEIGHT).floor() as usize).max(1);
 
+        // Built once and passed down, because putting the table through what a
+        // person changed is real work and the ribbon is drawn on every
+        // keystroke.
+        let groups = self.groups();
+
         // The style gallery gives up tiles before any group is given up
         // altogether, because it is the widest thing on the tab and the only
         // one that can be made smaller without losing a command.
-        self.style_tiles = self.tiles_that_fit(engine, rows, right_edge - EDGE);
+        self.style_tiles = self.tiles_that_fit(engine, &groups, rows, right_edge - EDGE);
 
         // A window too narrow for every group shows the last of them as one
         // button each, which opens what is inside it. Word does the same, and
         // the alternative is a group drawn half off the edge of the window.
-        let collapsed = self.collapsed_groups(engine, rows, right_edge - EDGE);
+        let collapsed = self.collapsed_groups(engine, &groups, rows, right_edge - EDGE);
 
-        for (index, group) in self.groups().iter().enumerate() {
+        for (index, group) in groups.iter().enumerate() {
             if index >= collapsed {
                 x = self.draw_collapsed_group(
                     canvas, engine, renderer, group, index, x, top, hovered, theme,
@@ -617,7 +642,7 @@ impl Ribbon {
             let mut row = 0usize;
             let mut widest = 0.0f32;
 
-            for item in group.items {
+            for item in &group.items {
                 if matches!(item, Item::Break | Item::NewColumn) {
                     widest = widest.max(cursor - start);
                     row += 1;
@@ -730,13 +755,13 @@ impl Ribbon {
     }
 
     /// How wide a whole group is, laid out the way it will be drawn.
-    fn group_width(&self, engine: &mut LayoutEngine<'_>, group: &Group, rows: usize) -> f32 {
+    fn group_width(&self, engine: &mut LayoutEngine<'_>, group: &Showing, rows: usize) -> f32 {
         let mut cursor = 0.0f32;
         let mut row_start = 0.0f32;
         let mut row = 0usize;
         let mut widest = 0.0f32;
 
-        for item in group.items {
+        for item in &group.items {
             if matches!(item, Item::Break | Item::NewColumn) {
                 widest = widest.max(cursor);
                 row += 1;
@@ -760,11 +785,16 @@ impl Ribbon {
     /// The most that leaves every group of the tab drawn in full, and the
     /// fewest worth showing when even that is not enough — at which point the
     /// groups on the right are given up as they always were.
-    fn tiles_that_fit(&mut self, engine: &mut LayoutEngine<'_>, rows: usize, room: f32) -> usize {
-        let showing = self.groups().len();
+    fn tiles_that_fit(
+        &mut self,
+        engine: &mut LayoutEngine<'_>,
+        groups: &[Showing],
+        rows: usize,
+        room: f32,
+    ) -> usize {
         for tiles in (STYLE_TILES_LEAST..=STYLE_TILES_MOST).rev() {
             self.style_tiles = tiles;
-            if self.collapsed_groups(engine, rows, room) >= showing {
+            if self.collapsed_groups(engine, groups, rows, room) >= groups.len() {
                 return tiles;
             }
         }
@@ -777,8 +807,13 @@ impl Ribbon {
     /// Groups are given up from the right, because the ones on the left are the
     /// ones a person reaches for — and because that is the order Word gives
     /// them up in.
-    fn collapsed_groups(&self, engine: &mut LayoutEngine<'_>, rows: usize, room: f32) -> usize {
-        let groups = self.groups();
+    fn collapsed_groups(
+        &self,
+        engine: &mut LayoutEngine<'_>,
+        groups: &[Showing],
+        rows: usize,
+        room: f32,
+    ) -> usize {
         let widths: Vec<f32> = groups
             .iter()
             .map(|group| self.group_width(engine, group, rows) + GROUP_PADDING * 2.0)
@@ -802,7 +837,7 @@ impl Ribbon {
         canvas: &mut Canvas,
         engine: &mut LayoutEngine<'_>,
         renderer: &mut Renderer<'_>,
-        group: &Group,
+        group: &Showing,
         index: usize,
         left: f32,
         top: f32,
@@ -2044,22 +2079,30 @@ pub fn groups_of(tab: Tab) -> &'static [Group] {
 /// The commands that have a name but no button on the ribbon.
 ///
 /// The File tab's places are here because that tab opens the backstage rather
-/// than a page of buttons, and the paste options because they live on the
-/// little button at the end of a paste. Both still need names: a macro that
-/// saves the document has to be able to write down that it saved the document.
-static OFF_RIBBON_COMMANDS: &[(Command, &str)] = &[
-    (Command::New, "New"),
-    (Command::Open, "Open"),
-    (Command::Save, "Save"),
-    (Command::SaveAs, "Save As"),
-    (Command::Print, "Print"),
-    (Command::DocumentProperties, "Info"),
-    (Command::Options, "Options"),
-    (Command::CloseDocument, "Close"),
-    (Command::PasteKeepSource, "Keep Source Formatting"),
-    (Command::PasteMerge, "Merge Formatting"),
-    (Command::PasteAsPicture, "Paste as Picture"),
-    (Command::PasteTextOnly, "Keep Text Only"),
+/// than a page of buttons; undo and redo because they live in the title bar;
+/// and the paste options because they live on the little button at the end of a
+/// paste. All still need names: a macro that saves the document has to be able
+/// to write down that it saved the document, and a command a person puts on the
+/// Quick Access Toolbar has to be findable by name in a list.
+///
+/// The drawing is here too, for the same reason: a command on the toolbar is
+/// drawn as an icon and nothing else, so one that has no button to take a
+/// drawing from has to carry its own.
+static OFF_RIBBON_COMMANDS: &[(Command, &str, Icon)] = &[
+    (Command::New, "New", Icon::New),
+    (Command::Open, "Open", Icon::Open),
+    (Command::Save, "Save", Icon::Save),
+    (Command::SaveAs, "Save As", Icon::Save),
+    (Command::Print, "Print", Icon::Print),
+    (Command::Undo, "Undo", Icon::Undo),
+    (Command::Redo, "Redo", Icon::Redo),
+    (Command::DocumentProperties, "Info", Icon::Info),
+    (Command::Options, "Options", Icon::Settings),
+    (Command::CloseDocument, "Close", Icon::Close),
+    (Command::PasteKeepSource, "Keep Source Formatting", Icon::Clipboard),
+    (Command::PasteMerge, "Merge Formatting", Icon::Clipboard),
+    (Command::PasteAsPicture, "Paste as Picture", Icon::Clipboard),
+    (Command::PasteTextOnly, "Keep Text Only", Icon::Clipboard),
 ];
 
 /// What a command is called, taken from the button that runs it.
@@ -2069,7 +2112,7 @@ static OFF_RIBBON_COMMANDS: &[(Command, &str)] = &[
 /// one only a keystroke reaches — has no name here and is not recorded.
 #[must_use]
 pub fn name_of(command: Command) -> Option<&'static str> {
-    if let Some((_, name)) = OFF_RIBBON_COMMANDS.iter().find(|(found, _)| *found == command) {
+    if let Some((_, name, _)) = OFF_RIBBON_COMMANDS.iter().find(|(found, ..)| *found == command) {
         return Some(name);
     }
     for tab in Tab::ALL {
@@ -2097,10 +2140,62 @@ pub fn name_of(command: Command) -> Option<&'static str> {
     None
 }
 
+/// What is drawn on a command's button.
+///
+/// Found the same way the name is, because the ribbon is where a command is
+/// given a picture. One that is on no button and in no table above has none,
+/// and is drawn with nothing rather than with somebody else's drawing.
+#[must_use]
+pub fn icon_of(command: Command) -> Icon {
+    if let Some((_, _, icon)) = OFF_RIBBON_COMMANDS.iter().find(|(found, ..)| *found == command) {
+        return *icon;
+    }
+    for tab in Tab::ALL.iter().chain(Tab::CONTEXTUAL.iter()) {
+        for group in groups_of(*tab) {
+            for item in group.items {
+                match item {
+                    Item::Large(found, icon, _)
+                    | Item::Small(found, icon, _)
+                    | Item::Button(found, icon)
+                        if *found == command =>
+                    {
+                        return *icon;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    Icon::None
+}
+
+/// Every command that has a name, in the order a person would look for one.
+///
+/// Word's "All Commands" list, which is alphabetical for the same reason: a
+/// person hunting for Bookmark should not have to know it is under Insert ▸
+/// Links. A command that appears on two tabs appears once here.
+#[must_use]
+pub fn all_commands() -> Vec<(Command, &'static str)> {
+    let mut out: Vec<(Command, &'static str)> =
+        OFF_RIBBON_COMMANDS.iter().map(|(command, name, _)| (*command, *name)).collect();
+    for tab in Tab::ALL.iter().chain(Tab::CONTEXTUAL.iter()) {
+        for index in 0..groups_of(*tab).len() {
+            for (command, name) in group_commands_of(*tab, index) {
+                if !out.iter().any(|(found, _)| *found == command) {
+                    out.push((command, name));
+                }
+            }
+        }
+    }
+    out.sort_by_key(|(_, name)| *name);
+
+    out
+}
+
 /// And back again: the command a name stands for.
 #[must_use]
 pub fn command_named(name: &str) -> Option<Command> {
-    if let Some((command, _)) = OFF_RIBBON_COMMANDS.iter().find(|(_, found)| *found == name) {
+    if let Some((command, ..)) = OFF_RIBBON_COMMANDS.iter().find(|(_, found, _)| *found == name) {
         return Some(*command);
     }
     for tab in Tab::ALL {
@@ -2128,12 +2223,20 @@ pub fn command_named(name: &str) -> Option<Command> {
     None
 }
 
-/// What is inside one group of a tab: every command it holds, and its name.
+/// What is inside one group of a tab, as the table has it: every command it
+/// holds, and its name.
+///
+/// The table and not the ribbon, so that the dialog which lists what a person
+/// may add to a group has something to list before anything has been changed.
 #[must_use]
-pub fn group_commands(tab: Tab, index: usize) -> Vec<(Command, &'static str)> {
+pub fn group_commands_of(tab: Tab, index: usize) -> Vec<(Command, &'static str)> {
     let Some(group) = groups_of(tab).get(index) else { return Vec::new() };
-    group
-        .items
+    commands_in(group.items)
+}
+
+/// Every command a list of items holds, and what each is called.
+fn commands_in(items: &[Item]) -> Vec<(Command, &'static str)> {
+    items
         .iter()
         .filter_map(|item| match item {
             Item::Large(command, _, label) | Item::Small(command, _, label) => {

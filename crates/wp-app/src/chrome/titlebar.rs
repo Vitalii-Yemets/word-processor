@@ -17,7 +17,7 @@
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::{Canvas, Color};
 
-use super::icons::{self, Icon};
+use super::icons;
 use super::theme::Theme;
 use super::{Command, ToolbarState};
 
@@ -50,9 +50,13 @@ pub struct TitleBar {
     hovered_quick: Option<Command>,
 }
 
-/// The commands the quick access buttons carry, in order.
-const QUICK: &[(Command, Icon)] =
-    &[(Command::Save, Icon::Save), (Command::Undo, Icon::Undo), (Command::Redo, Icon::Redo)];
+/// How many buttons the toolbar will draw, whatever is on it.
+///
+/// The title bar holds the document's name as well, and a toolbar allowed to
+/// grow without limit would push it off the bar altogether. Word's answer is to
+/// move the toolbar under the ribbon once it is long; this one keeps it where
+/// it is and stops.
+const QUICK_MOST: usize = 12;
 
 impl TitleBar {
     #[must_use]
@@ -107,12 +111,14 @@ impl TitleBar {
     }
 
     /// Draws the bar across the top of the window.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
         canvas: &mut Canvas,
         engine: &mut LayoutEngine<'_>,
         renderer: &mut Renderer<'_>,
         title: &str,
+        quick: &[Command],
         state: &ToolbarState,
         theme: &Theme,
     ) {
@@ -127,14 +133,14 @@ impl TitleBar {
 
         // The quick access buttons, on the left where Word puts them.
         let mut x = 8.0f32;
-        for (command, icon) in QUICK {
+        for command in quick.iter().take(QUICK_MOST) {
             let enabled = super::is_enabled(*command, state);
             if self.hovered_quick == Some(*command) && enabled {
                 rounded(canvas, x, 3.0, QUICK_WIDTH, HEIGHT - 6.0, theme.bar_hover());
             }
             icons::draw(
                 canvas,
-                *icon,
+                super::ribbon::icon_of(*command),
                 x + (QUICK_WIDTH - icons::SIZE) / 2.0,
                 (HEIGHT - icons::SIZE) / 2.0,
                 if enabled { text } else { dim },

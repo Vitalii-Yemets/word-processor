@@ -328,6 +328,43 @@ impl Editor {
             "options" => {
                 self.open_options();
             }
+            "quickaccess" | "customribbon" => {
+                // The two pages of Options that are two lists side by side,
+                // which is the only part of that dialog a picture of the first
+                // tab does not show.
+                self.open_options();
+                if let Some(dialog) = &mut self.dialog {
+                    dialog.show_tab(if option == "quickaccess" {
+                        super::ribbondialog::QUICK_PAGE
+                    } else {
+                        super::ribbondialog::RIBBON_PAGE
+                    });
+                }
+            }
+            "customised" => {
+                // A ribbon somebody has changed: a group switched off, a group
+                // moved to the front, a command added to another, and a fourth
+                // button on the toolbar. The only way to see that what the
+                // dialog says reaches what is drawn.
+                use crate::chrome::Command;
+                let home = crate::chrome::ribbon::Tab::Home;
+                let custom = &mut self.ribbon.custom;
+                custom.set_hidden(home, "Clipboard", true);
+                custom.move_group(home, "Editing", true);
+                custom.add_to_group(home, "Font", Command::AddBookmark);
+                custom.add_to_quick(Command::Print);
+            }
+            "ribbongroups" => {
+                // The same page with the first tab folded open, which is the
+                // only way to see the groups, their tick boxes and what is
+                // under them.
+                self.open_options();
+                if let Some(dialog) = &mut self.dialog {
+                    dialog.show_tab(super::ribbondialog::RIBBON_PAGE);
+                    dialog.focus_field(super::ribbondialog::RIBBON_TREE);
+                    dialog.key(wp_shell::Key::Space, false, false);
+                }
+            }
             "autocorrect" => {
                 self.open_autocorrect();
             }

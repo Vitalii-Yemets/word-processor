@@ -171,6 +171,7 @@ impl Editor {
             if state.modified { "*" } else { "" },
             self.document_name()
         );
+        let quick = self.ribbon.custom.quick.clone();
         let mut titlebar = std::mem::take(&mut self.titlebar);
         let theme = self.theme;
         titlebar.draw(
@@ -178,6 +179,7 @@ impl Editor {
             &mut self.chrome_engine,
             &mut self.renderer,
             &caption,
+            &quick,
             &state,
             &theme,
         );
@@ -208,6 +210,7 @@ impl Editor {
             self.document_name()
         );
 
+        let quick = self.ribbon.custom.quick.clone();
         let mut titlebar = std::mem::take(&mut self.titlebar);
         let theme = self.theme;
         titlebar.draw(
@@ -215,6 +218,7 @@ impl Editor {
             &mut self.chrome_engine,
             &mut self.renderer,
             &caption,
+            &quick,
             &state,
             &theme,
         );

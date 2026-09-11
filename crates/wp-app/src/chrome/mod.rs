@@ -13,6 +13,7 @@
 //! matters for a program meant to be used in every language Word supports.
 
 pub mod backstage;
+pub mod customise;
 pub mod dialog;
 pub mod findbar;
 pub mod grid;
@@ -38,6 +39,7 @@ use wp_docx::model::Alignment;
 use wp_docx::CharacterFormat;
 use wp_raster::Color;
 
+pub use customise::Customisation;
 pub use grid::TableGrid;
 pub use minibar::MiniBar;
 pub use navigation::Navigation;

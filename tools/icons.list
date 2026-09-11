@@ -168,6 +168,7 @@ SynchronousScrolling arrow_sync
 ResetWindow window_arrow_up
 Macros code
 Properties document_bullet_list_clock
+Settings settings
 Help question_circle
 Feedback person_feedback
 Training hat_graduation

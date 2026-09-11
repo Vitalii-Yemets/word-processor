@@ -48,6 +48,7 @@ mod proofing;
 mod properties;
 mod references;
 mod review;
+mod ribbondialog;
 mod ruler;
 mod rules;
 mod screenshot;
@@ -261,6 +262,9 @@ pub struct Editor {
     popup_anchor: Option<(f32, f32, f32)>,
     /// What is corrected as it is typed. See [`crate::autocorrect`].
     pub(super) autocorrect: crate::autocorrect::AutoCorrect,
+    /// What is being changed about the ribbon and the toolbar while the
+    /// Options dialog is up. See [`ribbondialog`].
+    pub(super) editing_chrome: crate::chrome::Customisation,
     /// The corrections being changed while the AutoCorrect dialog is up.
     ///
     /// A working copy, because that dialog is built again every time one of its
@@ -491,6 +495,7 @@ impl Editor {
             popup: None,
             popup_anchor: None,
             autocorrect: crate::autocorrect::AutoCorrect::default(),
+            editing_chrome: crate::chrome::Customisation::default(),
             editing_rules: crate::autocorrect::AutoCorrect::default(),
             exceptions_stash: None,
             ribbon_box: None,

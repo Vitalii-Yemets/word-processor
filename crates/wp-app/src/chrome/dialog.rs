@@ -91,6 +91,33 @@ pub const PAIR_ROWS: usize = 7;
 /// How tall one of those rows is.
 const PAIR_ROW: f32 = 20.0;
 
+/// How many rows of a tree are shown at once.
+///
+/// More than a list of pairs shows, because the two pages a tree is on hold
+/// nothing else: the room is there, and every row it saves is a row somebody
+/// does not have to scroll to.
+pub const TREE_ROWS: usize = 12;
+
+/// How far one depth of a tree sets a row in from the one above it.
+const TREE_INDENT: f32 = 16.0;
+
+/// How big a tick box on a tree row is.
+const TICK_SIZE: f32 = 12.0;
+
+/// And how much room the triangle that folds a row open takes.
+const FOLD_SIZE: f32 = 12.0;
+
+/// Which part of a row of a tree was pressed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TreePart {
+    /// The triangle, which folds what is under it open or shut.
+    Fold,
+    /// The tick box, which switches the thing on or off.
+    Tick,
+    /// Anywhere else, which only chooses the row.
+    Words,
+}
+
 /// One thing a dialog asks about.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Field {
@@ -159,6 +186,14 @@ pub enum Field {
         current: usize,
         scroll: usize,
     },
+    /// A column of rows at different depths, some of which are ticked.
+    ///
+    /// Word's Customize Ribbon page is built round one: the tabs against the
+    /// left-hand edge, their groups set in from it, the commands set in again,
+    /// and a tick box against each tab and group saying whether it is shown. A
+    /// list with every row at the same depth and no tick boxes is the plain
+    /// list beside it, which is the same thing with nothing turned on.
+    Tree { label: String, rows: Vec<TreeRow>, current: usize, scroll: usize },
     /// A rectangle round everything that follows, with a caption on its top
     /// edge, until the next group or the next tab.
     ///
@@ -166,6 +201,70 @@ pub enum Field {
     /// drawn round the two indent boxes says what those two boxes have to do
     /// with each other, which no amount of putting them near each other does.
     Group(String),
+}
+
+/// One row of a [`Field::Tree`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreeRow {
+    /// How far in it is set: nothing for a tab, one for a group, two for a
+    /// command inside one.
+    pub depth: u8,
+    pub text: String,
+    /// Whether it carries a tick box, and whether the box is ticked.
+    pub tick: Option<bool>,
+    /// Whether what is under it is showing.
+    ///
+    /// Nothing at all means nothing is under it. A tree of every tab, every
+    /// group and everything added to one is some seventy rows, and seven of
+    /// them are in sight at once: without this, reaching the View tab would be
+    /// nine screens of scrolling. Word's tree collapses for the same reason.
+    pub open: Option<bool>,
+}
+
+impl TreeRow {
+    /// A row with no tick box and nothing under it, which is what a plain list
+    /// is made of.
+    #[must_use]
+    pub fn plain(text: &str) -> Self {
+        Self { depth: 0, text: text.to_owned(), tick: None, open: None }
+    }
+
+    /// One set in from the edge, with a tick box.
+    #[must_use]
+    pub fn ticked(depth: u8, text: &str, on: bool) -> Self {
+        Self { depth, text: text.to_owned(), tick: Some(on), open: None }
+    }
+
+    /// One set in from the edge with no tick box: what is inside a group.
+    #[must_use]
+    pub fn under(depth: u8, text: &str) -> Self {
+        Self { depth, text: text.to_owned(), tick: None, open: None }
+    }
+
+    /// The same row, with something under it that is showing or is not.
+    #[must_use]
+    pub fn opening(mut self, open: bool) -> Self {
+        self.open = Some(open);
+        self
+    }
+}
+
+/// Which rows of a tree are in sight: the ones no closed row stands above.
+fn shown_rows(rows: &[TreeRow]) -> Vec<usize> {
+    let mut out = Vec::with_capacity(rows.len());
+    // The depth below which everything is folded away, while anything is.
+    let mut folded: Option<u8> = None;
+    for (at, row) in rows.iter().enumerate() {
+        match folded {
+            Some(depth) if row.depth >= depth => continue,
+            _ => folded = None,
+        }
+        out.push(at);
+        if row.open == Some(false) {
+            folded = Some(row.depth + 1);
+        }
+    }
+    out
 }
 
 /// What a preview shows: some text, and the formatting to draw it with.
@@ -214,7 +313,7 @@ impl Field {
             // A grid's label stands above it rather than beside it, whatever
             // row it is on: sixteen cells across leave no room for a column.
             // So does a list of pairs, for the same reason.
-            Self::Grid { .. } | Self::Pairs { .. } => None,
+            Self::Grid { .. } | Self::Pairs { .. } | Self::Tree { .. } => None,
             Self::Said { label, .. }
             | Self::Text { label, .. }
             | Self::Number { label, .. }
@@ -245,6 +344,7 @@ impl Field {
             Self::Group(_) => "a group",
             Self::Grid { .. } => "a grid",
             Self::Pairs { .. } => "a list of pairs",
+            Self::Tree { .. } => "a list of rows",
         }
     }
 
@@ -261,6 +361,7 @@ impl Field {
             Self::Shape(_) => SHAPE_HEIGHT + PADDING,
             Self::Grid { .. } => LABEL_HEIGHT + GRID_ROWS as f32 * GRID_CELL + PADDING,
             Self::Pairs { .. } => LABEL_HEIGHT + PAIR_ROWS as f32 * PAIR_ROW + PADDING,
+            Self::Tree { .. } => LABEL_HEIGHT + TREE_ROWS as f32 * PAIR_ROW + PADDING,
             _ => ROW + 4.0,
         }
     }
@@ -449,6 +550,54 @@ impl Dialog {
         }
     }
 
+    /// Carries over what a dialog has been answered as well as what has been
+    /// typed into it.
+    ///
+    /// For a dialog that is built again for a reason that has nothing to do
+    /// with its fields — Options, whose Add and Remove buttons change the
+    /// ribbon and leave the dialog standing. The fields are rebuilt from how
+    /// the window is now, which is not how the dialog says it should be, so
+    /// without this a tick made on one tab would be undone by pressing a button
+    /// on another.
+    ///
+    /// Not what [`Self::carry_typing_from`] does, and deliberately separate
+    /// from it: a dialog rebuilt *because* a field changed — the Tabs dialog
+    /// after Set, the Font dialog's preview — is rebuilt to show something the
+    /// fields do not say yet, and carrying the old answers over would put back
+    /// what it was built to change.
+    pub fn carry_answers_from(&mut self, previous: &Self) {
+        self.carry_typing_from(previous);
+        for (field, before) in self.fields.iter_mut().zip(previous.fields.iter()) {
+            match (field, before) {
+                (Field::Check { on, .. }, Field::Check { on: was, .. }) => *on = *was,
+                (Field::Choice { items, current, .. }, Field::Choice { current: was, .. }) => {
+                    if *was < items.len() {
+                        *current = *was;
+                    }
+                }
+                // A tree carries over which rows are folded open, matched by
+                // what they say rather than by where they are: the rows are
+                // built again and a command added or taken away moves every row
+                // after it.
+                (Field::Tree { rows, current, scroll, .. }, Field::Tree { rows: before, .. }) => {
+                    for row in rows.iter_mut() {
+                        let was = before
+                            .iter()
+                            .find(|old| old.depth == row.depth && old.text == row.text);
+                        if let (Some(open), Some(was)) = (row.open.as_mut(), was) {
+                            if let Some(before) = was.open {
+                                *open = before;
+                            }
+                        }
+                    }
+                    *current = (*current).min(rows.len().saturating_sub(1));
+                    *scroll = (*scroll).min(shown_rows(rows).len().saturating_sub(1));
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// The same dialog, with one of its buttons kept to one tab.
     #[must_use]
     pub fn button_on_tab(mut self, answer: Answer, tab: usize) -> Self {
@@ -511,6 +660,24 @@ impl Dialog {
         }
     }
 
+    /// Which row of a list of rows is chosen, and the row itself.
+    #[must_use]
+    pub fn chose_row(&self, index: usize) -> usize {
+        match self.fields.get(index) {
+            Some(Field::Tree { current, .. }) => *current,
+            _ => 0,
+        }
+    }
+
+    /// Every row of one, for a caller that has to read the ticks back.
+    #[must_use]
+    pub fn tree_rows(&self, index: usize) -> &[TreeRow] {
+        match self.fields.get(index) {
+            Some(Field::Tree { rows, .. }) => rows,
+            _ => &[],
+        }
+    }
+
     /// Which row of a list of pairs is chosen, as its place on the list.
     #[must_use]
     pub fn chose_pair(&self, index: usize) -> usize {
@@ -551,12 +718,14 @@ impl Dialog {
     }
 
     /// Whether a button is drawn on the tab that is showing.
+    ///
+    /// A button named for no tab is drawn on all of them; one named for any is
+    /// drawn on those and nowhere else.
     fn button_showing(&self, index: usize) -> bool {
         let Some(button) = self.buttons.get(index) else { return false };
-        self.button_tabs
-            .iter()
-            .find(|(answer, _)| *answer == button.answer)
-            .is_none_or(|(_, tab)| *tab == self.tab)
+        let mut named = self.button_tabs.iter().filter(|(answer, _)| *answer == button.answer);
+        let Some(first) = named.next() else { return true };
+        first.1 == self.tab || named.any(|(_, tab)| *tab == self.tab)
     }
 
     /// Moves the keyboard on, or back.
@@ -631,6 +800,18 @@ impl Dialog {
                 if matches!(self.fields.get(self.focus), Some(Field::Pairs { .. })) =>
             {
                 self.move_in_pairs(self.focus, if key == Key::Up { -1 } else { 1 });
+                Reaction::Changed
+            }
+            // And so is a list of rows, whose ticks Space turns on and off —
+            // which is what Space does to a tick box everywhere else.
+            Key::Up | Key::Down
+                if matches!(self.fields.get(self.focus), Some(Field::Tree { .. })) =>
+            {
+                self.move_in_tree(self.focus, if key == Key::Up { -1 } else { 1 });
+                Reaction::Changed
+            }
+            Key::Space if matches!(self.fields.get(self.focus), Some(Field::Tree { .. })) => {
+                self.tick_in_tree(self.focus);
                 Reaction::Changed
             }
             Key::Up | Key::Down => {
@@ -726,6 +907,24 @@ impl Dialog {
                     }
                     return Reaction::Changed;
                 }
+                // And a list of rows row by row, with the tick box on each one
+                // answering for itself: pressing the box turns it on or off,
+                // pressing the words beside it only chooses the row. Word's
+                // tree behaves the same, and a box that toggled whenever its
+                // row was chosen would switch a group off by being read.
+                if matches!(self.fields.get(index), Some(Field::Tree { .. })) {
+                    if let Some((row, part)) = self.tree_row_at(index, x, y) {
+                        if let Some(Field::Tree { current, .. }) = self.fields.get_mut(index) {
+                            *current = row;
+                        }
+                        match part {
+                            TreePart::Fold => self.fold_in_tree(index),
+                            TreePart::Tick => self.tick_in_tree(index),
+                            TreePart::Words => {}
+                        }
+                    }
+                    return Reaction::Changed;
+                }
                 // And a list of pairs row by row.
                 if matches!(self.fields.get(index), Some(Field::Pairs { .. })) {
                     if let Some(row) = self.pair_row_at(index, y) {
@@ -809,6 +1008,72 @@ impl Dialog {
         }
         let at = (scroll + row as usize) * GRID_COLUMNS + column as usize;
         (at < items.len()).then_some(at)
+    }
+
+    /// Moves the row a list of rows has chosen, scrolling to keep it in sight.
+    ///
+    /// A row folded away is not a row the arrows stop on: the keyboard walks
+    /// what the eye can see.
+    fn move_in_tree(&mut self, index: usize, step: i32) {
+        let Some(Field::Tree { rows, current, scroll, .. }) = self.fields.get_mut(index) else {
+            return;
+        };
+        let shown = shown_rows(rows);
+        if shown.is_empty() {
+            return;
+        }
+        let at = shown.iter().position(|row| *row == *current).unwrap_or(0) as i32;
+        let wanted = (at + step).clamp(0, shown.len() as i32 - 1) as usize;
+        *current = shown[wanted];
+        if wanted < *scroll {
+            *scroll = wanted;
+        } else if wanted >= *scroll + TREE_ROWS {
+            *scroll = wanted + 1 - TREE_ROWS;
+        }
+    }
+
+    /// Turns the tick of the chosen row on or off, if it has one; and folds it
+    /// open or shut if it has anything under it instead.
+    fn tick_in_tree(&mut self, index: usize) {
+        let Some(Field::Tree { rows, current, .. }) = self.fields.get_mut(index) else { return };
+        let Some(row) = rows.get_mut(*current) else { return };
+        if let Some(on) = &mut row.tick {
+            *on = !*on;
+        } else if let Some(open) = &mut row.open {
+            *open = !*open;
+        }
+    }
+
+    /// Folds the chosen row open or shut.
+    fn fold_in_tree(&mut self, index: usize) {
+        let Some(Field::Tree { rows, current, .. }) = self.fields.get_mut(index) else { return };
+        if let Some(open) = rows.get_mut(*current).and_then(|row| row.open.as_mut()) {
+            *open = !*open;
+        }
+    }
+
+    /// What a point in a list of rows is on: the row, and which part of it.
+    fn tree_row_at(&self, index: usize, x: i32, y: i32) -> Option<(usize, TreePart)> {
+        let (left, top, _, _) = self.rect_of(Hit::Field(index))?;
+        let Some(Field::Tree { rows, scroll, .. }) = self.fields.get(index) else { return None };
+        let row = ((y as f32 - top) / PAIR_ROW).floor();
+        if row < 0.0 || row >= TREE_ROWS as f32 {
+            return None;
+        }
+        let at = *shown_rows(rows).get(scroll + row as usize)?;
+        let held = rows.get(at)?;
+
+        let mut edge = left + 5.0 + f32::from(held.depth) * TREE_INDENT;
+        if held.open.is_some() {
+            if (x as f32) < edge + FOLD_SIZE {
+                return Some((at, TreePart::Fold));
+            }
+            edge += FOLD_SIZE;
+        }
+        if held.tick.is_some() && (x as f32) < edge + TICK_SIZE + 4.0 {
+            return Some((at, TreePart::Tick));
+        }
+        Some((at, TreePart::Words))
     }
 
     /// Moves the row a list of pairs has chosen, scrolling to keep it in sight.
@@ -973,8 +1238,18 @@ impl Dialog {
                     // over every box.
                     let labels_above =
                         together.iter().any(|at| !matches!(self.fields[*at], Field::Check { .. }));
-                    let height =
-                        if labels_above { LABEL_HEIGHT + BOX_HEIGHT + 10.0 } else { ROW + 4.0 };
+                    // A row is as tall as a box and its label, unless something
+                    // on it is taller than that — a list of rows, a grid — in
+                    // which case that is what decides it. Without this a row
+                    // holding two lists would be drawn over the buttons under
+                    // it, because the panel was measured for boxes.
+                    let tallest =
+                        together.iter().map(|at| self.fields[*at].height()).fold(0.0f32, f32::max);
+                    let height = if labels_above {
+                        (LABEL_HEIGHT + BOX_HEIGHT + 10.0).max(tallest)
+                    } else {
+                        (ROW + 4.0).max(tallest)
+                    };
                     out.push(Row { fields: together, height, labels_above, inside_group });
                     index = at;
                 }
@@ -1031,6 +1306,13 @@ impl Dialog {
     /// Whether a field is on the tab that is showing.
     fn on_this_tab(&self, index: usize) -> bool {
         self.on_tab(index, self.tab)
+    }
+
+    /// Puts the keyboard on one field, if it is one the keyboard can land on.
+    pub fn focus_field(&mut self, index: usize) {
+        if self.stops().contains(&index) {
+            self.focus = index;
+        }
     }
 
     /// Shows one of the tabs, putting the keyboard on its first field.
@@ -1500,6 +1782,62 @@ impl Dialog {
                 self.placed.push((Hit::Field(index), label_x, grid_top, grid_width, grid_height));
             }
 
+            Field::Tree { label, rows, current, scroll } => {
+                let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+
+                let room = box_x + box_width - label_x;
+                let list_top = box_y + LABEL_HEIGHT;
+                let list_height = TREE_ROWS as f32 * PAIR_ROW;
+                canvas.fill_rect(
+                    label_x as i32,
+                    list_top as i32,
+                    room as i32,
+                    list_height as i32,
+                    theme.field,
+                );
+                outline(canvas, label_x, list_top, room, list_height, theme.field_edge);
+
+                let shown = shown_rows(&rows);
+                for showing in 0..TREE_ROWS {
+                    let Some(at) = shown.get(scroll + showing).copied() else { break };
+                    let row = &rows[at];
+                    let row_y = list_top + PAIR_ROW * showing as f32;
+                    let picked = at == current;
+                    if picked {
+                        canvas.fill_rect(
+                            (label_x + 1.0) as i32,
+                            row_y as i32,
+                            (room - 2.0) as i32,
+                            PAIR_ROW as i32,
+                            if focused { theme.accent } else { theme.hover },
+                        );
+                    }
+                    let colour = if picked && focused { theme.on_accent() } else { theme.text };
+                    let mut at_x = label_x + 5.0 + f32::from(row.depth) * TREE_INDENT;
+                    if let Some(open) = row.open {
+                        draw_fold_mark(canvas, at_x, row_y, open, colour);
+                        at_x += FOLD_SIZE;
+                    }
+                    if let Some(on) = row.tick {
+                        let box_top = row_y + (PAIR_ROW - TICK_SIZE) / 2.0;
+                        draw_tick_box(canvas, at_x, box_top, TICK_SIZE, on, theme);
+                        at_x += TICK_SIZE + 4.0;
+                    }
+                    let line =
+                        engine.simple_line(&row.text, at_x, row_y + PAIR_ROW * 0.72, 9.0, colour);
+                    renderer.draw_within(
+                        canvas,
+                        &line,
+                        at_x,
+                        row_y,
+                        room - (at_x - label_x),
+                        PAIR_ROW,
+                    );
+                }
+                self.placed.push((Hit::Field(index), label_x, list_top, room, list_height));
+            }
+
             Field::Pairs { label, second, rows, current, scroll } => {
                 let room = box_x + box_width - label_x;
                 // The two columns are equal, which is how Word divides them:
@@ -1837,6 +2175,53 @@ fn unit_width(unit: &str, measured: f32, shown: &str) -> f32 {
     }
     // Proportional to the characters, which is near enough for a caret.
     measured * tail as f32 / all as f32
+}
+
+/// A tick box on a row of a tree.
+///
+/// Smaller than the one a [`Field::Check`] draws, because it stands inside a
+/// row of a list rather than on a row of its own. The box keeps the colours of a
+/// tick box wherever it stands, rather than the colours of the row it is on: a
+/// tick drawn in the chosen row.s white would vanish into the white box.
+/// The triangle before a row that has anything under it: pointing right while
+/// what is under it is folded away, and down while it is showing.
+///
+/// Drawn as a shape rather than an icon, because at seven pixels a triangle is
+/// seven rows of rectangles and a drawing read from a file would be a smudge.
+fn draw_fold_mark(canvas: &mut Canvas, x: f32, y: f32, open: bool, colour: Color) {
+    let size = 7.0f32;
+    let left = (x + (FOLD_SIZE - size) / 2.0).round() as i32;
+    let top = (y + (PAIR_ROW - size) / 2.0).round() as i32;
+    for step in 0..size as i32 {
+        if open {
+            // Pointing down: a row that narrows as it goes.
+            let width = size as i32 - step * 2;
+            if width <= 0 {
+                break;
+            }
+            canvas.fill_rect(left + step, top + step, width, 1, colour);
+        } else {
+            let height = size as i32 - step * 2;
+            if height <= 0 {
+                break;
+            }
+            canvas.fill_rect(left + step, top + step, 1, height, colour);
+        }
+    }
+}
+
+fn draw_tick_box(canvas: &mut Canvas, x: f32, y: f32, size: f32, on: bool, theme: &Theme) {
+    canvas.fill_rect(x as i32, y as i32, size as i32, size as i32, theme.field);
+    outline(canvas, x, y, size, size, theme.field_edge);
+    if on {
+        canvas.fill_rect(
+            (x + 3.0) as i32,
+            (y + 3.0) as i32,
+            (size - 6.0) as i32,
+            (size - 6.0) as i32,
+            theme.accent,
+        );
+    }
 }
 
 fn outline(canvas: &mut Canvas, x: f32, y: f32, width: f32, height: f32, colour: Color) {

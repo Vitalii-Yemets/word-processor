@@ -1011,7 +1011,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   a name up in an address book. Numbered lists begun by typing start at one,
   because the numbering model has no other starting number yet.
 
-- [ ] **C20. Customize Ribbon and the Quick Access Toolbar.** Two of the
+- [x] **C20. Customize Ribbon and the Quick Access Toolbar.** Two of the
   categories **C7** leaves out, and they are one job: both are a person saying
   which commands go where.
   The ribbon here is a static table — `RIBBON_GROUPS` and its neighbours — so
@@ -1019,9 +1019,23 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   whole truth, with what a person changed kept beside it in the settings.
   Word's Quick Access Toolbar is the row of small buttons in the title bar,
   which exists here with three fixed commands on it.
-  *Done when:* a command can be added to the toolbar and to a ribbon group, a
-  group can be moved or hidden, the changes survive closing the program, and
-  Reset puts it all back.
+  *Done:* `chrome::customise` keeps what was changed rather than a copy of the
+  ribbon — which groups are switched off, which tabs were reordered, what was
+  added where, and what is on the toolbar — so a group added to this program
+  later still turns up on the ribbon of somebody who customised it a year ago.
+  The two pages are the last two tabs of Options, laid out as Word lays them
+  out: every command on the left, the toolbar or the ribbon on the right, and
+  Add, Remove, Move Up, Move Down and Reset along the bottom. The right-hand
+  list is a new kind of dialog field — a tree that folds open, with a tick box
+  against each group — because the nine tabs and their fifty groups are not a
+  list anybody could scroll. Everything is written into the settings file, and
+  a file that says nothing says it in no lines at all.
+  *Not done, and named here rather than drawn as a dead control:* hiding a whole
+  tab, renaming a tab or a group, making a new tab or a new group, and taking
+  off a command that came with the group — that last one would mean the table in
+  `chrome::ribbon` no longer describing the ribbon, and there is nowhere yet to
+  say "this button of Word's is not shown". Word's Import/Export of a
+  customisation file is missing too.
 - [ ] **C21. The order things are drawn in, and which marks are shown.** Two
   gaps **C11** found, both of them a missing distinction rather than a missing
   button.
