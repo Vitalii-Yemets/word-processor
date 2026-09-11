@@ -154,7 +154,25 @@ pub struct Anchor {
     pub vertical: Placement,
     /// How much room to leave round it, in EMU: left, right, top, bottom.
     pub distance: (i64, i64, i64, i64),
+    /// Which drawing is over which where two of them overlap.
+    ///
+    /// `wp:anchor/@relativeHeight`, and bigger is nearer the reader. Word
+    /// starts at [`USUAL_DEPTH`] and counts up as drawings are added, which is
+    /// why a document's numbers are all within a few of each other and nothing
+    /// is lost by writing them back as they came.
+    ///
+    /// It orders the drawings within a layer and not across one: a drawing
+    /// behind the text is behind every drawing in front of it whatever number
+    /// either carries. See [`Anchor::behind_text`].
+    pub depth: u32,
 }
+
+/// The number Word gives the first floating drawing in a document.
+///
+/// 0x0F000000. There is nothing special about it beyond being Word's, and
+/// matching it means a document saved here and opened there has the numbers
+/// Word would have written.
+pub const USUAL_DEPTH: u32 = 251_658_240;
 
 impl Default for Anchor {
     fn default() -> Self {
@@ -167,6 +185,7 @@ impl Default for Anchor {
             vertical: Placement::Offset(0),
             // A tenth of an inch either side, which is what Word leaves.
             distance: (114_300, 114_300, 0, 0),
+            depth: USUAL_DEPTH,
         }
     }
 }
@@ -192,6 +211,10 @@ pub fn read_anchor(drawing: &Element) -> Option<Anchor> {
     let mut result = Anchor { wrap: Wrap::None, ..Anchor::default() };
 
     result.behind_text = matches!(anchor.attribute_by_name("behindDoc"), Some("1" | "true"));
+    result.depth = anchor
+        .attribute_by_name("relativeHeight")
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(USUAL_DEPTH);
     result.distance = (
         number(anchor, "distL"),
         number(anchor, "distR"),
@@ -233,9 +256,8 @@ pub fn write_anchor(anchor: &Anchor, element: &mut Element, wp: &str) {
     element.set_attribute("distT", &top.to_string());
     element.set_attribute("distB", &bottom.to_string());
     element.set_attribute("simplePos", "0");
-    // Which drawing is over which when two overlap. One number for all of them
-    // is enough while nothing here can reorder them.
-    element.set_attribute("relativeHeight", "251658240");
+    // Which drawing is over which when two overlap.
+    element.set_attribute("relativeHeight", &anchor.depth.to_string());
     element.set_attribute("behindDoc", if anchor.behind_text { "1" } else { "0" });
     element.set_attribute("locked", "0");
     element.set_attribute("layoutInCell", "1");
@@ -386,6 +408,25 @@ mod tests {
         let anchor = Anchor { distance: (1, 2, 3, 4), ..Anchor::default() };
         let read = read_anchor(&drawing_with(&anchor)).expect("an anchor");
         assert_eq!(read.distance, (1, 2, 3, 4));
+    }
+
+    #[test]
+    fn which_drawing_is_over_which_survives() {
+        let anchor = Anchor { depth: USUAL_DEPTH + 7, ..Anchor::default() };
+        let read = read_anchor(&drawing_with(&anchor)).expect("an anchor");
+        assert_eq!(read.depth, USUAL_DEPTH + 7);
+    }
+
+    #[test]
+    fn a_drawing_that_says_nothing_about_it_gets_words_own_number() {
+        // An anchor written by something that left the attribute out. It has to
+        // come back as a number, because a drawing with no place in the pile
+        // has no place at all.
+        let mut anchor = Element::new("wp:anchor", Some(WP));
+        anchor.set_attribute("behindDoc", "0");
+        let mut drawing = Element::new("w:drawing", Some("w"));
+        drawing.push_element(anchor);
+        assert_eq!(read_anchor(&drawing).expect("an anchor").depth, USUAL_DEPTH);
     }
 
     #[test]

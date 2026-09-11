@@ -52,51 +52,8 @@ pub(crate) fn of(page: &Page, names: &BTreeMap<usize, String>) -> Drawing {
 
     // The same order the screen is drawn in, because the order is what decides
     // which of two overlapping things is seen.
-    for (index, placed) in page.images.iter().enumerate() {
-        let name = format!("Im{index}");
-        let top = height - placed.y - placed.height;
-        out.push_str(&format!(
-            "q {} 0 0 {} {} {} cm /{name} Do Q\n",
-            number(placed.width),
-            number(placed.height),
-            number(placed.x),
-            number(top),
-        ));
-        drawing.images.push((name, take_apart(&placed.image)));
-    }
-
-    for shape in &page.shapes {
-        if let Some((colour, distance)) = shape.shadow {
-            let path = wp_layout::geometry::path_in(
-                shape.preset,
-                shape.x + distance,
-                shape.y + distance,
-                shape.width,
-                shape.height,
-            );
-            fill(&mut out, &path, colour, height, &mut drawing);
-        }
-        if let Some(colour) = shape.fill {
-            let path = wp_layout::geometry::path_in(
-                shape.preset,
-                shape.x,
-                shape.y,
-                shape.width,
-                shape.height,
-            );
-            fill(&mut out, &path, colour, height, &mut drawing);
-        }
-        if let Some(colour) = shape.outline {
-            let path = wp_layout::geometry::outline_in(
-                shape.preset,
-                shape.x,
-                shape.y,
-                shape.width,
-                shape.height,
-                shape.outline_weight,
-            );
-            fill(&mut out, &path, colour, height, &mut drawing);
-        }
+    for placed in page.drawings_under() {
+        write_drawing(&mut out, placed, height, &mut drawing);
     }
 
     for placed in &page.paths {
@@ -115,7 +72,8 @@ pub(crate) fn of(page: &Page, names: &BTreeMap<usize, String>) -> Drawing {
         ));
     }
 
-    let inside = page.shapes.iter().flat_map(|shape| shape.text.iter());
+    let inside =
+        page.shapes.iter().filter(|shape| !shape.over_text).flat_map(|shape| shape.text.iter());
     let glyphs: Vec<&PositionedGlyph> = page
         .glyphs
         .iter()
@@ -124,8 +82,77 @@ pub(crate) fn of(page: &Page, names: &BTreeMap<usize, String>) -> Drawing {
         .collect();
     write_text(&mut out, &glyphs, names, height, &mut drawing);
 
+    // What a person put in front of the text, over it, with the words inside a
+    // shape written after the shape so they are not painted over.
+    for placed in page.drawings_over() {
+        write_drawing(&mut out, placed, height, &mut drawing);
+        if let wp_layout::Drawing::Shape(shape) = placed {
+            let glyphs: Vec<&PositionedGlyph> =
+                shape.text.iter().filter(|glyph| !glyph.invisible && glyph.size > 0.0).collect();
+            write_text(&mut out, &glyphs, names, height, &mut drawing);
+        }
+    }
+
     drawing.stream = out;
     drawing
+}
+
+/// Writes one drawing's body into the page's instructions.
+fn write_drawing(
+    out: &mut String,
+    placed: wp_layout::Drawing<'_>,
+    height: f32,
+    drawing: &mut Drawing,
+) {
+    match placed {
+        wp_layout::Drawing::Picture(picture) => {
+            // Named by how many have gone in already, which is what the page's
+            // resource dictionary will call it.
+            let name = format!("Im{}", drawing.images.len());
+            let top = height - picture.y - picture.height;
+            out.push_str(&format!(
+                "q {} 0 0 {} {} {} cm /{name} Do Q\n",
+                number(picture.width),
+                number(picture.height),
+                number(picture.x),
+                number(top),
+            ));
+            drawing.images.push((name, take_apart(&picture.image)));
+        }
+        wp_layout::Drawing::Shape(shape) => {
+            if let Some((colour, distance)) = shape.shadow {
+                let path = wp_layout::geometry::path_in(
+                    shape.preset,
+                    shape.x + distance,
+                    shape.y + distance,
+                    shape.width,
+                    shape.height,
+                );
+                fill(out, &path, colour, height, drawing);
+            }
+            if let Some(colour) = shape.fill {
+                let path = wp_layout::geometry::path_in(
+                    shape.preset,
+                    shape.x,
+                    shape.y,
+                    shape.width,
+                    shape.height,
+                );
+                fill(out, &path, colour, height, drawing);
+            }
+            if let Some(colour) = shape.outline {
+                let path = wp_layout::geometry::outline_in(
+                    shape.preset,
+                    shape.x,
+                    shape.y,
+                    shape.width,
+                    shape.height,
+                    shape.outline_weight,
+                );
+                fill(out, &path, colour, height, drawing);
+            }
+        }
+    }
 }
 
 /// Writes the text, a run at a time.

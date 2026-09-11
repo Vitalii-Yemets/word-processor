@@ -1082,6 +1082,10 @@ impl Editor {
             | Choice::Tracking
             | Choice::DocumentSpacing
             | Choice::AlignmentTab => return self.open_ribbon_menu(choice),
+            // The two Arrange menus, whose entries depend on nothing but which
+            // way they move a drawing.
+            Choice::Forward => return self.open_arrange(true),
+            Choice::Backward => return self.open_arrange(false),
             Choice::Font => Command::ChooseFont,
             Choice::Size => Command::ChooseSize,
             Choice::Style => Command::ChooseStyle,
@@ -1216,6 +1220,8 @@ impl Editor {
             | Choice::Shape
             | Choice::Wrap
             | Choice::Position
+            | Choice::Forward
+            | Choice::Backward
             | Choice::QuickPart
             | Choice::WordArt
             | Choice::Drawing
@@ -1303,6 +1309,8 @@ impl Editor {
             Choice::TablePart => self.choose_table_part(index),
             Choice::Wrap => self.choose_wrapping(index),
             Choice::Position => self.choose_position(index),
+            Choice::Forward => self.choose_arrange(true, index),
+            Choice::Backward => self.choose_arrange(false, index),
             Choice::QuickPart => self.choose_quick_part(index),
             Choice::WordArt => self.choose_word_art(index),
             Choice::Drawing => self.choose_drawing(index),

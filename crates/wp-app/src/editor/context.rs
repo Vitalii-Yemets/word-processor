@@ -133,7 +133,9 @@ impl Editor {
                 Entry::item(Command::Position, "Position", Icon::Position),
                 Entry::line(),
                 Entry::item(Command::BringForward, "Bring Forward", Icon::BringForward),
+                Entry::item(Command::BringToFront, "Bring to Front", Icon::BringForward),
                 Entry::item(Command::SendBackward, "Send Backward", Icon::SendBackward),
+                Entry::item(Command::SendToBack, "Send to Back", Icon::SendBackward),
                 Entry::item(Command::SelectionPane, "Selection Pane", Icon::SelectionPane),
             ];
         }

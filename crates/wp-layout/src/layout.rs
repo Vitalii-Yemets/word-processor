@@ -334,6 +334,10 @@ pub struct PlacedImage {
     pub width: f32,
     pub height: f32,
     pub image: Rc<Image>,
+    /// Which drawing is over which where two overlap, and whether this one is
+    /// over the text. See [`Page::drawings_under`].
+    pub depth: u32,
+    pub over_text: bool,
 }
 
 /// A shape drawn on the page, with whatever is written inside it.
@@ -364,6 +368,10 @@ pub struct PlacedShape {
     /// Where in the document the drawing is, so a press on it can put the
     /// caret beside it and the commands that act on it can find it.
     pub at: Option<TextPosition>,
+    /// Which drawing is over which where two overlap, and whether this one is
+    /// over the text. See [`Page::drawings_under`].
+    pub depth: u32,
+    pub over_text: bool,
     /// The shape this was placed from, kept until its text has been laid out.
     ///
     /// The text inside a shape is a document of its own, and laying one out
@@ -409,7 +417,53 @@ pub struct Page {
     pub lines: Vec<PageLine>,
 }
 
+/// One drawing on a page, whatever kind it is.
+///
+/// The two kinds are kept in lists of their own because almost everything that
+/// touches them wants one kind or the other. Drawing them is the exception: two
+/// that overlap are ordered by the number their anchors carry and not by which
+/// kind they are, so the pass that draws them needs them in one sequence.
+#[derive(Clone, Copy, Debug)]
+pub enum Drawing<'a> {
+    Picture(&'a PlacedImage),
+    Shape(&'a PlacedShape),
+}
+
 impl Page {
+    /// The drawings that go under the text, in the order they are drawn.
+    #[must_use]
+    pub fn drawings_under(&self) -> Vec<Drawing<'_>> {
+        self.drawings_where(false)
+    }
+
+    /// And the ones that go over it: Word's "in front of text", which is every
+    /// floating drawing that does not say `behindDoc`.
+    #[must_use]
+    pub fn drawings_over(&self) -> Vec<Drawing<'_>> {
+        self.drawings_where(true)
+    }
+
+    /// One layer's drawings, nearest the reader last.
+    ///
+    /// Ordered by the anchor's number, and where two carry the same number —
+    /// which is what every drawing in the line of text does — by where they
+    /// stand in the document. That is Word's tie-break too.
+    fn drawings_where(&self, over: bool) -> Vec<Drawing<'_>> {
+        let mut out: Vec<(u32, bool, usize, Drawing<'_>)> = Vec::new();
+        for (at, picture) in self.images.iter().enumerate() {
+            if picture.over_text == over {
+                out.push((picture.depth, false, at, Drawing::Picture(picture)));
+            }
+        }
+        for (at, shape) in self.shapes.iter().enumerate() {
+            if shape.over_text == over {
+                out.push((shape.depth, true, at, Drawing::Shape(shape)));
+            }
+        }
+        out.sort_by_key(|(depth, is_shape, at, _)| (*depth, *is_shape, *at));
+        out.into_iter().map(|(_, _, _, drawing)| drawing).collect()
+    }
+
     /// The place in the document a point on the page corresponds to.
     ///
     /// Used to turn a click into a caret. A point below the last line lands at
@@ -3079,6 +3133,13 @@ impl<'a> LayoutEngine<'a> {
             text: Vec::new(),
             name: shape.name.clone(),
             at,
+            depth: anchor.depth,
+            // Word's rule, and the only thing `behindDoc` decides: a floating
+            // drawing is drawn over the text unless it says otherwise. Where
+            // the wrapping keeps the text out of its way it makes no visible
+            // difference; where it does not — a drawing laid over a table —
+            // it is the difference between reading the words and not.
+            over_text: !anchor.behind_text,
             source: Some(Box::new(shape.clone())),
         });
     }
@@ -4011,6 +4072,10 @@ impl LayoutEngine<'_> {
                     text: Vec::new(),
                     name: shape.name.clone(),
                     at: Some(TextPosition::new(placement.paragraph, item.start_offset)),
+                    // In the line of text, which is under everything that
+                    // floats and is drawn before the words of its own line.
+                    depth: 0,
+                    over_text: false,
                     source: Some(shape.clone()),
                 });
                 x += item.width;
@@ -4040,6 +4105,8 @@ impl LayoutEngine<'_> {
                     width: item.width,
                     height: *height,
                     image: Rc::clone(image),
+                    depth: 0,
+                    over_text: false,
                 });
                 x += item.width;
             } else if item.is_tab {

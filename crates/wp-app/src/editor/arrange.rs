@@ -19,6 +19,18 @@ use super::Editor;
 const POSITIONS: &[(&str, &str)] = &[("Left", "left"), ("Centre", "center"), ("Right", "right")];
 
 impl Editor {
+    /// The anchor a drawing has, or the one it gets when it begins to float.
+    ///
+    /// A drawing that starts floating goes on top of the ones already there,
+    /// which is what Word does and what anybody who has just made a drawing
+    /// float expects: they want to see it.
+    fn anchor_of(&self, shape: &wp_docx::shapes::Shape) -> Anchor {
+        match &shape.anchor {
+            Some(anchor) => anchor.clone(),
+            None => Anchor { depth: self.document.next_drawing_depth(), ..Anchor::default() },
+        }
+    }
+
     /// Drops open what the text can do about a drawing.
     pub(super) fn open_wrapping(&mut self) -> Response {
         if self.popup.as_ref().is_some_and(|popup| popup.choice == Choice::Wrap) {
@@ -62,7 +74,7 @@ impl Editor {
                     // Behind and in front are the same wrapping — none — and
                     // differ only in which is drawn over which.
                     behind_text: wrap == Wrap::None,
-                    ..shape.anchor.clone().unwrap_or_default()
+                    ..self.anchor_of(&shape)
                 };
                 (Some(anchor), format!("Wrap: {}", wrap.label()))
             }
@@ -102,7 +114,7 @@ impl Editor {
 
         // A drawing has to float before it can be put anywhere, so one that was
         // in the line starts floating with the wrapping Word gives it.
-        let mut anchor = shape.anchor.clone().unwrap_or_default();
+        let mut anchor = self.anchor_of(&shape);
         anchor.horizontal = Placement::Aligned(edge.to_owned());
         shape.anchor = Some(anchor);
 
@@ -112,11 +124,15 @@ impl Editor {
     }
 
     /// Puts the drawing at the caret in front of the text, or behind it.
+    ///
+    /// Word's last entry on each of the two Arrange menus, and the one that
+    /// takes a drawing out of the pile altogether: the text no longer keeps out
+    /// of its way, and it is drawn over the words or under them.
     pub(super) fn set_shape_depth(&mut self, behind: bool) -> Response {
         let Some(mut shape) = self.document.shape_here() else {
             return self.report("Put the caret beside a shape or a picture first");
         };
-        let mut anchor = shape.anchor.clone().unwrap_or_default();
+        let mut anchor = self.anchor_of(&shape);
         anchor.wrap = Wrap::None;
         anchor.behind_text = behind;
         shape.anchor = Some(anchor);
@@ -124,5 +140,273 @@ impl Editor {
         let changed = self.document.replace_shape_here(&shape);
         self.relayout();
         self.edited(changed, if behind { "Behind text" } else { "In front of text" })
+    }
+
+    /// Drops open one of Word's two Arrange menus.
+    pub(super) fn open_arrange(&mut self, forwards: bool) -> Response {
+        let (choice, command) = if forwards {
+            (Choice::Forward, Command::BringForward)
+        } else {
+            (Choice::Backward, Command::SendBackward)
+        };
+        if self.close_popup_if(choice) {
+            return Response::Redraw;
+        }
+        if self.document.shape_here().is_none() {
+            return self.report("Put the caret beside a shape or a picture first");
+        }
+        let Some((left, top, _)) = self.ribbon.command_rect(command) else {
+            return Response::Ignored;
+        };
+
+        let items: Vec<String> =
+            arrange_entries(forwards).iter().map(|(label, _)| (*label).to_owned()).collect();
+        self.popup = Some(Popup::new(choice, items, None, left, top, 240.0));
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// Runs whichever of a menu's three was chosen.
+    pub(super) fn choose_arrange(&mut self, forwards: bool, index: usize) -> Response {
+        self.popup = None;
+        let Some((_, command)) = arrange_entries(forwards).get(index).copied() else {
+            return Response::Ignored;
+        };
+        self.run(command)
+    }
+
+    /// Moves the drawing at the caret through the pile of drawings.
+    ///
+    /// The pile is every floating drawing in the document, ordered by the
+    /// number its anchor carries. One step puts this drawing just past its
+    /// neighbour; `all_the_way` puts it past every one of them.
+    ///
+    /// Nothing at all if it is already at that end, and nothing if it does not
+    /// float: a drawing in the line of text is part of the text, and there is
+    /// nothing for it to be in front of.
+    pub(super) fn move_shape_depth(&mut self, forwards: bool, all_the_way: bool) -> Response {
+        let Some(mut shape) = self.document.shape_here() else {
+            return self.report("Put the caret beside a shape or a picture first");
+        };
+        let Some(mut anchor) = shape.anchor.clone() else {
+            return self.report("A drawing in the line of text is not in front of anything");
+        };
+
+        // Every other floating drawing's depth. The one at the caret is among
+        // them, and comparing against itself is harmless: nothing is strictly
+        // above or below its own number.
+        let others: Vec<u32> = self
+            .document
+            .shapes()
+            .iter()
+            .filter_map(|found| found.anchor.as_ref())
+            .map(|found| found.depth)
+            .collect();
+
+        let wanted = if forwards {
+            let above = others.iter().copied().filter(|depth| *depth > anchor.depth);
+            if all_the_way { above.max() } else { above.min() }.map(|depth| depth.saturating_add(1))
+        } else {
+            let below = others.iter().copied().filter(|depth| *depth < anchor.depth);
+            if all_the_way { below.min() } else { below.max() }.map(|depth| depth.saturating_sub(1))
+        };
+        let Some(wanted) = wanted else {
+            return self.report(if forwards {
+                "This drawing is already in front of the others"
+            } else {
+                "This drawing is already behind the others"
+            });
+        };
+
+        anchor.depth = wanted;
+        shape.anchor = Some(anchor);
+        let changed = self.document.replace_shape_here(&shape);
+        self.relayout();
+        self.edited(
+            changed,
+            match (forwards, all_the_way) {
+                (true, false) => "Bring Forward",
+                (true, true) => "Bring to Front",
+                (false, false) => "Send Backward",
+                (false, true) => "Send to Back",
+            },
+        )
+    }
+}
+
+/// What one of the two Arrange menus offers, in Word's order.
+#[must_use]
+fn arrange_entries(forwards: bool) -> &'static [(&'static str, Command)] {
+    if forwards {
+        &[
+            ("Bring Forward", Command::BringForward),
+            ("Bring to Front", Command::BringToFront),
+            ("Bring in Front of Text", Command::BringInFrontOfText),
+        ]
+    } else {
+        &[
+            ("Send Backward", Command::SendBackward),
+            ("Send to Back", Command::SendToBack),
+            ("Send Behind Text", Command::SendBehindText),
+        ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wp_docx::anchor::USUAL_DEPTH;
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Event};
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    /// A document holding two floating shapes, one after the other.
+    fn editor() -> Editor {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Text")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+
+        for name in ["First", "Second"] {
+            let shape = wp_docx::shapes::Shape {
+                name: name.to_owned(),
+                width_emu: 914_400,
+                height_emu: 914_400,
+                fill: Some("4472C4".to_owned()),
+                anchor: Some(wp_docx::anchor::Anchor::default()),
+                ..wp_docx::shapes::Shape::default()
+            };
+            assert!(editor.document.insert_shape(&shape), "the shape went nowhere");
+        }
+        editor.relayout();
+        editor
+    }
+
+    /// The depths of every floating shape, in the order the document holds
+    /// them.
+    fn depths(editor: &Editor) -> Vec<u32> {
+        editor
+            .document
+            .shapes()
+            .iter()
+            .filter_map(|shape| shape.anchor.as_ref())
+            .map(|anchor| anchor.depth)
+            .collect()
+    }
+
+    /// Puts the caret beside the first of the two shapes.
+    fn on_first(editor: &mut Editor) {
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        assert_eq!(
+            editor.document.shape_here().map(|shape| shape.name),
+            Some("First".to_owned()),
+            "the caret is not beside the first shape"
+        );
+    }
+
+    #[test]
+    fn each_new_drawing_goes_on_top_of_the_ones_already_there() {
+        // Word counts up from its own number, and so does this. Two drawings
+        // at the same depth would be two nothing could tell apart.
+        let editor = editor();
+        assert_eq!(depths(&editor), vec![USUAL_DEPTH, USUAL_DEPTH + 1]);
+    }
+
+    #[test]
+    fn bringing_one_forward_puts_it_past_the_other() {
+        let mut editor = editor();
+        on_first(&mut editor);
+        editor.move_shape_depth(true, false);
+
+        let depths = depths(&editor);
+        assert!(depths[0] > depths[1], "got {depths:?}");
+    }
+
+    #[test]
+    fn sending_one_back_puts_it_behind_the_other() {
+        let mut editor = editor();
+        on_first(&mut editor);
+        editor.move_shape_depth(true, false);
+        editor.move_shape_depth(false, false);
+
+        let depths = depths(&editor);
+        assert!(depths[0] < depths[1], "got {depths:?}");
+    }
+
+    #[test]
+    fn one_already_at_the_back_does_not_move() {
+        let mut editor = editor();
+        on_first(&mut editor);
+        editor.move_shape_depth(false, false);
+        let before = depths(&editor);
+
+        // Everything is at the same depth, so there is nothing below it.
+        editor.move_shape_depth(false, false);
+        assert_eq!(depths(&editor), before);
+    }
+
+    #[test]
+    fn the_order_survives_being_saved_and_opened_again() {
+        let mut editor = editor();
+        on_first(&mut editor);
+        editor.move_shape_depth(true, true);
+        let wanted = depths(&editor);
+
+        let bytes = editor.document.save().expect("saving");
+        let reopened = Document::open(&bytes).expect("reopening");
+        let after: Vec<u32> = reopened
+            .shapes()
+            .iter()
+            .filter_map(|shape| shape.anchor.as_ref())
+            .map(|anchor| anchor.depth)
+            .collect();
+        assert_eq!(after, wanted);
+    }
+
+    #[test]
+    fn the_page_draws_them_in_that_order() {
+        let mut editor = editor();
+        on_first(&mut editor);
+        editor.move_shape_depth(true, true);
+        editor.relayout();
+
+        let page = editor.pages.first().expect("a page");
+        let order: Vec<u32> = page
+            .drawings_over()
+            .iter()
+            .filter_map(|drawing| match drawing {
+                wp_layout::Drawing::Shape(shape) => Some(shape.depth),
+                wp_layout::Drawing::Picture(_) => None,
+            })
+            .collect();
+        assert!(order.windows(2).all(|pair| pair[0] <= pair[1]), "got {order:?}");
+        assert_eq!(order.len(), 2, "both shapes should be in front of the text");
+    }
+
+    #[test]
+    fn a_drawing_in_the_line_of_text_is_not_in_front_of_anything() {
+        let mut editor = editor();
+        on_first(&mut editor);
+        // Put it back in the line, and the pile no longer has anything to say
+        // about it.
+        let mut shape = editor.document.shape_here().expect("a shape");
+        shape.anchor = None;
+        editor.document.replace_shape_here(&shape);
+
+        editor.move_shape_depth(true, false);
+        assert!(editor.document.shape_here().expect("a shape").anchor.is_none());
+    }
+
+    #[test]
+    fn each_menu_offers_words_three() {
+        assert_eq!(arrange_entries(true).len(), 3);
+        assert_eq!(arrange_entries(false).len(), 3);
     }
 }

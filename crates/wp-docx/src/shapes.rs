@@ -391,6 +391,16 @@ impl Document {
         let caret = self.caret();
         self.record(crate::history::EditKind::Structural, caret, false);
 
+        // A new floating drawing goes on top of the ones already there, which
+        // is what Word does and what anybody putting one down expects. Two
+        // drawings at the same depth would also be two that cannot be told
+        // apart by the commands that move one past the other.
+        let mut shape = shape.clone();
+        if let Some(anchor) = &mut shape.anchor {
+            anchor.depth = self.next_drawing_depth();
+        }
+        let shape = &shape;
+
         let prefix = self.prefix();
         let element = crate::shapes::shape_element(shape, prefix.as_deref());
         if !crate::position::insert_element_at(
@@ -405,6 +415,21 @@ impl Document {
         self.set_caret(crate::TextPosition::new(caret.paragraph, caret.offset + 1));
         self.mark_modified();
         true
+    }
+
+    /// The number to give a floating drawing that is to go on top of the ones
+    /// already in the document.
+    ///
+    /// One more than the highest there is, or Word's starting number when there
+    /// are none. See [`crate::anchor::Anchor::depth`].
+    #[must_use]
+    pub fn next_drawing_depth(&self) -> u32 {
+        self.shapes()
+            .iter()
+            .filter_map(|shape| shape.anchor.as_ref())
+            .map(|anchor| anchor.depth)
+            .max()
+            .map_or(crate::anchor::USUAL_DEPTH, |highest| highest.saturating_add(1))
     }
 
     /// Every shape in the document, in reading order.

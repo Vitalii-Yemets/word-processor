@@ -15,7 +15,7 @@ use wp_raster::{Canvas, Color, Path, Point, Transform};
 use wp_docx::effects::Effect;
 
 use crate::device::Device;
-use crate::layout::{GlyphEffect, Page, PositionedGlyph};
+use crate::layout::{Drawing, GlyphEffect, Page, PositionedGlyph};
 use crate::library::FontLibrary;
 
 /// Draws pages, keeping the outlines it has already read.
@@ -131,52 +131,12 @@ impl<'a> Renderer<'a> {
     pub fn draw_onto(&mut self, canvas: &mut Canvas, page: &Page, offset_x: f32, offset_y: f32) {
         // Decorations go first so that a glyph sitting on an underline is drawn
         // over it rather than under it.
-        // Pictures go under the text and the decorations: a caption drawn over
-        // a picture is a caption; a picture drawn over a caption is a mistake.
-        for picture in &page.images {
-            canvas.draw_pixels(
-                &picture.image.pixels,
-                picture.image.width,
-                picture.image.height,
-                (picture.x + offset_x).round() as i32,
-                (picture.y + offset_y).round() as i32,
-                picture.width.round().max(0.0) as usize,
-                picture.height.round().max(0.0) as usize,
-            );
-        }
-
-        // Shapes go under the text and over the pictures: a shape is drawn on
-        // the page, and the text of the document runs over it only where the
-        // document put text there.
-        for shape in &page.shapes {
-            let (x, y) = (shape.x + offset_x, shape.y + offset_y);
-            // The shadow first, under everything: an offset copy of whatever
-            // the shape's outline encloses.
-            if let Some((colour, distance)) = shape.shadow {
-                let path = crate::geometry::path_in(
-                    shape.preset,
-                    x + distance,
-                    y + distance,
-                    shape.width,
-                    shape.height,
-                );
-                canvas.fill_path(&path, colour);
-            }
-            if let Some(fill) = shape.fill {
-                let path = crate::geometry::path_in(shape.preset, x, y, shape.width, shape.height);
-                canvas.fill_path(&path, fill);
-            }
-            if let Some(outline) = shape.outline {
-                let path = crate::geometry::outline_in(
-                    shape.preset,
-                    x,
-                    y,
-                    shape.width,
-                    shape.height,
-                    shape.outline_weight,
-                );
-                canvas.fill_path(&path, outline);
-            }
+        // The drawings that go under the text: pictures and shapes in one
+        // sequence, ordered by what their anchors say rather than by which kind
+        // they are. A caption drawn over a picture is a caption; a picture
+        // drawn over a caption is a mistake.
+        for drawing in page.drawings_under() {
+            draw_drawing(canvas, drawing, offset_x, offset_y);
         }
 
         // Shapes that are not rectangles: the slices of a pie, the line of a
@@ -197,11 +157,38 @@ impl<'a> Renderer<'a> {
             );
         }
 
-        // The text of the document, and then the text inside the shapes — which
-        // is placed in page coordinates already and so is drawn the same way.
-        let inside: Vec<&PositionedGlyph> =
-            page.shapes.iter().flat_map(|shape| &shape.text).collect();
-        for glyph in page.glyphs.iter().chain(inside) {
+        // The text of the document, and then the text inside the shapes under
+        // it — which is placed in page coordinates already and so is drawn the
+        // same way. A shape in front of the text has its own text drawn with
+        // it, below, or the shape would be filled in over its own words.
+        let inside: Vec<&PositionedGlyph> = page
+            .shapes
+            .iter()
+            .filter(|shape| !shape.over_text)
+            .flat_map(|shape| &shape.text)
+            .collect();
+        self.draw_glyphs(canvas, page.glyphs.iter().chain(inside), offset_x, offset_y);
+
+        // And last, the drawings a person put in front of the text. Word's
+        // "In Front of Text", which until now was a command that said it had
+        // done something and had not.
+        for drawing in page.drawings_over() {
+            draw_drawing(canvas, drawing, offset_x, offset_y);
+            if let Drawing::Shape(shape) = drawing {
+                self.draw_glyphs(canvas, shape.text.iter(), offset_x, offset_y);
+            }
+        }
+    }
+
+    /// Draws letters onto the canvas, wherever they came from.
+    fn draw_glyphs<'glyphs>(
+        &mut self,
+        canvas: &mut Canvas,
+        glyphs: impl Iterator<Item = &'glyphs PositionedGlyph>,
+        offset_x: f32,
+        offset_y: f32,
+    ) {
+        for glyph in glyphs {
             // A tab or a break takes up room and carries a position, but there
             // is nothing to draw for it.
             if glyph.invisible {
@@ -234,6 +221,10 @@ impl<'a> Renderer<'a> {
     }
 
     /// Draws a page's text through a transform.
+    ///
+    /// (See [`draw_drawing`] below for the one that draws a picture or a
+    /// shape's body, which is not a method because it needs nothing the
+    /// renderer holds.)
     ///
     /// Only the glyphs: the things this is for — a watermark turned corner to
     /// corner, and whatever else is drawn at an angle later — are made of
@@ -323,6 +314,54 @@ const RING: &[(f32, f32)] = &[
 /// copy, a glow is three rings each fainter than the last, and a reflection is
 /// one faint mirrored copy. From a page's reading distance the difference is
 /// small; up close it is visible, and worth saying so.
+/// Draws one drawing's body: a picture's pixels, or a shape's shadow, fill and
+/// outline.
+///
+/// Not the text inside a shape, which is letters and goes through the renderer.
+fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset_y: f32) {
+    match drawing {
+        Drawing::Picture(picture) => canvas.draw_pixels(
+            &picture.image.pixels,
+            picture.image.width,
+            picture.image.height,
+            (picture.x + offset_x).round() as i32,
+            (picture.y + offset_y).round() as i32,
+            picture.width.round().max(0.0) as usize,
+            picture.height.round().max(0.0) as usize,
+        ),
+        Drawing::Shape(shape) => {
+            let (x, y) = (shape.x + offset_x, shape.y + offset_y);
+            // The shadow first, under everything: an offset copy of whatever
+            // the shape's outline encloses.
+            if let Some((colour, distance)) = shape.shadow {
+                let path = crate::geometry::path_in(
+                    shape.preset,
+                    x + distance,
+                    y + distance,
+                    shape.width,
+                    shape.height,
+                );
+                canvas.fill_path(&path, colour);
+            }
+            if let Some(fill) = shape.fill {
+                let path = crate::geometry::path_in(shape.preset, x, y, shape.width, shape.height);
+                canvas.fill_path(&path, fill);
+            }
+            if let Some(outline) = shape.outline {
+                let path = crate::geometry::outline_in(
+                    shape.preset,
+                    x,
+                    y,
+                    shape.width,
+                    shape.height,
+                    shape.outline_weight,
+                );
+                canvas.fill_path(&path, outline);
+            }
+        }
+    }
+}
+
 fn draw_effect(canvas: &mut Canvas, path: &Path, effect: &GlyphEffect, size: f32, baseline: f32) {
     match effect.kind {
         Effect::None => {}

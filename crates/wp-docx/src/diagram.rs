@@ -191,6 +191,9 @@ fn plain(preset: &str, x: i64, y: i64, width: i64, height: i64, fill: &str) -> S
             vertical_from: Relative::Paragraph,
             vertical: Placement::Offset(y),
             distance: (0, 0, GAP / 4, GAP / 4),
+            // Every box of a diagram is at the same depth: they are laid out
+            // side by side and never overlap.
+            depth: crate::anchor::USUAL_DEPTH,
         }),
         description: String::new(),
     }

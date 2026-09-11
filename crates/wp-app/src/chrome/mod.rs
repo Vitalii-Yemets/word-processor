@@ -272,8 +272,15 @@ pub enum Command {
     Envelopes,
     Labels,
     TableProperties,
+    /// The six of Word's two Arrange menus: one step through the pile, all the
+    /// way to one end of it, or out of the pile altogether and in front of or
+    /// behind the text.
     BringForward,
+    BringToFront,
+    BringInFrontOfText,
     SendBackward,
+    SendToBack,
+    SendBehindText,
     LineNumbers,
     Hyphenation,
 

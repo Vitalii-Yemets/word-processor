@@ -254,6 +254,10 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::AcceptChange, choice: Choice::Accepting, split: true },
     Menu { command: Command::RejectChange, choice: Choice::Rejecting, split: true },
     Menu { command: Command::TrackChanges, choice: Choice::Tracking, split: true },
+    // Word's two Arrange buttons: the face moves the drawing one place through
+    // the pile, and the arrow beside it offers the two longer moves.
+    Menu { command: Command::BringForward, choice: Choice::Forward, split: true },
+    Menu { command: Command::SendBackward, choice: Choice::Backward, split: true },
 ];
 
 /// The menu a command drops, if it drops one.
@@ -1142,6 +1146,8 @@ impl Ribbon {
                     | Choice::Shape
                     | Choice::Wrap
                     | Choice::Position
+                    | Choice::Forward
+                    | Choice::Backward
                     | Choice::QuickPart
                     | Choice::WordArt
                     | Choice::Drawing

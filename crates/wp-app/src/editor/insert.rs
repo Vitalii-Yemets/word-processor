@@ -341,6 +341,34 @@ impl Editor {
                     });
                 }
             }
+            "overlap" => {
+                // Two drawings on top of one another, the second brought in
+                // front of the text. The only way to see that the order the
+                // anchors carry is the order they are drawn in.
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                for (name, fill, offset) in
+                    [("Behind", "C00000", 0i64), ("In front", "70AD47", 457_200)]
+                {
+                    let shape = wp_docx::shapes::Shape {
+                        name: name.to_owned(),
+                        width_emu: 1_828_800,
+                        height_emu: 914_400,
+                        fill: Some(fill.to_owned()),
+                        text: vec![wp_docx::model::Paragraph::text(name)],
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset(offset),
+                            vertical: Placement::Offset(offset),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.insert_shape(&shape);
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                }
+                self.relayout();
+            }
             "customised" => {
                 // A ribbon somebody has changed: a group switched off, a group
                 // moved to the front, a command added to another, and a fourth
