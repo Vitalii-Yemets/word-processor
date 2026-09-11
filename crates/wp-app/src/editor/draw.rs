@@ -750,7 +750,14 @@ impl Editor {
         self.draw_dialog();
 
         // And the tip over even that: it is the one thing that is always about
-        // whatever the pointer is on this instant.
+        // whatever the pointer is on this instant — unless something is open,
+        // in which case it is forgotten rather than drawn over the menu it
+        // would cover. A menu can be dropped open by the keyboard as well as by
+        // the button, so the rule is kept here, where every road ends, and not
+        // at each of the places that open one.
+        if self.something_is_open() {
+            self.tip = None;
+        }
         if let Some(tip) = self.tip.take() {
             tip.draw(&mut self.canvas, &mut self.chrome_engine, &mut self.renderer, &theme);
             self.tip = Some(tip);

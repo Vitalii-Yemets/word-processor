@@ -869,6 +869,9 @@ impl Editor {
     /// The ribbon or the mini toolbar: both are rows of buttons, and a button
     /// that only shows a drawing needs telling on whichever of them it sits.
     pub(super) fn show_tip(&mut self) -> Option<Response> {
+        if self.something_is_open() {
+            return None;
+        }
         let (command, button) = match self.hovered {
             Some(command) => (command, self.ribbon.command_rect(command)?),
             None => {
@@ -882,6 +885,27 @@ impl Editor {
         self.tip = Some(Tip::new(command, label, button, &mut self.chrome_engine, width));
         self.needs_redraw = true;
         Some(Response::Redraw)
+    }
+
+    /// Whether something is dropped open over the ribbon.
+    ///
+    /// # Why a tip must not appear over it
+    ///
+    /// Because the button that opened a menu is still under the pointer, and a
+    /// tip for it would hang exactly where the first row of the menu is — over
+    /// the one thing the person is looking for. Word does not show one: while a
+    /// menu is open the tips stop, and they start again when it closes.
+    ///
+    /// The list of things counted here is the list of things drawn over the
+    /// ribbon. The mini toolbar is not one of them: it floats over the text, it
+    /// is a row of buttons with no words, and it has tips of its own.
+    pub(super) fn something_is_open(&self) -> bool {
+        self.popup.is_some()
+            || self.palette.is_some()
+            || self.table_grid.is_some()
+            || self.dialog.is_some()
+            || self.backstage.is_some()
+            || self.showing_key_tips()
     }
 
     /// The clock ticked.
@@ -901,6 +925,7 @@ impl Editor {
         // or on the mini toolbar floating over the text.
         let resting = self.hovered.or_else(|| self.mini_bar.as_ref().and_then(MiniBar::hovered));
         let tip_due = resting.is_some()
+            && !self.something_is_open()
             && self.tip.as_ref().map(|tip| tip.command) != resting
             && self.hovered_since.elapsed()
                 >= Duration::from_millis(crate::chrome::tip::DELAY_MILLIS);
@@ -1807,5 +1832,97 @@ impl Editor {
             // system, so these keys mean nothing on their own.
             Key::Letter(_) | Key::Digit(_) => Response::Ignored,
         }
+    }
+}
+
+#[cfg(test)]
+mod tip_tests {
+    use super::*;
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    /// An editor that has been drawn once, so the ribbon knows where its
+    /// buttons are.
+    fn editor() -> Editor {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Words")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor.draw(1400, 900);
+        editor
+    }
+
+    /// Rests the pointer on a button for longer than a tip waits.
+    fn rest_on(editor: &mut Editor, command: Command) {
+        editor.hovered = Some(command);
+        editor.hovered_since =
+            Instant::now() - Duration::from_millis(crate::chrome::tip::DELAY_MILLIS + 50);
+    }
+
+    /// Drops a menu open under that button, as pressing it would.
+    fn open_a_menu(editor: &mut Editor) {
+        let items = vec!["One".to_owned(), "Two".to_owned()];
+        editor.popup = Some(Popup::new(Choice::LineSpacing, items, None, 100.0, 100.0, 200.0));
+    }
+
+    #[test]
+    fn a_button_the_pointer_rests_on_says_what_it_is() {
+        let mut editor = editor();
+        rest_on(&mut editor, Command::Format(CharacterFormat::Bold));
+        assert!(editor.show_tip().is_some(), "no tip appeared");
+        assert_eq!(
+            editor.tip.as_ref().map(|tip| tip.command),
+            Some(Command::Format(CharacterFormat::Bold))
+        );
+    }
+
+    #[test]
+    fn no_tip_appears_while_a_menu_is_open() {
+        // The button that dropped the menu is still under the pointer, and a
+        // tip for it would hang exactly over the menu's first row.
+        let mut editor = editor();
+        open_a_menu(&mut editor);
+        rest_on(&mut editor, Command::Format(CharacterFormat::Bold));
+        assert!(editor.show_tip().is_none(), "a tip appeared over the menu");
+        assert!(editor.tip.is_none());
+    }
+
+    #[test]
+    fn a_tip_already_up_is_forgotten_when_a_menu_opens() {
+        let mut editor = editor();
+        rest_on(&mut editor, Command::Format(CharacterFormat::Bold));
+        editor.show_tip();
+        assert!(editor.tip.is_some(), "there was no tip to take away");
+
+        open_a_menu(&mut editor);
+        editor.draw(1400, 900);
+        assert!(editor.tip.is_none(), "the tip stayed over the menu");
+    }
+
+    #[test]
+    fn the_tip_comes_back_once_the_menu_closes() {
+        let mut editor = editor();
+        open_a_menu(&mut editor);
+        rest_on(&mut editor, Command::Format(CharacterFormat::Bold));
+        assert!(editor.show_tip().is_none());
+
+        editor.popup = None;
+        rest_on(&mut editor, Command::Format(CharacterFormat::Bold));
+        assert!(editor.show_tip().is_some(), "the tips did not start again");
+    }
+
+    #[test]
+    fn a_dialog_stops_the_tips_too() {
+        let mut editor = editor();
+        editor.open_word_count();
+        rest_on(&mut editor, Command::Format(CharacterFormat::Bold));
+        assert!(editor.show_tip().is_none(), "a tip appeared over a dialog");
     }
 }

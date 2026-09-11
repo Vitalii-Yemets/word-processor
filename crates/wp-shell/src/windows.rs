@@ -197,6 +197,12 @@ const MESSAGE_MOUSE_WHEEL: u32 = 0x020A;
 const MESSAGE_SET_CURSOR: u32 = 0x0020;
 const MESSAGE_CLOSE: u32 = 0x0010;
 const MESSAGE_TIMER: u32 = 0x0113;
+/// What the system's own caption buttons send. The window's own buttons send it
+/// too, so that both roads lead to the same place.
+const MESSAGE_SYSTEM_COMMAND: u32 = 0x0112;
+const COMMAND_MINIMISE: WordParam = 0xF020;
+const COMMAND_MAXIMISE: WordParam = 0xF030;
+const COMMAND_RESTORE: WordParam = 0xF120;
 /// Alt and the keys pressed with it, which Windows keeps apart from the rest.
 const MESSAGE_SYSTEM_KEY_DOWN: u32 = 0x0104;
 const MESSAGE_SYSTEM_KEY_UP: u32 = 0x0105;
@@ -307,8 +313,6 @@ const WINDOW_MAXIMIZED: u32 = 0x0100_0000;
 /// worked out while the window was being created stands, and the caption it
 /// drew there stays on screen above the one this program draws for itself.
 const FRAME_CHANGED: u32 = 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020;
-const SHOW_MINIMIZED: i32 = 6;
-const SHOW_MAXIMIZED: i32 = 3;
 const SHOW_RESTORED: i32 = 9;
 /// Moving and sizing a window, without changing its place in the stack.
 const MOVE_AND_SIZE: u32 = 0x0004 | 0x0010;
@@ -380,6 +384,9 @@ extern "system" {
     fn DispatchMessageW(message: *const Message) -> Result_;
     fn PostQuitMessage(code: i32);
     fn DestroyWindow(window: Handle) -> i32;
+    /// Puts a message in the queue and returns at once, rather than calling the
+    /// window procedure there and then. See [`window_command`].
+    fn PostMessageW(window: Handle, message: u32, word: WordParam, long: LongParam) -> i32;
     fn BeginPaint(window: Handle, paint: *mut PaintStruct) -> Handle;
     fn EndPaint(window: Handle, paint: *const PaintStruct) -> i32;
     fn InvalidateRect(window: Handle, area: *const Rect, erase: i32) -> i32;
@@ -530,11 +537,28 @@ fn window_index(window: Handle) -> usize {
 fn point_at(window: Handle) {
     WINDOW.with(|slot| slot.set(window));
     let index = window_index(window);
+    with_application(|app| app.switch_window(index));
+}
+
+/// Hands the application to a piece of work, unless it is already in hand.
+///
+/// # Why it can be already in hand
+///
+/// Because Windows calls the window procedure from inside the calls this
+/// program makes. A file dialog runs a message loop of its own and delivers
+/// this window's paints while it is open; changing the window's state sends the
+/// new size straight back down. Each of those arrives while the application is
+/// already answering something else.
+///
+/// Nothing here can serve two at once, and a program that asked to would stop
+/// dead rather than carry on — so the second is turned away instead. What it is
+/// is always a message about the window, never a keystroke or a press: those
+/// wait in the queue, which is not read again until this one is done with.
+fn with_application<R>(work: impl FnOnce(&mut dyn App) -> R) -> Option<R> {
     APPLICATION.with(|slot| {
-        if let Some(app) = slot.borrow_mut().as_mut() {
-            app.switch_window(index);
-        }
-    });
+        let Ok(mut held) = slot.try_borrow_mut() else { return None };
+        held.as_mut().map(|app| work(app.as_mut()))
+    })
 }
 
 /// How long two clicks may be apart and still count as one double click.
@@ -761,11 +785,10 @@ fn owner_window() -> Handle {
 
 /// Hands an event to the application and acts on what it asks for.
 fn deliver(window: Handle, event: Event) -> Result_ {
-    // Which of the program's windows this is, so the application can put that    // window's view back before it answers.    point_at(window);
-    let response = APPLICATION.with(|slot| match slot.borrow_mut().as_mut() {
-        Some(app) => app.handle(event),
-        None => Response::Ignored,
-    });
+    // Which of the program's windows this is, so the application can put that
+    // window's view back before it answers.
+    point_at(window);
+    let response = with_application(|app| app.handle(event)).unwrap_or(Response::Ignored);
 
     match response {
         Response::Redraw => {
@@ -962,10 +985,8 @@ unsafe extern "system" fn window_procedure(
             // The application gets to refuse, which is what lets it ask about
             // unsaved changes and act on "cancel".
             point_at(window);
-            let response = APPLICATION.with(|slot| match slot.borrow_mut().as_mut() {
-                Some(app) => app.handle(Event::Closing),
-                None => Response::Ignored,
-            });
+            let response =
+                with_application(|app| app.handle(Event::Closing)).unwrap_or(Response::Ignored);
             if response != Response::Refuse {
                 DestroyWindow(window);
             }
@@ -998,8 +1019,7 @@ fn paint(window: Handle) {
         let mut paint_struct = core::mem::zeroed::<PaintStruct>();
         let device_context = BeginPaint(window, &mut paint_struct);
 
-        let pixels = APPLICATION
-            .with(|slot| slot.borrow_mut().as_mut().map(|app| app.draw(width, height).to_bgra()));
+        let pixels = with_application(|app| app.draw(width, height).to_bgra());
 
         if let Some(pixels) = pixels {
             // A negative height means the rows run top to bottom, which is the
@@ -1085,10 +1105,7 @@ unsafe fn hit_test(window: Handle, long: LongParam) -> Result_ {
 
     // The application says which part of what it drew is the caption — the
     // empty stretch of the title bar, and not the buttons on it.
-    let draggable = APPLICATION.with(|slot| match slot.borrow_mut().as_mut() {
-        Some(app) => app.is_caption(point.x, point.y),
-        None => false,
-    });
+    let draggable = with_application(|app| app.is_caption(point.x, point.y)).unwrap_or(false);
 
     if draggable {
         HIT_CAPTION
@@ -1098,30 +1115,44 @@ unsafe fn hit_test(window: Handle, long: LongParam) -> Result_ {
 }
 
 /// Minimises, maximises, restores or closes the window.
+///
+/// # Why the message is posted rather than carried out
+///
+/// Because this is called from inside the application, and the application is
+/// borrowed while it runs. Minimising a window makes the system call the window
+/// procedure again then and there — with the new size, the new position, and
+/// the paint that follows — and every one of those wants to reach the
+/// application that is already in hand. That is a borrow of it while it is
+/// borrowed, which is not something a program carries on from: it stops dead,
+/// and the window goes as though it had been closed.
+///
+/// So the request is put in the queue instead, and carried out once the
+/// application has finished with the press that asked for it. That is also the
+/// road the system's own caption buttons take, which is the second reason to
+/// take it: one road to minimising a window rather than two.
 pub(crate) fn window_command(command: crate::WindowCommand) {
     let window = owner_window();
     if window.is_null() {
         return;
     }
-    // SAFETY: the handle is this thread's window.
+    // SAFETY: the handle is this thread's window, and posting a message copies
+    // what it is given rather than keeping a pointer to anything.
     unsafe {
         match command {
             crate::WindowCommand::Minimise => {
-                ShowWindow(window, SHOW_MINIMIZED);
+                PostMessageW(window, MESSAGE_SYSTEM_COMMAND, COMMAND_MINIMISE, 0);
             }
             crate::WindowCommand::ToggleMaximise => {
                 let maximised = GetWindowLongW(window, -16) as u32 & WINDOW_MAXIMIZED != 0;
-                ShowWindow(window, if maximised { SHOW_RESTORED } else { SHOW_MAXIMIZED });
+                let wanted = if maximised { COMMAND_RESTORE } else { COMMAND_MAXIMISE };
+                PostMessageW(window, MESSAGE_SYSTEM_COMMAND, wanted, 0);
             }
             crate::WindowCommand::Close => {
                 // Through the close message, so the application is asked about
                 // unsaved changes exactly as it is for the system's own button.
-                DefWindowProcW(window, MESSAGE_CLOSE, 0, 0);
+                PostMessageW(window, MESSAGE_CLOSE, 0, 0);
             }
         }
-        // The caption is drawn by the application, so a change of state has to
-        // repaint it.
-        InvalidateRect(window, core::ptr::null(), 0);
     }
 }
 
@@ -1837,8 +1868,7 @@ fn set_cursor_for_pointer(window: Handle) -> bool {
         return false;
     }
 
-    let wanted =
-        APPLICATION.with(|slot| slot.borrow_mut().as_mut().map(|app| app.cursor(point.x, point.y)));
+    let wanted = with_application(|app| app.cursor(point.x, point.y));
     let Some(wanted) = wanted else { return false };
 
     let name = match wanted {
