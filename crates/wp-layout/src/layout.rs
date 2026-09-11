@@ -34,6 +34,8 @@ use wp_font::{Font, GlyphId};
 use wp_image::Image;
 use wp_raster::Color;
 
+use wp_docx::cells::CellEdge;
+
 use crate::borders::Side;
 use crate::library::FontLibrary;
 
@@ -341,6 +343,49 @@ pub struct PlacedImage {
     pub over_text: bool,
 }
 
+/// One cell of a table, as the page holds it.
+///
+/// Only where it is. What is in it is text like any other text, and is on the
+/// page already; this is the rectangle round it, which nothing else records.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlacedCell {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    /// Somewhere in the document inside the cell, which is how anything acting
+    /// on the cell says which cell it means.
+    pub at: TextPosition,
+}
+
+impl PlacedCell {
+    /// Which of the cell's four edges a point is nearest, and how far away it
+    /// is.
+    ///
+    /// `None` when the point is not near any of them. Near is measured against
+    /// `reach`, and a point outside the cell altogether is not near its edges:
+    /// a pen held over the next cell is over the next cell.
+    #[must_use]
+    pub fn edge_near(&self, x: f32, y: f32, reach: f32) -> Option<(CellEdge, f32)> {
+        if x < self.x - reach
+            || x > self.x + self.width + reach
+            || y < self.y - reach
+            || y > self.y + self.height + reach
+        {
+            return None;
+        }
+        [
+            (CellEdge::Top, (y - self.y).abs()),
+            (CellEdge::Bottom, (y - (self.y + self.height)).abs()),
+            (CellEdge::Start, (x - self.x).abs()),
+            (CellEdge::End, (x - (self.x + self.width)).abs()),
+        ]
+        .into_iter()
+        .filter(|(_, away)| *away <= reach)
+        .min_by(|(_, one), (_, two)| one.total_cmp(two))
+    }
+}
+
 /// A shape drawn on the page, with whatever is written inside it.
 ///
 /// The text is a page of its own, already laid out and already positioned: a
@@ -412,6 +457,12 @@ pub struct Page {
     pub images: Vec<PlacedImage>,
     pub shapes: Vec<PlacedShape>,
     pub decorations: Vec<Decoration>,
+    /// The cells of every table on the page, as rectangles.
+    ///
+    /// Which edge of which cell the pointer is nearest cannot be worked out
+    /// from the text: a cell's edges are nowhere in it. Word's Border Painter
+    /// is a pen dragged along an edge, so it needs the edges.
+    pub cells: Vec<PlacedCell>,
     /// Shapes that are not rectangles: the slices of a pie, the line of a line
     /// chart. Already in page coordinates, and drawn over the decorations.
     pub paths: Vec<PlacedPath>,
@@ -2289,7 +2340,12 @@ impl<'a> LayoutEngine<'a> {
             }
 
             let row_top = *y;
+            // Where each cell began in the document, taken before it is laid
+            // out: the running paragraph number is the cell's first paragraph
+            // until the cell has been walked.
+            let mut placed: Vec<(TextPosition, f32, f32)> = Vec::with_capacity(row.cells.len());
             for (cell, (left, width)) in row.cells.iter().zip(&spans) {
+                placed.push((TextPosition::new(*index, 0), *left, *width));
                 let mut cell_y = row_top + CELL_PADDING_TOP;
                 self.place_cell(
                     cell,
@@ -2304,6 +2360,17 @@ impl<'a> LayoutEngine<'a> {
             }
 
             let row_bottom = row_top + height;
+            if let Some(page) = pages.last_mut() {
+                for (at, left, width) in placed {
+                    page.cells.push(PlacedCell {
+                        x: left,
+                        y: row_top,
+                        width,
+                        height: row_bottom - row_top,
+                        at,
+                    });
+                }
+            }
             if let Some(page) = pages.last_mut() {
                 draw_row_borders(
                     page,
@@ -4429,12 +4496,18 @@ fn draw_row_borders(
     let gridline = gridlines
         .then(|| (1.0f32, Color::rgba(automatic.red, automatic.green, automatic.blue, 70)));
 
-    let line = |border: &Option<Border>| -> Option<(f32, Color)> {
+    // What one line of the grid comes to: the border that asked for it, how
+    // thick it is and what colour. The border itself is carried because the
+    // style is drawn rather than only measured — a double line is two lines,
+    // and a table's are drawn by the same code that draws a paragraph's.
+    let line = |border: &Option<Border>| -> Option<(Option<Border>, f32, Color)> {
         let Some(border) = border.as_ref().filter(|border| border.is_visible()) else {
-            return gridline;
+            // A gridline has no border behind it and no style: it is the faint
+            // mark that says where a cell is, and nothing asked for it.
+            return gridline.map(|(thickness, colour)| (None, thickness, colour));
         };
         let color = border.color.as_deref().and_then(Color::from_hex).unwrap_or(automatic);
-        Some(((border.width_points() * scale).max(1.0), color))
+        Some((Some(border.clone()), (border.width_points() * scale).max(1.0), color))
     };
 
     let first_row = row_number == 0;
@@ -4464,25 +4537,13 @@ fn draw_row_borders(
         // A cell continuing the one above has no line between the two: that is
         // what makes them look like one cell.
         let continues = cell.is_some_and(|cell| cell.merged_upwards);
-        if let Some((thickness, color)) =
-            cell_line(|borders| &borders.top).or(if continues { None } else { horizontal })
-        {
-            page.decorations.push(Decoration {
-                x: *x,
-                y: top,
-                width: *width,
-                height: thickness,
-                color,
-            });
+        let wanted = if continues { None } else { horizontal.clone() };
+        if let Some(ruled) = cell_line(|borders| &borders.top).or(wanted) {
+            rule(page, &ruled, Side::Top, *x, top, *width);
         }
-        if let Some((thickness, color)) = cell_line(|borders| &borders.bottom).or(below) {
-            page.decorations.push(Decoration {
-                x: *x,
-                y: bottom - thickness,
-                width: *width,
-                height: thickness,
-                color,
-            });
+        if let Some(ruled) = cell_line(|borders| &borders.bottom).or(below.clone()) {
+            let (_, thickness, _) = ruled;
+            rule(page, &ruled, Side::Bottom, *x, bottom - thickness, *width);
         }
 
         let vertical = if index == 0 {
@@ -4490,26 +4551,47 @@ fn draw_row_borders(
         } else {
             line(&borders.inside_vertical).or_else(|| line(&borders.start))
         };
-        if let Some((thickness, color)) = cell_line(|borders| &borders.start).or(vertical) {
-            page.decorations.push(Decoration {
-                x: *x,
-                y: top,
-                width: thickness,
-                height: bottom - top,
-                color,
-            });
+        if let Some(ruled) = cell_line(|borders| &borders.start).or(vertical) {
+            rule(page, &ruled, Side::Start, *x, top, bottom - top);
         }
     }
 
-    if let Some((thickness, color)) = line(&borders.end) {
-        page.decorations.push(Decoration {
-            x: right_edge - thickness,
-            y: top,
-            width: thickness,
-            height: bottom - top,
-            color,
-        });
+    if let Some(ruled) = line(&borders.end) {
+        let (_, thickness, _) = ruled;
+        rule(page, &ruled, Side::End, right_edge - thickness, top, bottom - top);
     }
+}
+
+/// Draws one line of a table's grid.
+///
+/// The corner given is the one the line starts at, as the old code had it: the
+/// band is centred half a thickness in from it, so a line sits inside the cell
+/// rather than straddling its boundary. Which is what Word draws, and what the
+/// eye expects of a ruled table.
+fn rule(
+    page: &mut Page,
+    ruled: &(Option<Border>, f32, Color),
+    side: Side,
+    x: f32,
+    y: f32,
+    run: f32,
+) {
+    let (border, thickness, colour) = ruled;
+    let Some(border) = border else {
+        // A gridline, which is not a border and has no style of its own.
+        let (width, height) = match side {
+            Side::Top | Side::Bottom => (run, *thickness),
+            Side::Start | Side::End => (*thickness, run),
+        };
+        page.decorations.push(Decoration { x, y, width, height, color: *colour });
+        return;
+    };
+
+    let (at_x, at_y) = match side {
+        Side::Top | Side::Bottom => (x, y + thickness / 2.0),
+        Side::Start | Side::End => (x + thickness / 2.0, y),
+    };
+    crate::borders::draw_edge(page, border, side, at_x, at_y, run, *thickness, *colour);
 }
 
 /// Where a tab reaches from a given position.

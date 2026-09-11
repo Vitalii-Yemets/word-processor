@@ -1136,7 +1136,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* the gallery offers the patterns that can be drawn from shapes,
   each is drawn as its name describes, and the rest are named as not offered
   rather than drawn wrongly.
-- [ ] **C24. The Border Styles gallery and the Border Painter.** The last two
+- [x] **C24. The Border Styles gallery and the Border Painter.** The last two
   things the Table Design tab is missing, and one job: Word's gallery picks a
   line — a style, a width and a colour — and the painter is the pen that puts
   that line on whichever edge it is dragged along.
@@ -1146,8 +1146,21 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the pointer is nearest, which nothing here works out yet.
   The gallery is the line styles of **C23** over again, so the two are worth
   doing together.
-  *Done when:* a line can be chosen from the gallery, the pen puts it on the
-  edges it is dragged along, and pressing it again puts the pen down.
+  *Done:* both, in `editor/borderpainter.rs`. The gallery offers each of the
+  line shapes that read clearly at a table's scale, in several weights and in
+  each of the colours the borders dialog offers; picking one arms the pen, as
+  picking one does in Word. The pen is put down by pressing the button again or
+  by Escape, and a press that lands nowhere near an edge is an ordinary press —
+  a pen out must not swallow every click in the document.
+  Which edge the pen is on needed the cells as rectangles, which nothing
+  recorded: a cell's edges are nowhere in the text. The layout keeps them now
+  (`PlacedCell`), and `Document::set_cell_edge` puts a line on one edge of one
+  cell and leaves the other three alone — the only thing that could be said
+  before was the whole table's borders.
+  Found while doing it: a table's lines were drawn as plain rectangles, so the
+  gallery would have offered double, triple and wave and drawn all three as one
+  thick line. They go through the same code a paragraph's and a page's do now,
+  which is what **C23** wrote.
 - [ ] **C25. The six things the Table Layout tab still wants.** What **C16**
   left, each because it needs something that does not exist yet rather than
   because it was skipped.

@@ -43,6 +43,7 @@ impl Editor {
             painting: self.painter.is_some(),
             tracking_changes: self.document.tracking_changes(),
             show_markup: self.show_markup,
+            painting_borders: self.painting_borders(),
             show_comments: self.navigation.section == crate::chrome::navigation::Section::Comments,
             in_table: self.document.table_here().is_some(),
             table_look: self.document.table_look().unwrap_or_default(),

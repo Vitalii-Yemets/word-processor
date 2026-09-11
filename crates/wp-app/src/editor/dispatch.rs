@@ -329,6 +329,8 @@ impl Editor {
             Command::Envelopes => self.open_envelopes(),
             Command::Labels => self.open_labels(),
             Command::TableProperties => self.open_table_properties(),
+            Command::BorderStyles => self.open_list(Choice::BorderStyle),
+            Command::BorderPainter => self.toggle_border_painter(),
             Command::BringForward => self.move_shape_depth(true, false),
             Command::BringToFront => self.move_shape_depth(true, true),
             Command::BringInFrontOfText => self.set_shape_depth(false),

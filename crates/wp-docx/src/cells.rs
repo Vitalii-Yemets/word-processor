@@ -19,6 +19,32 @@ use crate::history::EditKind;
 use crate::tables::TablePosition;
 use crate::{edit, read, Document, TextPosition};
 
+/// One edge of one cell.
+///
+/// Named by where it is rather than by the element that holds it, because the
+/// format's own names are inconsistent: a cell's left edge is `w:left` and a
+/// paragraph's is `w:start`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CellEdge {
+    Top,
+    Bottom,
+    Start,
+    End,
+}
+
+impl CellEdge {
+    /// What the element inside `w:tcBorders` is called.
+    #[must_use]
+    pub fn element(self) -> &'static str {
+        match self {
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+            Self::Start => "left",
+            Self::End => "right",
+        }
+    }
+}
+
 /// The rectangle of cells a selection covers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CellRange {
@@ -57,10 +83,66 @@ impl Document {
     }
 
     /// Where a position sits in a table, if it is in one.
-    fn table_at(&self, position: TextPosition) -> Option<TablePosition> {
+    pub(crate) fn table_at(&self, position: TextPosition) -> Option<TablePosition> {
         let mut probe = self.clone();
         probe.set_caret(position);
         probe.table_here()
+    }
+
+    /// Puts a line on one edge of the cell a place in the document is inside,
+    /// or takes it off.
+    ///
+    /// What Word's Border Painter does. The pen is dragged along an edge and
+    /// the line it carries lands on that edge of that cell and nowhere else —
+    /// which is why this is one edge of one cell rather than the whole table's
+    /// borders, the only thing that could be said before.
+    pub fn set_cell_edge(
+        &mut self,
+        at: TextPosition,
+        edge: CellEdge,
+        border: Option<&crate::model::Border>,
+    ) -> bool {
+        let Some(place) = self.table_at(at) else { return false };
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+            return false;
+        };
+        let Some(row_position) = positions_of(table, "tr").get(place.row).copied() else {
+            return false;
+        };
+        let Some(row) = table.children.get_mut(row_position).and_then(Node::as_element_mut) else {
+            return false;
+        };
+        let Some(cell_position) = positions_of(row, "tc").get(place.column).copied() else {
+            return false;
+        };
+        let Some(cell) = row.children.get_mut(cell_position).and_then(Node::as_element_mut) else {
+            return false;
+        };
+
+        let properties = properties_of(cell, prefix.as_deref());
+        // The set of lines is one element holding one child per edge, so the
+        // one being changed is taken out and put back rather than the whole
+        // set being rewritten: the other three edges are nobody's business
+        // here.
+        if properties.child(Some(read::W), "tcBorders").is_none() {
+            edit::insert_ordered(
+                properties,
+                Element::new(&edit::name_with(prefix.as_deref(), "tcBorders"), Some(read::W)),
+                CELL_PROPERTY_ORDER,
+            );
+        }
+        let Some(borders) = properties.child_mut(Some(read::W), "tcBorders") else { return false };
+        borders.remove_children_named(Some(read::W), edge.element());
+        if let Some(border) = border {
+            borders.push_element(edit::border_element(edge.element(), border, prefix.as_deref()));
+        }
+
+        self.mark_modified();
+        true
     }
 
     /// Joins the selected cells into one.

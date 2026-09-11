@@ -743,6 +743,13 @@ impl Editor {
             return Response::Redraw;
         }
 
+        // The border painter, while it is in hand, takes a press that lands on
+        // the edge of a cell. One that does not is an ordinary press: a pen out
+        // must not swallow every click in the document.
+        if self.paint_border_at(x, y) {
+            return Response::Redraw;
+        }
+
         // Alt and a drag takes a rectangle of text rather than a stretch of it.
         if modifiers.alt {
             self.document.set_caret(position);
@@ -1128,6 +1135,7 @@ impl Editor {
             Choice::Forward => return self.open_arrange(true),
             Choice::Backward => return self.open_arrange(false),
             Choice::Markup => return self.open_markup_menu(),
+            Choice::BorderStyle => return self.open_border_styles(),
             Choice::Font => Command::ChooseFont,
             Choice::Size => Command::ChooseSize,
             Choice::Style => Command::ChooseStyle,
@@ -1265,6 +1273,7 @@ impl Editor {
             | Choice::Forward
             | Choice::Backward
             | Choice::Markup
+            | Choice::BorderStyle
             | Choice::QuickPart
             | Choice::WordArt
             | Choice::Drawing
@@ -1355,6 +1364,7 @@ impl Editor {
             Choice::Forward => self.choose_arrange(true, index),
             Choice::Backward => self.choose_arrange(false, index),
             Choice::Markup => self.choose_markup(index),
+            Choice::BorderStyle => self.choose_border_style(index),
             Choice::QuickPart => self.choose_quick_part(index),
             Choice::WordArt => self.choose_word_art(index),
             Choice::Drawing => self.choose_drawing(index),
@@ -1712,6 +1722,10 @@ impl Editor {
                     self.cancel_text_drag();
                     self.needs_redraw = true;
                     return Response::Redraw;
+                }
+                // A pen in hand is something being carried too.
+                if self.painting_borders() {
+                    return self.toggle_border_painter();
                 }
                 // Reading mode is left the way it is left in every reader.
                 if !self.view.shows_furniture() {

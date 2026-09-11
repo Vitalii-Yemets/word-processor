@@ -36,8 +36,8 @@ mod render;
 
 pub use device::{Device, Unprintable};
 pub use layout::{
-    Decoration, Drawing, GlyphEffect, LayoutEngine, Page, PageLine, PageMetrics, PlacedImage,
-    PlacedPath, PlacedShape, PositionedGlyph, TextStyle,
+    Decoration, Drawing, GlyphEffect, LayoutEngine, Page, PageLine, PageMetrics, PlacedCell,
+    PlacedImage, PlacedPath, PlacedShape, PositionedGlyph, TextStyle,
 };
 pub use library::{Face, FontLibrary};
 pub use render::Renderer;

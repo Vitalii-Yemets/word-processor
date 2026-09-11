@@ -337,6 +337,22 @@ impl Editor {
                     });
                 }
             }
+            "borderpen" => {
+                // A table with three of its edges ruled by the pen, and the
+                // gallery open over it. The only way to see that the pen puts
+                // a line where it is dragged and nowhere else.
+                self.document.insert_table(3, 3);
+                self.ribbon.tab = Tab::TableDesign;
+                self.relayout();
+                wp_shell::App::draw(self, 1400, 900);
+
+                self.choose_border_style(13);
+                for cell in [6usize, 7, 8] {
+                    let Some((x, y)) = self.top_edge_of_cell(cell) else { continue };
+                    self.paint_border_at(x, y);
+                }
+                self.open_border_styles();
+            }
             "borderstyles" => {
                 // A paragraph for each of the kinds of line Word lists, and a
                 // shadowed box round the pages. The only way to see that the

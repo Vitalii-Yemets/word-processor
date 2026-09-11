@@ -72,6 +72,8 @@ pub enum Choice {
     Wrap,
     /// Where a drawing sits across the page.
     Position,
+    /// The lines the border painter can be loaded with.
+    BorderStyle,
     /// How far forward through the pile of drawings to move one, and how far
     /// back: Word's two Arrange menus.
     Forward,

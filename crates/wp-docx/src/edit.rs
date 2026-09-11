@@ -945,7 +945,7 @@ pub(crate) fn table_borders_element(borders: &TableBorders, prefix: Option<&str>
 }
 
 /// One edge of a border, wherever it appears.
-fn border_element(name: &str, border: &Border, prefix: Option<&str>) -> Element {
+pub(crate) fn border_element(name: &str, border: &Border, prefix: Option<&str>) -> Element {
     let mut side = Element::new(&name_with(prefix, name), Some(W));
     side.set_namespaced_attribute(&name_with(prefix, "val"), W, &border.style);
     side.set_namespaced_attribute(&name_with(prefix, "sz"), W, &border.size.to_string());

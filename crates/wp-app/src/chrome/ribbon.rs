@@ -261,6 +261,9 @@ static MENUS: &[Menu] = &[
     // the pile, and the arrow beside it offers the two longer moves.
     Menu { command: Command::BringForward, choice: Choice::Forward, split: true },
     Menu { command: Command::SendBackward, choice: Choice::Backward, split: true },
+    // A gallery of lines, with no line of its own to be: pressing it anywhere
+    // asks which line.
+    Menu { command: Command::BorderStyles, choice: Choice::BorderStyle, split: false },
 ];
 
 /// The menu a command drops, if it drops one.
@@ -1152,6 +1155,7 @@ impl Ribbon {
                     | Choice::Forward
                     | Choice::Backward
                     | Choice::Markup
+                    | Choice::BorderStyle
                     | Choice::QuickPart
                     | Choice::WordArt
                     | Choice::Drawing
@@ -1903,6 +1907,11 @@ static TABLE_DESIGN_GROUPS: &[Group] = &[
                 "Outside",
             ),
             Item::Large(Command::TableBorders(TableBorderChoice::None), Icon::BorderNone, "None"),
+            // Word's gallery of lines and the pen that draws with them, which
+            // is where its Borders group ends.
+            Item::Small(Command::BorderStyles, Icon::Borders, "Border Styles"),
+            Item::Break,
+            Item::Small(Command::BorderPainter, Icon::Brush, "Border Painter"),
         ],
         launcher: None,
     },

@@ -5,6 +5,7 @@ mod arrange;
 mod autocorrectdialog;
 mod autoscroll;
 mod backstage;
+mod borderpainter;
 mod boxes;
 mod chart;
 mod citations;
@@ -141,6 +142,11 @@ pub struct Editor {
     view_height: usize,
     /// Whether the left button is down and dragging out a selection.
     dragging: bool,
+    /// The line the border painter is carrying, while it is in hand.
+    ///
+    /// A mode rather than a command, the way the format painter is: a person
+    /// ruling the lines of a table draws six of them. See [`borderpainter`].
+    border_pen: Option<wp_docx::model::Border>,
     /// Whether the drag that is running began with Ctrl held, and so is adding
     /// a stretch to the selection rather than replacing it. See
     /// [`wp_docx::Document::add_selection_at`].
@@ -450,6 +456,7 @@ impl Editor {
             view_width: 0,
             view_height: 0,
             dragging: false,
+            border_pen: None,
             adding_selection: false,
             column_drag: None,
             editing_furniture: None,

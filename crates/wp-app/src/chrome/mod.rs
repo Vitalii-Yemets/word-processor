@@ -276,6 +276,10 @@ pub enum Command {
     Envelopes,
     Labels,
     TableProperties,
+    /// Word's Border Styles gallery and the pen that draws with what it
+    /// offers. See [`crate::editor`]'s `borderpainter` module.
+    BorderStyles,
+    BorderPainter,
     /// The six of Word's two Arrange menus: one step through the pile, all the
     /// way to one end of it, or out of the pile altogether and in front of or
     /// behind the text.
@@ -461,6 +465,9 @@ pub struct ToolbarState {
     pub tracking_changes: bool,
     /// Whether tracked changes are drawn as changes.
     pub show_markup: bool,
+    /// Whether the border painter is in hand, which lights its button the way
+    /// the format painter's is lit.
+    pub painting_borders: bool,
     /// Whether the comments are listed in the pane.
     pub show_comments: bool,
     /// The colours the two coloured buttons would apply.
@@ -596,6 +603,7 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
         Command::RepeatHeaderRow => state.repeat_header_row,
         Command::AlignCell(which) => state.cell_alignment == Some(which),
         Command::ShowMarkup => state.show_markup,
+        Command::BorderPainter => state.painting_borders,
         Command::ShowProofing => state.show_proofing,
         Command::ReviewingPane | Command::ShowComments => state.show_comments,
         Command::WebLayout => state.view_is("Web layout"),
