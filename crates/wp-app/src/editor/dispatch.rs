@@ -108,6 +108,7 @@ impl Editor {
             Command::Sort => self.sort_selection(),
             Command::LineSpacing => self.open_list(Choice::LineSpacing),
             Command::DocumentSpacing => self.open_list(Choice::DocumentSpacing),
+            Command::AlignmentTab => self.open_list(Choice::AlignmentTab),
             Command::ShowMarks => {
                 self.show_marks = !self.show_marks;
                 self.needs_redraw = true;
@@ -175,7 +176,9 @@ impl Editor {
             | Command::SpaceBeforeBox
             | Command::SpaceAfterBox
             | Command::RowHeightBox
-            | Command::ColumnWidthBox => self.type_in_box(command),
+            | Command::ColumnWidthBox
+            | Command::HeaderFromTopBox
+            | Command::FooterFromBottomBox => self.type_in_box(command),
 
             // --- Tables -------------------------------------------------------
             Command::InsertRowAbove => {

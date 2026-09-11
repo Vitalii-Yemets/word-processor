@@ -235,6 +235,7 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::ChangeCase, choice: Choice::LetterCase, split: false },
     Menu { command: Command::PageNumber, choice: Choice::PageNumberPlace, split: false },
     Menu { command: Command::SelectAll, choice: Choice::Selecting, split: false },
+    Menu { command: Command::AlignmentTab, choice: Choice::AlignmentTab, split: false },
     Menu { command: Command::NextNote, choice: Choice::NoteJump, split: true },
     Menu { command: Command::AcceptChange, choice: Choice::Accepting, split: true },
     Menu { command: Command::RejectChange, choice: Choice::Rejecting, split: true },
@@ -1083,6 +1084,7 @@ impl Ribbon {
                     | Choice::Watermark
                     | Choice::PasteOption
                     | Choice::TableStyle
+                    | Choice::AlignmentTab
                     | Choice::TablePart
                     | Choice::DocumentSpacing
                     | Choice::BulletLibrary
@@ -1895,6 +1897,20 @@ static HEADER_FOOTER_GROUPS: &[Group] = &[
             Item::Small(Command::GoToFooter, Icon::Footer, "Go to Footer"),
             Item::Break,
             Item::Small(Command::LinkToPrevious, Icon::Link, "Link to Previous"),
+        ],
+        launcher: None,
+    },
+    Group {
+        label: "Position",
+        items: &[
+            // Where the header sits in the space above the text and the footer
+            // in the space below it — not margins, which say where the text
+            // starts.
+            Item::Measure(Command::HeaderFromTopBox, "Header from Top:", 62.0),
+            Item::Break,
+            Item::Measure(Command::FooterFromBottomBox, "Footer from Bottom:", 62.0),
+            Item::Break,
+            Item::Small(Command::AlignmentTab, Icon::AlignCenter, "Insert Alignment Tab"),
         ],
         launcher: None,
     },

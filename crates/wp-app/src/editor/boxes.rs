@@ -34,6 +34,8 @@ use super::Editor;
 
 /// The four boxes, in the order Tab walks them.
 const BOXES: &[Command] = &[
+    Command::HeaderFromTopBox,
+    Command::FooterFromBottomBox,
     Command::RowHeightBox,
     Command::ColumnWidthBox,
     Command::IndentLeftBox,
@@ -189,6 +191,8 @@ impl Editor {
             Command::SpaceAfterBox => room.space_after,
             Command::RowHeightBox => self.document.table_row_height().unwrap_or(0),
             Command::ColumnWidthBox => self.document.cell_width().unwrap_or(0),
+            Command::HeaderFromTopBox => self.document.furniture_distances().0,
+            Command::FooterFromBottomBox => self.document.furniture_distances().1,
             _ => 0,
         }
     }
@@ -241,6 +245,20 @@ impl Editor {
                 let shown = measure::format(twips, self.unit);
                 return self.edited(changed, &format!("Column width {shown}{}", self.unit.mark()));
             }
+            // And these two are about the section: where the header sits in the
+            // space above the text and the footer in the space below it.
+            Command::HeaderFromTopBox | Command::FooterFromBottomBox => {
+                let (header, footer) = self.document.furniture_distances();
+                let changed = if command == Command::HeaderFromTopBox {
+                    self.document.set_furniture_distances(twips, footer)
+                } else {
+                    self.document.set_furniture_distances(header, twips)
+                };
+                self.relayout();
+                let shown = measure::format(twips, self.unit);
+                return self
+                    .edited(changed, &format!("{} {shown}{}", name_of(command), self.unit.mark()));
+            }
             _ => {}
         }
 
@@ -280,6 +298,8 @@ fn is_indent(command: Command) -> bool {
             | Command::IndentRightBox
             | Command::RowHeightBox
             | Command::ColumnWidthBox
+            | Command::HeaderFromTopBox
+            | Command::FooterFromBottomBox
     )
 }
 
@@ -292,6 +312,8 @@ fn name_of(command: Command) -> &'static str {
         Command::SpaceAfterBox => "Space after",
         Command::RowHeightBox => "Row height",
         Command::ColumnWidthBox => "Column width",
+        Command::HeaderFromTopBox => "Header from top",
+        Command::FooterFromBottomBox => "Footer from bottom",
         _ => "",
     }
 }
@@ -493,5 +515,40 @@ mod tests {
 
         editor.handle(Event::Char('x'));
         assert!(editor.document.plain_text().contains('x'), "the document did not get it back");
+    }
+
+    #[test]
+    fn the_header_distance_is_typed_and_reaches_the_section() {
+        let mut editor = editor();
+        editor.type_in_box(Command::HeaderFromTopBox);
+        type_into(&mut editor, "1");
+        editor.finish_box();
+
+        assert_eq!(editor.document.furniture_distances().0, 1440);
+    }
+
+    #[test]
+    fn the_two_distances_are_set_apart_from_one_another() {
+        // They share one element in the file — `w:pgMar` — so writing one must
+        // not take the other with it.
+        let mut editor = editor();
+        editor.type_in_box(Command::FooterFromBottomBox);
+        type_into(&mut editor, "0.5");
+        editor.finish_box();
+
+        editor.type_in_box(Command::HeaderFromTopBox);
+        type_into(&mut editor, "2");
+        editor.finish_box();
+
+        assert_eq!(editor.document.furniture_distances(), (2880, 720));
+    }
+
+    #[test]
+    fn neither_distance_goes_below_nothing() {
+        let mut editor = editor();
+        editor.type_in_box(Command::HeaderFromTopBox);
+        type_into(&mut editor, "-3");
+        editor.finish_box();
+        assert_eq!(editor.document.furniture_distances().0, 0);
     }
 }

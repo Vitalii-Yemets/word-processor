@@ -183,6 +183,12 @@ pub enum Command {
     TableStyles,
     /// The two measurement boxes of the Table Layout tab.
     RowHeightBox,
+    /// And the two on the Header & Footer tab.
+    HeaderFromTopBox,
+    FooterFromBottomBox,
+    /// Word's Insert Alignment Tab, which drops a tab that goes to the middle
+    /// of the line or to its far end whatever the tab stops say.
+    AlignmentTab,
     ColumnWidthBox,
     /// The nine alignments of a cell: across and down in one press.
     AlignCell(u8),
@@ -456,6 +462,10 @@ pub struct ToolbarState {
     pub repeat_header_row: bool,
     /// How tall the row at the caret is and how wide its cell, in twentieths
     /// of a point. Zero where the table has not been told.
+    /// How far the header sits from the top of the paper and the footer from
+    /// the bottom, in twentieths of a point.
+    pub header_from_top: i32,
+    pub footer_from_bottom: i32,
     pub row_height: i32,
     pub column_width: i32,
     /// Which of the nine cell alignments is in force, if one of them is.
@@ -513,6 +523,8 @@ impl ToolbarState {
             // the same unit.
             Command::RowHeightBox => self.length(self.row_height),
             Command::ColumnWidthBox => self.length(self.column_width),
+            Command::HeaderFromTopBox => self.length(self.header_from_top),
+            Command::FooterFromBottomBox => self.length(self.footer_from_bottom),
             Command::SpaceAfterBox => points(self.space_after),
             _ => String::new(),
         }

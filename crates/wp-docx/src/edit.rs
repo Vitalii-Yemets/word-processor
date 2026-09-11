@@ -19,8 +19,8 @@ use wp_xml::tree::{Element, Node};
 
 use crate::model::{
     Alignment, Block, Border, BreakKind, LineRule, Paragraph, ParagraphBorders,
-    ParagraphProperties, RevisionKind, Run, RunContent, RunProperties, TabLeader, TabStop, Table,
-    TableBorders,
+    ParagraphProperties, RevisionKind, Run, RunContent, RunProperties, TabAlignment, TabLeader,
+    TabStop, Table, TableBorders,
 };
 use crate::read::W;
 
@@ -857,6 +857,23 @@ pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> El
             }
             RunContent::Tab => {
                 element.push_element(Element::new(&name_with(prefix, "tab"), Some(W)));
+            }
+            RunContent::PositionTab(alignment) => {
+                let mut tab = Element::new(&name_with(prefix, "ptab"), Some(W));
+                tab.set_namespaced_attribute(
+                    &name_with(prefix, "alignment"),
+                    W,
+                    match alignment {
+                        TabAlignment::Center => "center",
+                        TabAlignment::End => "right",
+                        _ => "left",
+                    },
+                );
+                // Measured from the margins, which is what makes it keep its
+                // place when the indents change.
+                tab.set_namespaced_attribute(&name_with(prefix, "relativeTo"), W, "margin");
+                tab.set_namespaced_attribute(&name_with(prefix, "leader"), W, "none");
+                element.push_element(tab);
             }
             // Building a drawing means writing four namespaces of DrawingML
             // and adding a part and a relationship for the picture itself.

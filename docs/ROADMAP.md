@@ -943,8 +943,25 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   **Convert to Text** turns the table back into paragraphs, one per row with the
   cells tabbed apart, which is Word's own separator and what makes the result
   convertible back.
-- [ ] **C17. The rest of the Header & Footer tab.** Header from Top, Footer from
+- [x] **C17. The rest of the Header & Footer tab.** Header from Top, Footer from
   Bottom, and Insert Alignment Tab.
+  *Done:* all three, in a Position group where Word puts them.
+
+  **Header from Top** and **Footer from Bottom** are two more boxes on the
+  machinery of **C12**. They are not margins — a margin says where the text
+  starts, and these say where the furniture sits in the space above and below
+  it — and they share one element in the file, `w:pgMar`, so writing one must
+  not take the other with it. The layout already honoured them; what was
+  missing was any way to say what they should be.
+
+  **Insert Alignment Tab** is `w:ptab`, which was neither read nor written
+  before. It is a tab that goes to the middle of the line or to its far end
+  whatever the tab stops say, and it is what a header with a title on the left
+  and a page number on the right is made of — such a header keeps its shape when
+  the margins move, because there is no stop that would have to move with them.
+  The layout tells it apart from an ordinary tab by what the item carries: an
+  ordinary tab looks its target up among the stops, and this one is told where
+  it is going.
 
 - [x] **C18. The way a dialog is laid out.** Every dialog here put one field
   per row with its label down the left. Word's put related fields side by side

@@ -670,6 +670,13 @@ pub enum RunContent {
     Text(String),
     Break(BreakKind),
     Tab,
+    /// Word's alignment tab: a tab that goes to the middle of the line or to
+    /// its far end whatever the tab stops say.
+    ///
+    /// `w:ptab`. What a header with a title on the left and a page number on
+    /// the right is made of, and the reason such a header keeps its shape when
+    /// the margins move: the stops would have to be moved, and this does not.
+    PositionTab(TabAlignment),
     /// A picture sitting in the line of text.
     Picture(Picture),
     /// A shape or a text box sitting in the line of text.
@@ -865,7 +872,9 @@ impl Run {
             match piece {
                 RunContent::Text(text) => out.push_str(text),
                 RunContent::Break(_) => out.push('\n'),
-                RunContent::Tab => out.push('\t'),
+                // An alignment tab is a tab as far as the text is concerned:
+                // one character, which is what the caret steps over.
+                RunContent::Tab | RunContent::PositionTab(_) => out.push('\t'),
                 // Neither a picture nor a note mark is text: both read as
                 // nothing, the way they do when a document is copied into a
                 // plain-text editor.

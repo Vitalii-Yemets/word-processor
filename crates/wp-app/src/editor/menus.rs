@@ -23,6 +23,7 @@
 
 use wp_docx::furniture::{Furniture, Preset};
 use wp_docx::model::{Alignment, LineRule, LineSpacing, ParagraphProperties};
+use wp_docx::model::{Run, RunContent, RunProperties, TabAlignment};
 use wp_docx::numbering::Shape;
 use wp_docx::page::CaseChange;
 use wp_docx::revisions::Decision;
@@ -220,6 +221,7 @@ impl Editor {
                 rows.push(Row::new(Kind::Choice, Icon::ParagraphSpacing));
                 (items, rows, self.spacing_in_force(), WIDTH)
             }
+            Choice::AlignmentTab => self.alignment_tab_menu(),
             Choice::DocumentSpacing => {
                 // Word's list says what each set does under its name, because
                 // "Compact" and "Tight" mean nothing until you are told.
@@ -325,6 +327,7 @@ impl Editor {
             Choice::MultilevelLibrary => self.choose_multilevel(index),
             Choice::LineSpacing => self.choose_spacing(index),
             Choice::DocumentSpacing => self.choose_document_spacing(index),
+            Choice::AlignmentTab => self.choose_alignment_tab(index),
             Choice::LetterCase => self.choose_case(index),
             Choice::PageNumberPlace => self.choose_page_number(index),
             Choice::Selecting => self.choose_selecting(index),
@@ -452,6 +455,35 @@ impl Editor {
         self.edited(changed, note)
     }
 
+    /// Word's Insert Alignment Tab: which way the tab sends what follows it.
+    fn alignment_tab_menu(&self) -> (Vec<String>, Vec<Row>, Option<usize>, f32) {
+        let items = vec!["Left".to_owned(), "Center".to_owned(), "Right".to_owned()];
+        let rows = vec![
+            Row::new(Kind::Choice, Icon::AlignStart),
+            Row::new(Kind::Choice, Icon::AlignCenter),
+            Row::new(Kind::Choice, Icon::AlignEnd),
+        ];
+        (items, rows, None, WIDTH)
+    }
+
+    /// Puts one in at the caret.
+    fn choose_alignment_tab(&mut self, index: usize) -> Response {
+        let alignment = match index {
+            1 => TabAlignment::Center,
+            2 => TabAlignment::End,
+            0 => TabAlignment::Start,
+            _ => return Response::Ignored,
+        };
+        let run = Run {
+            properties: RunProperties::default(),
+            content: vec![RunContent::PositionTab(alignment)],
+            field: None,
+            revision: None,
+        };
+        let changed = self.document.insert_runs(&[run]);
+        self.relayout();
+        self.edited(changed, "Alignment tab")
+    }
     // --- The spacing of a whole document ------------------------------------
 
     /// Which of Word's sets the document is in, if it is in one.
@@ -912,5 +944,46 @@ mod tests {
         let (items, ..) = editor.menu_contents(Choice::DocumentSpacing);
         editor.choose_document_spacing(items.len() - 1);
         assert!(editor.in_dialog(), "the dialog did not open");
+    }
+
+    #[test]
+    fn an_alignment_tab_goes_in_and_survives_being_saved() {
+        let mut editor = editor();
+        editor.choose_alignment_tab(2);
+
+        let saved = editor.document.save().expect("saving");
+        let reopened = Document::open(&saved).expect("reopening");
+        let body = reopened.body();
+        let wp_docx::model::Block::Paragraph(paragraph) = &body.blocks[0] else {
+            panic!("a paragraph")
+        };
+        let found = paragraph
+            .runs
+            .iter()
+            .flat_map(|run| run.content.iter())
+            .any(|piece| matches!(piece, RunContent::PositionTab(TabAlignment::End)));
+        assert!(found, "the alignment tab did not survive");
+    }
+
+    #[test]
+    fn an_alignment_tab_sends_what_follows_it_to_the_far_end() {
+        // The point of it: a header with a title on the left and a page number
+        // against the right margin, which keeps its shape when the margins
+        // move because there is no tab stop to move.
+        let mut editor = editor();
+        editor.document.type_text("Left");
+        editor.choose_alignment_tab(2);
+        editor.document.type_text("Right");
+        editor.relayout();
+
+        let page = editor.pages.first().expect("a page");
+        let line = page.lines.first().expect("a line");
+        let right_edge =
+            page.glyphs.iter().map(|glyph| glyph.x + glyph.advance).fold(0.0, f32::max);
+        assert!(
+            right_edge > line.right - 2.0,
+            "the text stopped at {right_edge} and the line ends at {}",
+            line.right
+        );
     }
 }

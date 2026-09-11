@@ -550,6 +550,17 @@ pub(crate) fn read_run(element: &Element) -> Run {
                 content.push(RunContent::Break(kind));
             }
             "tab" => content.push(RunContent::Tab),
+            "ptab" => {
+                // Word writes left, center or right; anything else is not an
+                // alignment tab this program can place, and an ordinary tab is
+                // the closest true thing.
+                let alignment = match child.attribute(Some(W), "alignment") {
+                    Some("center") => TabAlignment::Center,
+                    Some("right") => TabAlignment::End,
+                    _ => TabAlignment::Start,
+                };
+                content.push(RunContent::PositionTab(alignment));
+            }
             // A picture arrives as a DrawingML tree, or as the older VML shape
             // that documents saved by earlier versions still carry.
             "drawing" | "pict" | "object" => {

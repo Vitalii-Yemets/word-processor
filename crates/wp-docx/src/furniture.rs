@@ -538,6 +538,31 @@ impl Document {
         };
         (read_one("header"), read_one("footer"))
     }
+
+    /// How far the header sits from the top of the paper and the footer from
+    /// the bottom, in twentieths of a point.
+    ///
+    /// Word's Header from Top and Footer from Bottom. They are not margins:
+    /// the margin says where the text starts, and these say where the furniture
+    /// sits in the space above and below it. A header pushed past the top
+    /// margin overlaps the text, which is Word's behaviour too and is what a
+    /// person asking for a deep header is asking for.
+    pub fn set_furniture_distances(&mut self, header: i32, footer: i32) -> bool {
+        if self.furniture_distances() == (header.max(0), footer.max(0)) {
+            return false;
+        }
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+        let Some(section) = self.section_properties_mut(prefix.as_deref()) else { return false };
+
+        let margins = crate::page::section_child(section, prefix.as_deref(), "pgMar");
+        let name = |local: &str| edit::name_with(prefix.as_deref(), local);
+        margins.set_namespaced_attribute(&name("header"), read::W, &header.max(0).to_string());
+        margins.set_namespaced_attribute(&name("footer"), read::W, &footer.max(0).to_string());
+        self.mark_modified();
+        true
+    }
 }
 
 /// Keeps only the references a test agrees to, by the type each one names.

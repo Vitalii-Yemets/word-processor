@@ -32,6 +32,8 @@ pub enum Choice {
     PasteOption,
 
     // --- What the buttons with an arrow drop -------------------------------
+    /// Where an alignment tab goes.
+    AlignmentTab,
     /// Which part of a table to select.
     TablePart,
     /// The table styles a table can be given.

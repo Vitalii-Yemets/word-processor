@@ -796,6 +796,10 @@ struct Item {
     /// A tab, whose width is not known until the line is being placed: it
     /// reaches to the next stop, which depends on where the line has got to.
     is_tab: bool,
+    /// Where an alignment tab goes, when the tab is one.
+    ///
+    /// An ordinary tab looks its target up among the stops; this one is told.
+    aligned_tab: Option<wp_docx::model::TabAlignment>,
     /// A picture drawn in the line, with the height it takes up.
     picture: Option<(Rc<Image>, f32)>,
     /// An equation drawn in the line, with the height it takes up.
@@ -2641,6 +2645,7 @@ impl<'a> LayoutEngine<'a> {
                             is_space: chunk.is_space,
                             breaks_before: true,
                             is_tab: false,
+                            aligned_tab: None,
                             picture: None,
                             shape: None,
                             math: None,
@@ -2651,6 +2656,30 @@ impl<'a> LayoutEngine<'a> {
                             end_offset: *offset,
                         });
                     }
+                }
+                // An alignment tab is a tab that goes to the middle of the line
+                // or to its far end whatever the stops say — which is why it
+                // carries where it is going rather than looking it up.
+                RunContent::PositionTab(alignment) => {
+                    paragraph_text.push('\t');
+                    let start = *offset;
+                    *offset += 1;
+                    items.push(Item {
+                        width: self.default_tab_width(),
+                        glyphs: Vec::new(),
+                        is_space: false,
+                        breaks_before: true,
+                        is_tab: true,
+                        aligned_tab: Some(*alignment),
+                        picture: None,
+                        math: None,
+                        chart: None,
+                        shape: None,
+                        hard_break: None,
+                        style: style_index,
+                        start_offset: start,
+                        end_offset: *offset,
+                    });
                 }
                 RunContent::Tab => {
                     paragraph_text.push('\t');
@@ -2668,6 +2697,7 @@ impl<'a> LayoutEngine<'a> {
                         is_space: false,
                         breaks_before: true,
                         is_tab: true,
+                        aligned_tab: None,
                         picture: None,
                         math: None,
                         chart: None,
@@ -2694,6 +2724,7 @@ impl<'a> LayoutEngine<'a> {
                         is_space: false,
                         breaks_before: true,
                         is_tab: false,
+                        aligned_tab: None,
                         picture: None,
                         math: None,
                         chart: None,
@@ -2723,6 +2754,7 @@ impl<'a> LayoutEngine<'a> {
                         is_space: false,
                         breaks_before: true,
                         is_tab: false,
+                        aligned_tab: None,
                         picture: None,
                         math: None,
                         chart: drawn.map(|drawing| (Box::new(drawing), height)),
@@ -2751,6 +2783,7 @@ impl<'a> LayoutEngine<'a> {
                         is_space: false,
                         breaks_before: true,
                         is_tab: false,
+                        aligned_tab: None,
                         picture: None,
                         shape: None,
                         math: Some((Box::new(laid), height)),
@@ -2784,6 +2817,7 @@ impl<'a> LayoutEngine<'a> {
                         is_space: false,
                         breaks_before: true,
                         is_tab: false,
+                        aligned_tab: None,
                         picture: None,
                         math: None,
                         chart: None,
@@ -2823,6 +2857,7 @@ impl<'a> LayoutEngine<'a> {
                         is_space: false,
                         breaks_before: true,
                         is_tab: false,
+                        aligned_tab: None,
                         picture: decoded.map(|image| (image, height)),
                         shape: None,
                         math: None,
@@ -2843,6 +2878,7 @@ impl<'a> LayoutEngine<'a> {
                         is_space: false,
                         breaks_before: true,
                         is_tab: false,
+                        aligned_tab: None,
                         picture: None,
                         math: None,
                         chart: None,
@@ -4009,7 +4045,27 @@ impl LayoutEngine<'_> {
             } else if item.is_tab {
                 // A tab is a distance to a place, not a distance to travel.
                 let following = Following { from: index + 1, end: line_end, items, styles };
-                let (target, leader) = self.tab_reach(x, following, &placement, stops);
+                let (target, leader) = match item.aligned_tab {
+                    // An alignment tab is told where it is going. The middle
+                    // and the far end of the text, and what follows it is
+                    // pulled back so that it ends there rather than starting
+                    // there — which is what makes a page number sit against
+                    // the right margin.
+                    Some(alignment) => {
+                        let following = Following { from: index + 1, end: line_end, items, styles };
+                        let rest = segment_width(following);
+                        let right = placement.left + placement.width;
+                        let target = match alignment {
+                            wp_docx::model::TabAlignment::Center => {
+                                placement.left + (placement.width - rest) / 2.0
+                            }
+                            wp_docx::model::TabAlignment::End => right - rest,
+                            _ => x,
+                        };
+                        (target.max(x), TabLeader::None)
+                    }
+                    None => self.tab_reach(x, following, &placement, stops),
+                };
                 if let Some(character) = leader.character() {
                     let style = styles[item.style].clone();
                     let source = TextPosition::new(placement.paragraph, item.start_offset);

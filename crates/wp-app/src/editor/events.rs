@@ -1080,7 +1080,8 @@ impl Editor {
             | Choice::Accepting
             | Choice::Rejecting
             | Choice::Tracking
-            | Choice::DocumentSpacing => return self.open_ribbon_menu(choice),
+            | Choice::DocumentSpacing
+            | Choice::AlignmentTab => return self.open_ribbon_menu(choice),
             Choice::Font => Command::ChooseFont,
             Choice::Size => Command::ChooseSize,
             Choice::Style => Command::ChooseStyle,
@@ -1195,6 +1196,7 @@ impl Editor {
             | Choice::BulletLibrary
             | Choice::NumberLibrary
             | Choice::TablePart
+            | Choice::AlignmentTab
             | Choice::MultilevelLibrary
             | Choice::LineSpacing
             | Choice::LetterCase
@@ -1291,7 +1293,8 @@ impl Editor {
             | Choice::Accepting
             | Choice::Rejecting
             | Choice::Tracking
-            | Choice::DocumentSpacing => self.choose_from_menu(choice, index),
+            | Choice::DocumentSpacing
+            | Choice::AlignmentTab => self.choose_from_menu(choice, index),
             Choice::PasteOption => self.choose_paste_option(index),
             Choice::TableStyle => self.choose_table_style(index),
             Choice::Cover => self.choose_cover_page(index),

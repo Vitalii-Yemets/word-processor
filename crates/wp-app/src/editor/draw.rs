@@ -48,6 +48,8 @@ impl Editor {
             table_look: self.document.table_look().unwrap_or_default(),
             show_table_gridlines: self.show_table_gridlines,
             repeat_header_row: self.document.table_header_row().unwrap_or(false),
+            header_from_top: self.document.furniture_distances().0,
+            footer_from_bottom: self.document.furniture_distances().1,
             row_height: self.document.table_row_height().unwrap_or(0),
             column_width: self.document.cell_width().unwrap_or(0),
             cell_alignment: self.cell_alignment_here().map(|at| at as u8),
