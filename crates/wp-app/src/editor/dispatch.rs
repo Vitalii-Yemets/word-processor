@@ -105,7 +105,7 @@ impl Editor {
                 let changed = self.document.adjust_indent_here(-INDENT_STEP);
                 self.edited(changed, "Outdented")
             }
-            Command::Sort => self.sort_selection(),
+            Command::Sort => self.open_sort(),
             Command::LineSpacing => self.open_list(Choice::LineSpacing),
             Command::DocumentSpacing => self.open_list(Choice::DocumentSpacing),
             Command::AlignmentTab => self.open_list(Choice::AlignmentTab),

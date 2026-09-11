@@ -2090,6 +2090,11 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
     Group {
         label: "Data",
         items: &[
+            // Word puts Sort in this group as well as on the Home tab: sorting
+            // a table is what it is mostly for, and this is the tab a table
+            // brings out.
+            Item::Small(Command::Sort, Icon::Sort, "Sort"),
+            Item::Break,
             Item::Small(Command::RepeatHeaderRow, Icon::HeaderRow, "Repeat Header Rows"),
             Item::Break,
             Item::Small(Command::ConvertToText, Icon::Letter, "Convert to Text"),

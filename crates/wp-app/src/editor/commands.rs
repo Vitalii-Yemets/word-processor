@@ -126,37 +126,6 @@ impl Editor {
         changed
     }
 
-    /// Sorts the selected paragraphs into order.
-    ///
-    /// Word sorts by the text of each paragraph, ignoring case, which is what a
-    /// person means by "sort this list".
-    pub(super) fn sort_selection(&mut self) -> Response {
-        let Some((start, end)) = self.document.selection() else {
-            return self.report("Select the paragraphs to sort first");
-        };
-        if end.paragraph <= start.paragraph {
-            return self.report("Select more than one paragraph to sort");
-        }
-
-        let mut lines: Vec<String> = (start.paragraph..=end.paragraph)
-            .filter_map(|index| self.document.paragraph_text(index))
-            .collect();
-        if lines.len() < 2 {
-            return Response::Ignored;
-        }
-        lines.sort_by_key(|line| line.to_lowercase());
-
-        // Replacing the selection with the sorted text loses any formatting
-        // that differed between the paragraphs, which is worth saying rather
-        // than hiding.
-        self.document.move_caret(TextPosition::new(start.paragraph, 0), false);
-        let end_offset = self.document.paragraph_text(end.paragraph).map_or(0, |text| text.len());
-        self.document.move_caret(TextPosition::new(end.paragraph, end_offset), true);
-
-        let changed = self.document.paste(&lines.join("\n"));
-        self.edited(changed, "Sorted")
-    }
-
     /// Moves the paragraph one level deeper in its list, or back to the top.
     pub(super) fn step_list_level(&mut self, deeper: bool) -> Response {
         let Some(reference) = self.document.list_here() else {

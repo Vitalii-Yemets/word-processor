@@ -268,6 +268,27 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            "sort" => {
+                // Word's Sort on a table of names and figures, which is what
+                // it is for. The dialog cannot be photographed without one.
+                self.document.insert_table(4, 2);
+                for (paragraph, text) in [
+                    (1, "Name"),
+                    (2, "Score"),
+                    (3, "Pear"),
+                    (4, "10"),
+                    (5, "Apple"),
+                    (6, "9"),
+                    (7, "Cherry"),
+                    (8, "24"),
+                ] {
+                    self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                    self.document.type_text(text);
+                }
+                self.document.set_caret(wp_docx::TextPosition::new(1, 0));
+                self.relayout();
+                self.open_sort();
+            }
             "spacedtable" => {
                 // A table whose cells are held apart, with a good deal of room
                 // inside them as well. The only way to see that the spacing is

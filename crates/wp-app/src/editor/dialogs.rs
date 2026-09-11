@@ -64,6 +64,8 @@ pub(super) enum Asking {
     /// The words those corrections must leave alone, which is a dialog of its
     /// own behind the one above.
     Exceptions,
+    /// Which column to put the rows of a table in order by, and how.
+    Sort,
 }
 
 impl Editor {
@@ -140,6 +142,7 @@ impl Editor {
             Some(Asking::TabStops) => self.apply_tabs_dialog(&dialog),
             Some(Asking::Style) => self.apply_style_dialog(&dialog),
             Some(Asking::Table) => self.apply_table_dialog(&dialog),
+            Some(Asking::Sort) => self.apply_sort(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),
             Some(Asking::AutoCorrect) => self.apply_autocorrect_dialog(&dialog),
             Some(Asking::PageBorders) => self.apply_page_borders(&dialog),

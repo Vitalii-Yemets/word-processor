@@ -58,6 +58,7 @@ mod search;
 mod selecting;
 mod shapes;
 mod signature;
+mod sortdialog;
 mod split;
 mod stationery;
 mod statusmenu;

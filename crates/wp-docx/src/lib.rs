@@ -79,6 +79,7 @@ pub mod sections;
 pub mod settings;
 pub mod shapes;
 pub mod signature;
+pub mod sorting;
 pub mod stationery;
 pub mod styles;
 pub mod table_properties;

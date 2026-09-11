@@ -1391,13 +1391,39 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   percentage of the table is read as none: the model keeps twips, and Word's own
   dialog cannot ask for a percentage either.
 
-- [ ] **C32. Sorting the rows of a table.** The Sort command exists and sorts
-  paragraphs. Sorting a table means moving whole `w:tr` elements, knowing which
-  column to compare and how — as text, as a number, as a date — and Word's
-  dialog offers three levels of key, each with its own column and its own
-  direction, and a tick for whether the first row is a heading.
-  *Done when:* a table can be sorted on up to three columns at once, and a
-  header row stays where it is.
+- [x] **C32. Sorting the rows of a table.** The Sort command sorted paragraphs
+  and nothing else, by replacing their text with the same text in another order
+  — which ordered the words and threw away everything the paragraphs were
+  formatted with.
+  *Done:* `wp-docx/src/sorting.rs`. **Nothing is rewritten**: the `w:tr` elements
+  are read to find out what they say and the same elements are put back in
+  another order, so every cell keeps its width, its shading, its borders and the
+  formatting of every run in it. Sorting a run of paragraphs moves the `w:p`
+  elements the same way, which is the flaw above fixed rather than kept.
+  **Word's three keys**: by a column, and where two rows agree by a second, and
+  where they agree again by a third. Each has its own column, its own reading —
+  words, a number, a date — and its own direction. Rows that are equal on every
+  key keep the order they came in, which is what makes the third key mean
+  anything.
+  A **number is read out of whatever else is in the cell**, as Word's is:
+  "£1,234.50 (est.)" sorts as 1234.5, and a cell with no number in it sorts
+  before every cell that has one. A **date** reads the day first — what the
+  United Kingdom and most of the world write, and what this program's own
+  language setting says — with `2024-03-04`, the one form nobody can misread,
+  read as itself.
+  The **header row** is a tick and not a guess: a table whose first row names the
+  columns and one whose first row is data look alike to a program, and sorting
+  the names into the middle of the figures is the kind of mistake nobody
+  forgives.
+  The same dialog serves both places, because Word's asks the same three
+  questions in both and only the list of columns differs: the columns of the
+  table, or "Paragraphs" and the fields the tabs separate. Sort is on the Data
+  group of the Table Layout tab now as well as on the Home tab, where Word has
+  it.
+  *Not done:* Word's **Options** inside the Sort dialog — separating fields at
+  commas or at something else rather than at tabs, sorting with case counted,
+  the sorting language, and "sort column only". Each of those is a row in a
+  dialog behind the dialog, and none of them is what sorting a table is for.
 
 - [ ] **C33. Formula.** `=SUM(ABOVE)` and its kin, as a field. The field
   machinery is there and works out its own answers; what is missing is the
