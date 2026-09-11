@@ -2276,9 +2276,25 @@ impl Document {
         let text_width = 9360;
         let column_width = text_width / columns as i32;
 
+        // Every cell states the width of its column, which is what Word writes
+        // and what keeps a new table the width of the text. A cell's stated
+        // width is a preference rather than a measurement, and it is what
+        // AutoFit Contents clears to make the table hug what is in it: a table
+        // that stated nothing would collapse to its contents the moment it was
+        // made, which is not what asking for a three by three table means. See
+        // [`model::TableFit`].
         let table = Table::from_rows(
             (0..rows)
-                .map(|_| TableRow::from_cells((0..columns).map(|_| TableCell::default()).collect()))
+                .map(|_| {
+                    TableRow::from_cells(
+                        (0..columns)
+                            .map(|_| TableCell {
+                                width: Some(column_width),
+                                ..TableCell::default()
+                            })
+                            .collect(),
+                    )
+                })
                 .collect(),
         )
         .with_grid(vec![column_width; columns])

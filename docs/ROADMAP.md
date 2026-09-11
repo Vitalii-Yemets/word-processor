@@ -1276,14 +1276,46 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the file gives a picture, which for a picture carrying a description is the
   description: the model keeps one field where the format has two.
 
-- [ ] **C29. AutoFit.** Word's three: fit to contents, fit to window, fixed
-  column width. The last two are a `w:tblW` and a `w:tblLayout` away; the first
-  wants the layout to measure what is in every cell with no width to break it
-  against, which nothing does yet — every measuring pass this program has is
-  given a width first. All three belong together: a menu with two live rows
-  would be worse than none.
-  *Done when:* each of the three does what Word's does, and a table set to fit
-  its contents changes width as the text in it is typed.
+- [x] **C29. AutoFit.** Word's three: fit to contents, fit to window, fixed
+  column width. All three belonged together: a menu with two live rows would
+  have been worse than none.
+  *Done:* the AutoFit button is on the Table Layout tab where Word's is, it
+  drops Word's three rows and shows which of them is in force, and each does
+  what Word's does. `wp-layout/src/tablefit.rs` is how wide the columns come
+  out; `wp_docx::model::TableFit` is the one decision the file says in two
+  places — `w:tblW`, the width the table would like to be, and `w:tblLayout`,
+  whether its columns may be worked out at all.
+  **Fitting to contents** wanted the layout to measure what is in every cell
+  with no width to break it against, which nothing did: every measuring pass
+  this program has is given a width first. So a cell is measured by building its
+  items and never breaking them into lines, which gives the two numbers any
+  table algorithm needs — how wide it *must* be, its widest single item, and how
+  wide it *would like* to be, all of them in one line. A column takes the
+  largest of each over its cells. If every column can have what it wants it
+  does, and the table is as wide as its contents; if they cannot, each gets what
+  it must have and the rest is shared out in proportion to what each still
+  wanted.
+  A cell that **states a width still gets it**: `w:tcW` is a preferred width and
+  Word writes one on every cell of every table it makes, so a stated width is a
+  floor and the content is what can push a column past it. That is why a table
+  from Word keeps the shape it had there — and it is why **AutoFit Contents**
+  is the command that *clears* those preferences. With nothing preferred the
+  text alone decides, which is Word's own mechanism and the whole reason the
+  command has anything to do. Tables this program inserts now state their widths
+  too, as Word's do; they did not, and without that a new table would have hugged
+  its empty cells the moment it was made.
+  **Fixed column width** keeps the widths in front of you rather than the ones
+  the file was last written with: the editor reads the columns off the page it
+  has drawn and writes those into the grid and into every cell before fixing
+  them, so the table does not jump when it is frozen. The model could not do it
+  — it has never seen a page.
+  *Fixed on the way:* a cell width written as a percentage was read as
+  twentieths of a point, so a cell asking for half the table asked for a hundred
+  and twenty-five points instead. Percentages are left to the layout now.
+  *What it costs:* a pass over the text of every cell of every fitted table,
+  every time the document is laid out again — items only, no line breaking, but
+  not free. Nothing is cached; that is **B6**'s business when a large document
+  turns up to measure it against.
 
 - [ ] **C30. Text Direction in a cell.** `w:textDirection`, which turns a cell's
   text through a right angle — what the headings of a narrow column are set in.

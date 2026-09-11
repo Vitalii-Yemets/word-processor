@@ -1193,6 +1193,31 @@ impl TableBorders {
     }
 }
 
+/// How a table decides how wide it and its columns are: Word's AutoFit.
+///
+/// Word offers three and the file says which in two places — `w:tblW`, the
+/// width the table would like to be, and `w:tblLayout`, whether the columns may
+/// be worked out at all. They are one decision to anybody using the program, so
+/// they are one thing here.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TableFit {
+    /// Fit to contents. `w:tblW` of type `auto`, and the columns are as wide as
+    /// what is in them — so the table grows and shrinks as it is typed in.
+    ///
+    /// A cell that states a width of its own still gets it: `w:tcW` is a
+    /// *preferred* width, and content wider than that is what makes a column
+    /// grow past it. Word's AutoFit Contents is what clears those preferences,
+    /// which is how it makes a table hug its text.
+    #[default]
+    Contents,
+    /// Fit to window: `w:tblW` as a percentage of the text area. The columns
+    /// share out that width in the proportions they would have had.
+    Window(i32),
+    /// Fixed column width: `w:tblLayout w:type="fixed"`. The grid is the
+    /// geometry, and nothing in the cells changes it.
+    Fixed,
+}
+
 /// A table.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Table {
@@ -1213,6 +1238,8 @@ pub struct Table {
     /// Space kept clear inside a cell, in twentieths of a point.
     pub cell_margin_start: Option<i32>,
     pub cell_margin_end: Option<i32>,
+    /// How the width of the table and of its columns is arrived at.
+    pub fit: TableFit,
 }
 
 impl TableCell {

@@ -16,7 +16,7 @@ use crate::model::{
     Alignment, Block, Body, Border, BreakKind, LineRule, LineSpacing, NumberingReference,
     Paragraph, ParagraphBorders, ParagraphProperties, Picture, Revision, RevisionKind, Run,
     RunContent, RunProperties, TabAlignment, TabLeader, TabStop, Table, TableBorders, TableCell,
-    TableLook, TableRow, Underline, VerticalAlignment,
+    TableFit, TableLook, TableRow, Underline, VerticalAlignment,
 };
 
 /// The WordprocessingML namespace.
@@ -155,6 +155,7 @@ fn read_table(element: &Element) -> Table {
     Table {
         rows,
         style,
+        fit: read_table_fit(element),
         look: properties
             .and_then(|properties| properties.child(Some(W), "tblLook"))
             .map(read_table_look)
@@ -165,6 +166,34 @@ fn read_table(element: &Element) -> Table {
         cell_margin_start: cell_margin("start").or_else(|| cell_margin("left")),
         cell_margin_end: cell_margin("end").or_else(|| cell_margin("right")),
     }
+}
+
+/// Which of Word's three AutoFits a `w:tbl` is set to.
+///
+/// Said in two places. A table whose columns may not be worked out at all is
+/// fixed whatever width it asks for; one that asks for a percentage of the text
+/// area is fitted to the window; and everything else — a width of `auto`, a
+/// width in twips, or nothing said at all — is fitted to what is in it, which
+/// is the format's default and Word's.
+#[must_use]
+pub(crate) fn read_table_fit(table: &Element) -> TableFit {
+    let properties = table.child(Some(W), "tblPr");
+    let fixed = properties
+        .and_then(|properties| properties.child(Some(W), "tblLayout"))
+        .and_then(|layout| layout.attribute(Some(W), "type"))
+        == Some("fixed");
+    if fixed {
+        return TableFit::Fixed;
+    }
+
+    properties
+        .and_then(|properties| properties.child(Some(W), "tblW"))
+        .filter(|width| width.attribute(Some(W), "type") == Some("pct"))
+        .and_then(|width| width.attribute(Some(W), "w"))
+        .and_then(|text| text.parse::<i32>().ok())
+        // The format counts percentages in fiftieths of one.
+        .map(|fiftieths| TableFit::Window((fiftieths / 50).clamp(1, 100)))
+        .unwrap_or(TableFit::Contents)
 }
 
 fn read_table_row(row: &Element) -> TableRow {
@@ -189,10 +218,14 @@ fn read_table_cell(cell: &Element) -> TableCell {
     let properties = cell.child(Some(W), "tcPr");
 
     // A width of type "auto" is not a width: it asks for one to be worked out,
-    // which is exactly what saying nothing means.
+    // which is exactly what saying nothing means. Neither is a percentage:
+    // the model keeps twentieths of a point, and reading a `pct` of 2500 —
+    // fifty per cent — as twips would say the cell wanted a hundred and
+    // twenty-five points. Those are left for the layout to work out from the
+    // table's own width, which is what a percentage is a percentage of.
     let width = properties
         .and_then(|properties| properties.child(Some(W), "tcW"))
-        .filter(|element| element.attribute(Some(W), "type") != Some("auto"))
+        .filter(|element| !matches!(element.attribute(Some(W), "type"), Some("auto" | "pct")))
         .and_then(|element| element.attribute(Some(W), "w"))
         .and_then(|text| text.parse().ok());
 

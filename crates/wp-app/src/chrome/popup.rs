@@ -38,6 +38,8 @@ pub enum Choice {
     TablePart,
     /// The table styles a table can be given.
     TableStyle,
+    /// Word's three AutoFits: to the contents, to the window, or fixed.
+    AutoFit,
     /// The bullet shapes.
     BulletLibrary,
     /// The number formats.

@@ -483,6 +483,129 @@ impl Document {
         })
     }
 
+    /// Which of Word's three AutoFits the table at the caret is set to.
+    #[must_use]
+    pub fn table_fit(&self) -> crate::model::TableFit {
+        self.table_here()
+            .and_then(|_| self.table_element_here())
+            .map(read::read_table_fit)
+            .unwrap_or_default()
+    }
+
+    /// Sets it, which is what Word's AutoFit menu does.
+    ///
+    /// Fitting to contents clears the width every cell states for itself,
+    /// because those are preferences and a preference is exactly what stops a
+    /// table hugging its text. That is Word's own mechanism, and it is why the
+    /// command has anything to do: without it the table would keep the widths
+    /// it was written with and the menu would be three rows that change a file
+    /// and change nothing anybody can see.
+    pub fn set_table_fit(&mut self, fit: crate::model::TableFit) -> bool {
+        use crate::model::TableFit;
+
+        self.change_table(move |table, prefix| {
+            let name = |local: &str| edit::name_with(prefix, local);
+            let properties = table_properties(table, prefix);
+
+            // How wide the table would like to be.
+            properties.remove_children_named(Some(read::W), "tblW");
+            let mut width = Element::new(&name("tblW"), Some(read::W));
+            match fit {
+                TableFit::Window(percent) => {
+                    let fiftieths = percent.clamp(1, 100) * 50;
+                    width.set_namespaced_attribute(&name("w"), read::W, &fiftieths.to_string());
+                    width.set_namespaced_attribute(&name("type"), read::W, "pct");
+                }
+                // "Auto" is how the format says "work it out", and it is a width
+                // of type auto rather than no width at all.
+                _ => {
+                    width.set_namespaced_attribute(&name("w"), read::W, "0");
+                    width.set_namespaced_attribute(&name("type"), read::W, "auto");
+                }
+            }
+            edit::insert_ordered(properties, width, TABLE_PROPERTY_ORDER);
+
+            // And whether its columns may be worked out at all.
+            properties.remove_children_named(Some(read::W), "tblLayout");
+            if fit == TableFit::Fixed {
+                let mut layout = Element::new(&name("tblLayout"), Some(read::W));
+                layout.set_namespaced_attribute(&name("type"), read::W, "fixed");
+                edit::insert_ordered(properties, layout, TABLE_PROPERTY_ORDER);
+            }
+
+            if fit != TableFit::Contents {
+                return;
+            }
+            // Nothing preferred, so the text decides.
+            for row in rows_mut(table) {
+                for cell in cells_mut(row) {
+                    let properties = cell_properties(cell, prefix);
+                    properties.remove_children_named(Some(read::W), "tcW");
+                    let mut width = Element::new(&name("tcW"), Some(read::W));
+                    width.set_namespaced_attribute(&name("w"), read::W, "0");
+                    width.set_namespaced_attribute(&name("type"), read::W, "auto");
+                    edit::insert_ordered(properties, width, CELL_PROPERTY_ORDER);
+                }
+            }
+        })
+    }
+
+    /// Writes the widths of the columns of the table at the caret, in twentieths
+    /// of a point.
+    ///
+    /// The grid and every cell's stated width together, because they are two
+    /// records of one thing and a document where they disagree is a document
+    /// two programs lay out differently. What this is for is freezing the
+    /// columns where they are: Word's Fixed Column Width keeps the widths in
+    /// front of you, and the widths in front of you are the laid-out ones
+    /// rather than whatever the file was last written with.
+    pub fn set_table_grid(&mut self, widths: &[i32]) -> bool {
+        if widths.is_empty() || widths.iter().any(|width| *width <= 0) {
+            return false;
+        }
+        let widths = widths.to_vec();
+        self.change_table(move |table, prefix| {
+            let name = |local: &str| edit::name_with(prefix, local);
+
+            table.remove_children_named(Some(read::W), "tblGrid");
+            let mut grid = Element::new(&name("tblGrid"), Some(read::W));
+            for width in &widths {
+                let mut column = Element::new(&name("gridCol"), Some(read::W));
+                column.set_namespaced_attribute(&name("w"), read::W, &width.to_string());
+                grid.push_element(column);
+            }
+            // The grid goes after the properties and before the first row.
+            let at = usize::from(table.child(Some(read::W), "tblPr").is_some());
+            table.insert_element(at, grid);
+
+            // A cell covering several columns is as wide as all of them.
+            for row in rows_mut(table) {
+                let mut at = 0usize;
+                for cell in cells_mut(row) {
+                    let span = cell
+                        .child(Some(read::W), "tcPr")
+                        .and_then(|properties| properties.child(Some(read::W), "gridSpan"))
+                        .and_then(|span| span.attribute(Some(read::W), "val"))
+                        .and_then(|text| text.parse::<usize>().ok())
+                        .unwrap_or(1)
+                        .max(1);
+                    let width: i32 = widths.iter().skip(at).take(span).sum();
+                    at += span;
+                    if width <= 0 {
+                        continue;
+                    }
+
+                    let properties = cell_properties(cell, prefix);
+                    properties.remove_children_named(Some(read::W), "tcW");
+                    let mut stated = Element::new(&name("tcW"), Some(read::W));
+                    stated.set_namespaced_attribute(&name("w"), read::W, &width.to_string());
+                    stated.set_namespaced_attribute(&name("type"), read::W, "dxa");
+                    edit::insert_ordered(properties, stated, CELL_PROPERTY_ORDER);
+                }
+            }
+        })
+    }
+
     /// How far the table at the caret is set in from the left margin, in
     /// twentieths of a point.
     #[must_use]
@@ -662,6 +785,80 @@ mod tests {
         for alignment in CellAlignment::ALL {
             assert!(!alignment.label().is_empty());
         }
+    }
+
+    /// A document with one three by three table, the caret in its first cell.
+    fn with_table() -> Document {
+        let mut body = crate::model::Body::default();
+        body.blocks.push(crate::model::Block::Paragraph(crate::model::Paragraph::text("Before")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let mut document = Document::open(&bytes).expect("reopening");
+        assert!(document.insert_table(3, 3), "the table went nowhere");
+        document
+    }
+
+    /// The table at the caret, as the model reads it.
+    fn table_of(document: &Document) -> crate::model::Table {
+        let (_, table) = document
+            .body()
+            .blocks
+            .into_iter()
+            .enumerate()
+            .find_map(|(at, block)| match block {
+                crate::model::Block::Table(table) => Some((at, *table)),
+                crate::model::Block::Paragraph(_) => None,
+            })
+            .expect("a table");
+        table
+    }
+
+    #[test]
+    fn every_autofit_survives_being_written_and_read_back() {
+        for fit in [
+            crate::model::TableFit::Contents,
+            crate::model::TableFit::Window(100),
+            crate::model::TableFit::Fixed,
+        ] {
+            let mut document = with_table();
+            assert!(document.set_table_fit(fit), "nothing was written for {fit:?}");
+
+            let bytes = document.save().expect("saving");
+            let reopened = Document::open(&bytes).expect("reopening");
+            assert_eq!(table_of(&reopened).fit, fit, "{fit:?} came back as something else");
+        }
+    }
+
+    #[test]
+    fn fitting_to_contents_clears_the_width_every_cell_states() {
+        // A stated width is a preference, and a preference is what stops a
+        // table hugging its text. Word clears them; so does this.
+        let mut document = with_table();
+        assert!(table_of(&document).rows[0].cells[0].width.is_some(), "a new cell states none");
+
+        document.set_table_fit(crate::model::TableFit::Contents);
+        let table = table_of(&document);
+        assert!(
+            table.rows.iter().flat_map(|row| &row.cells).all(|cell| cell.width.is_none()),
+            "a cell still states a width of its own"
+        );
+    }
+
+    #[test]
+    fn fixing_the_columns_writes_the_widths_into_the_grid_and_the_cells() {
+        let mut document = with_table();
+        assert!(document.set_table_grid(&[1000, 2000, 3000]));
+
+        let table = table_of(&document);
+        assert_eq!(table.grid, vec![1000, 2000, 3000]);
+        let stated: Vec<Option<i32>> = table.rows[0].cells.iter().map(|cell| cell.width).collect();
+        assert_eq!(stated, vec![Some(1000), Some(2000), Some(3000)]);
+    }
+
+    #[test]
+    fn a_grid_of_nothing_is_refused_rather_than_written() {
+        let mut document = with_table();
+        assert!(!document.set_table_grid(&[]));
+        assert!(!document.set_table_grid(&[100, 0, 100]));
     }
 
     #[test]

@@ -1143,6 +1143,7 @@ impl Editor {
             | Choice::Rejecting
             | Choice::Tracking
             | Choice::DocumentSpacing
+            | Choice::AutoFit
             | Choice::AlignmentTab => return self.open_ribbon_menu(choice),
             // The two Arrange menus, whose entries depend on nothing but which
             // way they move a drawing.
@@ -1264,6 +1265,7 @@ impl Editor {
             | Choice::BulletLibrary
             | Choice::NumberLibrary
             | Choice::TablePart
+            | Choice::AutoFit
             | Choice::AlignmentTab
             | Choice::MultilevelLibrary
             | Choice::LineSpacing
@@ -1373,6 +1375,7 @@ impl Editor {
             Choice::Authority => self.choose_authorities(index),
             Choice::Shape => self.choose_shape(index),
             Choice::TablePart => self.choose_table_part(index),
+            Choice::AutoFit => self.choose_autofit(index),
             Choice::Wrap => self.choose_wrapping(index),
             Choice::Position => self.choose_position(index),
             Choice::Forward => self.choose_arrange(true, index),

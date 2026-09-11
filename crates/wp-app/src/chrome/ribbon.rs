@@ -264,6 +264,9 @@ static MENUS: &[Menu] = &[
     // A gallery of lines, with no line of its own to be: pressing it anywhere
     // asks which line.
     Menu { command: Command::BorderStyles, choice: Choice::BorderStyle, split: false },
+    // Word's AutoFit is a plain dropdown: there is no such thing as "autofit",
+    // only the three ways of arriving at a width, and one of them is in force.
+    Menu { command: Command::AutoFit, choice: Choice::AutoFit, split: false },
 ];
 
 /// The menu a command drops, if it drops one.
@@ -1131,6 +1134,7 @@ impl Ribbon {
                     | Choice::TableStyle
                     | Choice::AlignmentTab
                     | Choice::TablePart
+                    | Choice::AutoFit
                     | Choice::DocumentSpacing
                     | Choice::BulletLibrary
                     | Choice::NumberLibrary
@@ -2047,6 +2051,8 @@ static TABLE_LAYOUT_GROUPS: &[Group] = &[
         items: &[
             // Word's Cell Size group is the two measurements and the button
             // that evens the columns out.
+            Item::Small(Command::AutoFit, Icon::AutoFit, "AutoFit"),
+            Item::Break,
             Item::Measure(Command::RowHeightBox, "Height:", 62.0),
             Item::Break,
             Item::Measure(Command::ColumnWidthBox, "Width:", 62.0),

@@ -219,6 +219,8 @@ pub enum Command {
     MergeCells,
     SplitCells,
     DistributeColumns,
+    /// Word's AutoFit menu: how a table decides how wide it is.
+    AutoFit,
 
     // References.
     InsertContents,

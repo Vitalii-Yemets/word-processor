@@ -285,6 +285,23 @@ impl Editor {
                 // Select Objects is a mode, so the menu says whether it is on.
                 (items, rows, self.choosing_drawings().then_some(1), 300.0)
             }
+            Choice::AutoFit => {
+                let items = super::tablelayout::AUTOFITS
+                    .iter()
+                    .map(|(label, _)| (*label).to_owned())
+                    .collect();
+                let rows = super::tablelayout::AUTOFITS
+                    .iter()
+                    .map(|_| Row::new(Kind::Choice, Icon::AutoFit))
+                    .collect();
+                // Which of the three the table at the caret is set to, so the
+                // menu says what is in force rather than offering three alike.
+                let here = self.document.table_fit();
+                let current = super::tablelayout::AUTOFITS
+                    .iter()
+                    .position(|(_, fit)| super::tablelayout::same_fit(*fit, here));
+                (items, rows, current, 240.0)
+            }
             Choice::NoteJump => {
                 let items = vec![
                     "Next Footnote".to_owned(),

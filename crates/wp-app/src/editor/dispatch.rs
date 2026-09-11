@@ -249,6 +249,7 @@ impl Editor {
                 let changed = self.document.distribute_columns();
                 self.edited(changed, "Columns distributed")
             }
+            Command::AutoFit => self.open_list(Choice::AutoFit),
 
             // --- References ---------------------------------------------------
             Command::InsertContents | Command::UpdateContents => self.write_contents(),

@@ -34,6 +34,7 @@ mod layout;
 mod library;
 pub mod math;
 mod render;
+mod tablefit;
 
 pub use device::{Device, Unprintable};
 pub use layout::{

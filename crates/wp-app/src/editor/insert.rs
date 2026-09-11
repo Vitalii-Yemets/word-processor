@@ -251,6 +251,23 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            "fittedtable" => {
+                // A table fitted to what is in it, which is the only way to see
+                // that the columns are the answer to the text rather than to
+                // the file. Each cell holds a different word, so each column
+                // comes out a different width.
+                self.document.insert_table(3, 3);
+                for (paragraph, word) in
+                    [(1, "One"), (2, "A longer one"), (3, "Mid"), (4, "Two"), (5, "Short")]
+                {
+                    self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                    self.document.type_text(word);
+                }
+                self.document.set_caret(wp_docx::TextPosition::new(1, 0));
+                self.choose_autofit(0);
+                self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
+                self.relayout();
+            }
             "styledtable" => {
                 // A table with one of Word's styles on it, which is the only
                 // way to look at what the Table Style Options do.
@@ -708,6 +725,7 @@ impl Editor {
                         "case" => crate::chrome::Choice::LetterCase,
                         "pagenumber" => crate::chrome::Choice::PageNumberPlace,
                         "select" => crate::chrome::Choice::Selecting,
+                        "autofit" => crate::chrome::Choice::AutoFit,
                         "notes" => crate::chrome::Choice::NoteJump,
                         "accept" => crate::chrome::Choice::Accepting,
                         "reject" => crate::chrome::Choice::Rejecting,

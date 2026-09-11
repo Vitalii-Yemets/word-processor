@@ -40,7 +40,7 @@ use crate::borders::Side;
 use crate::library::FontLibrary;
 
 /// Twentieths of a point, the unit the format measures almost everything in.
-const TWIPS_PER_POINT: f32 = 20.0;
+pub(crate) const TWIPS_PER_POINT: f32 = 20.0;
 /// Points per inch, which is what makes a point a point.
 const POINTS_PER_INCH: f32 = 72.0;
 
@@ -694,7 +694,7 @@ impl Page {
 
 /// How a run should look, reduced to what drawing needs.
 #[derive(Clone, Debug)]
-struct RunStyle {
+pub(crate) struct RunStyle {
     face: usize,
     size: f32,
     color: Color,
@@ -895,12 +895,16 @@ fn is_plain(paragraph: &Paragraph) -> bool {
 }
 
 /// The smallest thing a line can be broken between.
+///
+/// Shared with [`crate::tablefit`], which measures a cell by building its items
+/// and never breaking them into lines: how wide the widest of them is, and how
+/// wide all of them together are, is what a column has to be to hold it.
 #[derive(Clone, Debug)]
-struct Item {
+pub(crate) struct Item {
     glyphs: Vec<ShapedGlyph>,
-    width: f32,
+    pub(crate) width: f32,
     /// Whitespace collapses at the end of a line rather than being drawn.
-    is_space: bool,
+    pub(crate) is_space: bool,
     /// Whether a line may end just before this item. Almost everything may
     /// begin one; a full stop that a change of formatting left in a run of its
     /// own may not.
@@ -2265,7 +2269,7 @@ impl<'a> LayoutEngine<'a> {
         area: Placement,
     ) {
         let scale = self.pixels_per_point();
-        let columns = column_widths(table, area.text_width, scale);
+        let columns = self.column_widths(table, document, area.text_width, scale);
         if columns.is_empty() {
             return;
         }
@@ -2280,12 +2284,7 @@ impl<'a> LayoutEngine<'a> {
         // it has one. See `wp_docx::table_properties::TableLook`.
         let look = table.look;
 
-        let margin_start = table.cell_margin_start.unwrap_or(DEFAULT_CELL_MARGIN_TWIPS) as f32
-            / TWIPS_PER_POINT
-            * scale;
-        let margin_end = table.cell_margin_end.unwrap_or(DEFAULT_CELL_MARGIN_TWIPS) as f32
-            / TWIPS_PER_POINT
-            * scale;
+        let (margin_start, margin_end) = cell_margins(table, scale);
         // A table sits in whichever column the flow has reached.
         let table_left =
             area.in_column(*column).left + table.indent as f32 / TWIPS_PER_POINT * scale;
@@ -2566,7 +2565,7 @@ impl<'a> LayoutEngine<'a> {
     /// the tree from the top, once per paragraph. A thousand-page document laid
     /// out that way spends most of its time counting paragraphs it has already
     /// counted.
-    fn build_items(
+    pub(crate) fn build_items(
         &mut self,
         paragraph: &Paragraph,
         document: &Document,
@@ -4521,42 +4520,29 @@ fn parts_of(
     parts
 }
 
-fn column_widths(table: &Table, available: f32, scale: f32) -> Vec<f32> {
-    let mut widths: Vec<f32> =
-        table.grid.iter().map(|twips| (*twips).max(0) as f32 / TWIPS_PER_POINT * scale).collect();
-
-    if widths.is_empty() {
-        // Without a grid, take the widths the cells state, and failing that
-        // divide the space evenly.
-        let columns = table.rows.iter().map(|row| row.cells.len()).max().unwrap_or(0);
-        if columns == 0 {
-            return Vec::new();
-        }
-        let stated: Option<Vec<f32>> = table.rows.first().map(|row| {
-            row.cells
-                .iter()
-                .map(|cell| cell.width.unwrap_or(0).max(0) as f32 / TWIPS_PER_POINT * scale)
-                .collect()
-        });
-        widths = match stated {
-            Some(stated) if stated.iter().all(|width| *width > 0.0) => stated,
-            _ => vec![available / columns as f32; columns],
-        };
+impl LayoutEngine<'_> {
+    /// Puts the list counters aside, for a pass that measures rather than
+    /// places.
+    ///
+    /// Measuring a numbered paragraph must not use up the number it is given
+    /// when it is really laid out, or a list inside a table would count every
+    /// item twice. See [`crate::tablefit`].
+    pub(crate) fn saved_counters(&mut self) -> ListCounters {
+        self.counters.clone()
     }
 
-    let total: f32 = widths.iter().sum();
-    if total <= 0.0 {
-        let columns = widths.len().max(1);
-        return vec![available / columns as f32; columns];
+    /// And puts them back.
+    pub(crate) fn restore_counters(&mut self, counters: ListCounters) {
+        self.counters = counters;
     }
-    // A table wider than the page is squeezed to fit rather than run off it.
-    if total > available {
-        let factor = available / total;
-        for width in &mut widths {
-            *width *= factor;
-        }
-    }
-    widths
+}
+
+/// How much room is kept clear inside a cell, left and right, in pixels.
+pub(crate) fn cell_margins(table: &Table, scale: f32) -> (f32, f32) {
+    let margin = |twips: Option<i32>| {
+        twips.unwrap_or(DEFAULT_CELL_MARGIN_TWIPS) as f32 / TWIPS_PER_POINT * scale
+    };
+    (margin(table.cell_margin_start), margin(table.cell_margin_end))
 }
 
 /// Where each cell of a row sits, as a left edge and a width.

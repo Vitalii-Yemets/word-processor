@@ -1070,12 +1070,28 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
     if let Some(style) = &table.style {
         properties.push_element(valued(prefix, "tblStyle", style));
     }
+    // How wide the table would like to be, which is half of Word's AutoFit; the
+    // other half is `w:tblLayout` below. See [`crate::model::TableFit`].
     let mut width = Element::new(&name_with(prefix, "tblW"), Some(W));
-    width.set_namespaced_attribute(&name_with(prefix, "w"), W, "0");
-    width.set_namespaced_attribute(&name_with(prefix, "type"), W, "auto");
+    match table.fit {
+        crate::model::TableFit::Window(percent) => {
+            let fiftieths = percent.clamp(1, 100) * 50;
+            width.set_namespaced_attribute(&name_with(prefix, "w"), W, &fiftieths.to_string());
+            width.set_namespaced_attribute(&name_with(prefix, "type"), W, "pct");
+        }
+        _ => {
+            width.set_namespaced_attribute(&name_with(prefix, "w"), W, "0");
+            width.set_namespaced_attribute(&name_with(prefix, "type"), W, "auto");
+        }
+    }
     properties.push_element(width);
     if !table.borders.is_empty() {
         properties.push_element(table_borders_element(&table.borders, prefix));
+    }
+    if table.fit == crate::model::TableFit::Fixed {
+        let mut layout = Element::new(&name_with(prefix, "tblLayout"), Some(W));
+        layout.set_namespaced_attribute(&name_with(prefix, "type"), W, "fixed");
+        properties.push_element(layout);
     }
     element.push_element(properties);
 
