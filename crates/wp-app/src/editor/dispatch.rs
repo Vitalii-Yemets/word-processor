@@ -253,6 +253,7 @@ impl Editor {
             Command::TextDirection => self.turn_cell_text(),
             Command::Formula => self.open_formula(),
             Command::AlignObjects => self.open_align(),
+            Command::RotateObjects => self.open_rotate(),
 
             // --- References ---------------------------------------------------
             Command::InsertContents | Command::UpdateContents => self.write_contents(),

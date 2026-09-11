@@ -1491,15 +1491,51 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   drawings it wholly encloses when Ctrl is held, where this one always takes
   what it touches.
 
-- [ ] **C36. Rotate.** `a:xfrm/@rot`, in sixtieths of a thousandth of a degree,
+- [x] **C36. Rotate.** `a:xfrm/@rot`, in sixtieths of a thousandth of a degree,
   read and written; the geometry turned through the angle as it is drawn and the
   pixels of a picture turned with it; Word's Rotate menu — right ninety, left
   ninety, flip vertically, flip horizontally — and the rotation handle above the
   drawing's top edge. A button that stored an angle and drew the shape the way up
   it always was would be a button that does nothing, which is why the drawing
   and the file are one item and not two.
-  *Done when:* a drawing can be turned by the menu and by its handle, a picture
-  turns with it, and the angle survives being saved and reopened.
+  *Done:* `rot`, `flipH` and `flipV` are read and written for both kinds of
+  drawing — a shape through its model, a picture by changing its own transform
+  where it stands, which is the same promise **C27** made about anchors: nothing
+  a picture's element says that this program does not model is thrown away. A
+  picture with no `a:xfrm`, and even one with no `pic:spPr` to put one in, is
+  given what it lacks rather than refusing to turn.
+  The page carries the angle in radians, and the renderer turns the fill, the
+  outline, the shadow and the words inside a shape about its middle together;
+  a picture's pixels go through a turned sampler that walks the destination and
+  asks each pixel which part of the picture it stands for, so a photograph at an
+  angle is no coarser than the same photograph straight. Mirroring is done
+  before the turn, which is the order the format states and the order anybody
+  would do it with a sheet of paper. The shadow is offset after the turn,
+  because the light does not turn with the shape.
+  The **Rotate** menu is four rows on the Arrange group, and the **round handle**
+  above the top edge turns a drawing by dragging: the sweep is measured from
+  where the pointer started, not from straight up, so taking hold of the handle
+  does not itself move anything. A whole drag is one thing to undo.
+  *Not done:* Word's fifth row, More Rotation Options, opens the Layout dialog,
+  which this program has not got — see **C38**. Word snaps the handle to
+  fifteen degrees while Shift is held, and the shell does not yet say whether a
+  modifier is down during a drag. The eight handles that change the size, and
+  the box round a chosen drawing, stay square to the page when the drawing is
+  turned, where Word turns them with it — so a turned drawing is resized along
+  its own axes while the pointer moves along the screen's.
+
+- [ ] **C38. The Layout dialog.** Word's Size, Position and Text Wrapping in one
+  three-tabbed dialog, reached from More Rotation Options, from More Layout
+  Options under Position and Wrap Text, and from the Size group's launcher. It
+  holds the exact height and width of a drawing, its scale as a percentage with
+  a lock that keeps the two in step, the rotation in degrees, the position
+  measured from any of the frames an anchor can count from, and the wrapping
+  with the distance from the text on each of the four sides. Everything in it
+  exists in the model already — **C27** built the anchors, **C36** the angle,
+  and dragging a handle already sets the size — so this is the dialog and not
+  what is behind it.
+  *Done when:* every box in the three tabs reads what the chosen drawing says
+  and changes it, and the drawing on the page agrees.
 
 - [ ] **C37. Group.** `wpg:wgp`: several drawings written as one, with a
   coordinate space of its own — the group states the rectangle it covers and the

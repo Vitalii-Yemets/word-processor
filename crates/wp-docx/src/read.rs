@@ -738,6 +738,7 @@ fn read_picture(drawing: &Element) -> Option<Picture> {
         height_emu,
         description,
         anchor: crate::anchor::read_anchor(drawing),
+        turned: crate::floating::Turned::under(drawing),
     })
 }
 

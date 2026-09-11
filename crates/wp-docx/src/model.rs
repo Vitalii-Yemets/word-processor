@@ -757,6 +757,13 @@ pub struct Picture {
     /// Text, Position and Arrange are about drawings, and a picture is a
     /// drawing. See [`crate::anchor::Anchor`].
     pub anchor: Option<crate::anchor::Anchor>,
+    /// How far round it is turned, and whether it is mirrored.
+    ///
+    /// Read from the picture's own `a:xfrm` and not written from here: a
+    /// picture is carried through in its own element rather than rebuilt, so
+    /// turning one changes that element where it stands. See
+    /// [`crate::Document::set_drawing_turn_at`].
+    pub turned: crate::floating::Turned,
 }
 
 /// English Metric Units per inch, the unit drawings are measured in.

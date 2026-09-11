@@ -42,6 +42,8 @@ pub enum Choice {
     AutoFit,
     /// How the chosen drawings are lined up.
     AlignObjects,
+    /// How the chosen drawings are turned, or mirrored.
+    RotateObjects,
     /// The bullet shapes.
     BulletLibrary,
     /// The number formats.

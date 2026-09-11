@@ -454,6 +454,11 @@ pub struct PlacedImage {
     /// Where in the document it is, so a press on it can say which picture was
     /// pressed. A shape carries the same. See [`PlacedShape::at`].
     pub at: Option<TextPosition>,
+    /// How far round it is turned as it is drawn, in radians, and whether it is
+    /// drawn as its own mirror image. See [`wp_docx::floating::Turned`].
+    pub turn: f32,
+    pub flipped_across: bool,
+    pub flipped_down: bool,
     /// What it is called in a list of the document's drawings: the name the
     /// file gives it, and "Picture" for one that carries none.
     pub name: String,
@@ -541,6 +546,11 @@ pub struct PlacedShape {
     /// itself. So it is done in a pass of its own afterwards, and this is what
     /// that pass works from.
     pub(crate) source: Option<Box<wp_docx::shapes::Shape>>,
+    /// How far round it is turned as it is drawn, in radians, and whether it is
+    /// drawn as its own mirror image. See [`wp_docx::floating::Turned`].
+    pub turn: f32,
+    pub flipped_across: bool,
+    pub flipped_down: bool,
 }
 
 /// A shape drawn on a page that is not a rectangle.
@@ -1092,6 +1102,9 @@ pub(crate) struct Item {
     /// The same reason `picture_anchor` is here: a shape carries its name and a
     /// picture has nowhere else to put one.
     picture_name: Option<String>,
+    /// How far round the picture is turned, and whether it is mirrored. A
+    /// shape carries its own; this is where a picture's lives.
+    picture_turn: wp_docx::floating::Turned,
     /// An equation drawn in the line, with the height it takes up.
     math: Option<(Box<crate::math::MathBox>, f32)>,
     /// A chart drawn in the line, with the height it takes up.
@@ -2998,6 +3011,7 @@ impl<'a> LayoutEngine<'a> {
                             picture: None,
                             picture_anchor: None,
                             picture_name: None,
+                            picture_turn: wp_docx::floating::Turned::default(),
                             shape: None,
                             math: None,
                             chart: None,
@@ -3025,6 +3039,7 @@ impl<'a> LayoutEngine<'a> {
                         picture: None,
                         picture_anchor: None,
                         picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
                         math: None,
                         chart: None,
                         shape: None,
@@ -3054,6 +3069,7 @@ impl<'a> LayoutEngine<'a> {
                         picture: None,
                         picture_anchor: None,
                         picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
                         math: None,
                         chart: None,
                         shape: None,
@@ -3083,6 +3099,7 @@ impl<'a> LayoutEngine<'a> {
                         picture: None,
                         picture_anchor: None,
                         picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
                         math: None,
                         chart: None,
                         shape: None,
@@ -3115,6 +3132,7 @@ impl<'a> LayoutEngine<'a> {
                         picture: None,
                         picture_anchor: None,
                         picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
                         math: None,
                         chart: drawn.map(|drawing| (Box::new(drawing), height)),
                         shape: None,
@@ -3146,6 +3164,7 @@ impl<'a> LayoutEngine<'a> {
                         picture: None,
                         picture_anchor: None,
                         picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
                         shape: None,
                         math: Some((Box::new(laid), height)),
                         chart: None,
@@ -3182,6 +3201,7 @@ impl<'a> LayoutEngine<'a> {
                         picture: None,
                         picture_anchor: None,
                         picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
                         math: None,
                         chart: None,
                         shape: Some((Box::new(shape.clone()), height)),
@@ -3224,6 +3244,7 @@ impl<'a> LayoutEngine<'a> {
                         picture: decoded.map(|image| (image, height)),
                         picture_anchor: picture.anchor.clone(),
                         picture_name: picture.description.clone(),
+                        picture_turn: picture.turned,
                         shape: None,
                         math: None,
                         chart: None,
@@ -3247,6 +3268,7 @@ impl<'a> LayoutEngine<'a> {
                         picture: None,
                         picture_anchor: None,
                         picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
                         math: None,
                         chart: None,
                         shape: None,
@@ -3374,6 +3396,7 @@ impl<'a> LayoutEngine<'a> {
         at: Option<TextPosition>,
     ) {
         let scale = self.pixels_per_point();
+        let turned = wp_docx::floating::Turned::of_shape(shape);
         let (x, y) = self.float_box(
             anchor,
             page_index,
@@ -3405,6 +3428,9 @@ impl<'a> LayoutEngine<'a> {
             // it is the difference between reading the words and not.
             over_text: !anchor.behind_text,
             source: Some(Box::new(shape.clone())),
+            turn: turned.radians(),
+            flipped_across: turned.flipped_across,
+            flipped_down: turned.flipped_down,
         });
     }
 
@@ -4421,6 +4447,9 @@ impl LayoutEngine<'_> {
                     depth: 0,
                     over_text: false,
                     source: Some(shape.clone()),
+                    turn: wp_docx::floating::Turned::of_shape(shape).radians(),
+                    flipped_across: shape.flipped_across,
+                    flipped_down: shape.flipped_down,
                 });
                 x += item.width;
             } else if let Some((drawing, _)) = &item.chart {
@@ -4467,6 +4496,9 @@ impl LayoutEngine<'_> {
                         depth: anchor.depth,
                         over_text: !anchor.behind_text,
                         at: Some(TextPosition::new(placement.paragraph, item.start_offset)),
+                        turn: item.picture_turn.radians(),
+                        flipped_across: item.picture_turn.flipped_across,
+                        flipped_down: item.picture_turn.flipped_down,
                         name: picture_name(item),
                     });
                     continue;
@@ -4481,6 +4513,9 @@ impl LayoutEngine<'_> {
                     depth: 0,
                     over_text: false,
                     at: Some(TextPosition::new(placement.paragraph, item.start_offset)),
+                    turn: item.picture_turn.radians(),
+                    flipped_across: item.picture_turn.flipped_across,
+                    flipped_down: item.picture_turn.flipped_down,
                     name: picture_name(item),
                 });
                 x += item.width;

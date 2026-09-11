@@ -228,6 +228,8 @@ pub enum Command {
     Formula,
     /// Lines the chosen drawings up with each other, the page or the margins.
     AlignObjects,
+    /// Turns the chosen drawings, or mirrors them: Word's Rotate menu.
+    RotateObjects,
 
     // References.
     InsertContents,

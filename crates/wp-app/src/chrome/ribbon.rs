@@ -270,6 +270,8 @@ static MENUS: &[Menu] = &[
     // A gallery of alignments, with no alignment of its own to be: pressing it
     // anywhere asks which.
     Menu { command: Command::AlignObjects, choice: Choice::AlignObjects, split: false },
+    // The same: pressing Rotate anywhere asks which way round.
+    Menu { command: Command::RotateObjects, choice: Choice::RotateObjects, split: false },
 ];
 
 /// The menu a command drops, if it drops one.
@@ -1139,6 +1141,7 @@ impl Ribbon {
                     | Choice::TablePart
                     | Choice::AutoFit
                     | Choice::AlignObjects
+                    | Choice::RotateObjects
                     | Choice::DocumentSpacing
                     | Choice::BulletLibrary
                     | Choice::NumberLibrary
@@ -1608,6 +1611,8 @@ static LAYOUT_GROUPS: &[Group] = &[
             Item::Small(Command::AlignObjects, Icon::AlignObjects, "Align"),
             Item::Break,
             Item::Small(Command::SelectionPane, Icon::SelectionPane, "Selection Pane"),
+            Item::Break,
+            Item::Small(Command::RotateObjects, Icon::Rotate, "Rotate"),
         ],
         launcher: None,
     },

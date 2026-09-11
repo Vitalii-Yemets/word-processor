@@ -52,6 +52,7 @@ mod properties;
 mod references;
 mod review;
 mod ribbondialog;
+mod rotate;
 mod ruler;
 mod rules;
 mod screenshot;

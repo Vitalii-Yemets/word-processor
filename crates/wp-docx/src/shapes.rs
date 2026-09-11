@@ -56,6 +56,15 @@ pub struct Shape {
     /// Read out in place of the drawing by anything that cannot show it, which
     /// is the only thing a reader who cannot see it has.
     pub description: String,
+    /// How far round it is turned, in sixtieths of a thousandth of a degree —
+    /// `a:xfrm/@rot`, and the unit the whole of DrawingML measures angles in.
+    /// Clockwise, and a whole turn is 21,600,000.
+    pub rotation: i32,
+    /// Whether it is drawn as its own mirror image, across or down.
+    /// `@flipH` and `@flipV`, which are not a turn: a shape flipped once is
+    /// not the same as one turned by anything.
+    pub flipped_across: bool,
+    pub flipped_down: bool,
 }
 
 impl Default for Shape {
@@ -71,6 +80,9 @@ impl Default for Shape {
             name: "Shape".to_owned(),
             anchor: None,
             description: String::new(),
+            rotation: 0,
+            flipped_across: false,
+            flipped_down: false,
         }
     }
 }
@@ -122,6 +134,7 @@ impl Shape {
             name: "Shape".to_owned(),
             anchor: None,
             description: String::new(),
+            ..Self::default()
         }
     }
 
@@ -146,6 +159,7 @@ impl Shape {
             name: "Text Box".to_owned(),
             anchor: None,
             description: String::new(),
+            ..Self::default()
         }
     }
 }
@@ -183,6 +197,14 @@ pub fn read_shape(drawing: &Element) -> Option<Shape> {
     }
 
     let properties = find(wsp, "spPr");
+    // How far round it is turned, and whether it is drawn as its own mirror
+    // image. Both live on the shape's own transform.
+    if let Some(transform) = properties.and_then(|properties| child(properties, "xfrm")) {
+        shape.rotation =
+            transform.attribute_by_name("rot").and_then(|value| value.parse().ok()).unwrap_or(0);
+        shape.flipped_across = matches!(transform.attribute_by_name("flipH"), Some("1" | "true"));
+        shape.flipped_down = matches!(transform.attribute_by_name("flipV"), Some("1" | "true"));
+    }
     if let Some(geometry) = properties.and_then(|properties| child(properties, "prstGeom")) {
         if let Some(name) = geometry.attribute_by_name("prst") {
             shape.preset = name.to_owned();
@@ -280,6 +302,18 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     let mut properties = Element::new("wps:spPr", Some(WPS));
 
     let mut transform = Element::new("a:xfrm", Some(A));
+    // Written only when it says something: a shape that is not turned and not
+    // mirrored says nothing, which is what every shape this program made until
+    // now wrote.
+    if shape.rotation != 0 {
+        transform.set_attribute("rot", &shape.rotation.to_string());
+    }
+    if shape.flipped_across {
+        transform.set_attribute("flipH", "1");
+    }
+    if shape.flipped_down {
+        transform.set_attribute("flipV", "1");
+    }
     let mut offset = Element::new("a:off", Some(A));
     offset.set_attribute("x", "0");
     offset.set_attribute("y", "0");

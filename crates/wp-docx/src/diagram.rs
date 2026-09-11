@@ -196,6 +196,7 @@ fn plain(preset: &str, x: i64, y: i64, width: i64, height: i64, fill: &str) -> S
             depth: crate::anchor::USUAL_DEPTH,
         }),
         description: String::new(),
+        ..Shape::default()
     }
 }
 

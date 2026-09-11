@@ -34,6 +34,7 @@
 //! line stays in the line however big it is made.
 
 use wp_docx::anchor::{Anchor, Placement, Wrap};
+use wp_docx::floating::Turned;
 use wp_docx::shapes::EMU_PER_POINT;
 use wp_docx::TextPosition;
 use wp_layout::Drawing;
@@ -43,6 +44,13 @@ use super::Editor;
 
 /// How big the square handles are, in pixels.
 pub(super) const HANDLE: f32 = 7.0;
+
+/// How far above the top edge the round handle that turns a drawing sits, in
+/// pixels.
+///
+/// Far enough that it is not mistaken for the handle that changes the height,
+/// which is the one directly under it.
+pub(super) const TURN_REACH: f32 = 20.0;
 
 /// The least a drawing can be dragged down to, in points.
 ///
@@ -55,6 +63,8 @@ const LEAST: f32 = 8.0;
 pub(super) enum Grip {
     /// The middle: the drawing moves.
     Body,
+    /// The round one above the top edge: the drawing turns.
+    Turn,
     /// A corner or an edge: the drawing changes size.
     TopLeft,
     Top,
@@ -91,6 +101,9 @@ impl Grip {
             Self::BottomLeft => (0.0, 1.0),
             Self::Left => (0.0, 0.5),
             Self::Body => (0.5, 0.5),
+            // Above the box rather than on it; how far above is
+            // [`TURN_REACH`], which a fraction of the box cannot say.
+            Self::Turn => (0.5, 0.0),
         }
     }
 
@@ -106,6 +119,8 @@ impl Grip {
             Self::BottomLeft => (1.0, 0.0, 0.0, 1.0),
             Self::Left => (1.0, 0.0, 0.0, 0.0),
             Self::Body => (1.0, 1.0, 1.0, 1.0),
+            // It turns the drawing and moves no edge of it.
+            Self::Turn => (0.0, 0.0, 0.0, 0.0),
         }
     }
 
@@ -114,6 +129,9 @@ impl Grip {
         match self {
             Self::Top | Self::Bottom => Cursor::ResizeVertical,
             Self::Left | Self::Right => Cursor::ResizeHorizontal,
+            // The circling arrow Word shows is not one the shell offers; the
+            // hand at least says this is something to take hold of.
+            Self::Turn => Cursor::Hand,
             // The corners want a diagonal pointer, which the shell does not
             // offer yet; the horizontal one at least says the edge can be
             // dragged.
@@ -132,6 +150,8 @@ pub(super) struct Held {
     pub width_emu: i64,
     pub height_emu: i64,
     pub anchor: Option<Anchor>,
+    /// How far round it was already turned, which a turn by the handle adds to.
+    pub turned: Turned,
 }
 
 /// A drag of one drawing or of several that is under way.
@@ -146,6 +166,19 @@ pub(super) struct ShapeDrag {
     pub held: Vec<Held>,
     /// Where in the pile a drawing goes if this drag is what makes it float.
     pub depth: u32,
+    /// The middle of the drawing whose handle is held, on the screen. A turn is
+    /// measured about it; nothing else uses it.
+    pub middle: (f32, f32),
+}
+
+/// Where the handle that turns a drawing sits, on the screen.
+///
+/// Above the middle of the top edge, clear of the handle that changes the
+/// height. Word puts it there, and puts it there whichever way round the
+/// drawing already is: a handle that moved with the drawing would be a handle
+/// nobody could find twice.
+pub(super) fn turn_handle(drawing: &OnPage) -> (f32, f32) {
+    (drawing.left + drawing.width / 2.0, drawing.top - TURN_REACH)
 }
 
 /// A drawing on a page: where it was drawn, and where it is in the document.
@@ -332,6 +365,12 @@ impl Editor {
     pub(super) fn grip_at(&self, x: i32, y: i32) -> Option<(TextPosition, Grip)> {
         let (px, py) = (x as f32, y as f32);
         for drawing in self.chosen_drawing_boxes() {
+            // The one that turns the drawing comes first: it stands clear of
+            // the box, so nothing else can be where it is.
+            let (turn_x, turn_y) = turn_handle(&drawing);
+            if (px - turn_x).abs() <= HANDLE && (py - turn_y).abs() <= HANDLE {
+                return Some((drawing.at, Grip::Turn));
+            }
             for grip in Grip::EDGES {
                 let (fx, fy) = grip.at();
                 let cx = drawing.left + drawing.width * fx;
@@ -473,12 +512,28 @@ impl Editor {
             .into_iter()
             .filter_map(|at| {
                 let (width_emu, height_emu) = self.document.drawing_size_at(at)?;
-                Some(Held { at, width_emu, height_emu, anchor: self.document.anchor_at(at) })
+                Some(Held {
+                    at,
+                    width_emu,
+                    height_emu,
+                    anchor: self.document.anchor_at(at),
+                    turned: self.document.drawing_turn_at(at),
+                })
             })
             .collect();
         if held.is_empty() {
             return false;
         }
+
+        // Where the drawing whose handle this is has its middle, which is what
+        // a turn is measured about.
+        let middle = self
+            .chosen_drawing_boxes()
+            .into_iter()
+            .find(|drawing| drawing.at == at)
+            .map_or((x as f32, y as f32), |drawing| {
+                (drawing.left + drawing.width / 2.0, drawing.top + drawing.height / 2.0)
+            });
 
         // One drag is one thing to undo, however many moves and however many
         // drawings it is made of.
@@ -489,6 +544,7 @@ impl Editor {
             from_y: y as f32,
             held,
             depth: self.document.next_drawing_depth(),
+            middle,
         });
         self.needs_redraw = true;
         true
@@ -500,6 +556,13 @@ impl Editor {
         let scale = self.pixels_per_inch() / 72.0;
         if scale <= 0.0 {
             return Response::Ignored;
+        }
+
+        // The handle above the drawing turns it and does nothing else: how far
+        // round is the angle the pointer has swept about the drawing's middle,
+        // added to the turn it already had.
+        if drag.grip == Grip::Turn {
+            return self.turn_by_handle(&drag, x, y);
         }
 
         // How far the pointer has come, in points rather than pixels: the
@@ -538,6 +601,35 @@ impl Editor {
             }
         }
 
+        if !changed {
+            return Response::Ignored;
+        }
+        self.relayout();
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// Turns the drawing a drag of its round handle is turning.
+    ///
+    /// Measured as a sweep from where the pointer started rather than from
+    /// straight up, so that taking hold of the handle does not itself move the
+    /// drawing: a turn is a difference, the way every other drag here is.
+    fn turn_by_handle(&mut self, drag: &ShapeDrag, x: i32, y: i32) -> Response {
+        let (middle_x, middle_y) = drag.middle;
+        let was = (drag.from_y - middle_y).atan2(drag.from_x - middle_x);
+        let now = (y as f32 - middle_y).atan2(x as f32 - middle_x);
+        // The format counts clockwise, and so does a screen whose y counts
+        // down the page, so the two agree without a change of sign.
+        let swept = (now - was) / core::f32::consts::TAU * Turned::WHOLE as f32;
+        let swept = swept.round() as i32;
+        if swept == 0 {
+            return Response::Ignored;
+        }
+
+        let mut changed = false;
+        for held in &drag.held {
+            changed |= self.document.set_drawing_turn_at(held.at, held.turned.turned_by(swept));
+        }
         if !changed {
             return Response::Ignored;
         }
@@ -803,6 +895,108 @@ mod tests {
         // somewhere the caret alone would find no drawing at all.
         editor.document.set_caret(TextPosition::new(0, 6));
         assert_eq!(editor.drawing_in_hand(), editor.chosen_drawings.first().copied());
+    }
+
+    #[test]
+    fn the_handle_that_turns_a_drawing_stands_clear_above_it() {
+        let mut editor = editor();
+        let (x, y) = middle(&editor);
+        editor.press_on_shape(x, y, false);
+        editor.release_shape();
+
+        let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
+        let (turn_x, turn_y) = turn_handle(&drawing);
+        assert!(turn_y < drawing.top, "it is not above the drawing");
+        assert_eq!(
+            editor.grip_at(turn_x as i32, turn_y as i32),
+            Some((drawing.at, Grip::Turn)),
+            "the handle above the drawing is not the one that turns it"
+        );
+        // And the one directly under it is still the one that changes the
+        // height, which is the reason it stands as far off as it does.
+        let (top_x, top_y) = handle(&editor, Grip::Top);
+        assert_eq!(editor.grip_at(top_x, top_y), Some((drawing.at, Grip::Top)));
+    }
+
+    #[test]
+    fn that_handle_is_drawn_where_it_is_pressed() {
+        // A handle that can be pressed and cannot be seen is a handle nobody
+        // will ever press.
+        let mut editor = editor();
+        let (x, y) = middle(&editor);
+        editor.press_on_shape(x, y, false);
+        editor.release_shape();
+
+        let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
+        let (turn_x, turn_y) = turn_handle(&drawing);
+        let accent = editor.theme.accent;
+        let canvas = editor.draw(1400, 900);
+
+        let reach = HANDLE as i32;
+        let mut found = false;
+        for down in -reach..=reach {
+            for across in -reach..=reach {
+                let (px, py) = (turn_x as i32 + across, turn_y as i32 + down);
+                if px < 0 || py < 0 {
+                    continue;
+                }
+                found |= canvas.pixel(px as usize, py as usize) == accent;
+            }
+        }
+        assert!(found, "nothing is drawn where the handle that turns the drawing is pressed");
+    }
+
+    #[test]
+    fn a_drag_of_that_handle_turns_the_drawing() {
+        let mut editor = editor();
+        let (x, y) = middle(&editor);
+        editor.press_on_shape(x, y, false);
+        editor.release_shape();
+        let at = editor.chosen_drawings.first().copied().expect("a chosen drawing");
+        assert_eq!(editor.document.drawing_turn_at(at).rotation, 0);
+
+        let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
+        let (turn_x, turn_y) = turn_handle(&drawing);
+        let (middle_x, middle_y) =
+            (drawing.left + drawing.width / 2.0, drawing.top + drawing.height / 2.0);
+        assert!(editor.press_on_shape(turn_x as i32, turn_y as i32, false));
+        // A quarter of the way round: from above the middle to the right of it.
+        let reach = middle_y - turn_y;
+        editor.drag_shape((middle_x + reach) as i32, middle_y as i32);
+        editor.release_shape();
+
+        let turned = editor.document.drawing_turn_at(at);
+        let quarter = Turned::WHOLE / 4;
+        assert!(
+            (turned.rotation - quarter).abs() < quarter / 20,
+            "a quarter sweep turned it by {}",
+            turned.rotation
+        );
+    }
+
+    #[test]
+    fn one_undo_takes_back_a_whole_turn_of_the_handle() {
+        let mut editor = editor();
+        let (x, y) = middle(&editor);
+        editor.press_on_shape(x, y, false);
+        editor.release_shape();
+        let at = editor.chosen_drawings.first().copied().expect("a chosen drawing");
+
+        let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
+        let (turn_x, turn_y) = turn_handle(&drawing);
+        let (middle_x, middle_y) =
+            (drawing.left + drawing.width / 2.0, drawing.top + drawing.height / 2.0);
+        editor.press_on_shape(turn_x as i32, turn_y as i32, false);
+        // Several moves, as a real drag is made of.
+        for step in 1..=4 {
+            let reach = (middle_y - turn_y) * step as f32 / 4.0;
+            editor.drag_shape((middle_x + reach) as i32, (middle_y - reach) as i32);
+        }
+        editor.release_shape();
+        assert_ne!(editor.document.drawing_turn_at(at).rotation, 0, "it did not turn at all");
+
+        editor.document.undo();
+        assert_eq!(editor.document.drawing_turn_at(at).rotation, 0, "one undo was not enough");
     }
 
     #[test]

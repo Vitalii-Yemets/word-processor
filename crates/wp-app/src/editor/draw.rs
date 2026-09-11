@@ -464,6 +464,50 @@ impl Editor {
                 self.theme.page,
             );
         }
+
+        // And the round one that turns the drawing, standing clear above the
+        // top edge on a short stalk that says what it belongs to. Round rather
+        // than square because it does something the other eight do not.
+        let (turn_x, turn_y) = super::handles::turn_handle(&chosen);
+        self.canvas.fill_rect(turn_x as i32, turn_y as i32, 1, (top - turn_y) as i32, colour);
+        self.draw_round_handle(turn_x, turn_y, handle / 2.0 + 1.0, colour);
+    }
+
+    /// A disc with a rim, drawn row by row.
+    ///
+    /// There is no circle in the drawing stack below this — it fills paths, and
+    /// a path for a handle would be four curves built and thrown away on every
+    /// redraw — so the rows are worked out here from the circle itself.
+    fn draw_round_handle(
+        &mut self,
+        middle_x: f32,
+        middle_y: f32,
+        radius: f32,
+        rim: wp_raster::Color,
+    ) {
+        let inside = self.theme.page;
+        let from = (middle_y - radius).floor() as i32;
+        let to = (middle_y + radius).ceil() as i32;
+        for y in from..=to {
+            let down = y as f32 + 0.5 - middle_y;
+            let half = (radius * radius - down * down).max(0.0).sqrt();
+            if half <= 0.0 {
+                continue;
+            }
+            let left = (middle_x - half).round() as i32;
+            let width = (half * 2.0).round().max(1.0) as i32;
+            self.canvas.fill_rect(left, y, width, 1, rim);
+
+            // The same row of the disc one pixel smaller, which leaves the rim
+            // showing round it.
+            let inner = radius - 1.0;
+            let half = (inner * inner - down * down).max(0.0).sqrt();
+            if half > 0.0 {
+                let left = (middle_x - half).round() as i32;
+                let width = (half * 2.0).round().max(1.0) as i32;
+                self.canvas.fill_rect(left, y, width, 1, inside);
+            }
+        }
     }
 
     fn draw_status(&mut self) {

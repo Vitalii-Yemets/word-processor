@@ -721,6 +721,70 @@ impl Editor {
                 self.choose_drawing_here();
                 self.relayout();
             }
+            "turned" | "rotatemenu" => {
+                // Drawings at angles: shapes turned by a quarter, by an eighth
+                // and mirrored, and a picture turned with them — the only way
+                // to see that the geometry, the words inside it and the pixels
+                // all go round together. "rotatemenu" drops the menu open over
+                // the same page.
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                use wp_docx::floating::Turned;
+                for (name, rotation, across, mirrored) in [
+                    ("Straight", 0, 0i64, false),
+                    ("Quarter", Turned::WHOLE / 4, 1_371_600, false),
+                    ("Eighth", Turned::WHOLE / 8, 2_743_200, false),
+                    ("Mirror", Turned::WHOLE / 8, 4_114_800, true),
+                ] {
+                    let shape = wp_docx::shapes::Shape {
+                        name: name.to_owned(),
+                        width_emu: 1_143_000,
+                        height_emu: 685_800,
+                        fill: Some("4472C4".to_owned()),
+                        text: vec![wp_docx::model::Paragraph::text(name)],
+                        rotation,
+                        flipped_across: mirrored,
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset(across),
+                            vertical: Placement::Offset(0),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+
+                // And a picture, turned an eighth of a turn by the same
+                // command a person would use: the pixels have to follow the
+                // box or the box is a lie.
+                let mut canvas = wp_raster::Canvas::filled(120, 90, wp_raster::Color::WHITE);
+                for y in 0..90i32 {
+                    for x in 0..120i32 {
+                        let shade = (x * 2) as u8;
+                        canvas.fill_rect(x, y, 1, 1, wp_raster::Color::rgb(shade, 0x70, 0xC0));
+                    }
+                }
+                let bytes = wp_raster::encode_png(&canvas);
+                self.document.set_caret(wp_docx::TextPosition::new(6, 0));
+                let _ = self.document.insert_picture(&bytes, "png", 1_143_000, 857_250);
+                let at = wp_docx::TextPosition::new(6, 0);
+                self.document.set_drawing_turn_at(
+                    at,
+                    Turned { rotation: Turned::WHOLE / 8, ..Turned::default() },
+                );
+                self.relayout();
+
+                self.choose_drawing_at(at);
+                self.ribbon.tab = crate::chrome::ribbon::Tab::Layout;
+                if option == "rotatemenu" {
+                    // The menu hangs under its button, and where the button is
+                    // is only known once the tab it is on has been drawn.
+                    let (width, height) = (self.view_width, self.view_height);
+                    self.draw(width, height);
+                    self.open_rotate();
+                }
+            }
             "customised" => {
                 // A ribbon somebody has changed: a group switched off, a group
                 // moved to the front, a command added to another, and a fourth

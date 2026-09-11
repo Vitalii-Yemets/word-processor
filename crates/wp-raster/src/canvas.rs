@@ -57,6 +57,29 @@ pub struct Clip {
     pub bottom: usize,
 }
 
+/// How a rectangle of pixels is turned as it is drawn.
+///
+/// Mirroring happens first and the turn second, which is the order the drawing
+/// formats state it in and the order a person would do it with a sheet of
+/// paper: turn the mirrored picture, not mirror the turned one.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Turned {
+    /// Clockwise on a canvas, because the canvas counts down the page.
+    pub radians: f32,
+    pub flipped_across: bool,
+    pub flipped_down: bool,
+}
+
+impl Turned {
+    /// Whether it is turned or mirrored at all.
+    ///
+    /// Nothing at all is the ordinary case and has a much cheaper path.
+    #[must_use]
+    pub fn is_turned(self) -> bool {
+        self.radians != 0.0 || self.flipped_across || self.flipped_down
+    }
+}
+
 /// A rectangular buffer of pixels, stored as red, green, blue, alpha.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Canvas {
@@ -323,6 +346,115 @@ impl Canvas {
         }
     }
 
+    /// Draws pixels into a rectangle turned about its middle.
+    ///
+    /// # Why it works backwards
+    ///
+    /// Because a turn does not send whole pixels to whole pixels. Walking the
+    /// source and putting each pixel where it lands would leave gaps between
+    /// them wherever the turn spreads them apart. So the destination is walked
+    /// instead: every pixel of the box the turned rectangle needs is asked
+    /// which part of the picture it stands for, and a pixel whose answer is
+    /// outside the picture is left alone.
+    ///
+    /// Each answer is the average of the same block of source pixels the
+    /// straight version would have used, so a photograph turned through an
+    /// angle is no coarser than the same photograph not turned.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_lines)]
+    pub fn draw_pixels_turned(
+        &mut self,
+        pixels: &[u8],
+        source_width: usize,
+        source_height: usize,
+        x: i32,
+        y: i32,
+        width: usize,
+        height: usize,
+        turned: Turned,
+    ) {
+        if !turned.is_turned() {
+            self.draw_pixels(pixels, source_width, source_height, x, y, width, height);
+            return;
+        }
+        if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
+            return;
+        }
+
+        let (sin, cos) = turned.radians.sin_cos();
+        let (middle_x, middle_y) = (x as f32 + width as f32 / 2.0, y as f32 + height as f32 / 2.0);
+        // How far the turned rectangle reaches from its middle, which is the
+        // box that has to be walked.
+        let (half_width, half_height) = (width as f32 / 2.0, height as f32 / 2.0);
+        let reach_x = half_width * cos.abs() + half_height * sin.abs();
+        let reach_y = half_width * sin.abs() + half_height * cos.abs();
+
+        let from_x = (middle_x - reach_x).floor().max(0.0) as usize;
+        let to_x = (middle_x + reach_x).ceil().max(0.0) as usize;
+        let from_y = (middle_y - reach_y).floor().max(0.0) as usize;
+        let to_y = (middle_y + reach_y).ceil().max(0.0) as usize;
+
+        // How much of the picture one drawn pixel stands for.
+        let across = (source_width as f32 / width as f32).max(1.0) as usize;
+        let down = (source_height as f32 / height as f32).max(1.0) as usize;
+
+        for target_y in from_y..to_y.min(self.height) {
+            for target_x in from_x..to_x.min(self.width) {
+                // Where this pixel is before the turn, measured from the
+                // middle: the turn undone.
+                let (dx, dy) = (target_x as f32 + 0.5 - middle_x, target_y as f32 + 0.5 - middle_y);
+                let mut straight_x = dx * cos + dy * sin + half_width;
+                let mut straight_y = -dx * sin + dy * cos + half_height;
+                // The mirroring is undone after the turn, because it was done
+                // before it: a picture is mirrored where it stands and the
+                // whole of it, mirror and all, is then turned.
+                if turned.flipped_across {
+                    straight_x = width as f32 - straight_x;
+                }
+                if turned.flipped_down {
+                    straight_y = height as f32 - straight_y;
+                }
+                if straight_x < 0.0
+                    || straight_y < 0.0
+                    || straight_x >= width as f32
+                    || straight_y >= height as f32
+                {
+                    continue;
+                }
+
+                let source_x = (straight_x * source_width as f32 / width as f32) as usize;
+                let source_y = (straight_y * source_height as f32 / height as f32) as usize;
+                let mut totals = [0u32; 4];
+                let mut counted = 0u32;
+                for sample_y in source_y..(source_y + down).min(source_height) {
+                    for sample_x in source_x..(source_x + across).min(source_width) {
+                        let at = (sample_y * source_width + sample_x) * 4;
+                        let Some(sample) = pixels.get(at..at + 4) else { continue };
+                        for (total, value) in totals.iter_mut().zip(sample) {
+                            *total += u32::from(*value);
+                        }
+                        counted += 1;
+                    }
+                }
+                if counted == 0 {
+                    continue;
+                }
+
+                let alpha = (totals[3] / counted) as u8;
+                if alpha == 0 {
+                    continue;
+                }
+                let color = Color {
+                    red: (totals[0] / counted) as u8,
+                    green: (totals[1] / counted) as u8,
+                    blue: (totals[2] / counted) as u8,
+                    alpha,
+                };
+                self.blend(target_x, target_y, color, alpha);
+            }
+        }
+    }
+
     /// Draws a rectangle of RGBA pixels, scaled to a given size.
     ///
     /// # Why the sampling is what it is
@@ -560,6 +692,140 @@ mod tests {
         assert_eq!(Color::from_hex("auto"), None);
         assert_eq!(Color::from_hex("nonsense"), None);
         assert_eq!(Color::from_hex(""), None);
+    }
+
+    /// A picture of four quarters, each a colour of its own, so that a turn
+    /// can be seen rather than only measured.
+    fn quarters() -> Vec<u8> {
+        let mut pixels = Vec::new();
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let colour = match (x < 4, y < 4) {
+                    (true, true) => [255, 0, 0, 255],
+                    (false, true) => [0, 255, 0, 255],
+                    (true, false) => [0, 0, 255, 255],
+                    (false, false) => [255, 255, 0, 255],
+                };
+                pixels.extend_from_slice(&colour);
+            }
+        }
+        pixels
+    }
+
+    /// Which quarter of the drawn rectangle a colour ended up in.
+    fn corners(canvas: &Canvas) -> [Color; 4] {
+        [canvas.pixel(4, 4), canvas.pixel(12, 4), canvas.pixel(4, 12), canvas.pixel(12, 12)]
+    }
+
+    #[test]
+    fn a_straight_turn_draws_what_the_plain_one_draws() {
+        let mut turned = Canvas::filled(16, 16, Color::WHITE);
+        turned.draw_pixels_turned(&quarters(), 8, 8, 0, 0, 16, 16, Turned::default());
+        let mut plain = Canvas::filled(16, 16, Color::WHITE);
+        plain.draw_pixels(&quarters(), 8, 8, 0, 0, 16, 16);
+        assert_eq!(turned, plain, "a turn of nothing is not the picture itself");
+    }
+
+    #[test]
+    fn a_quarter_turn_carries_each_corner_round_to_the_next() {
+        let straight = {
+            let mut canvas = Canvas::filled(16, 16, Color::WHITE);
+            canvas.draw_pixels(&quarters(), 8, 8, 0, 0, 16, 16);
+            corners(&canvas)
+        };
+        let mut canvas = Canvas::filled(16, 16, Color::WHITE);
+        let quarter = core::f32::consts::FRAC_PI_2;
+        canvas.draw_pixels_turned(
+            &quarters(),
+            8,
+            8,
+            0,
+            0,
+            16,
+            16,
+            Turned { radians: quarter, ..Turned::default() },
+        );
+        let after = corners(&canvas);
+        // Clockwise: top left goes to top right, top right to bottom right.
+        assert_eq!(after[1], straight[0], "the top left did not come round to the top right");
+        assert_eq!(after[3], straight[1]);
+        assert_eq!(after[2], straight[3]);
+        assert_eq!(after[0], straight[2]);
+    }
+
+    #[test]
+    fn mirroring_across_swaps_left_and_right_and_leaves_top_and_bottom() {
+        let straight = {
+            let mut canvas = Canvas::filled(16, 16, Color::WHITE);
+            canvas.draw_pixels(&quarters(), 8, 8, 0, 0, 16, 16);
+            corners(&canvas)
+        };
+        let mut canvas = Canvas::filled(16, 16, Color::WHITE);
+        canvas.draw_pixels_turned(
+            &quarters(),
+            8,
+            8,
+            0,
+            0,
+            16,
+            16,
+            Turned { flipped_across: true, ..Turned::default() },
+        );
+        let after = corners(&canvas);
+        assert_eq!(after[0], straight[1], "the top right is not on the left");
+        assert_eq!(after[1], straight[0]);
+        assert_eq!(after[2], straight[3]);
+        assert_eq!(after[3], straight[2]);
+    }
+
+    #[test]
+    fn mirroring_down_swaps_top_and_bottom() {
+        let straight = {
+            let mut canvas = Canvas::filled(16, 16, Color::WHITE);
+            canvas.draw_pixels(&quarters(), 8, 8, 0, 0, 16, 16);
+            corners(&canvas)
+        };
+        let mut canvas = Canvas::filled(16, 16, Color::WHITE);
+        canvas.draw_pixels_turned(
+            &quarters(),
+            8,
+            8,
+            0,
+            0,
+            16,
+            16,
+            Turned { flipped_down: true, ..Turned::default() },
+        );
+        let after = corners(&canvas);
+        assert_eq!(after[0], straight[2]);
+        assert_eq!(after[2], straight[0]);
+    }
+
+    #[test]
+    fn a_turned_picture_reaches_outside_the_box_it_was_given() {
+        // A square turned an eighth of a turn does not fit in its own square,
+        // and the corners it grows are the whole point of walking the
+        // destination rather than the source.
+        let mut canvas = Canvas::filled(40, 40, Color::WHITE);
+        canvas.draw_pixels_turned(
+            &quarters(),
+            8,
+            8,
+            12,
+            12,
+            16,
+            16,
+            Turned { radians: core::f32::consts::FRAC_PI_4, ..Turned::default() },
+        );
+        // Straight above the middle, which the unturned square does not reach.
+        assert_ne!(canvas.pixel(20, 9), Color::WHITE, "the turned corner is missing");
+    }
+
+    #[test]
+    fn nothing_at_all_is_the_cheap_case() {
+        assert!(!Turned::default().is_turned());
+        assert!(Turned { radians: 0.1, ..Turned::default() }.is_turned());
+        assert!(Turned { flipped_down: true, ..Turned::default() }.is_turned());
     }
 
     #[test]

@@ -303,3 +303,80 @@ fn a_floating_picture_is_in_the_same_pile_as_a_shape() {
     assert_eq!(document.drawing_depths(), vec![251_658_250]);
     assert_eq!(document.next_drawing_depth(), 251_658_251);
 }
+
+/// A drawing whose picture carries a transform of its own, as a turned one does.
+fn turned_drawing(rotation: i32, mirrored: bool) -> String {
+    let flip = if mirrored { r#" flipH="1""# } else { "" };
+    format!(
+        r#"<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">
+<wp:extent cx="914400" cy="914400"/>
+<wp:docPr id="1" name="Picture 1"/>
+<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+<pic:pic><pic:blipFill><a:blip r:embed="rId1"/></pic:blipFill>
+<pic:spPr><a:xfrm rot="{rotation}"{flip}><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm></pic:spPr>
+</pic:pic>
+</a:graphicData></a:graphic>
+</wp:inline></w:drawing>"#
+    )
+}
+
+#[test]
+fn a_picture_carries_how_far_round_it_is_turned() {
+    // A quarter turn, in the sixtieths of a thousandth of a degree the format
+    // counts angles in.
+    let bytes = document_with_picture(&turned_drawing(5_400_000, true), &fixture());
+    let document = Document::open(&bytes).expect("a readable document");
+
+    let picture = picture_of(&document);
+    assert_eq!(picture.turned.rotation, 5_400_000);
+    assert!(picture.turned.flipped_across);
+    assert!(!picture.turned.flipped_down);
+}
+
+#[test]
+fn a_picture_that_was_never_turned_is_straight() {
+    let bytes = document_with_picture(&drawing("rId1", 914_400, 914_400), &fixture());
+    let document = Document::open(&bytes).expect("a readable document");
+
+    let picture = picture_of(&document);
+    assert!(!picture.turned.is_turned(), "an untouched picture should be the way up it was");
+}
+
+#[test]
+fn turning_a_picture_keeps_everything_else_under_the_drawing() {
+    // The same promise making one float keeps: the graphic is changed where it
+    // stands, so nothing this program does not model is thrown away.
+    let bytes = document_with_picture(&drawing("rId1", 914_400, 914_400), &fixture());
+    let mut document = Document::open(&bytes).expect("a readable document");
+
+    let at = wp_docx::TextPosition::new(0, 6);
+    let turned = wp_docx::floating::Turned {
+        rotation: 5_400_000,
+        flipped_down: true,
+        ..wp_docx::floating::Turned::default()
+    };
+    assert!(document.set_drawing_turn_at(at, turned), "the picture was not turned");
+
+    let saved = document.save().expect("saving");
+    let reopened = Document::open(&saved).expect("reopening");
+    assert_eq!(reopened.drawing_turn_at(at), turned, "the turn did not survive");
+
+    let picture = picture_of(&reopened);
+    assert_eq!(picture.relationship, "rId1", "the picture lost what it points at");
+    assert_eq!(picture.width_emu, 914_400, "the picture lost its size");
+    assert_eq!(picture.description.as_deref(), Some("a gradient"));
+    assert_eq!(picture.turned, turned, "the model does not agree with the file");
+}
+
+#[test]
+fn turning_a_picture_back_to_straight_leaves_no_angle_behind() {
+    let bytes = document_with_picture(&turned_drawing(5_400_000, false), &fixture());
+    let mut document = Document::open(&bytes).expect("a readable document");
+
+    let at = wp_docx::TextPosition::new(0, 6);
+    assert!(document.set_drawing_turn_at(at, wp_docx::floating::Turned::default()));
+
+    let saved = document.save().expect("saving");
+    let reopened = Document::open(&saved).expect("reopening");
+    assert!(!reopened.drawing_turn_at(at).is_turned(), "it is still turned");
+}

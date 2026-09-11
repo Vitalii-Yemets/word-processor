@@ -1139,6 +1139,7 @@ impl Editor {
             Choice::TableStyle => return self.open_table_styles(),
             Choice::TablePart => return self.open_table_select(),
             Choice::AlignObjects => return self.open_align(),
+            Choice::RotateObjects => return self.open_rotate(),
             // The menus the ribbon's arrows drop are filled in by the module
             // that owns them, which knows what is in each and which of its
             // entries is in force.
@@ -1278,6 +1279,7 @@ impl Editor {
             | Choice::TablePart
             | Choice::AutoFit
             | Choice::AlignObjects
+            | Choice::RotateObjects
             | Choice::AlignmentTab
             | Choice::MultilevelLibrary
             | Choice::LineSpacing
@@ -1389,6 +1391,7 @@ impl Editor {
             Choice::TablePart => self.choose_table_part(index),
             Choice::AutoFit => self.choose_autofit(index),
             Choice::AlignObjects => self.choose_align(index),
+            Choice::RotateObjects => self.choose_rotate(index),
             Choice::Wrap => self.choose_wrapping(index),
             Choice::Position => self.choose_position(index),
             Choice::Forward => self.choose_arrange(true, index),

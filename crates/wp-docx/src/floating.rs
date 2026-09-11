@@ -29,6 +29,77 @@ use crate::anchor::{self, Anchor};
 use crate::history::EditKind;
 use crate::{edit, position, read, Document, TextPosition};
 
+/// How a drawing is turned: how far round, and whether it is mirrored.
+///
+/// One word for both kinds, because Word's Rotate menu does not care which it
+/// is turning and neither does anything above this.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Turned {
+    /// Sixtieths of a thousandth of a degree, clockwise. A whole turn is
+    /// 21,600,000, which is the unit the whole of DrawingML measures angles in.
+    pub rotation: i32,
+    pub flipped_across: bool,
+    pub flipped_down: bool,
+}
+
+impl Turned {
+    /// A whole turn, in the unit the format counts angles in.
+    pub const WHOLE: i32 = 21_600_000;
+
+    /// The same turn with a quarter added or taken away.
+    #[must_use]
+    pub fn turned_by(self, sixtieths: i32) -> Self {
+        let rotation = (self.rotation + sixtieths).rem_euclid(Self::WHOLE);
+        Self { rotation, ..self }
+    }
+
+    /// Whether it is turned or mirrored at all.
+    #[must_use]
+    pub fn is_turned(self) -> bool {
+        self.rotation != 0 || self.flipped_across || self.flipped_down
+    }
+
+    /// The angle in radians, which is what drawing it asks for.
+    #[must_use]
+    pub fn radians(self) -> f32 {
+        self.rotation as f32 / Self::WHOLE as f32 * core::f32::consts::TAU
+    }
+
+    /// How the drawing under an element is turned.
+    ///
+    /// The turn lives in the graphic's own `a:xfrm`, wherever that is below the
+    /// wrapper: `pic:spPr/a:xfrm` for a picture, `wps:spPr/a:xfrm` for a shape.
+    /// A drawing that was never turned carries no transform at all.
+    #[must_use]
+    pub fn under(element: &Element) -> Self {
+        fn search(element: &Element) -> Option<&Element> {
+            if element.local_name() == "xfrm" {
+                return Some(element);
+            }
+            element.child_elements().find_map(search)
+        }
+        let Some(transform) = search(element) else { return Self::default() };
+        Self {
+            rotation: transform
+                .attribute_by_name("rot")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0),
+            flipped_across: matches!(transform.attribute_by_name("flipH"), Some("1" | "true")),
+            flipped_down: matches!(transform.attribute_by_name("flipV"), Some("1" | "true")),
+        }
+    }
+
+    /// How a shape of the model is turned.
+    #[must_use]
+    pub fn of_shape(shape: &crate::shapes::Shape) -> Self {
+        Self {
+            rotation: shape.rotation,
+            flipped_across: shape.flipped_across,
+            flipped_down: shape.flipped_down,
+        }
+    }
+}
+
 /// The namespace a drawing's placement lives in.
 const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
@@ -136,6 +207,53 @@ impl Document {
         let mut found = None;
         walk_drawings(paragraph, &mut offset, at.offset, &mut found);
         found
+    }
+
+    /// How far round the drawing at one place is turned, and whether it is
+    /// drawn as its own mirror image.
+    #[must_use]
+    pub fn drawing_turn_at(&self, at: TextPosition) -> Turned {
+        if let Some(shape) = self.shape_at(at) {
+            return Turned::of_shape(&shape);
+        }
+        self.picture_drawing_at(at).map_or_else(Turned::default, Turned::under)
+    }
+
+    /// Turns it.
+    ///
+    /// A shape is rebuilt from its model, as every other change to one is; a
+    /// picture's own transform is changed where it stands, because rebuilding a
+    /// picture would throw away everything the model does not hold. See the note
+    /// at the top of this file.
+    pub fn set_drawing_turn_at(&mut self, at: TextPosition, turned: Turned) -> bool {
+        if let Some(mut shape) = self.shape_at(at) {
+            shape.rotation = turned.rotation;
+            shape.flipped_across = turned.flipped_across;
+            shape.flipped_down = turned.flipped_down;
+            return self.replace_shape_at(at, &shape);
+        }
+
+        let caret = self.caret();
+        if !self.drawing_at(at) {
+            return false;
+        }
+        self.record(EditKind::Structural, caret, false);
+        let Some(path) = position::paragraph_path(&self.tree().root, at.paragraph) else {
+            return false;
+        };
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+            return false;
+        };
+
+        let mut offset = 0usize;
+        let mut done = false;
+        walk_drawings_mut(paragraph, &mut offset, at.offset, &mut |drawing| {
+            done = turn(drawing, turned);
+        });
+        if done {
+            self.mark_modified();
+        }
+        done
     }
 
     /// Makes it that big.
@@ -409,6 +527,96 @@ fn gather_picture_depths(block: &crate::model::Block, out: &mut Vec<u32>) {
             }
         }
     }
+}
+
+/// Writes a turn onto a drawing's own transform, making one if it has none.
+///
+/// The angle lives on `a:xfrm`, which is inside the graphic rather than on the
+/// box the text flows round: the box stays where it is and the picture inside
+/// it turns, which is why a turned picture still keeps the words out of the
+/// same rectangle. A drawing whose transform says nothing is given one.
+fn turn(drawing: &mut Element, turned: Turned) -> bool {
+    fn write(element: &mut Element, turned: Turned, done: &mut bool) {
+        if element.local_name() == "xfrm" {
+            if turned.rotation == 0 {
+                element.attributes.retain(|held| !held.name.ends_with("rot"));
+            } else {
+                element.set_attribute("rot", &turned.rotation.to_string());
+            }
+            for (name, on) in [("flipH", turned.flipped_across), ("flipV", turned.flipped_down)] {
+                if on {
+                    element.set_attribute(name, "1");
+                } else {
+                    element.attributes.retain(|held| !held.name.ends_with(name));
+                }
+            }
+            *done = true;
+            return;
+        }
+        for child in element.child_elements_mut() {
+            write(child, turned, done);
+        }
+    }
+
+    let mut done = false;
+    write(drawing, turned, &mut done);
+    if done {
+        return true;
+    }
+
+    // No transform at all: one is made inside the picture's own properties,
+    // which is where the format puts it.
+    fn made(turned: Turned) -> Element {
+        let mut transform = Element::new("a:xfrm", Some(edit::DRAWING_MAIN));
+        if turned.rotation != 0 {
+            transform.set_attribute("rot", &turned.rotation.to_string());
+        }
+        if turned.flipped_across {
+            transform.set_attribute("flipH", "1");
+        }
+        if turned.flipped_down {
+            transform.set_attribute("flipV", "1");
+        }
+        transform
+    }
+
+    fn give_one(element: &mut Element, turned: Turned, done: &mut bool) {
+        if element.local_name() == "spPr" {
+            element.insert_element(0, made(turned));
+            *done = true;
+            return;
+        }
+        for child in element.child_elements_mut() {
+            give_one(child, turned, done);
+        }
+    }
+    give_one(drawing, turned, &mut done);
+    if done {
+        return true;
+    }
+
+    // Not even the properties a transform lives in. Word always writes them,
+    // but a document from something terser need not, and a picture nobody can
+    // turn because of what it does not say would be a button doing nothing.
+    // They go last inside the graphic's own element, which is where the schema
+    // has them, and take that element's prefix: a new one would need a
+    // declaration to go with it.
+    fn give_properties(element: &mut Element, turned: Turned, done: &mut bool) {
+        if matches!(element.local_name(), "pic" | "wsp" | "sp") {
+            let prefix = element.name.split_once(':').map(|(prefix, _)| prefix.to_owned());
+            let name = prefix.map_or_else(|| "spPr".to_owned(), |prefix| format!("{prefix}:spPr"));
+            let mut properties = Element::new(&name, element.namespace.as_deref());
+            properties.push_element(made(turned));
+            element.push_element(properties);
+            *done = true;
+            return;
+        }
+        for child in element.child_elements_mut() {
+            give_properties(child, turned, done);
+        }
+    }
+    give_properties(drawing, turned, &mut done);
+    done
 }
 
 /// The box a drawing's text flows round.

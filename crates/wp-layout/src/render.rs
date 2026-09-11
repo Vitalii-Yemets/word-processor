@@ -157,22 +157,28 @@ impl<'a> Renderer<'a> {
             );
         }
 
-        // The text of the document, and then the text inside the shapes under
-        // it — which is placed in page coordinates already and so is drawn the
-        // same way. A shape in front of the text has its own text drawn with
-        // it, below, or the shape would be filled in over its own words.
-        let inside: Vec<&PositionedGlyph> = page
-            .shapes
-            .iter()
-            .filter(|shape| !shape.over_text)
-            .flat_map(|shape| &shape.text)
-            .collect();
-        // Which of the page's own letters are turned is kept as spans rather
-        // than on every letter, so it is looked up here; a shape's text is
-        // never turned.
-        let own = page.glyphs.iter().enumerate().map(|(at, glyph)| (glyph, page.turn_of(at)));
-        let inside = inside.into_iter().map(|glyph| (glyph, Turn::None));
-        self.draw_glyphs(canvas, own.chain(inside), offset_x, offset_y);
+        // The text of the document. Which of its letters are turned is kept as
+        // spans rather than on every letter, so it is looked up here; a letter
+        // in a turned cell turns about its own origin, which is already where
+        // it belongs on the page.
+        let own = page.glyphs.iter().enumerate().map(|(at, glyph)| {
+            let turn = Self::quarter_turn(page.turn_of(at)).map(|angle| {
+                Transform::rotate_about(angle, glyph.x + offset_x, glyph.baseline + offset_y)
+            });
+            (glyph, turn)
+        });
+        self.draw_glyphs(canvas, own, offset_x, offset_y);
+
+        // Then the text inside the shapes under it, which is placed in page
+        // coordinates already and so is drawn the same way — turned with the
+        // shape it is in, because the words on a turned sign are turned too. A
+        // shape in front of the text has its own text drawn with it, below, or
+        // the shape would be filled in over its own words.
+        for shape in page.shapes.iter().filter(|shape| !shape.over_text) {
+            let turn = shape_turn(shape, offset_x, offset_y);
+            let text = shape.text.iter().map(|glyph| (glyph, turn));
+            self.draw_glyphs(canvas, text, offset_x, offset_y);
+        }
 
         // And last, the drawings a person put in front of the text. Word's
         // "In Front of Text", which until now was a command that said it had
@@ -180,17 +186,22 @@ impl<'a> Renderer<'a> {
         for drawing in page.drawings_over() {
             draw_drawing(canvas, drawing, offset_x, offset_y);
             if let Drawing::Shape(shape) = drawing {
-                let text = shape.text.iter().map(|glyph| (glyph, Turn::None));
+                let turn = shape_turn(shape, offset_x, offset_y);
+                let text = shape.text.iter().map(|glyph| (glyph, turn));
                 self.draw_glyphs(canvas, text, offset_x, offset_y);
             }
         }
     }
 
     /// Draws letters onto the canvas, wherever they came from.
+    ///
+    /// A letter may carry a transform in page coordinates, applied after the one
+    /// that puts it where it belongs: the quarter turn of a cell that reads
+    /// sideways, or the angle of the shape whose text it is.
     fn draw_glyphs<'glyphs>(
         &mut self,
         canvas: &mut Canvas,
-        glyphs: impl Iterator<Item = (&'glyphs PositionedGlyph, Turn)>,
+        glyphs: impl Iterator<Item = (&'glyphs PositionedGlyph, Option<Transform>)>,
         offset_x: f32,
         offset_y: f32,
     ) {
@@ -200,11 +211,15 @@ impl<'a> Renderer<'a> {
             if glyph.invisible {
                 continue;
             }
+            let x = glyph.x + offset_x;
             let baseline = glyph.baseline + offset_y;
             // Skip anything entirely off the canvas before doing any work for
             // it. A turned letter reaches as far along the page as it is tall,
-            // so the band it could be in is the same one either way.
-            if baseline + glyph.size < 0.0 || baseline - glyph.size * 2.0 > canvas.height() as f32 {
+            // so the band it could be in is the same one either way — but a
+            // letter turned with a shape lands somewhere else altogether, so
+            // what is tested is where it lands.
+            let landed = turn.map_or(baseline, |turn| turn.apply(Point { x, y: baseline }).y);
+            if landed + glyph.size < 0.0 || landed - glyph.size * 2.0 > canvas.height() as f32 {
                 continue;
             }
 
@@ -214,12 +229,9 @@ impl<'a> Renderer<'a> {
             // Font outlines are y-up on a design grid; the canvas is y-down in
             // pixels. This is the transform that reconciles the two.
             let scale = glyph.size / cached.units_per_em;
-            let x = glyph.x + offset_x;
             let mut transform = Transform::stretched_glyph(scale, glyph.stretch, x, baseline);
-            // A letter in a turned cell is turned about its own origin, which
-            // is already where it belongs on the page.
-            if let Some(angle) = Self::quarter_turn(turn) {
-                transform = transform.then(&Transform::rotate_about(angle, x, baseline));
+            if let Some(turn) = turn {
+                transform = transform.then(&turn);
             }
             let path = cached.path.transformed(&transform);
 
@@ -346,7 +358,7 @@ const RING: &[(f32, f32)] = &[
 /// Not the text inside a shape, which is letters and goes through the renderer.
 fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset_y: f32) {
     match drawing {
-        Drawing::Picture(picture) => canvas.draw_pixels(
+        Drawing::Picture(picture) => canvas.draw_pixels_turned(
             &picture.image.pixels,
             picture.image.width,
             picture.image.height,
@@ -354,38 +366,76 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
             (picture.y + offset_y).round() as i32,
             picture.width.round().max(0.0) as usize,
             picture.height.round().max(0.0) as usize,
+            wp_raster::Turned {
+                radians: picture.turn,
+                flipped_across: picture.flipped_across,
+                flipped_down: picture.flipped_down,
+            },
         ),
         Drawing::Shape(shape) => {
             let (x, y) = (shape.x + offset_x, shape.y + offset_y);
+            let turn = shape_turn(shape, offset_x, offset_y);
+            let turned = |path: Path| match turn {
+                Some(turn) => path.transformed(&turn),
+                None => path,
+            };
             // The shadow first, under everything: an offset copy of whatever
-            // the shape's outline encloses.
+            // the shape's outline encloses. It is offset after the turn rather
+            // than before it, because the light does not turn with the shape:
+            // a sign turned on its side still casts its shadow downwards.
             if let Some((colour, distance)) = shape.shadow {
-                let path = crate::geometry::path_in(
-                    shape.preset,
-                    x + distance,
-                    y + distance,
-                    shape.width,
-                    shape.height,
-                );
+                let path =
+                    turned(crate::geometry::path_in(shape.preset, x, y, shape.width, shape.height))
+                        .transformed(&Transform::translate(distance, distance));
                 canvas.fill_path(&path, colour);
             }
             if let Some(fill) = shape.fill {
-                let path = crate::geometry::path_in(shape.preset, x, y, shape.width, shape.height);
+                let path =
+                    turned(crate::geometry::path_in(shape.preset, x, y, shape.width, shape.height));
                 canvas.fill_path(&path, fill);
             }
             if let Some(outline) = shape.outline {
-                let path = crate::geometry::outline_in(
+                let path = turned(crate::geometry::outline_in(
                     shape.preset,
                     x,
                     y,
                     shape.width,
                     shape.height,
                     shape.outline_weight,
-                );
+                ));
                 canvas.fill_path(&path, outline);
             }
         }
     }
+}
+
+/// How a shape is turned where it stands, in page coordinates.
+///
+/// A drawing turns about its own middle and is mirrored about its own middle,
+/// and the mirroring comes first: the format states it that way, and so would
+/// anyone doing it with a sheet of paper — turn the mirrored shape, not mirror
+/// the turned one. `None` for a shape that is neither, which is nearly all of
+/// them and saves every path a pass through a transform.
+fn shape_turn(
+    shape: &crate::layout::PlacedShape,
+    offset_x: f32,
+    offset_y: f32,
+) -> Option<Transform> {
+    if shape.turn == 0.0 && !shape.flipped_across && !shape.flipped_down {
+        return None;
+    }
+    let middle_x = shape.x + offset_x + shape.width / 2.0;
+    let middle_y = shape.y + offset_y + shape.height / 2.0;
+    let mirror = Transform::scale(
+        if shape.flipped_across { -1.0 } else { 1.0 },
+        if shape.flipped_down { -1.0 } else { 1.0 },
+    );
+    Some(
+        Transform::translate(-middle_x, -middle_y)
+            .then(&mirror)
+            .then(&Transform::rotate(shape.turn))
+            .then(&Transform::translate(middle_x, middle_y)),
+    )
 }
 
 fn draw_effect(canvas: &mut Canvas, path: &Path, effect: &GlyphEffect, size: f32, baseline: f32) {
