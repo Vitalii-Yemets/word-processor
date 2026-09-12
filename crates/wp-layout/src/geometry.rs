@@ -165,6 +165,29 @@ pub enum Preset {
     HorizontalScroll,
     Wave,
     DoubleWave,
+
+    // Word's callouts: the four bubbles and the twelve with a leader line.
+    // What sets these apart from every other shape here is that they are drawn
+    // partly outside their own box, which is what a tail is for. See
+    // [`crate::callouts`].
+    RoundedCallout,
+    OvalCallout,
+    CloudCallout,
+    LineCallout1,
+    LineCallout2,
+    LineCallout3,
+    AccentCallout1,
+    AccentCallout2,
+    AccentCallout3,
+    BorderCallout1,
+    BorderCallout2,
+    BorderCallout3,
+    AccentBorderCallout1,
+    AccentBorderCallout2,
+    AccentBorderCallout3,
+    /// The cloud on its own, which is a basic shape rather than a callout: the
+    /// same ring of bumps without the bubbles leading to a point.
+    Cloud,
 }
 
 /// Every preset this program draws: the name the format knows it by, and the
@@ -210,6 +233,7 @@ const NAMED: &[(Preset, &str, &str)] = &[
     (Preset::Plaque, "plaque", "Plaque"),
     (Preset::Moon, "moon", "Moon"),
     (Preset::Heart, "heart", "Heart"),
+    (Preset::Cloud, "cloud", "Cloud"),
     // The block arrows, in the order Word's gallery shows them.
     (Preset::Arrow, "rightArrow", "Right Arrow"),
     (Preset::LeftArrow, "leftArrow", "Left Arrow"),
@@ -294,7 +318,40 @@ const NAMED: &[(Preset, &str, &str)] = &[
     (Preset::Wave, "wave", "Wave"),
     (Preset::DoubleWave, "doubleWave", "Double Wave"),
     (Preset::Line, "line", "Line"),
-    (Preset::Callout, "wedgeRectCallout", "Speech Bubble"),
+    // The callouts, in the order Word's gallery shows them: the bubbles, then
+    // the leader lines in their four families.
+    (Preset::Callout, "wedgeRectCallout", "Speech Bubble: Rectangular"),
+    (
+        Preset::RoundedCallout,
+        "wedgeRoundRectCallout",
+        "Speech Bubble: Rectangle with Rounded Corners",
+    ),
+    (Preset::OvalCallout, "wedgeEllipseCallout", "Speech Bubble: Oval"),
+    (Preset::CloudCallout, "cloudCallout", "Thought Bubble: Cloud"),
+    (Preset::LineCallout1, "callout1", "Callout: Line"),
+    (Preset::LineCallout2, "callout2", "Callout: Bent Line"),
+    (Preset::LineCallout3, "callout3", "Callout: Double Bent Line"),
+    (Preset::AccentCallout1, "accentCallout1", "Callout: Line with Accent Bar"),
+    (Preset::AccentCallout2, "accentCallout2", "Callout: Bent Line with Accent Bar"),
+    (Preset::AccentCallout3, "accentCallout3", "Callout: Double Bent Line with Accent Bar"),
+    (Preset::BorderCallout1, "borderCallout1", "Callout: Line with Border"),
+    (Preset::BorderCallout2, "borderCallout2", "Callout: Bent Line with Border"),
+    (Preset::BorderCallout3, "borderCallout3", "Callout: Double Bent Line with Border"),
+    (
+        Preset::AccentBorderCallout1,
+        "accentBorderCallout1",
+        "Callout: Line with Border and Accent Bar",
+    ),
+    (
+        Preset::AccentBorderCallout2,
+        "accentBorderCallout2",
+        "Callout: Bent Line with Border and Accent Bar",
+    ),
+    (
+        Preset::AccentBorderCallout3,
+        "accentBorderCallout3",
+        "Callout: Double Bent Line with Border and Accent Bar",
+    ),
 ];
 
 impl Preset {
@@ -324,6 +381,61 @@ impl Preset {
             .iter()
             .find(|(preset, ..)| *preset == self)
             .map_or("Rectangle", |(_, _, label)| *label)
+    }
+
+    /// Whether the shape is a callout: a body with something pointing out of
+    /// it.
+    ///
+    /// What sets one apart from every other shape here is that it is drawn
+    /// partly *outside* its own box. The box is where the words go and the tail
+    /// points at what they are about, which is somewhere else. Every other
+    /// shape stays inside the box it was given, and the tests that say so say
+    /// it about everything but these.
+    ///
+    /// Said as a list and not as a name: the six arrow callouts have the word
+    /// in their names and are not these. They are arrows coming out of a box
+    /// and they stay inside it, which is the very thing this question asks.
+    #[must_use]
+    pub fn is_callout(self) -> bool {
+        matches!(
+            self,
+            Self::Callout
+                | Self::RoundedCallout
+                | Self::OvalCallout
+                | Self::CloudCallout
+                | Self::LineCallout1
+                | Self::LineCallout2
+                | Self::LineCallout3
+                | Self::AccentCallout1
+                | Self::AccentCallout2
+                | Self::AccentCallout3
+                | Self::BorderCallout1
+                | Self::BorderCallout2
+                | Self::BorderCallout3
+                | Self::AccentBorderCallout1
+                | Self::AccentBorderCallout2
+                | Self::AccentBorderCallout3
+        )
+    }
+
+    /// Whether the line a shape is drawn with goes round its edge.
+    ///
+    /// The six line callouts with no border in their name are drawn with a
+    /// leader going out of the words and nothing at all round the words
+    /// themselves, which is what "no border" means. Everything else has a band
+    /// round its edge, and a shape whose fill and line are both none is a
+    /// shape nobody can see — not a shape drawn some other way.
+    #[must_use]
+    pub fn edge_drawn(self) -> bool {
+        !matches!(
+            self,
+            Self::LineCallout1
+                | Self::LineCallout2
+                | Self::LineCallout3
+                | Self::AccentCallout1
+                | Self::AccentCallout2
+                | Self::AccentCallout3
+        )
     }
 
     /// Whether the shape encloses an area that text could sit in.
@@ -463,24 +575,19 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
     if let Some(shape) = crate::banners::path_in(preset, adjusts, left, top, right, bottom) {
         return shape;
     }
+    // And the callouts, which are the shapes that point at something outside
+    // themselves. See [`crate::callouts`].
+    if let Some(shape) = crate::callouts::path_in(preset, adjusts, left, top, right, bottom) {
+        return shape;
+    }
 
     match preset {
-        Preset::Rectangle | Preset::Callout => {
+        Preset::Rectangle => {
             path.move_to(point(left, top));
             path.line_to(point(right, top));
             path.line_to(point(right, bottom));
             path.line_to(point(left, bottom));
             path.close();
-            if preset == Preset::Callout {
-                // The tail, hanging from the lower left of the bubble. Word
-                // puts it wherever the shape's adjustment says; this puts it
-                // where a bubble usually has one.
-                let tip_x = left + width * 0.20;
-                path.move_to(point(left + width * 0.18, bottom));
-                path.line_to(point(left + width * 0.34, bottom));
-                path.line_to(point(tip_x, bottom + height * 0.22));
-                path.close();
-            }
         }
         Preset::RoundedRectangle => {
             // A sixth of the shorter side unless the handle says otherwise,
@@ -887,22 +994,30 @@ pub fn outline_in(
         return thick_line(x, y, x + width, y + height, weight);
     }
 
-    let mut path = path_in(preset, adjusts, x, y, width, height);
-    // The inside of the band: the same shape, inset by the weight on every
-    // side, and reversed so that the nonzero rule leaves a hole rather than
-    // filling it in twice.
-    let inset_width = (width - weight * 2.0).max(0.0);
-    let inset_height = (height - weight * 2.0).max(0.0);
-    if inset_width <= 0.0 || inset_height <= 0.0 {
-        return path;
-    }
-    let inner = path_in(preset, adjusts, x + weight, y + weight, inset_width, inset_height);
-    path.extend_reversed(&inner);
+    // A shape whose line does not go round its edge is drawn with its lines
+    // alone: a line callout with no border is a box of words with nothing round
+    // them and a leader going out of it. See [`Preset::edge_drawn`].
+    let mut path = if preset.edge_drawn() {
+        let mut band = path_in(preset, adjusts, x, y, width, height);
+        // The inside of the band: the same shape, inset by the weight on every
+        // side, and reversed so that the nonzero rule leaves a hole rather than
+        // filling it in twice.
+        let inset_width = (width - weight * 2.0).max(0.0);
+        let inset_height = (height - weight * 2.0).max(0.0);
+        if inset_width > 0.0 && inset_height > 0.0 {
+            let inner = path_in(preset, adjusts, x + weight, y + weight, inset_width, inset_height);
+            band.extend_reversed(&inner);
+        }
+        band
+    } else {
+        Path::new()
+    };
     // And the lines some shapes have inside them, which are drawn with the
     // same line as the outline and are part of neither the area of the shape
     // nor the band round it. See [`crate::flowchart::rules_into`].
     crate::flowchart::rules_into(&mut path, preset, x, y, width, height, weight);
     crate::banners::rules_into(&mut path, preset, x, y, width, height, weight);
+    crate::callouts::rules_into(&mut path, preset, adjusts, x, y, width, height, weight);
     path
 }
 
@@ -1386,7 +1501,8 @@ mod tests {
     #[test]
     fn a_shape_never_reaches_outside_the_box_it_was_given() {
         for preset in Preset::all() {
-            if preset == Preset::Callout {
+            // Every shape but a callout, whose tail is outside it by design.
+            if preset.is_callout() {
                 continue;
             }
             for band in 0..10 {
@@ -1428,15 +1544,16 @@ mod tests {
 
     #[test]
     fn a_preset_nobody_knows_becomes_a_rectangle() {
-        assert_eq!(Preset::from_word("cloudCallout"), Preset::Rectangle);
+        assert_eq!(Preset::from_word("gear9"), Preset::Rectangle);
     }
 
     #[test]
     fn every_shape_stays_inside_the_box_it_was_given() {
         for preset in Preset::all() {
-            // The bubble's tail hangs below the box on purpose, which is what a
-            // tail is.
-            if preset == Preset::Callout {
+            // A callout is the one shape that is drawn outside its own box, on
+            // purpose: the box is where the words go and the tail points at
+            // what they are about, which is somewhere else.
+            if preset.is_callout() {
                 continue;
             }
             let path = path_in(preset, 10.0, 20.0, 100.0, 60.0);
@@ -1475,7 +1592,10 @@ mod tests {
     #[test]
     fn an_outline_is_a_ring_and_so_has_more_in_it_than_the_shape() {
         for preset in Preset::all() {
-            if preset == Preset::Line {
+            // A line has no inside, and the six callouts with no border have no
+            // line round their edge at all: what is drawn is the leader going
+            // out of the words. See [`Preset::edge_drawn`].
+            if preset == Preset::Line || !preset.edge_drawn() {
                 continue;
             }
             let shape = path_in(preset, 0.0, 0.0, 100.0, 60.0);
@@ -1612,7 +1732,7 @@ mod gallery_tests {
         }
         // And a name this program does not know draws as a rectangle, which is
         // wrong but is visibly a shape of the right size in the right place.
-        assert_eq!(Preset::from_word("cloudCallout"), Preset::Rectangle);
+        assert_eq!(Preset::from_word("gear9"), Preset::Rectangle);
     }
 
     #[test]
@@ -1774,6 +1894,62 @@ mod gallery_tests {
     }
 
     #[test]
+    fn the_callouts_are_all_sixteen_of_them() {
+        // The four bubbles and the twelve with a leader line, which is what the
+        // format has. The six arrow callouts are arrows and not these.
+        let count = Preset::all().iter().filter(|preset| preset.is_callout()).count();
+        assert_eq!(count, 16, "the format has sixteen callouts");
+    }
+
+    #[test]
+    fn a_bubble_points_where_its_handles_say() {
+        // The two handles of a bubble are the point itself, from the middle of
+        // the box. Moving them moves the tail, and the tail is the only part of
+        // the shape outside the box, so the furthest corner of the path is it.
+        let below = Adjusts::from_pairs(&[("adj1".to_owned(), 0), ("adj2".to_owned(), 90_000)]);
+        let above = Adjusts::from_pairs(&[("adj1".to_owned(), 0), ("adj2".to_owned(), -90_000)]);
+        let lowest = |adjusts: &Adjusts| {
+            super::path_in(Preset::Callout, adjusts, 0.0, 0.0, 40.0, 40.0)
+                .points()
+                .fold(f32::MIN, |low, at| low.max(at.y))
+        };
+        let highest = |adjusts: &Adjusts| {
+            super::path_in(Preset::Callout, adjusts, 0.0, 0.0, 40.0, 40.0)
+                .points()
+                .fold(f32::MAX, |high, at| high.min(at.y))
+        };
+        assert!(lowest(&below) > 40.0, "the tail should hang below the box");
+        assert!(highest(&above) < 0.0, "and above it when the handle says so");
+    }
+
+    #[test]
+    fn a_callout_with_no_border_has_no_band_round_its_words() {
+        // What "no border" means: the leader is drawn and the words are not
+        // ringed. The shape is still an area, because that is where the words
+        // go and what the fill fills.
+        let plain = outline_in(Preset::LineCallout1, 0.0, 0.0, 40.0, 40.0, 2.0);
+        let bordered = outline_in(Preset::BorderCallout1, 0.0, 0.0, 40.0, 40.0, 2.0);
+        assert!(!plain.is_empty(), "the leader should still be drawn");
+        assert!(
+            bordered.points().count() > plain.points().count(),
+            "the bordered one should have the band as well"
+        );
+        // The band would reach the corners of the box; the leader does not.
+        let corner = plain.points().any(|at| at.x > 39.0 && at.y > 39.0);
+        assert!(!corner, "something was drawn round the words after all");
+    }
+
+    #[test]
+    fn a_leader_reaches_the_words_it_comes_out_of() {
+        // The first handle says where the leader leaves the words, and it is
+        // taken to the edge of the box: a line stopping short of the words
+        // would join nothing to nothing.
+        let path = outline_in(Preset::LineCallout1, 10.0, 10.0, 40.0, 40.0, 2.0);
+        let touches = path.points().any(|at| (at.x - 10.0).abs() <= 1.5);
+        assert!(touches, "the leader does not reach the side of the box");
+    }
+
+    #[test]
     fn the_stars_and_banners_are_all_twenty_of_them() {
         // Word's own section: two explosions, ten stars, four ribbons, two
         // scrolls and two waves.
@@ -1912,10 +2088,10 @@ mod gallery_tests {
     #[test]
     fn a_shape_keeps_its_corners_out_of_its_own_box() {
         // Every shape is drawn inside the box it is given and nowhere else.
-        // The speech bubble is the one exception, and says so: its tail hangs
-        // below the bubble, which is what makes it a bubble.
+        // The callouts are the exception, and say so: a tail that stayed inside
+        // the box would point at the words rather than at what they are about.
         for preset in Preset::all() {
-            if preset == Preset::Callout {
+            if preset.is_callout() {
                 continue;
             }
             let path = path_in(preset, 10.0, 10.0, 20.0, 20.0);

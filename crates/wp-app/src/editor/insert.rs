@@ -968,6 +968,15 @@ impl Editor {
                     .collect();
                 self.shape_grid(&shapes, 6);
             }
+            // The callouts: the four bubbles and the twelve with a leader. A
+            // callout is drawn partly outside its own box, so these are given
+            // more room than the other scenes give a shape.
+            "callouts" => {
+                use wp_layout::geometry::Preset;
+                let shapes: Vec<Preset> =
+                    Preset::all().into_iter().filter(|preset| preset.is_callout()).collect();
+                self.shape_grid(&shapes, 4);
+            }
             // One shape at a time with its handle moved: four rounded
             // rectangles from square to a stadium, four stars from a deep dip
             // to none, four arrows with the head growing, and four pies opening

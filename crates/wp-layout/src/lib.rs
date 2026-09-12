@@ -29,6 +29,7 @@ mod arrows;
 mod artborders;
 mod banners;
 mod borders;
+mod callouts;
 pub mod charting;
 mod device;
 mod flowchart;

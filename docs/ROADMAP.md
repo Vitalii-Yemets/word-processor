@@ -2099,15 +2099,38 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* two shapes joined by each kind of connector stay joined when
   either is moved.
 
-- [ ] **D19. Callouts.** The sixteen the format has: the rectangular, rounded
+- [x] **D19. Callouts.** The sixteen the format has: the rectangular, rounded
   and oval bubbles and the cloud; and the twelve line callouts, which are three
   shapes each drawn four ways — with no border, with a border, with an accent
   bar down the side of the words, and with both.
   *Done when:* each is drawn, each bubble has its tail, and the elbow of a line
   callout bends where the shape says it bends.
-  This waits on **D20**. A bubble whose tail is drawn where a bubble usually has
-  one rather than where the file says is a bubble pointing at the wrong thing,
-  and the speech bubble drawn today does exactly that.
+  A callout is the one shape here drawn partly **outside** its own box. The box
+  is where the words go and the tail points at what they are about, which is
+  somewhere else — so the rule every other shape keeps, that nothing is drawn
+  outside the box it was given, is the rule these are for breaking, and the
+  tests that say it now say it about everything but a callout.
+  A bubble's tail is part of the same outline as its body and not a triangle
+  laid over it: a triangle laid over it shows a line across the bubble where its
+  base sits, and a bubble has no line across it. The tail leaves by whichever
+  side its point is beyond, and the point is where the handles say — which is
+  what **D20** was for.
+  What "no border" means is that the shape is drawn with no band round its edge
+  at all: the leader is drawn and the words are not ringed. So a shape now
+  answers whether the line it is drawn with goes round its edge, and the six
+  callouts with no border in their name say no.
+  The cloud is a ring of round bumps, each drawn from where it crosses the bump
+  behind it to where it crosses the one ahead. Round, so that the crossing can
+  be worked out exactly and used by both bumps: two arcs that only nearly meet
+  leave a nick in the outline and a chord across the inside. The bumps are
+  counted from how far it is round the oval they sit on, so a cloud stretched
+  wide gets more bumps rather than gaps between the ones it had. The cloud on
+  its own was missing from the basic shapes and is drawn now too.
+  *Not done:* a line callout's leader is drawn from the first pair of handles
+  taken to the edge of the box, and the bends and the point from the pairs after
+  it. That is what Word's own values describe, but the format states them
+  through guides this program does not have, so a callout whose handles were
+  dragged a long way in Word may bend at a different place here.
 
 - [x] **D20. The values behind the handles.** `a:avLst`: read it, keep it on
   the shape, write back untouched every value nothing moved, carry it to the
