@@ -1616,14 +1616,27 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   at the bottom right — **C40**. Double-clicking a column's line to fit it to its
   contents, and the ⊕ buttons Word shows between rows — **C41**.
 
-- [ ] **C40. The table's own handles.** Word draws two when the pointer is over a
+- [x] **C40. The table's own handles.** Word draws two when the pointer is over a
   table: a four-arrows square just outside the top-left corner, which drags the
   whole table to another place in the document, and a small right angle just
   outside the bottom-right corner, which resizes the whole table — every column
-  by the same proportion. The move handle is Word's only way of dragging a table
-  and needs the table's element to be taken out of one place in the tree and put
-  into another, which is what Cut and Paste of a table would be; the resize
-  handle is **C39**'s grid writing with every width scaled at once.
+  by the same proportion.
+  *Done:* both, drawn outside the corners so they sit over the margin rather
+  than over the text, and shown for the table the pointer is over or the table
+  the caret is in. The move handle **moves the element** rather than rebuilding
+  the table: it is taken out of one place in the tree and put into another, so
+  a tracked change, a content control or a property from a later version of the
+  format goes with it — the same reasoning **C37**'s groups follow. While it is
+  dragged, a line shows where the table would land, because a table that moved
+  under the hand would carry the text it passed through along with it. Pressing
+  it rather than dragging takes the whole table, which is what Word's does.
+  The resize handle scales every column by the same proportion through the same
+  grid writing **C39** uses, and fixes the columns as Word does the moment one
+  is settled by hand; one drag is one thing to undo.
+  *Not done:* Word will drop a table into a cell of another table. This will
+  not: the move is refused when the place it was dropped on is inside a
+  different parent — inside the table itself, or in a cell — and says so rather
+  than doing something surprising.
 
 - [ ] **C41. What the pointer offers between rows.** Two more of Word's mouse
   affordances on a table. Double-clicking the line at the right of a column fits

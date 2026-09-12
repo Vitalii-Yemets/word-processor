@@ -72,6 +72,7 @@ mod symboldialog;
 mod tablecheck;
 mod tabledialog;
 mod tableedges;
+mod tablehandles;
 mod tablelayout;
 mod tablestyle;
 mod tablework;
@@ -183,6 +184,12 @@ pub struct Editor {
     /// Word's way of setting a column width: the line between two columns is
     /// pulled to where it should be. See [`tableedges`].
     edge_drag: Option<tableedges::EdgeDrag>,
+    /// The handle of a table being dragged, while one is being dragged.
+    ///
+    /// Word's two: the square outside the top-left corner that moves the whole
+    /// table, and the one outside the bottom-right that resizes it. See
+    /// [`tablehandles`].
+    handle_drag: Option<tablehandles::HandleDrag>,
     /// Where the bar between two views of the document sits, as a share of the
     /// window, and how the second view is scrolled. See [`split`].
     split: Option<f32>,
@@ -514,6 +521,7 @@ impl Editor {
             column_drag: None,
             cell_anchor: None,
             edge_drag: None,
+            handle_drag: None,
             editing_furniture: None,
             tab_before_furniture: None,
             dimmed: Vec::new(),

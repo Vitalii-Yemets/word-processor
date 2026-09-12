@@ -175,6 +175,11 @@ impl App for Editor {
             return Cursor::ResizeVertical;
         }
 
+        // A table's handles are pressed, not typed in.
+        if self.table_handle_at(x, y).is_some() {
+            return Cursor::Hand;
+        }
+
         // The band above a table is not text: a press there takes a column.
         if self.column_bar_at(x, y).is_some() {
             return Cursor::Arrow;
@@ -310,6 +315,11 @@ impl App for Editor {
                 self.column_drag = None;
                 self.sliding = false;
                 self.resizing_pane = false;
+
+                // A table dragged by its handle is put down where it was let go.
+                if self.release_table_handle(x, y) {
+                    return Response::Redraw;
+                }
 
                 // A line of the table that was being dragged is left where it is.
                 if self.release_table_edge() {
@@ -779,6 +789,15 @@ impl Editor {
             return Response::Redraw;
         }
 
+        // A table's own handles come first of all: they are drawn outside the
+        // table, over the margin or the desk beside it, where nothing else is
+        // asking for the press.
+        if self.press_table_handle(x, y) {
+            self.status.clear();
+            self.needs_redraw = true;
+            return Response::Redraw;
+        }
+
         // Just above a table, a press takes the column under the pointer.
         // Before the lines, because the band above the table is not a line and
         // after the caret would have been moved into a cell it is too late.
@@ -1176,6 +1195,11 @@ impl Editor {
             }
             self.needs_redraw = true;
             return Response::Redraw;
+        }
+
+        // A table's handle being dragged.
+        if self.handle_drag.is_some() {
+            return self.drag_table_handle(x, y);
         }
 
         // A line of a table being dragged follows the pointer.

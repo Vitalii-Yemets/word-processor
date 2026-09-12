@@ -131,6 +131,66 @@ impl Document {
         paragraphs_under(&self.tree().root, &place.table)
     }
 
+    /// The same for the table round any paragraph, which is what a pointer over
+    /// a table asks: the caret may be nowhere near it.
+    #[must_use]
+    pub fn table_paragraphs_at(&self, paragraph: usize) -> Option<(usize, usize)> {
+        let place = self.table_at(paragraph)?;
+        paragraphs_under(&self.tree().root, &place.table)
+    }
+
+    /// Moves the table at the caret so that it comes before a paragraph.
+    ///
+    /// Word's move handle: the square outside the top-left corner of a table,
+    /// dragged to put the table somewhere else. The element itself is taken out
+    /// of the tree and put back in — not rebuilt — so everything the table
+    /// carries that this program has never heard of goes with it.
+    ///
+    /// Answers false rather than doing something surprising when the table
+    /// cannot go where it was asked: into itself, or out of the cell or the
+    /// body it lives in. Word will move a table into a cell of another table;
+    /// this will not, and says so.
+    pub fn move_table_before(&mut self, paragraph: usize) -> bool {
+        let Some(place) = self.table_here() else { return false };
+        let Some((first, last)) = paragraphs_under(&self.tree().root, &place.table) else {
+            return false;
+        };
+        // Into itself is nowhere.
+        if (first..=last).contains(&paragraph) {
+            return false;
+        }
+        let Some(target) = position::paragraph_path(&self.tree().root, paragraph) else {
+            return false;
+        };
+        let Some((table_at, table_parent)) = place.table.split_last() else { return false };
+        let Some((target_at, target_parent)) = target.split_last() else { return false };
+        if table_parent != target_parent {
+            return false;
+        }
+        let (table_at, target_at) = (*table_at, *target_at);
+        if table_at == target_at {
+            return false;
+        }
+
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let parent_path = table_parent.to_vec();
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, &parent_path)
+        else {
+            return false;
+        };
+
+        let element = parent.children.remove(table_at);
+        // Taking it out moved everything after it up one, so a place past the
+        // table is one less than it was.
+        let at = if target_at > table_at { target_at - 1 } else { target_at };
+        parent.children.insert(at, element);
+
+        self.clamp_caret_after_edit();
+        self.mark_modified();
+        true
+    }
+
     /// How many cells a row of the table at the caret has.
     ///
     /// Row by row rather than once for the table, because rows do not have to

@@ -156,6 +156,79 @@ impl Editor {
                 self.draw_marks(index, origin_x, y);
             }
         }
+
+        // A table's own two handles, over everything on the page: they are not
+        // part of the document, they are what the pointer takes hold of.
+        self.draw_table_handles();
+    }
+
+    /// The square that moves a table and the one that resizes it.
+    ///
+    /// Word draws both just outside the corners of the table, so they are over
+    /// the margin rather than over the text. While the move handle is being
+    /// dragged, a line shows where the table would land: a table cannot be
+    /// dragged about under the hand — it would take the text it passed through
+    /// with it — so what moves during the drag is the mark, not the table.
+    fn draw_table_handles(&mut self) {
+        let handles = self.table_handles();
+        if handles.is_empty() {
+            return;
+        }
+        let size = super::tablehandles::HANDLE;
+        let accent = self.theme.accent;
+        let inside = self.theme.page;
+
+        for (handle, x, y) in handles {
+            let (left, top, span) = (x as i32, y as i32, size as i32);
+            self.canvas.fill_rect(left, top, span, span, accent);
+            self.canvas.fill_rect(left + 1, top + 1, span - 2, span - 2, inside);
+
+            let middle = span / 2;
+            match handle {
+                // A cross, which is what a four-arrows pointer comes to at
+                // eleven pixels across.
+                super::tablehandles::TableHandle::Move => {
+                    self.canvas.fill_rect(left + middle, top + 2, 1, span - 4, accent);
+                    self.canvas.fill_rect(left + 2, top + middle, span - 4, 1, accent);
+                }
+                // And a corner, pointing the way the drag goes.
+                super::tablehandles::TableHandle::Resize => {
+                    self.canvas.fill_rect(left + 2, top + span - 3, span - 4, 1, accent);
+                    self.canvas.fill_rect(left + span - 3, top + 2, 1, span - 4, accent);
+                }
+            }
+        }
+
+        self.draw_table_landing();
+    }
+
+    /// Where a table being dragged by its handle would land.
+    fn draw_table_landing(&mut self) {
+        let Some(drag) = self.handle_drag.clone() else { return };
+        if drag.handle != super::tablehandles::TableHandle::Move || !drag.moved {
+            return;
+        }
+        let (x, y) = (self.pointer_x as i32, self.pointer_y as i32);
+        let Some(at) = self.position_at(x, y) else { return };
+        let Some((page, line)) = self.line_of_paragraph(at.paragraph) else { return };
+
+        let (origin_x, origin_y) = self.page_origin(page);
+        let top = self.content_top() + origin_y - self.scroll_down();
+        let found = &self.pages[page].lines[line];
+        let (left, width) = (origin_x + found.left, self.pages[page].width * 0.6);
+        let at_y = top + found.top();
+        let colour = self.theme.accent;
+        self.canvas.fill_rect(left as i32, at_y as i32, width as i32, 2, colour);
+    }
+
+    /// The first line of a paragraph, as a page and a line on it.
+    fn line_of_paragraph(&self, paragraph: usize) -> Option<(usize, usize)> {
+        self.pages.iter().enumerate().find_map(|(page_index, page)| {
+            page.lines
+                .iter()
+                .position(|line| line.paragraph == paragraph)
+                .map(|line| (page_index, line))
+        })
     }
 
     /// Draws the marks that are normally invisible: a paragraph mark at the end
