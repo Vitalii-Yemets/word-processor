@@ -132,6 +132,32 @@ impl WrapSide {
     pub const ALL: &'static [Self] = &[Self::BothSides, Self::Left, Self::Right, Self::Largest];
 }
 
+/// Word's 2010 extension to the drawing markup.
+///
+/// Two of the things a drawing can say live only here: its size as a percentage
+/// of a frame, and its position as one. Word writes the absolute values beside
+/// them, so a reader that skips the extension still draws the picture in the
+/// right place — which is what makes an extension an extension. See
+/// [`crate::edit::declare_extension`].
+pub const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
+
+/// And the prefix Word writes it under.
+pub const WP14_PREFIX: &str = "wp14";
+
+/// A measurement stated as a percentage of a frame.
+///
+/// `wp14:sizeRelH` and `wp14:sizeRelV`: what Word writes when a drawing is
+/// sized in per cent rather than in inches — a picture at half the page width
+/// stays half of it when the paper changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Relatively {
+    /// What the percentage is of.
+    pub from: Relative,
+    /// Thousandths of a per cent, which is the unit the format counts in:
+    /// 50000 is half.
+    pub thousandths: i32,
+}
+
 /// What a position is measured from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Relative {
@@ -188,6 +214,12 @@ pub enum Placement {
     Aligned(String),
     /// A distance, in English Metric Units.
     Offset(i64),
+    /// A distance as a percentage of the frame, in thousandths of a per cent.
+    ///
+    /// `wp14:pctPosHOffset` and its twin: the same extension the relative size
+    /// uses, and the same reason — a drawing a third of the way across the page
+    /// is still a third of the way across a wider page. See [`WP14`].
+    Percent(i32),
 }
 
 impl Default for Placement {
@@ -202,6 +234,11 @@ pub struct Anchor {
     pub wrap: Wrap,
     /// Which side of it the text runs down. See [`WrapSide`].
     pub side: WrapSide,
+    /// Its width as a percentage of a frame, where it is stated that way.
+    /// The absolute width is written beside it and is what a reader that skips
+    /// the extension uses. See [`Relatively`].
+    pub width_of: Option<Relatively>,
+    pub height_of: Option<Relatively>,
     /// Whether the drawing is drawn under the text rather than over it.
     pub behind_text: bool,
     pub horizontal_from: Relative,
@@ -235,6 +272,8 @@ impl Default for Anchor {
         Self {
             wrap: Wrap::Square,
             side: WrapSide::default(),
+            width_of: None,
+            height_of: None,
             behind_text: false,
             horizontal_from: Relative::Column,
             horizontal: Placement::Offset(0),
@@ -303,6 +342,8 @@ pub fn read_anchor(drawing: &Element) -> Option<Anchor> {
             Relative::from_word(down.attribute_by_name("relativeFrom").unwrap_or_default());
         result.vertical = placement_of(down);
     }
+    result.width_of = relatively(anchor, "sizeRelH", "pctWidth");
+    result.height_of = relatively(anchor, "sizeRelV", "pctHeight");
     Some(result)
 }
 
@@ -359,8 +400,47 @@ fn position(name: &str, from: Relative, placement: &Placement, wp: &str) -> Elem
             offset.set_text(&distance.to_string());
             element.push_element(offset);
         }
+        // The extension, in place of the offset. Word writes it this way round
+        // — a percentage instead of a distance, not beside one — and the
+        // relative size is the other way about. See [`WP14`].
+        Placement::Percent(thousandths) => {
+            let local = if name == "positionH" { "pctPosHOffset" } else { "pctPosVOffset" };
+            let mut offset = Element::new(&format!("{WP14_PREFIX}:{local}"), Some(WP14));
+            offset.set_text(&thousandths.to_string());
+            element.push_element(offset);
+        }
     }
     element
+}
+
+/// The two elements that state a size as a percentage of a frame.
+///
+/// They go last among the anchor's children, after the wrap, which is where
+/// Word writes them.
+#[must_use]
+pub fn relative_size_elements(anchor: &Anchor) -> Vec<Element> {
+    let mut out = Vec::new();
+    for (relatively, local, inner) in
+        [(anchor.width_of, "sizeRelH", "pctWidth"), (anchor.height_of, "sizeRelV", "pctHeight")]
+    {
+        let Some(relatively) = relatively else { continue };
+        let mut element = Element::new(&format!("{WP14_PREFIX}:{local}"), Some(WP14));
+        element.set_attribute("relativeFrom", relatively.from.word());
+        let mut value = Element::new(&format!("{WP14_PREFIX}:{inner}"), Some(WP14));
+        value.set_text(&relatively.thousandths.to_string());
+        element.push_element(value);
+        out.push(element);
+    }
+    out
+}
+
+/// Whether an anchor says anything that needs the 2010 extension declared.
+#[must_use]
+pub fn needs_extension(anchor: &Anchor) -> bool {
+    anchor.width_of.is_some()
+        || anchor.height_of.is_some()
+        || matches!(anchor.horizontal, Placement::Percent(_))
+        || matches!(anchor.vertical, Placement::Percent(_))
 }
 
 /// Reads whichever of the two ways a position was written.
@@ -376,7 +456,27 @@ fn placement_of(element: &Element) -> Placement {
             return Placement::Offset(distance);
         }
     }
+    // The extension, which Word writes *instead* of an offset when the position
+    // is a percentage. Looked for by local name: the prefix is the document's
+    // business. See [`WP14`].
+    for local in ["pctPosHOffset", "pctPosVOffset"] {
+        if let Some(offset) = child(element, local) {
+            if let Ok(thousandths) = offset.text_content().trim().parse() {
+                return Placement::Percent(thousandths);
+            }
+        }
+    }
     Placement::Offset(0)
+}
+
+/// A size stated as a percentage, read out of `wp14:sizeRelH` or its twin.
+fn relatively(anchor: &Element, local: &str, inner: &str) -> Option<Relatively> {
+    let element = child(anchor, local)?;
+    let thousandths = child(element, inner)?.text_content().trim().parse().ok()?;
+    Some(Relatively {
+        from: Relative::from_word(element.attribute_by_name("relativeFrom").unwrap_or_default()),
+        thousandths,
+    })
 }
 
 fn number(element: &Element, name: &str) -> i64 {

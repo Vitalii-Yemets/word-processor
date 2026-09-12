@@ -17,7 +17,7 @@
 //! angle it is turned to, and dragging a handle already sets its size. This is
 //! the dialog, and every box in it reads what the drawing says and changes it.
 
-use wp_docx::anchor::{Anchor, Placement, Relative, Wrap, WrapSide};
+use wp_docx::anchor::{Anchor, Placement, Relative, Relatively, Wrap, WrapSide};
 use wp_docx::floating::Turned;
 use wp_shell::Response;
 
@@ -59,8 +59,15 @@ const SCALE: usize = 23;
 const ROW_SCALE: usize = 24;
 const SCALE_HEIGHT: usize = 25;
 const SCALE_WIDTH: usize = 26;
-const SIZE_LOCKED: usize = 27;
-const SIZE_ROTATION: usize = 28;
+const RELATIVE: usize = 27;
+const ROW_RELATIVE_WIDTH: usize = 28;
+const RELATIVE_WIDTH: usize = 29;
+const RELATIVE_WIDTH_OF: usize = 30;
+const ROW_RELATIVE_HEIGHT: usize = 31;
+const RELATIVE_HEIGHT: usize = 32;
+const RELATIVE_HEIGHT_OF: usize = 33;
+const SIZE_LOCKED: usize = 34;
+const SIZE_ROTATION: usize = 35;
 
 /// English Metric Units in one point, which is what the dialog measures in.
 const EMU_PER_POINT: f32 = 12_700.0;
@@ -75,12 +82,16 @@ const TWIPS_PER_POINT: f32 = 20.0;
 /// with different words. These are the two the format actually holds.
 const PLACEMENTS: &[(&str, Option<&str>)] = &[
     ("Absolute position", None),
+    ("Relative position, per cent", Some("%")),
     ("Aligned left or top", Some("left")),
     ("Centred", Some("center")),
     ("Aligned right or bottom", Some("right")),
     ("Inside", Some("inside")),
     ("Outside", Some("outside")),
 ];
+
+/// Which row of that list the percentage is.
+const PLACEMENT_PERCENT: usize = 1;
 
 /// What each of those is measured from.
 const FRAMES: &[(&str, Relative)] = &[
@@ -136,9 +147,29 @@ impl Editor {
             list.iter().map(|(name, _)| (*name).to_owned()).collect::<Vec<String>>()
         };
         let frames = FRAMES.iter().map(|(name, _)| (*name).to_owned()).collect::<Vec<String>>();
+        let frames_again = frames.clone();
 
-        let (across_how, across_at) = placement_rows(&anchor.horizontal);
-        let (down_how, down_at) = placement_rows(&anchor.vertical);
+        // Which row of the list each axis is on, what its box shows, and what
+        // that number is measured in: a share of a frame is a percentage, and
+        // the box says so rather than showing per cent under an inch mark.
+        let shown = |placement: &Placement| match placement {
+            Placement::Offset(distance) => {
+                (0, measure::format(emu_to_twips(*distance), unit), unit.mark())
+            }
+            Placement::Percent(thousandths) => {
+                (PLACEMENT_PERCENT, format!("{:.0}", f64::from(*thousandths) / 1000.0), "%")
+            }
+            Placement::Aligned(name) => (
+                PLACEMENTS
+                    .iter()
+                    .position(|(_, aligned)| *aligned == Some(name.as_str()))
+                    .unwrap_or(2),
+                measure::format(0, unit),
+                unit.mark(),
+            ),
+        };
+        let (across_how, across_at, across_unit) = shown(&anchor.horizontal);
+        let (down_how, down_at, down_unit) = shown(&anchor.vertical);
 
         // A picture's own size, which the Scale boxes are a percentage of.
         let original = self.original_size(at);
@@ -161,11 +192,11 @@ impl Editor {
             Field::Tab("Position".to_owned()),
             Field::Columns(3),
             choice("Horizontal", names(PLACEMENTS), across_how),
-            number("Position", emu(across_at), unit.mark()),
+            number("Position", across_at, across_unit),
             choice("relative to", frames.clone(), frame_row(anchor.horizontal_from)),
             Field::Columns(3),
             choice("Vertical", names(PLACEMENTS), down_how),
-            number("Position", emu(down_at), unit.mark()),
+            number("Position", down_at, down_unit),
             choice("relative to", frames, frame_row(anchor.vertical_from)),
             // --- Text Wrapping ---------------------------------------------
             Field::Tab("Text Wrapping".to_owned()),
@@ -206,6 +237,17 @@ impl Editor {
             Field::Columns(2),
             number("Height", scale(height, original.map(|(_, tall)| tall)), "%"),
             number("Width", scale(width, original.map(|(wide, _)| wide)), "%"),
+            // And the size as a share of a frame, which is what the file states
+            // when it states one: a picture at half the page width stays half
+            // of it when the paper changes. An empty box is no share at all,
+            // and then the measurement above is what the drawing is.
+            Field::Group("Relative to the page or the text".to_owned()),
+            Field::Columns(2),
+            number("Width", share_shown(anchor.width_of), "%"),
+            choice("of", frames_again.clone(), frame_row(share_from(anchor.width_of))),
+            Field::Columns(2),
+            number("Height", share_shown(anchor.height_of), "%"),
+            choice("of", frames_again, frame_row(share_from(anchor.height_of))),
             Field::Check { label: "Lock aspect ratio".to_owned(), on: true },
             number("Rotation", format!("{:.0}", degrees_of(turned)), "°"),
         ];
@@ -241,6 +283,13 @@ impl Editor {
                 (ROW_SCALE, "a row"),
                 (SCALE_HEIGHT, "a number"),
                 (SCALE_WIDTH, "a number"),
+                (RELATIVE, "a group"),
+                (ROW_RELATIVE_WIDTH, "a row"),
+                (RELATIVE_WIDTH, "a number"),
+                (RELATIVE_WIDTH_OF, "a list"),
+                (ROW_RELATIVE_HEIGHT, "a row"),
+                (RELATIVE_HEIGHT, "a number"),
+                (RELATIVE_HEIGHT_OF, "a list"),
                 (SIZE_LOCKED, "a tick box"),
                 (SIZE_ROTATION, "a number"),
             ],
@@ -289,9 +338,16 @@ impl Editor {
         let twips = |field: usize| measure::parse(&dialog.said(field), self.unit).unwrap_or(0);
         let emu = |field: usize| twips_to_emu(twips(field));
 
-        let placement = |how: usize, at_field: usize| match PLACEMENTS.get(dialog.chose(how)) {
-            Some((_, Some(aligned))) => Placement::Aligned((*aligned).to_owned()),
-            _ => Placement::Offset(emu(at_field)),
+        let placement = |how: usize, at_field: usize| {
+            if dialog.chose(how) == PLACEMENT_PERCENT {
+                // The box holds per cent and the file thousandths of one.
+                let said = dialog.said(at_field).trim().parse::<f64>().unwrap_or(0.0);
+                return Placement::Percent((said * 1000.0).round() as i32);
+            }
+            match PLACEMENTS.get(dialog.chose(how)) {
+                Some((_, Some(aligned))) => Placement::Aligned((*aligned).to_owned()),
+                _ => Placement::Offset(emu(at_field)),
+            }
         };
         let frame = |field: usize| {
             FRAMES.get(dialog.chose(field)).map_or(Relative::Margin, |(_, found)| *found)
@@ -301,9 +357,25 @@ impl Editor {
             .map_or((Wrap::Square, false), |(_, wrap, behind)| (*wrap, *behind));
         let side = WrapSide::ALL.get(dialog.chose(WRAPPING_SIDE)).copied().unwrap_or_default();
 
+        // The two shares. An empty box is no share, and then the measurement
+        // boxes above say what the drawing is.
+        let relatively = |field: usize, frame: usize| {
+            let said = dialog.said(field).trim().to_owned();
+            if said.is_empty() {
+                return None;
+            }
+            let per_cent = said.parse::<f64>().ok().filter(|value| *value > 0.0)?;
+            Some(Relatively {
+                from: FRAMES.get(dialog.chose(frame)).map_or(Relative::Page, |(_, found)| *found),
+                thousandths: (per_cent * 1000.0).round() as i32,
+            })
+        };
+
         let anchor = Anchor {
             wrap,
             side,
+            width_of: relatively(RELATIVE_WIDTH, RELATIVE_WIDTH_OF),
+            height_of: relatively(RELATIVE_HEIGHT, RELATIVE_HEIGHT_OF),
             behind_text: behind,
             horizontal_from: frame(HORIZONTAL_FROM),
             horizontal: placement(HORIZONTAL_HOW, HORIZONTAL_AT),
@@ -401,6 +473,21 @@ impl Editor {
     }
 }
 
+/// A share of a frame as the box shows it: a percentage, or nothing where the
+/// drawing states no share.
+fn share_shown(relatively: Option<Relatively>) -> String {
+    match relatively {
+        // Thousandths of a per cent in the file; per cent in the box.
+        Some(found) => format!("{:.0}", f64::from(found.thousandths) / 1000.0),
+        None => String::new(),
+    }
+}
+
+/// And what it is a share of, which an empty box still has to answer.
+fn share_from(relatively: Option<Relatively>) -> Relative {
+    relatively.map_or(Relative::Page, |found| found.from)
+}
+
 /// A size as a percentage of what it is a percentage of, as the box shows it.
 ///
 /// In one place because two things have to agree about it: the box is filled in
@@ -411,24 +498,6 @@ fn shown_scale(now: i64, whole: i64) -> String {
         return "100".to_owned();
     }
     format!("{:.0}", now as f64 / whole as f64 * 100.0)
-}
-
-/// Which row of the list a placement is, and the distance to show beside it.
-///
-/// An aligned drawing has no distance of its own, so the box shows nothing
-/// rather than a nought: a drawing centred on the page is not a drawing nought
-/// inches from its left edge.
-fn placement_rows(placement: &Placement) -> (usize, i64) {
-    match placement {
-        Placement::Aligned(name) => {
-            let row = PLACEMENTS
-                .iter()
-                .position(|(_, aligned)| *aligned == Some(name.as_str()))
-                .unwrap_or(1);
-            (row, 0)
-        }
-        Placement::Offset(emu) => (0, *emu),
-    }
 }
 
 /// Which row of the list a frame is.
@@ -462,7 +531,8 @@ mod tests {
     use crate::chrome::dialog::{Answer, Field};
 
     use super::{Editor, DISTANCE_TOP, HORIZONTAL_AT, HORIZONTAL_FROM, HORIZONTAL_HOW};
-    use super::{SCALE_HEIGHT, SCALE_WIDTH, SIZE_HEIGHT, SIZE_LOCKED, SIZE_ROTATION};
+    use super::{RELATIVE_WIDTH, RELATIVE_WIDTH_OF, SCALE_HEIGHT, SCALE_WIDTH, SIZE_HEIGHT};
+    use super::{SIZE_LOCKED, SIZE_ROTATION};
     use super::{SIZE_WIDTH, WRAPPING_SIDE, WRAPPING_STYLE};
 
     /// Types into one of the dialog's measurement boxes.
@@ -563,8 +633,9 @@ mod tests {
     fn an_alignment_chosen_in_it_replaces_the_position() {
         let mut editor = editor();
         editor.open_layout_dialog();
-        // Centred, which is the third row of the list.
-        choose(&mut editor, HORIZONTAL_HOW, 2);
+        // Centred, which is the fourth row of the list: the second is the
+        // relative position, which came with C44.
+        choose(&mut editor, HORIZONTAL_HOW, 3);
         editor.finish_dialog(Answer::Accept);
 
         let at = editor.chosen_drawings[0];
@@ -759,6 +830,89 @@ mod tests {
         let (width, height) = editor.document.drawing_size_at(at).expect("a size");
         assert!((width - 914_400).abs() < 3000, "one inch came out as {width}");
         assert!((height - 457_200).abs() < 3000, "half an inch came out as {height}");
+    }
+
+    #[test]
+    fn a_width_typed_as_a_percentage_is_kept_as_one_and_drawn_as_one() {
+        let mut editor = editor();
+        let at = editor.chosen_drawings[0];
+
+        editor.open_layout_dialog();
+        type_number(&mut editor, RELATIVE_WIDTH, "50");
+        choose(&mut editor, RELATIVE_WIDTH_OF, 1); // Of the page.
+        editor.finish_dialog(Answer::Accept);
+
+        let anchor = editor.document.anchor_at(at).expect("an anchor");
+        let width_of = anchor.width_of.expect("the share was not kept");
+        assert_eq!(width_of.thousandths, 50_000, "half is fifty thousand thousandths");
+        assert_eq!(width_of.from, wp_docx::anchor::Relative::Page);
+
+        // And the page draws it at half the paper's width.
+        let shape = editor.pages[0].shapes.first().cloned().expect("the shape is on the page");
+        let half = editor.pages[0].width / 2.0;
+        assert!(
+            (shape.width - half).abs() < 2.0,
+            "half of {} came out as {}",
+            editor.pages[0].width,
+            shape.width
+        );
+    }
+
+    #[test]
+    fn a_percentage_survives_being_saved_and_opened_again() {
+        // The extension has to be declared and marked ignorable, or the file
+        // is either not XML or not something a strict reader will open.
+        let mut editor = editor();
+        let at = editor.chosen_drawings[0];
+        editor.open_layout_dialog();
+        type_number(&mut editor, RELATIVE_WIDTH, "40");
+        editor.finish_dialog(Answer::Accept);
+
+        let bytes = editor.document.save().expect("saving");
+        let reopened = Document::open(&bytes).expect("reopening");
+        let anchor = reopened.anchor_at(at).expect("an anchor");
+        assert_eq!(
+            anchor.width_of.map(|found| found.thousandths),
+            Some(40_000),
+            "the share did not survive the file"
+        );
+    }
+
+    #[test]
+    fn a_position_typed_as_a_percentage_is_a_share_of_the_frame() {
+        let mut editor = editor();
+        let at = editor.chosen_drawings[0];
+
+        editor.open_layout_dialog();
+        choose(&mut editor, HORIZONTAL_HOW, 1); // Relative position.
+        type_number(&mut editor, HORIZONTAL_AT, "25");
+        choose(&mut editor, HORIZONTAL_FROM, 1); // Of the page.
+        editor.finish_dialog(Answer::Accept);
+
+        let anchor = editor.document.anchor_at(at).expect("an anchor");
+        assert_eq!(anchor.horizontal, Placement::Percent(25_000));
+
+        let shape = editor.pages[0].shapes.first().cloned().expect("the shape is on the page");
+        let quarter = editor.pages[0].width / 4.0;
+        assert!((shape.x - quarter).abs() < 2.0, "a quarter across came out at {}", shape.x);
+    }
+
+    #[test]
+    fn an_empty_percentage_box_is_no_percentage_at_all() {
+        let mut editor = editor();
+        let at = editor.chosen_drawings[0];
+        editor.open_layout_dialog();
+        type_number(&mut editor, RELATIVE_WIDTH, "50");
+        editor.finish_dialog(Answer::Accept);
+        assert!(editor.document.anchor_at(at).expect("an anchor").width_of.is_some());
+
+        editor.open_layout_dialog();
+        type_number(&mut editor, RELATIVE_WIDTH, "");
+        editor.finish_dialog(Answer::Accept);
+        assert!(
+            editor.document.anchor_at(at).expect("an anchor").width_of.is_none(),
+            "the share would not come off"
+        );
     }
 
     #[test]

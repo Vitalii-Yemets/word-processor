@@ -722,11 +722,17 @@ fn moved(anchor: Option<Anchor>, dx: f32, dy: f32, depth: u32) -> Anchor {
         Placement::Offset(distance) => distance,
         // A drawing lined up with an edge and then dragged is no longer lined
         // up with it, so the alignment gives way to a distance.
-        Placement::Aligned(_) => 0,
+        // A share of a frame gives way too: what a drag or an Align hands
+        // over is a distance, and the drawing is no longer a share of
+        // anything.
+        Placement::Aligned(_) | Placement::Percent(_) => 0,
     };
     let down = match anchor.vertical {
         Placement::Offset(distance) => distance,
-        Placement::Aligned(_) => 0,
+        // A share of a frame gives way too: what a drag or an Align hands
+        // over is a distance, and the drawing is no longer a share of
+        // anything.
+        Placement::Aligned(_) | Placement::Percent(_) => 0,
     };
     anchor.horizontal = Placement::Offset(across + points_to_emu(dx));
     anchor.vertical = Placement::Offset(down + points_to_emu(dy));

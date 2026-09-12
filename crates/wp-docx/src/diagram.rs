@@ -188,6 +188,10 @@ fn plain(preset: &str, x: i64, y: i64, width: i64, height: i64, fill: &str) -> S
             // Nothing runs beside it, so which side would run beside it is
             // not a question this asks.
             side: crate::anchor::WrapSide::default(),
+            // Its size is worked out from the boxes it holds, not stated as a
+            // share of anything.
+            width_of: None,
+            height_of: None,
             behind_text: false,
             horizontal_from: Relative::Column,
             horizontal: Placement::Offset(x),
@@ -325,11 +329,15 @@ mod tests {
         let anchor = shape.anchor.as_ref().expect("a floating shape");
         let across = match anchor.horizontal {
             Placement::Offset(value) => value,
-            Placement::Aligned(_) => 0,
+            // A diagram's boxes are placed by distance; nothing else can
+            // have put them anywhere.
+            Placement::Aligned(_) | Placement::Percent(_) => 0,
         };
         let down = match anchor.vertical {
             Placement::Offset(value) => value,
-            Placement::Aligned(_) => 0,
+            // A diagram's boxes are placed by distance; nothing else can
+            // have put them anywhere.
+            Placement::Aligned(_) | Placement::Percent(_) => 0,
         };
         (across, down)
     }

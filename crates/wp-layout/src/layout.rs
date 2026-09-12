@@ -3830,6 +3830,42 @@ impl<'a> LayoutEngine<'a> {
         }
     }
 
+    /// How big a floating drawing is, once a size stated as a percentage has
+    /// had its say.
+    ///
+    /// A picture at half the page width is half of whatever the page is, which
+    /// is the whole point of stating it that way: the absolute size beside it
+    /// was right for the paper the document was last written on.
+    fn float_size(
+        &self,
+        anchor: &wp_docx::anchor::Anchor,
+        area: &Placement,
+        stated: (f32, f32),
+    ) -> (f32, f32) {
+        use wp_docx::anchor::Relative;
+
+        let (width, height) = stated;
+
+        let across = |from: Relative| match from {
+            Relative::Page => area.page_width,
+            _ => area.text_width,
+        };
+        let down = |from: Relative| match from {
+            Relative::Page => area.page_height,
+            _ => (area.bottom_limit - area.top).max(1.0),
+        };
+
+        let width = match anchor.width_of {
+            Some(relatively) => across(relatively.from) * share(relatively.thousandths),
+            None => width,
+        };
+        let height = match anchor.height_of {
+            Some(relatively) => down(relatively.from) * share(relatively.thousandths),
+            None => height,
+        };
+        (width.max(1.0), height.max(1.0))
+    }
+
     /// Works out where a floating drawing sits and reserves the room round it.
     ///
     /// Everything a shape and a picture have in common, which is all of it but
@@ -3866,6 +3902,10 @@ impl<'a> LayoutEngine<'a> {
                 _ => band_left,
             },
             Where::Offset(distance) => band_left + emu(*distance),
+            // A share of the frame rather than a distance into it, which is
+            // what keeps a drawing a third of the way across a page of any
+            // width. See [`wp_docx::anchor::Placement::Percent`].
+            Where::Percent(thousandths) => band_left + band_width * share(*thousandths),
         };
 
         // Down the page.
@@ -3877,6 +3917,7 @@ impl<'a> LayoutEngine<'a> {
                     _ => 0.0,
                 },
                 Where::Offset(distance) => emu(*distance),
+                Where::Percent(thousandths) => area.page_height * share(*thousandths),
             },
             Relative::Margin => match &anchor.vertical {
                 Where::Aligned(edge) => match edge.as_str() {
@@ -3885,11 +3926,17 @@ impl<'a> LayoutEngine<'a> {
                     _ => area.top,
                 },
                 Where::Offset(distance) => area.top + emu(*distance),
+                Where::Percent(thousandths) => {
+                    area.top + (area.bottom_limit - area.top) * share(*thousandths)
+                }
             },
             // Paragraph and line both mean "from where the text is now", which
             // is what anchors a drawing to the words it belongs with.
             _ => match &anchor.vertical {
                 Where::Offset(distance) => line_top + emu(*distance),
+                Where::Percent(thousandths) => {
+                    line_top + (area.bottom_limit - line_top).max(0.0) * share(*thousandths)
+                }
                 Where::Aligned(_) => line_top,
             },
         };
@@ -4812,14 +4859,24 @@ impl LayoutEngine<'_> {
                 if let Some(anchor) = shape.anchor.clone() {
                     let line_top = baseline - placement.ascent;
                     let shape = shape.as_ref().clone();
+                    // A size stated as a percentage of a frame wins over the
+                    // one written beside it. See [`Self::float_size`].
+                    let (width, height) = self.float_size(
+                        &anchor,
+                        &placement.area,
+                        (
+                            item.width.max(shape.width_points() as f32 * self.pixels_per_point()),
+                            *height,
+                        ),
+                    );
                     self.place_float(
                         &anchor,
                         page,
                         placement.page,
                         &placement.area,
                         line_top,
-                        item.width.max(shape.width_points() as f32 * self.pixels_per_point()),
-                        *height,
+                        width,
+                        height,
                         &shape,
                         Some(TextPosition::new(placement.paragraph, item.start_offset)),
                     );
@@ -4855,8 +4912,15 @@ impl LayoutEngine<'_> {
                 // one drawing would: a group is one drawing.
                 if let Some(anchor) = group.anchor.clone() {
                     let line_top = baseline - placement.ascent;
-                    let width =
-                        item.width.max(group.width_points() as f32 * self.pixels_per_point());
+                    let (width, height) = self.float_size(
+                        &anchor,
+                        &placement.area,
+                        (
+                            item.width.max(group.width_points() as f32 * self.pixels_per_point()),
+                            *height,
+                        ),
+                    );
+                    let height = &height;
                     let (at_x, at_y) = self.float_box(
                         &anchor,
                         placement.page,
@@ -4914,13 +4978,15 @@ impl LayoutEngine<'_> {
                 // same as a shape that floats.
                 if let Some(anchor) = item.picture_anchor.clone() {
                     let line_top = baseline - placement.ascent;
+                    let (width, height) =
+                        self.float_size(&anchor, &placement.area, (item.width, *height));
                     let (at_x, at_y) = self.float_box(
                         &anchor,
                         placement.page,
                         &placement.area,
                         line_top,
-                        item.width,
-                        *height,
+                        width,
+                        height,
                         // A picture is the box it fills: there is no outline for
                         // tight wrapping to follow.
                         None,
@@ -4928,8 +4994,8 @@ impl LayoutEngine<'_> {
                     page.images.push(PlacedImage {
                         x: at_x,
                         y: at_y,
-                        width: item.width,
-                        height: *height,
+                        width,
+                        height,
                         image: Rc::clone(image),
                         depth: anchor.depth,
                         over_text: !anchor.behind_text,
@@ -6578,6 +6644,14 @@ fn count_sequences(
             }
         }
     }
+}
+
+/// A percentage in thousandths of a per cent, as a fraction of one.
+///
+/// The unit the format counts shares in: 50000 is half. Kept to something
+/// sensible, because a document may say anything.
+fn share(thousandths: i32) -> f32 {
+    (thousandths as f32 / 100_000.0).clamp(0.0, 10.0)
 }
 
 /// The narrowest stretch of room beside a drawing that counts as room at all,

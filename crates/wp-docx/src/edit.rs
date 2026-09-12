@@ -1099,6 +1099,37 @@ pub fn drawing_element(
     drawing
 }
 
+/// Declares an extension namespace on the root, and says it may be ignored.
+///
+/// # Why both halves
+///
+/// Because an extension is only safe if a reader that does not know it can skip
+/// it. Without the declaration the prefix means nothing and the file is not
+/// XML; without `mc:Ignorable` a strict reader stops at the element it does not
+/// know instead of passing over it, and the document fails to open in exactly
+/// the reader the extension was supposed to be safe in.
+///
+/// Word writes both on `w:document` for every extension it uses, and so does
+/// this. See [`crate::anchor::WP14`] and [`crate::effects::W14`].
+pub(crate) fn declare_extension(root: &mut Element, prefix: &str, uri: &str) {
+    /// The namespace the "which of these may be ignored" attribute lives in.
+    const MC: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+
+    if !root.declarations.iter().any(|(_, found)| found == uri) {
+        root.declarations.push((Some(prefix.to_owned()), uri.to_owned()));
+    }
+    if !root.declarations.iter().any(|(_, found)| found == MC) {
+        root.declarations.push((Some("mc".to_owned()), MC.to_owned()));
+    }
+
+    let already = root.attribute(Some(MC), "Ignorable").unwrap_or_default().to_owned();
+    if already.split_whitespace().any(|name| name == prefix) {
+        return;
+    }
+    let listed = if already.is_empty() { prefix.to_owned() } else { format!("{already} {prefix}") };
+    root.set_namespaced_attribute("mc:Ignorable", MC, &listed);
+}
+
 /// Turns a table from the model into an element ready to insert.
 #[must_use]
 pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {

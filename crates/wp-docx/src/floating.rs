@@ -395,6 +395,13 @@ impl Document {
 
     /// Sets where the drawing at one place floats, or puts it back in the line.
     pub fn set_anchor_at(&mut self, at: TextPosition, anchor: Option<&Anchor>) -> bool {
+        // A size or a place stated as a percentage is written with the 2010
+        // extension, which has to be declared and marked ignorable before
+        // anything under it is written. See [`edit::declare_extension`].
+        if anchor.is_some_and(anchor::needs_extension) {
+            edit::declare_extension(&mut self.tree_mut().root, anchor::WP14_PREFIX, anchor::WP14);
+        }
+
         // A shape is rebuilt from its model, which is what every other command
         // that changes one does.
         if let Some(mut shape) = self.shape_at(at) {
@@ -454,12 +461,25 @@ fn set_anchor_on(drawing: &mut Element, anchor: Option<&Anchor>, prefix: Option<
                 node.as_element()
                     .is_none_or(|child| !FLOATING_CHILDREN.contains(&child.local_name()))
             });
+            // The percentages the extension states are written again below, so
+            // the ones that were there go first: a drawing that is no longer a
+            // percentage of anything must not keep saying it is.
+            wrapper.children.retain(|node| {
+                node.as_element()
+                    .is_none_or(|child| !matches!(child.local_name(), "sizeRelH" | "sizeRelV"))
+            });
             anchor::write_anchor(anchor, wrapper, &namespace);
 
             // The wrap goes after the extent and before the name, which is
             // where the schema puts it. `write_anchor` has just put the
             // positions on the end, so the wrap goes after them.
             wrapper.push_element(anchor::wrap_element(anchor, &namespace));
+            // And the 2010 extension goes at the very end, after the graphic,
+            // which is where Word writes it. `reorder` leaves what it does not
+            // name where it found it, so pushing it last is enough.
+            for element in anchor::relative_size_elements(anchor) {
+                wrapper.push_element(element);
+            }
             reorder(wrapper);
         }
         None => {

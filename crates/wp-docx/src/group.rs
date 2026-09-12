@@ -557,12 +557,14 @@ fn grouped_anchor(anchor: Option<Anchor>, across: i64, down: i64, depth: u32) ->
     let was_across = match anchor.horizontal {
         Placement::Offset(distance) => distance,
         // A drawing lined up with an edge and then moved is no longer lined up
-        // with it, so the alignment gives way to a distance.
-        Placement::Aligned(_) => 0,
+        // with it, so the alignment gives way to a distance. A share of a
+        // frame gives way for the same reason: the group is a rectangle now,
+        // and where it sits in it is a distance.
+        Placement::Aligned(_) | Placement::Percent(_) => 0,
     };
     let was_down = match anchor.vertical {
         Placement::Offset(distance) => distance,
-        Placement::Aligned(_) => 0,
+        Placement::Aligned(_) | Placement::Percent(_) => 0,
     };
     anchor.horizontal = Placement::Offset(was_across + across);
     anchor.vertical = Placement::Offset(was_down + down);

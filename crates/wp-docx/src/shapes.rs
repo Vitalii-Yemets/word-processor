@@ -274,6 +274,10 @@ pub fn shape_element(shape: &Shape, prefix: Option<&str>) -> Element {
     if let Some(anchor) = &shape.anchor {
         inline.push_element(crate::anchor::wrap_element(anchor, WP));
     }
+    // The 2010 extension goes last of all, after the graphic — pushed here and
+    // moved to the end below, where the graphic is added.
+    let relative =
+        shape.anchor.as_ref().map(crate::anchor::relative_size_elements).unwrap_or_default();
 
     let mut visible = Element::new("wp:docPr", Some(WP));
     visible.set_attribute("id", "1");
@@ -290,6 +294,9 @@ pub fn shape_element(shape: &Shape, prefix: Option<&str>) -> Element {
     data.push_element(word_shape(shape, prefix));
     graphic.push_element(data);
     inline.push_element(graphic);
+    for element in relative {
+        inline.push_element(element);
+    }
 
     drawing.push_element(inline);
     drawing

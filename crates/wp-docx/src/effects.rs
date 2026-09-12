@@ -243,24 +243,10 @@ fn solid_color(hex: &str, prefix: &str, alpha: Option<&str>) -> Element {
 
 /// Declares the extension namespace on the root, and says it may be ignored.
 ///
-/// Without the second half a strict reader stops at an element it does not know
-/// instead of skipping it, and the document fails to open in exactly the reader
-/// this was supposed to be safe in.
+/// The how of it is [`crate::edit::declare_extension`], which every extension
+/// this program writes goes through.
 pub(crate) fn declare_namespace(root: &mut Element) {
-    if !root.declarations.iter().any(|(_, uri)| uri == W14) {
-        root.declarations.push((Some(W14_PREFIX.to_owned()), W14.to_owned()));
-    }
-    if !root.declarations.iter().any(|(_, uri)| uri == MC) {
-        root.declarations.push((Some("mc".to_owned()), MC.to_owned()));
-    }
-
-    let already = root.attribute(Some(MC), "Ignorable").unwrap_or_default().to_owned();
-    if already.split_whitespace().any(|name| name == W14_PREFIX) {
-        return;
-    }
-    let listed =
-        if already.is_empty() { W14_PREFIX.to_owned() } else { format!("{already} {W14_PREFIX}") };
-    root.set_namespaced_attribute("mc:Ignorable", MC, &listed);
+    crate::edit::declare_extension(root, W14_PREFIX, W14);
 }
 
 #[cfg(test)]

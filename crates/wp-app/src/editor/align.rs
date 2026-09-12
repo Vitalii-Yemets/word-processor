@@ -284,11 +284,17 @@ fn moved(anchor: Option<Anchor>, dx: f32, dy: f32, depth: u32) -> Anchor {
     let emu = |points: f32| (f64::from(points) * EMU_PER_POINT as f64) as i64;
     let across = match anchor.horizontal {
         Placement::Offset(distance) => distance,
-        Placement::Aligned(_) => 0,
+        // A share of a frame gives way too: what a drag or an Align hands
+        // over is a distance, and the drawing is no longer a share of
+        // anything.
+        Placement::Aligned(_) | Placement::Percent(_) => 0,
     };
     let down = match anchor.vertical {
         Placement::Offset(distance) => distance,
-        Placement::Aligned(_) => 0,
+        // A share of a frame gives way too: what a drag or an Align hands
+        // over is a distance, and the drawing is no longer a share of
+        // anything.
+        Placement::Aligned(_) | Placement::Percent(_) => 0,
     };
     anchor.horizontal = Placement::Offset(across + emu(dx));
     anchor.vertical = Placement::Offset(down + emu(dy));

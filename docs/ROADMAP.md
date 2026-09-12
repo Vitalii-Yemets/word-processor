@@ -1700,14 +1700,26 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Not done:* Relative position and Relative width — **C44**. Move object with
   text, Allow overlap and Lock anchor — **C46**.
 
-- [ ] **C44. Position and size as percentages.** Word's Relative position and
+- [x] **C44. Position and size as percentages.** Word's Relative position and
   Relative width in the Layout dialog, which measure a drawing's place and its
   width as a percentage of the page, the margin or the column rather than in
   inches. Written as `wp14:pctPosHOffset` and `wp14:sizeRelH` — the 2010
-  extensions, which live inside `mc:AlternateContent` beside the plain values so
-  that a reader that knows neither still sees a drawing. So this is the
-  extension mechanism as much as the two numbers: reading a choice of markup and
-  writing both halves of it.
+  extensions.
+  *Done:* all four — the width and the height as a share of a frame, and the
+  place along each axis as one. Read, written, laid out and in the dialog: a
+  picture at half the page width is half of whatever the page is, which is the
+  whole point of stating it that way, because the absolute size written beside it
+  was right for the paper the document was last saved on.
+  The extension markup is not `mc:AlternateContent` after all — Word writes the
+  plain values and the extension side by side, and marks the extension's prefix
+  ignorable so that a reader which does not know it passes over it. Both halves
+  of that are now one helper, and the text effects **C22** wrote its own copy of
+  are now through the same one.
+  A share of a frame is a third kind of place, beside a distance and an
+  alignment, so the box beside the list shows per cent under a per cent sign
+  rather than inches under an inch mark. Dragging a drawing or aligning it gives
+  the share up, as it already gave up an alignment: what a drag hands over is a
+  distance.
 
 - [x] **C45. Text down both sides of a drawing.** `wrapText="bothSides"`, which
   is what Word writes unless told otherwise: a line beside a drawing is broken
