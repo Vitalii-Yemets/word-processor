@@ -83,6 +83,15 @@ function U16([int]$value) { return ,[System.BitConverter]::GetBytes([uint16]$val
 function U32([int]$value) { return ,[System.BitConverter]::GetBytes([uint32]$value) }
 function I32([int]$value) { return ,[System.BitConverter]::GetBytes([int32]$value) }
 
+# Writes the bytes to a file and says so, without reading it back. For the one
+# form GDI+ cannot read: a picture cut into tiles. What proves that one is the
+# same picture in strips, which GDI+ does read — see the tests.
+function Save-Unread($name, $bytes, $why) {
+    $path = Join-Path $fixtures $name
+    [System.IO.File]::WriteAllBytes($path, $bytes)
+    Write-Output ("  {0}  {1} bytes (not read back: {2})" -f $name, $bytes.Length, $why)
+}
+
 # Writes the bytes to a file, reads them back through GDI+, and records what
 # GDI+ says is at each point.
 function Save-Raw($name, $bytes, $points, $tolerance = 0) {
@@ -529,6 +538,227 @@ $progressive.AddRange((Jpeg-End))
 $progressive.AddRange([byte[]]@(0xFF, 0xD9))
 
 Save-Raw 'progressive.jpg' $progressive.ToArray() @(@(0, 0), @(3, 3), @(7, 7), @(5, 2)) 2
+
+# --- TIFFs -------------------------------------------------------------------
+#
+# GDI+ writes TIFF in several compressions and reads more forms than it writes.
+# The ones it writes are saved through it; the rest are assembled here and read
+# back through it, the same way the bitmaps and the GIFs above are.
+
+# Builds a little-endian TIFF. Each tag is a hashtable of Tag, Kind and Values;
+# values too long for the four bytes of an entry are written after the directory
+# and the entry says where they went. The pixels may be in one strip or several,
+# which is what a picture with one channel to a strip needs.
+function Tiff-Build($tags, $pixels, $strips, $blockTags) {
+    $sizes = @{ 1 = 1; 2 = 1; 3 = 2; 4 = 4 }
+    if ($null -eq $strips) { $strips = @($pixels.Count) }
+    # Where the blocks are and how long they are. A picture cut into strips
+    # says so under one pair of tags and one cut into tiles under another; the
+    # arithmetic is the same either way.
+    if ($null -eq $blockTags) { $blockTags = @(273, 279) }
+    $entries = @($tags | Sort-Object { $_.Tag })
+
+    $count = $entries.Count + 2
+    $directory = 8
+    $afterEntries = $directory + 2 + $count * 12 + 4
+
+    # Where each entry's values go, for the ones too long to sit in the entry.
+    # The two strip tags are among them when there is more than one strip.
+    $spill = New-Object System.Collections.Generic.List[byte]
+    $places = @{}
+    $longer = @($entries)
+    if ($strips.Count -gt 1) {
+        $longer = $longer + @(
+            @{ Tag = $blockTags[0]; Kind = 4; Values = $strips },
+            @{ Tag = $blockTags[1]; Kind = 4; Values = $strips }
+        )
+        $longer = @($longer | Sort-Object { $_.Tag })
+    }
+    foreach ($entry in $longer) {
+        $width = $sizes[[int]$entry.Kind]
+        if ($width * $entry.Values.Count -gt 4) {
+            $places[$entry.Tag] = $afterEntries + $spill.Count
+            foreach ($value in $entry.Values) {
+                switch ($width) {
+                    1 { $spill.Add([byte]$value) }
+                    2 { $spill.AddRange((U16 $value)) }
+                    4 { $spill.AddRange((U32 $value)) }
+                }
+            }
+        }
+    }
+
+    # Where each strip begins, now that everything before them is placed.
+    $pixelsAt = $afterEntries + $spill.Count
+    $offsets = @()
+    $at = $pixelsAt
+    foreach ($length in $strips) { $offsets += $at; $at += $length }
+
+    # The two strip tags were spilled with the lengths standing in for the
+    # offsets, so the offsets are written over them now they are known.
+    if ($strips.Count -gt 1) {
+        $where = $places[$blockTags[0]] - $afterEntries
+        foreach ($offset in $offsets) {
+            foreach ($byte in (U32 $offset)) { $spill[$where] = $byte; $where++ }
+        }
+    }
+
+    $all = @($entries) + @(
+        @{ Tag = $blockTags[0]; Kind = 4; Values = $offsets },
+        @{ Tag = $blockTags[1]; Kind = 4; Values = $strips }
+    )
+    $all = @($all | Sort-Object { $_.Tag })
+
+    $out = New-Object System.Collections.Generic.List[byte]
+    $out.AddRange([byte[]]@(0x49, 0x49, 0x2A, 0x00))
+    $out.AddRange((U32 $directory))
+    $out.AddRange((U16 $all.Count))
+
+    foreach ($entry in $all) {
+        $width = $sizes[[int]$entry.Kind]
+        $out.AddRange((U16 $entry.Tag))
+        $out.AddRange((U16 $entry.Kind))
+        $out.AddRange((U32 $entry.Values.Count))
+        if ($width * $entry.Values.Count -gt 4) {
+            $out.AddRange((U32 $places[$entry.Tag]))
+        } else {
+            # A value shorter than the field sits at the front of it.
+            $field = New-Object System.Collections.Generic.List[byte]
+            foreach ($value in $entry.Values) {
+                switch ($width) {
+                    1 { $field.Add([byte]$value) }
+                    2 { $field.AddRange((U16 $value)) }
+                    4 { $field.AddRange((U32 $value)) }
+                }
+            }
+            while ($field.Count -lt 4) { $field.Add(0) }
+            $out.AddRange($field)
+        }
+    }
+    $out.AddRange((U32 0))
+    $out.AddRange($spill)
+    $out.AddRange([byte[]]$pixels)
+    return ,$out
+}
+
+# What GDI+ writes: the same square uncompressed, in LZW, and in runs.
+$codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/tiff' }
+foreach ($kind in @(
+    @{ Name = 'none.tif'; Value = [System.Drawing.Imaging.EncoderValue]::CompressionNone },
+    @{ Name = 'lzw.tif'; Value = [System.Drawing.Imaging.EncoderValue]::CompressionLZW },
+    @{ Name = 'packbits.tif'; Value = [System.Drawing.Imaging.EncoderValue]::CompressionRle }
+)) {
+    $parameters = New-Object System.Drawing.Imaging.EncoderParameters 1
+    $parameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter (
+        [System.Drawing.Imaging.Encoder]::Compression), ([int]$kind.Value)
+    $path = Join-Path $fixtures $kind.Name
+    $square.Save($path, $codec, $parameters)
+
+    $check = New-Object System.Drawing.Bitmap $path
+    foreach ($point in $corners) {
+        $c = $check.GetPixel($point[0], $point[1])
+        $manifest.Add("$($kind.Name) $($check.Width) $($check.Height) $($point[0]) $($point[1]) $($c.R) $($c.G) $($c.B) $($c.A) 0")
+    }
+    $check.Dispose()
+    Write-Output ("  {0}  {1} bytes" -f $kind.Name, (Get-Item $path).Length)
+}
+
+# Each sample as its difference from the one to its left, which is what the
+# predictor means. Uncompressed, so the predictor is the only thing proved.
+$differences = New-Object System.Collections.Generic.List[byte]
+for ($y = 0; $y -lt 4; $y++) {
+    $previous = @(0, 0, 0)
+    for ($x = 0; $x -lt 4; $x++) {
+        $c = $colours[($x + $y) % 4]
+        $now = @([int]$c.R, [int]$c.G, [int]$c.B)
+        for ($channel = 0; $channel -lt 3; $channel++) {
+            $differences.Add([byte]((($now[$channel] - $previous[$channel]) % 256 + 256) % 256))
+        }
+        $previous = $now
+    }
+}
+$predicted = Tiff-Build @(
+    @{ Tag = 256; Kind = 3; Values = @(4) },
+    @{ Tag = 257; Kind = 3; Values = @(4) },
+    @{ Tag = 258; Kind = 3; Values = @(8, 8, 8) },
+    @{ Tag = 259; Kind = 3; Values = @(1) },
+    @{ Tag = 262; Kind = 3; Values = @(2) },
+    @{ Tag = 277; Kind = 3; Values = @(3) },
+    @{ Tag = 278; Kind = 3; Values = @(4) },
+    @{ Tag = 317; Kind = 3; Values = @(2) }
+) $differences.ToArray() $null $null
+Save-Unread 'predictor.tif' $predicted.ToArray() 'GDI+ does not undo the predictor'
+
+# A palette, which a TIFF writes as every red, then every green, then every
+# blue, all at sixteen bits — and four bits to the pixel.
+$map = New-Object System.Collections.Generic.List[int]
+foreach ($channel in @('R', 'G', 'B')) {
+    foreach ($c in $colours) { $map.Add([int]$c.$channel * 257) }
+    for ($i = 4; $i -lt 16; $i++) { $map.Add(0) }
+}
+$indices = New-Object System.Collections.Generic.List[byte]
+for ($y = 0; $y -lt 4; $y++) {
+    for ($x = 0; $x -lt 4; $x += 2) {
+        $high = ($x + $y) % 4
+        $low = ($x + 1 + $y) % 4
+        $indices.Add([byte](($high -shl 4) -bor $low))
+    }
+}
+$paletted = Tiff-Build @(
+    @{ Tag = 256; Kind = 3; Values = @(4) },
+    @{ Tag = 257; Kind = 3; Values = @(4) },
+    @{ Tag = 258; Kind = 3; Values = @(4) },
+    @{ Tag = 259; Kind = 3; Values = @(1) },
+    @{ Tag = 262; Kind = 3; Values = @(3) },
+    @{ Tag = 277; Kind = 3; Values = @(1) },
+    @{ Tag = 278; Kind = 3; Values = @(4) },
+    @{ Tag = 320; Kind = 3; Values = $map.ToArray() }
+) $indices.ToArray() $null $null
+Save-Raw 'palette.tif' $paletted.ToArray() $corners
+
+# One channel at a time, each in a strip of its own.
+$planes = New-Object System.Collections.Generic.List[byte]
+foreach ($channel in @('R', 'G', 'B')) {
+    for ($y = 0; $y -lt 4; $y++) {
+        for ($x = 0; $x -lt 4; $x++) {
+            $planes.Add([byte]$colours[($x + $y) % 4].$channel)
+        }
+    }
+}
+$planar = Tiff-Build @(
+    @{ Tag = 256; Kind = 3; Values = @(4) },
+    @{ Tag = 257; Kind = 3; Values = @(4) },
+    @{ Tag = 258; Kind = 3; Values = @(8, 8, 8) },
+    @{ Tag = 259; Kind = 3; Values = @(1) },
+    @{ Tag = 262; Kind = 3; Values = @(2) },
+    @{ Tag = 277; Kind = 3; Values = @(3) },
+    @{ Tag = 278; Kind = 3; Values = @(4) },
+    @{ Tag = 284; Kind = 3; Values = @(2) }
+) $planes.ToArray() @(16, 16, 16) $null
+Save-Raw 'planar.tif' $planar.ToArray() $corners
+
+# Four tiles of two by two, which is the other way a picture can be cut up.
+# A tile is padded out to its own size whether or not the picture fills it.
+$tiles = New-Object System.Collections.Generic.List[byte]
+foreach ($tile in @(@(0, 0), @(2, 0), @(0, 2), @(2, 2))) {
+    for ($row = 0; $row -lt 2; $row++) {
+        for ($column = 0; $column -lt 2; $column++) {
+            $c = $colours[(($tile[0] + $column) + ($tile[1] + $row)) % 4]
+            $tiles.AddRange([byte[]]@($c.R, $c.G, $c.B))
+        }
+    }
+}
+$tiled = Tiff-Build @(
+    @{ Tag = 256; Kind = 3; Values = @(4) },
+    @{ Tag = 257; Kind = 3; Values = @(4) },
+    @{ Tag = 258; Kind = 3; Values = @(8, 8, 8) },
+    @{ Tag = 259; Kind = 3; Values = @(1) },
+    @{ Tag = 262; Kind = 3; Values = @(2) },
+    @{ Tag = 277; Kind = 3; Values = @(3) },
+    @{ Tag = 322; Kind = 3; Values = @(2) },
+    @{ Tag = 323; Kind = 3; Values = @(2) }
+) $tiles.ToArray() @(12, 12, 12, 12) @(324, 325)
+Save-Unread 'tiled.tif' $tiled.ToArray() 'GDI+ does not read tiles'
 
 Set-Content -Path (Join-Path $fixtures 'manifest.txt') -Value $manifest -Encoding ascii
 Write-Output "wrote $($manifest.Count) sample points to $fixtures"

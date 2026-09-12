@@ -1,7 +1,8 @@
 //! Decoding the image formats a document can carry.
 //!
 //! A `.docx` embeds its pictures as ordinary files inside the package, most
-//! often PNG or JPEG and, in anything old enough, a Windows bitmap or a GIF.
+//! often PNG or JPEG and, in anything old enough, a Windows bitmap, a GIF or a
+//! scan in TIFF.
 //! None can be shown without being decoded, so the decoders are here — written
 //! against the specifications rather than taken from a library, like everything
 //! else in this project.
@@ -19,6 +20,7 @@ pub mod bmp;
 pub mod gif;
 pub mod jpeg;
 pub mod png;
+pub mod tiff;
 
 /// A decoded picture: eight-bit RGBA, top row first.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,6 +92,7 @@ pub enum Format {
     Jpeg,
     Bmp,
     Gif,
+    Tiff,
 }
 
 impl Format {
@@ -105,6 +108,11 @@ impl Format {
         }
         if data.starts_with(&gif::SIGNATURE_87) || data.starts_with(&gif::SIGNATURE_89) {
             return Some(Self::Gif);
+        }
+        // Two letters saying which way round the numbers are, and then the
+        // number forty-two either way round.
+        if data.starts_with(&tiff::LITTLE) || data.starts_with(&tiff::BIG) {
+            return Some(Self::Tiff);
         }
         // Two letters and nothing else, which is as much as a bitmap says
         // about itself. The header after them is checked by the decoder.
@@ -122,6 +130,7 @@ pub fn decode(data: &[u8]) -> Result<Image, Error> {
         Some(Format::Jpeg) => jpeg::decode(data),
         Some(Format::Bmp) => bmp::decode(data),
         Some(Format::Gif) => gif::decode(data),
+        Some(Format::Tiff) => tiff::decode(data),
         None => Err(Error::UnknownFormat),
     }
 }
@@ -168,6 +177,14 @@ mod tests {
         assert_eq!(Format::detect(b"GIF87a and the rest"), Some(Format::Gif));
         assert_eq!(Format::detect(b"GIF89a and the rest"), Some(Format::Gif));
         assert_eq!(Format::detect(b"GIF99a"), None);
+    }
+
+    #[test]
+    fn a_tiff_is_recognised_either_way_round() {
+        assert_eq!(Format::detect(b"II\x2A\x00 and the rest"), Some(Format::Tiff));
+        assert_eq!(Format::detect(b"MM\x00\x2A and the rest"), Some(Format::Tiff));
+        // The letters without the forty-two after them are not a picture.
+        assert_eq!(Format::detect(b"II\x00\x00"), None);
     }
 
     #[test]

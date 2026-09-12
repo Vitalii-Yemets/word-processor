@@ -1650,12 +1650,39 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Not done:* arithmetic coding, which almost nothing produces, and the lossless
   and hierarchical modes, which nothing does. All three say so.
 
-- [ ] **D9. TIFF.** The tag directory, strips and tiles, the compressions a
-  document carries — none, PackBits, LZW, deflate, and the two CCITT fax codings
-  — the photometric interpretations, the predictors, and planar configuration.
-  The largest of the four by a distance, which is why it is last.
-  *Done when:* it decodes to the same pixels as an independent decoder, on
-  fixtures made the way **D1**'s were.
+- [x] **D9. TIFF.** The tag directory, strips and tiles, the compressions a
+  document carries, the photometric interpretations, the predictors, and planar
+  configuration. The largest of the four by a distance, which is why it was
+  last — and why the two fax codings came out of it into **D10**: they are a
+  coding of their own, they belong to scanned pages, and nothing else in TIFF
+  depends on them.
+  *Done:* the directory, either way round the numbers are written; strips and
+  tiles, which are the same thing at two sizes; one channel to a block or all of
+  them together; one, two, four, eight and sixteen bits a sample; no
+  compression, PackBits, LZW in the variant TIFF uses — packed the other way up
+  from GIF's and growing a code early — and deflate under both of the numbers
+  the format has given it; grey either way round, colour, a palette, and ink;
+  the horizontal predictor; and a sample past the ones the colour needs, read as
+  transparency when the file says that is what it is.
+  Seven fixtures. Five are held to GDI+'s own reading. The other two are the
+  forms GDI+ will not read back: a picture cut into **tiles**, which its codec
+  does not do at all, and one with a **predictor**, which it hands back
+  undone — each is held instead to the same picture in a form GDI+ does read, so
+  a decoder that put the tiles in the wrong order or ignored the predictor would
+  still be caught.
+  *Not done:* the pages after the first — a TIFF may hold a whole scanned
+  document, and a document shows one picture; `YCbCr` and the subsampling that
+  goes with it, which is JPEG's colour model carried in a TIFF and is rare
+  outside scanners; and strips that are whole JPEGs.
+
+- [ ] **D10. The fax codings.** CCITT modified Huffman, Group 3 in its one- and
+  two-dimensional forms, and Group 4 — the codings a scanned page is written in,
+  inside a TIFF and nowhere else a document carries.
+  A coding of its own: run lengths of black and white through code tables, and
+  for the two-dimensional forms each row written as its differences from the row
+  above. Nothing in **D9** depends on it, which is why it is here.
+  *Done when:* a scanned page in each of the three decodes to the same pixels as
+  an independent decoder. GDI+ writes all three, so the fixtures come from it.
 - [ ] **D2. WMF and EMF.** The metafile formats Word documents still carry:
   a record interpreter drawing through the rasterizer.
 - [ ] **D3. The rest of DrawingML.** The preset shape geometries that are not

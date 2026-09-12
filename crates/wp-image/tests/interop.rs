@@ -106,6 +106,50 @@ fn a_progressive_picture_is_among_the_fixtures() {
 }
 
 #[test]
+fn every_form_of_tiff_is_among_the_fixtures() {
+    let names: Vec<String> = read_manifest().into_iter().map(|sample| sample.name).collect();
+    for wanted in [
+        "none.tif",     // Written by GDI+, uncompressed.
+        "lzw.tif",      // And in LZW, which is a real compressor's stream.
+        "packbits.tif", // And in runs.
+        "palette.tif",  // Numbers into a palette, four bits each.
+        "planar.tif",   // One channel at a time, each in a strip of its own.
+    ] {
+        assert!(names.iter().any(|name| name == wanted), "{wanted} is not among the fixtures");
+    }
+}
+
+#[test]
+fn a_picture_with_a_predictor_is_the_same_picture_as_one_without() {
+    // GDI+ hands back the differences rather than undoing them, so there is no
+    // outside reading of this one to compare against either. What there is is
+    // the same picture written without a predictor, which GDI+ does read — and
+    // a decoder that ignored the tag, or added up the wrong neighbour, would
+    // not come out with the same picture.
+    let predicted = std::fs::read(fixtures_dir().join("predictor.tif")).expect("the fixture");
+    let plain = std::fs::read(fixtures_dir().join("none.tif")).expect("the strip fixture");
+
+    let predicted = decode(&predicted).expect("a picture with a predictor");
+    let plain = decode(&plain).expect("a picture without one");
+    assert_eq!(predicted.pixels, plain.pixels, "the differences were not added back up");
+}
+
+#[test]
+fn a_picture_in_tiles_is_the_same_picture_as_one_in_strips() {
+    // The one form GDI+ will not read, so there is no outside reading of it to
+    // compare against. What there is instead is the same picture in strips,
+    // which GDI+ does read and which the manifest holds to it — so if the tiles
+    // are put back in the wrong order, this says so.
+    let tiled = std::fs::read(fixtures_dir().join("tiled.tif")).expect("the tiled fixture");
+    let stripped = std::fs::read(fixtures_dir().join("none.tif")).expect("the strip fixture");
+
+    let tiled = decode(&tiled).expect("a picture in tiles");
+    let stripped = decode(&stripped).expect("a picture in strips");
+    assert_eq!((tiled.width, tiled.height), (stripped.width, stripped.height));
+    assert_eq!(tiled.pixels, stripped.pixels, "the tiles are not where they belong");
+}
+
+#[test]
 fn the_fixtures_are_there() {
     let samples = read_manifest();
     assert!(
@@ -157,6 +201,7 @@ fn each_fixture_is_recognised_from_its_own_bytes() {
             Some("png") => Format::Png,
             Some("bmp") => Format::Bmp,
             Some("gif") => Format::Gif,
+            Some("tif") => Format::Tiff,
             _ => Format::Jpeg,
         };
         assert_eq!(Format::detect(&bytes), Some(wanted), "{}", sample.name);
