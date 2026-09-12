@@ -1772,13 +1772,27 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Not done:* **Lock anchor** is kept and written now, so it survives a
   document, but it has nothing here to stop. See **C47**.
 
-- [ ] **C47. Where a dragged drawing belongs afterwards.** Word re-anchors a
+- [x] **C47. Where a dragged drawing belongs afterwards.** Word re-anchors a
   drawing to the paragraph it is dropped nearest, unless Lock anchor says
   otherwise — which is what makes a picture dragged down three pages stay there
-  when the text above it grows, and what the lock is for. Dragging here moves a
-  drawing by a distance and leaves its anchor where it was, so a drawing dragged
-  far from its paragraph is still tied to it and comes back on the next edit.
-  The two halves are one item: the re-anchoring, and the lock that refuses it.
+  when the text above it grows, and what the lock is for. Dragging moved a
+  drawing by a distance and left its anchor where it was, so a drawing dragged
+  far from its paragraph was still tied to it and came back on the next edit.
+  *Done:* both halves. When a drag of the body ends, each drawing it moved is
+  re-hung on the paragraph its own top is nearest, and the distance it hangs at
+  is worked out afresh from where it is drawn — so the paragraph changes
+  underneath it and nothing else does. A locked anchor is left alone, which is
+  the whole of what the lock does and what **C46** had nothing to stop.
+  The drawing's element is moved rather than rebuilt, as a table's is: out of
+  the run that held it, into a run of its own at the end of the paragraph it
+  landed by, so everything about it this program does not understand goes with
+  it. The run it came out of goes too when it held nothing else.
+  *Not done:* Word will re-hang a drawing on a paragraph inside a table cell,
+  and a drawing dropped over one here keeps the paragraph it had: a drawing in a
+  cell is a different thing from a drawing beside it, and moving it there is not
+  the same operation. The distance is measured from a frame of "paragraph" or
+  "line"; from the page or the margin the distance says the same thing wherever
+  the drawing hangs from, so nothing is recomputed.
 
 - [x] **C42. A double click takes the space after the word.** Found while
   proving **C41**: Word's double click selects the word *and* the space that

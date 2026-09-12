@@ -33,7 +33,7 @@
 //! anchors it, exactly as Word's does. Resizing one does not: a picture in the
 //! line stays in the line however big it is made.
 
-use wp_docx::anchor::{Anchor, Placement, Wrap};
+use wp_docx::anchor::{Anchor, Placement, Relative, Wrap};
 use wp_docx::floating::Turned;
 use wp_docx::shapes::EMU_PER_POINT;
 use wp_docx::TextPosition;
@@ -672,10 +672,104 @@ impl Editor {
 
     /// Lets go at the end of a drag.
     pub(super) fn release_shape(&mut self) {
-        if self.shape_drag.take().is_some() {
+        if let Some(drag) = self.shape_drag.take() {
+            // A drawing dropped somewhere else hangs from the paragraph it was
+            // dropped nearest, which is Word's rule and what keeps it where it
+            // was put. See [`Editor::reanchor`].
+            if drag.grip == Grip::Body {
+                self.reanchor(&drag);
+            }
             self.document.end_gesture();
             self.update_title();
         }
+    }
+
+    /// Re-hangs the dragged drawings on the paragraphs they were dropped
+    /// nearest.
+    ///
+    /// # Why a drawing changes paragraph at all
+    ///
+    /// Because a floating drawing hangs from one, and that is what it moves
+    /// with. A picture dragged three pages down and still tied to where it came
+    /// from follows that paragraph about: a line added above it moves the
+    /// picture, and it comes back to where it started on the next edit. Word
+    /// re-hangs it, and only Lock anchor stops that — which is what the lock is
+    /// for.
+    ///
+    /// The drawing does not move on the page: the distance it hangs at is
+    /// worked out afresh from where it is drawn now, so the paragraph changes
+    /// underneath it and nothing else does.
+    fn reanchor(&mut self, drag: &ShapeDrag) {
+        // Where each of them is drawn now, and what it hangs from.
+        let mut held: Vec<(TextPosition, Anchor)> = Vec::new();
+        for one in &drag.held {
+            let Some(anchor) = self.document.anchor_at(one.at) else { continue };
+            // A locked anchor is one the person has said to leave alone.
+            if anchor.locked {
+                continue;
+            }
+            held.push((one.at, anchor));
+        }
+
+        for (at, anchor) in held {
+            let Some(drawn) = self.drawings_facing().into_iter().find(|found| found.at == at)
+            else {
+                continue;
+            };
+            let Some((paragraph, line_top)) = self.paragraph_under(drawn.page, drawn.top) else {
+                continue;
+            };
+            if paragraph == at.paragraph {
+                continue;
+            }
+
+            // How far below that paragraph's first line the drawing is drawn.
+            // Only the frames that mean "from where the text is" are measured
+            // that way; from the page or the margin, the distance says the same
+            // thing whichever paragraph the drawing hangs from.
+            let anchor = match anchor.vertical_from {
+                Relative::Paragraph | Relative::Line => {
+                    let scale = self.pixels_per_inch() / 72.0;
+                    if scale <= 0.0 {
+                        continue;
+                    }
+                    let down = (drawn.top - line_top) / scale;
+                    Anchor { vertical: Placement::Offset(points_to_emu(down)), ..anchor }
+                }
+                _ => anchor,
+            };
+
+            let Some(moved_to) = self.document.move_drawing_to(at, paragraph) else { continue };
+            self.document.set_anchor_at(moved_to, Some(&anchor));
+        }
+        self.relayout();
+    }
+
+    /// Which paragraph a point down a page belongs to, and where that
+    /// paragraph's first line sits on the screen.
+    ///
+    /// The paragraph whose own band the point is in, or the nearest one above
+    /// it: a drawing dropped in the white space under the text hangs from the
+    /// last paragraph, which is what Word does with it.
+    fn paragraph_under(&self, page: usize, top: f32) -> Option<(usize, f32)> {
+        let (_, origin_y) = self.page_origin(page);
+        let up = self.content_top() + origin_y - self.scroll_down();
+        let lines = &self.pages.get(page)?.lines;
+
+        let mut best: Option<(usize, f32)> = None;
+        for line in lines {
+            let at = up + line.top();
+            let nearer = best.is_none_or(|(_, found)| (at - top).abs() < (found - top).abs());
+            if nearer {
+                best = Some((line.paragraph, at));
+            }
+        }
+        // The first line of whichever paragraph that was: a drawing hangs from
+        // the paragraph, and the paragraph begins where its first line does.
+        let (paragraph, _) = best?;
+        let first =
+            lines.iter().find(|line| line.paragraph == paragraph).map(|line| up + line.top())?;
+        Some((paragraph, first))
     }
 
     /// Whether a drawing is being dragged.
@@ -795,6 +889,103 @@ mod tests {
         let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
         let (fx, fy) = grip.at();
         ((drawing.left + drawing.width * fx) as i32, (drawing.top + drawing.height * fy) as i32)
+    }
+
+    /// An editor whose document is several paragraphs with the drawing hanging
+    /// from the first, so that a drag has somewhere to take it.
+    fn editor_with_paragraphs() -> Editor {
+        let mut body = Body::default();
+        for text in ["First paragraph", "Second paragraph", "Third paragraph"] {
+            body.blocks.push(Block::Paragraph(Paragraph::text(text)));
+        }
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+
+        let shape = wp_docx::shapes::Shape {
+            name: "Box".to_owned(),
+            width_emu: 457_200,
+            height_emu: 228_600,
+            fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+            anchor: Some(Anchor { wrap: Wrap::Square, ..Anchor::default() }),
+            ..wp_docx::shapes::Shape::default()
+        };
+        editor.document.set_caret(TextPosition::new(0, 0));
+        assert!(editor.document.insert_shape(&shape), "the shape went nowhere");
+        editor.relayout();
+        editor
+    }
+
+    #[test]
+    fn a_drawing_dragged_down_the_page_hangs_from_the_paragraph_it_landed_by() {
+        // Word's rule, and what keeps a picture where it was put: one still
+        // tied to the paragraph it came from follows that paragraph about.
+        let mut editor = editor_with_paragraphs();
+        let before = editor.drawings_facing().first().copied().expect("a drawing");
+        assert_eq!(before.at.paragraph, 0, "it should start on the first paragraph");
+
+        let (x, y) = middle(&editor);
+        editor.press_on_shape(x, y, false);
+        // Down to the third paragraph, whose first line the layout knows.
+        let third = editor.pages[0]
+            .lines
+            .iter()
+            .find(|line| line.paragraph == 2)
+            .expect("the third paragraph is on the page")
+            .clone();
+        let (_, origin_y) = editor.page_origin(0);
+        let up = editor.content_top() + origin_y - editor.scroll_down();
+        let wanted = (up + third.baseline) as i32;
+        editor.drag_shape(x, wanted);
+        editor.release_shape();
+        editor.relayout();
+
+        let after = editor.drawings_facing().first().copied().expect("a drawing");
+        assert_ne!(
+            after.at.paragraph, 0,
+            "the drawing is still hanging from the paragraph it came from"
+        );
+        // And it has not moved on the page: the paragraph changed underneath it
+        // and nothing else did.
+        assert!(
+            (after.top - (up + third.top())).abs() < 12.0,
+            "it jumped: {} against {}",
+            after.top,
+            up + third.top()
+        );
+    }
+
+    #[test]
+    fn a_locked_anchor_keeps_the_paragraph_it_hangs_from() {
+        let mut editor = editor_with_paragraphs();
+        let at = editor.drawings_facing().first().copied().expect("a drawing").at;
+        let anchor = Anchor { locked: true, ..editor.document.anchor_at(at).expect("an anchor") };
+        assert!(editor.document.set_anchor_at(at, Some(&anchor)));
+        editor.relayout();
+
+        let (x, y) = middle(&editor);
+        editor.press_on_shape(x, y, false);
+        editor.drag_shape(x, y + 120);
+        editor.release_shape();
+        editor.relayout();
+
+        let after = editor.drawings_facing().first().copied().expect("a drawing");
+        assert_eq!(after.at.paragraph, 0, "a locked anchor was moved anyway");
+    }
+
+    #[test]
+    fn a_drawing_dragged_a_little_stays_where_it_hangs() {
+        // The paragraph it was dropped nearest is the one it came from, so
+        // nothing about the document's shape changes.
+        let mut editor = editor_with_paragraphs();
+        let (x, y) = middle(&editor);
+        editor.press_on_shape(x, y, false);
+        editor.drag_shape(x + 20, y + 4);
+        editor.release_shape();
+
+        let after = editor.drawings_facing().first().copied().expect("a drawing");
+        assert_eq!(after.at.paragraph, 0, "a small drag moved the anchor");
     }
 
     #[test]

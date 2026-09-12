@@ -23,7 +23,7 @@
 //! [`Document::anchor_here`] and [`Document::set_anchor_here`] answer for both,
 //! so the commands above them stopped having to ask.
 
-use wp_xml::tree::Element;
+use wp_xml::tree::{Element, Node};
 
 use crate::anchor::{self, Anchor};
 use crate::history::EditKind;
@@ -391,6 +391,59 @@ impl Document {
     pub fn set_anchor_here(&mut self, anchor: Option<&Anchor>) -> bool {
         let Some(at) = self.drawing_place_here() else { return false };
         self.set_anchor_at(at, anchor)
+    }
+
+    /// Moves the drawing at one place into another paragraph, and says where it
+    /// has landed.
+    ///
+    /// # Why a drawing moves between paragraphs at all
+    ///
+    /// Because a floating drawing hangs from a paragraph, and Word re-hangs it
+    /// on the paragraph it is dropped nearest. A picture dragged three pages
+    /// down and still tied to where it came from would follow that paragraph
+    /// about: add a line above it and the picture moves, which is not what
+    /// anybody who dropped it three pages down meant. The drawing's own place
+    /// on the page is the caller's business — it has just worked out where the
+    /// drawing looks like it is. See [`crate::editor`]'s handles.
+    ///
+    /// Answers `None` and changes nothing when the two paragraphs do not live
+    /// in the same parent: a drawing dropped over a table cell would have to
+    /// become a drawing inside that cell, which is a different thing from
+    /// moving it and is not done here.
+    pub fn move_drawing_to(&mut self, at: TextPosition, paragraph: usize) -> Option<TextPosition> {
+        if at.paragraph == paragraph {
+            return None;
+        }
+        let root = &self.tree().root;
+        let here = position::paragraph_path(root, at.paragraph)?;
+        let there = position::paragraph_path(root, paragraph)?;
+        let (_, from_parent) = here.split_last()?;
+        let (_, to_parent) = there.split_last()?;
+        if from_parent != to_parent {
+            return None;
+        }
+
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+
+        // Out of the paragraph it was in, taking the run with it when the run
+        // held nothing else: an empty run left behind is an empty run saved.
+        let source = edit::element_at_path_mut(&mut self.tree_mut().root, &here)?;
+        let taken = take_drawing(source, at.offset)?;
+
+        // And into the other one, as a run of its own at the end.
+        let there = position::paragraph_path(&self.tree().root, paragraph)?;
+        let target = edit::element_at_path_mut(&mut self.tree_mut().root, &there)?;
+        let mut run = Element::new(&edit::name_with(prefix.as_deref(), "r"), Some(read::W));
+        run.push_element(taken);
+        target.push_element(run);
+
+        self.mark_modified();
+        // Appended at the end, so it stands after everything the paragraph
+        // holds: the offset is the length of what is there.
+        let offset = self.paragraph_text(paragraph).map_or(0, |text| text.len());
+        Some(TextPosition::new(paragraph, offset.saturating_sub(1)))
     }
 
     /// Sets where the drawing at one place floats, or puts it back in the line.
@@ -773,4 +826,68 @@ fn find_blip(element: &Element) -> Option<String> {
         }
     }
     element.child_elements().find_map(find_blip)
+}
+
+/// Takes the drawing at an offset out of a paragraph, and the run with it if
+/// the run held nothing else.
+fn take_drawing(paragraph: &mut Element, wanted: usize) -> Option<Element> {
+    let mut offset = 0usize;
+    let mut taken = None;
+    lift_drawing(paragraph, &mut offset, wanted, &mut taken);
+    taken
+}
+
+/// Walks a paragraph counting what the editor counts, and lifts one drawing
+/// out of it.
+fn lift_drawing(
+    element: &mut Element,
+    offset: &mut usize,
+    wanted: usize,
+    taken: &mut Option<Element>,
+) {
+    let mut at = 0usize;
+    while at < element.children.len() {
+        let Some(child) = element.children[at].as_element_mut() else {
+            at += 1;
+            continue;
+        };
+        let is = |local: &str| {
+            child.namespace.as_deref() == Some(read::W) && child.local_name() == local
+        };
+        if is("drawing") {
+            if *offset == wanted && taken.is_none() {
+                let Node::Element(found) = element.children.remove(at) else { return };
+                *taken = Some(found);
+                // The run that held it is worth nothing without it, unless it
+                // holds something else as well.
+                if element.namespace.as_deref() == Some(read::W)
+                    && element.local_name() == "r"
+                    && element.child_elements().all(|left| left.local_name() == "rPr")
+                {
+                    element.children.clear();
+                }
+                return;
+            }
+            *offset += 1;
+            at += 1;
+            continue;
+        }
+        if is("t") {
+            *offset += child.text_content().len();
+            at += 1;
+            continue;
+        }
+        lift_drawing(child, offset, wanted, taken);
+        if taken.is_some() {
+            // An empty run is dropped on the way back out.
+            if child.namespace.as_deref() == Some(read::W)
+                && child.local_name() == "r"
+                && child.children.is_empty()
+            {
+                element.children.remove(at);
+            }
+            return;
+        }
+        at += 1;
+    }
 }
