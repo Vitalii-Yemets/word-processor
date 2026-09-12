@@ -188,6 +188,18 @@ pub enum Preset {
     /// The cloud on its own, which is a basic shape rather than a callout: the
     /// same ring of bumps without the bubbles leading to a point.
     Cloud,
+
+    // Word's lines and connectors. These are open: what is drawn is the line
+    // itself rather than anything it encloses. See [`crate::connectors`].
+    StraightConnector,
+    BentConnector2,
+    BentConnector3,
+    BentConnector4,
+    BentConnector5,
+    CurvedConnector2,
+    CurvedConnector3,
+    CurvedConnector4,
+    CurvedConnector5,
 }
 
 /// Every preset this program draws: the name the format knows it by, and the
@@ -317,7 +329,19 @@ const NAMED: &[(Preset, &str, &str)] = &[
     (Preset::HorizontalScroll, "horizontalScroll", "Horizontal Scroll"),
     (Preset::Wave, "wave", "Wave"),
     (Preset::DoubleWave, "doubleWave", "Double Wave"),
+    // Word's Lines: the line itself and the nine connectors. What tells one
+    // gallery entry from another there is often the arrowheads rather than the
+    // shape, and those belong to the line. See [`wp_docx::lines`].
     (Preset::Line, "line", "Line"),
+    (Preset::StraightConnector, "straightConnector1", "Connector: Straight"),
+    (Preset::BentConnector2, "bentConnector2", "Connector: Elbow, One Bend"),
+    (Preset::BentConnector3, "bentConnector3", "Connector: Elbow"),
+    (Preset::BentConnector4, "bentConnector4", "Connector: Elbow, Three Bends"),
+    (Preset::BentConnector5, "bentConnector5", "Connector: Elbow, Four Bends"),
+    (Preset::CurvedConnector2, "curvedConnector2", "Connector: Curved, One Bend"),
+    (Preset::CurvedConnector3, "curvedConnector3", "Connector: Curved"),
+    (Preset::CurvedConnector4, "curvedConnector4", "Connector: Curved, Three Bends"),
+    (Preset::CurvedConnector5, "curvedConnector5", "Connector: Curved, Four Bends"),
     // The callouts, in the order Word's gallery shows them: the bubbles, then
     // the leader lines in their four families.
     (Preset::Callout, "wedgeRectCallout", "Speech Bubble: Rectangular"),
@@ -440,11 +464,25 @@ impl Preset {
 
     /// Whether the shape encloses an area that text could sit in.
     ///
-    /// A line does not, which is why a line never carries text and never has a
-    /// fill.
+    /// A line does not, and neither does a connector: what is drawn is the line
+    /// itself rather than anything it encloses, which is why these never carry
+    /// text, never have a fill, and are drawn by laying a band along them
+    /// rather than round them.
     #[must_use]
     pub fn is_closed(self) -> bool {
-        self != Self::Line
+        !matches!(
+            self,
+            Self::Line
+                | Self::StraightConnector
+                | Self::BentConnector2
+                | Self::BentConnector3
+                | Self::BentConnector4
+                | Self::BentConnector5
+                | Self::CurvedConnector2
+                | Self::CurvedConnector3
+                | Self::CurvedConnector4
+                | Self::CurvedConnector5
+        )
     }
 
     /// Every preset that can be picked, in the order the gallery shows them.
@@ -553,7 +591,16 @@ impl Adjusts {
 #[must_use]
 pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, height: f32) -> Path {
     let mut path = Path::new();
-    if width <= 0.0 || height <= 0.0 {
+    // A closed shape with a side of nothing has no area and draws nothing. A
+    // line is not like that: one with no height is a level line and one with no
+    // width is an upright one, and only one with neither draws nothing. A
+    // connector between two shapes side by side is exactly that level line.
+    let nothing = if preset.is_closed() {
+        width <= 0.0 || height <= 0.0
+    } else {
+        width == 0.0 && height == 0.0
+    };
+    if nothing {
         return path;
     }
     let (left, top, right, bottom) = (x, y, x + width, y + height);
@@ -578,6 +625,11 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
     // And the callouts, which are the shapes that point at something outside
     // themselves. See [`crate::callouts`].
     if let Some(shape) = crate::callouts::path_in(preset, adjusts, left, top, right, bottom) {
+        return shape;
+    }
+    // And the lines and connectors, which are the shapes that enclose nothing
+    // at all. See [`crate::connectors`].
+    if let Some(shape) = crate::connectors::path_in(preset, adjusts, left, top, right, bottom) {
         return shape;
     }
 
@@ -955,10 +1007,6 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
             path.cubic_to(point(right, top), point(right, top + height * 0.60), point(cx, bottom));
             path.close();
         }
-        Preset::Line => {
-            path.move_to(point(left, top));
-            path.line_to(point(right, bottom));
-        }
         // The block arrows answered above, before this match was reached: they
         // are in a file of their own. Naming them here would be naming them
         // twice, and the one thing worse than a shape in no list is a shape in
@@ -990,8 +1038,10 @@ pub fn outline_in(
     weight: f32,
 ) -> Path {
     let weight = weight.max(0.5);
-    if preset == Preset::Line {
-        return thick_line(x, y, x + width, y + height, weight);
+    // An open shape has no inside, so its line is laid *along* it rather than
+    // round it: the band round nothing is nothing.
+    if !preset.is_closed() {
+        return thick_path(&path_in(preset, adjusts, x, y, width, height), weight);
     }
 
     // A shape whose line does not go round its edge is drawn with its lines
@@ -1210,6 +1260,84 @@ fn band(path: &mut Path, cx: f32, cy: f32, rx: f32, ry: f32, from: f32, to: f32,
         path.line_to(inner(to + (from - to) * step as f32 / steps as f32));
     }
     path.close();
+}
+
+/// The band that draws an open shape: a rectangle laid along every piece of it,
+/// and a square at every turn.
+///
+/// The squares are what keeps a corner from opening up: two bands meeting at an
+/// angle cover everything but a notch on the outside of it, and a line drawn
+/// with notches in it is a line drawn wrong. They are square rather than round
+/// because that is the join the format falls back on.
+fn thick_path(path: &Path, weight: f32) -> Path {
+    let mut band = Path::new();
+    for run in flattened(path) {
+        for pair in run.windows(2) {
+            let piece = thick_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, weight);
+            band.commands.extend_from_slice(&piece.commands);
+        }
+        for turn in run.iter().take(run.len().saturating_sub(1)).skip(1) {
+            // Laid down the same way the pieces are, and not as a square of its
+            // own: by the nonzero rule a patch wound against what it sits on
+            // cancels it, and the line would come out dashed at every turn --
+            // which for a curve, whose every step is a turn, is a dashed line.
+            let half = weight / 2.0;
+            let patch = thick_line(turn.x - half, turn.y, turn.x + half, turn.y, weight);
+            band.commands.extend_from_slice(&patch.commands);
+        }
+    }
+    band
+}
+
+/// A path as the runs of straight pieces it amounts to.
+///
+/// Curves are walked in steps, because a band cannot be laid along a curve any
+/// other way. One run per contour: a shape of several contours gives several.
+fn flattened(path: &Path) -> Vec<Vec<Point>> {
+    use wp_raster::Command;
+
+    let mut runs: Vec<Vec<Point>> = Vec::new();
+    let mut run: Vec<Point> = Vec::new();
+    let mut at = Point::new(0.0, 0.0);
+    for command in &path.commands {
+        match *command {
+            Command::MoveTo(to) => {
+                if run.len() > 1 {
+                    runs.push(std::mem::take(&mut run));
+                } else {
+                    run.clear();
+                }
+                run.push(to);
+                at = to;
+            }
+            Command::LineTo(to) => {
+                run.push(to);
+                at = to;
+            }
+            Command::QuadTo(control, to) => {
+                for step in 1..=CURVE_STEPS {
+                    run.push(quadratic(at, control, to, step as f32 / CURVE_STEPS as f32));
+                }
+                at = to;
+            }
+            Command::CubicTo(first, second, to) => {
+                for step in 1..=CURVE_STEPS {
+                    run.push(cubic(at, first, second, to, step as f32 / CURVE_STEPS as f32));
+                }
+                at = to;
+            }
+            Command::Close => {
+                if let Some(first) = run.first().copied() {
+                    run.push(first);
+                    at = first;
+                }
+            }
+        }
+    }
+    if run.len() > 1 {
+        runs.push(run);
+    }
+    runs
 }
 
 /// A rectangle drawn along a line, which is how a line is given a width.
@@ -1584,8 +1712,26 @@ mod tests {
     #[test]
     fn a_box_of_no_size_draws_nothing() {
         for preset in Preset::all() {
-            assert!(path_in(preset, 0.0, 0.0, 0.0, 50.0).points().next().is_none());
-            assert!(path_in(preset, 0.0, 0.0, 50.0, -1.0).points().next().is_none());
+            if preset.is_closed() {
+                assert!(
+                    path_in(preset, 0.0, 0.0, 0.0, 50.0).points().next().is_none(),
+                    "{preset:?}"
+                );
+                assert!(
+                    path_in(preset, 0.0, 0.0, 50.0, -1.0).points().next().is_none(),
+                    "{preset:?}"
+                );
+            } else {
+                // A line with no length, and a line that is only level.
+                assert!(
+                    path_in(preset, 0.0, 0.0, 0.0, 0.0).points().next().is_none(),
+                    "{preset:?}"
+                );
+                assert!(
+                    path_in(preset, 0.0, 0.0, 100.0, 0.0).points().next().is_some(),
+                    "{preset:?}"
+                );
+            }
         }
     }
 
@@ -1615,16 +1761,40 @@ mod tests {
     }
 
     #[test]
-    fn a_line_is_drawn_as_a_band_along_itself() {
-        let outline = outline_in(Preset::Line, 0.0, 0.0, 100.0, 0.0, 4.0);
-        let (_, top, _, bottom) = bounds(&outline);
-        assert!((bottom - top - 4.0).abs() < 0.01, "the band is {} thick", bottom - top);
+    fn every_open_shape_is_drawn_as_a_band_along_itself() {
+        // A level line of no height: whatever bends the connector has, they are
+        // all on the same line, so the band it is drawn with is the width it
+        // was asked for and nothing else.
+        for preset in Preset::all() {
+            if preset.is_closed() {
+                continue;
+            }
+            let outline = outline_in(preset, 0.0, 0.0, 100.0, 0.0, 4.0);
+            let (_, top, _, bottom) = bounds(&outline);
+            assert!(
+                (bottom - top - 4.0).abs() < 0.01,
+                "{} is drawn {} thick",
+                preset.label(),
+                bottom - top
+            );
+        }
     }
 
     #[test]
-    fn only_a_line_is_open() {
+    fn the_shapes_that_enclose_nothing_are_the_lines_and_the_connectors() {
+        // Asked the other way round from the way the code answers it, so that a
+        // shape added to the list of open ones and nowhere else is caught: a
+        // shape that encloses nothing is a line or a connector, and its name
+        // says which.
         for preset in Preset::all() {
-            assert_eq!(preset.is_closed(), preset != Preset::Line, "{}", preset.label());
+            if preset.is_closed() {
+                continue;
+            }
+            assert!(
+                preset == Preset::Line || preset.label().starts_with("Connector"),
+                "{} encloses nothing and is neither a line nor a connector",
+                preset.label()
+            );
         }
     }
 
@@ -1777,7 +1947,7 @@ mod gallery_tests {
             Preset::SwooshArrow,
         ];
         for preset in Preset::all() {
-            if preset == Preset::Line || hollow.contains(&preset) {
+            if !preset.is_closed() || hollow.contains(&preset) {
                 continue;
             }
             let canvas = drawn(preset, 40);
@@ -2109,6 +2279,13 @@ mod gallery_tests {
     #[test]
     fn a_box_of_nothing_draws_nothing() {
         for preset in Preset::all() {
+            // A shape that encloses nothing is not caught by a side of
+            // nothing: a line with no height is a level line. It draws nothing
+            // only when it has no length at all.
+            if !preset.is_closed() {
+                assert!(path_in(preset, 0.0, 0.0, 0.0, 0.0).is_empty(), "{preset:?}");
+                continue;
+            }
             assert!(path_in(preset, 0.0, 0.0, 0.0, 10.0).is_empty(), "{preset:?}");
             assert!(path_in(preset, 0.0, 0.0, 10.0, 0.0).is_empty(), "{preset:?}");
         }

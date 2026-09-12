@@ -968,6 +968,76 @@ impl Editor {
                     .collect();
                 self.shape_grid(&shapes, 6);
             }
+            // The lines and connectors, each with an arrowhead on its tail, and
+            // then one line drawn with each of the six things the format can
+            // put at the end of one.
+            "connectors" => {
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                use wp_docx::lines::{EndKind, LineEnd};
+                use wp_layout::geometry::Preset;
+
+                let lines: Vec<Preset> =
+                    Preset::all().into_iter().filter(|preset| !preset.is_closed()).collect();
+                let ends = [
+                    EndKind::None,
+                    EndKind::Triangle,
+                    EndKind::Stealth,
+                    EndKind::Diamond,
+                    EndKind::Oval,
+                    EndKind::Arrow,
+                ];
+                let cells: Vec<(Preset, EndKind)> = lines
+                    .iter()
+                    .map(|preset| (*preset, EndKind::Triangle))
+                    .chain(ends.into_iter().map(|kind| (Preset::StraightConnector, kind)))
+                    .collect();
+
+                const CELL: i64 = 914_400;
+                let across = 4usize;
+                let rows = cells.len().div_ceil(across) as i64;
+                let sheet = wp_docx::shapes::Shape {
+                    name: "Sheet".to_owned(),
+                    preset: "rect".to_owned(),
+                    width_emu: across as i64 * CELL,
+                    height_emu: rows * CELL,
+                    fill: wp_docx::fills::Fill::Solid("FFFFFF".to_owned()),
+                    outline: None,
+                    anchor: Some(Anchor {
+                        wrap: Wrap::None,
+                        horizontal: Placement::Offset(0),
+                        vertical: Placement::Offset(0),
+                        ..Anchor::default()
+                    }),
+                    ..wp_docx::shapes::Shape::default()
+                };
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.insert_shape(&sheet);
+
+                for (index, (preset, kind)) in cells.iter().enumerate() {
+                    let shape = wp_docx::shapes::Shape {
+                        name: preset.label().to_owned(),
+                        preset: preset.word().to_owned(),
+                        width_emu: 685_800,
+                        height_emu: 457_200,
+                        // A line has no inside, so it has no fill and is drawn
+                        // thick enough to see what is at the end of it.
+                        fill: wp_docx::fills::Fill::None,
+                        outline: Some("1F3864".to_owned()),
+                        outline_emu: 28_575,
+                        tail_end: LineEnd { kind: *kind, ..LineEnd::default() },
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset((index % across) as i64 * CELL + 114_300),
+                            vertical: Placement::Offset((index / across) as i64 * CELL + 228_600),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+                self.relayout();
+            }
             // The callouts: the four bubbles and the twelve with a leader. A
             // callout is drawn partly outside its own box, so these are given
             // more room than the other scenes give a shape.

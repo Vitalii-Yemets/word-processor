@@ -31,6 +31,7 @@ mod banners;
 mod borders;
 mod callouts;
 pub mod charting;
+pub mod connectors;
 mod device;
 mod flowchart;
 pub mod geometry;

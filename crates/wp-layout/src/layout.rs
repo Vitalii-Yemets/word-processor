@@ -548,6 +548,10 @@ pub struct PlacedShape {
     pub outline: Option<Color>,
     /// How thick the line round it is, in pixels.
     pub outline_weight: f32,
+    /// What is drawn at the two ends of that line: the arrowheads of a
+    /// connector. See [`wp_docx::lines`].
+    pub head_end: wp_docx::lines::LineEnd,
+    pub tail_end: wp_docx::lines::LineEnd,
     /// The shadow under it, from the document theme, and how far it falls in
     /// pixels. See [`wp_docx::theme::Effect`].
     pub shadow: Option<(Color, f32)>,
@@ -3691,6 +3695,8 @@ impl<'a> LayoutEngine<'a> {
             height,
             preset: crate::geometry::Preset::from_word(&shape.preset),
             adjusts: crate::geometry::Adjusts::from_pairs(&shape.adjusts),
+            head_end: shape.head_end,
+            tail_end: shape.tail_end,
             fill: crate::paint::Paint::of(&shape.fill),
             outline: shape.outline.as_deref().and_then(Color::from_hex),
             outline_weight: (shape.outline_points() * scale).max(1.0),
@@ -3795,6 +3801,8 @@ impl<'a> LayoutEngine<'a> {
                         height: member_height,
                         preset: crate::geometry::Preset::from_word(&shape.preset),
                         adjusts: crate::geometry::Adjusts::from_pairs(&shape.adjusts),
+                        head_end: shape.head_end,
+                        tail_end: shape.tail_end,
                         fill: crate::paint::Paint::of(&shape.fill),
                         outline: shape.outline.as_deref().and_then(Color::from_hex),
                         outline_weight: (shape.outline_points() * scale).max(1.0),
@@ -4945,6 +4953,8 @@ impl LayoutEngine<'_> {
                     height: *height,
                     preset: crate::geometry::Preset::from_word(&shape.preset),
                     adjusts: crate::geometry::Adjusts::from_pairs(&shape.adjusts),
+                    head_end: shape.head_end,
+                    tail_end: shape.tail_end,
                     fill: crate::paint::Paint::of(&shape.fill),
                     outline: shape.outline.as_deref().and_then(Color::from_hex),
                     outline_weight: (shape.outline_points() * self.pixels_per_point()).max(1.0),

@@ -62,6 +62,7 @@ pub mod gallery;
 pub mod group;
 mod history;
 pub mod languages;
+pub mod lines;
 pub mod links;
 pub mod math;
 pub mod merge;

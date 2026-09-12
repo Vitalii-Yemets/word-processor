@@ -427,6 +427,27 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
                     shape.outline_weight,
                 ));
                 canvas.fill_path(&path, outline);
+
+                // And what is drawn at the ends of that line. They are worked
+                // out from the shape and turned with it, so an arrow on a
+                // drawing stood on its side still points along its own line.
+                let along = crate::geometry::path_in(
+                    shape.preset,
+                    &shape.adjusts,
+                    x,
+                    y,
+                    shape.width,
+                    shape.height,
+                );
+                for (tip, end) in [
+                    (crate::connectors::LineTip::Head, shape.head_end),
+                    (crate::connectors::LineTip::Tail, shape.tail_end),
+                ] {
+                    let head = crate::connectors::arrowhead(&along, tip, end, shape.outline_weight);
+                    if !head.is_empty() {
+                        canvas.fill_path(&turned(head), outline);
+                    }
+                }
             }
         }
     }

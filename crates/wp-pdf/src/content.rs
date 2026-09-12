@@ -157,6 +157,26 @@ fn write_drawing(
                     shape.outline_weight,
                 );
                 fill(out, &path, colour, height, drawing);
+
+                // And the arrowheads, which are drawn with the same line.
+                let along = wp_layout::geometry::path_in(
+                    shape.preset,
+                    &shape.adjusts,
+                    shape.x,
+                    shape.y,
+                    shape.width,
+                    shape.height,
+                );
+                for (tip, end) in [
+                    (wp_layout::connectors::LineTip::Head, shape.head_end),
+                    (wp_layout::connectors::LineTip::Tail, shape.tail_end),
+                ] {
+                    let head =
+                        wp_layout::connectors::arrowhead(&along, tip, end, shape.outline_weight);
+                    if !head.is_empty() {
+                        fill(out, &head, colour, height, drawing);
+                    }
+                }
             }
         }
     }

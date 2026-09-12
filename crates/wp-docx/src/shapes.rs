@@ -54,6 +54,11 @@ pub struct Shape {
     /// The colour of the line round it, and how thick that line is.
     pub outline: Option<String>,
     pub outline_emu: i64,
+    /// What is drawn at the two ends of that line, which is what makes a
+    /// connector an arrow. Nothing at either end for every shape that is not a
+    /// line. See [`crate::lines`].
+    pub head_end: crate::lines::LineEnd,
+    pub tail_end: crate::lines::LineEnd,
     /// The paragraphs inside, which is what makes a shape a text box.
     pub text: Vec<Paragraph>,
     /// What the shape is called, which is what the selection pane would list.
@@ -86,6 +91,8 @@ impl Default for Shape {
             fill: crate::fills::Fill::None,
             outline: None,
             outline_emu: 0,
+            head_end: crate::lines::LineEnd::default(),
+            tail_end: crate::lines::LineEnd::default(),
             text: Vec::new(),
             name: "Shape".to_owned(),
             anchor: None,
@@ -256,6 +263,8 @@ pub fn read_shape(drawing: &Element) -> Option<Shape> {
     if let Some(line) = properties.and_then(|properties| child(properties, "ln")) {
         shape.outline_emu = line.attribute_by_name("w").and_then(|w| w.parse().ok()).unwrap_or(0);
         shape.outline = solid_color(line);
+        shape.head_end = crate::lines::read_end(line, "headEnd");
+        shape.tail_end = crate::lines::read_end(line, "tailEnd");
         // A line saying nothing about its colour is still a line: Word draws it
         // in the theme's, and black is nearer that than nothing at all.
         if shape.outline.is_none() && child(line, "noFill").is_none() {
@@ -386,6 +395,14 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     match &shape.outline {
         Some(colour) => line.push_element(solid(colour)),
         None => line.push_element(Element::new("a:noFill", Some(A))),
+    }
+    // The ends come after the fill of the line, which is the order the schema
+    // asks for: a document whose elements are in the wrong order is a document
+    // Word will not open at all.
+    for (name, end) in [("a:headEnd", shape.head_end), ("a:tailEnd", shape.tail_end)] {
+        if let Some(element) = crate::lines::end_element(name, end) {
+            line.push_element(element);
+        }
     }
     properties.push_element(line);
     wsp.push_element(properties);

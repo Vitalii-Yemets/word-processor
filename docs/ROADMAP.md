@@ -2093,11 +2093,38 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   would sit outside it. A shape is measured by the points its path names, so
   that would read as a shape drawn outside its own box.
 
-- [ ] **D18. Lines and connectors.** The straight, elbow and curved connectors,
-  their arrowheads at either end, and the routing that keeps an elbow out of the
-  shapes it joins.
-  *Done when:* two shapes joined by each kind of connector stay joined when
-  either is moved.
+- [x] **D18. Lines and connectors: the shapes and their ends.** The line, the
+  straight connector, the four elbows and the four curved ones; and the six
+  things the format can draw at either end of a line — the triangle, the
+  stealth, the diamond, the oval and the open arrow, or nothing.
+  *Done when:* each is drawn, and an arrowhead points the way its own leg goes.
+  Until now a document's connectors drew as **rectangles**: the preset was not
+  one this program knew, and an unknown preset is drawn as a box of the right
+  size in the right place. A page of a flowchart came out as a page of blue
+  boxes over the shapes it joined.
+  These are the first shapes here that enclose nothing. A closed shape is drawn
+  by the band between it and a copy of itself inset all round; a line has no
+  inside for that, so it is drawn by laying a band *along* it, with a patch at
+  every turn. The patch is laid down the same way the pieces are and not as a
+  square of its own: by the nonzero rule a patch wound against what it sits on
+  cancels it, and the line comes out dashed at every turn — which for a curve,
+  whose every step is a turn, is a dashed line. The first attempt did exactly
+  that.
+  A box of no size draws nothing, but that is a rule about area: a line with no
+  height is a level line and one with no width is upright. Only a line with
+  neither draws nothing — and a connector between two shapes standing side by
+  side is exactly that level line.
+  An arrowhead belongs to the *line* and not to the shape, which is why the
+  format puts it inside `a:ln` beside the colour and the width, and why Word's
+  gallery offers "Line", "Line Arrow" and "Line Arrow Double" as three things to
+  insert that all insert the same shape. Which way one points comes from the
+  line itself — the first two places its path names for the head, the last two
+  for the tail — so an arrow on a bent connector points along its own last leg
+  rather than along the diagonal of its box.
+  *Not done:* the gallery here offers the shapes and not Word's three entries
+  per shape, because an entry that sets an arrowhead is an entry that carries
+  more than a preset name. And the half of this item about staying joined is
+  **D22**.
 
 - [x] **D19. Callouts.** The sixteen the format has: the rectangular, rounded
   and oval bubbles and the cloud; and the twelve line callouts, which are three
@@ -2175,6 +2202,17 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   theirs, as the arithmetic behind each is worked out.
   *Done when:* dragging a handle changes the shape and writes a value Word
   reads back as the same shape.
+
+- [ ] **D22. Connectors that stay joined.** `wps:cNvCnPr` with `a:stCxn` and
+  `a:endCxn`: which drawing each end of a connector is fastened to, and at which
+  of that shape's connection points. Read them; give every drawing the id the
+  file knows it by, so an end can name one; work out where each preset puts its
+  connection points; and place a joined connector from the two points it is
+  fastened to rather than from the box it was saved with. Then write that box
+  back when a drawing moves, so the file says what the screen shows. And the
+  routing that keeps an elbow out of the shapes at either end of it.
+  *Done when:* two shapes joined by each kind of connector stay joined when
+  either is moved, and Word opens the saved file with them still joined.
 
 ## E — The rest of the text engine
 
