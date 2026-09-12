@@ -255,24 +255,76 @@ impl Editor {
 }
 
 /// Where the word round an offset starts and ends.
+///
+/// # Why the space after it is part of it
+///
+/// Because that is what Word selects, and because of what follows from it: a
+/// word taken this way and cut leaves one space behind rather than two, and
+/// pasted somewhere else it arrives with the space it needs. The rule is the
+/// same one [`sentence_around`] already follows a level up — the space after a
+/// sentence belongs to it — and it is why deleting a word by double-clicking it
+/// does not leave the sentence with a gap in it.
+///
+/// A point in the space between two words takes that space, and a point on
+/// punctuation takes the run of punctuation: a double click that selects
+/// nothing at all looks broken, and Word selects the run of whatever kind of
+/// character is under it.
 #[must_use]
 fn word_around(text: &str, offset: usize) -> (usize, usize) {
-    let letters = |character: char| character.is_alphanumeric() || character == '\'';
     let offset = offset.min(text.len());
+    let letters = |character: char| character.is_alphanumeric() || character == '\'';
+    let spaces = |character: char| character == ' ' || character == '\t';
+
+    // Which kind of character the point is on. The one *before* it where the
+    // point is at the end of the text or between two kinds: a click at the end
+    // of a word is a click on that word, which is the rule a caret follows too.
+    let here = text[offset..].chars().next();
+    let before = text[..offset].chars().next_back();
+    let kind = |character: Option<char>| match character {
+        Some(character) if letters(character) => 0u8,
+        Some(character) if spaces(character) => 1,
+        Some(_) => 2,
+        None => 3,
+    };
+    let wanted = match (kind(here), kind(before)) {
+        // On a letter, or at the end of one.
+        (0, _) => 0,
+        (_, 0) => 0,
+        // In the spaces, or in a run of punctuation.
+        (1, _) => 1,
+        (_, 1) if kind(here) == 3 => 1,
+        (2, _) | (_, 2) => 2,
+        _ => 3,
+    };
+    if wanted == 3 {
+        return (offset, offset);
+    }
+    let same = move |character: char| match wanted {
+        0 => letters(character),
+        1 => spaces(character),
+        _ => !letters(character) && !spaces(character),
+    };
 
     let start = text[..offset]
         .char_indices()
         .rev()
-        .take_while(|(_, character)| letters(*character))
+        .take_while(|(_, character)| same(*character))
         .map(|(at, _)| at)
         .last()
         .unwrap_or(offset);
-    let end = text[offset..]
+    let mut end = text[offset..]
         .char_indices()
-        .take_while(|(_, character)| letters(*character))
+        .take_while(|(_, character)| same(*character))
         .map(|(at, character)| offset + at + character.len_utf8())
         .last()
         .unwrap_or(offset);
+
+    // And the spaces after a word, which belong to it.
+    if wanted == 0 {
+        while end < text.len() && text[end..].starts_with(' ') {
+            end += 1;
+        }
+    }
     (start, end)
 }
 
@@ -345,30 +397,58 @@ mod tests {
     }
 
     #[test]
-    fn a_word_is_found_round_a_point_inside_it() {
-        assert_eq!(word_around("one two three", 5), (4, 7));
+    fn a_word_is_found_round_a_point_inside_it_with_the_space_after_it() {
+        // Word takes the space, and that is the point of it: the word cut this
+        // way leaves one space behind rather than two.
+        assert_eq!(word_around("one two three", 5), (4, 8));
+        assert_eq!(&"one two three"[4..8], "two ");
     }
+
     #[test]
     fn a_point_at_the_end_of_a_word_takes_that_word() {
         // Offset three is the end of "one" and the start of the space; a
         // person clicking there clicked on "one".
-        assert_eq!(word_around("one two", 3), (0, 3));
+        assert_eq!(word_around("one two", 3), (0, 4));
     }
 
     #[test]
-    fn a_point_in_the_space_between_words_takes_neither() {
-        assert_eq!(word_around("one  two", 4), (4, 4));
-    }
-
-    #[test]
-    fn a_word_at_the_start_and_at_the_end_are_both_found() {
-        assert_eq!(word_around("one two", 1), (0, 3));
+    fn the_last_word_of_a_line_has_no_space_to_take() {
         assert_eq!(word_around("one two", 6), (4, 7));
     }
 
     #[test]
+    fn a_point_in_the_space_between_words_takes_the_space() {
+        // Both of them: a double click that selects nothing looks broken, and
+        // Word takes the run of whatever is under it.
+        assert_eq!(word_around("one  two", 4), (3, 5));
+    }
+
+    #[test]
+    fn a_word_at_the_start_is_found_too() {
+        assert_eq!(word_around("one two", 1), (0, 4));
+    }
+
+    #[test]
     fn an_apostrophe_is_part_of_the_word_round_it() {
-        assert_eq!(word_around("it doesn't matter", 6), (3, 10));
+        assert_eq!(word_around("it doesn't matter", 6), (3, 11));
+        assert_eq!(&"it doesn't matter"[3..11], "doesn't ");
+    }
+
+    #[test]
+    fn a_point_on_punctuation_takes_the_punctuation() {
+        // A full stop is not a word and not a space, and a click on one takes
+        // the run of marks it is in — as Word does.
+        // Offset five is inside the dots; four is the boundary, and a click on
+        // a boundary takes the word behind it.
+        assert_eq!(word_around("Ends... and goes on", 5), (4, 7));
+        assert_eq!(word_around("Ends... and goes on", 4), (0, 4));
+    }
+
+    #[test]
+    fn a_word_with_a_full_stop_after_it_leaves_the_stop_alone() {
+        let text = "Ends here. And on";
+        let (start, end) = word_around(text, 6);
+        assert_eq!(&text[start..end], "here", "the full stop is not part of the word");
     }
 
     #[test]

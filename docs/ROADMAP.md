@@ -1681,13 +1681,28 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   `wrapSquare/@wrapText`; and Move object with text, Allow overlap and Lock
   anchor, which are three flags on `wp:anchor` that nothing yet reads.
 
-- [ ] **C42. A double click takes the space after the word.** Found while
+- [x] **C42. A double click takes the space after the word.** Found while
   proving **C41**: Word's double click selects the word *and* the space that
   follows it, which is what makes deleting a word leave one space rather than
-  two. Ours takes the word alone. The other half of the same rule is Word's
+  two. Ours took the word alone. The other half of the same rule is Word's
   "smart cut and paste", which puts a space back when a word is pasted between
   two others — so the two belong together and are one item rather than a
   one-line change to `word_around`.
+  *Done:* both halves, and they answer to one another. A double click takes the
+  word and the spaces after it, so a word cut that way leaves one space behind
+  and arrives somewhere else with the space it needs; a drag that began on a
+  double click goes on taking words the same way. A double click in the space
+  between two words now takes that space, and one on punctuation takes the run
+  of marks: a double click that selected nothing at all looked broken, and Word
+  takes the run of whatever kind of character is under it.
+  And a paste that lands against a letter is spaced from it — in front, behind,
+  or both — unless what was copied already ends or begins with a space, or is
+  whole paragraphs rather than words. The paste and the spaces it asked for are
+  one thing to take back, which is what the paste options need: choosing
+  another one takes the paste back and puts it down again.
+  *Not done:* Word's option to switch smart cut and paste off, which is in
+  Options > Advanced behind a Settings button of its own, along with adjusting
+  paragraph spacing on paste and adjusting table formatting on paste.
 
 ## D — Pictures and drawings
 

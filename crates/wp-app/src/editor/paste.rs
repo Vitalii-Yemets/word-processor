@@ -143,12 +143,69 @@ impl Editor {
         }
     }
 
+    /// Whether a space is needed in front of what is being pasted, and behind
+    /// it.
+    ///
+    /// # Word's smart cut and paste
+    ///
+    /// A word pasted between two words needs a space; a word cut with its own
+    /// space already has one. The two halves answer to one another — a double
+    /// click takes the space after a word, so a word cut that way arrives with
+    /// it and nothing is added here. See [`super::selecting`].
+    ///
+    /// Only for a piece that is word-like: no space at either end and no line
+    /// ending in it. Anything else is being pasted for its own shape — a
+    /// paragraph, a list, a sentence with its spaces — and adding to it would
+    /// be changing what was copied.
+    fn spacing_for_paste(&self, text: &str) -> (bool, bool) {
+        let word_like = !text.is_empty()
+            && !text.starts_with(char::is_whitespace)
+            && !text.ends_with(char::is_whitespace)
+            && !text.contains(['\n', '\r', '\t']);
+        if !word_like {
+            return (false, false);
+        }
+
+        // What the pasted piece will land between. Measured round the
+        // selection rather than round the caret: pasting over a selection puts
+        // the piece where that selection was, so its neighbours are the
+        // characters outside it.
+        let caret = self.document.caret();
+        let (start, end) = self.document.selection().unwrap_or((caret, caret));
+        let joins = |at: wp_docx::TextPosition, behind: bool| {
+            let Some(text) = self.document.paragraph_text(at.paragraph) else { return false };
+            let character = if behind {
+                text[..at.offset.min(text.len())].chars().next_back()
+            } else {
+                text[at.offset.min(text.len())..].chars().next()
+            };
+            character.is_some_and(char::is_alphanumeric)
+        };
+        (joins(start, true), joins(end, false))
+    }
+
     /// Puts the content down, and leaves the button at the end of it.
     pub(super) fn put_down(&mut self, text: &str, blocks: &[Block], how: PasteAs) -> Response {
+        if text.is_empty() && blocks.is_empty() {
+            return self.report("Nothing was pasted");
+        }
         // Nothing formatted to work with means there is only one thing that
         // can be done, whatever was asked for.
         let how = if blocks.is_empty() { PasteAs::TextOnly } else { how };
         let characters = text.chars().count();
+
+        // The spaces a word needs round it where it lands, worked out before
+        // anything moves. One gesture, so that a paste and the spaces it asked
+        // for are one thing to take back — and so that choosing another paste
+        // option, which takes the paste back, takes them back too.
+        let (space_before, space_after) = match how {
+            PasteAs::Picture => (false, false),
+            _ => self.spacing_for_paste(text),
+        };
+        self.document.begin_gesture();
+        if space_before {
+            self.document.type_text(" ");
+        }
 
         let changed = match how {
             PasteAs::KeepSource => self.document.paste_blocks_as(blocks, Formatting::Source),
@@ -156,6 +213,14 @@ impl Editor {
             PasteAs::Picture => self.paste_as_picture(blocks),
             PasteAs::TextOnly => self.document.paste(text),
         };
+        if changed && space_after {
+            // The caret goes back in front of the space, which is where Word
+            // leaves it: at the end of what was pasted.
+            self.document.type_text(" ");
+            self.document.caret_left(false);
+        }
+        self.document.end_gesture();
+
         if !changed {
             return self.report("Nothing was pasted");
         }
@@ -481,6 +546,97 @@ mod tests {
         let mut editor = Editor::new(library(), document, None);
         editor.handle(Event::Resized { width: 1400, height: 900 });
         editor
+    }
+
+    /// The words of the document, paragraph by paragraph.
+    fn text_of(editor: &Editor, paragraph: usize) -> String {
+        editor.document.paragraph_text(paragraph).unwrap_or_default()
+    }
+
+    #[test]
+    fn a_word_pasted_between_two_words_gets_the_spaces_it_needs() {
+        // Word's smart cut and paste. Without it, pasting "one" into the middle
+        // of "two three" gives "twoonethree".
+        let mut editor = editor();
+        editor.document.set_caret(TextPosition::new(1, 9));
+        assert_eq!(&text_of(&editor, 1)[..9], "Somewhere");
+
+        let blocks = vec![Block::Paragraph(Paragraph::text("here"))];
+        editor.put_down("here", &blocks, PasteAs::KeepSource);
+        assert_eq!(text_of(&editor, 1), "Somewhere here to put it");
+    }
+
+    #[test]
+    fn a_word_pasted_with_its_own_space_gets_no_second_one() {
+        // Which is the point of the pair: a word cut by double-clicking it
+        // comes with the space after it, and adding another would leave two.
+        let mut editor = editor();
+        editor.document.set_caret(TextPosition::new(1, 10));
+        let blocks = vec![Block::Paragraph(Paragraph::text("here "))];
+        editor.put_down("here ", &blocks, PasteAs::KeepSource);
+        assert_eq!(text_of(&editor, 1), "Somewhere here to put it");
+    }
+
+    #[test]
+    fn a_word_pasted_at_the_start_of_a_paragraph_gets_a_space_after_it_only() {
+        let mut editor = editor();
+        editor.document.set_caret(TextPosition::new(1, 0));
+        let blocks = vec![Block::Paragraph(Paragraph::text("Here"))];
+        editor.put_down("Here", &blocks, PasteAs::KeepSource);
+        assert_eq!(text_of(&editor, 1), "Here Somewhere to put it");
+    }
+
+    #[test]
+    fn a_phrase_pasted_against_a_word_is_spaced_from_it_too() {
+        // The rule is about where the join falls, not about how many words
+        // were copied: a phrase run straight into the word after it reads as
+        // one word, which is the thing being prevented.
+        let mut editor = editor();
+        editor.document.set_caret(TextPosition::new(1, 10));
+        let blocks = vec![Block::Paragraph(Paragraph::text("two words"))];
+        editor.put_down("two words", &blocks, PasteAs::KeepSource);
+        assert_eq!(text_of(&editor, 1), "Somewhere two words to put it");
+    }
+
+    #[test]
+    fn a_paste_of_whole_paragraphs_is_left_as_it_was_copied() {
+        // Something copied for its own shape rather than for its words: adding
+        // a space to it would be changing what was copied.
+        let mut editor = editor();
+        editor.document.set_caret(TextPosition::new(1, 9));
+        let blocks = vec![
+            Block::Paragraph(Paragraph::text("First")),
+            Block::Paragraph(Paragraph::text("Second")),
+        ];
+        editor.put_down("First\nSecond", &blocks, PasteAs::KeepSource);
+        assert_eq!(text_of(&editor, 1), "SomewhereFirst", "a space was added to a paragraph");
+    }
+
+    #[test]
+    fn the_spaces_and_the_paste_are_one_thing_to_take_back() {
+        let mut editor = editor();
+        let before = text_of(&editor, 1);
+        editor.document.set_caret(TextPosition::new(1, 9));
+        let blocks = vec![Block::Paragraph(Paragraph::text("here"))];
+        editor.put_down("here", &blocks, PasteAs::KeepSource);
+        assert_ne!(text_of(&editor, 1), before, "nothing was pasted");
+
+        assert!(editor.document.undo(), "there was nothing to undo");
+        assert_eq!(text_of(&editor, 1), before, "one undo left a space behind");
+    }
+
+    #[test]
+    fn a_word_pasted_over_a_selected_word_needs_no_spaces() {
+        // The word that was there had its own spaces round it, and they are
+        // still there: the piece lands between them.
+        let mut editor = editor();
+        editor.document.set_caret(TextPosition::new(1, 10));
+        editor.document.extend_selection_to(TextPosition::new(1, 12));
+        assert_eq!(&text_of(&editor, 1)[10..12], "to");
+
+        let blocks = vec![Block::Paragraph(Paragraph::text("beside"))];
+        editor.put_down("beside", &blocks, PasteAs::KeepSource);
+        assert_eq!(text_of(&editor, 1), "Somewhere beside put it");
     }
 
     #[test]
