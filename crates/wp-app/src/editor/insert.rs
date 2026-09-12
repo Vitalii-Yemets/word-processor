@@ -968,6 +968,17 @@ impl Editor {
                     .collect();
                 self.shape_grid(&shapes, 6);
             }
+            // And the stars and banners: the run of the gallery from the first
+            // explosion to the last wave.
+            "banners" => {
+                use wp_layout::geometry::Preset;
+                let shapes: Vec<Preset> = Preset::all()
+                    .into_iter()
+                    .skip_while(|preset| *preset != Preset::Explosion1)
+                    .take_while(|preset| *preset != Preset::Line)
+                    .collect();
+                self.shape_grid(&shapes, 5);
+            }
             "gallery" => {
                 // Every shape the program can draw, laid out in rows: the only
                 // way to look at the whole gallery at once and see which of

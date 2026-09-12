@@ -142,6 +142,29 @@ pub enum Preset {
     FlowMagneticDisk,
     FlowDirectStorage,
     FlowDisplay,
+
+    // Word's stars and banners. The stars differ in how many points they have
+    // and how far in the dips go; the rest are a banner of one shape or
+    // another. See [`crate::banners`].
+    Explosion1,
+    Explosion2,
+    Star4,
+    Star6,
+    Star7,
+    Star8,
+    Star10,
+    Star12,
+    Star16,
+    Star24,
+    Star32,
+    UpRibbon,
+    DownRibbon,
+    CurvedUpRibbon,
+    CurvedDownRibbon,
+    VerticalScroll,
+    HorizontalScroll,
+    Wave,
+    DoubleWave,
 }
 
 /// Every preset this program draws: the name the format knows it by, and the
@@ -172,7 +195,6 @@ const NAMED: &[(Preset, &str, &str)] = &[
     (Preset::Octagon, "octagon", "Octagon"),
     (Preset::Decagon, "decagon", "Decagon"),
     (Preset::Dodecagon, "dodecagon", "Dodecagon"),
-    (Preset::Star, "star5", "5-Point Star"),
     (Preset::Cross, "plus", "Cross"),
     (Preset::LShape, "lShape", "L Shape"),
     (Preset::HalfFrame, "halfFrame", "Half Frame"),
@@ -250,6 +272,27 @@ const NAMED: &[(Preset, &str, &str)] = &[
     (Preset::FlowMagneticDisk, "flowChartMagneticDisk", "Flowchart: Magnetic Disk"),
     (Preset::FlowDirectStorage, "flowChartMagneticDrum", "Flowchart: Direct Access Storage"),
     (Preset::FlowDisplay, "flowChartDisplay", "Flowchart: Display"),
+    // The stars and banners, in the order Word's gallery shows them.
+    (Preset::Explosion1, "irregularSeal1", "Explosion 1"),
+    (Preset::Explosion2, "irregularSeal2", "Explosion 2"),
+    (Preset::Star4, "star4", "4-Point Star"),
+    (Preset::Star, "star5", "5-Point Star"),
+    (Preset::Star6, "star6", "6-Point Star"),
+    (Preset::Star7, "star7", "7-Point Star"),
+    (Preset::Star8, "star8", "8-Point Star"),
+    (Preset::Star10, "star10", "10-Point Star"),
+    (Preset::Star12, "star12", "12-Point Star"),
+    (Preset::Star16, "star16", "16-Point Star"),
+    (Preset::Star24, "star24", "24-Point Star"),
+    (Preset::Star32, "star32", "32-Point Star"),
+    (Preset::UpRibbon, "ribbon2", "Up Ribbon"),
+    (Preset::DownRibbon, "ribbon", "Down Ribbon"),
+    (Preset::CurvedUpRibbon, "ellipseRibbon2", "Curved Up Ribbon"),
+    (Preset::CurvedDownRibbon, "ellipseRibbon", "Curved Down Ribbon"),
+    (Preset::VerticalScroll, "verticalScroll", "Vertical Scroll"),
+    (Preset::HorizontalScroll, "horizontalScroll", "Horizontal Scroll"),
+    (Preset::Wave, "wave", "Wave"),
+    (Preset::DoubleWave, "doubleWave", "Double Wave"),
     (Preset::Line, "line", "Line"),
     (Preset::Callout, "wedgeRectCallout", "Speech Bubble"),
 ];
@@ -326,6 +369,10 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
     if let Some(shape) = crate::flowchart::path_in(preset, left, top, right, bottom) {
         return shape;
     }
+    // And the stars and banners. See [`crate::banners`].
+    if let Some(shape) = crate::banners::path_in(preset, left, top, right, bottom) {
+        return shape;
+    }
 
     match preset {
         Preset::Rectangle | Preset::Callout => {
@@ -381,7 +428,6 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
         }
         Preset::Pentagon => regular(&mut path, left, top, width, height, 5),
         Preset::Hexagon => regular(&mut path, left, top, width, height, 6),
-        Preset::Star => star(&mut path, left, top, width, height),
         Preset::Arrow => {
             // The shaft is the middle half of the height and the head takes the
             // last third of the width, which is the arrow Word draws.
@@ -754,6 +800,7 @@ pub fn outline_in(preset: Preset, x: f32, y: f32, width: f32, height: f32, weigh
     // same line as the outline and are part of neither the area of the shape
     // nor the band round it. See [`crate::flowchart::rules_into`].
     crate::flowchart::rules_into(&mut path, preset, x, y, width, height, weight);
+    crate::banners::rules_into(&mut path, preset, x, y, width, height, weight);
     path
 }
 
@@ -1007,28 +1054,6 @@ fn regular(path: &mut Path, left: f32, top: f32, width: f32, height: f32, sides:
     for step in 0..sides {
         let angle = -quarter + step as f32 / sides as f32 * core::f32::consts::TAU;
         let point = Point::new(cx + rx * angle.cos(), cy + ry * angle.sin());
-        if step == 0 {
-            path.move_to(point);
-        } else {
-            path.line_to(point);
-        }
-    }
-    path.close();
-}
-
-/// A five-pointed star filling the box.
-fn star(path: &mut Path, left: f32, top: f32, width: f32, height: f32) {
-    let (cx, cy) = (left + width / 2.0, top + height / 2.0);
-    let (rx, ry) = (width / 2.0, height / 2.0);
-    // The inner radius of a five-pointed star, which is what makes it that
-    // star and not a different one.
-    let inner = 0.382;
-    let quarter = core::f32::consts::FRAC_PI_2;
-
-    for step in 0..10 {
-        let angle = -quarter + step as f32 / 10.0 * core::f32::consts::TAU;
-        let reach = if step % 2 == 0 { 1.0 } else { inner };
-        let point = Point::new(cx + rx * reach * angle.cos(), cy + ry * reach * angle.sin());
         if step == 0 {
             path.move_to(point);
         } else {
@@ -1462,6 +1487,11 @@ mod gallery_tests {
             Preset::CurvedUpArrow,
             Preset::CurvedDownArrow,
             Preset::CircularArrow,
+            // The two curved ribbons bow away from the middle of the box: the
+            // band is along the top of it, the tails hang at the sides, and
+            // what is in the middle is the gap between them.
+            Preset::CurvedUpRibbon,
+            Preset::CurvedDownRibbon,
             // And the swoosh, which is a stroke rather than a solid: it rises
             // from one corner to another and the middle of the box is above
             // it.
@@ -1473,6 +1503,58 @@ mod gallery_tests {
             }
             let canvas = drawn(preset, 40);
             assert!(is_ink(&canvas, 20, 20), "{preset:?} has nothing in the middle of it");
+        }
+    }
+
+    #[test]
+    fn the_stars_and_banners_are_all_twenty_of_them() {
+        // Word's own section: two explosions, ten stars, four ribbons, two
+        // scrolls and two waves.
+        let count = Preset::all()
+            .iter()
+            .skip_while(|preset| **preset != Preset::Explosion1)
+            .take_while(|preset| **preset != Preset::Line)
+            .count();
+        assert_eq!(count, 20, "Word draws twenty stars and banners");
+    }
+
+    #[test]
+    fn a_star_has_two_corners_for_every_point_it_is_named_after() {
+        // A point and the dip beside it. Without the dips a ten-pointed star
+        // would be a decagon, which is a shape this gallery already has.
+        for (preset, points) in [(Preset::Star4, 4), (Preset::Star, 5), (Preset::Star32, 32)] {
+            let path = path_in(preset, 0.0, 0.0, 100.0, 60.0);
+            assert_eq!(path.points().count(), points * 2, "{}", preset.label());
+        }
+    }
+
+    #[test]
+    fn which_way_up_a_ribbon_goes_is_the_whole_difference() {
+        // The panel of an up ribbon is at the top of the box and its tails
+        // hang lower, so the space under the panel of the one is above the
+        // panel of the other. The down ribbon is drawn as this turned over.
+        let up = drawn(Preset::UpRibbon, 40);
+        let down = drawn(Preset::DownRibbon, 40);
+        assert!(is_ink(&up, 20, 2), "the up ribbon should have its panel at the top");
+        assert!(!is_ink(&up, 20, 38), "and nothing below it");
+        assert!(is_ink(&down, 20, 38), "the down ribbon should have its panel at the bottom");
+        assert!(!is_ink(&down, 20, 2), "and nothing above it");
+    }
+
+    #[test]
+    fn a_wave_is_the_same_depth_all_the_way_along() {
+        // The top of a wave and its bottom undulate together. Mirroring the
+        // one to get the other would give a shape that bulges in the middle
+        // and pinches at the ends, which is not a wave.
+        let canvas = drawn(Preset::Wave, 40);
+        let depth = |x: usize| (0..40).filter(|y| is_ink(&canvas, x, *y)).count();
+        let middle = depth(20);
+        for across in [6, 14, 26, 33] {
+            assert!(
+                depth(across).abs_diff(middle) <= 1,
+                "at {across} the wave is {} deep and in the middle {middle}",
+                depth(across)
+            );
         }
     }
 

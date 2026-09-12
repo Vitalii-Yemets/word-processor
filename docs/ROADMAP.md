@@ -2076,18 +2076,47 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   shape does not see them. Without them a predefined process is a process and
   a sort is a decision: two shapes under one drawing.
 
-- [ ] **D17. Stars, banners and callouts.** The stars from four points to
-  thirty-two, the explosions, the ribbons and scrolls, and the twenty callouts —
-  the rectangular, rounded, oval and cloud bubbles, and the line callouts with
-  their bends.
-  *Done when:* each is drawn, and a callout's tail points where its adjustment
-  says.
+- [x] **D17. Stars and banners.** Word's own section: the two explosions, the
+  ten stars from four points to thirty-two, the four ribbons, the two scrolls
+  and the two waves.
+  *Done when:* each is drawn.
+  The callouts came out of this item and are **D19** now. They were in it
+  because Word shows them next to each other, but a callout is a different
+  piece of work: its tail points where the file says it points, and nothing
+  here reads that yet — which is **D20**.
+  What each star is, is two numbers: how many points it has and how far in the
+  dips between them go. The second is the whole difference between a spiky star
+  and a blunt one, and the format has an answer for each of the ten.
+  The curves here are arcs and not quadratics. Several of these have an edge
+  that reaches the side of the box and comes back — the apex of a wave, the bow
+  of a curved ribbon — and the control point of a curve that touched the edge
+  would sit outside it. A shape is measured by the points its path names, so
+  that would read as a shape drawn outside its own box.
 
 - [ ] **D18. Lines and connectors.** The straight, elbow and curved connectors,
   their arrowheads at either end, and the routing that keeps an elbow out of the
   shapes it joins.
   *Done when:* two shapes joined by each kind of connector stay joined when
   either is moved.
+
+- [ ] **D19. Callouts.** The sixteen the format has: the rectangular, rounded
+  and oval bubbles and the cloud; and the twelve line callouts, which are three
+  shapes each drawn four ways — with no border, with a border, with an accent
+  bar down the side of the words, and with both.
+  *Done when:* each is drawn, each bubble has its tail, and the elbow of a line
+  callout bends where the shape says it bends.
+  This waits on **D20**. A bubble whose tail is drawn where a bubble usually has
+  one rather than where the file says is a bubble pointing at the wrong thing,
+  and the speech bubble drawn today does exactly that.
+
+- [ ] **D20. Shape adjustments.** `a:avLst`: the values behind the yellow
+  handles. How round a rounded corner is, how wide an arrow's head, how far in
+  a star dips, where a callout's tail points — read them, keep them on the
+  model, write back untouched the ones nothing moved, and let every preset that
+  has one use it in place of the value the format falls back on. Then the
+  handles themselves: drag one and the shape follows.
+  *Done when:* a shape whose handle was dragged in Word opens as the same shape
+  here, and dragging it here writes a value Word reads back the same way.
 - [ ] **D4. Charts.** The chart types beyond those drawn today, their axes,
   legends, labels and the data table behind them.
 - [ ] **D5. SmartArt.** The diagram layouts, which are a language of their own

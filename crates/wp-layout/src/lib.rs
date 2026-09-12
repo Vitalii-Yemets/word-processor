@@ -27,6 +27,7 @@
 
 mod arrows;
 mod artborders;
+mod banners;
 mod borders;
 pub mod charting;
 mod device;
