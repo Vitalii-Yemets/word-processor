@@ -160,6 +160,40 @@ impl Editor {
         // A table's own two handles, over everything on the page: they are not
         // part of the document, they are what the pointer takes hold of.
         self.draw_table_handles();
+        self.draw_insert_spot();
+    }
+
+    /// The circled plus that puts a row or a column in, beside the line it is
+    /// about.
+    ///
+    /// Only while the pointer is near that line, which is when Word shows it:
+    /// a button drawn beside every line of every table would be a row of
+    /// buttons nobody asked for.
+    fn draw_insert_spot(&mut self) {
+        let Some(spot) = self.insert_spot() else { return };
+        let size = super::tablespots::SPOT;
+        let accent = self.theme.accent;
+        let middle_x = spot.x + size / 2.0;
+        let middle_y = spot.y + size / 2.0;
+
+        self.draw_round_handle(middle_x, middle_y, size / 2.0, accent);
+        // The plus inside it, drawn from the middle out so it stays centred
+        // whatever the size comes to.
+        let arm = (size / 2.0 - 3.0).max(2.0);
+        self.canvas.fill_rect(
+            (middle_x - arm) as i32,
+            middle_y as i32,
+            (arm * 2.0) as i32,
+            1,
+            accent,
+        );
+        self.canvas.fill_rect(
+            middle_x as i32,
+            (middle_y - arm) as i32,
+            1,
+            (arm * 2.0) as i32,
+            accent,
+        );
     }
 
     /// The square that moves a table and the one that resizes it.

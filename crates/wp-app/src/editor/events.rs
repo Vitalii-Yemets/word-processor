@@ -175,6 +175,11 @@ impl App for Editor {
             return Cursor::ResizeVertical;
         }
 
+        // The button beside a line, and a table's handles: all pressed.
+        if self.spot_at(x, y).is_some() {
+            return Cursor::Hand;
+        }
+
         // A table's handles are pressed, not typed in.
         if self.table_handle_at(x, y).is_some() {
             return Cursor::Hand;
@@ -369,6 +374,12 @@ impl App for Editor {
             }
 
             Event::DoubleClick { x, y } => {
+                // On the line at the right of a column, two clicks fit that
+                // column to what is in it, which is Word's quickest way to
+                // tidy a table up.
+                if self.fit_column_at(x, y) == Response::Redraw {
+                    return Response::Redraw;
+                }
                 // Double-clicking the join between two pages hides the white
                 // space between them, exactly as it does in Word.
                 if self.between_pages(x, y).is_some() {
@@ -786,6 +797,13 @@ impl Editor {
         // the edge of a cell. One that does not is an ordinary press: a pen out
         // must not swallow every click in the document.
         if self.paint_border_at(x, y) {
+            return Response::Redraw;
+        }
+
+        // The button that puts a row or a column in, which sits beside the
+        // line it is about — outside the table, where nothing else is asking
+        // for the press.
+        if self.press_insert_spot(x, y) {
             return Response::Redraw;
         }
 

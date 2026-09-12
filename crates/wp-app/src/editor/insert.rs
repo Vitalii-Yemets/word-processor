@@ -252,6 +252,20 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            // The button that puts a row in, beside the line it is about, with
+            // the pointer where a person would have to put it to see it.
+            "tablespot" => {
+                self.document.insert_table(3, 3);
+                self.relayout();
+                if let Some((_, cell)) = self.placed_cell(1, 0) {
+                    let (origin_x, origin_y) = self.page_origin(0);
+                    let top = self.content_top() + origin_y - self.scroll_down();
+                    self.pointer_x = origin_x + cell.x - 12.0;
+                    self.pointer_y = top + cell.y;
+                }
+                self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
+                self.relayout();
+            }
             // A bulleted list in a narrow cell, whose indent leaves less room
             // than the word needs: the word is cut rather than drawn across the
             // border of the cell.

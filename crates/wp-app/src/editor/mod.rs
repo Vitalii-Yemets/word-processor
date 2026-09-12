@@ -74,6 +74,7 @@ mod tabledialog;
 mod tableedges;
 mod tablehandles;
 mod tablelayout;
+mod tablespots;
 mod tablestyle;
 mod tablework;
 mod tabsdialog;

@@ -1638,13 +1638,35 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   different parent — inside the table itself, or in a cell — and says so rather
   than doing something surprising.
 
-- [ ] **C41. What the pointer offers between rows.** Two more of Word's mouse
+- [x] **C41. What the pointer offers between rows.** Two more of Word's mouse
   affordances on a table. Double-clicking the line at the right of a column fits
   that column to what is in it — the width of the widest cell, which is
   **C15**'s AutoFit for one column rather than for the table. And resting the
   pointer just outside a line between two rows, or between two columns, shows a
   small ⊕ which inserts a row or a column there when it is pressed: Word's
   quickest way to add one, and the reason its Insert group is rarely reached for.
+  *Done:* both. The fit measures the widest line actually drawn in that column
+  and adds the room the cell keeps clear either side of it, so it fits what is
+  in the column rather than what the file says is in it — the same reasoning
+  **C39**'s line dragging follows, and it fixes the columns as Word does once
+  one has been settled by hand. A double click anywhere else in a cell goes on
+  taking the word.
+  The button appears beside the line the pointer is nearest, and only while it
+  is near: down the left-hand side for the lines between rows and one at each
+  end, along the top for the lines between columns. Pressing it puts the row or
+  the column in on the side the line is — which is the whole point of aiming at
+  a line rather than at a row.
+  *Not done:* Word's button is a circle with a plus that grows a little as the
+  pointer nears it, and is drawn on a short line the width of the table. This
+  one is the circle and the plus.
+
+- [ ] **C42. A double click takes the space after the word.** Found while
+  proving **C41**: Word's double click selects the word *and* the space that
+  follows it, which is what makes deleting a word leave one space rather than
+  two. Ours takes the word alone. The other half of the same rule is Word's
+  "smart cut and paste", which puts a space back when a word is pasted between
+  two others — so the two belong together and are one item rather than a
+  one-line change to `word_around`.
 
 ## D — Pictures and drawings
 

@@ -318,7 +318,7 @@ impl Editor {
     /// it, so that filling a table in is a matter of typing and pressing Tab:
     /// what is typed next replaces what was there. An empty cell has nothing to
     /// take, and gets the caret.
-    fn take_cell(&mut self, row: usize, column: usize) -> bool {
+    pub(super) fn take_cell(&mut self, row: usize, column: usize) -> bool {
         let Some((start, end)) = self.document.cell_text_range(row, column) else { return false };
         if start == end {
             self.document.set_caret(start);
