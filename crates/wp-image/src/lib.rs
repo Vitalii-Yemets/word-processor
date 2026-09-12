@@ -1,10 +1,10 @@
 //! Decoding the image formats a document can carry.
 //!
 //! A `.docx` embeds its pictures as ordinary files inside the package, most
-//! often PNG or JPEG and, in anything old enough, a Windows bitmap. None can be
-//! shown without being decoded, so the decoders are here — written against the
-//! specifications rather than taken from a library, like everything else in
-//! this project.
+//! often PNG or JPEG and, in anything old enough, a Windows bitmap or a GIF.
+//! None can be shown without being decoded, so the decoders are here — written
+//! against the specifications rather than taken from a library, like everything
+//! else in this project.
 //!
 //! # What comes out
 //!
@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 
 pub mod bmp;
+pub mod gif;
 pub mod jpeg;
 pub mod png;
 
@@ -88,6 +89,7 @@ pub enum Format {
     Png,
     Jpeg,
     Bmp,
+    Gif,
 }
 
 impl Format {
@@ -100,6 +102,9 @@ impl Format {
         // Every JPEG begins with the start-of-image marker.
         if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
             return Some(Self::Jpeg);
+        }
+        if data.starts_with(&gif::SIGNATURE_87) || data.starts_with(&gif::SIGNATURE_89) {
+            return Some(Self::Gif);
         }
         // Two letters and nothing else, which is as much as a bitmap says
         // about itself. The header after them is checked by the decoder.
@@ -116,6 +121,7 @@ pub fn decode(data: &[u8]) -> Result<Image, Error> {
         Some(Format::Png) => png::decode(data),
         Some(Format::Jpeg) => jpeg::decode(data),
         Some(Format::Bmp) => bmp::decode(data),
+        Some(Format::Gif) => gif::decode(data),
         None => Err(Error::UnknownFormat),
     }
 }
@@ -155,6 +161,13 @@ mod tests {
     fn a_bitmap_is_recognised_by_its_two_letters() {
         assert_eq!(Format::detect(b"BM and whatever follows"), Some(Format::Bmp));
         assert_eq!(Format::detect(b"MB"), None);
+    }
+
+    #[test]
+    fn both_versions_of_gif_are_recognised() {
+        assert_eq!(Format::detect(b"GIF87a and the rest"), Some(Format::Gif));
+        assert_eq!(Format::detect(b"GIF89a and the rest"), Some(Format::Gif));
+        assert_eq!(Format::detect(b"GIF99a"), None);
     }
 
     #[test]

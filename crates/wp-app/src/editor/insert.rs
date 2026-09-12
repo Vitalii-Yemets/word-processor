@@ -13,8 +13,8 @@ use super::{Editor, DPI};
 /// cannot yet.
 const PICTURE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
     wp_shell::dialog::FileFilter {
-        label: "Pictures (*.png;*.jpg;*.jpeg;*.bmp)",
-        pattern: "*.png;*.jpg;*.jpeg;*.bmp",
+        label: "Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif)",
+        pattern: "*.png;*.jpg;*.jpeg;*.bmp;*.gif",
     },
     wp_shell::dialog::FileFilter { label: "All files (*.*)", pattern: "*.*" },
 ];
@@ -62,7 +62,7 @@ impl Editor {
         // from a camera is thousands of pixels across.
         let Ok(image) = wp_image::decode(&bytes) else {
             wp_shell::dialog::show_error(&format!(
-                "{} is not a picture this program can read. PNG, JPEG and BMP are.",
+                "{} is not a picture this program can read. PNG, JPEG, BMP and GIF are.",
                 path.display()
             ));
             return Response::Ignored;

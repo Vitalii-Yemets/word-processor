@@ -84,6 +84,19 @@ fn every_form_of_bitmap_is_among_the_fixtures() {
 }
 
 #[test]
+fn every_form_of_gif_is_among_the_fixtures() {
+    let names: Vec<String> = read_manifest().into_iter().map(|sample| sample.name).collect();
+    for wanted in [
+        "square.gif",      // Written by GDI+, so a real compressor's stream.
+        "interlaced.gif",  // The rows in the order interlacing puts them.
+        "transparent.gif", // A colour the file says is not to be drawn.
+        "animated.gif",    // Two frames, of which the first is the picture.
+    ] {
+        assert!(names.iter().any(|name| name == wanted), "{wanted} is not among the fixtures");
+    }
+}
+
+#[test]
 fn the_fixtures_are_there() {
     let samples = read_manifest();
     assert!(
@@ -134,6 +147,7 @@ fn each_fixture_is_recognised_from_its_own_bytes() {
         let wanted = match sample.name.rsplit_once('.').map(|(_, suffix)| suffix) {
             Some("png") => Format::Png,
             Some("bmp") => Format::Bmp,
+            Some("gif") => Format::Gif,
             _ => Format::Jpeg,
         };
         assert_eq!(Format::detect(&bytes), Some(wanted), "{}", sample.name);

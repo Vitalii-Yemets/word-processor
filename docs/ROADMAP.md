@@ -1602,10 +1602,27 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Word ignores as well; and `BI_CMYK`, which is a printer's format and never
   appears in a document.
 
-- [ ] **D7. GIF.** The palette, LZW, transparency, interlacing, and the first
+- [x] **D7. GIF.** The palette, LZW, transparency, interlacing, and the first
   frame of an animation — which is what Word draws for one.
-  *Done when:* it decodes to the same pixels as an independent decoder, on
-  fixtures made the way **D1**'s were.
+  *Done:* both versions of the header; the global palette and a frame's own;
+  LZW in the variant the format uses — codes packed from the bottom of each byte
+  up, growing a bit wider as the table fills, running straight across the join
+  between one sub-block and the next, and including the one case the
+  specification names, where a code arrives for a string that is about to be
+  added; interlacing, whose four passes are put back in order; the colour a file
+  says is not to be drawn, which keeps its colour and loses only its alpha —
+  throwing the colour away would come back as a dark halo the moment the picture
+  were scaled; a frame smaller than the screen or offset within it, with what it
+  does not cover left as nothing at all so the page shows through; and an
+  animation, of which the first frame is the picture.
+  Four fixtures. One is GDI+'s own GIF, which is what proves the compressor's
+  side of LZW — a real stream with the codes widening, not the short one a test
+  can write by hand. The other three are assembled, and their streams are real
+  for all that: a clear code every second pixel keeps the table from filling, so
+  no compressor is needed to write one a decoder cannot tell from compressed.
+  *Not done:* the frames after the first, and with them the disposal methods
+  that say what each leaves behind for the next. Word draws one frame and so
+  does this; the rest are carried through in the file and saved back unchanged.
 
 - [ ] **D8. JPEG, the rest of it.** Baseline is done. Progressive — the
   coefficients spread over several scans, by spectral selection and by

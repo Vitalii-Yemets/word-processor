@@ -258,6 +258,137 @@ for ($y = 0; $y -lt 4; $y++) {
 }
 Save-Raw 'topdown.bmp' $down.ToArray() $corners
 
+# --- GIFs -------------------------------------------------------------------
+#
+# GDI+ writes one kind of GIF and reads several. The one it writes is saved
+# through it; the rest are assembled here and read back through it, the same way
+# the bitmaps above are.
+#
+# The pixels of the assembled ones are written as a real LZW stream with a clear
+# code every few pixels, which is what a program with no compressor writes: the
+# table never fills, so the codes never grow past their first width and the
+# stream can be produced without a compressor here either. A decoder cannot tell
+# such a stream from a compressed one.
+
+function Gif-Pixels($indices, $least) {
+    $clear = 1 -shl $least
+    $end = $clear + 1
+    $width = $least + 1
+    # How many codes may follow a clear before the table would grow. The first
+    # of them adds nothing to the table, each of the rest adds one, and the
+    # codes widen the moment the table reaches twice the palette.
+    $run = $clear - 2
+
+    $codes = New-Object System.Collections.Generic.List[int]
+    $since = 0
+    $codes.Add($clear)
+    foreach ($index in $indices) {
+        if ($since -ge $run) { $codes.Add($clear); $since = 0 }
+        $codes.Add([int]$index)
+        $since++
+    }
+    $codes.Add($end)
+
+    $bytes = New-Object System.Collections.Generic.List[byte]
+    $held = 0
+    $count = 0
+    foreach ($code in $codes) {
+        $held = $held -bor ($code -shl $count)
+        $count += $width
+        while ($count -ge 8) {
+            $bytes.Add([byte]($held -band 0xFF))
+            $held = $held -shr 8
+            $count -= 8
+        }
+    }
+    if ($count -gt 0) { $bytes.Add([byte]($held -band 0xFF)) }
+
+    # The stream is carried in sub-blocks of at most 255 bytes, ended by a zero.
+    $out = New-Object System.Collections.Generic.List[byte]
+    $out.Add([byte]$least)
+    $at = 0
+    while ($at -lt $bytes.Count) {
+        $length = [Math]::Min(255, $bytes.Count - $at)
+        $out.Add([byte]$length)
+        for ($i = 0; $i -lt $length; $i++) { $out.Add($bytes[$at + $i]) }
+        $at += $length
+    }
+    $out.Add(0)
+    return ,$out
+}
+
+# The header, the screen descriptor and a global palette of four.
+function Gif-Head($width, $height) {
+    $out = New-Object System.Collections.Generic.List[byte]
+    $out.AddRange([byte[]][System.Text.Encoding]::ASCII.GetBytes('GIF89a'))
+    $out.AddRange((U16 $width))
+    $out.AddRange((U16 $height))
+    $out.Add([byte](0x80 -bor 0x01))
+    $out.Add(0)
+    $out.Add(0)
+    foreach ($c in $colours) { $out.AddRange([byte[]]@($c.R, $c.G, $c.B)) }
+    return ,$out
+}
+
+# One image block: where it goes, how big, and its pixels.
+function Gif-Frame($left, $top, $width, $height, $indices, $interlaced) {
+    $out = New-Object System.Collections.Generic.List[byte]
+    $out.Add(0x2C)
+    $out.AddRange((U16 $left))
+    $out.AddRange((U16 $top))
+    $out.AddRange((U16 $width))
+    $out.AddRange((U16 $height))
+    $out.Add([byte]$(if ($interlaced) { 0x40 } else { 0x00 }))
+    $out.AddRange((Gif-Pixels $indices 2))
+    return ,$out
+}
+
+# The four-by-four square, as palette indices read row by row.
+$square16 = @()
+for ($y = 0; $y -lt 4; $y++) {
+    for ($x = 0; $x -lt 4; $x++) { $square16 += (($x + $y) % 4) }
+}
+
+# What GDI+ writes itself.
+$path = Join-Path $fixtures 'square.gif'
+$square.Save($path, [System.Drawing.Imaging.ImageFormat]::Gif)
+$check = New-Object System.Drawing.Bitmap $path
+foreach ($point in $corners) {
+    $c = $check.GetPixel($point[0], $point[1])
+    $manifest.Add("square.gif $($check.Width) $($check.Height) $($point[0]) $($point[1]) $($c.R) $($c.G) $($c.B) $($c.A) 0")
+}
+$check.Dispose()
+Write-Output ("  square.gif  {0} bytes" -f (Get-Item $path).Length)
+
+# The rows in the order interlacing puts them: for four rows, 0 and 2 in the
+# first two passes and 1 and 3 in the last.
+$woven = @()
+foreach ($row in @(0, 2, 1, 3)) {
+    for ($x = 0; $x -lt 4; $x++) { $woven += (($x + $row) % 4) }
+}
+$interlaced = Gif-Head 4 4
+$interlaced.AddRange((Gif-Frame 0 0 4 4 $woven $true))
+$interlaced.Add(0x3B)
+Save-Raw 'interlaced.gif' $interlaced.ToArray() $corners
+
+# A colour the file says is not to be drawn.
+$clearOne = Gif-Head 4 4
+$clearOne.AddRange([byte[]]@(0x21, 0xF9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00))
+$clearOne.AddRange((Gif-Frame 0 0 4 4 $square16 $false))
+$clearOne.Add(0x3B)
+Save-Raw 'transparent.gif' $clearOne.ToArray() $corners
+
+# Two frames. What is drawn is the first of them, which is what Word draws.
+$moving = Gif-Head 4 4
+$first = @(); foreach ($i in 0..15) { $first += 1 }
+$second = @(); foreach ($i in 0..15) { $second += 2 }
+$moving.AddRange([byte[]]@(0x21, 0xF9, 0x04, 0x00, 0x32, 0x00, 0x00, 0x00))
+$moving.AddRange((Gif-Frame 0 0 4 4 $first $false))
+$moving.AddRange([byte[]]@(0x21, 0xF9, 0x04, 0x00, 0x32, 0x00, 0x00, 0x00))
+$moving.AddRange((Gif-Frame 0 0 4 4 $second $false))
+$moving.Add(0x3B)
+Save-Raw 'animated.gif' $moving.ToArray() $corners
+
 Set-Content -Path (Join-Path $fixtures 'manifest.txt') -Value $manifest -Encoding ascii
 Write-Output "wrote $($manifest.Count) sample points to $fixtures"
 Get-ChildItem $fixtures | ForEach-Object { Write-Output ("  {0}  {1} bytes" -f $_.Name, $_.Length) }
