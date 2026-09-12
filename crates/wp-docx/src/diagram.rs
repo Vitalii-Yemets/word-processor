@@ -192,6 +192,11 @@ fn plain(preset: &str, x: i64, y: i64, width: i64, height: i64, fill: &str) -> S
             // share of anything.
             width_of: None,
             height_of: None,
+            // Word's default. The boxes of a diagram are laid out side by side
+            // and do not overlap anyway, so nothing asks for the rule that
+            // pushes one drawing off another.
+            allow_overlap: true,
+            locked: false,
             behind_text: false,
             horizontal_from: Relative::Column,
             horizontal: Placement::Offset(x),

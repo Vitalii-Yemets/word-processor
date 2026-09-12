@@ -1747,14 +1747,38 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   spaces come out the same width on both sides of a drawing; each piece here is
   justified within itself.
 
-- [ ] **C46. The three flags at the foot of the Position tab.** Move object with
+- [x] **C46. The three flags at the foot of the Position tab.** Move object with
   text, Allow overlap and Lock anchor. Each is one attribute and none of them is
   only an attribute: allowing overlap means deciding what to do when two
   drawings want the same place — Word pushes the second one down — locking an
   anchor means refusing to move it when the text it hangs from moves, and moving
   with text means the opposite. A tick box that wrote a flag nothing obeyed
-  would be a control that does nothing, which is why they are here rather than
+  would be a control that does nothing, which is why they were here rather than
   in **C38**.
+  *Done:* two of the three, with what they mean.
+  **Allow overlap** is `allowOverlap`, and unticking it pushes the drawing down
+  until it lies clear of every drawing already placed — down and not sideways,
+  because down is where a page has room and moving it across would take it away
+  from the text it belongs beside. Each push can uncover another neighbour, so
+  it is done until nothing is in the way, and counted so that a page crowded
+  with drawings cannot become a loop.
+  **Move object with text** is the same answer the vertical frame already gave:
+  a drawing measured from the paragraph moves with it and one measured from the
+  page does not. So the tick and the list above it are two faces of one thing,
+  as they are in Word, and the tick decides when they disagree.
+  Both flags were being *lost*: the model kept neither, and the writer put a
+  constant in the file — every document with overlap turned off came back with
+  it turned on.
+  *Not done:* **Lock anchor** is kept and written now, so it survives a
+  document, but it has nothing here to stop. See **C47**.
+
+- [ ] **C47. Where a dragged drawing belongs afterwards.** Word re-anchors a
+  drawing to the paragraph it is dropped nearest, unless Lock anchor says
+  otherwise — which is what makes a picture dragged down three pages stay there
+  when the text above it grows, and what the lock is for. Dragging here moves a
+  drawing by a distance and leaves its anchor where it was, so a drawing dragged
+  far from its paragraph is still tied to it and comes back on the next edit.
+  The two halves are one item: the re-anchoring, and the lock that refuses it.
 
 - [x] **C42. A double click takes the space after the word.** Found while
   proving **C41**: Word's double click selects the word *and* the space that

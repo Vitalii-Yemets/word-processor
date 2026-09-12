@@ -3942,6 +3942,39 @@ impl<'a> LayoutEngine<'a> {
         };
 
         let (left_room, right_room, top_room, bottom_room) = anchor.distance;
+
+        // A drawing that may not overlap is pushed down until it lies clear of
+        // the ones already placed. Word's Allow overlap, unticked: two pictures
+        // dropped in the same place end up one above the other rather than one
+        // on top of the other.
+        //
+        // Down and not sideways, because down is where a page has room: moving
+        // it across would take it out of the text it belongs beside. Each push
+        // can uncover a new neighbour, so it is done until nothing is in the
+        // way — and counted, because a page crowded with drawings must not
+        // become a loop.
+        let mut y = y;
+        if !anchor.allow_overlap {
+            for _ in 0..self.floats.len().min(64) {
+                let (top, bottom) = (y - emu(top_room), y + height + emu(bottom_room));
+                let (left, right) = (x - emu(left_room), x + width + emu(right_room));
+                let Some(under) = self
+                    .floats
+                    .iter()
+                    .filter(|float| float.page == page_index)
+                    .filter(|float| float.right > left && float.left < right)
+                    .filter(|float| float.bottom > top && float.top < bottom)
+                    .map(|float| float.bottom)
+                    .fold(None, |most: Option<f32>, bottom| {
+                        Some(most.map_or(bottom, |most| most.max(bottom)))
+                    })
+                else {
+                    break;
+                };
+                y = under + emu(top_room);
+            }
+        }
+
         self.floats.push(Float {
             page: page_index,
             left: x - emu(left_room),

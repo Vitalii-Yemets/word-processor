@@ -37,37 +37,39 @@ const ROW_VERTICAL: usize = 5;
 const VERTICAL_HOW: usize = 6;
 const VERTICAL_AT: usize = 7;
 const VERTICAL_FROM: usize = 8;
+const WITH_TEXT: usize = 9;
+const OVERLAP: usize = 10;
 
 // Text Wrapping.
-const TAB_WRAPPING: usize = 9;
-const WRAPPING_STYLE: usize = 10;
-const WRAPPING_SIDE: usize = 11;
-const DISTANCE: usize = 12;
-const ROW_DISTANCE_DOWN: usize = 13;
-const DISTANCE_TOP: usize = 14;
-const DISTANCE_BOTTOM: usize = 15;
-const ROW_DISTANCE_SIDES: usize = 16;
-const DISTANCE_LEFT: usize = 17;
-const DISTANCE_RIGHT: usize = 18;
+const TAB_WRAPPING: usize = 11;
+const WRAPPING_STYLE: usize = 12;
+const WRAPPING_SIDE: usize = 13;
+const DISTANCE: usize = 14;
+const ROW_DISTANCE_DOWN: usize = 15;
+const DISTANCE_TOP: usize = 16;
+const DISTANCE_BOTTOM: usize = 17;
+const ROW_DISTANCE_SIDES: usize = 18;
+const DISTANCE_LEFT: usize = 19;
+const DISTANCE_RIGHT: usize = 20;
 
 // Size.
-const TAB_SIZE: usize = 19;
-const ROW_SIZE: usize = 20;
-const SIZE_HEIGHT: usize = 21;
-const SIZE_WIDTH: usize = 22;
-const SCALE: usize = 23;
-const ROW_SCALE: usize = 24;
-const SCALE_HEIGHT: usize = 25;
-const SCALE_WIDTH: usize = 26;
-const RELATIVE: usize = 27;
-const ROW_RELATIVE_WIDTH: usize = 28;
-const RELATIVE_WIDTH: usize = 29;
-const RELATIVE_WIDTH_OF: usize = 30;
-const ROW_RELATIVE_HEIGHT: usize = 31;
-const RELATIVE_HEIGHT: usize = 32;
-const RELATIVE_HEIGHT_OF: usize = 33;
-const SIZE_LOCKED: usize = 34;
-const SIZE_ROTATION: usize = 35;
+const TAB_SIZE: usize = 21;
+const ROW_SIZE: usize = 22;
+const SIZE_HEIGHT: usize = 23;
+const SIZE_WIDTH: usize = 24;
+const SCALE: usize = 25;
+const ROW_SCALE: usize = 26;
+const SCALE_HEIGHT: usize = 27;
+const SCALE_WIDTH: usize = 28;
+const RELATIVE: usize = 29;
+const ROW_RELATIVE_WIDTH: usize = 30;
+const RELATIVE_WIDTH: usize = 31;
+const RELATIVE_WIDTH_OF: usize = 32;
+const ROW_RELATIVE_HEIGHT: usize = 33;
+const RELATIVE_HEIGHT: usize = 34;
+const RELATIVE_HEIGHT_OF: usize = 35;
+const SIZE_LOCKED: usize = 36;
+const SIZE_ROTATION: usize = 37;
 
 /// English Metric Units in one point, which is what the dialog measures in.
 const EMU_PER_POINT: f32 = 12_700.0;
@@ -198,6 +200,16 @@ impl Editor {
             choice("Vertical", names(PLACEMENTS), down_how),
             number("Position", down_at, down_unit),
             choice("relative to", frames, frame_row(anchor.vertical_from)),
+            // Word's two ticks. Moving with the text is the same thing the
+            // vertical frame says — a drawing measured from the paragraph moves
+            // with it and one measured from the page does not — so the tick and
+            // the list above it are two faces of one answer, as they are in
+            // Word.
+            Field::Check {
+                label: "Move object with text".to_owned(),
+                on: matches!(anchor.vertical_from, Relative::Paragraph | Relative::Line),
+            },
+            Field::Check { label: "Allow overlap".to_owned(), on: anchor.allow_overlap },
             // --- Text Wrapping ---------------------------------------------
             Field::Tab("Text Wrapping".to_owned()),
             choice(
@@ -265,6 +277,8 @@ impl Editor {
                 (VERTICAL_HOW, "a list"),
                 (VERTICAL_AT, "a number"),
                 (VERTICAL_FROM, "a list"),
+                (WITH_TEXT, "a tick box"),
+                (OVERLAP, "a tick box"),
                 (TAB_WRAPPING, "a tab"),
                 (WRAPPING_STYLE, "a list"),
                 (WRAPPING_SIDE, "a list"),
@@ -371,15 +385,27 @@ impl Editor {
             })
         };
 
+        // The tick and the list say the same thing, so the tick decides when it
+        // disagrees with what the list was left saying: ticking it moves the
+        // drawing with the text, which is what a frame of "paragraph" means.
+        let vertical_from = match (dialog.ticked(WITH_TEXT), frame(VERTICAL_FROM)) {
+            (true, Relative::Paragraph | Relative::Line) => frame(VERTICAL_FROM),
+            (true, _) => Relative::Paragraph,
+            (false, Relative::Paragraph | Relative::Line) => Relative::Page,
+            (false, other) => other,
+        };
+
         let anchor = Anchor {
             wrap,
             side,
+            allow_overlap: dialog.ticked(OVERLAP),
+            locked: before.locked,
             width_of: relatively(RELATIVE_WIDTH, RELATIVE_WIDTH_OF),
             height_of: relatively(RELATIVE_HEIGHT, RELATIVE_HEIGHT_OF),
             behind_text: behind,
             horizontal_from: frame(HORIZONTAL_FROM),
             horizontal: placement(HORIZONTAL_HOW, HORIZONTAL_AT),
-            vertical_from: frame(VERTICAL_FROM),
+            vertical_from,
             vertical: placement(VERTICAL_HOW, VERTICAL_AT),
             distance: (
                 emu(DISTANCE_LEFT),
@@ -533,7 +559,7 @@ mod tests {
     use super::{Editor, DISTANCE_TOP, HORIZONTAL_AT, HORIZONTAL_FROM, HORIZONTAL_HOW};
     use super::{RELATIVE_WIDTH, RELATIVE_WIDTH_OF, SCALE_HEIGHT, SCALE_WIDTH, SIZE_HEIGHT};
     use super::{SIZE_LOCKED, SIZE_ROTATION};
-    use super::{SIZE_WIDTH, WRAPPING_SIDE, WRAPPING_STYLE};
+    use super::{SIZE_WIDTH, WITH_TEXT, WRAPPING_SIDE, WRAPPING_STYLE};
 
     /// Types into one of the dialog's measurement boxes.
     fn type_number(editor: &mut Editor, field: usize, text: &str) {
@@ -566,14 +592,20 @@ mod tests {
         Box::leak(Box::new(FontLibrary::scan_system()))
     }
 
-    /// An editor with one floating shape in it, chosen.
-    fn editor() -> Editor {
+    /// An editor with a paragraph of text and no drawing at all.
+    fn blank() -> Editor {
         let mut body = Body::default();
         body.blocks.push(Block::Paragraph(Paragraph::text("Text round the shape")));
         let bytes = Document::create(&body).expect("a document").save().expect("saving");
         let document = Document::open(&bytes).expect("reopening");
         let mut editor = Editor::new(library(), document, None);
         editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor
+    }
+
+    /// And one with a shape in it, chosen.
+    fn editor() -> Editor {
+        let mut editor = blank();
         editor.document.set_caret(TextPosition::new(0, 0));
         // Two inches by one, in points, which is what a preset is measured in.
         let shape = wp_docx::shapes::Shape::preset("rect", 144.0, 72.0);
@@ -912,6 +944,102 @@ mod tests {
         assert!(
             editor.document.anchor_at(at).expect("an anchor").width_of.is_none(),
             "the share would not come off"
+        );
+    }
+
+    #[test]
+    fn moving_with_the_text_and_the_frame_it_is_measured_from_agree() {
+        // The tick and the list are two faces of one answer, as they are in
+        // Word: a drawing measured from the paragraph moves with it.
+        let mut editor = editor();
+        let at = editor.chosen_drawings[0];
+
+        editor.open_layout_dialog();
+        tick(&mut editor, WITH_TEXT, false);
+        editor.finish_dialog(Answer::Accept);
+        assert_eq!(
+            editor.document.anchor_at(at).expect("an anchor").vertical_from,
+            wp_docx::anchor::Relative::Page,
+            "unticking it should take the drawing off the paragraph"
+        );
+
+        editor.open_layout_dialog();
+        tick(&mut editor, WITH_TEXT, true);
+        editor.finish_dialog(Answer::Accept);
+        assert_eq!(
+            editor.document.anchor_at(at).expect("an anchor").vertical_from,
+            wp_docx::anchor::Relative::Paragraph,
+            "ticking it should put the drawing back on the paragraph"
+        );
+    }
+
+    /// A floating shape put into a document at a place, with an anchor of its
+    /// own.
+    fn float_a_shape(editor: &mut Editor, anchor: wp_docx::anchor::Anchor) -> TextPosition {
+        let end = editor.document.paragraph_text(0).map_or(0, |text| text.len());
+        editor.document.set_caret(TextPosition::new(0, end));
+        let shape = wp_docx::shapes::Shape::preset("rect", 144.0, 72.0).floating(anchor);
+        assert!(editor.document.insert_shape(&shape), "the shape went nowhere");
+        editor.relayout();
+        editor.document.set_caret(TextPosition::new(0, end + 1));
+        editor.document.drawing_place_here().expect("a drawing")
+    }
+
+    /// An anchor asking for one particular place, so that two of them collide.
+    fn anchored(allow_overlap: bool) -> wp_docx::anchor::Anchor {
+        wp_docx::anchor::Anchor {
+            wrap: Wrap::Square,
+            horizontal: Placement::Offset(0),
+            vertical: Placement::Offset(0),
+            allow_overlap,
+            ..wp_docx::anchor::Anchor::default()
+        }
+    }
+
+    #[test]
+    fn a_drawing_that_may_not_overlap_is_pushed_clear_of_one_that_is_there() {
+        let mut editor = blank();
+        float_a_shape(&mut editor, anchored(true));
+        float_a_shape(&mut editor, anchored(false));
+        editor.relayout();
+
+        let mut boxes: Vec<(f32, f32)> =
+            editor.pages[0].shapes.iter().map(|shape| (shape.y, shape.height)).collect();
+        boxes.sort_by(|one, other| one.0.total_cmp(&other.0));
+        assert_eq!(boxes.len(), 2, "both shapes should be on the page: {boxes:?}");
+        assert!(
+            boxes[1].0 >= boxes[0].0 + boxes[0].1,
+            "the second was left on top of the first: {boxes:?}"
+        );
+    }
+
+    #[test]
+    fn allowing_overlap_leaves_the_two_where_they_were_put() {
+        let mut editor = blank();
+        float_a_shape(&mut editor, anchored(true));
+        float_a_shape(&mut editor, anchored(true));
+        editor.relayout();
+
+        let tops: Vec<f32> = editor.pages[0].shapes.iter().map(|shape| shape.y).collect();
+        assert_eq!(tops.len(), 2, "both shapes should be on the page");
+        assert!((tops[0] - tops[1]).abs() < 1.0, "they were moved apart: {tops:?}");
+    }
+
+    #[test]
+    fn a_locked_anchor_survives_being_saved_and_opened_again() {
+        // Nothing here moves an anchor on its own, so there is nothing for the
+        // lock to stop — but losing it on save would be losing what the
+        // document said. See **C47**.
+        let mut editor = blank();
+        let at =
+            float_a_shape(&mut editor, wp_docx::anchor::Anchor { locked: true, ..anchored(true) });
+        assert!(editor.document.anchor_at(at).expect("an anchor").locked, "it was not set");
+
+        let bytes = editor.document.save().expect("saving");
+        let reopened = Document::open(&bytes).expect("reopening");
+        assert!(
+            reopened.anchor_at(at).expect("an anchor after the file").locked,
+            "the lock did not survive the file"
         );
     }
 

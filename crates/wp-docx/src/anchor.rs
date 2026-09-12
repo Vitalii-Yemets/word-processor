@@ -241,6 +241,21 @@ pub struct Anchor {
     pub height_of: Option<Relatively>,
     /// Whether the drawing is drawn under the text rather than over it.
     pub behind_text: bool,
+    /// Whether it may lie over another floating drawing.
+    ///
+    /// `allowOverlap`, and Word's Allow overlap. With it off, a drawing that
+    /// would land on top of one already placed is pushed down until it does
+    /// not — which is what makes two pictures dropped in the same place end up
+    /// one above the other rather than one on top of the other.
+    pub allow_overlap: bool,
+    /// Whether the anchor may be moved to another paragraph.
+    ///
+    /// `locked`, and Word's Lock anchor. Kept so that it survives being read
+    /// and written; what it guards against — Word moving an anchor to the
+    /// paragraph a dragged drawing lands in — is not something this program
+    /// does yet, so there is nothing here for it to stop. See **C47** in the
+    /// roadmap.
+    pub locked: bool,
     pub horizontal_from: Relative,
     pub horizontal: Placement,
     pub vertical_from: Relative,
@@ -274,6 +289,10 @@ impl Default for Anchor {
             side: WrapSide::default(),
             width_of: None,
             height_of: None,
+            // Word's own defaults: a drawing may overlap, and its anchor is
+            // free to move.
+            allow_overlap: true,
+            locked: false,
             behind_text: false,
             horizontal_from: Relative::Column,
             horizontal: Placement::Offset(0),
@@ -307,6 +326,10 @@ pub fn read_anchor(drawing: &Element) -> Option<Anchor> {
     let mut result = Anchor { wrap: Wrap::None, ..Anchor::default() };
 
     result.behind_text = matches!(anchor.attribute_by_name("behindDoc"), Some("1" | "true"));
+    // Both default to what Word writes when it says nothing, which is not the
+    // same answer for the two of them.
+    result.allow_overlap = !matches!(anchor.attribute_by_name("allowOverlap"), Some("0" | "false"));
+    result.locked = matches!(anchor.attribute_by_name("locked"), Some("1" | "true"));
     result.depth = anchor
         .attribute_by_name("relativeHeight")
         .and_then(|value| value.trim().parse().ok())
@@ -361,9 +384,9 @@ pub fn write_anchor(anchor: &Anchor, element: &mut Element, wp: &str) {
     // Which drawing is over which when two overlap.
     element.set_attribute("relativeHeight", &anchor.depth.to_string());
     element.set_attribute("behindDoc", if anchor.behind_text { "1" } else { "0" });
-    element.set_attribute("locked", "0");
+    element.set_attribute("locked", if anchor.locked { "1" } else { "0" });
     element.set_attribute("layoutInCell", "1");
-    element.set_attribute("allowOverlap", "1");
+    element.set_attribute("allowOverlap", if anchor.allow_overlap { "1" } else { "0" });
 
     let mut simple = Element::new("wp:simplePos", Some(wp));
     simple.set_attribute("x", "0");
