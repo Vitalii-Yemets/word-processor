@@ -64,6 +64,9 @@ pub(super) enum Asking {
     /// The words those corrections must leave alone, which is a dialog of its
     /// own behind the one above.
     Exceptions,
+    /// Where a drawing sits, how the text keeps out of its way, and how big
+    /// it is: Word's Layout, in three tabs.
+    Layout,
     /// Which column to put the rows of a table in order by, and how.
     Sort,
     /// Arithmetic over the cells of a table.
@@ -144,6 +147,7 @@ impl Editor {
             Some(Asking::TabStops) => self.apply_tabs_dialog(&dialog),
             Some(Asking::Style) => self.apply_style_dialog(&dialog),
             Some(Asking::Table) => self.apply_table_dialog(&dialog),
+            Some(Asking::Layout) => self.apply_layout_dialog(&dialog),
             Some(Asking::Sort) => self.apply_sort(&dialog),
             Some(Asking::Formula) => self.apply_formula(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),

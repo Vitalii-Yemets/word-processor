@@ -1524,7 +1524,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   turned, where Word turns them with it — so a turned drawing is resized along
   its own axes while the pointer moves along the screen's.
 
-- [ ] **C38. The Layout dialog.** Word's Size, Position and Text Wrapping in one
+- [x] **C38. The Layout dialog.** Word's Size, Position and Text Wrapping in one
   three-tabbed dialog, reached from More Rotation Options, from More Layout
   Options under Position and Wrap Text, and from the Size group's launcher. It
   holds the exact height and width of a drawing, its scale as a percentage with
@@ -1534,8 +1534,22 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   exists in the model already — **C27** built the anchors, **C36** the angle,
   and dragging a handle already sets the size — so this is the dialog and not
   what is behind it.
-  *Done when:* every box in the three tabs reads what the chosen drawing says
-  and changes it, and the drawing on the page agrees.
+  *Done:* the three tabs, behind the three doors Word puts them behind — More
+  Layout Options at the foot of the Position menu and of the Wrap Text menu, and
+  More Rotation Options at the foot of Rotate. Every box reads what the drawing
+  says and changes it, and the page agrees: Position holds how the drawing is
+  placed along each axis and what that is measured from, Text Wrapping the style
+  and the room on each of the four sides, Size the height, the width, a lock
+  that works one out from the other, and the angle in degrees. One answer is one
+  thing to take back, and cancelling changes nothing.
+  *Not done:* Word's Scale boxes, which are a percentage of the picture's
+  original size — the original is the decoded picture's own size and nothing
+  keeps it, so a percentage would be a percentage of nothing. Its Relative
+  position and Relative width, which measure in percentages of a frame rather
+  than in inches. Its Wrap text side — both sides, left only, right only,
+  largest only — which the format writes as `wrapSquare/@wrapText` and this does
+  not read. And the three tick boxes at the foot of Position: Move object with
+  text, Allow overlap and Lock anchor. See **C43**.
 
 - [x] **C37. Group.** `wpg:wgp`: several drawings written as one, with a
   coordinate space of its own — the group states the rectangle it covers and the
@@ -1659,6 +1673,13 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Not done:* Word's button is a circle with a plus that grows a little as the
   pointer nears it, and is drawn on a short line the width of the table. This
   one is the circle and the plus.
+
+- [ ] **C43. The rest of the Layout dialog.** What **C38** left: the Scale
+  boxes, which need a picture's original size kept beside it; Relative position
+  and Relative width, which are percentages of a frame and a second way of
+  writing `wp:positionH`; the side the text wraps on, which is
+  `wrapSquare/@wrapText`; and Move object with text, Allow overlap and Lock
+  anchor, which are three flags on `wp:anchor` that nothing yet reads.
 
 - [ ] **C42. A double click takes the space after the word.** Found while
   proving **C41**: Word's double click selects the word *and* the space that

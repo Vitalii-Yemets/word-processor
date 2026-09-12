@@ -539,6 +539,27 @@ impl Editor {
                 self.open_symbol_dialog();
                 self.dialog_key(wp_shell::Key::Tab, false, true);
             }
+            // Word's Layout, on a shape: three tabs of where it sits, what the
+            // text does about it, and how big it is.
+            "layout" | "layoutwrap" | "layoutsize" => {
+                let shape = wp_docx::shapes::Shape::preset("rect", 144.0, 72.0);
+                self.document.insert_shape(&shape);
+                self.relayout();
+                if let Some(at) = self.document.drawing_place_here() {
+                    self.chosen_drawings = vec![at];
+                }
+                self.open_layout_dialog();
+                // The other two tabs, reached the way the keyboard reaches
+                // them: a picture of the first tab shows a third of a dialog.
+                let tabs = match option {
+                    "layoutwrap" => 1,
+                    "layoutsize" => 2,
+                    _ => 0,
+                };
+                for _ in 0..tabs {
+                    self.dialog_key(wp_shell::Key::Tab, false, true);
+                }
+            }
             "tableprops" => {
                 self.document.insert_table(3, 3);
                 self.relayout();

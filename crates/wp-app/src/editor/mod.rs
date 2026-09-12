@@ -31,6 +31,7 @@ mod handles;
 mod help;
 mod insert;
 mod keytips;
+mod layoutdialog;
 mod links;
 mod macros;
 mod mailings;
@@ -191,6 +192,12 @@ pub struct Editor {
     /// table, and the one outside the bottom-right that resizes it. See
     /// [`tablehandles`].
     handle_drag: Option<tablehandles::HandleDrag>,
+    /// Which drawing the Layout dialog is open on.
+    ///
+    /// Remembered rather than found again when the dialog is answered: the
+    /// dialog can be answered with the keyboard, and nothing says the drawing
+    /// is still the one in hand by then. See [`layoutdialog`].
+    laying_out: Option<TextPosition>,
     /// Where the bar between two views of the document sits, as a share of the
     /// window, and how the second view is scrolled. See [`split`].
     split: Option<f32>,
@@ -523,6 +530,7 @@ impl Editor {
             cell_anchor: None,
             edge_drag: None,
             handle_drag: None,
+            laying_out: None,
             editing_furniture: None,
             tab_before_furniture: None,
             dimmed: Vec::new(),

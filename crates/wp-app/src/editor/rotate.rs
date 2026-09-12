@@ -33,6 +33,9 @@ pub(super) enum Rotation {
     FlipAcross,
 }
 
+/// The last row of the menu, which is where Word puts the Layout dialog.
+pub(super) const MORE: &str = "More Rotation Options…";
+
 /// A quarter of a whole turn, in the unit the format counts in.
 const QUARTER: i32 = Turned::WHOLE / 4;
 
@@ -68,7 +71,10 @@ impl Editor {
             return Response::Ignored;
         };
 
-        let items = ROWS.iter().map(|(label, _)| (*label).to_owned()).collect();
+        let mut items: Vec<String> = ROWS.iter().map(|(label, _)| (*label).to_owned()).collect();
+        // The last row is Word's door to the Layout dialog, where the angle can
+        // be typed rather than turned a quarter at a time.
+        items.push(MORE.to_owned());
         // None of the four is a state to be in: each does something to whatever
         // angle the drawing already has, so none of them is ticked.
         self.popup = Some(Popup::new(Choice::RotateObjects, items, None, left, top, 220.0));
@@ -79,6 +85,9 @@ impl Editor {
     /// Does whichever row was picked.
     pub(super) fn choose_rotate(&mut self, index: usize) -> Response {
         self.popup = None;
+        if index == ROWS.len() {
+            return self.open_layout_dialog();
+        }
         let Some((label, row)) = ROWS.get(index).copied() else { return Response::Ignored };
         self.rotate_drawings(row, label)
     }

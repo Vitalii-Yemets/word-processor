@@ -23,6 +23,10 @@ use super::Editor;
 /// Where a drawing can be put across the page.
 const POSITIONS: &[(&str, &str)] = &[("Left", "left"), ("Centre", "center"), ("Right", "right")];
 
+/// The last row of the Position and Wrap Text menus, which is where Word puts
+/// the Layout dialog. See [`super::layoutdialog`].
+pub(super) const MORE: &str = "More Layout Options…";
+
 /// What to say when a command about a drawing is given with none in hand.
 const NOTHING: &str = "Click a shape or a picture first";
 
@@ -54,6 +58,7 @@ impl Editor {
         let here = self.document.anchor_at(at);
         let mut items = vec!["In Line with Text".to_owned()];
         items.extend(Wrap::ALL.iter().map(|wrap| wrap.label().to_owned()));
+        items.push(MORE.to_owned());
 
         let current = match here {
             None => Some(0),
@@ -69,6 +74,11 @@ impl Editor {
         self.popup = None;
         // The first line puts the drawing back in the line of text; the rest
         // are the ways of floating.
+        // And the last row is the door to the Layout dialog, which is where
+        // everything the menu cannot say lives.
+        if index == Wrap::ALL.len() + 1 {
+            return self.open_layout_dialog();
+        }
         let (wrap, note) = match index.checked_sub(1) {
             None => (None, "In line with text".to_owned()),
             Some(which) => {
@@ -112,8 +122,10 @@ impl Editor {
             return Response::Ignored;
         };
 
-        let items = POSITIONS.iter().map(|(label, _)| (*label).to_owned()).collect();
-        self.popup = Some(Popup::new(Choice::Position, items, None, left, top, 200.0));
+        let mut items: Vec<String> =
+            POSITIONS.iter().map(|(label, _)| (*label).to_owned()).collect();
+        items.push(MORE.to_owned());
+        self.popup = Some(Popup::new(Choice::Position, items, None, left, top, 220.0));
         self.needs_redraw = true;
         Response::Redraw
     }
@@ -121,6 +133,9 @@ impl Editor {
     /// Moves the drawing in hand across the page.
     pub(super) fn choose_position(&mut self, index: usize) -> Response {
         self.popup = None;
+        if index == POSITIONS.len() {
+            return self.open_layout_dialog();
+        }
         let Some((label, edge)) = POSITIONS.get(index).copied() else { return Response::Ignored };
         if self.drawings_in_hand().is_empty() {
             return self.report(NOTHING);
