@@ -97,6 +97,15 @@ fn every_form_of_gif_is_among_the_fixtures() {
 }
 
 #[test]
+fn a_progressive_picture_is_among_the_fixtures() {
+    // The one form no encoder to hand writes. It is assembled by the tool and
+    // read back through GDI+, which does read progressive — so the proof still
+    // comes from outside even though the file did not.
+    let names: Vec<String> = read_manifest().into_iter().map(|sample| sample.name).collect();
+    assert!(names.iter().any(|name| name == "progressive.jpg"));
+}
+
+#[test]
 fn the_fixtures_are_there() {
     let samples = read_manifest();
     assert!(

@@ -85,7 +85,7 @@ function I32([int]$value) { return ,[System.BitConverter]::GetBytes([int32]$valu
 
 # Writes the bytes to a file, reads them back through GDI+, and records what
 # GDI+ says is at each point.
-function Save-Raw($name, $bytes, $points) {
+function Save-Raw($name, $bytes, $points, $tolerance = 0) {
     $path = Join-Path $fixtures $name
     [System.IO.File]::WriteAllBytes($path, $bytes)
 
@@ -93,7 +93,7 @@ function Save-Raw($name, $bytes, $points) {
     foreach ($point in $points) {
         $x = $point[0]; $y = $point[1]
         $c = $bitmap.GetPixel($x, $y)
-        $manifest.Add("$name $($bitmap.Width) $($bitmap.Height) $x $y $($c.R) $($c.G) $($c.B) $($c.A) 0")
+        $manifest.Add("$name $($bitmap.Width) $($bitmap.Height) $x $y $($c.R) $($c.G) $($c.B) $($c.A) $tolerance")
     }
     $bitmap.Dispose()
     Write-Output ("  {0}  {1} bytes" -f $name, $bytes.Length)
@@ -388,6 +388,147 @@ $moving.AddRange([byte[]]@(0x21, 0xF9, 0x04, 0x00, 0x32, 0x00, 0x00, 0x00))
 $moving.AddRange((Gif-Frame 0 0 4 4 $second $false))
 $moving.Add(0x3B)
 Save-Raw 'animated.gif' $moving.ToArray() $corners
+
+# --- Progressive JPEG --------------------------------------------------------
+#
+# GDI+ writes baseline JPEG and nothing else, so this one is assembled here. It
+# reads progressive perfectly well, which is what matters: the manifest is still
+# its reading of the file and not this project's.
+#
+# The picture is one block of one component, and it is written in four scans —
+# the first bits of the first coefficient, the first bits of the rest, one more
+# bit of the first, and one more bit of the rest. That is every kind of scan a
+# progressive picture is made of.
+
+# A writer of entropy-coded bits: most significant first, and an 0xFF byte
+# followed by the stuffed zero that keeps it from looking like a marker.
+$script:jheld = 0
+$script:jcount = 0
+$script:jbytes = $null
+
+function Jpeg-Start {
+    $script:jheld = 0
+    $script:jcount = 0
+    $script:jbytes = New-Object System.Collections.Generic.List[byte]
+}
+
+function Jpeg-Put([int]$value, [int]$width) {
+    for ($i = $width - 1; $i -ge 0; $i--) {
+        $bit = ($value -shr $i) -band 1
+        $script:jheld = (($script:jheld -shl 1) -bor $bit) -band 0xFF
+        $script:jcount++
+        if ($script:jcount -eq 8) {
+            $byte = [byte]$script:jheld
+            $script:jbytes.Add($byte)
+            if ($byte -eq 0xFF) { $script:jbytes.Add(0) }
+            $script:jheld = 0
+            $script:jcount = 0
+        }
+    }
+}
+
+# The last byte is padded with ones, which is what the format says to pad with.
+function Jpeg-End {
+    while ($script:jcount -ne 0) { Jpeg-Put 1 1 }
+    return ,$script:jbytes
+}
+
+# A marker segment: the marker, the length, and the body.
+function Jpeg-Segment([int]$marker, $body) {
+    $out = New-Object System.Collections.Generic.List[byte]
+    $out.Add(0xFF)
+    $out.Add([byte]$marker)
+    $length = $body.Count + 2
+    $out.Add([byte](($length -shr 8) -band 0xFF))
+    $out.Add([byte]($length -band 0xFF))
+    $out.AddRange($body)
+    return ,$out
+}
+
+# A Huffman table of eight codes, all four bits long, standing for the symbols
+# nought to seven. Canonical, so the code for a symbol is the symbol — and
+# eight of them rather than sixteen because a table may not use the code that
+# is all ones, which sixteen four-bit codes would.
+function Jpeg-Table([int]$class, [int]$index) {
+    $body = New-Object System.Collections.Generic.List[byte]
+    $body.Add([byte](($class -shl 4) -bor $index))
+    foreach ($length in 1..16) {
+        $body.Add([byte]$(if ($length -eq 4) { 8 } else { 0 }))
+    }
+    foreach ($symbol in 0..7) { $body.Add([byte]$symbol) }
+    return ,$body
+}
+
+$progressive = New-Object System.Collections.Generic.List[byte]
+$progressive.AddRange([byte[]]@(0xFF, 0xD8))
+
+# A quantisation table of ones, so the coefficients are the coefficients.
+$quant = New-Object System.Collections.Generic.List[byte]
+$quant.Add(0)
+foreach ($i in 0..63) { $quant.Add(1) }
+$progressive.AddRange((Jpeg-Segment 0xDB $quant))
+
+# A progressive frame: eight by eight, one component, no subsampling.
+$frame = New-Object System.Collections.Generic.List[byte]
+$frame.Add(8)
+$frame.AddRange([byte[]]@(0, 8))
+$frame.AddRange([byte[]]@(0, 8))
+$frame.Add(1)
+$frame.AddRange([byte[]]@(1, 0x11, 0))
+$progressive.AddRange((Jpeg-Segment 0xC2 $frame))
+
+$progressive.AddRange((Jpeg-Segment 0xC4 (Jpeg-Table 0 0)))
+$progressive.AddRange((Jpeg-Segment 0xC4 (Jpeg-Table 1 0)))
+
+# The header of a scan: one component, and the band and bits it carries.
+function Jpeg-ScanHead([int]$tables, [int]$start, [int]$end, [int]$high, [int]$low) {
+    $head = New-Object System.Collections.Generic.List[byte]
+    $head.Add(1)
+    $head.AddRange([byte[]]@(1, $tables))
+    $head.Add([byte]$start)
+    $head.Add([byte]$end)
+    $head.Add([byte](($high -shl 4) -bor $low))
+    return ,$head
+}
+
+# The first coefficient, at half its precision: a difference of four, which is
+# three bits wide, so the symbol is three and the bits are those of four.
+$progressive.AddRange((Jpeg-Segment 0xDA (Jpeg-ScanHead 0x00 0 0 0 1)))
+Jpeg-Start
+Jpeg-Put 3 4
+Jpeg-Put 4 3
+$progressive.AddRange((Jpeg-End))
+
+# The rest of the band, also at half precision: three at the first place, minus
+# one at the second, and then the end of the block.
+$progressive.AddRange((Jpeg-Segment 0xDA (Jpeg-ScanHead 0x00 1 63 0 1)))
+Jpeg-Start
+Jpeg-Put 2 4     # No run, two bits.
+Jpeg-Put 3 2     # Which are three.
+Jpeg-Put 1 4     # No run, one bit.
+Jpeg-Put 0 1     # Which is minus one.
+Jpeg-Put 0 4     # And the end of the block.
+$progressive.AddRange((Jpeg-End))
+
+# One more bit of the first coefficient.
+$progressive.AddRange((Jpeg-Segment 0xDA (Jpeg-ScanHead 0x00 0 0 1 0)))
+Jpeg-Start
+Jpeg-Put 1 1
+$progressive.AddRange((Jpeg-End))
+
+# And one more bit of the rest: nothing new in the band, so the end of the
+# block comes first and the two coefficients already there take their bits
+# after it.
+$progressive.AddRange((Jpeg-Segment 0xDA (Jpeg-ScanHead 0x00 1 63 1 0)))
+Jpeg-Start
+Jpeg-Put 0 4     # The end of the block, a run of one.
+Jpeg-Put 1 1     # The first coefficient grows.
+Jpeg-Put 0 1     # The second does not.
+$progressive.AddRange((Jpeg-End))
+
+$progressive.AddRange([byte[]]@(0xFF, 0xD9))
+
+Save-Raw 'progressive.jpg' $progressive.ToArray() @(@(0, 0), @(3, 3), @(7, 7), @(5, 2)) 2
 
 Set-Content -Path (Join-Path $fixtures 'manifest.txt') -Value $manifest -Encoding ascii
 Write-Output "wrote $($manifest.Count) sample points to $fixtures"

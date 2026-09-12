@@ -1624,16 +1624,31 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   that say what each leaves behind for the next. Word draws one frame and so
   does this; the rest are carried through in the file and saved back unchanged.
 
-- [ ] **D8. JPEG, the rest of it.** Baseline is done. Progressive — the
+- [x] **D8. JPEG, the rest of it.** Baseline is done. Progressive — the
   coefficients spread over several scans, by spectral selection and by
   successive approximation — and the four-component pictures Adobe writes, where
   the colour is CMYK or YCCK and stored inverted.
-  The fixtures for this one cannot come from an encoder to hand: GDI+ writes
-  baseline only. They have to be assembled by hand, as **D1**'s were, and read
-  back through GDI+ — which does read progressive, so the proof still comes from
-  outside.
-  *Done when:* a progressive picture and a baseline picture of the same image
-  decode alike, and both match what an independent decoder reads.
+  *Done:* the decoder was turned inside out first. It used to transform each
+  block as it read it, which a progressive picture forbids: the first scans
+  carry the top bits of the low frequencies and the scans after them add bands
+  and bits, so nothing can be transformed until the last of them is read. Now
+  both kinds gather coefficients and are transformed in one pass at the end,
+  and they differ only in how the coefficients are filled in.
+  All four kinds of progressive scan: the first bits of the first coefficient
+  and one more bit of it, and the first bits of a band above it and one more bit
+  of that. The last is unlike the other three — every coefficient already sent
+  needs a bit whether or not the scan has anything new to say about it, and
+  those bits are written in the gaps between the ones that do.
+  Colour: three components are brightness and two differences unless Adobe's
+  marker says they are red, green and blue, or the components name themselves
+  after the three colours; four are ink, and Adobe writes ink inverted, which is
+  why they multiply by the black rather than being subtracted from it — a reader
+  that does not know shows a scanned page as a photographic negative.
+  The fixture is assembled by the tool, because GDI+ writes baseline only. It
+  reads progressive perfectly well, so the proof still comes from outside even
+  though the file did not.
+  *Not done:* arithmetic coding, which almost nothing produces, and the lossless
+  and hierarchical modes, which nothing does. All three say so.
 
 - [ ] **D9. TIFF.** The tag directory, strips and tiles, the compressions a
   document carries — none, PackBits, LZW, deflate, and the two CCITT fax codings
