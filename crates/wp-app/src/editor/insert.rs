@@ -968,6 +968,28 @@ impl Editor {
                     .collect();
                 self.shape_grid(&shapes, 6);
             }
+            // One shape at a time with its handle moved: four rounded
+            // rectangles from square to a stadium, four stars from a deep dip
+            // to none, four arrows with the head growing, and four pies opening
+            // round. What this shows is that the shape follows the file.
+            "handles" => {
+                use wp_layout::geometry::Preset;
+                let run = |preset: Preset, name: &str, values: [i32; 4]| {
+                    values
+                        .into_iter()
+                        .map(|value| (preset, vec![(name.to_owned(), value)]))
+                        .collect::<Vec<_>>()
+                };
+                let mut cells = run(Preset::RoundedRectangle, "adj", [0, 8_000, 25_000, 50_000]);
+                cells.extend(run(Preset::Star, "adj", [8_000, 19_098, 30_000, 45_000]));
+                cells.extend(run(Preset::Arrow, "adj2", [15_000, 35_000, 50_000, 90_000]));
+                cells.extend(run(
+                    Preset::Pie,
+                    "adj2",
+                    [2_700_000, 8_100_000, 16_200_000, 21_000_000],
+                ));
+                self.handle_grid(&cells, 4);
+            }
             // And the stars and banners: the run of the gallery from the first
             // explosion to the last wave.
             "banners" => {
@@ -1331,6 +1353,19 @@ impl Editor {
     /// shape. And a sheet under the lot, because the body text showing through
     /// the gaps between the shapes hides the very edges being looked at.
     fn shape_grid(&mut self, presets: &[wp_layout::geometry::Preset], across: usize) {
+        let cells: Vec<(wp_layout::geometry::Preset, Vec<(String, i32)>)> =
+            presets.iter().map(|preset| (*preset, Vec::new())).collect();
+        self.handle_grid(&cells, across);
+    }
+
+    /// The same, with a handle moved on each shape: the only way to see that a
+    /// shape follows the value the document gives it rather than the one the
+    /// format falls back on.
+    fn handle_grid(
+        &mut self,
+        cells: &[(wp_layout::geometry::Preset, Vec<(String, i32)>)],
+        across: usize,
+    ) {
         use wp_docx::anchor::{Anchor, Placement, Wrap};
 
         /// One cell, and the shape inside it: an inch, with a tenth of an inch
@@ -1338,7 +1373,7 @@ impl Editor {
         const CELL: i64 = 914_400;
         const SHAPE: i64 = 800_100;
 
-        let rows = presets.len().div_ceil(across) as i64;
+        let rows = cells.len().div_ceil(across) as i64;
         // The sheet first: the newest drawing at one place is drawn last and
         // so on top, so the sheet has to go in before what stands on it.
         let sheet = wp_docx::shapes::Shape {
@@ -1359,10 +1394,11 @@ impl Editor {
         self.document.set_caret(wp_docx::TextPosition::new(2, 0));
         self.document.insert_shape(&sheet);
 
-        for (index, preset) in presets.iter().enumerate() {
+        for (index, (preset, adjusts)) in cells.iter().enumerate() {
             let shape = wp_docx::shapes::Shape {
                 name: preset.label().to_owned(),
                 preset: preset.word().to_owned(),
+                adjusts: adjusts.clone(),
                 width_emu: SHAPE,
                 height_emu: SHAPE,
                 fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),

@@ -37,6 +37,15 @@ pub const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordproce
 pub struct Shape {
     /// The preset geometry's name, exactly as the document wrote it.
     pub preset: String,
+    /// The values behind the shape's yellow handles: `a:avLst`, in the order
+    /// the document gave them and under the names it used.
+    ///
+    /// Each is a hundred-thousandth of whatever its own preset measures it in —
+    /// mostly a fraction of the shape's shorter side, and for the shapes made
+    /// of arcs an angle in sixtieths of a degree. A preset with no entry here
+    /// is drawn at the proportion the format falls back on, which is what Word
+    /// does with the same file. See [`crate::shapes::Shape::adjust`].
+    pub adjusts: Vec<(String, i32)>,
     pub width_emu: i64,
     pub height_emu: i64,
     /// What is inside it: nothing, one colour, a gradient or a hatching. See
@@ -71,6 +80,7 @@ impl Default for Shape {
     fn default() -> Self {
         Self {
             preset: "rect".to_owned(),
+            adjusts: Vec::new(),
             width_emu: 0,
             height_emu: 0,
             fill: crate::fills::Fill::None,
@@ -84,6 +94,29 @@ impl Default for Shape {
             flipped_across: false,
             flipped_down: false,
         }
+    }
+}
+
+impl Shape {
+    /// One of the shape's adjustments, by the name the format calls it.
+    ///
+    /// `adj` for a shape with one and `adj1`, `adj2` and so on for a shape with
+    /// several — and a shape with one is written both ways by different
+    /// programs, so asking for either finds the other. Nothing when the
+    /// document said nothing, which means the shape is drawn at the proportion
+    /// the format falls back on.
+    #[must_use]
+    pub fn adjust(&self, name: &str) -> Option<i32> {
+        let also = match name {
+            "adj" => "adj1",
+            "adj1" => "adj",
+            _ => name,
+        };
+        self.adjusts
+            .iter()
+            .find(|(it, _)| it == name)
+            .or_else(|| self.adjusts.iter().find(|(it, _)| it == also))
+            .map(|(_, value)| *value)
     }
 }
 
@@ -216,6 +249,7 @@ pub fn read_shape(drawing: &Element) -> Option<Shape> {
         if let Some(name) = geometry.attribute_by_name("prst") {
             shape.preset = name.to_owned();
         }
+        shape.adjusts = read_adjusts(geometry);
     }
     shape.fill = properties.map(crate::fills::read_fill).unwrap_or_default();
 
@@ -340,7 +374,7 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
 
     let mut geometry = Element::new("a:prstGeom", Some(A));
     geometry.set_attribute("prst", &shape.preset);
-    geometry.push_element(Element::new("a:avLst", Some(A)));
+    geometry.push_element(adjust_element(&shape.adjusts, "a"));
     properties.push_element(geometry);
 
     properties.push_element(fill_element(&shape.fill));
@@ -402,6 +436,45 @@ fn solid_color(parent: &Element) -> Option<String> {
     let fill = child(parent, "solidFill")?;
     let colour = child(fill, "srgbClr")?;
     colour.attribute_by_name("val").map(|value| value.to_uppercase())
+}
+
+/// The values behind a shape's yellow handles, as the document gave them.
+///
+/// A `gd` says its value as a formula, and the only formula an adjustment ever
+/// uses is `val 25000`. One saying anything else is one this program cannot
+/// work out, and it is kept out of the list rather than guessed at: a shape
+/// drawn at the wrong proportion because a formula was misread is worse than
+/// one drawn at the proportion the format falls back on.
+fn read_adjusts(geometry: &Element) -> Vec<(String, i32)> {
+    let Some(values) = child(geometry, "avLst") else {
+        return Vec::new();
+    };
+    values
+        .child_elements()
+        .filter(|gd| gd.local_name() == "gd")
+        .filter_map(|gd| {
+            let name = gd.attribute_by_name("name")?;
+            let formula = gd.attribute_by_name("fmla")?;
+            let value = formula.strip_prefix("val ")?.trim().parse().ok()?;
+            Some((name.to_owned(), value))
+        })
+        .collect()
+}
+
+/// And the same written back out.
+///
+/// An empty `avLst` where there were no adjustments, because that is what Word
+/// writes there and a shape with no element at all is a shape Word rewrites the
+/// first time it is opened.
+fn adjust_element(adjusts: &[(String, i32)], prefix: &str) -> Element {
+    let mut values = Element::new(&format!("{prefix}:avLst"), Some(A));
+    for (name, value) in adjusts {
+        let mut gd = Element::new(&format!("{prefix}:gd"), Some(A));
+        gd.set_attribute("name", name);
+        gd.set_attribute("fmla", &format!("val {value}"));
+        values.push_element(gd);
+    }
+    values
 }
 
 /// An attribute read as a number, or nothing.

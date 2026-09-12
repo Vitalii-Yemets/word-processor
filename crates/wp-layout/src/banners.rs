@@ -19,13 +19,14 @@
 
 use wp_raster::{Path, Point, Transform};
 
-use crate::geometry::{arc_into, Preset};
+use crate::geometry::{arc_into, Adjusts, Preset};
 
 use core::f32::consts::{FRAC_PI_2, PI, TAU};
 
 /// The outline of a star or a banner, or `None` if the preset is not one.
 pub(crate) fn path_in(
     preset: Preset,
+    adjusts: &Adjusts,
     left: f32,
     top: f32,
     right: f32,
@@ -53,6 +54,10 @@ pub(crate) fn path_in(
         | Preset::Star24
         | Preset::Star32 => {
             let (points, inner) = star_of(preset)?;
+            // The handle is the dip, and the format states it over half the
+            // radius rather than over the whole of it: 50000 would be a star
+            // whose dips reach the points, which is no star at all.
+            let inner = adjusts.value(1).map_or(inner, |value| value as f32 / 50_000.0);
             star(&mut path, mx, my, width / 2.0, height / 2.0, points, inner);
         }
         Preset::UpRibbon => ribbon(&mut path, left, top, right, bottom),

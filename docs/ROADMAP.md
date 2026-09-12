@@ -2109,20 +2109,49 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   one rather than where the file says is a bubble pointing at the wrong thing,
   and the speech bubble drawn today does exactly that.
 
-- [ ] **D20. Shape adjustments.** `a:avLst`: the values behind the yellow
-  handles. How round a rounded corner is, how wide an arrow's head, how far in
-  a star dips, where a callout's tail points — read them, keep them on the
-  model, write back untouched the ones nothing moved, and let every preset that
-  has one use it in place of the value the format falls back on. Then the
-  handles themselves: drag one and the shape follows.
-  *Done when:* a shape whose handle was dragged in Word opens as the same shape
-  here, and dragging it here writes a value Word reads back the same way.
+- [x] **D20. The values behind the handles.** `a:avLst`: read it, keep it on
+  the shape, write back untouched every value nothing moved, carry it to the
+  geometry, and use it in the presets whose handle is one number with one plain
+  meaning.
+  *Done when:* a rounded rectangle, a star, an arrow or a pie whose handle was
+  dragged in Word opens as the same shape here, and a document saved by this
+  program has every handle it came with, to the number.
+  A shape is now a preset **and** its handles. That is a change to what a shape
+  *is*, so it runs from the reader through the model, the layout, the renderer
+  and the PDF writer alike, and the value is carried in the format's own unit —
+  a hundred-thousandth of whatever that handle measures — from the file to the
+  screen and back, so nothing is lost rounding it into something else and out
+  again.
+  A handle the document never mentioned is not a handle at zero. A rounded
+  rectangle with no `adj` has round corners and one with `adj` at zero has
+  square ones, and a test says so.
+  What obeys its handle: the rounded rectangle, all seven of the snipped and
+  rounded corner shapes, the ten stars, the eight straight block arrows in both
+  their shaft and their head, and the pie, the chord and the arc, whose handles
+  are angles.
+  *Not done:* the rest read their handles and draw at the format's fallback —
+  the can's lid, the donut's rim, the trapezoid's lean, the ribbons' panel, the
+  notched and striped arrows, the elbows and the curved arrows, the teardrop,
+  the plaque, the moon, the cross, the L and the half frame. Each of those
+  states its handle through the format's own guide arithmetic, several values
+  combining into one point, and this program has the proportions it draws from
+  rather than those tables. Where the two agree the handle is used; where they
+  do not, using it would draw a shape the number does not mean. That is **D21**
+  along with the handles themselves.
 - [ ] **D4. Charts.** The chart types beyond those drawn today, their axes,
   legends, labels and the data table behind them.
 - [ ] **D5. SmartArt.** The diagram layouts, which are a language of their own
   in the file format.
 - [ ] **D6. Ink and media.** What a document holds when somebody drew on it or
   put a video in it.
+
+- [ ] **D21. The adjust handles.** The yellow diamonds themselves: where each
+  preset puts them, drawing them on the chosen shape, dragging one, the shape
+  following under the pointer, the value written when the drag ends, and one
+  drag being one undo. And the presets listed under **D20** as not obeying
+  theirs, as the arithmetic behind each is worked out.
+  *Done when:* dragging a handle changes the shape and writes a value Word
+  reads back as the same shape.
 
 ## E — The rest of the text engine
 

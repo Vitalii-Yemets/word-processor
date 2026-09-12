@@ -346,12 +346,100 @@ impl Preset {
     }
 }
 
+/// The values behind a shape's yellow handles.
+///
+/// A shape's outline is not settled by its preset alone: a rounded rectangle
+/// has a corner that can be dragged rounder, an arrow a head that can be
+/// dragged longer, a star a dip that can be dragged deeper. The document says
+/// so in `a:avLst`, and this is what it said.
+///
+/// # The unit
+///
+/// The format's own: a hundred-thousandth of whatever the shape measures that
+/// handle in. For nearly all of them that is a fraction of the shorter side of
+/// the box — 50000 is half of it — and for the shapes made of arcs it is an
+/// angle in sixtieths of a degree. The value is carried in that unit from the
+/// file to the screen and back, so nothing is lost rounding it into and out of
+/// something else.
+///
+/// # What a missing one means
+///
+/// That the document said nothing about that handle, and the shape is drawn at
+/// the proportion the format falls back on — which is what Word draws for the
+/// same file. It does not mean zero: a rounded rectangle whose `adj` is zero
+/// has square corners, and one with no `adj` at all has round ones.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Adjusts {
+    /// `adj1` to `adj8`, and `None` where the document said nothing.
+    ///
+    /// Eight because no preset the format defines has more. A shape with one
+    /// handle calls it `adj` and it is held here as the first.
+    values: [Option<i32>; 8],
+}
+
+impl Adjusts {
+    /// A shape nobody has dragged: every handle at the format's own value.
+    pub const NONE: Self = Self { values: [None; 8] };
+
+    /// The adjustments a document gave, by the names it gave them under.
+    ///
+    /// A name that is not one of `adj`, `adj1` … `adj8` is passed over here.
+    /// It is still kept on the shape itself and still written back, because a
+    /// name this program does not know is not a name the document is wrong
+    /// about. See [`wp_docx::shapes::Shape::adjusts`].
+    #[must_use]
+    pub fn from_pairs(pairs: &[(String, i32)]) -> Self {
+        let mut adjusts = Self::NONE;
+        for (name, value) in pairs {
+            let index = match name.as_str() {
+                "adj" => Some(0),
+                other => other
+                    .strip_prefix("adj")
+                    .and_then(|digits| digits.parse::<usize>().ok())
+                    .filter(|number| (1..=8).contains(number))
+                    .map(|number| number - 1),
+            };
+            if let Some(index) = index {
+                adjusts.values[index] = Some(*value);
+            }
+        }
+        adjusts
+    }
+
+    /// One adjustment as the file gave it, counting from one the way the format
+    /// names them: `adj1` is one.
+    #[must_use]
+    pub fn value(self, index: usize) -> Option<i32> {
+        self.values.get(index.checked_sub(1)?).copied().flatten()
+    }
+
+    /// One adjustment as a fraction of one, or `fallback` when the document
+    /// said nothing about it.
+    #[must_use]
+    pub fn share(self, index: usize, fallback: f32) -> f32 {
+        self.value(index).map_or(fallback, |value| value as f32 / 100_000.0)
+    }
+
+    /// And as an angle in radians, for the shapes made of arcs.
+    #[must_use]
+    pub fn angle(self, index: usize, fallback: f32) -> f32 {
+        self.value(index).map_or(fallback, |value| (value as f32 / 60_000.0).to_radians())
+    }
+
+    /// Whether a handle was dragged at all, which is what says a shape has to
+    /// be written back with an `avLst` of its own.
+    #[must_use]
+    pub fn is_none(self) -> bool {
+        self.values.iter().all(Option::is_none)
+    }
+}
+
 /// The outline of a shape, inside the box given.
 ///
 /// `x` and `y` are the top left corner and the box grows right and down, which
 /// is how a canvas is measured.
 #[must_use]
-pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path {
+pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, height: f32) -> Path {
     let mut path = Path::new();
     if width <= 0.0 || height <= 0.0 {
         return path;
@@ -361,16 +449,18 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
 
     // The block arrows are their own file: there are twenty-eight of them and
     // they are nearly all one shape. See [`crate::arrows`].
-    if let Some(arrow) = crate::arrows::path_in(preset, left, top, right, bottom) {
+    if let Some(arrow) = crate::arrows::path_in(preset, adjusts, left, top, right, bottom) {
         return arrow;
     }
     // And so are the flowchart shapes, for the same reason and in the same
-    // way. See [`crate::flowchart`].
+    // way. They take no adjustments: the format gives a flowchart shape no
+    // handles, because a decision is a diamond and there is nothing about it
+    // to drag. See [`crate::flowchart`].
     if let Some(shape) = crate::flowchart::path_in(preset, left, top, right, bottom) {
         return shape;
     }
     // And the stars and banners. See [`crate::banners`].
-    if let Some(shape) = crate::banners::path_in(preset, left, top, right, bottom) {
+    if let Some(shape) = crate::banners::path_in(preset, adjusts, left, top, right, bottom) {
         return shape;
     }
 
@@ -393,9 +483,11 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
             }
         }
         Preset::RoundedRectangle => {
-            // A sixth of the shorter side, which is the corner Word rounds by
-            // default.
-            let radius = (width.min(height) / 6.0).min(width / 2.0).min(height / 2.0);
+            // A sixth of the shorter side unless the handle says otherwise,
+            // which is the corner Word rounds by default. Never more than half
+            // the box, or the corners of one side would reach past each other.
+            let radius =
+                (width.min(height) * adjusts.share(1, CORNER)).min(width / 2.0).min(height / 2.0);
             rounded_rectangle(&mut path, left, top, right, bottom, radius);
         }
         Preset::Ellipse => {
@@ -447,6 +539,7 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
         // differently. Clockwise from the top left.
         Preset::SnipOneCorner => cornered(
             &mut path,
+            corner_reach(adjusts, width, height),
             left,
             top,
             right,
@@ -455,6 +548,7 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
         ),
         Preset::SnipTwoSame => cornered(
             &mut path,
+            corner_reach(adjusts, width, height),
             left,
             top,
             right,
@@ -463,6 +557,7 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
         ),
         Preset::SnipTwoDiagonal => cornered(
             &mut path,
+            corner_reach(adjusts, width, height),
             left,
             top,
             right,
@@ -471,6 +566,7 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
         ),
         Preset::SnipAndRound => cornered(
             &mut path,
+            corner_reach(adjusts, width, height),
             left,
             top,
             right,
@@ -479,6 +575,7 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
         ),
         Preset::RoundOneCorner => cornered(
             &mut path,
+            corner_reach(adjusts, width, height),
             left,
             top,
             right,
@@ -487,6 +584,7 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
         ),
         Preset::RoundTwoSame => cornered(
             &mut path,
+            corner_reach(adjusts, width, height),
             left,
             top,
             right,
@@ -495,6 +593,7 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
         ),
         Preset::RoundTwoDiagonal => cornered(
             &mut path,
+            corner_reach(adjusts, width, height),
             left,
             top,
             right,
@@ -582,37 +681,32 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
 
         // The ones made of arcs. Angles are measured the way a canvas measures
         // them: clockwise, from the three o'clock position.
-        Preset::Pie => wedge(
+        Preset::Pie | Preset::Chord => wedge(
             &mut path,
             (left + right) / 2.0,
             (top + bottom) / 2.0,
             width / 2.0,
             height / 2.0,
-            0.0,
-            core::f32::consts::PI * 1.5,
-            true,
-        ),
-        Preset::Chord => wedge(
-            &mut path,
-            (left + right) / 2.0,
-            (top + bottom) / 2.0,
-            width / 2.0,
-            height / 2.0,
-            0.0,
-            core::f32::consts::PI * 1.5,
-            false,
+            // The two handles of these are the angles themselves, and the
+            // format measures an angle in sixtieths of a degree: three
+            // quarters of the way round is 16,200,000 of them, which is what
+            // both of these open to when nothing says otherwise.
+            adjusts.angle(1, 0.0),
+            adjusts.angle(2, core::f32::consts::PI * 1.5),
+            preset == Preset::Pie,
         ),
         Preset::Arc => {
             // A quarter of the way round, and open: an arc has no inside, so it
-            // is drawn as a band rather than filled.
+            // is drawn as a band rather than filled. Its two handles are the
+            // angles it runs between, as the pie's are.
             band(
                 &mut path,
                 (left + right) / 2.0,
                 (top + bottom) / 2.0,
                 width / 2.0,
                 height / 2.0,
-                -core::f32::consts::FRAC_PI_2,
-                0.0,
+                adjusts.angle(1, -core::f32::consts::FRAC_PI_2),
+                adjusts.angle(2, 0.0),
                 width.min(height) / 16.0,
             );
         }
@@ -779,13 +873,21 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
 /// the nonzero rule the two leave a ring. A line has no inside, so its outline
 /// is drawn as a long thin rectangle along it instead.
 #[must_use]
-pub fn outline_in(preset: Preset, x: f32, y: f32, width: f32, height: f32, weight: f32) -> Path {
+pub fn outline_in(
+    preset: Preset,
+    adjusts: &Adjusts,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    weight: f32,
+) -> Path {
     let weight = weight.max(0.5);
     if preset == Preset::Line {
         return thick_line(x, y, x + width, y + height, weight);
     }
 
-    let mut path = path_in(preset, x, y, width, height);
+    let mut path = path_in(preset, adjusts, x, y, width, height);
     // The inside of the band: the same shape, inset by the weight on every
     // side, and reversed so that the nonzero rule leaves a hole rather than
     // filling it in twice.
@@ -794,7 +896,7 @@ pub fn outline_in(preset: Preset, x: f32, y: f32, width: f32, height: f32, weigh
     if inset_width <= 0.0 || inset_height <= 0.0 {
         return path;
     }
-    let inner = path_in(preset, x + weight, y + weight, inset_width, inset_height);
+    let inner = path_in(preset, adjusts, x + weight, y + weight, inset_width, inset_height);
     path.extend_reversed(&inner);
     // And the lines some shapes have inside them, which are drawn with the
     // same line as the outline and are part of neither the area of the shape
@@ -826,12 +928,26 @@ enum Corner {
 /// rectangle comes out as a long shallow wedge instead of a corner cut off.
 const CORNER: f32 = 1.0 / 6.0;
 
-/// A rectangle with each of its four corners done to as asked.
-fn cornered(path: &mut Path, left: f32, top: f32, right: f32, bottom: f32, corners: [Corner; 4]) {
-    let width = right - left;
-    let height = bottom - top;
-    let reach = (width.min(height) * CORNER).min(width / 2.0).min(height / 2.0);
+/// How far in a corner is cut or taken round, with the handle taken into
+/// account.
+///
+/// The shapes in the rectangle gallery have one handle each for the corners
+/// they treat, and the ones that treat two corners drag both together. A shape
+/// whose handle says nothing is drawn at the format's own sixth.
+fn corner_reach(adjusts: &Adjusts, width: f32, height: f32) -> f32 {
+    (width.min(height) * adjusts.share(1, CORNER)).min(width / 2.0).min(height / 2.0)
+}
 
+/// A rectangle with each of its four corners done to as asked.
+fn cornered(
+    path: &mut Path,
+    reach: f32,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    corners: [Corner; 4],
+) {
     // Clockwise from the top left, which is the order the corners are given in.
     let places = [(left, top), (right, top), (right, bottom), (left, bottom)];
     // Which way along each edge the corner's two ends lie.
@@ -1077,8 +1193,10 @@ fn regular(path: &mut Path, left: f32, top: f32, width: f32, height: f32, sides:
 /// band, which is what a line of text in that band has to keep out of. Nothing
 /// comes back when the shape does not reach into the band at all.
 #[must_use]
+#[allow(clippy::too_many_arguments, reason = "a shape, its handles, its box and a band")]
 pub fn span_between(
     preset: Preset,
+    adjusts: &Adjusts,
     x: f32,
     y: f32,
     width: f32,
@@ -1089,7 +1207,7 @@ pub fn span_between(
     if bottom <= top || width <= 0.0 || height <= 0.0 {
         return None;
     }
-    let path = path_in(preset, x, y, width, height);
+    let path = path_in(preset, adjusts, x, y, width, height);
 
     let mut left = f32::MAX;
     let mut right = f32::MIN;
@@ -1197,6 +1315,33 @@ fn cubic(from: Point, first: Point, second: Point, to: Point, t: f32) -> Point {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shape at the proportions the format falls back on.
+    ///
+    /// Nearly every test here is about the shape itself and not about a handle
+    /// somebody dragged, so it asks for the shape with nothing adjusted. The
+    /// few that are about an adjustment pass one and say which.
+    fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path {
+        super::path_in(preset, &Adjusts::NONE, x, y, width, height)
+    }
+
+    /// The same for the band round it.
+    fn outline_in(preset: Preset, x: f32, y: f32, width: f32, height: f32, weight: f32) -> Path {
+        super::outline_in(preset, &Adjusts::NONE, x, y, width, height, weight)
+    }
+
+    /// And for the room a line of text has beside it.
+    fn span_between(
+        preset: Preset,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        top: f32,
+        bottom: f32,
+    ) -> Option<(f32, f32)> {
+        super::span_between(preset, &Adjusts::NONE, x, y, width, height, top, bottom)
+    }
 
     #[test]
     fn a_rectangle_reaches_right_across_at_every_height() {
@@ -1390,6 +1535,20 @@ mod gallery_tests {
     use super::*;
     use wp_raster::{Canvas, Color};
 
+    /// The shape at the proportions the format falls back on.
+    ///
+    /// Nearly every test here is about the shape itself and not about a handle
+    /// somebody dragged, so it asks for the shape with nothing adjusted. The
+    /// few that are about an adjustment pass one and say which.
+    fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path {
+        super::path_in(preset, &Adjusts::NONE, x, y, width, height)
+    }
+
+    /// The same for the band round it.
+    fn outline_in(preset: Preset, x: f32, y: f32, width: f32, height: f32, weight: f32) -> Path {
+        super::outline_in(preset, &Adjusts::NONE, x, y, width, height, weight)
+    }
+
     /// Draws a shape filled black on white paper, in a box of a given size.
     fn drawn(preset: Preset, size: usize) -> Canvas {
         let mut canvas = Canvas::filled(size, size, Color::WHITE);
@@ -1504,6 +1663,114 @@ mod gallery_tests {
             let canvas = drawn(preset, 40);
             assert!(is_ink(&canvas, 20, 20), "{preset:?} has nothing in the middle of it");
         }
+    }
+
+    /// A shape with one handle moved to a given value.
+    fn adjusted(value: i32) -> Adjusts {
+        Adjusts::from_pairs(&[("adj".to_owned(), value)])
+    }
+
+    #[test]
+    fn a_corner_dragged_square_is_square() {
+        // A rounded rectangle whose handle is at nothing is a rectangle. This
+        // is the difference between a handle the document set to zero and a
+        // handle the document never mentioned: the second one rounds.
+        let square = super::path_in(Preset::RoundedRectangle, &adjusted(0), 0.0, 0.0, 40.0, 40.0);
+        let round = path_in(Preset::RoundedRectangle, 0.0, 0.0, 40.0, 40.0);
+        let corner = |path: &Path| {
+            let mut canvas = Canvas::filled(40, 40, Color::WHITE);
+            canvas.fill_path(path, Color::BLACK);
+            canvas.pixel(1, 1).red < 128
+        };
+        assert!(corner(&square), "a handle at zero should leave the corner square");
+        assert!(!corner(&round), "and no handle at all should round it");
+    }
+
+    #[test]
+    fn a_corner_dragged_all_the_way_round_is_a_stadium() {
+        // Half the shorter side is as far as it goes: the two corners of one
+        // side meet, and the end of the shape is a half circle. Further than that
+        // is not a rounder corner but a shape crossing itself, which is why
+        // the reach is held to half the box.
+        let path =
+            super::path_in(Preset::RoundedRectangle, &adjusted(50_000), 0.0, 0.0, 40.0, 40.0);
+        let across = path
+            .points()
+            .fold((f32::MAX, f32::MIN), |(low, high), at| (low.min(at.x), high.max(at.x)));
+        assert!(across.0 <= 0.01 && across.1 >= 39.99, "it should still fill its box: {across:?}");
+        let mut canvas = Canvas::filled(40, 40, Color::WHITE);
+        canvas.fill_path(&path, Color::BLACK);
+        assert!(!is_ink(&canvas, 1, 1), "the corner should be gone altogether");
+        assert!(is_ink(&canvas, 20, 1), "and the middle of the top still drawn");
+    }
+
+    #[test]
+    fn a_star_dragged_deeper_is_spikier() {
+        // The dip is stated over half the radius, so 50000 would be a star
+        // whose dips reach its points. A smaller number is a deeper dip.
+        let deep = super::path_in(Preset::Star, &adjusted(10_000), 0.0, 0.0, 40.0, 40.0);
+        let shallow = super::path_in(Preset::Star, &adjusted(45_000), 0.0, 0.0, 40.0, 40.0);
+        let ink = |path: &Path| {
+            let mut canvas = Canvas::filled(40, 40, Color::WHITE);
+            canvas.fill_path(path, Color::BLACK);
+            (0..40)
+                .flat_map(|y| (0..40).map(move |x| (x, y)))
+                .filter(|(x, y)| is_ink(&canvas, *x, *y))
+                .count()
+        };
+        assert!(ink(&deep) < ink(&shallow), "a deeper dip should leave less of the shape");
+    }
+
+    #[test]
+    fn an_arrow_dragged_wider_has_a_thicker_shaft() {
+        // The first handle of an arrow is the shaft and the second is the head,
+        // both over the shorter side of the box.
+        let thin = Adjusts::from_pairs(&[("adj1".to_owned(), 20_000)]);
+        let thick = Adjusts::from_pairs(&[("adj1".to_owned(), 80_000)]);
+        let depth = |adjusts: &Adjusts| {
+            let path = super::path_in(Preset::Arrow, adjusts, 0.0, 0.0, 60.0, 40.0);
+            let mut canvas = Canvas::filled(60, 40, Color::WHITE);
+            canvas.fill_path(&path, Color::BLACK);
+            (0..40).filter(|y| canvas.pixel(2, *y).red < 128).count()
+        };
+        assert!(depth(&thin) < depth(&thick), "the shaft did not follow its handle");
+    }
+
+    #[test]
+    fn an_arrow_dragged_longer_in_the_head_is_shorter_in_the_shaft() {
+        // The two handles are the two halves of an arrow: the head starts where
+        // the shaft stops.
+        let short = Adjusts::from_pairs(&[("adj2".to_owned(), 20_000)]);
+        let long = Adjusts::from_pairs(&[("adj2".to_owned(), 90_000)]);
+        // Both arrows reach the point, so what the handle changes is where the
+        // head begins: the first ink along the top edge of the box, which is
+        // where the head's base stands.
+        let head_begins = |adjusts: &Adjusts| {
+            let path = super::path_in(Preset::Arrow, adjusts, 0.0, 0.0, 60.0, 40.0);
+            let mut canvas = Canvas::filled(60, 40, Color::WHITE);
+            canvas.fill_path(&path, Color::BLACK);
+            (0..60).find(|x| canvas.pixel(*x, 2).red < 128).unwrap_or(60)
+        };
+        assert!(
+            head_begins(&long) < head_begins(&short),
+            "a longer head should start further back"
+        );
+    }
+
+    #[test]
+    fn the_two_handles_of_a_pie_are_the_angles_it_opens_between() {
+        // The format measures an angle in sixtieths of a degree, so a quarter
+        // turn is 5,400,000 of them. A pie open a quarter of the way round
+        // covers a quarter of its box and no more.
+        let quarter =
+            Adjusts::from_pairs(&[("adj1".to_owned(), 0), ("adj2".to_owned(), 5_400_000)]);
+        let path = super::path_in(Preset::Pie, &quarter, 0.0, 0.0, 40.0, 40.0);
+        let mut canvas = Canvas::filled(40, 40, Color::WHITE);
+        canvas.fill_path(&path, Color::BLACK);
+        // Round to the bottom right, which is where the first quarter of a
+        // canvas turn goes.
+        assert!(is_ink(&canvas, 26, 26), "the quarter it opens to should be filled");
+        assert!(!is_ink(&canvas, 14, 14), "and the three quarters it does not should not be");
     }
 
     #[test]

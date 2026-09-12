@@ -123,6 +123,7 @@ fn write_drawing(
             if let Some((colour, distance)) = shape.shadow {
                 let path = wp_layout::geometry::path_in(
                     shape.preset,
+                    &shape.adjusts,
                     shape.x + distance,
                     shape.y + distance,
                     shape.width,
@@ -137,6 +138,7 @@ fn write_drawing(
             if let Some(colour) = shape.fill.colour() {
                 let path = wp_layout::geometry::path_in(
                     shape.preset,
+                    &shape.adjusts,
                     shape.x,
                     shape.y,
                     shape.width,
@@ -147,6 +149,7 @@ fn write_drawing(
             if let Some(colour) = shape.outline {
                 let path = wp_layout::geometry::outline_in(
                     shape.preset,
+                    &shape.adjusts,
                     shape.x,
                     shape.y,
                     shape.width,

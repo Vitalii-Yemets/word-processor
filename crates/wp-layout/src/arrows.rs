@@ -25,7 +25,7 @@
 
 use wp_raster::{Path, Point};
 
-use crate::geometry::{arc_into, Preset};
+use crate::geometry::{arc_into, Adjusts, Preset};
 
 /// An angle in degrees, as [`arc_into`] wants it.
 ///
@@ -50,6 +50,7 @@ enum Side {
 /// `None` for anything else, which is how the caller knows to look elsewhere.
 pub(crate) fn path_in(
     preset: Preset,
+    adjusts: &Adjusts,
     left: f32,
     top: f32,
     right: f32,
@@ -59,17 +60,17 @@ pub(crate) fn path_in(
     let box_ = Box_ { left, top, right, bottom };
 
     match preset {
-        Preset::Arrow => straight(&mut path, box_, &[Side::Right]),
-        Preset::LeftArrow => straight(&mut path, box_, &[Side::Left]),
-        Preset::UpArrow => straight(&mut path, box_, &[Side::Up]),
-        Preset::DownArrow => straight(&mut path, box_, &[Side::Down]),
-        Preset::LeftRightArrow => straight(&mut path, box_, &[Side::Left, Side::Right]),
-        Preset::UpDownArrow => straight(&mut path, box_, &[Side::Up, Side::Down]),
+        Preset::Arrow => straight(&mut path, box_, adjusts, &[Side::Right]),
+        Preset::LeftArrow => straight(&mut path, box_, adjusts, &[Side::Left]),
+        Preset::UpArrow => straight(&mut path, box_, adjusts, &[Side::Up]),
+        Preset::DownArrow => straight(&mut path, box_, adjusts, &[Side::Down]),
+        Preset::LeftRightArrow => straight(&mut path, box_, adjusts, &[Side::Left, Side::Right]),
+        Preset::UpDownArrow => straight(&mut path, box_, adjusts, &[Side::Up, Side::Down]),
         Preset::QuadArrow => {
-            straight(&mut path, box_, &[Side::Left, Side::Right, Side::Up, Side::Down]);
+            straight(&mut path, box_, adjusts, &[Side::Left, Side::Right, Side::Up, Side::Down]);
         }
         Preset::LeftRightUpArrow => {
-            straight(&mut path, box_, &[Side::Left, Side::Right, Side::Up]);
+            straight(&mut path, box_, adjusts, &[Side::Left, Side::Right, Side::Up]);
         }
         Preset::NotchedArrow => notched(&mut path, box_),
         Preset::StripedArrow => striped(&mut path, box_),
@@ -140,20 +141,20 @@ impl Box_ {
 /// share nothing but the proportions: writing the cross and leaving out the
 /// arms would give an up arrow a bar across its middle, which is what it had
 /// until this was split in two.
-fn straight(path: &mut Path, box_: Box_, heads: &[Side]) {
+fn straight(path: &mut Path, box_: Box_, adjusts: &Adjusts, heads: &[Side]) {
     let across = heads.iter().any(|side| matches!(side, Side::Left | Side::Right));
     let down = heads.iter().any(|side| matches!(side, Side::Up | Side::Down));
     match (across, down) {
-        (true, true) => cross(path, box_, heads),
-        (false, true) => along(path, box_, heads, false),
+        (true, true) => cross(path, box_, adjusts, heads),
+        (false, true) => along(path, box_, adjusts, heads, false),
         // No heads at all is a bar across, which is what a shaft on its own
         // looks like; nothing asks for one, and it is better than nothing.
-        _ => along(path, box_, heads, true),
+        _ => along(path, box_, adjusts, heads, true),
     }
 }
 
 /// An arrow along one axis: a bar with a head on one end or on both.
-fn along(path: &mut Path, box_: Box_, heads: &[Side], horizontal: bool) {
+fn along(path: &mut Path, box_: Box_, adjusts: &Adjusts, heads: &[Side], horizontal: bool) {
     let point = Point::new;
     let has = |side: Side| heads.contains(&side);
     // Word states these over `ss`, the shorter side of the box, and not over
@@ -166,8 +167,13 @@ fn along(path: &mut Path, box_: Box_, heads: &[Side], horizontal: bool) {
     let shorter = box_.shorter();
     let heads_on = usize::from(has(Side::Left) || has(Side::Up))
         + usize::from(has(Side::Right) || has(Side::Down));
-    let head = (shorter * 0.5).min(length / heads_on.max(1) as f32);
-    let half = shorter * 0.25;
+    // The head as long as the second handle says and the shaft as thick as the
+    // first, both over `ss`; half the shorter side each when nothing says
+    // otherwise, which is what the format falls back on. Two heads that will
+    // not both fit are cut to what there is room for, and that is what makes a
+    // two-headed arrow in a square box come out as a diamond.
+    let head = (shorter * adjusts.share(2, 0.5)).min(length / heads_on.max(1) as f32);
+    let half = shorter * adjusts.share(1, 0.5) / 2.0;
 
     // Along the arrow: where the shaft starts and ends. Across it: the edges of
     // the shaft, and the edges of the box, which a head's base stands on.
@@ -215,15 +221,15 @@ fn along(path: &mut Path, box_: Box_, heads: &[Side], horizontal: bool) {
 /// either turns the corner or goes out to the point and back. A side with no
 /// head contributes its corner and no more, which is how one walk serves the
 /// quad arrow and the three-headed one alike.
-fn cross(path: &mut Path, box_: Box_, heads: &[Side]) {
+fn cross(path: &mut Path, box_: Box_, adjusts: &Adjusts, heads: &[Side]) {
     let has = |side: Side| heads.contains(&side);
     let shorter = box_.shorter();
 
     // Thinner than a single-axis arrow: four heads on a half-thickness shaft
     // would leave nothing between them.
-    let thick = shorter * 0.23;
+    let thick = shorter * adjusts.share(1, 0.23);
     let half = thick / 2.0;
-    let reach = shorter * 0.25;
+    let reach = shorter * adjusts.share(3, 0.25);
     let across_reach = reach.min(box_.width() / 2.0);
     let down_reach = reach.min(box_.height() / 2.0);
     let base = shorter * 0.25;

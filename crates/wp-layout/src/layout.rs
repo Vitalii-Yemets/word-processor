@@ -539,6 +539,10 @@ pub struct PlacedShape {
     pub height: f32,
     /// The geometry to draw, worked out from the shape's preset name.
     pub preset: crate::geometry::Preset,
+    /// The values behind its yellow handles, which the geometry needs along
+    /// with the preset: a rounded rectangle is not one shape but a family of
+    /// them. See [`crate::geometry::Adjusts`].
+    pub adjusts: crate::geometry::Adjusts,
     /// What is inside it: nothing, one colour, a gradient or a hatching.
     pub fill: crate::paint::Paint,
     pub outline: Option<Color>,
@@ -3552,16 +3556,22 @@ impl<'a> LayoutEngine<'a> {
             // rather than to the box round it: beside the point of a triangle a
             // line gets nearly the whole width, and beside its base none.
             let (blocked_left, blocked_right) = match (float.wrap, float.outline) {
-                (
-                    wp_docx::anchor::Wrap::Tight | wp_docx::anchor::Wrap::Through,
-                    Some((preset, x, y, width, height)),
-                ) => {
-                    match crate::geometry::span_between(preset, x, y, width, height, top, bottom) {
+                (wp_docx::anchor::Wrap::Tight | wp_docx::anchor::Wrap::Through, Some(outline)) => {
+                    match crate::geometry::span_between(
+                        outline.preset,
+                        &outline.adjusts,
+                        outline.x,
+                        outline.y,
+                        outline.width,
+                        outline.height,
+                        top,
+                        bottom,
+                    ) {
                         // The room asked for round the drawing is kept either side
                         // of the outline, the same as it is either side of the box.
                         Some((reaches_left, reaches_right)) => (
-                            reaches_left - (x - float.left),
-                            reaches_right + (float.right - (x + width)),
+                            reaches_left - (outline.x - float.left),
+                            reaches_right + (float.right - (outline.x + outline.width)),
                         ),
                         // The band is beside the box but not beside the shape: a
                         // line there is not blocked at all.
@@ -3668,7 +3678,10 @@ impl<'a> LayoutEngine<'a> {
             line_top,
             width,
             height,
-            Some(crate::geometry::Preset::from_word(&shape.preset)),
+            Some((
+                crate::geometry::Preset::from_word(&shape.preset),
+                crate::geometry::Adjusts::from_pairs(&shape.adjusts),
+            )),
         );
 
         page.shapes.push(PlacedShape {
@@ -3677,6 +3690,7 @@ impl<'a> LayoutEngine<'a> {
             width,
             height,
             preset: crate::geometry::Preset::from_word(&shape.preset),
+            adjusts: crate::geometry::Adjusts::from_pairs(&shape.adjusts),
             fill: crate::paint::Paint::of(&shape.fill),
             outline: shape.outline.as_deref().and_then(Color::from_hex),
             outline_weight: (shape.outline_points() * scale).max(1.0),
@@ -3780,6 +3794,7 @@ impl<'a> LayoutEngine<'a> {
                         width: member_width,
                         height: member_height,
                         preset: crate::geometry::Preset::from_word(&shape.preset),
+                        adjusts: crate::geometry::Adjusts::from_pairs(&shape.adjusts),
                         fill: crate::paint::Paint::of(&shape.fill),
                         outline: shape.outline.as_deref().and_then(Color::from_hex),
                         outline_weight: (shape.outline_points() * scale).max(1.0),
@@ -3881,7 +3896,7 @@ impl<'a> LayoutEngine<'a> {
         line_top: f32,
         width: f32,
         height: f32,
-        outline: Option<crate::geometry::Preset>,
+        outline: Option<(crate::geometry::Preset, crate::geometry::Adjusts)>,
     ) -> (f32, f32) {
         use wp_docx::anchor::{Placement as Where, Relative};
 
@@ -3985,7 +4000,14 @@ impl<'a> LayoutEngine<'a> {
             side: anchor.side,
             // The shape itself, so that tight wrapping can follow its outline
             // rather than the box round it.
-            outline: outline.map(|preset| (preset, x, y, width, height)),
+            outline: outline.map(|(preset, adjusts)| Outline {
+                preset,
+                adjusts,
+                x,
+                y,
+                width,
+                height,
+            }),
         });
 
         (x, y)
@@ -4922,6 +4944,7 @@ impl LayoutEngine<'_> {
                     width: item.width,
                     height: *height,
                     preset: crate::geometry::Preset::from_word(&shape.preset),
+                    adjusts: crate::geometry::Adjusts::from_pairs(&shape.adjusts),
                     fill: crate::paint::Paint::of(&shape.fill),
                     outline: shape.outline.as_deref().and_then(Color::from_hex),
                     outline_weight: (shape.outline_points() * self.pixels_per_point()).max(1.0),
@@ -6937,7 +6960,23 @@ pub(crate) struct Float {
     pub side: wp_docx::anchor::WrapSide,
     /// The shape and where it sits, for wrapping that follows its outline. A
     /// picture has none: a picture is the box it fills.
-    pub outline: Option<(crate::geometry::Preset, f32, f32, f32, f32)>,
+    pub outline: Option<Outline>,
+}
+
+/// The shape a float's text runs round, for tight and through wrapping.
+///
+/// The preset alone does not say what the shape is: a rounded rectangle with
+/// its corner dragged square is a rectangle, and the text beside it should run
+/// where the corner now is. So the handles travel with it. See
+/// [`crate::geometry::Adjusts`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Outline {
+    pub preset: crate::geometry::Preset,
+    pub adjusts: crate::geometry::Adjusts,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 /// The day out of a timestamp, which is what a date field shows.

@@ -384,14 +384,26 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
             // than before it, because the light does not turn with the shape:
             // a sign turned on its side still casts its shadow downwards.
             if let Some((colour, distance)) = shape.shadow {
-                let path =
-                    turned(crate::geometry::path_in(shape.preset, x, y, shape.width, shape.height))
-                        .transformed(&Transform::translate(distance, distance));
+                let path = turned(crate::geometry::path_in(
+                    shape.preset,
+                    &shape.adjusts,
+                    x,
+                    y,
+                    shape.width,
+                    shape.height,
+                ))
+                .transformed(&Transform::translate(distance, distance));
                 canvas.fill_path(&path, colour);
             }
             if !shape.fill.is_nothing() {
-                let path =
-                    turned(crate::geometry::path_in(shape.preset, x, y, shape.width, shape.height));
+                let path = turned(crate::geometry::path_in(
+                    shape.preset,
+                    &shape.adjusts,
+                    x,
+                    y,
+                    shape.width,
+                    shape.height,
+                ));
                 // Where in the shape a pixel is, as fractions of its box: a
                 // gradient needs to know, and the fill is asked pixel by pixel
                 // so that it can be a gradient or a hatching and not only a
@@ -407,6 +419,7 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
             if let Some(outline) = shape.outline {
                 let path = turned(crate::geometry::outline_in(
                     shape.preset,
+                    &shape.adjusts,
                     x,
                     y,
                     shape.width,
