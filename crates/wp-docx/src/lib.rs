@@ -245,6 +245,26 @@ pub struct Document {
     /// noted yet. Counted rather than a flag, because gestures nest.
     ///
     /// See [`Document::begin_gesture`].
+    /// The cells selected, when what is selected is a block of them, together
+    /// with the selection it was made for.
+    ///
+    /// # Why it is kept and not worked out
+    ///
+    /// Because the cells of a new table hold nothing. A block of cells is
+    /// ordinarily read back from the stretches of text in it — the first and
+    /// the last say which rectangle was taken — but empty cells make empty
+    /// stretches, and a selection of nine empty cells is indistinguishable
+    /// from no selection at all. Merge Cells on a table somebody has only just
+    /// inserted is the first thing anyone tries.
+    ///
+    /// # Why the selection is kept with it
+    ///
+    /// So that it goes stale by itself. The caret and its anchor are recorded
+    /// as they were when the block was taken, and the block is only believed
+    /// while they still are that: anything that moves the caret or selects
+    /// anything else leaves them different, and the block is then ignored
+    /// without anybody having to remember to say so.
+    cell_block: Option<(cells::CellRange, Option<TextPosition>, TextPosition)>,
     gesture_depth: usize,
     gesture_noted: bool,
 }
@@ -277,6 +297,7 @@ impl Document {
             caret: TextPosition::default(),
             anchor: None,
             extra: Vec::new(),
+            cell_block: None,
             pending: RunProperties::default(),
             history: History::default(),
             modified: false,
@@ -335,6 +356,7 @@ impl Document {
             caret: TextPosition::default(),
             anchor: None,
             extra: Vec::new(),
+            cell_block: None,
             pending: RunProperties::default(),
             history: History::default(),
             modified: false,
@@ -915,6 +937,24 @@ impl Document {
         // path a paste takes, so there is one place that knows how.
         if text.contains('\t') || text.contains('\n') || text.contains('\r') {
             return self.paste(text);
+        }
+
+        // Typing over a selection made of several stretches — a block of the
+        // cells of a table, or pieces picked out with Ctrl held — empties all
+        // of them and types where the first of them was. Word does the same:
+        // what was selected is what is replaced, not the last piece of it.
+        if self.selections().len() > 1 {
+            self.begin_gesture();
+            let emptied = self.delete_selection();
+            let at = self.caret;
+            let typed = emptied && self.write_text(at, text);
+            if typed {
+                self.caret = TextPosition::new(at.paragraph, at.offset + text.len());
+                self.apply_pending(at, self.caret);
+                self.modified = true;
+            }
+            self.end_gesture();
+            return emptied || typed;
         }
 
         // Typing over a selection is one change, not two: taking it back has to

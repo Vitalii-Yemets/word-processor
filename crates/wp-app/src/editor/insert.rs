@@ -252,6 +252,31 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            // A block of cells taken by dragging across them, which Word shows
+            // as the cells themselves and not as the text in them.
+            "cellblock" => {
+                self.document.insert_table(3, 3);
+                self.relayout();
+                for row in 0..3 {
+                    for column in 0..3 {
+                        let Some((paragraph, _)) = self.document.cell_paragraphs(row, column)
+                        else {
+                            continue;
+                        };
+                        self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                        self.document.type_text(&format!("Cell {row}{column}"));
+                    }
+                }
+                self.relayout();
+                if let Some((paragraph, _)) = self.document.cell_paragraphs(0, 0) {
+                    self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                    self.cell_anchor = Some((0, 0));
+                    let (x, y) = self.cell_middle_for_scene(1, 1);
+                    self.extend_cell_drag(x, y);
+                }
+                self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
+                self.relayout();
+            }
             "fittedtable" => {
                 // A table fitted to what is in it, which is the only way to see
                 // that the columns are the answer to the text rather than to

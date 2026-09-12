@@ -373,6 +373,24 @@ impl Frame {
     }
 }
 
+/// Whether a line belongs to a cell, by where the two of them are.
+///
+/// Geometry rather than a recorded owner, because a line does not know which
+/// cell it is in — and does not need to: the page holds the cell rectangles and
+/// the lines, and where a line sits is what says which cell holds it. The
+/// middle of the line is what is asked about, so that a word too long for its
+/// cell, which is drawn hanging over the edge, still belongs to the cell it was
+/// typed in.
+fn in_cell(line: &PageLine, cell: &PlacedCell) -> bool {
+    let (x, y, width, height) = line.band(line.left, line.right);
+    let middle_x = x + width / 2.0;
+    let middle_y = y + height / 2.0;
+    middle_x >= cell.x
+        && middle_x <= cell.x + cell.width
+        && middle_y >= cell.y
+        && middle_y <= cell.y + cell.height
+}
+
 /// One line of text on a page.
 ///
 /// Kept because a caret and a mouse click are line-shaped questions: which line
@@ -671,31 +689,18 @@ impl Page {
             return None;
         }
 
-        // The line the point is on, or the nearest one above or below it. Each
-        // line is asked in its own coordinates, so a point inside a turned cell
-        // lands on the turned line it is really on rather than on whichever
-        // ordinary line happens to share its height.
-        let across = |line: &PageLine| line.frame.in_frame(x, y).1;
-        let line = self
-            .lines
-            .iter()
-            .find(|line| {
-                let across = across(line);
-                across >= line.top() && across <= line.bottom()
-            })
-            .or_else(|| {
-                self.lines.iter().min_by(|first, second| {
-                    let distance = |line: &PageLine| {
-                        let across = across(line);
-                        if across < line.top() {
-                            line.top() - across
-                        } else {
-                            across - line.bottom()
-                        }
-                    };
-                    distance(first).total_cmp(&distance(second))
-                })
-            })?;
+        // A point inside a cell is answered by that cell's own lines, and by
+        // nothing else.
+        //
+        // # Why the cell has to come first
+        //
+        // Because the cells of a row are side by side: their lines all sit at
+        // the same height, and asking which line a point is level with says
+        // only which row it is in. Without the cell, every click in a row
+        // landed in whichever of its cells came first — a table nobody could
+        // put the caret in, which is most of what a table is for.
+        let cell = self.cell_at(x, y);
+        let line = self.nearest_line(x, y, cell).or_else(|| self.nearest_line(x, y, None))?;
 
         let (along, _) = line.frame.in_frame(x, y);
 
@@ -723,6 +728,59 @@ impl Page {
         }
 
         Some(TextPosition::new(line.paragraph, line.end_offset))
+    }
+
+    /// The cell a point is in, innermost first.
+    ///
+    /// Innermost, because a table inside a cell is inside that cell: the point
+    /// is in both, and the one that decides where a click goes is the smallest
+    /// that holds it.
+    #[must_use]
+    pub fn cell_at(&self, x: f32, y: f32) -> Option<&PlacedCell> {
+        self.cells
+            .iter()
+            .filter(|cell| {
+                x >= cell.x && x <= cell.x + cell.width && y >= cell.y && y <= cell.y + cell.height
+            })
+            .min_by(|one, other| (one.width * one.height).total_cmp(&(other.width * other.height)))
+    }
+
+    /// The line a point is nearest, out of a cell's lines or out of all of them.
+    ///
+    /// Nearest across the text first and along it second: a point level with a
+    /// line belongs to that line wherever along it the point is, which is what
+    /// makes clicking in the margin beside a line put the caret on that line.
+    /// The second measure only settles which of several lines at one height is
+    /// meant — the case a table makes, and a text box beside text.
+    fn nearest_line(&self, x: f32, y: f32, cell: Option<&PlacedCell>) -> Option<&PageLine> {
+        let across = |line: &PageLine| {
+            let across = line.frame.in_frame(x, y).1;
+            if across < line.top() {
+                line.top() - across
+            } else if across > line.bottom() {
+                across - line.bottom()
+            } else {
+                0.0
+            }
+        };
+        let along = |line: &PageLine| {
+            let along = line.frame.in_frame(x, y).0;
+            if along < line.left {
+                line.left - along
+            } else if along > line.right {
+                along - line.right
+            } else {
+                0.0
+            }
+        };
+
+        self.lines.iter().filter(|line| cell.is_none_or(|cell| in_cell(line, cell))).min_by(
+            |first, second| {
+                across(first)
+                    .total_cmp(&across(second))
+                    .then_with(|| along(first).total_cmp(&along(second)))
+            },
+        )
     }
 
     /// Where a caret at a position should be drawn, as a rectangle.

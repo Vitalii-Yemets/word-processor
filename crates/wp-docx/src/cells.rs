@@ -56,10 +56,26 @@ pub struct CellRange {
 
 impl Document {
     /// Which cells the selection covers, when it is inside one table.
+    ///
+    /// Every stretch of it, and not only the one the caret is in: a block of
+    /// cells taken by dragging across them is one stretch per cell, and the
+    /// rectangle they make is what a command about it is about. Reaching for
+    /// [`Document::selection`] here made Merge Cells merge the one cell the
+    /// caret happened to be in.
     #[must_use]
     pub fn selected_cells(&self) -> Option<CellRange> {
         let here = self.table_here()?;
-        let Some((start, end)) = self.selection() else {
+
+        // A block taken cell by cell says so itself, which is the only way an
+        // empty one can be known. See [`Document::select_cell_block`].
+        if let Some(range) = self.cell_block_now() {
+            if range.table == here.table {
+                return Some(range);
+            }
+        }
+
+        let stretches = self.selections();
+        let (Some(&(start, _)), Some(&(_, end))) = (stretches.first(), stretches.last()) else {
             return Some(CellRange {
                 table: here.table,
                 rows: (here.row, here.row),
@@ -79,6 +95,24 @@ impl Document {
             rows: (at_start.row.min(at_end.row), at_start.row.max(at_end.row)),
             columns: (at_start.column.min(at_end.column), at_start.column.max(at_end.column)),
         })
+    }
+
+    /// Says that a block of cells is what is selected.
+    ///
+    /// Called with the stretches of text in those cells already selected: this
+    /// is the part of a cell selection that the stretches cannot express, which
+    /// is which cells were taken when the cells are empty. It is believed only
+    /// while the selection is still the one it was given with, so there is
+    /// nothing to undo it with. See the `cell_block` field.
+    pub fn select_cell_block(&mut self, range: CellRange) {
+        self.cell_block = Some((range, self.anchor, self.caret));
+    }
+
+    /// The block of cells taken, if one was and the selection is still it.
+    #[must_use]
+    fn cell_block_now(&self) -> Option<CellRange> {
+        let (range, anchor, caret) = self.cell_block.as_ref()?;
+        (*anchor == self.anchor && *caret == self.caret).then(|| range.clone())
     }
 
     /// Puts a line on one edge of the cell a place in the document is inside,

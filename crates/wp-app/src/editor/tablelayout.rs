@@ -27,7 +27,6 @@
 
 use wp_docx::model::{Alignment, TableFit};
 use wp_docx::table_properties::CellAlignment;
-use wp_docx::TextPosition;
 use wp_shell::Response;
 
 use crate::chrome::{Choice, Command, Popup};
@@ -218,50 +217,26 @@ impl Editor {
         let Some(position) = self.document.table_here() else {
             return self.report("Put the caret in a table first");
         };
-        let caret = self.caret();
-
-        // Which paragraphs the wanted part covers. A cell holds at least one
-        // paragraph and may hold several, so a part is a range of paragraphs
-        // rather than a count of cells.
-        let range = match index {
-            // The cell the caret is in: the paragraphs of that cell alone.
-            0 => self.document.cell_paragraphs(position.row, position.column),
-            1 => {
-                let mut first = usize::MAX;
-                let mut last = 0usize;
-                for row in 0..position.rows {
-                    let Some((start, end)) = self.document.cell_paragraphs(row, position.column)
-                    else {
-                        continue;
-                    };
-                    first = first.min(start);
-                    last = last.max(end);
-                }
-                (first != usize::MAX).then_some((first, last))
-            }
-            2 => {
-                let mut first = usize::MAX;
-                let mut last = 0usize;
-                for column in 0..position.columns {
-                    let Some((start, end)) = self.document.cell_paragraphs(position.row, column)
-                    else {
-                        continue;
-                    };
-                    first = first.min(start);
-                    last = last.max(end);
-                }
-                (first != usize::MAX).then_some((first, last))
-            }
-            3 => self.document.table_paragraphs(),
+        // Which cells the wanted part is made of. A row, a column and the
+        // whole table are rectangles of cells, taken cell by cell: a column
+        // taken as one stretch of text from its first cell to its last would
+        // take every other column on the way, because that is the order the
+        // cells are written in and not the order they are read.
+        let part = match index {
+            0 => Some(((position.row, position.row), (position.column, position.column))),
+            1 => Some(((0, position.rows.saturating_sub(1)), (position.column, position.column))),
+            2 => Some(((position.row, position.row), (0, position.columns.saturating_sub(1)))),
+            3 => Some((
+                (0, position.rows.saturating_sub(1)),
+                (0, position.columns.saturating_sub(1)),
+            )),
             _ => None,
         };
 
-        let Some((first, last)) = range else { return Response::Ignored };
-        let end = self.document.paragraph_text(last).map_or(0, |text| text.len());
-        self.document.set_caret(TextPosition::new(first, 0));
-        self.document.extend_selection_to(TextPosition::new(last, end));
-
-        let _ = caret;
+        let Some((rows, columns)) = part else { return Response::Ignored };
+        if !self.select_cells(rows, columns) {
+            return Response::Ignored;
+        }
         self.needs_redraw = true;
         self.report(SELECTING.get(index).copied().unwrap_or_default())
     }
@@ -349,8 +324,23 @@ mod tests {
         editor.document.set_caret(wp_docx::TextPosition::new(2, 0));
         editor.choose_table_part(2);
 
-        let (start, end) = editor.document.selection().expect("a selection");
-        assert!(end.paragraph > start.paragraph, "the selection covers one paragraph");
+        let taken = editor.document.selected_cells().expect("a block of cells");
+        assert_eq!(taken.rows, (0, 0), "a row other than the caret's was taken");
+        assert_eq!(taken.columns, (0, 2), "the row was not taken whole");
+    }
+
+    #[test]
+    fn selecting_a_column_takes_that_column_and_no_other() {
+        // The one thing a stretch of text cannot say: the cells between the
+        // top and the bottom of a column, in the order the file writes them,
+        // are the whole of the rest of the table.
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(2, 0));
+        editor.choose_table_part(1);
+
+        let taken = editor.document.selected_cells().expect("a block of cells");
+        assert_eq!(taken.rows, (0, 2), "the column was not taken whole");
+        assert_eq!(taken.columns, (1, 1), "it took more than the one column");
     }
 
     #[test]
@@ -358,9 +348,9 @@ mod tests {
         let mut editor = editor();
         editor.choose_table_part(3);
 
-        let (start, end) = editor.document.selection().expect("a selection");
-        // Nine cells of one paragraph each.
-        assert_eq!(end.paragraph - start.paragraph, 8);
+        let taken = editor.document.selected_cells().expect("a block of cells");
+        assert_eq!(taken.rows, (0, 2));
+        assert_eq!(taken.columns, (0, 2));
     }
 
     #[test]

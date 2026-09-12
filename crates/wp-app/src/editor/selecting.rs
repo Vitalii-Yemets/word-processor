@@ -107,9 +107,18 @@ impl Editor {
             if py < top || py > top + page.height {
                 continue;
             }
-            // From the left edge of the paper to where the text begins.
+            // From the left edge of the paper to where the text begins. Both
+            // measured from the same corner: the lines are the page's own
+            // measurements and the pointer is the window's, so the page's
+            // corner is added to the one before they are compared. Without
+            // that, the bar was the stretch from the page's left edge to a
+            // place on the desk beside it — which is to say, nothing at all.
+            //
+            // The pixel the text starts on belongs to the text, not to the bar,
+            // which is what the floor is for: a press on the first letter of a
+            // line is a press on that letter.
             let text_left = page.lines.iter().map(|line| line.left).fold(f32::MAX, f32::min);
-            if text_left == f32::MAX || px < origin_x || px >= origin_x + (text_left - origin_x) {
+            if text_left == f32::MAX || px < origin_x || px >= (origin_x + text_left).floor() {
                 continue;
             }
             // The line the pointer is level with.
@@ -128,6 +137,18 @@ impl Editor {
             return Response::Ignored;
         };
         let (paragraph, start, end) = (found.paragraph, found.start_offset, found.end_offset);
+
+        // Beside a table the bar takes the whole row, which is what Word takes:
+        // a line of it is one cell's worth of one row, and nobody means that.
+        if let Some(place) = self.document.table_at(paragraph) {
+            self.document.set_caret(TextPosition::new(paragraph, start));
+            if self.select_table_row(place.row) {
+                self.drag_by = Granularity::Line;
+                self.dragging = true;
+                self.cell_anchor = Some((place.row, 0));
+                return Response::Redraw;
+            }
+        }
 
         self.document.set_caret(TextPosition::new(paragraph, start));
         self.document.extend_selection_to(TextPosition::new(paragraph, end));
@@ -196,6 +217,13 @@ impl Editor {
     ///
     /// A plain drag needs none of this: the caret goes where the pointer is.
     pub(super) fn extend_drag(&mut self, x: i32, y: i32) -> Response {
+        // In a table, a drag that leaves the cell it began in takes whole
+        // cells: the rectangle between the two. See
+        // [`super::tablework::extend_cell_drag`].
+        if self.extend_cell_drag(x, y) {
+            return Response::Redraw;
+        }
+
         let Some(at) = self.position_at(x, y) else { return Response::Ignored };
 
         match self.drag_by {
@@ -286,6 +314,35 @@ fn sentence_around(text: &str, offset: usize) -> (usize, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_bar_down_the_left_of_the_page_selects_the_line_beside_it() {
+        use wp_docx::model::{Block, Body, Paragraph};
+        use wp_docx::Document;
+        use wp_shell::{App, Event, Modifiers};
+
+        let library = Box::leak(Box::new(wp_layout::FontLibrary::scan_system()));
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("A line to be taken whole")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = crate::editor::Editor::new(library, document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+
+        // Halfway between the left edge of the paper and where the text starts,
+        // level with the line.
+        let line = editor.pages[0].lines[0].clone();
+        let (origin_x, origin_y) = editor.page_origin(0);
+        let x = (origin_x + line.left / 2.0) as i32;
+        let y = (editor.content_top() + origin_y - editor.scroll_down() + line.baseline) as i32;
+
+        editor.handle(Event::MouseDown { x, y, modifiers: Modifiers::default() });
+        editor.handle(Event::MouseUp { x, y });
+
+        let (start, end) = editor.document.selection().expect("the line was not taken");
+        assert_eq!(start.offset, 0);
+        assert_eq!(end.offset, "A line to be taken whole".len());
+    }
 
     #[test]
     fn a_word_is_found_round_a_point_inside_it() {

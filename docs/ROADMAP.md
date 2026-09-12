@@ -1575,6 +1575,64 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   document is closed, which is Word's behaviour, but Word also offers it greyed
   out rather than saying so afterwards.
 
+- [x] **C39. Using a table with the mouse and the keyboard.** The commands about
+  tables were all there and working, and the table itself could not be used:
+  reported as "tables are broken and impossible to use". Four things were wrong,
+  and each of them was wrong everywhere rather than in some corner.
+  *Done:* a **press lands in the cell it was aimed at**. Every cell of a row is
+  at the same height, and a click was answered by the first line level with the
+  pointer — which is the first cell of that row, whichever cell was pressed. The
+  page now answers a point with the cell that holds it and then with that cell's
+  own lines, so the caret goes where it was put; the same answer serves a text
+  box beside text, which had the same fault.
+  **Tab moves by cell**, and Shift+Tab back, taking what is in the cell it lands
+  on so that a table is filled in by typing and pressing Tab. At the last cell it
+  adds a row. It typed a tab character before, which is what Ctrl+Tab is for and
+  is now.
+  **The arrows move by row.** Down went to the next line of the *document*,
+  which after the first cell of a row is the second cell of that row — the arrow
+  appeared to do nothing three times before reaching the row below. Down and up
+  now go to the cell under or over the caret, and off the end of the table to the
+  paragraph after or before it, while a cell of several lines is still moved
+  through line by line.
+  **A drag across cells takes the rectangle between them**, cell by cell and
+  whole, as Word does — not the stretch of text from one to the other, which runs
+  through every cell written in between. Shift and a press does the same, and so
+  does the Select menu, whose Column took the whole table before. The block is
+  drawn as the cells themselves, empty ones included; Delete empties them and
+  keeps them, and typing empties them and types in the first.
+  **The lines can be dragged**: a column's line moves between its two columns
+  and the last one makes the table wider, a row's bottom makes it taller, one
+  drag is one thing to undo, and the caret stays where it was. The pointer says
+  so over a line, and a row whose cells are merged offers nothing — its cells and
+  the grid no longer answer to one another.
+  **The bar beside a row takes the row**, and the band above a column takes the
+  column. Two faults were found underneath: the selection bar compared a window
+  coordinate with a page one and so was empty on every page that is not at the
+  window's left edge — no click in it had ever selected a line — and a block of
+  cells was read back from the text in them, so Merge Cells on a table somebody
+  had just inserted merged the one cell the caret was in.
+  *Not done:* Word's move handle at the top left of a table and its resize handle
+  at the bottom right — **C40**. Double-clicking a column's line to fit it to its
+  contents, and the ⊕ buttons Word shows between rows — **C41**.
+
+- [ ] **C40. The table's own handles.** Word draws two when the pointer is over a
+  table: a four-arrows square just outside the top-left corner, which drags the
+  whole table to another place in the document, and a small right angle just
+  outside the bottom-right corner, which resizes the whole table — every column
+  by the same proportion. The move handle is Word's only way of dragging a table
+  and needs the table's element to be taken out of one place in the tree and put
+  into another, which is what Cut and Paste of a table would be; the resize
+  handle is **C39**'s grid writing with every width scaled at once.
+
+- [ ] **C41. What the pointer offers between rows.** Two more of Word's mouse
+  affordances on a table. Double-clicking the line at the right of a column fits
+  that column to what is in it — the width of the widest cell, which is
+  **C15**'s AutoFit for one column rather than for the table. And resting the
+  pointer just outside a line between two rows, or between two columns, shows a
+  small ⊕ which inserts a row or a column there when it is pressed: Word's
+  quickest way to add one, and the reason its Insert group is rarely reached for.
+
 ## D — Pictures and drawings
 
 - [x] **D1. BMP, in its several forms.** The first of the four formats the

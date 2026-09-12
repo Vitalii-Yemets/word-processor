@@ -70,8 +70,10 @@ mod styledialog;
 mod styles;
 mod symboldialog;
 mod tabledialog;
+mod tableedges;
 mod tablelayout;
 mod tablestyle;
+mod tablework;
 mod tabsdialog;
 mod theme_effects;
 mod themes;
@@ -166,6 +168,20 @@ pub struct Editor {
     /// Word's column selection: a rectangle of text rather than a stretch of
     /// it. See [`selecting::extend_column_drag`].
     column_drag: Option<(i32, i32)>,
+    /// Which cell a drag inside a table began in, while one is running.
+    ///
+    /// A drag from one cell to another takes whole cells, and which cells is a
+    /// rectangle drawn between the cell it began in and the cell the pointer is
+    /// over. Remembered because the selection itself cannot say: once it covers
+    /// the rectangle, both its ends are corners of the rectangle and neither of
+    /// them says which corner the hand started from. See
+    /// [`tablework::extend_cell_drag`].
+    cell_anchor: Option<(usize, usize)>,
+    /// The line of a table being dragged, while one is being dragged.
+    ///
+    /// Word's way of setting a column width: the line between two columns is
+    /// pulled to where it should be. See [`tableedges`].
+    edge_drag: Option<tableedges::EdgeDrag>,
     /// Where the bar between two views of the document sits, as a share of the
     /// window, and how the second view is scrolled. See [`split`].
     split: Option<f32>,
@@ -495,6 +511,8 @@ impl Editor {
             border_pen: None,
             adding_selection: false,
             column_drag: None,
+            cell_anchor: None,
+            edge_drag: None,
             editing_furniture: None,
             tab_before_furniture: None,
             dimmed: Vec::new(),
@@ -1025,6 +1043,12 @@ impl Editor {
 
     /// Moves the caret a line up or down, keeping roughly the same column.
     fn move_vertically(&mut self, downwards: bool, extend: bool) {
+        // In a table, down is a row down and not a line on: the next line of
+        // the document is the next cell of the same row. See
+        // [`Editor::step_table_row`].
+        if self.step_table_row(downwards, extend) {
+            return;
+        }
         let lines = self.lines();
         let Some(current) = self.caret_line() else { return };
         let Some(index) = lines.iter().position(|entry| *entry == current) else { return };

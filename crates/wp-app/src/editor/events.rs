@@ -175,6 +175,16 @@ impl App for Editor {
             return Cursor::ResizeVertical;
         }
 
+        // The band above a table is not text: a press there takes a column.
+        if self.column_bar_at(x, y).is_some() {
+            return Cursor::Arrow;
+        }
+
+        // On one of a table's own lines, the pointer says which way it moves.
+        if let Some(edge) = self.table_edge_at(x, y) {
+            return if edge.across { Cursor::ResizeHorizontal } else { Cursor::ResizeVertical };
+        }
+
         // Over the page area: an I-beam where there is a place for the caret,
         // and an arrow over the desk beside and between the pages.
         if self.position_at(x, y).is_some() {
@@ -300,6 +310,11 @@ impl App for Editor {
                 self.column_drag = None;
                 self.sliding = false;
                 self.resizing_pane = false;
+
+                // A line of the table that was being dragged is left where it is.
+                if self.release_table_edge() {
+                    return Response::Redraw;
+                }
 
                 // The table pen draws its line when the drag that made it ends.
                 if self.table_pen_release(x, y) {
@@ -764,6 +779,24 @@ impl Editor {
             return Response::Redraw;
         }
 
+        // Just above a table, a press takes the column under the pointer.
+        // Before the lines, because the band above the table is not a line and
+        // after the caret would have been moved into a cell it is too late.
+        if self.press_column_bar(x, y) {
+            self.status.clear();
+            self.needs_redraw = true;
+            return Response::Redraw;
+        }
+
+        // A press on one of a table's own lines drags that line, which is how a
+        // column is given a width in Word. Before the caret is moved, because
+        // the line is not a place for the caret to go.
+        if self.press_table_edge(x, y) {
+            self.status.clear();
+            self.needs_redraw = true;
+            return Response::Redraw;
+        }
+
         // Alt and a drag takes a rectangle of text rather than a stretch of it.
         if modifiers.alt {
             self.document.set_caret(position);
@@ -775,8 +808,22 @@ impl Editor {
         }
 
         // Shift+click reaches from where the caret already is, which is how a
-        // selection is made without dragging.
+        // selection is made without dragging — and in a table it reaches by
+        // whole cells, as a drag does.
+        if modifiers.shift && self.document.table_here().is_some() {
+            self.cell_anchor = self.document.table_here().map(|place| (place.row, place.column));
+            if self.extend_cell_drag(x, y) {
+                self.drag_by = super::selecting::Granularity::Character;
+                self.dragging = true;
+                self.status.clear();
+                return Response::Redraw;
+            }
+        }
+
         self.document.move_caret(position, modifiers.shift);
+        // Where the caret has landed is where a drag across cells reaches
+        // from. Outside a table there is no such cell, and this is None.
+        self.cell_anchor = self.document.table_here().map(|place| (place.row, place.column));
         self.drag_by = super::selecting::Granularity::Character;
         self.dragging = true;
         self.status.clear();
@@ -1129,6 +1176,11 @@ impl Editor {
             }
             self.needs_redraw = true;
             return Response::Redraw;
+        }
+
+        // A line of a table being dragged follows the pointer.
+        if self.edge_drag.is_some() {
+            return self.drag_table_edge(x, y);
         }
 
         // A drag begun with Alt takes a rectangle, which is worked out from the
@@ -1724,6 +1776,13 @@ impl Editor {
                     let changed = self.document.delete_word_forward();
                     self.edited(changed, "")
                 }
+                // Tab moves between cells, so a tab inside a cell has to be
+                // asked for another way. Word's answer is Ctrl+Tab, and it is
+                // the same key outside a table, where it simply types one.
+                Key::Tab => {
+                    let changed = self.document.type_text("\t");
+                    self.edited(changed, "")
+                }
 
                 _ => Response::Ignored,
             };
@@ -1766,6 +1825,10 @@ impl Editor {
                 let changed = self.document.delete_forward();
                 self.edited(changed, "")
             }
+            // In a table Tab is how the caret gets about: it moves a cell on,
+            // or with Shift a cell back, and never types anything. Outside one
+            // it types a tab like any other key.
+            Key::Tab if self.document.table_here().is_some() => self.step_cell(!extend),
             Key::Tab => {
                 let changed = self.document.type_text("\t");
                 self.edited(changed, "")

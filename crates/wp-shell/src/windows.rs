@@ -197,12 +197,6 @@ const MESSAGE_MOUSE_WHEEL: u32 = 0x020A;
 const MESSAGE_SET_CURSOR: u32 = 0x0020;
 const MESSAGE_CLOSE: u32 = 0x0010;
 const MESSAGE_TIMER: u32 = 0x0113;
-/// What the system's own caption buttons send. The window's own buttons send it
-/// too, so that both roads lead to the same place.
-const MESSAGE_SYSTEM_COMMAND: u32 = 0x0112;
-const COMMAND_MINIMISE: WordParam = 0xF020;
-const COMMAND_MAXIMISE: WordParam = 0xF030;
-const COMMAND_RESTORE: WordParam = 0xF120;
 /// Alt and the keys pressed with it, which Windows keeps apart from the rest.
 const MESSAGE_SYSTEM_KEY_DOWN: u32 = 0x0104;
 const MESSAGE_SYSTEM_KEY_UP: u32 = 0x0105;
@@ -313,7 +307,11 @@ const WINDOW_MAXIMIZED: u32 = 0x0100_0000;
 /// worked out while the window was being created stands, and the caption it
 /// drew there stays on screen above the one this program draws for itself.
 const FRAME_CHANGED: u32 = 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020;
+const SHOW_MINIMIZED: i32 = 6;
+const SHOW_MAXIMIZED: i32 = 3;
 const SHOW_RESTORED: i32 = 9;
+/// What the size message says when the window has just been minimised.
+const SIZE_MINIMISED: WordParam = 1;
 /// Moving and sizing a window, without changing its place in the stack.
 const MOVE_AND_SIZE: u32 = 0x0004 | 0x0010;
 /// Asking the system for the part of the screen a window may use.
@@ -526,6 +524,13 @@ thread_local! {
     /// The window the last event came from, so a dialog is owned by the window
     /// the person is looking at rather than always by the first one.
     static WINDOW: std::cell::Cell<Handle> = const { std::cell::Cell::new(core::ptr::null_mut()) };
+
+    /// What the window was asked to do with itself, waiting to be done.
+    ///
+    /// See [`window_command`] for why it waits, and [`run_pending_command`] for
+    /// where the wait ends.
+    static PENDING: std::cell::Cell<Option<(Handle, crate::WindowCommand)>> =
+        const { std::cell::Cell::new(None) };
 }
 
 /// Which view a window is, by the order it was opened in.
@@ -801,6 +806,10 @@ fn deliver(window: Handle, event: Event) -> Result_ {
         }
         Response::Ignored | Response::Refuse => {}
     }
+
+    // Last of all, because the application is no longer in hand here and
+    // because what it asks for changes the window itself.
+    run_pending_command();
     0
 }
 
@@ -881,6 +890,14 @@ unsafe extern "system" fn window_procedure(
         MESSAGE_SIZE => {
             let width = (long & 0xFFFF) as u32;
             let height = ((long >> 16) & 0xFFFF) as u32;
+            // A window on its way to the taskbar reports no size at all. There
+            // is nothing to lay a page out in and nobody to show it to, and
+            // Word leaves the view as it was until the window comes back — so
+            // the size is not passed on, and the one it had is what it has when
+            // it is restored.
+            if word == SIZE_MINIMISED || width == 0 || height == 0 {
+                return 0;
+            }
             deliver(window, Event::Resized { width, height })
         }
         MESSAGE_MOUSE_WHEEL => {
@@ -1116,36 +1133,58 @@ unsafe fn hit_test(window: Handle, long: LongParam) -> Result_ {
 
 /// Minimises, maximises, restores or closes the window.
 ///
-/// # Why the message is posted rather than carried out
+/// # Why it is remembered rather than carried out
 ///
-/// Because this is called from inside the application, and the application is
-/// borrowed while it runs. Minimising a window makes the system call the window
-/// procedure again then and there — with the new size, the new position, and
-/// the paint that follows — and every one of those wants to reach the
-/// application that is already in hand. That is a borrow of it while it is
-/// borrowed, which is not something a program carries on from: it stops dead,
-/// and the window goes as though it had been closed.
+/// Because this is called from inside the application, in the middle of the
+/// press on the button that asked for it, and two things about that moment
+/// make the change impossible to make there.
 ///
-/// So the request is put in the queue instead, and carried out once the
-/// application has finished with the press that asked for it. That is also the
-/// road the system's own caption buttons take, which is the second reason to
-/// take it: one road to minimising a window rather than two.
+/// The application is borrowed while it answers. Minimising a window makes the
+/// system call the window procedure again then and there — with the new size,
+/// the new position, and the paint that follows — and every one of those wants
+/// to reach the application that is already in hand. Borrowing it twice is
+/// where a program stops dead, and the window then goes as though it had been
+/// closed.
+///
+/// And the press has the mouse captured, so that a selection dragged off the
+/// edge of the window keeps growing. A window holding the capture is in the
+/// middle of a gesture as far as the system is concerned, and a request to
+/// minimise or maximise sent to it in that state is declined — which is a
+/// button that does nothing at all.
+///
+/// So the request is remembered, and carried out by
+/// [`run_pending_command`] once the application has finished answering and the
+/// capture is let go.
 pub(crate) fn window_command(command: crate::WindowCommand) {
     let window = owner_window();
     if window.is_null() {
         return;
     }
-    // SAFETY: the handle is this thread's window, and posting a message copies
-    // what it is given rather than keeping a pointer to anything.
+    PENDING.with(|slot| slot.set(Some((window, command))));
+}
+
+/// Carries out the window command the application asked for, if it asked.
+///
+/// Called after the application has answered an event, which is the first
+/// moment at which the window's own state can be changed: see
+/// [`window_command`] for what is wrong with the moment before it.
+fn run_pending_command() {
+    let Some((window, command)) = PENDING.with(std::cell::Cell::take) else { return };
+    // SAFETY: the handle is this thread's window. Taking the request out of the
+    // slot before acting on it is what keeps the calls below — which deliver
+    // the new size straight back down — from finding it again and looping.
     unsafe {
+        // The gesture is over: whatever the press captured the mouse for, it is
+        // not carrying on through a window that is about to change shape. Held
+        // capture is also the reason the system declines to minimise.
+        ReleaseCapture();
         match command {
             crate::WindowCommand::Minimise => {
-                PostMessageW(window, MESSAGE_SYSTEM_COMMAND, COMMAND_MINIMISE, 0);
+                ShowWindow(window, SHOW_MINIMIZED);
             }
             crate::WindowCommand::ToggleMaximise => {
                 let maximised = GetWindowLongW(window, -16) as u32 & WINDOW_MAXIMIZED != 0;
-                let wanted = if maximised { COMMAND_RESTORE } else { COMMAND_MAXIMISE };
-                PostMessageW(window, MESSAGE_SYSTEM_COMMAND, wanted, 0);
+                ShowWindow(window, if maximised { SHOW_RESTORED } else { SHOW_MAXIMIZED });
             }
             crate::WindowCommand::Close => {
                 // Through the close message, so the application is asked about

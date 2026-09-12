@@ -72,6 +72,10 @@ impl Editor {
     /// Draws the pages, and everything on them.
     pub(super) fn draw_pages(&mut self) {
         let selections = self.document.selections();
+        // A block of cells is shown as the cells themselves rather than as the
+        // text in them, which is how Word shows it — and the only way an empty
+        // cell can be seen to be selected at all.
+        let cells = self.selected_cell_rects();
 
         for index in 0..self.pages.len() {
             let (origin_x, origin_y) = self.page_origin(index);
@@ -115,11 +119,23 @@ impl Editor {
                 self.draw_gridlines(origin_x, paper_top, page_width, paper_height);
             }
 
+            // The cells of a block, whole: the lines inside them are not drawn
+            // over again, because the cell covers them.
+            for (_, cell) in cells.iter().filter(|(page, _)| *page == index) {
+                self.canvas.fill_rect(
+                    (origin_x + cell.x) as i32,
+                    (y + cell.y) as i32,
+                    cell.width.ceil() as i32,
+                    cell.height.ceil() as i32,
+                    self.theme.selection,
+                );
+            }
+
             // The selection goes under the text, not over it, so the letters
             // stay the colour they were written in. Every stretch of it: a
             // person who held Ctrl and dragged out a second one has to see
             // both, or the next thing they press will surprise them.
-            for (start, end) in &selections {
+            for (start, end) in selections.iter().filter(|_| cells.is_empty()) {
                 for (rect_x, rect_y, rect_width, rect_height) in
                     self.pages[index].selection_rects(*start, *end)
                 {

@@ -131,6 +131,64 @@ impl Document {
         paragraphs_under(&self.tree().root, &place.table)
     }
 
+    /// How many cells a row of the table at the caret has.
+    ///
+    /// Row by row rather than once for the table, because rows do not have to
+    /// agree: two cells merged across leave that row one cell shorter, and a
+    /// table read from Word may have been built that way in the first place.
+    #[must_use]
+    pub fn cells_in_row(&self, row: usize) -> usize {
+        let Some(place) = self.table_here() else { return 0 };
+        let Some(table) = element_at(&self.tree().root, &place.table) else { return 0 };
+        table
+            .children_named(Some(read::W), "tr")
+            .nth(row)
+            .map_or(0, |row| count_children(row, "tc"))
+    }
+
+    /// The cell Tab moves the caret on to, or Shift+Tab back to.
+    ///
+    /// Word's Tab in a table moves by cell rather than by character — it is how
+    /// a table is filled in without ever reaching for the mouse. At the end of
+    /// a row it goes on to the first cell of the next one, and at the very last
+    /// cell it answers `None`: that is where Word adds a row instead, which is
+    /// a decision for the editor and not for the document.
+    #[must_use]
+    pub fn cell_beside(&self, forwards: bool) -> Option<(usize, usize)> {
+        let place = self.table_here()?;
+        if forwards {
+            if place.column + 1 < place.columns {
+                return Some((place.row, place.column + 1));
+            }
+            if place.row + 1 < place.rows {
+                return Some((place.row + 1, 0));
+            }
+            None
+        } else {
+            if place.column > 0 {
+                return Some((place.row, place.column - 1));
+            }
+            let above = place.row.checked_sub(1)?;
+            Some((above, self.cells_in_row(above).checked_sub(1)?))
+        }
+    }
+
+    /// Everything in one cell of the table at the caret, as a stretch.
+    ///
+    /// What Tab selects when it lands on a cell, and what selecting a cell with
+    /// the mouse comes to. From the start of the cell's first paragraph to the
+    /// end of its last: a cell holds paragraphs, so a cell is a range.
+    #[must_use]
+    pub fn cell_text_range(
+        &self,
+        row: usize,
+        column: usize,
+    ) -> Option<(crate::TextPosition, crate::TextPosition)> {
+        let (first, last) = self.cell_paragraphs(row, column)?;
+        let end = self.paragraph_text(last).unwrap_or_default().len();
+        Some((crate::TextPosition::new(first, 0), crate::TextPosition::new(last, end)))
+    }
+
     /// Turns the table at the caret back into ordinary paragraphs.
     ///
     /// Word's Convert to Text. Its default separator is a tab, so a row becomes

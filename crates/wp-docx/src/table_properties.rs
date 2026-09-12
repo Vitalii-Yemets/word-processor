@@ -375,6 +375,30 @@ impl Document {
             .map(str::to_owned)
     }
 
+    /// The widths of the columns of the table round a paragraph, in twentieths
+    /// of a point.
+    ///
+    /// Round a paragraph rather than at the caret, because what asks is a
+    /// pointer over a line of some table that the caret is nowhere near. Empty
+    /// when there is no table there, and when the table states no grid — which
+    /// is a table whose columns nobody has settled.
+    #[must_use]
+    pub fn table_grid_at(&self, paragraph: usize) -> Vec<i32> {
+        let Some(place) = self.table_at(paragraph) else { return Vec::new() };
+        let Some(table) = edit::element_at_path(&self.tree().root, &place.table) else {
+            return Vec::new();
+        };
+        let Some(grid) = table.child(Some(read::W), "tblGrid") else { return Vec::new() };
+        grid.children_named(Some(read::W), "gridCol")
+            .map(|column| {
+                column
+                    .attribute(Some(read::W), "w")
+                    .and_then(|text| text.parse::<i32>().ok())
+                    .unwrap_or(0)
+            })
+            .collect()
+    }
+
     /// The `w:tbl` the caret is in, for reading.
     fn table_element_here(&self) -> Option<&Element> {
         let position = self.table_here()?;
