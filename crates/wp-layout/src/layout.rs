@@ -2300,8 +2300,60 @@ impl<'a> LayoutEngine<'a> {
             // this one on the next page along with the one after it.
             before_line = Mark::here(pages, *y, *column, cursor, number);
 
+            // The pieces this line is laid out in: one for each stretch of
+            // room beside the drawings at this height, filled left to right.
+            // Nearly always one — a drawing in the middle of the text is what
+            // makes it two, which is what Word's `bothSides` wrapping is.
+            //
+            // The stretches are asked for against the height settled above; a
+            // piece whose own text is taller than the first piece's would like
+            // a taller band than was asked for, which is rare enough to leave.
+            let spans = self.free_spans(
+                page_index,
+                here.left + indent_start + extra_first,
+                (full_width - extra_first).max(1.0),
+                *y,
+                *y + height,
+            );
+            let mut pieces: Vec<(Line, f32, f32)> = Vec::new();
+            let mut at = cursor;
+            for (which, (span_left, span_width)) in spans.iter().copied().enumerate() {
+                if at >= items.len() {
+                    break;
+                }
+                let last_span = which + 1 == spans.len();
+                let piece = if last_span {
+                    // Nowhere to pass a word on to, so this one takes it
+                    // whatever its width — and cuts it if it is wider than the
+                    // stretch itself.
+                    break_line(&mut items, &mut item_levels, at, span_width)
+                } else {
+                    break_next_line_fitting(&items, at, span_width, true)
+                };
+                if piece.items.end <= at {
+                    // Nothing fits in this stretch. The word goes in the next.
+                    continue;
+                }
+                at = piece.items.end;
+                pieces.push((piece, span_left, span_width));
+            }
+            if pieces.is_empty() {
+                pieces.push((line.clone(), line_left, line_width));
+                at = line.items.end;
+            }
+
+            // The line is as tall as the tallest of its pieces.
+            for (piece, ..) in &pieces {
+                let (piece_ascent, piece_descent, piece_natural) =
+                    line_metrics(piece, &items, &styles);
+                ascent = ascent.max(piece_ascent);
+                descent = descent.max(piece_descent);
+                natural_height = natural_height.max(piece_natural);
+            }
+            height = line_height(natural_height, &resolved, scale).max(height);
+
             let baseline = *y + ascent;
-            let next = line.items.end;
+            let next = at;
             let is_last = next >= items.len();
 
             // The mark goes on the first line only, and before the glyphs of
@@ -2314,34 +2366,40 @@ impl<'a> LayoutEngine<'a> {
                         paragraph,
                         document,
                         pages.last_mut().expect("there is always a page"),
-                        line_left,
+                        pieces.first().map_or(line_left, |(_, left, _)| *left),
                         indent_first,
                         baseline,
                     );
                 }
             }
 
-            self.place_line(
-                &line,
-                &items,
-                &styles,
-                pages.last_mut().expect("there is always a page"),
-                LinePlacement {
-                    left: line_left,
-                    origin: here.left,
-                    width: line_width,
-                    baseline,
-                    ascent,
-                    descent,
-                    alignment: resolved.alignment,
-                    paragraph_rtl: resolved.right_to_left,
-                    is_last_line: is_last,
-                    paragraph: index,
-                    page: page_index,
-                    area,
-                },
-                Composition { stops: &resolved.tab_stops, levels: &item_levels },
-            );
+            let count = pieces.len();
+            for (which, (piece, piece_left, piece_width)) in pieces.iter().enumerate() {
+                self.place_line(
+                    piece,
+                    &items,
+                    &styles,
+                    pages.last_mut().expect("there is always a page"),
+                    LinePlacement {
+                        left: *piece_left,
+                        origin: here.left,
+                        width: *piece_width,
+                        baseline,
+                        ascent,
+                        descent,
+                        alignment: resolved.alignment,
+                        paragraph_rtl: resolved.right_to_left,
+                        // Only the piece that ends the paragraph is a last
+                        // line: a justified line broken round a drawing is
+                        // stretched in every piece but that one.
+                        is_last_line: is_last && which + 1 == count,
+                        paragraph: index,
+                        page: page_index,
+                        area,
+                    },
+                    Composition { stops: &resolved.tab_stops, levels: &item_levels },
+                );
+            }
 
             *y += height;
             // A drawing wrapped above and below pushes the text past its foot,
@@ -3439,18 +3497,40 @@ impl<'a> LayoutEngine<'a> {
         }
     }
 
-    /// How much room a line has, once the drawings floating beside it are out
-    /// of the way.
+    /// The widest stretch of room a line has, once the drawings floating
+    /// beside it are out of the way.
     ///
-    /// Given where the line would start and how wide it would be, this returns
-    /// where it actually starts and how wide it actually is. Where a drawing
-    /// splits the room in two — text could run down either side of it — the
-    /// wider side is taken, which is what Word does and what keeps a column of
-    /// four words wide from appearing beside a picture.
+    /// What asks is everything that needs one number rather than a line's
+    /// worth of them: the first guess at a line's height, and the widow rule
+    /// looking ahead. The line itself is laid out across every stretch — see
+    /// [`Self::free_spans`].
     fn usable_span(&self, page: usize, left: f32, width: f32, top: f32, bottom: f32) -> (f32, f32) {
+        let spans = self.free_spans(page, left, width, top, bottom);
+        // The widest. A line has to be somewhere, so a drawing that covers
+        // everything leaves the line where it was rather than nowhere.
+        spans.into_iter().max_by(|one, other| (one.1).total_cmp(&other.1)).unwrap_or((left, width))
+    }
+
+    /// Every stretch of room a line has, left to right, once the drawings
+    /// floating beside it are out of the way.
+    ///
+    /// A drawing in the middle of the text leaves room on both sides of it, and
+    /// a line beside it is a piece of line each side — which is what Word's
+    /// `bothSides` wrapping means and what it writes unless told otherwise.
+    /// Each stretch is where it starts and how wide it is.
+    fn free_spans(
+        &self,
+        page: usize,
+        left: f32,
+        width: f32,
+        top: f32,
+        bottom: f32,
+    ) -> Vec<(f32, f32)> {
         if self.floats.is_empty() {
-            return (left, width);
+            return vec![(left, width)];
         }
+        // Whether any drawing beside this line asks for the wider side alone.
+        let mut largest_only = false;
 
         // Every stretch across the line that no drawing covers, in order.
         let mut free = vec![(left, left + width)];
@@ -3498,7 +3578,11 @@ impl<'a> LayoutEngine<'a> {
             let (blocked_left, blocked_right) = match float.side {
                 wp_docx::anchor::WrapSide::Left => (blocked_left, left + width),
                 wp_docx::anchor::WrapSide::Right => (left, blocked_right),
-                _ => (blocked_left, blocked_right),
+                wp_docx::anchor::WrapSide::Largest => {
+                    largest_only = true;
+                    (blocked_left, blocked_right)
+                }
+                wp_docx::anchor::WrapSide::BothSides => (blocked_left, blocked_right),
             };
 
             let mut narrowed = Vec::new();
@@ -3517,18 +3601,31 @@ impl<'a> LayoutEngine<'a> {
             free = narrowed;
         }
 
-        // The widest stretch left. A line has to be somewhere, so a drawing
-        // that covers everything leaves the line where it was rather than
-        // leaving it nowhere.
-        let widest = free.into_iter().filter(|(start, end)| end > start).max_by(|first, second| {
-            (first.1 - first.0)
-                .partial_cmp(&(second.1 - second.0))
-                .unwrap_or(core::cmp::Ordering::Equal)
-        });
-        match widest {
-            Some((start, end)) => (start, (end - start).max(1.0)),
-            None => (left, width),
+        // What is left, as a place and a width each. Anything narrower than a
+        // line is tall is not room for text at all: a four-pixel gap beside a
+        // picture would otherwise take one letter per line and read as a
+        // column of nonsense, and Word leaves such a gap empty too.
+        let least = ROOM_FOR_TEXT;
+        let mut spans: Vec<(f32, f32)> = free
+            .into_iter()
+            .filter(|(start, end)| end - start >= least)
+            .map(|(start, end)| (start, end - start))
+            .collect();
+        spans.sort_by(|one, other| one.0.total_cmp(&other.0));
+
+        // A drawing that asks for the wider side alone gets it.
+        if largest_only && spans.len() > 1 {
+            let widest = spans
+                .iter()
+                .copied()
+                .max_by(|one, other| (one.1).total_cmp(&other.1))
+                .expect("more than one");
+            spans = vec![widest];
         }
+        if spans.is_empty() {
+            return vec![(left, width.max(1.0))];
+        }
+        spans
     }
 
     /// Pushes a position past any drawing wrapped above and below it.
@@ -5082,6 +5179,22 @@ impl Placement {
     }
 }
 
+impl Item {
+    /// Whether the drawing in this item floats on the page rather than sitting
+    /// in the line.
+    ///
+    /// A floating drawing takes no room on the line it is anchored in: not
+    /// across it — the width is already left out when the item is built — and
+    /// not down it either. Counting its height made the anchor's line as tall
+    /// as the whole drawing, so the text after it began below the drawing and
+    /// nothing ever came out beside one. Square wrapping wrapped nothing.
+    fn floats(&self) -> bool {
+        self.picture_anchor.is_some()
+            || self.shape.as_ref().is_some_and(|(shape, _)| shape.anchor.is_some())
+            || self.group.as_ref().is_some_and(|(group, _)| group.anchor.is_some())
+    }
+}
+
 /// One line: a span of items, and where the drawable part of it ends.
 #[derive(Clone, Debug)]
 struct Line {
@@ -5498,6 +5611,10 @@ fn line_metrics(line: &Line, items: &[Item], styles: &[RunStyle]) -> (f32, f32, 
             ascent = ascent.max(style.ascent);
             descent = descent.max(style.descent);
             height = height.max(style.line_height);
+        }
+        // A drawing that floats is not part of the line. See [`Item::floats`].
+        if items[index].floats() {
+            continue;
         }
         // A picture stands on the baseline, so the line has to be tall enough
         // to hold it or it would be drawn over the paragraph above.
@@ -6463,12 +6580,31 @@ fn count_sequences(
     }
 }
 
+/// The narrowest stretch of room beside a drawing that counts as room at all,
+/// in pixels.
+///
+/// A tenth of an inch at the usual ninety-six to the inch: about one letter of
+/// ordinary text. A gap narrower than that would take a letter per line and
+/// read as a column of nonsense, so it is left empty — which is what Word does
+/// with the sliver between a picture and the margin.
+const ROOM_FOR_TEXT: f32 = 9.6;
+
 /// Breaks the next line out of a paragraph's items.
 ///
 /// Greedy, as Word is: words are added until one does not fit and the line ends
 /// before it. A single item wider than the line still goes on it, because there
 /// is nowhere else for it to go and a line that fits nothing would never end.
 fn break_next_line(items: &[Item], start: usize, available: f32) -> Line {
+    break_next_line_fitting(items, start, available, false)
+}
+
+/// The same, able to say that nothing fits.
+///
+/// `must_fit` is for a line laid out in pieces: a word too wide for the piece
+/// beside a picture belongs in the piece on the other side of it, not cut in
+/// half. The last piece has nowhere to pass a word on to, so it takes one
+/// whatever its width — which is the rule this had always followed.
+fn break_next_line_fitting(items: &[Item], start: usize, available: f32, must_fit: bool) -> Line {
     let mut index = start;
     let mut used = 0.0f32;
 
@@ -6490,6 +6626,11 @@ fn break_next_line(items: &[Item], start: usize, available: f32) -> Line {
         }
 
         let would_be = used + item.width;
+        // Nothing on the line yet and this will not fit: for a piece that has
+        // somewhere to pass the word on to, the piece stays empty.
+        if must_fit && would_be > available && used == 0.0 && !item.is_space {
+            return Line { items: first..first, last_visible: first };
+        }
         if would_be > available && used > 0.0 && !item.is_space {
             if item.breaks_before {
                 return Line { items: first..index, last_visible };

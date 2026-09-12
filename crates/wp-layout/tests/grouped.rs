@@ -104,12 +104,30 @@ fn every_drawing_in_a_group_answers_to_the_group() {
 }
 
 #[test]
-fn a_group_is_as_tall_on_the_line_as_the_box_it_covers() {
-    let laid = pages(&grouped());
+fn a_group_in_the_line_is_as_tall_on_it_as_the_box_it_covers() {
+    // In the line rather than floating: a group that floats is not part of the
+    // line at all, which is the test after this one.
+    let mut document = grouped();
+    let at = TextPosition::new(0, 0);
+    document.set_caret(at);
+    assert!(document.set_anchor_at(at, None), "the group would not come back into the line");
+
+    let laid = pages(&document);
     let page = laid.first().expect("a page");
     let line = page.lines.first().expect("a line");
     // Two inches, and the line has to be tall enough to hold it.
     assert!(line.ascent > 180.0, "the line is only {} tall", line.ascent);
+}
+
+#[test]
+fn a_group_that_floats_leaves_the_line_it_is_anchored_in_alone() {
+    // A floating drawing takes no room on its line: not across it, and not
+    // down it either. Counting its height made the line as tall as the whole
+    // drawing, so nothing ever came out beside one.
+    let laid = pages(&grouped());
+    let page = laid.first().expect("a page");
+    let line = page.lines.first().expect("a line");
+    assert!(line.ascent < 40.0, "the line was made {} tall by the group", line.ascent);
 }
 
 #[test]

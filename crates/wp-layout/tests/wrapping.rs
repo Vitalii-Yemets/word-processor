@@ -195,12 +195,25 @@ fn shaped(preset: &str, wrap: Wrap) -> Document {
     Document::open(&bytes).expect("reopening")
 }
 
-/// How wide the lines beside a drawing come out.
+/// How much room the lines beside a drawing come out with, line by line.
+///
+/// Room and not width: a line beside a drawing that has space on both sides of
+/// it is two pieces, and what the outline decides is how much room the line has
+/// altogether. The pieces of one line are the ones that share a baseline.
 ///
 /// The first line is left out: the line a floating drawing is anchored in keeps
 /// the whole width, which is what makes it the anchor rather than an obstacle.
 fn top_line_widths(page: &wp_layout::Page) -> Vec<f32> {
-    page.lines.iter().skip(1).take(4).map(|line| line.right - line.left).collect()
+    let mut rooms: Vec<(f32, f32)> = Vec::new();
+    for line in page.lines.iter().skip(1) {
+        let room = line.right - line.left;
+        match rooms.iter_mut().find(|(baseline, _)| (*baseline - line.baseline).abs() < 0.5) {
+            Some((_, found)) => *found += room,
+            None => rooms.push((line.baseline, room)),
+        }
+    }
+    rooms.sort_by(|one, other| one.0.total_cmp(&other.0));
+    rooms.into_iter().take(4).map(|(_, room)| room).collect()
 }
 
 #[test]
@@ -230,4 +243,122 @@ fn tight_wrapping_round_a_rectangle_is_the_same_as_square_wrapping() {
     let tight = top_line_widths(&pages(&shaped("rect", Wrap::Tight))[0]);
     let square = top_line_widths(&pages(&shaped("rect", Wrap::Square))[0]);
     assert_eq!(tight, square);
+}
+
+// --- Text down both sides of a drawing --------------------------------------
+
+/// The same document with the drawing put where there is room either side of
+/// it: half an inch in from the left of the text, which leaves about an inch
+/// and a half on the left and four inches on the right.
+fn document_with_drawing_in_the_middle(side: wp_docx::anchor::WrapSide) -> Document {
+    let anchor = Anchor {
+        wrap: Wrap::Square,
+        side,
+        horizontal: Placement::Offset(1_828_800),
+        vertical: Placement::Offset(0),
+        ..Anchor::default()
+    };
+    document(Some(anchor))
+}
+
+/// Where the drawing came out on the page, as its left and right edges.
+fn drawing_edges(page: &wp_layout::Page) -> (f32, f32) {
+    let shape = page.shapes.first().expect("the drawing is on the page");
+    (shape.x, shape.x + shape.width)
+}
+
+/// How many lines have text on each side of the drawing.
+fn lines_each_side(page: &wp_layout::Page) -> (usize, usize) {
+    let (left_edge, right_edge) = drawing_edges(page);
+    let shape = page.shapes.first().expect("a drawing");
+    let beside = |line: &wp_layout::PageLine| {
+        line.baseline > shape.y && line.baseline < shape.y + shape.height
+    };
+    let left =
+        page.lines.iter().filter(|line| beside(line) && line.right <= left_edge + 1.0).count();
+    let right =
+        page.lines.iter().filter(|line| beside(line) && line.left >= right_edge - 1.0).count();
+    (left, right)
+}
+
+#[test]
+fn text_runs_down_both_sides_of_a_drawing_in_the_middle_of_it() {
+    // Word's `bothSides`, which is what it writes unless told otherwise: a
+    // line beside the drawing is a piece of line each side of it.
+    let laid = pages(&document_with_drawing_in_the_middle(wp_docx::anchor::WrapSide::BothSides));
+    let (left, right) = lines_each_side(&laid[0]);
+    assert!(left > 0, "no text to the left of the drawing");
+    assert!(right > 0, "no text to the right of the drawing");
+}
+
+#[test]
+fn the_two_pieces_of_one_line_share_a_baseline_and_follow_on_from_each_other() {
+    let laid = pages(&document_with_drawing_in_the_middle(wp_docx::anchor::WrapSide::BothSides));
+    let shape = laid[0].shapes.first().expect("a drawing").clone();
+    let (left_edge, _) = drawing_edges(&laid[0]);
+
+    // The first line beside the drawing, and the piece that follows it.
+    let mut beside: Vec<&wp_layout::PageLine> = laid[0]
+        .lines
+        .iter()
+        .filter(|line| line.baseline > shape.y && line.baseline < shape.y + shape.height)
+        .collect();
+    beside.sort_by(|one, other| {
+        one.baseline.total_cmp(&other.baseline).then(one.left.total_cmp(&other.left))
+    });
+    // The first baseline that has two pieces to it. The line the drawing is
+    // anchored in keeps the whole width and is one piece, so it is not that
+    // one.
+    let pair = beside
+        .windows(2)
+        .find(|pair| (pair[0].baseline - pair[1].baseline).abs() < 0.5)
+        .expect("a line in two pieces");
+    let (first, second) = (pair[0], pair[1]);
+
+    assert!(first.right <= left_edge + 1.0, "the first piece is not on the left");
+    assert_eq!(
+        first.end_offset, second.start_offset,
+        "the second piece does not carry on where the first left off"
+    );
+    assert!(first.paragraph == second.paragraph, "the pieces are from different paragraphs");
+}
+
+#[test]
+fn asking_for_the_left_side_only_leaves_the_right_empty() {
+    let laid = pages(&document_with_drawing_in_the_middle(wp_docx::anchor::WrapSide::Left));
+    let (left, right) = lines_each_side(&laid[0]);
+    assert!(left > 0, "no text to the left of the drawing");
+    assert_eq!(right, 0, "the right of the drawing should be empty");
+}
+
+#[test]
+fn asking_for_the_right_side_only_leaves_the_left_empty() {
+    let laid = pages(&document_with_drawing_in_the_middle(wp_docx::anchor::WrapSide::Right));
+    let (left, right) = lines_each_side(&laid[0]);
+    assert_eq!(left, 0, "the left of the drawing should be empty");
+    assert!(right > 0, "no text to the right of the drawing");
+}
+
+#[test]
+fn asking_for_the_largest_side_uses_the_wider_one_alone() {
+    let laid = pages(&document_with_drawing_in_the_middle(wp_docx::anchor::WrapSide::Largest));
+    let (left, right) = lines_each_side(&laid[0]);
+    assert_eq!(left, 0, "the narrower side should be empty");
+    assert!(right > 0, "the wider side should hold the text");
+}
+
+#[test]
+fn a_sliver_of_room_beside_a_drawing_is_left_empty() {
+    // A drawing that reaches nearly to the left margin leaves a few pixels
+    // there. A line of one letter down a gap that narrow reads as nonsense,
+    // and Word leaves it empty.
+    let anchor = Anchor {
+        wrap: Wrap::Square,
+        horizontal: Placement::Offset(50_000),
+        vertical: Placement::Offset(0),
+        ..Anchor::default()
+    };
+    let laid = pages(&document(Some(anchor)));
+    let (left, _) = lines_each_side(&laid[0]);
+    assert_eq!(left, 0, "text was squeezed into the sliver on the left");
 }

@@ -1709,14 +1709,31 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   extension mechanism as much as the two numbers: reading a choice of markup and
   writing both halves of it.
 
-- [ ] **C45. Text down both sides of a drawing.** `wrapText="bothSides"`, which
+- [x] **C45. Text down both sides of a drawing.** `wrapText="bothSides"`, which
   is what Word writes unless told otherwise: a line beside a drawing is broken
-  into a piece each side of it. The layout gives a line one left edge and one
-  width, so what it draws is the wider side alone — Word's "Largest only" —
-  whatever the file says. A line has to become several pieces for this, which is
-  the same shape of change a line inside a turned cell needed, and it touches
-  every measurement a line has: where a caret goes, what a click means, how a
-  selection band is drawn.
+  into a piece each side of it. The layout gave a line one left edge and one
+  width, so what it drew was the wider side alone — Word's "Largest only" —
+  whatever the file said.
+  *Done:* a line is laid out in pieces, one for each stretch of room beside the
+  drawings at its height, filled left to right. Nearly always one; a drawing
+  with room either side of it is what makes it two. The pieces share a baseline
+  and follow on from one another, so a caret, a click and a selection band all
+  work as they already did — the page holds two lines where it held one, and
+  everything that asks a page a question asks it of lines. A word too wide for
+  the piece it is offered goes in the next piece rather than being cut; only the
+  last piece has nowhere to pass it on to. A stretch narrower than about one
+  letter is left empty, as Word leaves the sliver between a picture and the
+  margin.
+  *Found on the way, and the reason none of this had ever been seen:* a floating
+  drawing was making the line it is anchored in as tall as the whole drawing.
+  The width was already left out — a floating drawing takes no room on its line
+  — but the height was not, so the text after the anchor began *below* the
+  drawing and nothing was ever laid out beside one. Square wrapping wrapped
+  nothing, in any document, since it was written. One test had been passing on
+  the strength of a short last line.
+  *Not done:* Word measures the pieces of a justified line together, so the
+  spaces come out the same width on both sides of a drawing; each piece here is
+  justified within itself.
 
 - [ ] **C46. The three flags at the foot of the Position tab.** Move object with
   text, Allow overlap and Lock anchor. Each is one attribute and none of them is

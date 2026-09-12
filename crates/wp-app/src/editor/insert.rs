@@ -541,6 +541,20 @@ impl Editor {
             }
             // Word's Layout, on a shape: three tabs of where it sits, what the
             // text does about it, and how big it is.
+            // A drawing with room either side of it, which is where text runs
+            // down both sides: Word's own default wrapping.
+            "bothsides" => {
+                let anchor = wp_docx::anchor::Anchor {
+                    wrap: wp_docx::anchor::Wrap::Square,
+                    horizontal: wp_docx::anchor::Placement::Offset(1_828_800),
+                    vertical: wp_docx::anchor::Placement::Offset(228_600),
+                    ..wp_docx::anchor::Anchor::default()
+                };
+                let shape = wp_docx::shapes::Shape::preset("rect", 126.0, 108.0).floating(anchor);
+                self.document.set_caret(wp_docx::TextPosition::new(3, 0));
+                self.document.insert_shape(&shape);
+                self.relayout();
+            }
             "layout" | "layoutwrap" | "layoutsize" => {
                 let shape = wp_docx::shapes::Shape::preset("rect", 144.0, 72.0);
                 self.document.insert_shape(&shape);
