@@ -806,6 +806,58 @@ foreach ($kind in @(
 }
 $page.Dispose()
 
+# --- Metafiles ---------------------------------------------------------------
+#
+# GDI+ both records a metafile and plays one back, so this one is held to it at
+# both ends: the file is recorded through GDI+, and what it draws is GDI+
+# playing that same file back onto a bitmap.
+#
+# The tolerance is not nothing here, as it is for the pixel formats. Two
+# rasterizers do not put the edge of a shape in quite the same place, so the
+# points sampled are well inside a shape or well outside every one, and a few
+# levels either way are allowed.
+
+$screen = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
+$context = $screen.GetHdc()
+$frame = New-Object System.Drawing.Rectangle 0, 0, 64, 48
+$path = Join-Path $fixtures 'drawing.emf'
+$meta = New-Object System.Drawing.Imaging.Metafile $path, $context, $frame,
+    ([System.Drawing.Imaging.MetafileFrameUnit]::Pixel),
+    ([System.Drawing.Imaging.EmfType]::EmfOnly)
+$screen.ReleaseHdc($context)
+$screen.Dispose()
+
+$into = [System.Drawing.Graphics]::FromImage($meta)
+$into.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::None
+$red = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 255, 0, 0))
+$green = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 0, 160, 0))
+$blue = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 0, 0, 255)), 4
+$into.FillRectangle($red, 4, 4, 24, 16)
+$into.FillEllipse($green, 36, 4, 24, 24)
+$into.DrawLine($blue, 4, 40, 60, 40)
+$red.Dispose(); $green.Dispose(); $blue.Dispose()
+$into.Dispose()
+$meta.Dispose()
+
+# And now GDI+ playing the same file back, which is what the manifest records.
+$played = New-Object System.Drawing.Imaging.Metafile $path
+$size = $played.Size
+$sheet = New-Object System.Drawing.Bitmap $size.Width, $size.Height
+$onto = [System.Drawing.Graphics]::FromImage($sheet)
+$onto.Clear([System.Drawing.Color]::White)
+$onto.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::None
+$onto.DrawImage($played, 0, 0, $size.Width, $size.Height)
+$onto.Dispose()
+
+# Points well inside a shape and well outside every one.
+foreach ($point in @(@(16, 12), @(48, 16), @(32, 40), @(32, 24))) {
+    $c = $sheet.GetPixel($point[0], $point[1])
+    $manifest.Add("drawing.emf $($sheet.Width) $($sheet.Height) $($point[0]) $($point[1]) $($c.R) $($c.G) $($c.B) $($c.A) 6")
+}
+$sheet.Dispose()
+$played.Dispose()
+Write-Output ("  drawing.emf  {0} bytes" -f (Get-Item $path).Length)
+
 Set-Content -Path (Join-Path $fixtures 'manifest.txt') -Value $manifest -Encoding ascii
 Write-Output "wrote $($manifest.Count) sample points to $fixtures"
 Get-ChildItem $fixtures | ForEach-Object { Write-Output ("  {0}  {1} bytes" -f $_.Name, $_.Length) }

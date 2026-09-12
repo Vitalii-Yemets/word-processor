@@ -105,3 +105,7 @@ faxnone.tif 64 16 10 4 0 0 0 255 0
 faxnone.tif 64 16 31 5 0 0 0 255 0
 faxnone.tif 64 16 45 10 0 0 0 255 0
 faxnone.tif 64 16 60 2 255 255 255 255 0
+drawing.emf 64 48 16 12 255 0 0 255 6
+drawing.emf 64 48 48 16 0 160 0 255 6
+drawing.emf 64 48 32 40 0 0 255 255 6
+drawing.emf 64 48 32 24 255 255 255 255 6

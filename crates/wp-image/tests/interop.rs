@@ -168,6 +168,14 @@ fn a_picture_in_tiles_is_the_same_picture_as_one_in_strips() {
 }
 
 #[test]
+fn a_metafile_is_among_the_fixtures() {
+    // The one fixture GDI+ is at both ends of: it recorded the file, and what
+    // the manifest holds is GDI+ playing that same file back.
+    let names: Vec<String> = read_manifest().into_iter().map(|sample| sample.name).collect();
+    assert!(names.iter().any(|name| name == "drawing.emf"));
+}
+
+#[test]
 fn the_fixtures_are_there() {
     let samples = read_manifest();
     assert!(
@@ -187,14 +195,32 @@ fn every_picture_decodes_to_the_colours_its_encoder_wrote() {
         let image =
             decode(&bytes).unwrap_or_else(|error| panic!("cannot decode {}: {error}", sample.name));
 
-        assert_eq!(
-            (image.width, image.height),
-            (sample.width, sample.height),
-            "{} came out the wrong size",
-            sample.name
-        );
+        // How big a metafile is played back is a decision and not a fact: the
+        // file says how many millimetres across it is, and how many pixels that
+        // comes to depends on the resolution whoever plays it back chooses.
+        // GDI+ chooses its screen's and this chooses ninety-six to the inch, so
+        // the two differ by a pixel or two — and what is worth checking is not
+        // the size but where the drawing landed on it.
+        let metafile = sample.name.ends_with(".emf") || sample.name.ends_with(".wmf");
+        if !metafile {
+            assert_eq!(
+                (image.width, image.height),
+                (sample.width, sample.height),
+                "{} came out the wrong size",
+                sample.name
+            );
+        }
 
-        let at = (sample.y * image.width + sample.x) * 4;
+        let (x, y) = if metafile {
+            (
+                sample.x * image.width / sample.width.max(1),
+                sample.y * image.height / sample.height.max(1),
+            )
+        } else {
+            (sample.x, sample.y)
+        };
+
+        let at = (y * image.width + x) * 4;
         let found = &image.pixels[at..at + 4];
         let wanted = [sample.red, sample.green, sample.blue, sample.alpha];
 
@@ -202,10 +228,8 @@ fn every_picture_decodes_to_the_colours_its_encoder_wrote() {
             let difference = i32::from(*got) - i32::from(*expected);
             assert!(
                 difference.abs() <= sample.tolerance,
-                "{} at ({}, {}), channel {channel}: got {got}, expected {expected}",
-                sample.name,
-                sample.x,
-                sample.y
+                "{} at ({x}, {y}), channel {channel}: got {got}, expected {expected}",
+                sample.name
             );
         }
     }
@@ -220,6 +244,8 @@ fn each_fixture_is_recognised_from_its_own_bytes() {
             Some("bmp") => Format::Bmp,
             Some("gif") => Format::Gif,
             Some("tif") => Format::Tiff,
+            Some("emf") => Format::Emf,
+            Some("wmf") => Format::Wmf,
             _ => Format::Jpeg,
         };
         assert_eq!(Format::detect(&bytes), Some(wanted), "{}", sample.name);

@@ -18,6 +18,25 @@
 
 use crate::path::{Command, Path, Point};
 
+/// Which parts of a path count as inside it.
+///
+/// # Why there are two
+///
+/// Because two answers are wanted and neither is wrong. A font outline draws
+/// a hole by winding the inner contour the other way round, and expects the two
+/// to cancel — that is the nonzero rule. A drawing that stacks overlapping
+/// shapes expects every second layer to be a hole whichever way it was wound —
+/// that is the even-odd rule, and it is what the metafile formats ask for
+/// unless they say otherwise.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Rule {
+    /// A contour wound the other way cancels the one round it.
+    #[default]
+    Nonzero,
+    /// Every second crossing is a hole, however it was wound.
+    EvenOdd,
+}
+
 /// A grayscale coverage image: how much of each pixel a shape covers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Mask {
@@ -143,9 +162,15 @@ impl Rasterizer {
         }
     }
 
-    /// Produces the coverage of everything added so far.
+    /// Produces the coverage of everything added so far, by the nonzero rule.
     #[must_use]
     pub fn finish(&self) -> Mask {
+        self.finish_by(Rule::Nonzero)
+    }
+
+    /// The same, by whichever rule is asked for.
+    #[must_use]
+    pub fn finish_by(&self, rule: Rule) -> Mask {
         let mut coverage = vec![0u8; self.width * self.height];
 
         for row in 0..self.height {
@@ -156,7 +181,19 @@ impl Rasterizer {
             let destination = row * self.width;
             for column in 0..self.width {
                 total += self.area[source + column];
-                let value = total.abs().min(1.0);
+                let value = match rule {
+                    Rule::Nonzero => total.abs().min(1.0),
+                    // Every second turn of the winding is a hole: the total
+                    // folded back on itself at every even number.
+                    Rule::EvenOdd => {
+                        let folded = total.rem_euclid(2.0);
+                        if folded > 1.0 {
+                            2.0 - folded
+                        } else {
+                            folded
+                        }
+                    }
+                };
                 coverage[destination + column] = (value * 255.0 + 0.5) as u8;
             }
         }
@@ -457,5 +494,43 @@ mod tests {
         rasterizer.fill(&Path::rectangle(1.0, 1.0, 4.0, 4.0));
         rasterizer.clear();
         assert!(rasterizer.finish().is_blank());
+    }
+}
+
+#[cfg(test)]
+mod rule_tests {
+    use super::*;
+    use crate::path::Path;
+
+    /// A square with a smaller square inside it, both wound the same way.
+    fn ring() -> Path {
+        let mut path = Path::rectangle(0.0, 0.0, 20.0, 20.0);
+        let inner = Path::rectangle(5.0, 5.0, 10.0, 10.0);
+        for command in &inner.commands {
+            path.commands.push(*command);
+        }
+        path
+    }
+
+    fn covered(mask: &Mask, x: usize, y: usize) -> u8 {
+        mask.coverage()[y * mask.width() + x]
+    }
+
+    #[test]
+    fn two_contours_wound_alike_are_solid_by_the_nonzero_rule() {
+        let mut rasterizer = Rasterizer::new(20, 20);
+        rasterizer.fill(&ring());
+        let mask = rasterizer.finish_by(Rule::Nonzero);
+        assert_eq!(covered(&mask, 10, 10), 255, "the middle should be filled");
+        assert_eq!(covered(&mask, 2, 2), 255, "and so should the rest");
+    }
+
+    #[test]
+    fn the_same_two_leave_a_hole_by_the_even_odd_rule() {
+        let mut rasterizer = Rasterizer::new(20, 20);
+        rasterizer.fill(&ring());
+        let mask = rasterizer.finish_by(Rule::EvenOdd);
+        assert_eq!(covered(&mask, 10, 10), 0, "the middle should be a hole");
+        assert_eq!(covered(&mask, 2, 2), 255, "and the rest still filled");
     }
 }

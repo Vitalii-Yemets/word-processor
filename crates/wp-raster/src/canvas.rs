@@ -256,6 +256,11 @@ impl Canvas {
     /// across; rasterizing the full page for every one of them would make
     /// drawing a page take seconds instead of milliseconds.
     pub fn fill_path(&mut self, path: &Path, color: Color) {
+        self.fill_path_by(path, color, crate::raster::Rule::Nonzero);
+    }
+
+    /// The same, by whichever rule is asked for. See [`crate::raster::Rule`].
+    pub fn fill_path_by(&mut self, path: &Path, color: Color, rule: crate::raster::Rule) {
         let Some((min_x, min_y, max_x, max_y)) = bounds_of(path) else {
             return;
         };
@@ -278,7 +283,7 @@ impl Canvas {
             &path.transformed(&crate::path::Transform::translate(-(left as f32), -(top as f32))),
         );
 
-        self.draw_mask(&rasterizer.finish(), left as i32, top as i32, color);
+        self.draw_mask(&rasterizer.finish_by(rule), left as i32, top as i32, color);
     }
 
     /// The pixels of one rectangle, copied out.

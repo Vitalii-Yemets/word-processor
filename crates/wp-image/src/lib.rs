@@ -1,8 +1,8 @@
 //! Decoding the image formats a document can carry.
 //!
 //! A `.docx` embeds its pictures as ordinary files inside the package, most
-//! often PNG or JPEG and, in anything old enough, a Windows bitmap, a GIF or a
-//! scan in TIFF.
+//! often PNG or JPEG and, in anything old enough, a Windows bitmap, a GIF, a
+//! scan in TIFF, or a drawing recorded as a metafile.
 //! None can be shown without being decoded, so the decoders are here — written
 //! against the specifications rather than taken from a library, like everything
 //! else in this project.
@@ -17,11 +17,14 @@
 #![forbid(unsafe_code)]
 
 pub mod bmp;
+pub mod emf;
 pub mod fax;
 pub mod gif;
 pub mod jpeg;
+pub mod metafile;
 pub mod png;
 pub mod tiff;
+pub mod wmf;
 
 /// A decoded picture: eight-bit RGBA, top row first.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,6 +97,10 @@ pub enum Format {
     Bmp,
     Gif,
     Tiff,
+    /// The two metafile formats, which are recordings of drawing rather than
+    /// pictures. See [`metafile`].
+    Emf,
+    Wmf,
 }
 
 impl Format {
@@ -120,6 +127,16 @@ impl Format {
         if data.starts_with(&bmp::SIGNATURE) {
             return Some(Self::Bmp);
         }
+        // The metafiles say what they are further in than the others do: one
+        // through a signature forty bytes along, the other through a header
+        // that has to be recognised by its shape. Both are asked last, so that
+        // nothing which says outright what it is can be taken for one.
+        if emf::is_emf(data) {
+            return Some(Self::Emf);
+        }
+        if wmf::is_wmf(data) {
+            return Some(Self::Wmf);
+        }
         None
     }
 }
@@ -132,6 +149,8 @@ pub fn decode(data: &[u8]) -> Result<Image, Error> {
         Some(Format::Bmp) => bmp::decode(data),
         Some(Format::Gif) => gif::decode(data),
         Some(Format::Tiff) => tiff::decode(data),
+        Some(Format::Emf) => emf::decode(data),
+        Some(Format::Wmf) => wmf::decode(data),
         None => Err(Error::UnknownFormat),
     }
 }
@@ -178,6 +197,21 @@ mod tests {
         assert_eq!(Format::detect(b"GIF87a and the rest"), Some(Format::Gif));
         assert_eq!(Format::detect(b"GIF89a and the rest"), Some(Format::Gif));
         assert_eq!(Format::detect(b"GIF99a"), None);
+    }
+
+    #[test]
+    fn a_metafile_is_recognised_by_what_it_says_further_in() {
+        // A metafile says what it is forty bytes along rather than at the
+        // front, so a file that is one is only known after the others have
+        // been asked.
+        let mut emf = vec![0u8; 88];
+        emf[0..4].copy_from_slice(&1u32.to_le_bytes());
+        emf[40..44].copy_from_slice(&emf::SIGNATURE);
+        assert_eq!(Format::detect(&emf), Some(Format::Emf));
+
+        let mut wmf = vec![0u8; 32];
+        wmf[0..4].copy_from_slice(&wmf::PLACEABLE);
+        assert_eq!(Format::detect(&wmf), Some(Format::Wmf));
     }
 
     #[test]

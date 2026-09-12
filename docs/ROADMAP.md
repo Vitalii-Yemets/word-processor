@@ -1699,8 +1699,50 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   so noisy the coding would make them longer; and `FillOrder`, which writes the
   bits of each byte the other way round and which nothing this side of a fax
   machine produces.
-- [ ] **D2. WMF and EMF.** The metafile formats Word documents still carry:
-  a record interpreter drawing through the rasterizer.
+- [x] **D2. WMF and EMF: the shapes.** The metafile formats Word documents still
+  carry. Not pictures but recordings of how one was drawn — take this pen, draw
+  a line here, fill this polygon — which is why a document that held a diagram
+  held one: it draws at any size, and in 1990 that mattered more than anything.
+  *Done:* both record interpreters, over one set of state and one set of drawing
+  — a pen, a brush, where the last line ended, the mappings, and which of the two
+  fill rules is in force. Lines, polylines, polygons, several polygons at once,
+  rectangles, rounded rectangles and ellipses; pens and brushes, including the
+  two styles that mean *draw nothing* and the handful of objects the system
+  provides rather than the file; paths collected between the records that begin
+  and end one, and then filled, stroked, or both; and, for the newer format, the
+  world transform in all four of the ways a record can change it.
+  Three things were decided rather than transcribed. A metafile is **played back
+  into pixels** at the size it says it is, because everything above this draws
+  pictures and a picture is pixels — one road through the program rather than
+  two, at the price of a metafile scaled up afterwards being no sharper than the
+  canvas it was played onto. A **pen's width is in logical units** and is brought
+  into pixels where it is drawn with, not where it is made: a file that draws at
+  sixteen times the size with a pen sixteen times as wide means a line of the
+  same thickness, and missing that blacks the picture out — which is exactly what
+  it did until it was found. And a coordinate **names a pixel** rather than the
+  corner between four, so everything is drawn half a pixel along; without that a
+  line one pixel wide straddles two rows and comes out grey in both.
+  The rasterizer gained the **even-odd rule** for this. A font outline draws a
+  hole by winding the inner contour the other way and expects the two to cancel;
+  a metafile expects every second layer to be a hole whichever way it was wound.
+  Both answers are wanted and neither is wrong.
+  The fixture is the one GDI+ is at both ends of: it recorded the metafile, and
+  what the manifest holds is GDI+ playing that same file back. The tolerance is
+  not nothing, as it is for the pixel formats — two rasterizers do not put the
+  edge of a shape in quite the same place — so the points sampled are well inside
+  a shape or well outside every one.
+  *Not done:* text, which is its own piece of work and is **D11**; the pictures a
+  metafile can carry inside itself; clipping regions; saving and restoring the
+  state, which the newer files do around every drawing and which matters only
+  where something is left changed afterwards; and the hatched brushes and dashed
+  pens, which are drawn solid — a dashed line drawn solid is a line, where one
+  drawn as nothing is a shape with a piece missing.
+
+- [ ] **D11. Text in a metafile.** The records that draw words, the fonts they
+  name and how those are matched against the fonts actually present, the
+  alignment, and the escapement that turns a label on its side.
+  *Done when:* a metafile with words in it draws them where an independent
+  player puts them.
 - [ ] **D3. The rest of DrawingML.** The preset shape geometries that are not
   yet built, gradients, patterns, 3-D effects, and the shape effects Word draws.
 - [ ] **D4. Charts.** The chart types beyond those drawn today, their axes,

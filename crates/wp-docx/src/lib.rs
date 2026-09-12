@@ -2353,6 +2353,10 @@ impl Document {
             "gif" => "image/gif",
             "bmp" => "image/bmp",
             "tif" | "tiff" => "image/tiff",
+            // The metafiles, which a document carries as often as any of the
+            // others and which Word writes under these names.
+            "emf" => "image/x-emf",
+            "wmf" => "image/x-wmf",
             other => {
                 let _ = other;
                 "application/octet-stream"
