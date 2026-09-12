@@ -1743,8 +1743,74 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   alignment, and the escapement that turns a label on its side.
   *Done when:* a metafile with words in it draws them where an independent
   player puts them.
-- [ ] **D3. The rest of DrawingML.** The preset shape geometries that are not
-  yet built, gradients, patterns, 3-D effects, and the shape effects Word draws.
+- [x] **D3. The preset shape geometries: the rectangles and the basic shapes.**
+  A document does not carry the outline of a star; it carries the word `star5`
+  and a box to fit it in, and every program that opens the document is expected
+  to know what that means. There are about 180 of them. This is the first two
+  sections of Word's own gallery, which is what a document is most likely to
+  hold — the other sections are **D15** to **D18**, and the rest of what the old
+  **D3** asked for is **D12** to **D14**.
+  *Done:* twenty-eight new shapes on top of the twelve there were. All nine
+  rectangles, which are one shape with its four corners treated three ways —
+  squared, cut straight across, or taken round — so they are one helper and nine
+  arrangements. The rest of the regular polygons up to twelve sides. The shapes
+  of straight lines: the trapezoid, the parallelogram, the cross, the L and the
+  half frame. And the ones made of arcs: the pie, the chord, the arc, the donut,
+  the "no" symbol, the block arc, the can, the teardrop, the frame, the plaque,
+  the moon and the heart.
+  The three names a shape has — the one in the file, the one on the screen, and
+  the shape itself — now come out of **one table**. They were three matches, and
+  a shape added to two of them is a shape that draws and cannot be picked, or is
+  picked and draws as a rectangle. Neither says so, which is why it is one table
+  and a test that no two share a name.
+  The tests draw each shape and look at it: every closed one has ink in its
+  middle, the ring-shaped few have a hole there, a snipped corner is gone and a
+  rounded one is not, and no shape reaches outside the box it was given. That
+  last one caught the heart and the moon, both of which did.
+  *Not done:* Word's gallery groups its shapes into sections and this program
+  offers one flat list of them; and the adjustments — the yellow handles that
+  make a rounded corner rounder or an arrow's head wider — are not read, so each
+  shape is drawn at the proportions the format uses when nothing says otherwise.
+
+- [ ] **D12. Gradients and patterns.** `a:gradFill` in its three kinds — linear,
+  radial and along a path — with the stops and the angle; `a:pattFill`, which is
+  fifty-four named hatchings; and the picture and texture fills.
+  *Done when:* a shape filled each of those ways is drawn as Word draws it.
+
+- [ ] **D13. The shape effects.** `a:effectLst`: the outer and inner shadow, the
+  glow, the soft edge and the reflection, drawn as effects on a shape rather
+  than the approximation the letters use. A real blur is the piece of work
+  underneath all of them.
+  *Done when:* a shape with each effect is drawn as Word draws it.
+
+- [ ] **D14. Three dimensions.** `a:scene3d` and `a:sp3d`: the bevels, the
+  extrusion and its depth, the material, the lighting and the camera. Word
+  draws these flat when it cannot manage them, and so could this — but a bevel
+  is the one most documents use and is worth drawing properly.
+  *Done when:* a shape with a bevel and a depth is drawn with them.
+
+- [ ] **D15. Block arrows.** The twenty-eight arrows of Word's gallery: the four
+  straight ones, the bent and the curved, the striped and the notched, the
+  chevron and the pentagon, and the circular arrow.
+  *Done when:* each is drawn, and each is drawn the way round its name says.
+
+- [ ] **D16. Flowchart shapes.** The twenty-eight boxes a flowchart is drawn
+  with: the process, the decision, the terminator, the document, the stored
+  data, and the rest.
+  *Done when:* each is drawn.
+
+- [ ] **D17. Stars, banners and callouts.** The stars from four points to
+  thirty-two, the explosions, the ribbons and scrolls, and the twenty callouts —
+  the rectangular, rounded, oval and cloud bubbles, and the line callouts with
+  their bends.
+  *Done when:* each is drawn, and a callout's tail points where its adjustment
+  says.
+
+- [ ] **D18. Lines and connectors.** The straight, elbow and curved connectors,
+  their arrowheads at either end, and the routing that keeps an elbow out of the
+  shapes it joins.
+  *Done when:* two shapes joined by each kind of connector stay joined when
+  either is moved.
 - [ ] **D4. Charts.** The chart types beyond those drawn today, their axes,
   legends, labels and the data table behind them.
 - [ ] **D5. SmartArt.** The diagram layouts, which are a language of their own

@@ -40,7 +40,7 @@ impl Editor {
             return Response::Ignored;
         };
 
-        let items = Preset::ALL.iter().map(|preset| preset.label().to_owned()).collect();
+        let items = Preset::all().iter().map(|preset| preset.label().to_owned()).collect();
         self.popup = Some(Popup::new(Choice::Shape, items, None, left, top, 240.0));
         self.needs_redraw = true;
         Response::Redraw
@@ -49,7 +49,7 @@ impl Editor {
     /// Puts the shape that was chosen at the caret.
     pub(super) fn choose_shape(&mut self, index: usize) -> Response {
         self.popup = None;
-        let Some(preset) = Preset::ALL.get(index).copied() else { return Response::Ignored };
+        let Some(preset) = Preset::all().get(index).copied() else { return Response::Ignored };
 
         let mut shape = Shape::preset(preset.word(), SHAPE_WIDTH, SHAPE_HEIGHT);
         shape.name = preset.label().to_owned();

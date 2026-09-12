@@ -851,6 +851,37 @@ impl Editor {
                     self.open_grouping();
                 }
             }
+            "gallery" => {
+                // Every shape the program can draw, laid out in rows: the only
+                // way to look at the whole gallery at once and see which of
+                // them is wrong.
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                let all = wp_layout::geometry::Preset::all();
+                let across = 8usize;
+                for (index, preset) in all.iter().enumerate() {
+                    let column = index % across;
+                    let row = index / across;
+                    let shape = wp_docx::shapes::Shape {
+                        name: preset.label().to_owned(),
+                        preset: preset.word().to_owned(),
+                        width_emu: 685_800,
+                        height_emu: 548_640,
+                        fill: Some("4472C4".to_owned()),
+                        outline: Some("1F3864".to_owned()),
+                        outline_emu: 9_525,
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset(column as i64 * 800_100),
+                            vertical: Placement::Offset(row as i64 * 640_080),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+                self.relayout();
+            }
             "customised" => {
                 // A ribbon somebody has changed: a group switched off, a group
                 // moved to the front, a command added to another, and a fourth
