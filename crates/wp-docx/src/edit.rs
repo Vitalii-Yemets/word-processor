@@ -1155,6 +1155,31 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
 
     for row in &table.rows {
         let mut row_element = Element::new(&name_with(prefix, "tr"), Some(W));
+
+        // What the row itself says: how tall it is, and whether it is repeated
+        // at the top of every page. Both were dropped here, so a table written
+        // from the model came out with rows of whatever height their contents
+        // happened to be and a header row that was a header no longer — which
+        // is what a spreadsheet pasted in, a list converted to a table and a
+        // new table all went through.
+        let mut row_properties = Element::new(&name_with(prefix, "trPr"), Some(W));
+        if let Some(twips) = row.height {
+            let mut height = Element::new(&name_with(prefix, "trHeight"), Some(W));
+            height.set_namespaced_attribute(&name_with(prefix, "val"), W, &twips.to_string());
+            height.set_namespaced_attribute(
+                &name_with(prefix, "hRule"),
+                W,
+                if row.height_exact { "exact" } else { "atLeast" },
+            );
+            row_properties.push_element(height);
+        }
+        if row.is_header {
+            row_properties.push_element(valued(prefix, "tblHeader", "true"));
+        }
+        if !row_properties.children.is_empty() {
+            row_element.push_element(row_properties);
+        }
+
         for cell in &row.cells {
             let mut cell_element = Element::new(&name_with(prefix, "tc"), Some(W));
 

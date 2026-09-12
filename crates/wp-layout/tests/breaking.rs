@@ -91,15 +91,25 @@ fn a_hyphenated_word_breaks_after_its_hyphen_and_not_before_it() {
 }
 
 #[test]
-fn a_non_breaking_space_holds_two_words_together() {
+fn a_non_breaking_space_is_never_where_a_line_ends() {
     // Two words joined by a non-breaking space, and together too long for any
-    // line: they still may not be parted, so the line runs on instead.
+    // line. They may not be parted *there*, which is what the space is for —
+    // so the line is broken inside one of the words instead, as Word breaks any
+    // word too long for the line it is on. The space and the letter after it
+    // stay on the same line as each other.
     let text = format!("{}\u{00A0}{}", "a".repeat(80), "b".repeat(80));
     let lines = lines(&text);
-    assert!(
-        !lines.iter().any(|line| line.trim_start().starts_with('b')),
-        "the pair was broken at the non-breaking space: {lines:?}"
-    );
+    assert!(lines.len() > 1, "the text never wrapped, so the rule was not tried");
+
+    for line in &lines {
+        assert!(!line.ends_with('\u{00A0}'), "a line ended at the non-breaking space: {lines:?}");
+    }
+    let holding = lines
+        .iter()
+        .find(|line| line.contains('\u{00A0}'))
+        .expect("the space is on one of the lines");
+    let after = holding.split('\u{00A0}').nth(1).unwrap_or_default();
+    assert!(!after.is_empty(), "nothing followed the space on its own line: {lines:?}");
 }
 
 #[test]

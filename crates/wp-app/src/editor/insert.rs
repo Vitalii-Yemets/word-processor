@@ -252,6 +252,24 @@ impl Editor {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
                 self.relayout();
             }
+            // A bulleted list in a narrow cell, whose indent leaves less room
+            // than the word needs: the word is cut rather than drawn across the
+            // border of the cell.
+            "cellbullet" => {
+                self.document.insert_table(4, 4);
+                self.relayout();
+                if let Some((paragraph, _)) = self.document.cell_paragraphs(3, 0) {
+                    self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                    self.run(crate::chrome::Command::Bullets);
+                    self.document.type_text("укецукецуке");
+                }
+                if let Some((paragraph, _)) = self.document.cell_paragraphs(0, 1) {
+                    self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                    self.document.type_text("Averylongwordwithnospacesatall");
+                }
+                self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
+                self.relayout();
+            }
             // A block of cells taken by dragging across them, which Word shows
             // as the cells themselves and not as the text in them.
             "cellblock" => {

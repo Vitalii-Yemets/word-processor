@@ -232,6 +232,12 @@ fn read_table_row(row: &Element) -> TableRow {
         .and_then(value)
         .and_then(|text| text.parse().ok());
 
+    let height_exact = row
+        .child(Some(W), "trPr")
+        .and_then(|properties| properties.child(Some(W), "trHeight"))
+        .and_then(|element| element.attribute(Some(W), "hRule"))
+        == Some("exact");
+
     let is_header = row
         .child(Some(W), "trPr")
         .and_then(|properties| properties.child(Some(W), "tblHeader"))
@@ -239,6 +245,7 @@ fn read_table_row(row: &Element) -> TableRow {
     TableRow {
         cells: row.children_named(Some(W), "tc").map(read_table_cell).collect(),
         height,
+        height_exact,
         is_header,
     }
 }

@@ -162,6 +162,7 @@ impl Document {
         let row = TableRow {
             cells: (0..sheet.columns).map(|_| cell()).collect(),
             height: Some(sheet.height),
+            height_exact: false,
             is_header: false,
         };
 

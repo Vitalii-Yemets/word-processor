@@ -91,7 +91,7 @@ impl Editor {
     /// list of stops and leave the dialog standing, and its Paragraph dialog
     /// has one that opens the Tabs dialog instead of answering. Those are dealt
     /// with first, and only what is left is an answer.
-    fn finish_dialog(&mut self, answer: Answer) -> Response {
+    pub(super) fn finish_dialog(&mut self, answer: Answer) -> Response {
         if let Answer::Named(button) = answer {
             if let Some(response) = self.pressed_without_answering(button) {
                 return response;

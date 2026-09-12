@@ -420,46 +420,49 @@ impl Document {
         true
     }
 
-    /// Gives every column of the table the same width.
+    /// Gives the selected columns the same width as one another.
+    ///
+    /// Word's Distribute Columns. With nothing selected, or with the whole
+    /// table selected, every column of it; with a block selected, the columns
+    /// that block covers — and the room they shared between them stays theirs,
+    /// so the rest of the table does not move.
+    ///
+    /// # Why the cells are written and not only the grid
+    ///
+    /// Because a column's width is written twice over: once in the table's grid
+    /// and once in every cell of that column. Writing the grid alone left the
+    /// cells still asking for what they asked for before, and a cell's own
+    /// width is what the layout believes — so the button did nothing at all to
+    /// look at. See [`Document::set_table_grid`], which is what writes both.
     pub fn distribute_columns(&mut self) -> bool {
         let Some(place) = self.table_here() else { return false };
-        let caret = self.caret();
-        self.record(EditKind::Structural, caret, false);
-        let prefix = self.prefix();
+        let mut widths = self.table_grid_at(self.caret().paragraph);
+        if widths.is_empty() {
+            // A table that states no grid: the columns are even shares of the
+            // text width, which is what evening them out comes to anyway.
+            widths = vec![9360 / place.columns.max(1) as i32; place.columns.max(1)];
+        }
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
-            return false;
-        };
-        let Some(grid) = table.child_mut(Some(read::W), "tblGrid") else { return false };
-
-        let columns = positions_of(grid, "gridCol");
-        if columns.is_empty() {
+        let (first, last) = self
+            .selected_cells()
+            .filter(|range| range.columns.1 > range.columns.0)
+            .map_or((0, widths.len().saturating_sub(1)), |range| range.columns);
+        let last = last.min(widths.len().saturating_sub(1));
+        if last <= first {
             return false;
         }
 
-        // The table keeps the width it had; only the shares change.
-        let total: i32 = columns
-            .iter()
-            .filter_map(|position| grid.children.get(*position))
-            .filter_map(Node::as_element)
-            .filter_map(|column| column.attribute(Some(read::W), "w"))
-            .filter_map(|text| text.parse::<i32>().ok())
-            .sum();
-        let total = if total > 0 { total } else { 9360 };
-        let each = (total / columns.len() as i32).max(1);
-
-        for position in columns {
-            if let Some(column) = grid.children.get_mut(position).and_then(Node::as_element_mut) {
-                column.set_namespaced_attribute(
-                    &edit::name_with(prefix.as_deref(), "w"),
-                    read::W,
-                    &each.to_string(),
-                );
-            }
+        let total: i32 = widths[first..=last].iter().sum();
+        let count = (last - first + 1) as i32;
+        let each = (total / count).max(1);
+        for width in &mut widths[first..=last] {
+            *width = each;
         }
+        // The remainder goes on the first of them, so the table keeps the
+        // width it had to the twentieth of a point.
+        widths[first] += total - each * count;
 
-        self.mark_modified();
-        true
+        self.set_table_grid(&widths)
     }
 }
 

@@ -1092,6 +1092,15 @@ pub struct TableRow {
     pub cells: Vec<TableCell>,
     /// Height in twentieths of a point, when the row asks for one.
     pub height: Option<i32>,
+    /// Whether that height is a ceiling rather than a floor.
+    ///
+    /// Word's Exactly against its At least, and they are not the same thing:
+    /// text that does not fit an exact height is cut off where the row ends,
+    /// and text that does not fit a minimum makes the row taller. The file says
+    /// which in `w:trHeight/@w:hRule`, and dropping it here left the layout
+    /// treating every height as a minimum — so a row asked to be exactly half
+    /// an inch grew to whatever was put in it.
+    pub height_exact: bool,
     /// Whether the row is a header: repeated at the top of every page the
     /// table runs onto, and read as the names of the columns.
     pub is_header: bool,
@@ -1423,7 +1432,7 @@ impl TableCell {
 impl TableRow {
     #[must_use]
     pub fn from_cells(cells: Vec<TableCell>) -> Self {
-        Self { cells, height: None, is_header: false }
+        Self { cells, height: None, height_exact: false, is_header: false }
     }
 
     /// A row of plain text cells.

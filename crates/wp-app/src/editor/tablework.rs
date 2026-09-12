@@ -904,6 +904,218 @@ mod tests {
         assert_eq!(here.columns.0, here.columns.1, "the block outlived the selection");
     }
 
+    /// How far past the right-hand edge of a cell anything in it is drawn.
+    fn overflow(editor: &Editor, row: usize, column: usize) -> f32 {
+        let (page, cell) = editor.placed_cell(row, column).expect("the cell is on the page");
+        let (first, last) = editor.document.cell_paragraphs(row, column).expect("a cell");
+        editor.pages[page]
+            .glyphs
+            .iter()
+            .filter(|glyph| (first..=last).contains(&glyph.source.paragraph))
+            .map(|glyph| glyph.x + glyph.advance - (cell.x + cell.width))
+            .fold(0.0, f32::max)
+    }
+
+    #[test]
+    fn a_word_too_wide_for_its_cell_is_broken_rather_than_drawn_over_the_border() {
+        // Word breaks a word that will not fit its cell at all. Ours drew it
+        // across the border and over whatever was in the next cell, which is
+        // what a bulleted list in a narrow cell looked like: the list's indent
+        // leaves the cell narrower still.
+        let mut editor = with_table();
+        editor.run(crate::chrome::Command::Bullets);
+        typed(&mut editor, "укецукецукецукецукецуке");
+        editor.relayout();
+
+        let past = overflow(&editor, 0, 0);
+        assert!(past <= 1.0, "the word is drawn {past} pixels past the edge of its cell");
+        assert!(
+            editor.pages[0].lines.iter().filter(|line| line.paragraph == 1).count() >= 2,
+            "the word was not broken onto a second line"
+        );
+    }
+
+    #[test]
+    fn a_long_word_in_a_plain_cell_stays_inside_it() {
+        let mut editor = with_table();
+        typed(&mut editor, "Averylongwordwithnospacesinitatall");
+        editor.relayout();
+        let past = overflow(&editor, 0, 0);
+        assert!(past <= 1.0, "the word is drawn {past} pixels past the edge of its cell");
+    }
+
+    /// Where the text of a cell is, as a rectangle on the page.
+    fn text_box(editor: &Editor, row: usize, column: usize) -> (f32, f32, f32, f32) {
+        let (page, _) = editor.placed_cell(row, column).expect("the cell is on the page");
+        let (first, last) = editor.document.cell_paragraphs(row, column).expect("a cell");
+        let mut left = f32::MAX;
+        let mut right = f32::MIN;
+        let mut top = f32::MAX;
+        let mut bottom = f32::MIN;
+        for line in
+            editor.pages[page].lines.iter().filter(|line| (first..=last).contains(&line.paragraph))
+        {
+            left = left.min(line.left);
+            right = right.max(line.right);
+            top = top.min(line.top());
+            bottom = bottom.max(line.bottom());
+        }
+        assert!(right > f32::MIN, "the cell has no lines on the page");
+        (left, top, right, bottom)
+    }
+
+    #[test]
+    fn text_in_a_cell_can_be_centred_across_it() {
+        let mut editor = with_table();
+        typed(&mut editor, "Mid");
+        editor.run(crate::chrome::Command::AlignCell(4));
+        editor.relayout();
+
+        let (_, cell) = editor.placed_cell(0, 0).expect("a cell");
+        let (left, _, right, _) = text_box(&editor, 0, 0);
+        let text_middle = (left + right) / 2.0;
+        let cell_middle = cell.x + cell.width / 2.0;
+        assert!(
+            (text_middle - cell_middle).abs() < 2.0,
+            "the text sits at {text_middle} and the middle of the cell is {cell_middle}"
+        );
+    }
+
+    #[test]
+    fn text_in_a_tall_cell_can_be_centred_down_it() {
+        let mut editor = with_table();
+        typed(&mut editor, "Mid");
+        // Word centres the paragraph and the room it asks for round itself, so
+        // the space after the paragraph is part of what is centred. It is taken
+        // off here, which makes the two measurements the same thing and the
+        // test about the centring rather than about the spacing.
+        editor.document.set_paragraph_format(&wp_docx::model::ParagraphProperties {
+            space_before: Some(0),
+            space_after: Some(0),
+            ..wp_docx::model::ParagraphProperties::default()
+        });
+        // A row taller than its text is the only case where down-the-cell
+        // alignment shows at all.
+        assert!(editor.document.set_table_row_height(Some(1440), false), "no height was set");
+        editor.run(crate::chrome::Command::AlignCell(4));
+        editor.relayout();
+
+        let (_, cell) = editor.placed_cell(0, 0).expect("a cell");
+        let (_, top, _, bottom) = text_box(&editor, 0, 0);
+        let text_middle = (top + bottom) / 2.0;
+        let cell_middle = cell.y + cell.height / 2.0;
+        assert!(
+            (text_middle - cell_middle).abs() < 4.0,
+            "the text sits at {text_middle} and the middle of the cell is {cell_middle}"
+        );
+    }
+
+    #[test]
+    fn a_row_given_a_height_takes_it_and_gives_it_back() {
+        let mut editor = with_table();
+        typed(&mut editor, "One");
+        editor.relayout();
+        let (_, before) = editor.placed_cell(0, 0).expect("a cell");
+
+        assert!(editor.document.set_table_row_height(Some(1440), false), "no height was set");
+        editor.relayout();
+        let (_, taller) = editor.placed_cell(0, 0).expect("a cell");
+        assert!(taller.height > before.height * 1.5, "the row did not grow: {}", taller.height);
+
+        // Nothing asked for is Word's automatic: the row goes back to the
+        // height of what is in it.
+        assert!(editor.document.set_table_row_height(None, false), "the height would not clear");
+        editor.relayout();
+        let (_, back) = editor.placed_cell(0, 0).expect("a cell");
+        assert!(
+            (back.height - before.height).abs() < 1.0,
+            "the row stayed {} when it was {} to begin with",
+            back.height,
+            before.height
+        );
+    }
+
+    #[test]
+    fn a_row_asked_for_an_exact_height_is_that_tall_and_no_taller() {
+        // Word's Exactly: the row is the height it is told, and text that does
+        // not fit is cut off rather than making the row grow.
+        let mut editor = with_table();
+        typed(&mut editor, "One");
+        key(&mut editor, Key::Enter, false);
+        typed(&mut editor, "Two");
+        key(&mut editor, Key::Enter, false);
+        typed(&mut editor, "Three");
+        editor.relayout();
+        let (_, grown) = editor.placed_cell(0, 0).expect("a cell");
+
+        assert!(editor.document.set_table_row_height(Some(720), true), "no height was set");
+        editor.relayout();
+        let (_, exact) = editor.placed_cell(0, 0).expect("a cell");
+        assert!(
+            exact.height < grown.height,
+            "three lines in a half-inch row came out {} tall",
+            exact.height
+        );
+    }
+
+    #[test]
+    fn dragging_a_row_shorter_brings_it_back_to_its_text() {
+        let mut editor = with_table();
+        typed(&mut editor, "One");
+        editor.relayout();
+        let (_, hugging) = editor.placed_cell(0, 0).expect("a cell");
+
+        assert!(editor.document.set_table_row_height(Some(1440), false), "no height was set");
+        editor.relayout();
+        let (_, cell) = editor.placed_cell(0, 0).expect("a cell");
+        let (origin_x, origin_y) = editor.page_origin(0);
+        let top = editor.content_top() + origin_y - editor.scroll_down();
+        let x = (origin_x + cell.x + cell.width / 2.0) as i32;
+        let y = (top + cell.y + cell.height) as i32;
+
+        editor.handle(Event::MouseDown { x, y, modifiers: Modifiers::default() });
+        editor.handle(Event::MouseMove {
+            x,
+            y: y - 400,
+            held: true,
+            modifiers: Modifiers::default(),
+        });
+        editor.handle(Event::MouseUp { x, y: y - 400 });
+
+        let (_, after) = editor.placed_cell(0, 0).expect("a cell");
+        assert!(
+            after.height < hugging.height + 2.0,
+            "dragging up left the row {} tall when its text needs {}",
+            after.height,
+            hugging.height
+        );
+    }
+
+    #[test]
+    fn every_row_of_a_new_table_is_the_same_height() {
+        let mut editor = with_table();
+        editor.relayout();
+        let heights: Vec<f32> =
+            (0..3).map(|row| editor.placed_cell(row, 0).expect("a cell").1.height).collect();
+        assert!(
+            heights.windows(2).all(|pair| (pair[0] - pair[1]).abs() < 0.5),
+            "the rows came out {heights:?}"
+        );
+    }
+
+    #[test]
+    fn a_row_with_text_in_it_is_no_taller_than_an_empty_one() {
+        // One line of text and one empty paragraph are the same height, so the
+        // rows are too — a table whose rows jump about as it is filled in looks
+        // broken whatever the file says.
+        let mut editor = with_table();
+        typed(&mut editor, "One");
+        editor.relayout();
+        let filled = editor.placed_cell(0, 0).expect("a cell").1.height;
+        let empty = editor.placed_cell(1, 0).expect("a cell").1.height;
+        assert!((filled - empty).abs() < 0.5, "filled {filled} against empty {empty}");
+    }
+
     #[test]
     fn a_table_survives_being_saved_and_opened_again() {
         let mut editor = with_table();

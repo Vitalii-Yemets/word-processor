@@ -2056,7 +2056,7 @@ impl<'a> LayoutEngine<'a> {
             .filter(|measured| measured.paragraph == *paragraph)
             .cloned();
 
-        let (items, styles, item_levels) = match ready {
+        let (mut items, styles, mut item_levels) = match ready {
             Some(measured) => (measured.items, measured.styles, measured.levels),
             None => {
                 let mut styles = Vec::new();
@@ -2119,7 +2119,14 @@ impl<'a> LayoutEngine<'a> {
         if items.is_empty() {
             // An empty paragraph still takes up a line's worth of height, and
             // still needs a line recorded: a caret has to be able to sit in it.
-            let height = self.empty_line_height(paragraph, document);
+            //
+            // Its line spacing counts, exactly as it does for a line with
+            // letters on it. Without that, an empty paragraph was a shade
+            // shorter than a full one — and a row of a table grew by a pixel
+            // and a half the moment anything was typed into it, which is the
+            // sort of jump that makes a table look broken.
+            let natural = self.empty_line_height(paragraph, document);
+            let height = line_height(natural, &resolved, scale);
             if *y + height > self.limit(pages.len().saturating_sub(1), area)
                 && !pages.last().is_some_and(|page| page.glyphs.is_empty())
             {
@@ -2182,7 +2189,7 @@ impl<'a> LayoutEngine<'a> {
                 *y,
                 *y + 1.0,
             );
-            let mut line = break_next_line(&items, cursor, line_width);
+            let mut line = break_line(&mut items, &mut item_levels, cursor, line_width);
             let (mut ascent, mut descent, mut natural_height) =
                 line_metrics(&line, &items, &styles);
             let mut height = line_height(natural_height, &resolved, scale);
@@ -2200,7 +2207,7 @@ impl<'a> LayoutEngine<'a> {
             if settled_width < line_width {
                 line_left = settled_left;
                 line_width = settled_width;
-                line = break_next_line(&items, cursor, line_width);
+                line = break_line(&mut items, &mut item_levels, cursor, line_width);
                 let measured = line_metrics(&line, &items, &styles);
                 ascent = measured.0;
                 descent = measured.1;
@@ -2273,7 +2280,7 @@ impl<'a> LayoutEngine<'a> {
                 );
                 line_left = fresh_left;
                 line_width = fresh_width;
-                line = break_next_line(&items, cursor, line_width);
+                line = break_line(&mut items, &mut item_levels, cursor, line_width);
                 let measured = line_metrics(&line, &items, &styles);
                 ascent = measured.0;
                 descent = measured.1;
@@ -2589,7 +2596,12 @@ impl<'a> LayoutEngine<'a> {
             // them and half below.
             height += spacing;
             if let Some(wanted) = row.height {
-                height = height.max(wanted as f32 / TWIPS_PER_POINT * scale);
+                let wanted = wanted as f32 / TWIPS_PER_POINT * scale;
+                // Word's two rules, and the difference between them is the
+                // whole point of having both: a minimum is pushed taller by
+                // what is in the row, and an exact height is not — what does
+                // not fit is cut off at the line the row ends on.
+                height = if row.height_exact { wanted + spacing } else { height.max(wanted) };
             }
 
             // A row that will not fit starts a page, unless it would not fit on
@@ -2678,6 +2690,12 @@ impl<'a> LayoutEngine<'a> {
                 };
 
                 let mut cell_y = cells_top + margins.top + down;
+                // What the page held before this cell, so that what the cell
+                // adds can be cut back to the room the cell has. Only an exact
+                // height leaves less room than the content needs.
+                let already = pages.last().map_or((0, 0, 0), |page| {
+                    (page.glyphs.len(), page.lines.len(), page.decorations.len())
+                });
                 self.place_cell(
                     cell,
                     index,
@@ -2688,6 +2706,11 @@ impl<'a> LayoutEngine<'a> {
                     *left + margins.start,
                     across,
                 );
+                if row.height_exact {
+                    if let Some(page) = pages.last_mut() {
+                        trim_cell(page, already, cells_bottom - margins.bottom);
+                    }
+                }
             }
 
             let row_bottom = row_top + height;
@@ -5334,18 +5357,22 @@ fn draw_row_borders(
         Some((Some(border.clone()), (border.width_points() * scale).max(1.0), color))
     };
 
+    // A line inside the table comes from the table's inside borders and from
+    // nowhere else. An absent inside border is a table that asks for no line
+    // between its rows, which is what Word draws for one: falling back to the
+    // border round the outside made Borders > Outside draw a full grid, and
+    // every table whose frame was its only border came out ruled.
     let first_row = row_number == 0;
     let last_row = row_number + 1 == row_count;
-    let horizontal = if first_row {
-        line(&borders.top)
-    } else {
-        line(&borders.inside_horizontal).or_else(|| line(&borders.top))
-    };
-    let below = if last_row {
-        line(&borders.bottom)
-    } else {
-        line(&borders.inside_horizontal).or_else(|| line(&borders.bottom))
-    };
+    let horizontal = if first_row { line(&borders.top) } else { line(&borders.inside_horizontal) };
+    // A line between two rows belongs to the row under it and is drawn once.
+    // Drawing it from above as well put two lines in the same place — twice the
+    // ink, and a pair of cells joined down the table still had a line between
+    // them: the upper one drew it whatever the lower one said. Below the last
+    // row there is no row under it, so that line is the table's own edge; a
+    // cell that asks for a bottom border of its own still gets one, which is
+    // what the border painter paints.
+    let below = if last_row { line(&borders.bottom) } else { None };
 
     let Some((left_edge, _)) = spans.first() else { return };
     let right_edge = spans.last().map_or(*left_edge, |(x, width)| x + width);
@@ -5354,8 +5381,26 @@ fn draw_row_borders(
         let cell = row.cells.get(index);
         // A cell of its own says what it wants; otherwise the table decides.
         let cell_borders = cell.map(|cell| &cell.borders);
+        // A border the cell itself asks for, and nothing else.
+        //
+        // Not `line`, which answers an absent border with a gridline: a
+        // gridline is the faint mark a table with no borders draws to show
+        // where its cells are, and a cell that says nothing about an edge is
+        // not asking for one of its own — the table decides that edge. Asking
+        // `line` here meant every cell drew all four of its own edges as
+        // gridlines, over whatever the table had drawn: two lines in every
+        // place there should be one, and a pair of cells joined down the table
+        // still had a line between them because the gridline outranked the
+        // join.
         let cell_line = |pick: fn(&TableBorders) -> &Option<Border>| {
-            cell_borders.and_then(|own| line(pick(own)))
+            cell_borders
+                .and_then(|own| pick(own).as_ref())
+                .filter(|border| border.is_visible())
+                .map(|border| {
+                    let colour =
+                        border.color.as_deref().and_then(Color::from_hex).unwrap_or(automatic);
+                    (Some(border.clone()), (border.width_points() * scale).max(1.0), colour)
+                })
         };
 
         // A cell continuing the one above has no line between the two: that is
@@ -5370,11 +5415,8 @@ fn draw_row_borders(
             rule(page, &ruled, Side::Bottom, *x, bottom - thickness, *width);
         }
 
-        let vertical = if index == 0 {
-            line(&borders.start)
-        } else {
-            line(&borders.inside_vertical).or_else(|| line(&borders.start))
-        };
+        let vertical =
+            if index == 0 { line(&borders.start) } else { line(&borders.inside_vertical) };
         if let Some(ruled) = cell_line(|borders| &borders.start).or(vertical) {
             rule(page, &ruled, Side::Start, *x, top, bottom - top);
         }
@@ -6460,6 +6502,142 @@ fn break_next_line(items: &[Item], start: usize, available: f32) -> Line {
     }
 
     Line { items: first..items.len(), last_visible }
+}
+
+/// Breaks the next line, cutting a word that is wider than the room it has.
+///
+/// # Why a word is ever cut
+///
+/// Because a cell can be narrower than a word, and so can a column. The rule
+/// that a word too wide for the line goes on it anyway is right when the line
+/// is the width of the page — there is nowhere else for it to go — and wrong
+/// inside a table, where what it does is draw the word across the border of its
+/// cell and over whatever is in the next one. It is what a bulleted list in a
+/// narrow cell looked like, because the list's indent leaves a cell narrower
+/// still.
+///
+/// Word cuts such a word between letters and carries the rest to the next line.
+/// So the line is broken, and while what came out is one word that still does
+/// not fit, that word is cut and the line broken again.
+fn break_line(items: &mut Vec<Item>, levels: &mut Vec<u8>, cursor: usize, available: f32) -> Line {
+    let mut line = break_next_line(items, cursor, available);
+    while line.items.end == line.items.start + 1
+        && items
+            .get(line.items.start)
+            .is_some_and(|item| item.width > available && item.hard_break.is_none())
+        && split_item(items, levels, line.items.start, available)
+    {
+        line = break_next_line(items, cursor, available);
+    }
+    line
+}
+
+/// Cuts an item so that what is left of it fits a width.
+///
+/// The rest becomes an item of its own, right behind it, which the next line
+/// picks up. Returns whether anything was cut: a single glyph wider than the
+/// room has nowhere to be cut, and is drawn as it is.
+///
+/// The cut goes between clusters and never inside one, so a letter and the
+/// accent shaped onto it stay together and an offset in the document still
+/// falls between two glyphs rather than inside one.
+fn split_item(items: &mut Vec<Item>, levels: &mut Vec<u8>, index: usize, available: f32) -> bool {
+    let item = &items[index];
+    // Only text is cut. A picture, an equation or a chart is one thing, and a
+    // tab is measured when the line is placed rather than now.
+    if item.is_tab || item.picture.is_some() || item.math.is_some() {
+        return false;
+    }
+    if item.chart.is_some() || item.shape.is_some() || item.group.is_some() {
+        return false;
+    }
+
+    // How many glyphs fit, counted to cluster boundaries: a glyph whose
+    // character is the same as the one before it belongs with it.
+    let mut used = 0.0f32;
+    let mut fits = 0usize;
+    let mut at_cluster = 0usize;
+    for (position, glyph) in item.glyphs.iter().enumerate() {
+        let starts_cluster = position == 0 || glyph.offset != item.glyphs[position - 1].offset;
+        if starts_cluster {
+            at_cluster = position;
+        }
+        if used + glyph.advance > available && at_cluster > 0 {
+            fits = at_cluster;
+            break;
+        }
+        used += glyph.advance;
+        fits = position + 1;
+    }
+
+    // Nothing to gain: the whole item fits after all, or its first cluster does
+    // not and cutting before it would leave an empty line.
+    if fits == 0 || fits >= item.glyphs.len() {
+        return false;
+    }
+
+    let mut rest = item.clone();
+    rest.glyphs = rest.glyphs.split_off(fits);
+    let mut head = items[index].clone();
+    head.glyphs.truncate(fits);
+
+    let boundary = rest.glyphs.first().map_or(head.end_offset, |glyph| glyph.offset);
+    head.width = head.glyphs.iter().map(|glyph| glyph.advance).sum();
+    head.end_offset = boundary;
+    rest.width = rest.glyphs.iter().map(|glyph| glyph.advance).sum();
+    rest.start_offset = boundary;
+    // The line ends before what is left, which is the whole point of cutting.
+    rest.breaks_before = true;
+    // A hard break belongs to the end of the item, which is now the second one.
+    head.hard_break = None;
+
+    items[index] = head;
+    items.insert(index + 1, rest);
+    let level = levels.get(index).copied().unwrap_or(0);
+    if index < levels.len() {
+        levels.insert(index + 1, level);
+    }
+    true
+}
+
+/// Cuts the lines of a cell that the room it has leaves no place for.
+///
+/// A row of an exact height is that tall whatever is in it, and Word cuts the
+/// text off where the row ends. This is the same cut made a line at a time: a
+/// line that does not fit whole is not drawn at all, which keeps the text
+/// inside the cell it belongs to. Word draws the top half of the line that
+/// straddles the boundary, and doing that needs the glyphs clipped as they are
+/// rasterized — named in the roadmap rather than pretended at here.
+///
+/// `already` is what the page held before the cell was placed: only what the
+/// cell added is ever cut.
+fn trim_cell(page: &mut Page, already: (usize, usize, usize), limit: f32) {
+    let (glyphs_before, lines_before, decorations_before) = already;
+
+    let mut cut = None;
+    for index in lines_before..page.lines.len() {
+        let line = &page.lines[index];
+        let (_, top, _, height) =
+            line.frame.rect(line.left, line.top(), 0.0, line.ascent + line.descent);
+        if top + height > limit {
+            cut = Some(index);
+            break;
+        }
+    }
+    let Some(cut) = cut else { return };
+
+    let first_glyph = page.lines[cut].glyphs.start.max(glyphs_before);
+    page.lines.truncate(cut);
+    page.glyphs.truncate(first_glyph);
+    // An underline under a line that is no longer drawn is not drawn either.
+    let mut index = decorations_before;
+    while index < page.decorations.len() {
+        if page.decorations[index].y > limit {
+            page.decorations.remove(index);
+        } else {
+            index += 1;
+        }
+    }
 }
 
 /// Where the drawn part of a line ends, once the spaces at its end are left

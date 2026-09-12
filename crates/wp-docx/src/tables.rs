@@ -255,13 +255,21 @@ impl Document {
         true
     }
 
-    /// Takes the row the caret is in out of the table.
+    /// Takes every selected row out of the table, or the caret's row when
+    /// nothing is selected.
+    ///
+    /// Word's Delete Rows: three rows selected are three rows deleted. Taking
+    /// the caret's row alone meant selecting a block and pressing it once per
+    /// row, which is not what the button says.
     ///
     /// Removing the last row removes the table, because a table with no rows is
     /// not a table — Word will not open one.
     pub fn delete_table_row(&mut self) -> bool {
         let Some(place) = self.table_here() else { return false };
-        if place.rows <= 1 {
+        let (first, last) =
+            self.selected_cells().map_or((place.row, place.row), |range| range.rows);
+        let last = last.min(place.rows.saturating_sub(1));
+        if last + 1 - first >= place.rows {
             return self.delete_table();
         }
         let caret = self.caret();
@@ -270,10 +278,21 @@ impl Document {
         let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
             return false;
         };
-        let Some(position) = child_position(table, "tr", place.row) else { return false };
-        table.children.remove(position);
+        // From the last back to the first: taking one out moves every row after
+        // it up, and the ones still to go would then be the wrong rows.
+        for row in (first..=last).rev() {
+            if let Some(position) = child_position(table, "tr", row) {
+                table.children.remove(position);
+            }
+        }
 
-        self.clamp_caret_after_edit();
+        // The caret goes into the row that took their place, which is where
+        // Word leaves it — deleting a row while typing does not throw the caret
+        // out of the table.
+        let table_path = place.table.clone();
+        if !self.caret_into_cell(&table_path, first, place.column) {
+            self.clamp_caret_after_edit();
+        }
         self.mark_modified();
         true
     }
@@ -326,10 +345,14 @@ impl Document {
         true
     }
 
-    /// Takes the column the caret is in out of the table.
+    /// Takes every selected column out of the table, or the caret's column when
+    /// nothing is selected. See [`Document::delete_table_row`].
     pub fn delete_table_column(&mut self) -> bool {
         let Some(place) = self.table_here() else { return false };
-        if place.columns <= 1 {
+        let (first, last) =
+            self.selected_cells().map_or((place.column, place.column), |range| range.columns);
+        let last = last.min(place.columns.saturating_sub(1));
+        if last + 1 - first >= place.columns {
             return self.delete_table();
         }
         let caret = self.caret();
@@ -354,13 +377,21 @@ impl Document {
             else {
                 continue;
             };
-            if let Some(cell_position) = child_position(row, "tc", place.column) {
-                row.children.remove(cell_position);
+            // Backwards, for the reason the rows go backwards.
+            for column in (first..=last).rev() {
+                if let Some(cell_position) = child_position(row, "tc", column) {
+                    row.children.remove(cell_position);
+                }
             }
         }
-        remove_grid_column(table, place.column);
+        for column in (first..=last).rev() {
+            remove_grid_column(table, column);
+        }
 
-        self.clamp_caret_after_edit();
+        let table_path = place.table.clone();
+        if !self.caret_into_cell(&table_path, place.row, first) {
+            self.clamp_caret_after_edit();
+        }
         self.mark_modified();
         true
     }
@@ -404,6 +435,39 @@ impl Document {
         );
 
         self.mark_modified();
+        true
+    }
+
+    /// Puts the caret in one cell of a table named by its path.
+    ///
+    /// By the path rather than by [`Document::cell_paragraphs`], because what
+    /// asks is a row or a column being deleted: the caret is about to be
+    /// nowhere, and asking where the caret is would be asking the question
+    /// backwards.
+    fn caret_into_cell(&mut self, table_path: &[usize], row: usize, column: usize) -> bool {
+        let Some(table) = element_at(&self.tree().root, table_path) else { return false };
+        let rows = count_children(table, "tr");
+        if rows == 0 {
+            return false;
+        }
+        let row = row.min(rows - 1);
+        let Some(row_at) = child_index_of(table, "tr", row) else { return false };
+        let Some(row_element) = table.children_named(Some(read::W), "tr").nth(row) else {
+            return false;
+        };
+        let columns = count_children(row_element, "tc");
+        if columns == 0 {
+            return false;
+        }
+        let Some(cell_at) = child_index_of(row_element, "tc", column.min(columns - 1)) else {
+            return false;
+        };
+
+        let mut path = table_path.to_vec();
+        path.push(row_at);
+        path.push(cell_at);
+        let Some((first, _)) = paragraphs_under(&self.tree().root, &path) else { return false };
+        self.set_caret(crate::TextPosition::new(first, 0));
         true
     }
 

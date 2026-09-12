@@ -272,11 +272,12 @@ impl Document {
             == Some("exact")
     }
 
-    /// Sets how tall the row at the caret is, or lets it find its own height.
+    /// Sets how tall every selected row is, or lets them find their own height.
+    ///
+    /// Every selected row, as Word's Height box does: a table is given even
+    /// rows by taking them all and typing one number.
     pub fn set_table_row_height(&mut self, twips: Option<i32>, exact: bool) -> bool {
-        let Some(position) = self.table_here() else { return false };
-        self.change_table(move |table, prefix| {
-            let Some(row) = rows_mut(table).nth(position.row) else { return };
+        self.change_selected_rows(move |row, prefix| {
             let properties = row_properties(row, prefix);
             properties.remove_children_named(Some(read::W), "trHeight");
             let Some(twips) = twips else { return };
@@ -308,46 +309,38 @@ impl Document {
         Some(CellAlignment::from_word(value))
     }
 
-    /// Sets where the text sits up and down the cell at the caret.
+    /// Sets where the text sits up and down every selected cell.
     ///
-    /// The one cell, as Word's buttons do with no selection — and as the other
-    /// half of the same question already did: which way up the text is set is
-    /// [`Document::set_cell_direction`], and it would be strange for one of the
-    /// two to change a row and the other a cell.
+    /// Every one of them, which is what Word's nine buttons do — and with
+    /// nothing selected, the cell at the caret. See
+    /// [`Document::change_selected_cells`].
     pub fn set_cell_alignment(&mut self, alignment: CellAlignment) -> bool {
-        let Some(position) = self.table_here() else { return false };
-        self.change_table(move |table, prefix| {
-            let Some(row) = rows_mut(table).nth(position.row) else { return };
-            if let Some(cell) = cells_mut(row).nth(position.column) {
-                let properties = cell_properties(cell, prefix);
-                properties.remove_children_named(Some(read::W), "vAlign");
-                if alignment == CellAlignment::Top {
-                    return;
-                }
-                let mut element = Element::new(&edit::name_with(prefix, "vAlign"), Some(read::W));
-                element.set_namespaced_attribute(
-                    &edit::name_with(prefix, "val"),
-                    read::W,
-                    alignment.word(),
-                );
-                edit::insert_ordered(properties, element, CELL_PROPERTY_ORDER);
+        self.change_selected_cells(move |cell, prefix| {
+            let properties = cell_properties(cell, prefix);
+            properties.remove_children_named(Some(read::W), "vAlign");
+            if alignment == CellAlignment::Top {
+                return;
             }
+            let mut element = Element::new(&edit::name_with(prefix, "vAlign"), Some(read::W));
+            element.set_namespaced_attribute(
+                &edit::name_with(prefix, "val"),
+                read::W,
+                alignment.word(),
+            );
+            edit::insert_ordered(properties, element, CELL_PROPERTY_ORDER);
         })
     }
 
-    /// Colours the cell at the caret, or takes its colour off.
+    /// Colours every selected cell, or takes their colour off.
     ///
     /// Word's Shading, on the Table Design tab. It colours the cell rather than
     /// the paragraph inside it: a cell is what a table is made of, and a colour
     /// on the paragraph would stop at the ends of the text rather than filling
-    /// the cell.
+    /// the cell. Every selected cell, because colouring a table is done a row
+    /// or a block at a time.
     pub fn set_cell_shading(&mut self, fill: Option<&str>) -> bool {
-        let Some(position) = self.table_here() else { return false };
         let fill = fill.map(str::to_owned);
-        self.change_table(move |table, prefix| {
-            let Some(row) = rows_mut(table).nth(position.row) else { return };
-            let Some(cell) = cells_mut(row).nth(position.column) else { return };
-
+        self.change_selected_cells(move |cell, prefix| {
             let properties = cell_properties(cell, prefix);
             properties.remove_children_named(Some(read::W), "shd");
             let Some(fill) = &fill else { return };
@@ -403,6 +396,45 @@ impl Document {
     fn table_element_here(&self) -> Option<&Element> {
         let position = self.table_here()?;
         edit::element_at_path(&self.tree().root, &position.table)
+    }
+
+    /// Changes every cell of the selection, or the cell at the caret when
+    /// nothing is selected.
+    ///
+    /// # Why every one of them
+    ///
+    /// Because that is what a person means. Word's buttons about a cell —
+    /// where the text sits in it, what colour it is, which way up it is, how
+    /// wide it is — act on every cell that is selected, and a table is used by
+    /// taking a row or a block of cells and then pressing one button. Acting on
+    /// the caret's cell alone meant selecting a row, pressing Align Center, and
+    /// watching one cell of the row move.
+    ///
+    /// With nothing selected the selection is the caret's own cell, so this is
+    /// the same as changing that one — which is the other half of Word's
+    /// behaviour.
+    fn change_selected_cells(&mut self, change: impl Fn(&mut Element, Option<&str>)) -> bool {
+        let Some(range) = self.selected_cells() else { return false };
+        self.change_table(move |table, prefix| {
+            for row in rows_mut(table).skip(range.rows.0).take(range.rows.1 - range.rows.0 + 1) {
+                let cells = cells_mut(row)
+                    .skip(range.columns.0)
+                    .take(range.columns.1 - range.columns.0 + 1);
+                for cell in cells {
+                    change(cell, prefix);
+                }
+            }
+        })
+    }
+
+    /// And every row of the selection, for what a row rather than a cell says.
+    fn change_selected_rows(&mut self, change: impl Fn(&mut Element, Option<&str>)) -> bool {
+        let Some(range) = self.selected_cells() else { return false };
+        self.change_table(move |table, prefix| {
+            for row in rows_mut(table).skip(range.rows.0).take(range.rows.1 - range.rows.0 + 1) {
+                change(row, prefix);
+            }
+        })
     }
 
     /// Changes the table at the caret.
@@ -586,11 +618,7 @@ impl Document {
     /// heading is set is a decision about that heading, and a row of headings
     /// turned together is several presses in Word too.
     pub fn set_cell_direction(&mut self, direction: crate::model::TextDirection) -> bool {
-        let Some(position) = self.table_here() else { return false };
-        self.change_table(move |table, prefix| {
-            let Some(row) = rows_mut(table).nth(position.row) else { return };
-            let Some(cell) = cells_mut(row).nth(position.column) else { return };
-
+        self.change_selected_cells(move |cell, prefix| {
             let properties = cell_properties(cell, prefix);
             properties.remove_children_named(Some(read::W), "textDirection");
             // The ordinary way up is what a cell that says nothing means, so it
@@ -816,10 +844,7 @@ impl Document {
 
     /// Sets that width, or takes it away.
     pub fn set_cell_width(&mut self, twips: Option<i32>) -> bool {
-        let Some(position) = self.table_here() else { return false };
-        self.change_table(move |table, prefix| {
-            let Some(row) = rows_mut(table).nth(position.row) else { return };
-            let Some(cell) = cells_mut(row).nth(position.column) else { return };
+        self.change_selected_cells(move |cell, prefix| {
             let properties = cell_properties(cell, prefix);
             properties.remove_children_named(Some(read::W), "tcW");
 

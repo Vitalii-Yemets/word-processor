@@ -69,6 +69,7 @@ mod statusmenu;
 mod styledialog;
 mod styles;
 mod symboldialog;
+mod tablecheck;
 mod tabledialog;
 mod tableedges;
 mod tablelayout;

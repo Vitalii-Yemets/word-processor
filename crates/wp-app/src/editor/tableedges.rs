@@ -173,8 +173,8 @@ impl super::Editor {
     pub(super) fn release_table_edge(&mut self) -> bool {
         let Some(drag) = self.edge_drag.take() else { return false };
         self.document.end_gesture();
-        self.status = if drag.across { "Column width changed" } else { "Row height changed" }
-            .to_owned();
+        self.status =
+            if drag.across { "Column width changed" } else { "Row height changed" }.to_owned();
         true
     }
 
