@@ -3491,6 +3491,16 @@ impl<'a> LayoutEngine<'a> {
                 _ => (float.left, float.right),
             };
 
+            // Which side the text is allowed down. Left means the text keeps
+            // to the left of the drawing, so everything from the drawing's
+            // left edge onwards is out of bounds however much room is beyond
+            // it — that is what asking for one side means.
+            let (blocked_left, blocked_right) = match float.side {
+                wp_docx::anchor::WrapSide::Left => (blocked_left, left + width),
+                wp_docx::anchor::WrapSide::Right => (left, blocked_right),
+                _ => (blocked_left, blocked_right),
+            };
+
             let mut narrowed = Vec::new();
             for (start, end) in free {
                 if blocked_right <= start || blocked_left >= end {
@@ -3795,6 +3805,7 @@ impl<'a> LayoutEngine<'a> {
             right: x + width + emu(right_room),
             bottom: y + height + emu(bottom_room),
             wrap: anchor.wrap,
+            side: anchor.side,
             // The shape itself, so that tight wrapping can follow its outline
             // rather than the box round it.
             outline: outline.map(|preset| (preset, x, y, width, height)),
@@ -6673,6 +6684,9 @@ pub(crate) struct Float {
     pub right: f32,
     pub bottom: f32,
     pub wrap: wp_docx::anchor::Wrap,
+    /// Which side of it the text may run down. See
+    /// [`wp_docx::anchor::WrapSide`].
+    pub side: wp_docx::anchor::WrapSide,
     /// The shape and where it sits, for wrapping that follows its outline. A
     /// picture has none: a picture is the box it fills.
     pub outline: Option<(crate::geometry::Preset, f32, f32, f32, f32)>,

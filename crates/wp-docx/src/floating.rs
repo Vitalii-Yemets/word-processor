@@ -257,6 +257,18 @@ impl Document {
         self.drawing_element_at(at)
     }
 
+    /// Which part of the package the picture at one place is embedded from.
+    ///
+    /// The relationship rather than the bytes, because the caller is asking so
+    /// that it can decode the picture and find the size it was drawn at —
+    /// which is what Word's Scale boxes are a percentage of. A shape or a chart
+    /// answers nothing: neither has an original size to be a percentage of.
+    #[must_use]
+    pub fn picture_relationship_at(&self, at: TextPosition) -> Option<String> {
+        let drawing = self.drawing_element_at(at)?;
+        find_blip(drawing)
+    }
+
     /// How far round the drawing at one place is turned, and whether it is
     /// drawn as its own mirror image.
     #[must_use]
@@ -725,4 +737,20 @@ fn resize(drawing: &mut Element, width_emu: i64, height_emu: i64) -> bool {
     let mut done = false;
     write(drawing, width_emu, height_emu, &mut done);
     done
+}
+
+/// The relationship a `a:blip` under an element points at, if there is one.
+///
+/// Walked rather than reached directly, because how deep a blip sits depends on
+/// what kind of drawing holds it: a picture's is three elements down, and one
+/// used as a shape's fill is deeper still.
+fn find_blip(element: &Element) -> Option<String> {
+    if element.local_name() == "blip" {
+        // By namespace and not by written name: the attribute is `r:embed`, and
+        // what its prefix is is the document's business.
+        if let Some(id) = element.attribute(Some(read::RELATIONSHIPS), "embed") {
+            return Some(id.to_owned());
+        }
+    }
+    element.child_elements().find_map(find_blip)
 }

@@ -17,7 +17,7 @@
 //! angle it is turned to, and dragging a handle already sets its size. This is
 //! the dialog, and every box in it reads what the drawing says and changes it.
 
-use wp_docx::anchor::{Anchor, Placement, Relative, Wrap};
+use wp_docx::anchor::{Anchor, Placement, Relative, Wrap, WrapSide};
 use wp_docx::floating::Turned;
 use wp_shell::Response;
 
@@ -41,21 +41,26 @@ const VERTICAL_FROM: usize = 8;
 // Text Wrapping.
 const TAB_WRAPPING: usize = 9;
 const WRAPPING_STYLE: usize = 10;
-const DISTANCE: usize = 11;
-const ROW_DISTANCE_DOWN: usize = 12;
-const DISTANCE_TOP: usize = 13;
-const DISTANCE_BOTTOM: usize = 14;
-const ROW_DISTANCE_SIDES: usize = 15;
-const DISTANCE_LEFT: usize = 16;
-const DISTANCE_RIGHT: usize = 17;
+const WRAPPING_SIDE: usize = 11;
+const DISTANCE: usize = 12;
+const ROW_DISTANCE_DOWN: usize = 13;
+const DISTANCE_TOP: usize = 14;
+const DISTANCE_BOTTOM: usize = 15;
+const ROW_DISTANCE_SIDES: usize = 16;
+const DISTANCE_LEFT: usize = 17;
+const DISTANCE_RIGHT: usize = 18;
 
 // Size.
-const TAB_SIZE: usize = 18;
-const ROW_SIZE: usize = 19;
-const SIZE_HEIGHT: usize = 20;
-const SIZE_WIDTH: usize = 21;
-const SIZE_LOCKED: usize = 22;
-const SIZE_ROTATION: usize = 23;
+const TAB_SIZE: usize = 19;
+const ROW_SIZE: usize = 20;
+const SIZE_HEIGHT: usize = 21;
+const SIZE_WIDTH: usize = 22;
+const SCALE: usize = 23;
+const ROW_SCALE: usize = 24;
+const SCALE_HEIGHT: usize = 25;
+const SCALE_WIDTH: usize = 26;
+const SIZE_LOCKED: usize = 27;
+const SIZE_ROTATION: usize = 28;
 
 /// English Metric Units in one point, which is what the dialog measures in.
 const EMU_PER_POINT: f32 = 12_700.0;
@@ -135,6 +140,13 @@ impl Editor {
         let (across_how, across_at) = placement_rows(&anchor.horizontal);
         let (down_how, down_at) = placement_rows(&anchor.vertical);
 
+        // A picture's own size, which the Scale boxes are a percentage of.
+        let original = self.original_size(at);
+        let scale = |now: i64, whole: Option<i64>| match whole.filter(|whole| *whole > 0) {
+            Some(whole) => shown_scale(now, whole),
+            None => shown_scale(now, now),
+        };
+
         // A drawing in the text has no anchor at all, and Word shows the
         // wrapping style In line with text for it. That style is not here: it
         // is the tick that makes a drawing float, and it belongs to Wrap Text
@@ -162,6 +174,15 @@ impl Editor {
                 STYLES.iter().map(|(name, _, _)| (*name).to_owned()).collect(),
                 style,
             ),
+            // Which side of the drawing the text runs down. Only the three
+            // wraps that let text beside the drawing at all can answer it,
+            // and for the others Word shows it greyed; here it says what the
+            // file says and is ignored when the wrap gives it nothing to mean.
+            choice(
+                "Wrap text",
+                WrapSide::ALL.iter().map(|side| side.label().to_owned()).collect(),
+                WrapSide::ALL.iter().position(|side| *side == anchor.side).unwrap_or(0),
+            ),
             Field::Group("Distance from text".to_owned()),
             Field::Columns(2),
             number("Top", emu(anchor.distance.2), unit.mark()),
@@ -174,6 +195,17 @@ impl Editor {
             Field::Columns(2),
             number("Height", emu(height), unit.mark()),
             number("Width", emu(width), unit.mark()),
+            // The same size as a percentage. Of the picture's own size where
+            // there is a picture — which is what Word's Scale is a percentage
+            // of — and of the size it is now for a shape, which has no
+            // original to be a percentage of. See [`Editor::original_size`].
+            Field::Group(match original {
+                Some(_) => "Scale, of the original picture".to_owned(),
+                None => "Scale, of the size it is now".to_owned(),
+            }),
+            Field::Columns(2),
+            number("Height", scale(height, original.map(|(_, tall)| tall)), "%"),
+            number("Width", scale(width, original.map(|(wide, _)| wide)), "%"),
             Field::Check { label: "Lock aspect ratio".to_owned(), on: true },
             number("Rotation", format!("{:.0}", degrees_of(turned)), "°"),
         ];
@@ -193,6 +225,7 @@ impl Editor {
                 (VERTICAL_FROM, "a list"),
                 (TAB_WRAPPING, "a tab"),
                 (WRAPPING_STYLE, "a list"),
+                (WRAPPING_SIDE, "a list"),
                 (DISTANCE, "a group"),
                 (ROW_DISTANCE_DOWN, "a row"),
                 (DISTANCE_TOP, "a number"),
@@ -204,6 +237,10 @@ impl Editor {
                 (ROW_SIZE, "a row"),
                 (SIZE_HEIGHT, "a number"),
                 (SIZE_WIDTH, "a number"),
+                (SCALE, "a group"),
+                (ROW_SCALE, "a row"),
+                (SCALE_HEIGHT, "a number"),
+                (SCALE_WIDTH, "a number"),
                 (SIZE_LOCKED, "a tick box"),
                 (SIZE_ROTATION, "a number"),
             ],
@@ -218,6 +255,30 @@ impl Editor {
             ],
         )
         .wide(520.0)
+    }
+
+    /// The size a picture was drawn at, before anything resized it.
+    ///
+    /// Word's Scale is a percentage of this: a photograph brought down to fit
+    /// the page is at twenty per cent of itself, and typing 50 there means half
+    /// the photograph rather than half of what it is now. Read by decoding the
+    /// picture, which is the only place the number exists — the file records
+    /// what the drawing is *now*, not what it was.
+    ///
+    /// Nothing for a shape or a chart: neither has an original to be a
+    /// percentage of, and Word greys the boxes out for them.
+    fn original_size(&self, at: wp_docx::TextPosition) -> Option<(i64, i64)> {
+        let relationship = self.document.picture_relationship_at(at)?;
+        let bytes = self.document.embedded_part(&relationship)?;
+        let image = wp_image::decode(bytes).ok()?;
+        if image.width == 0 || image.height == 0 {
+            return None;
+        }
+        // A picture's own size is its pixels read at the screen's usual
+        // ninety-six to the inch, which is the size this program gives one when
+        // it is inserted. See [`super::insert`].
+        let per_pixel = wp_docx::EMU_PER_INCH / super::DPI as i64;
+        Some((image.width as i64 * per_pixel, image.height as i64 * per_pixel))
     }
 
     /// Puts what the dialog says onto the drawing.
@@ -238,9 +299,11 @@ impl Editor {
         let (wrap, behind) = STYLES
             .get(dialog.chose(WRAPPING_STYLE))
             .map_or((Wrap::Square, false), |(_, wrap, behind)| (*wrap, *behind));
+        let side = WrapSide::ALL.get(dialog.chose(WRAPPING_SIDE)).copied().unwrap_or_default();
 
         let anchor = Anchor {
             wrap,
+            side,
             behind_text: behind,
             horizontal_from: frame(HORIZONTAL_FROM),
             horizontal: placement(HORIZONTAL_HOW, HORIZONTAL_AT),
@@ -260,8 +323,53 @@ impl Editor {
         // the same, a box at a time, while the dialog is open; ours has one
         // moment to do it in, which is here.
         let (was_width, was_height) = self.document.drawing_size_at(at).unwrap_or((0, 0));
-        let mut width = emu(SIZE_WIDTH);
-        let mut height = emu(SIZE_HEIGHT);
+        // Whether a measurement box was typed into, told by what it says
+        // rather than by what it parses to: the box was filled in with a
+        // rounded measurement — a tenth of an inch shows as 0.12 — and reading
+        // that back gives a number a few hundred English Metric Units away
+        // from the one it was made from. Every box would then look changed, and
+        // the percentages would never get a hearing.
+        let untouched = |field: usize, value: i64| {
+            dialog.said(field).trim() == measure::format(emu_to_twips(value), self.unit)
+        };
+        let mut width = if untouched(SIZE_WIDTH, was_width) { was_width } else { emu(SIZE_WIDTH) };
+        let mut height =
+            if untouched(SIZE_HEIGHT, was_height) { was_height } else { emu(SIZE_HEIGHT) };
+
+        // A percentage changed rather than a measurement is the percentage that
+        // is meant: the two boxes say the same thing two ways, and Word keeps
+        // them in step as they are typed in. Ours has one moment to settle
+        // them, which is here — so the measurement wins where it was changed
+        // and the percentage wins where it was not.
+        let original = self.original_size(at);
+        let whole = |axis: Option<i64>, now: i64| axis.filter(|value| *value > 0).unwrap_or(now);
+        // What the box said when the dialog opened, worked out the same way it
+        // was filled in: a box still showing that is a box nobody touched.
+        // Comparing against a hundred instead would mean a picture shown at
+        // twenty-five per cent could never be asked for a hundred.
+        let per_cent = |field: usize, whole: i64, now: i64| {
+            let said = dialog.said(field).trim().to_owned();
+            if said == shown_scale(now, whole) {
+                return None;
+            }
+            said.parse::<f64>()
+                .ok()
+                .filter(|value| *value > 0.0)
+                .map(|value| (whole as f64 * value / 100.0).round() as i64)
+        };
+        if width == was_width {
+            let whole = whole(original.map(|(wide, _)| wide), was_width);
+            if let Some(wanted) = per_cent(SCALE_WIDTH, whole, was_width) {
+                width = wanted;
+            }
+        }
+        if height == was_height {
+            let whole = whole(original.map(|(_, tall)| tall), was_height);
+            if let Some(wanted) = per_cent(SCALE_HEIGHT, whole, was_height) {
+                height = wanted;
+            }
+        }
+
         if dialog.ticked(SIZE_LOCKED) && was_width > 0 && was_height > 0 {
             let ratio = was_height as f64 / was_width as f64;
             if width != was_width && height == was_height {
@@ -291,6 +399,18 @@ impl Editor {
         self.relayout();
         self.edited(changed, "Layout")
     }
+}
+
+/// A size as a percentage of what it is a percentage of, as the box shows it.
+///
+/// In one place because two things have to agree about it: the box is filled in
+/// with it, and the answer compares what the box says against it to tell a box
+/// that was typed into from one that was not.
+fn shown_scale(now: i64, whole: i64) -> String {
+    if whole <= 0 {
+        return "100".to_owned();
+    }
+    format!("{:.0}", now as f64 / whole as f64 * 100.0)
 }
 
 /// Which row of the list a placement is, and the distance to show beside it.
@@ -342,7 +462,8 @@ mod tests {
     use crate::chrome::dialog::{Answer, Field};
 
     use super::{Editor, DISTANCE_TOP, HORIZONTAL_AT, HORIZONTAL_FROM, HORIZONTAL_HOW};
-    use super::{SIZE_HEIGHT, SIZE_LOCKED, SIZE_ROTATION, SIZE_WIDTH, WRAPPING_STYLE};
+    use super::{SCALE_HEIGHT, SCALE_WIDTH, SIZE_HEIGHT, SIZE_LOCKED, SIZE_ROTATION};
+    use super::{SIZE_WIDTH, WRAPPING_SIDE, WRAPPING_STYLE};
 
     /// Types into one of the dialog's measurement boxes.
     fn type_number(editor: &mut Editor, field: usize, text: &str) {
@@ -541,6 +662,103 @@ mod tests {
             Some(before),
             "one undo did not put the whole answer back"
         );
+    }
+
+    #[test]
+    fn the_side_the_text_runs_down_is_taken_and_the_page_obeys_it() {
+        let mut editor = editor();
+        // Square wrapping, so there is text beside the drawing to keep to one
+        // side of, and the shape in the middle of the text width.
+        editor.open_layout_dialog();
+        choose(&mut editor, WRAPPING_STYLE, 0);
+        choose(&mut editor, HORIZONTAL_HOW, 2);
+        editor.finish_dialog(Answer::Accept);
+
+        let at = editor.chosen_drawings[0];
+        assert_eq!(editor.document.anchor_at(at).expect("an anchor").wrap, Wrap::Square);
+
+        // Left only: nothing may be drawn to the right of the shape.
+        editor.open_layout_dialog();
+        choose(&mut editor, WRAPPING_SIDE, 1);
+        editor.finish_dialog(Answer::Accept);
+        assert_eq!(
+            editor.document.anchor_at(at).expect("an anchor").side,
+            wp_docx::anchor::WrapSide::Left,
+            "the side was not taken"
+        );
+
+        let shape = editor.pages[0].shapes.first().cloned().expect("the shape is on the page");
+        let right_edge = shape.x + shape.width;
+        let beyond = editor.pages[0]
+            .glyphs
+            .iter()
+            .filter(|glyph| glyph.baseline > shape.y && glyph.baseline < shape.y + shape.height)
+            .filter(|glyph| glyph.x >= right_edge)
+            .count();
+        assert_eq!(beyond, 0, "the text still runs down the right of the shape");
+    }
+
+    #[test]
+    fn a_percentage_typed_into_the_scale_resizes_the_drawing() {
+        // A shape has no original size to be a percentage of, so the
+        // percentage is of the size it is now — which is what Word's boxes do
+        // for a shape, and what the group's label says.
+        let mut editor = editor();
+        let at = editor.chosen_drawings[0];
+        let (was_width, was_height) = editor.document.drawing_size_at(at).expect("a size");
+
+        editor.open_layout_dialog();
+        tick(&mut editor, SIZE_LOCKED, false);
+        type_number(&mut editor, SCALE_WIDTH, "50");
+        type_number(&mut editor, SCALE_HEIGHT, "50");
+        editor.finish_dialog(Answer::Accept);
+
+        let (width, height) = editor.document.drawing_size_at(at).expect("a size");
+        assert!((width - was_width / 2).abs() < 3000, "half of {was_width} came out as {width}");
+        assert!((height - was_height / 2).abs() < 3000, "and the height as {height}");
+    }
+
+    #[test]
+    fn a_measurement_wins_over_a_percentage_that_was_not_touched() {
+        let mut editor = editor();
+        let at = editor.chosen_drawings[0];
+
+        editor.open_layout_dialog();
+        tick(&mut editor, SIZE_LOCKED, false);
+        type_number(&mut editor, SIZE_WIDTH, "3");
+        editor.finish_dialog(Answer::Accept);
+
+        let (width, _) = editor.document.drawing_size_at(at).expect("a size");
+        assert!((width - 2_743_200).abs() < 3000, "three inches came out as {width}");
+    }
+
+    #[test]
+    fn a_picture_is_scaled_from_the_size_it_was_drawn_at() {
+        // The other half of the rule: a picture *has* an original, and Word's
+        // percentage is of that rather than of what the picture is now.
+        let mut editor = editor();
+        editor.chosen_drawings.clear();
+        let canvas = wp_raster::Canvas::filled(96, 48, wp_raster::Color::BLACK);
+        let bytes = wp_raster::encode_png(&canvas);
+        let end = editor.document.paragraph_text(0).map_or(0, |text| text.len());
+        editor.document.set_caret(TextPosition::new(0, end));
+        // Put in at a quarter of its own size, so a scale of 100 has something
+        // to put back.
+        editor.document.insert_picture(&bytes, "png", 228_600, 114_300).expect("a picture");
+        editor.relayout();
+        let at = editor.document.drawing_place_here().expect("a drawing");
+        editor.chosen_drawings = vec![at];
+
+        editor.open_layout_dialog();
+        tick(&mut editor, SIZE_LOCKED, false);
+        type_number(&mut editor, SCALE_WIDTH, "100");
+        type_number(&mut editor, SCALE_HEIGHT, "100");
+        editor.finish_dialog(Answer::Accept);
+
+        // Ninety-six pixels at ninety-six to the inch is one inch.
+        let (width, height) = editor.document.drawing_size_at(at).expect("a size");
+        assert!((width - 914_400).abs() < 3000, "one inch came out as {width}");
+        assert!((height - 457_200).abs() < 3000, "half an inch came out as {height}");
     }
 
     #[test]

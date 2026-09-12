@@ -78,6 +78,60 @@ impl Wrap {
         &[Self::Square, Self::Tight, Self::Through, Self::TopAndBottom, Self::None];
 }
 
+/// Which side of a drawing the text runs down.
+///
+/// `wrapSquare/@wrapText`, and Word's Wrap text in the Layout dialog. Only
+/// meaningful for the three wraps that let text beside the drawing at all.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WrapSide {
+    /// Both, which is what Word writes unless told otherwise: a line beside
+    /// the drawing is broken into a piece each side of it.
+    #[default]
+    BothSides,
+    /// The text keeps to the left of the drawing and the room to its right is
+    /// left empty.
+    Left,
+    /// And the other way about.
+    Right,
+    /// Whichever side has more room, which is one piece of line rather than
+    /// two.
+    Largest,
+}
+
+impl WrapSide {
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::BothSides => "bothSides",
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::Largest => "largest",
+        }
+    }
+
+    #[must_use]
+    pub fn from_word(word: &str) -> Self {
+        match word {
+            "left" => Self::Left,
+            "right" => Self::Right,
+            "largest" => Self::Largest,
+            _ => Self::BothSides,
+        }
+    }
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::BothSides => "Both sides",
+            Self::Left => "Left only",
+            Self::Right => "Right only",
+            Self::Largest => "Largest only",
+        }
+    }
+
+    pub const ALL: &'static [Self] = &[Self::BothSides, Self::Left, Self::Right, Self::Largest];
+}
+
 /// What a position is measured from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Relative {
@@ -146,6 +200,8 @@ impl Default for Placement {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Anchor {
     pub wrap: Wrap,
+    /// Which side of it the text runs down. See [`WrapSide`].
+    pub side: WrapSide,
     /// Whether the drawing is drawn under the text rather than over it.
     pub behind_text: bool,
     pub horizontal_from: Relative,
@@ -178,6 +234,7 @@ impl Default for Anchor {
     fn default() -> Self {
         Self {
             wrap: Wrap::Square,
+            side: WrapSide::default(),
             behind_text: false,
             horizontal_from: Relative::Column,
             horizontal: Placement::Offset(0),
@@ -228,6 +285,10 @@ pub fn read_anchor(drawing: &Element) -> Option<Anchor> {
     for child in anchor.child_elements() {
         if let Some(wrap) = Wrap::from_element(child.local_name()) {
             result.wrap = wrap;
+            // And which side of the drawing the text runs down, which only
+            // the wraps that let text beside it at all can say.
+            result.side =
+                WrapSide::from_word(child.attribute_by_name("wrapText").unwrap_or_default());
             break;
         }
     }
@@ -277,9 +338,8 @@ pub fn write_anchor(anchor: &Anchor, element: &mut Element, wp: &str) {
 pub fn wrap_element(anchor: &Anchor, wp: &str) -> Element {
     let mut element = Element::new(&format!("wp:{}", anchor.wrap.element()), Some(wp));
     if matches!(anchor.wrap, Wrap::Square | Wrap::Tight | Wrap::Through) {
-        // Which sides the text may run down. Both is the ordinary answer and
-        // the only one this program lays out.
-        element.set_attribute("wrapText", "bothSides");
+        // Which side the text may run down. See [`WrapSide`].
+        element.set_attribute("wrapText", anchor.side.word());
     }
     element
 }

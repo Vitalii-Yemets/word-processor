@@ -185,6 +185,9 @@ fn plain(preset: &str, x: i64, y: i64, width: i64, height: i64, fill: &str) -> S
             // a line of words running down the side of a chain of boxes is a
             // line nobody can read.
             wrap: Wrap::TopAndBottom,
+            // Nothing runs beside it, so which side would run beside it is
+            // not a question this asks.
+            side: crate::anchor::WrapSide::default(),
             behind_text: false,
             horizontal_from: Relative::Column,
             horizontal: Placement::Offset(x),

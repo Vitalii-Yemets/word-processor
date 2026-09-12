@@ -1674,12 +1674,58 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   pointer nears it, and is drawn on a short line the width of the table. This
   one is the circle and the plus.
 
-- [ ] **C43. The rest of the Layout dialog.** What **C38** left: the Scale
+- [x] **C43. The rest of the Layout dialog.** What **C38** left: the Scale
   boxes, which need a picture's original size kept beside it; Relative position
   and Relative width, which are percentages of a frame and a second way of
   writing `wp:positionH`; the side the text wraps on, which is
   `wrapSquare/@wrapText`; and Move object with text, Allow overlap and Lock
   anchor, which are three flags on `wp:anchor` that nothing yet reads.
+  *Done:* the **Scale** boxes and the **side the text runs down**.
+  Scale is a percentage of what a percentage can be of: a picture's own size,
+  found by decoding the picture, which is the only place that number exists —
+  the file records what a drawing is now and not what it was. A photograph
+  brought down to fit the page shows as twenty per cent of itself, and typing
+  100 puts it back. A shape has no original, so its boxes are a percentage of
+  the size it is now, and the group says which it is rather than pretending.
+  Two traps were found and are worth the words: a box shows a measurement
+  rounded to two decimals, so reading it back gives a number a few hundred
+  English Metric Units away from the one it was filled in with — every box
+  looked changed, and the percentages never got a hearing. And a percentage box
+  showing 25 could never be asked for 100 while "changed" meant "not a
+  hundred". Both are now told by what the box *says* against what it was given.
+  The side is `wrapSquare/@wrapText`, read, written and laid out: Left keeps
+  the text to the left of the drawing whatever room is beyond it, Right the
+  other way about, and Largest is what the layout already did. See **C45** for
+  Both sides, which is the default and is not what is drawn.
+  *Not done:* Relative position and Relative width — **C44**. Move object with
+  text, Allow overlap and Lock anchor — **C46**.
+
+- [ ] **C44. Position and size as percentages.** Word's Relative position and
+  Relative width in the Layout dialog, which measure a drawing's place and its
+  width as a percentage of the page, the margin or the column rather than in
+  inches. Written as `wp14:pctPosHOffset` and `wp14:sizeRelH` — the 2010
+  extensions, which live inside `mc:AlternateContent` beside the plain values so
+  that a reader that knows neither still sees a drawing. So this is the
+  extension mechanism as much as the two numbers: reading a choice of markup and
+  writing both halves of it.
+
+- [ ] **C45. Text down both sides of a drawing.** `wrapText="bothSides"`, which
+  is what Word writes unless told otherwise: a line beside a drawing is broken
+  into a piece each side of it. The layout gives a line one left edge and one
+  width, so what it draws is the wider side alone — Word's "Largest only" —
+  whatever the file says. A line has to become several pieces for this, which is
+  the same shape of change a line inside a turned cell needed, and it touches
+  every measurement a line has: where a caret goes, what a click means, how a
+  selection band is drawn.
+
+- [ ] **C46. The three flags at the foot of the Position tab.** Move object with
+  text, Allow overlap and Lock anchor. Each is one attribute and none of them is
+  only an attribute: allowing overlap means deciding what to do when two
+  drawings want the same place — Word pushes the second one down — locking an
+  anchor means refusing to move it when the text it hangs from moves, and moving
+  with text means the opposite. A tick box that wrote a flag nothing obeyed
+  would be a control that does nothing, which is why they are here rather than
+  in **C38**.
 
 - [x] **C42. A double click takes the space after the word.** Found while
   proving **C41**: Word's double click selects the word *and* the space that
