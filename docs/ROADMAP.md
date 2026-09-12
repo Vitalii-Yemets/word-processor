@@ -2057,10 +2057,13 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   is the one most documents use and is worth drawing properly.
   *Done when:* a shape with a bevel and a depth is drawn with them.
 
-- [ ] **D15. Block arrows.** The twenty-eight arrows of Word's gallery: the four
+- [x] **D15. Block arrows.** The twenty-eight arrows of Word's gallery: the four
   straight ones, the bent and the curved, the striped and the notched, the
   chevron and the pentagon, and the circular arrow.
   *Done when:* each is drawn, and each is drawn the way round its name says.
+  Each takes its head length and its shaft thickness from the shorter side of
+  its box, as Word does, so two heads that cannot both fit meet in the middle
+  and the arrow reads as a diamond — which is what Word draws too.
 
 - [ ] **D16. Flowchart shapes.** The twenty-eight boxes a flowchart is drawn
   with: the process, the decision, the terminator, the document, the stored

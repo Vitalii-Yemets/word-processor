@@ -943,6 +943,73 @@ impl Editor {
                     self.open_grouping();
                 }
             }
+            // The block arrows alone, big enough to see whether each is the
+            // shape it is named after.
+            "arrows" => {
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                let arrows: Vec<wp_layout::geometry::Preset> = wp_layout::geometry::Preset::all()
+                    .into_iter()
+                    .filter(|preset| {
+                        let word = preset.word();
+                        word.contains("Arrow")
+                            || word.contains("arrow")
+                            || word == "homePlate"
+                            || word == "chevron"
+                    })
+                    .collect();
+                // Square cells, because a block arrow takes its head length
+                // from the shorter side of its box: a wide, short box makes
+                // Word draw a two-headed arrow as a diamond, and that is
+                // correct arithmetic which says nothing about the shape.
+                let across = 6usize;
+                let rows = arrows.len().div_ceil(across) as i64;
+
+                // A blank sheet under the lot, inserted first because the
+                // newest drawing at one place is drawn last and so on top: the
+                // body text showing through the gaps between the arrows hides
+                // the very edges being looked at.
+                let sheet = wp_docx::shapes::Shape {
+                    name: "Sheet".to_owned(),
+                    preset: "rect".to_owned(),
+                    width_emu: across as i64 * 914_400,
+                    height_emu: rows * 914_400,
+                    fill: wp_docx::fills::Fill::Solid("FFFFFF".to_owned()),
+                    outline: None,
+                    anchor: Some(Anchor {
+                        wrap: Wrap::None,
+                        horizontal: Placement::Offset(0),
+                        vertical: Placement::Offset(0),
+                        ..Anchor::default()
+                    }),
+                    ..wp_docx::shapes::Shape::default()
+                };
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.insert_shape(&sheet);
+
+                for (index, preset) in arrows.iter().enumerate() {
+                    let column = index % across;
+                    let row = index / across;
+                    let shape = wp_docx::shapes::Shape {
+                        name: preset.label().to_owned(),
+                        preset: preset.word().to_owned(),
+                        width_emu: 800_100,
+                        height_emu: 800_100,
+                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                        outline: Some("1F3864".to_owned()),
+                        outline_emu: 9_525,
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset(column as i64 * 914_400),
+                            vertical: Placement::Offset(row as i64 * 914_400),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+                self.relayout();
+            }
             "gallery" => {
                 // Every shape the program can draw, laid out in rows: the only
                 // way to look at the whole gallery at once and see which of

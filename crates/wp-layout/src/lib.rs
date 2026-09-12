@@ -25,6 +25,7 @@
 
 #![forbid(unsafe_code)]
 
+mod arrows;
 mod artborders;
 mod borders;
 pub mod charting;

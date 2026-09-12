@@ -79,6 +79,37 @@ pub enum Preset {
     Plaque,
     Moon,
     Heart,
+
+    // Word's block arrows. An arrow is a shaft with a head on it, and which
+    // sides the heads are on is the whole of the difference between most of
+    // these. See [`crate::arrows`].
+    LeftArrow,
+    UpArrow,
+    DownArrow,
+    LeftRightArrow,
+    UpDownArrow,
+    QuadArrow,
+    LeftRightUpArrow,
+    NotchedArrow,
+    StripedArrow,
+    HomePlate,
+    Chevron,
+    BentArrow,
+    BentUpArrow,
+    LeftUpArrow,
+    UturnArrow,
+    CurvedRightArrow,
+    CurvedLeftArrow,
+    CurvedUpArrow,
+    CurvedDownArrow,
+    RightArrowCallout,
+    LeftArrowCallout,
+    UpArrowCallout,
+    DownArrowCallout,
+    LeftRightArrowCallout,
+    QuadArrowCallout,
+    CircularArrow,
+    SwooshArrow,
 }
 
 /// Every preset this program draws: the name the format knows it by, and the
@@ -103,7 +134,7 @@ const NAMED: &[(Preset, &str, &str)] = &[
     (Preset::Diamond, "diamond", "Diamond"),
     (Preset::Trapezoid, "trapezoid", "Trapezoid"),
     (Preset::Parallelogram, "parallelogram", "Parallelogram"),
-    (Preset::Pentagon, "pentagon", "Pentagon"),
+    (Preset::Pentagon, "pentagon", "Regular Pentagon"),
     (Preset::Hexagon, "hexagon", "Hexagon"),
     (Preset::Heptagon, "heptagon", "Heptagon"),
     (Preset::Octagon, "octagon", "Octagon"),
@@ -125,7 +156,35 @@ const NAMED: &[(Preset, &str, &str)] = &[
     (Preset::Plaque, "plaque", "Plaque"),
     (Preset::Moon, "moon", "Moon"),
     (Preset::Heart, "heart", "Heart"),
+    // The block arrows, in the order Word's gallery shows them.
     (Preset::Arrow, "rightArrow", "Right Arrow"),
+    (Preset::LeftArrow, "leftArrow", "Left Arrow"),
+    (Preset::UpArrow, "upArrow", "Up Arrow"),
+    (Preset::DownArrow, "downArrow", "Down Arrow"),
+    (Preset::LeftRightArrow, "leftRightArrow", "Left-Right Arrow"),
+    (Preset::UpDownArrow, "upDownArrow", "Up-Down Arrow"),
+    (Preset::QuadArrow, "quadArrow", "Quad Arrow"),
+    (Preset::LeftRightUpArrow, "leftRightUpArrow", "Left-Right-Up Arrow"),
+    (Preset::BentArrow, "bentArrow", "Bent Arrow"),
+    (Preset::UturnArrow, "uturnArrow", "U-Turn Arrow"),
+    (Preset::LeftUpArrow, "leftUpArrow", "Left-Up Arrow"),
+    (Preset::BentUpArrow, "bentUpArrow", "Bent-Up Arrow"),
+    (Preset::CurvedRightArrow, "curvedRightArrow", "Curved Right Arrow"),
+    (Preset::CurvedLeftArrow, "curvedLeftArrow", "Curved Left Arrow"),
+    (Preset::CurvedUpArrow, "curvedUpArrow", "Curved Up Arrow"),
+    (Preset::CurvedDownArrow, "curvedDownArrow", "Curved Down Arrow"),
+    (Preset::StripedArrow, "stripedRightArrow", "Striped Right Arrow"),
+    (Preset::NotchedArrow, "notchedRightArrow", "Notched Right Arrow"),
+    (Preset::HomePlate, "homePlate", "Pentagon"),
+    (Preset::Chevron, "chevron", "Chevron"),
+    (Preset::RightArrowCallout, "rightArrowCallout", "Right Arrow Callout"),
+    (Preset::LeftArrowCallout, "leftArrowCallout", "Left Arrow Callout"),
+    (Preset::UpArrowCallout, "upArrowCallout", "Up Arrow Callout"),
+    (Preset::DownArrowCallout, "downArrowCallout", "Down Arrow Callout"),
+    (Preset::LeftRightArrowCallout, "leftRightArrowCallout", "Left-Right Arrow Callout"),
+    (Preset::QuadArrowCallout, "quadArrowCallout", "Quad Arrow Callout"),
+    (Preset::CircularArrow, "circularArrow", "Circular Arrow"),
+    (Preset::SwooshArrow, "swooshArrow", "Swoosh Arrow"),
     (Preset::Line, "line", "Line"),
     (Preset::Callout, "wedgeRectCallout", "Speech Bubble"),
 ];
@@ -191,6 +250,12 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
     }
     let (left, top, right, bottom) = (x, y, x + width, y + height);
     let point = |px: f32, py: f32| Point::new(px, py);
+
+    // The block arrows are their own file: there are twenty-eight of them and
+    // they are nearly all one shape. See [`crate::arrows`].
+    if let Some(arrow) = crate::arrows::path_in(preset, left, top, right, bottom) {
+        return arrow;
+    }
 
     match preset {
         Preset::Rectangle | Preset::Callout => {
@@ -577,6 +642,17 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
             path.move_to(point(left, top));
             path.line_to(point(right, bottom));
         }
+        // The block arrows answered above, before this match was reached: they
+        // are in a file of their own. Naming them here would be naming them
+        // twice, and the one thing worse than a shape in no list is a shape in
+        // two. See [`crate::arrows`].
+        _ => {
+            path.move_to(point(left, top));
+            path.line_to(point(right, top));
+            path.line_to(point(right, bottom));
+            path.line_to(point(left, bottom));
+            path.close();
+        }
     }
     path
 }
@@ -697,13 +773,21 @@ const QUARTER: f32 = 0.552_284_8;
 /// Adds a run of an ellipse to a path that is already somewhere.
 ///
 /// Straight from where the path is to the first point of the run, and then
-/// along it. Angles go the way a canvas measures them: clockwise, from the
-/// three o'clock position.
-fn arc_into(path: &mut Path, cx: f32, cy: f32, rx: f32, ry: f32, from: f32, to: f32) {
+/// along it. Angles are in radians and go the way a canvas measures them:
+/// clockwise, from the three o'clock position.
+pub(crate) fn arc_into(path: &mut Path, cx: f32, cy: f32, rx: f32, ry: f32, from: f32, to: f32) {
     let steps = ARC_STEPS * 2;
     for step in 0..=steps {
         let angle = from + (to - from) * step as f32 / steps as f32;
-        path.line_to(Point::new(cx + rx * angle.cos(), cy + ry * angle.sin()));
+        let at = Point::new(cx + rx * angle.cos(), cy + ry * angle.sin());
+        // An arc that begins the shape says where it begins, because a path
+        // whose first step is a line starts at the origin and drags an edge
+        // across everything between there and the shape.
+        if step == 0 && path.is_empty() {
+            path.move_to(at);
+        } else {
+            path.line_to(at);
+        }
     }
 }
 
@@ -1212,6 +1296,22 @@ mod gallery_tests {
     }
 
     #[test]
+    fn every_shape_says_where_it_starts() {
+        // A path whose first step is a line starts at the origin, wherever the
+        // shape itself is, and drags an edge across everything in between. It
+        // is invisible to the tests that measure a shape, because they look at
+        // the points the path names and the origin is not one of them.
+        for preset in Preset::all() {
+            let path = path_in(preset, 10.0, 20.0, 100.0, 60.0);
+            assert!(
+                matches!(path.commands.first(), Some(wp_raster::Command::MoveTo(_))),
+                "{preset:?} starts with {:?}",
+                path.commands.first()
+            );
+        }
+    }
+
+    #[test]
     fn every_preset_has_a_name_and_a_name_and_draws_something() {
         // The three things a shape has to have to be a shape anybody can use:
         // a name in the file, a name on the screen, and an outline.
@@ -1266,6 +1366,25 @@ mod gallery_tests {
             Preset::LShape,
             Preset::HalfFrame,
             Preset::Moon,
+            // And the U-turn, which is a horseshoe: the gap between its two
+            // legs is what makes it a U rather than a bar. The three elbows are
+            // hollow in the corner they turn, for the same reason the L shape
+            // is.
+            Preset::UturnArrow,
+            Preset::BentArrow,
+            Preset::BentUpArrow,
+            Preset::LeftUpArrow,
+            // The curved arrows and the circular one are bands bent round a
+            // middle they do not cover — an arc with a head on it.
+            Preset::CurvedRightArrow,
+            Preset::CurvedLeftArrow,
+            Preset::CurvedUpArrow,
+            Preset::CurvedDownArrow,
+            Preset::CircularArrow,
+            // And the swoosh, which is a stroke rather than a solid: it rises
+            // from one corner to another and the middle of the box is above
+            // it.
+            Preset::SwooshArrow,
         ];
         for preset in Preset::all() {
             if preset == Preset::Line || hollow.contains(&preset) {
