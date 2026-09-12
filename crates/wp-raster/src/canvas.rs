@@ -261,6 +261,25 @@ impl Canvas {
 
     /// The same, by whichever rule is asked for. See [`crate::raster::Rule`].
     pub fn fill_path_by(&mut self, path: &Path, color: Color, rule: crate::raster::Rule) {
+        self.fill_path_using(path, rule, |_, _| color);
+    }
+
+    /// Fills a path with a colour that is different at every pixel.
+    ///
+    /// # Why a path is filled by asking rather than by being told
+    ///
+    /// Because a shade is not a colour. A gradient, a hatching, a picture used
+    /// as a fill: none of them can be handed in as one colour, and all of them
+    /// are the same thing as far as filling goes — a rule that says what colour
+    /// a place is. So the rule is handed in instead, and asked once for every
+    /// pixel the shape covers. The coordinates it is asked about are the
+    /// canvas's own, so a shade knows where on the page it is.
+    pub fn fill_path_using(
+        &mut self,
+        path: &Path,
+        rule: crate::raster::Rule,
+        colour: impl Fn(usize, usize) -> Color,
+    ) {
         let Some((min_x, min_y, max_x, max_y)) = bounds_of(path) else {
             return;
         };
@@ -283,7 +302,21 @@ impl Canvas {
             &path.transformed(&crate::path::Transform::translate(-(left as f32), -(top as f32))),
         );
 
-        self.draw_mask(&rasterizer.finish_by(rule), left as i32, top as i32, color);
+        let mask = rasterizer.finish_by(rule);
+        for row in 0..mask.height() {
+            let y = top + row as i64;
+            if y < 0 || y >= self.height as i64 {
+                continue;
+            }
+            for column in 0..mask.width() {
+                let x = left + column as i64;
+                if x < 0 || x >= self.width as i64 {
+                    continue;
+                }
+                let (x, y) = (x as usize, y as usize);
+                self.blend(x, y, colour(x, y), mask.at(column, row));
+            }
+        }
     }
 
     /// The pixels of one rectangle, copied out.

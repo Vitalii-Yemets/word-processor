@@ -53,6 +53,7 @@ pub mod edit;
 pub mod effects;
 pub mod fields;
 pub mod figures;
+pub mod fills;
 pub mod floating;
 mod format;
 pub mod formula;

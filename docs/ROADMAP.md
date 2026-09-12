@@ -1772,10 +1772,36 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   make a rounded corner rounder or an arrow's head wider — are not read, so each
   shape is drawn at the proportions the format uses when nothing says otherwise.
 
-- [ ] **D12. Gradients and patterns.** `a:gradFill` in its three kinds — linear,
-  radial and along a path — with the stops and the angle; `a:pattFill`, which is
-  fifty-four named hatchings; and the picture and texture fills.
-  *Done when:* a shape filled each of those ways is drawn as Word draws it.
+- [x] **D12. Gradients and patterns.** `a:gradFill` in its three kinds — linear,
+  radial and along a path — with the stops and the angle; and `a:pattFill`, the
+  named hatchings.
+  *Done:* a fill stopped being a colour. It was six hex digits or nothing, which
+  could carry none of this — and three quarters of the shapes in a real document
+  are not one colour: Word's own shape styles are gradients and its charts hatch
+  their bars. So the model holds a **fill** now, of which one colour is one kind,
+  and everything that reads or writes a shape goes through it.
+  The rasterizer gained the other half of it: a path can be filled by a **rule
+  that says what colour a place is** rather than by one colour. A gradient, a
+  hatching and a picture used as a fill are all the same thing to it, and the
+  rule is asked once per pixel the shape covers.
+  Gradients run at any angle, with any number of stops, mixed in proportion
+  between them — and outwards from the middle in rings or in rectangles. The
+  angle is handled so that nought is the corner the line first meets and one is
+  the last, which is what makes a gradient at forty-five degrees run corner to
+  corner rather than stopping halfway.
+  The hatchings are eight pixels by eight, in pixels of the page rather than
+  fractions of the shape, which is what makes a hatched shape look the same at
+  any size. The percentages are worked out from an ordered dither — the same
+  sixty-four thresholds at sixteen weights — and the thirty-odd lines, crosses,
+  checks and diamonds are written down.
+  *Not done:* the picture and texture fills, which need the picture on the
+  placed shape and a decision about tiling; the handful of named hatchings that
+  are neither a percentage nor a line — they are drawn as the half-and-half
+  dither, which is visibly a hatching of about the right weight rather than a
+  shape pretending to be solid; the gradient's `scaled` flag and its tile
+  rectangle; and a gradient exported to PDF, which is written as the colour at
+  its middle because that is all a PDF content stream of this program's can
+  carry so far.
 
 - [ ] **D13. The shape effects.** `a:effectLst`: the outer and inner shadow, the
   glow, the soft edge and the reflection, drawn as effects on a shape rather

@@ -626,7 +626,7 @@ impl Editor {
                         name: name.to_owned(),
                         width_emu: 1_828_800,
                         height_emu: 914_400,
-                        fill: Some(fill.to_owned()),
+                        fill: wp_docx::fills::Fill::Solid(fill.to_owned()),
                         text: vec![wp_docx::model::Paragraph::text(name)],
                         anchor: Some(Anchor {
                             wrap: Wrap::None,
@@ -654,7 +654,7 @@ impl Editor {
                         name: name.to_owned(),
                         width_emu: 914_400,
                         height_emu: 548_640,
-                        fill: Some("4472C4".to_owned()),
+                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
                         text: vec![wp_docx::model::Paragraph::text(name)],
                         anchor: Some(Anchor {
                             wrap: Wrap::None,
@@ -706,7 +706,7 @@ impl Editor {
                     name: "Rectangle".to_owned(),
                     width_emu: 1_828_800,
                     height_emu: 1_143_000,
-                    fill: Some("4472C4".to_owned()),
+                    fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
                     text: vec![wp_docx::model::Paragraph::text("Chosen")],
                     anchor: Some(Anchor {
                         wrap: Wrap::Square,
@@ -739,7 +739,7 @@ impl Editor {
                         name: name.to_owned(),
                         width_emu: 1_143_000,
                         height_emu: 685_800,
-                        fill: Some("4472C4".to_owned()),
+                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
                         text: vec![wp_docx::model::Paragraph::text(name)],
                         rotation,
                         flipped_across: mirrored,
@@ -800,7 +800,7 @@ impl Editor {
                         name: name.to_owned(),
                         width_emu: 914_400,
                         height_emu: 685_800,
-                        fill: Some(fill.to_owned()),
+                        fill: wp_docx::fills::Fill::Solid(fill.to_owned()),
                         text: vec![wp_docx::model::Paragraph::text(name)],
                         anchor: Some(Anchor {
                             wrap: Wrap::None,
@@ -866,13 +866,72 @@ impl Editor {
                         preset: preset.word().to_owned(),
                         width_emu: 685_800,
                         height_emu: 548_640,
-                        fill: Some("4472C4".to_owned()),
+                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
                         outline: Some("1F3864".to_owned()),
                         outline_emu: 9_525,
                         anchor: Some(Anchor {
                             wrap: Wrap::None,
                             horizontal: Placement::Offset(column as i64 * 800_100),
                             vertical: Placement::Offset(row as i64 * 640_080),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+                self.relayout();
+            }
+            "fills" => {
+                // Shapes filled every way the format allows: one colour, the
+                // three kinds of gradient, and a row of hatchings. The only way
+                // to see that a shade is a shade rather than an average of one.
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                use wp_docx::fills::{Direction, Fill, Gradient, Pattern};
+
+                let run = |from: &str, to: &str, direction: Direction| {
+                    Fill::Gradient(Gradient {
+                        stops: vec![(0, from.to_owned()), (100_000, to.to_owned())],
+                        direction,
+                    })
+                };
+                let hatch = |name: &str| {
+                    Fill::Pattern(Pattern {
+                        name: name.to_owned(),
+                        foreground: "1F3864".to_owned(),
+                        background: "FFFFFF".to_owned(),
+                    })
+                };
+
+                let fills = [
+                    Fill::Solid("4472C4".to_owned()),
+                    run("4472C4", "FFFFFF", Direction::Linear(5_400_000)),
+                    run("4472C4", "FFFFFF", Direction::Linear(0)),
+                    run("4472C4", "FFFFFF", Direction::Linear(2_700_000)),
+                    run("4472C4", "FFFFFF", Direction::Radial),
+                    run("4472C4", "FFFFFF", Direction::Rectangular),
+                    hatch("ltUpDiag"),
+                    hatch("diagCross"),
+                    hatch("pct25"),
+                    hatch("horz"),
+                    hatch("smCheck"),
+                    hatch("wdDnDiag"),
+                ];
+
+                for (index, fill) in fills.iter().enumerate() {
+                    let column = index % 6;
+                    let row = index / 6;
+                    let shape = wp_docx::shapes::Shape {
+                        name: format!("Fill {index}"),
+                        width_emu: 1_028_700,
+                        height_emu: 685_800,
+                        fill: fill.clone(),
+                        outline: Some("1F3864".to_owned()),
+                        outline_emu: 9_525,
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset(column as i64 * 1_143_000),
+                            vertical: Placement::Offset(row as i64 * 800_100),
                             ..Anchor::default()
                         }),
                         ..wp_docx::shapes::Shape::default()

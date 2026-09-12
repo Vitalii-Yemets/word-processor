@@ -33,6 +33,7 @@ pub mod geometry;
 mod layout;
 mod library;
 pub mod math;
+pub mod paint;
 mod render;
 mod tablefit;
 

@@ -143,7 +143,7 @@ impl Editor {
         let width = ART_SIZE * 0.62 * text.chars().count().max(4) as f64;
         let mut shape = Shape::text_box(width, ART_SIZE * 1.8, &text);
         shape.name = "WordArt".to_owned();
-        shape.fill = None;
+        shape.fill = wp_docx::fills::Fill::None;
         shape.outline = None;
         shape.outline_emu = 0;
         for paragraph in &mut shape.text {

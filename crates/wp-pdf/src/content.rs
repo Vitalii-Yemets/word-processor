@@ -130,7 +130,11 @@ fn write_drawing(
                 );
                 fill(out, &path, colour, height, drawing);
             }
-            if let Some(colour) = shape.fill {
+            // A PDF fills a shape in one colour; a gradient is written as the
+            // colour at its middle, which is the nearest one colour to it.
+            // Drawing the shade itself is the roadmap's F-series work on what
+            // a PDF can carry.
+            if let Some(colour) = shape.fill.colour() {
                 let path = wp_layout::geometry::path_in(
                     shape.preset,
                     shape.x,

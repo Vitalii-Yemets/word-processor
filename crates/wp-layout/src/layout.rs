@@ -521,7 +521,8 @@ pub struct PlacedShape {
     pub height: f32,
     /// The geometry to draw, worked out from the shape's preset name.
     pub preset: crate::geometry::Preset,
-    pub fill: Option<Color>,
+    /// What is inside it: nothing, one colour, a gradient or a hatching.
+    pub fill: crate::paint::Paint,
     pub outline: Option<Color>,
     /// How thick the line round it is, in pixels.
     pub outline_weight: f32,
@@ -3488,7 +3489,7 @@ impl<'a> LayoutEngine<'a> {
             width,
             height,
             preset: crate::geometry::Preset::from_word(&shape.preset),
-            fill: shape.fill.as_deref().and_then(Color::from_hex),
+            fill: crate::paint::Paint::of(&shape.fill),
             outline: shape.outline.as_deref().and_then(Color::from_hex),
             outline_weight: (shape.outline_points() * scale).max(1.0),
             shadow: self.shape_shadow(scale),
@@ -3591,7 +3592,7 @@ impl<'a> LayoutEngine<'a> {
                         width: member_width,
                         height: member_height,
                         preset: crate::geometry::Preset::from_word(&shape.preset),
-                        fill: shape.fill.as_deref().and_then(Color::from_hex),
+                        fill: crate::paint::Paint::of(&shape.fill),
                         outline: shape.outline.as_deref().and_then(Color::from_hex),
                         outline_weight: (shape.outline_points() * scale).max(1.0),
                         shadow: self.shape_shadow(scale),
@@ -4642,7 +4643,7 @@ impl LayoutEngine<'_> {
                     width: item.width,
                     height: *height,
                     preset: crate::geometry::Preset::from_word(&shape.preset),
-                    fill: shape.fill.as_deref().and_then(Color::from_hex),
+                    fill: crate::paint::Paint::of(&shape.fill),
                     outline: shape.outline.as_deref().and_then(Color::from_hex),
                     outline_weight: (shape.outline_points() * self.pixels_per_point()).max(1.0),
                     shadow: self.shape_shadow(self.pixels_per_point()),

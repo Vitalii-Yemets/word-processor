@@ -28,7 +28,7 @@ fn two_shapes() -> Document {
             name: name.to_owned(),
             width_emu: 914_400,
             height_emu: 914_400,
-            fill: Some(colour.to_owned()),
+            fill: wp_docx::fills::Fill::Solid(colour.to_owned()),
             anchor: Some(Anchor { wrap: Wrap::None, ..Anchor::default() }),
             ..Shape::default()
         };
@@ -168,7 +168,7 @@ fn a_group_inside_a_group_is_laid_out_through_both_rectangles() {
         name: "Three".to_owned(),
         width_emu: 914_400,
         height_emu: 914_400,
-        fill: Some("70AD47".to_owned()),
+        fill: wp_docx::fills::Fill::Solid("70AD47".to_owned()),
         anchor: Some(Anchor { wrap: Wrap::None, ..Anchor::default() }),
         ..Shape::default()
     };

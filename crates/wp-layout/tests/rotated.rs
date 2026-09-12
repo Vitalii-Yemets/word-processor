@@ -16,7 +16,7 @@ fn library() -> &'static FontLibrary {
 fn document(turned: Turned) -> Document {
     let shape = Shape {
         name: "Box".to_owned(),
-        fill: Some("4472C4".to_owned()),
+        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
         text: vec![Paragraph::text("Words")],
         rotation: turned.rotation,
         flipped_across: turned.flipped_across,

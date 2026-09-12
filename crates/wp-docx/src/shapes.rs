@@ -39,9 +39,9 @@ pub struct Shape {
     pub preset: String,
     pub width_emu: i64,
     pub height_emu: i64,
-    /// The colour inside, as six hex digits. `None` means nothing is drawn
-    /// there and whatever is behind shows through.
-    pub fill: Option<String>,
+    /// What is inside it: nothing, one colour, a gradient or a hatching. See
+    /// [`crate::fills`].
+    pub fill: crate::fills::Fill,
     /// The colour of the line round it, and how thick that line is.
     pub outline: Option<String>,
     pub outline_emu: i64,
@@ -73,7 +73,7 @@ impl Default for Shape {
             preset: "rect".to_owned(),
             width_emu: 0,
             height_emu: 0,
-            fill: None,
+            fill: crate::fills::Fill::None,
             outline: None,
             outline_emu: 0,
             text: Vec::new(),
@@ -127,7 +127,7 @@ impl Shape {
             height_emu: (height_points * EMU_PER_POINT as f64) as i64,
             // The blue Word fills a new shape with, and the darker blue it
             // draws round one.
-            fill: Some("4472C4".to_owned()),
+            fill: crate::fills::Fill::Solid("4472C4".to_owned()),
             outline: Some("2F528F".to_owned()),
             outline_emu: EMU_PER_POINT,
             text: Vec::new(),
@@ -152,7 +152,7 @@ impl Shape {
             preset: "rect".to_owned(),
             width_emu: (width_points * EMU_PER_POINT as f64) as i64,
             height_emu: (height_points * EMU_PER_POINT as f64) as i64,
-            fill: None,
+            fill: crate::fills::Fill::None,
             outline: Some("000000".to_owned()),
             outline_emu: EMU_PER_POINT,
             text: text.split('\n').map(Paragraph::text).collect(),
@@ -217,7 +217,7 @@ pub fn read_shape(drawing: &Element) -> Option<Shape> {
             shape.preset = name.to_owned();
         }
     }
-    shape.fill = properties.and_then(solid_color);
+    shape.fill = properties.map(crate::fills::read_fill).unwrap_or_default();
 
     if let Some(line) = properties.and_then(|properties| child(properties, "ln")) {
         shape.outline_emu = line.attribute_by_name("w").and_then(|w| w.parse().ok()).unwrap_or(0);
@@ -336,12 +336,7 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     geometry.push_element(Element::new("a:avLst", Some(A)));
     properties.push_element(geometry);
 
-    match &shape.fill {
-        Some(colour) => properties.push_element(solid(colour)),
-        // Said rather than left out: a shape with no fill element at all takes
-        // the theme's, which is not the same as having none.
-        None => properties.push_element(Element::new("a:noFill", Some(A))),
-    }
+    properties.push_element(fill_element(&shape.fill));
 
     let mut line = Element::new("a:ln", Some(A));
     if shape.outline_emu > 0 {
@@ -637,6 +632,64 @@ fn replace_shape(
     false
 }
 
+/// The element that says what a shape is filled with.
+///
+/// Said rather than left out: a shape with no fill element at all takes the
+/// theme's, which is not the same as having none.
+fn fill_element(fill: &crate::fills::Fill) -> Element {
+    use crate::fills::{Direction, Fill};
+    match fill {
+        Fill::None => Element::new("a:noFill", Some(A)),
+        Fill::Solid(colour) => solid(colour),
+        Fill::Gradient(gradient) => {
+            let mut element = Element::new("a:gradFill", Some(A));
+            let mut stops = Element::new("a:gsLst", Some(A));
+            for (along, colour) in &gradient.stops {
+                let mut stop = Element::new("a:gs", Some(A));
+                stop.set_attribute("pos", &along.to_string());
+                let mut value = Element::new("a:srgbClr", Some(A));
+                value.set_attribute("val", colour);
+                stop.push_element(value);
+                stops.push_element(stop);
+            }
+            element.push_element(stops);
+
+            match gradient.direction {
+                Direction::Linear(angle) => {
+                    let mut line = Element::new("a:lin", Some(A));
+                    line.set_attribute("ang", &angle.to_string());
+                    line.set_attribute("scaled", "0");
+                    element.push_element(line);
+                }
+                Direction::Radial | Direction::Rectangular => {
+                    let mut path = Element::new("a:path", Some(A));
+                    path.set_attribute(
+                        "path",
+                        if gradient.direction == Direction::Radial { "circle" } else { "rect" },
+                    );
+                    element.push_element(path);
+                }
+            }
+            element
+        }
+        Fill::Pattern(pattern) => {
+            let mut element = Element::new("a:pattFill", Some(A));
+            element.set_attribute("prst", &pattern.name);
+            let mut front = Element::new("a:fgClr", Some(A));
+            let mut value = Element::new("a:srgbClr", Some(A));
+            value.set_attribute("val", &pattern.foreground);
+            front.push_element(value);
+            element.push_element(front);
+            let mut back = Element::new("a:bgClr", Some(A));
+            let mut value = Element::new("a:srgbClr", Some(A));
+            value.set_attribute("val", &pattern.background);
+            back.push_element(value);
+            element.push_element(back);
+            element
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -666,7 +719,7 @@ mod tests {
     fn a_text_box_has_no_fill_and_a_line() {
         let shape = Shape::text_box(200.0, 80.0, "words");
         let read = read_shape(&shape_element(&shape, Some("w"))).expect("a shape");
-        assert_eq!(read.fill, None, "a text box lets the page show through");
+        assert_eq!(read.fill, crate::fills::Fill::None, "a text box lets the page show through");
         assert_eq!(read.outline.as_deref(), Some("000000"));
     }
 

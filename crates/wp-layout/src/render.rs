@@ -389,10 +389,20 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
                         .transformed(&Transform::translate(distance, distance));
                 canvas.fill_path(&path, colour);
             }
-            if let Some(fill) = shape.fill {
+            if !shape.fill.is_nothing() {
                 let path =
                     turned(crate::geometry::path_in(shape.preset, x, y, shape.width, shape.height));
-                canvas.fill_path(&path, fill);
+                // Where in the shape a pixel is, as fractions of its box: a
+                // gradient needs to know, and the fill is asked pixel by pixel
+                // so that it can be a gradient or a hatching and not only a
+                // colour. See [`crate::paint::Paint`].
+                let (width, height) = (shape.width.max(0.0001), shape.height.max(0.0001));
+                let fill = &shape.fill;
+                canvas.fill_path_using(&path, wp_raster::Rule::Nonzero, |px, py| {
+                    let across = (px as f32 - x) / width;
+                    let down = (py as f32 - y) / height;
+                    fill.at_pixel(px, py, across.clamp(0.0, 1.0), down.clamp(0.0, 1.0))
+                });
             }
             if let Some(outline) = shape.outline {
                 let path = turned(crate::geometry::outline_in(

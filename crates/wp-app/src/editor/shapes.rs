@@ -56,7 +56,7 @@ impl Editor {
         // A line has no inside, so it has no fill and is drawn thicker — a
         // hairline is a line nobody can see.
         if !preset.is_closed() {
-            shape.fill = None;
+            shape.fill = wp_docx::fills::Fill::None;
             shape.outline = Some("2F528F".to_owned());
             shape.outline_emu = wp_docx::shapes::EMU_PER_POINT * 2;
         }

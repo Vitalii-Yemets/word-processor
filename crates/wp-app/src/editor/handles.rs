@@ -768,7 +768,7 @@ mod tests {
             name: "Box".to_owned(),
             width_emu: 914_400,
             height_emu: 914_400,
-            fill: Some("4472C4".to_owned()),
+            fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
             anchor: Some(Anchor { wrap: Wrap::Square, ..Anchor::default() }),
             ..wp_docx::shapes::Shape::default()
         };

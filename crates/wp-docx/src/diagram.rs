@@ -175,7 +175,7 @@ fn plain(preset: &str, x: i64, y: i64, width: i64, height: i64, fill: &str) -> S
         preset: preset.to_owned(),
         width_emu: width,
         height_emu: height,
-        fill: Some(fill.to_owned()),
+        fill: crate::fills::Fill::Solid(fill.to_owned()),
         outline: None,
         outline_emu: 0,
         text: Vec::new(),
@@ -313,7 +313,7 @@ mod tests {
     fn a_diagram_takes_its_colour_from_what_it_was_given() {
         let items = items(2);
         for shape in list(&borrowed(&items), ROOM, "70AD47") {
-            assert_eq!(shape.fill.as_deref(), Some("70AD47"));
+            assert_eq!(shape.fill, crate::fills::Fill::Solid("70AD47".to_owned()));
         }
     }
 

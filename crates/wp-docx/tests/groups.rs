@@ -22,7 +22,7 @@ fn two_shapes() -> Document {
             name: name.to_owned(),
             width_emu: 914_400,
             height_emu: 914_400,
-            fill: Some("4472C4".to_owned()),
+            fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
             anchor: Some(Anchor {
                 wrap: Wrap::None,
                 horizontal: Placement::Offset(offset),
@@ -174,7 +174,7 @@ fn a_group_can_hold_a_group() {
         name: "Three".to_owned(),
         width_emu: 914_400,
         height_emu: 914_400,
-        fill: Some("ED7D31".to_owned()),
+        fill: wp_docx::fills::Fill::Solid("ED7D31".to_owned()),
         anchor: Some(Anchor {
             wrap: Wrap::None,
             horizontal: Placement::Offset(1_828_800),
@@ -315,7 +315,7 @@ fn what_is_inside_a_group_is_read_as_what_it_is() {
 
     let Inside::Shape(first) = &group.members[0].what else { panic!("not a shape") };
     assert_eq!(first.preset, "ellipse", "the geometry of a member was lost");
-    assert_eq!(first.fill.as_deref(), Some("4472C4"));
+    assert_eq!(first.fill, wp_docx::fills::Fill::Solid("4472C4".to_owned()));
     assert_eq!(first.name, "Left");
 
     let Inside::Shape(second) = &group.members[1].what else { panic!("not a shape") };
