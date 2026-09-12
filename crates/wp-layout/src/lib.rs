@@ -30,6 +30,7 @@ mod artborders;
 mod borders;
 pub mod charting;
 mod device;
+mod flowchart;
 pub mod geometry;
 mod layout;
 mod library;

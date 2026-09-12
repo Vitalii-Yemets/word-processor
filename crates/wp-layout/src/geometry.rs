@@ -110,6 +110,38 @@ pub enum Preset {
     QuadArrowCallout,
     CircularArrow,
     SwooshArrow,
+
+    // Word's flowchart shapes. Most of these are a rectangle with one edge
+    // changed, and eight of them have a line drawn inside the shape rather
+    // than round it. See [`crate::flowchart`].
+    FlowProcess,
+    FlowAlternateProcess,
+    FlowDecision,
+    FlowData,
+    FlowPredefinedProcess,
+    FlowInternalStorage,
+    FlowDocument,
+    FlowMultidocument,
+    FlowTerminator,
+    FlowPreparation,
+    FlowManualInput,
+    FlowManualOperation,
+    FlowConnector,
+    FlowOffpageConnector,
+    FlowCard,
+    FlowPunchedTape,
+    FlowSummingJunction,
+    FlowOr,
+    FlowCollate,
+    FlowSort,
+    FlowExtract,
+    FlowMerge,
+    FlowStoredData,
+    FlowDelay,
+    FlowSequentialStorage,
+    FlowMagneticDisk,
+    FlowDirectStorage,
+    FlowDisplay,
 }
 
 /// Every preset this program draws: the name the format knows it by, and the
@@ -185,6 +217,39 @@ const NAMED: &[(Preset, &str, &str)] = &[
     (Preset::QuadArrowCallout, "quadArrowCallout", "Quad Arrow Callout"),
     (Preset::CircularArrow, "circularArrow", "Circular Arrow"),
     (Preset::SwooshArrow, "swooshArrow", "Swoosh Arrow"),
+    // The flowchart shapes, in the order Word's gallery shows them.
+    (Preset::FlowProcess, "flowChartProcess", "Flowchart: Process"),
+    (Preset::FlowAlternateProcess, "flowChartAlternateProcess", "Flowchart: Alternate Process"),
+    (Preset::FlowDecision, "flowChartDecision", "Flowchart: Decision"),
+    (Preset::FlowData, "flowChartInputOutput", "Flowchart: Data"),
+    (Preset::FlowPredefinedProcess, "flowChartPredefinedProcess", "Flowchart: Predefined Process"),
+    (Preset::FlowInternalStorage, "flowChartInternalStorage", "Flowchart: Internal Storage"),
+    (Preset::FlowDocument, "flowChartDocument", "Flowchart: Document"),
+    (Preset::FlowMultidocument, "flowChartMultidocument", "Flowchart: Multidocument"),
+    (Preset::FlowTerminator, "flowChartTerminator", "Flowchart: Terminator"),
+    (Preset::FlowPreparation, "flowChartPreparation", "Flowchart: Preparation"),
+    (Preset::FlowManualInput, "flowChartManualInput", "Flowchart: Manual Input"),
+    (Preset::FlowManualOperation, "flowChartManualOperation", "Flowchart: Manual Operation"),
+    (Preset::FlowConnector, "flowChartConnector", "Flowchart: Connector"),
+    (Preset::FlowOffpageConnector, "flowChartOffpageConnector", "Flowchart: Off-page Connector"),
+    (Preset::FlowCard, "flowChartPunchedCard", "Flowchart: Card"),
+    (Preset::FlowPunchedTape, "flowChartPunchedTape", "Flowchart: Punched Tape"),
+    (Preset::FlowSummingJunction, "flowChartSummingJunction", "Flowchart: Summing Junction"),
+    (Preset::FlowOr, "flowChartOr", "Flowchart: Or"),
+    (Preset::FlowCollate, "flowChartCollate", "Flowchart: Collate"),
+    (Preset::FlowSort, "flowChartSort", "Flowchart: Sort"),
+    (Preset::FlowExtract, "flowChartExtract", "Flowchart: Extract"),
+    (Preset::FlowMerge, "flowChartMerge", "Flowchart: Merge"),
+    (Preset::FlowStoredData, "flowChartOnlineStorage", "Flowchart: Stored Data"),
+    (Preset::FlowDelay, "flowChartDelay", "Flowchart: Delay"),
+    (
+        Preset::FlowSequentialStorage,
+        "flowChartMagneticTape",
+        "Flowchart: Sequential Access Storage",
+    ),
+    (Preset::FlowMagneticDisk, "flowChartMagneticDisk", "Flowchart: Magnetic Disk"),
+    (Preset::FlowDirectStorage, "flowChartMagneticDrum", "Flowchart: Direct Access Storage"),
+    (Preset::FlowDisplay, "flowChartDisplay", "Flowchart: Display"),
     (Preset::Line, "line", "Line"),
     (Preset::Callout, "wedgeRectCallout", "Speech Bubble"),
 ];
@@ -255,6 +320,11 @@ pub fn path_in(preset: Preset, x: f32, y: f32, width: f32, height: f32) -> Path 
     // they are nearly all one shape. See [`crate::arrows`].
     if let Some(arrow) = crate::arrows::path_in(preset, left, top, right, bottom) {
         return arrow;
+    }
+    // And so are the flowchart shapes, for the same reason and in the same
+    // way. See [`crate::flowchart`].
+    if let Some(shape) = crate::flowchart::path_in(preset, left, top, right, bottom) {
+        return shape;
     }
 
     match preset {
@@ -680,6 +750,10 @@ pub fn outline_in(preset: Preset, x: f32, y: f32, width: f32, height: f32, weigh
     }
     let inner = path_in(preset, x + weight, y + weight, inset_width, inset_height);
     path.extend_reversed(&inner);
+    // And the lines some shapes have inside them, which are drawn with the
+    // same line as the outline and are part of neither the area of the shape
+    // nor the band round it. See [`crate::flowchart::rules_into`].
+    crate::flowchart::rules_into(&mut path, preset, x, y, width, height, weight);
     path
 }
 
@@ -880,7 +954,14 @@ fn thick_line(x1: f32, y1: f32, x2: f32, y2: f32, weight: f32) -> Path {
 }
 
 /// A rectangle with its corners taken off in quarter circles.
-fn rounded_rectangle(path: &mut Path, left: f32, top: f32, right: f32, bottom: f32, radius: f32) {
+pub(crate) fn rounded_rectangle(
+    path: &mut Path,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    radius: f32,
+) {
     let point = Point::new;
     path.move_to(point(left + radius, top));
     path.line_to(point(right - radius, top));
@@ -895,7 +976,7 @@ fn rounded_rectangle(path: &mut Path, left: f32, top: f32, right: f32, bottom: f
 }
 
 /// An ellipse about a centre, drawn as a run of quadratic curves.
-fn ellipse(path: &mut Path, cx: f32, cy: f32, rx: f32, ry: f32) {
+pub(crate) fn ellipse(path: &mut Path, cx: f32, cy: f32, rx: f32, ry: f32) {
     let steps = ARC_STEPS * 4;
     let angle_of = |step: usize| step as f32 / steps as f32 * core::f32::consts::TAU;
     let at = |angle: f32| Point::new(cx + rx * angle.cos(), cy + ry * angle.sin());
@@ -1393,6 +1474,38 @@ mod gallery_tests {
             let canvas = drawn(preset, 40);
             assert!(is_ink(&canvas, 20, 20), "{preset:?} has nothing in the middle of it");
         }
+    }
+
+    #[test]
+    fn the_flowchart_gallery_has_all_twenty_eight_of_them() {
+        let count = Preset::all().iter().filter(|p| p.word().starts_with("flowChart")).count();
+        assert_eq!(count, 28, "Word draws twenty-eight flowchart shapes");
+    }
+
+    #[test]
+    fn the_rules_inside_a_shape_are_drawn_with_its_outline() {
+        // A predefined process is a process with a rule down each end. The two
+        // cover the same area, so the rules are no part of it: what tells them
+        // apart is drawn with the line round the shape, and a shape drawn with
+        // no line has none of them.
+        let process = path_in(Preset::FlowProcess, 0.0, 0.0, 100.0, 60.0);
+        let predefined = path_in(Preset::FlowPredefinedProcess, 0.0, 0.0, 100.0, 60.0);
+        assert_eq!(process, predefined, "the two shapes are the same rectangle");
+
+        let plain = outline_in(Preset::FlowProcess, 0.0, 0.0, 100.0, 60.0, 2.0);
+        let ruled = outline_in(Preset::FlowPredefinedProcess, 0.0, 0.0, 100.0, 60.0, 2.0);
+        assert!(ruled.points().count() > plain.points().count(), "the rules were not drawn");
+    }
+
+    #[test]
+    fn a_rule_does_not_cut_a_gap_in_the_outline_it_runs_into() {
+        // The rules are filled by the same nonzero rule as the band round the
+        // shape, so one wound the other way would cancel the band where the
+        // two overlap and draw a gap across it instead of a line.
+        let mut canvas = Canvas::filled(40, 40, Color::WHITE);
+        canvas.fill_path(&outline_in(Preset::FlowOr, 0.0, 0.0, 40.0, 40.0, 3.0), Color::BLACK);
+        assert!(is_ink(&canvas, 20, 20), "the rules were not drawn");
+        assert!(is_ink(&canvas, 20, 1), "the outline has a gap where a rule runs into it");
     }
 
     #[test]

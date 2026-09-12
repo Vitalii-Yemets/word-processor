@@ -2065,10 +2065,16 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   its box, as Word does, so two heads that cannot both fit meet in the middle
   and the arrow reads as a diamond — which is what Word draws too.
 
-- [ ] **D16. Flowchart shapes.** The twenty-eight boxes a flowchart is drawn
+- [x] **D16. Flowchart shapes.** The twenty-eight boxes a flowchart is drawn
   with: the process, the decision, the terminator, the document, the stored
   data, and the rest.
   *Done when:* each is drawn.
+  Eight of them have a line drawn inside the shape rather than round it — the
+  two down a predefined process, the cross through an "or", the near side of a
+  magnetic disk's lid. Those are drawn with the shape's outline and are no part
+  of its area, so they do not change the fill and the text wrapping round the
+  shape does not see them. Without them a predefined process is a process and
+  a sort is a decision: two shapes under one drawing.
 
 - [ ] **D17. Stars, banners and callouts.** The stars from four points to
   thirty-two, the explosions, the ribbons and scrolls, and the twenty callouts —
