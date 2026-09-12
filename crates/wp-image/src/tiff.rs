@@ -106,6 +106,9 @@ struct Fields {
     palette: Vec<u16>,
     /// What the samples past the ones the colour needs are for.
     extra: Vec<u16>,
+    /// What a fax coding was given: whether the rows may be written against
+    /// each other, and whether each begins on a byte of its own.
+    options: u32,
 }
 
 /// Decodes a TIFF into eight-bit RGBA.
@@ -178,6 +181,8 @@ fn read_fields(data: &[u8], order: Order, directory: usize) -> Result<Fields, Er
         bits: numbers(258).iter().map(|value| *value as u16).collect(),
         palette: numbers(320).iter().map(|value| *value as u16).collect(),
         extra: numbers(338).iter().map(|value| *value as u16).collect(),
+        // The two fax codings keep their options under a tag each.
+        options: first(292, 0) | first(293, 0),
         ..Fields::default()
     };
 
@@ -243,12 +248,14 @@ fn read_pixels(data: &[u8], order: Order, fields: &Fields, image: &mut Image) ->
             let start = start as usize;
             let Some(written) = data.get(start..start + length) else { continue };
 
+            // The last strip of a picture holds only the rows that are left.
+            let top = (index / across) * block_height;
+            let rows = block_height.min(fields.height.saturating_sub(top));
             let wanted = row_bytes * block_height;
-            let mut body = expand(written, fields.compression, wanted)?;
+            let mut body = expand(written, fields, block_width, rows, wanted)?;
             undo_predictor(&mut body, fields, block_width, samples_in_block, row_bytes);
 
             let left = (index % across) * block_width;
-            let top = (index / across) * block_height;
             place(
                 &body,
                 fields,
@@ -266,14 +273,36 @@ fn read_pixels(data: &[u8], order: Order, fields: &Fields, image: &mut Image) ->
 }
 
 /// Undoes whatever the pixels were compressed with.
-fn expand(written: &[u8], compression: u16, wanted: usize) -> Result<Vec<u8>, Error> {
-    match compression {
+fn expand(
+    written: &[u8],
+    fields: &Fields,
+    width: usize,
+    rows: usize,
+    wanted: usize,
+) -> Result<Vec<u8>, Error> {
+    match fields.compression {
         1 => Ok(written.to_vec()),
         5 => unpack_lzw(written, wanted),
         8 | 32_946 => wp_deflate::inflate_zlib(written, wanted.max(1) * 2)
             .map_err(|_| Error::Malformed("a strip that will not decompress")),
         32_773 => Ok(unpack_runs(written, wanted)),
-        2..=4 => Err(Error::Unsupported("one of the fax codings")),
+        // A scanned page, written in one of the fax codings. See [`crate::fax`].
+        2..=4 => {
+            let kind = match fields.compression {
+                2 => crate::fax::Kind::Huffman,
+                3 => crate::fax::Kind::Group3 {
+                    // The first of the options says the rows may be written
+                    // against each other, and the third that each begins on a
+                    // byte of its own.
+                    two_dimensional: fields.options & 0x1 != 0,
+                    byte_aligned: fields.options & 0x4 != 0,
+                },
+                _ => crate::fax::Kind::Group4,
+            };
+            let mut out = crate::fax::decode(written, width, rows, kind)?;
+            out.resize(wanted, 0);
+            Ok(out)
+        }
         6 | 7 => Err(Error::Unsupported("a picture whose strips are JPEG")),
         _ => Err(Error::Unsupported("a compression this decoder does not read")),
     }
@@ -761,15 +790,42 @@ mod tests {
 
     #[test]
     fn a_compression_this_decoder_does_not_read_says_so() {
+        let fields = Fields { compression: 999, ..Fields::default() };
         assert_eq!(
-            expand(&[], 999, 1),
+            expand(&[], &fields, 1, 1, 1),
             Err(Error::Unsupported("a compression this decoder does not read"))
         );
     }
 
     #[test]
-    fn a_fax_coding_says_so_rather_than_drawing_nonsense() {
-        assert_eq!(expand(&[], 4, 1), Err(Error::Unsupported("one of the fax codings")));
+    fn a_strip_of_fax_coding_reaches_the_coding_that_reads_it() {
+        // Two white, three black, three white: the same row the fax tests use,
+        // arriving through a TIFF this time. Two white is 0111, three black is
+        // 10, and three white is 1000, packed from the top of the byte down.
+        let tags = vec![
+            (256, 3, 8), // Eight across,
+            (257, 3, 1), // one down,
+            (258, 3, 1), // one bit a sample,
+            (259, 3, 2), // in modified Huffman,
+            (262, 3, 0), // and zero is white, as a scanned page has it.
+            (277, 3, 1),
+            (279, 4, 2),
+        ];
+        let data = tiff(&tags, &[0b0111_1010, 0b0000_0000]);
+
+        let image = decode(&data).expect("a picture");
+        assert_eq!(pixel(&image, 0, 0), [255, 255, 255, 255], "white comes out white");
+        assert_eq!(pixel(&image, 2, 0), [0, 0, 0, 255], "and black comes out black");
+        assert_eq!(pixel(&image, 7, 0), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn a_picture_whose_strips_are_jpeg_says_so() {
+        let fields = Fields { compression: 7, ..Fields::default() };
+        assert_eq!(
+            expand(&[], &fields, 1, 1, 1),
+            Err(Error::Unsupported("a picture whose strips are JPEG"))
+        );
     }
 
     #[test]

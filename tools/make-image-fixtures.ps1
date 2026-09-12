@@ -760,6 +760,52 @@ $tiled = Tiff-Build @(
 ) $tiles.ToArray() @(12, 12, 12, 12) @(324, 325)
 Save-Unread 'tiled.tif' $tiled.ToArray() 'GDI+ does not read tiles'
 
+# --- Scanned pages -----------------------------------------------------------
+#
+# The three fax codings, which GDI+ writes as well as reads. The picture is one
+# bit to the pixel and looks like what these codings are for: mostly white, with
+# runs of black across it.
+
+$page = New-Object System.Drawing.Bitmap 64, 16, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+$brush = [System.Drawing.Graphics]::FromImage($page)
+$brush.Clear([System.Drawing.Color]::White)
+# A few bars and a border, which give the codings runs of every length to work
+# with — and a two-dimensional coding rows that are alike and rows that are not.
+$black = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Black)
+$brush.FillRectangle($black, 0, 0, 64, 1)
+$brush.FillRectangle($black, 0, 15, 64, 1)
+$brush.FillRectangle($black, 4, 3, 20, 4)
+$brush.FillRectangle($black, 30, 3, 2, 10)
+$brush.FillRectangle($black, 40, 8, 18, 5)
+$brush.Dispose()
+$black.Dispose()
+
+$faxPoints = @(@(0, 0), @(10, 4), @(31, 5), @(45, 10), @(60, 2))
+
+foreach ($kind in @(
+    @{ Name = 'fax3.tif'; Value = [System.Drawing.Imaging.EncoderValue]::CompressionCCITT3 },
+    @{ Name = 'fax4.tif'; Value = [System.Drawing.Imaging.EncoderValue]::CompressionCCITT4 },
+    # The same page with nothing done to it, which is what the two codings are
+    # held to: five points apiece would not catch much in a coding like this,
+    # and a thousand pixels apiece will.
+    @{ Name = 'faxnone.tif'; Value = [System.Drawing.Imaging.EncoderValue]::CompressionNone }
+)) {
+    $parameters = New-Object System.Drawing.Imaging.EncoderParameters 1
+    $parameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter (
+        [System.Drawing.Imaging.Encoder]::Compression), ([int]$kind.Value)
+    $path = Join-Path $fixtures $kind.Name
+    $page.Save($path, $codec, $parameters)
+
+    $check = New-Object System.Drawing.Bitmap $path
+    foreach ($point in $faxPoints) {
+        $c = $check.GetPixel($point[0], $point[1])
+        $manifest.Add("$($kind.Name) $($check.Width) $($check.Height) $($point[0]) $($point[1]) $($c.R) $($c.G) $($c.B) $($c.A) 0")
+    }
+    $check.Dispose()
+    Write-Output ("  {0}  {1} bytes" -f $kind.Name, (Get-Item $path).Length)
+}
+$page.Dispose()
+
 Set-Content -Path (Join-Path $fixtures 'manifest.txt') -Value $manifest -Encoding ascii
 Write-Output "wrote $($manifest.Count) sample points to $fixtures"
 Get-ChildItem $fixtures | ForEach-Object { Write-Output ("  {0}  {1} bytes" -f $_.Name, $_.Length) }

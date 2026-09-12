@@ -1675,14 +1675,30 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   goes with it, which is JPEG's colour model carried in a TIFF and is rare
   outside scanners; and strips that are whole JPEGs.
 
-- [ ] **D10. The fax codings.** CCITT modified Huffman, Group 3 in its one- and
+- [x] **D10. The fax codings.** CCITT modified Huffman, Group 3 in its one- and
   two-dimensional forms, and Group 4 — the codings a scanned page is written in,
   inside a TIFF and nowhere else a document carries.
-  A coding of its own: run lengths of black and white through code tables, and
-  for the two-dimensional forms each row written as its differences from the row
-  above. Nothing in **D9** depends on it, which is why it is here.
-  *Done when:* a scanned page in each of the three decodes to the same pixels as
-  an independent decoder. GDI+ writes all three, so the fixtures come from it.
+  *Done:* both code tables in full — the sixty-four exact run lengths and the
+  make-up codes for the rest, white and black entirely different because black
+  runs are short and frequent and the short codes are spent on them; the
+  make-up codes past 1728 that the wider papers added; the end-of-row code and
+  whatever padding precedes it; and, for the two-dimensional forms, all seven
+  modes.
+  A row is decoded into **the places its colour changes**, and the row after it
+  is read against that list — which is what the two-dimensional forms are
+  entirely about. The awkward part is finding, for each step, the next place the
+  row above changes *to the colour this row is not*: getting that parity the
+  wrong way round shifts every run by one and is the classic way to write a
+  decoder that works on blank pages and nothing else.
+  Five points apiece would not catch much in a coding like this, so the three
+  are held to each other as well: the same scanned page, a thousand pixels of
+  it, written uncompressed and in both codings, must come back identical.
+  *Not done:* Group 3 with the rows written against each other is proved by
+  construction rather than against GDI+, which writes the one-dimensional form
+  only; the uncompressed mode both groups allow as an escape, which is for lines
+  so noisy the coding would make them longer; and `FillOrder`, which writes the
+  bits of each byte the other way round and which nothing this side of a fax
+  machine produces.
 - [ ] **D2. WMF and EMF.** The metafile formats Word documents still carry:
   a record interpreter drawing through the rasterizer.
 - [ ] **D3. The rest of DrawingML.** The preset shape geometries that are not

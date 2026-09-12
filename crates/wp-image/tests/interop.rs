@@ -120,6 +120,24 @@ fn every_form_of_tiff_is_among_the_fixtures() {
 }
 
 #[test]
+fn a_scanned_page_reads_the_same_in_all_three_codings() {
+    // The manifest holds each of these to five points, which for a coding made
+    // of run lengths and modes is not much: a mistake in one mode could still
+    // miss all five. So the three are held to each other as well — the same
+    // page, a thousand pixels of it, coded three ways.
+    let read = |name: &str| {
+        let bytes = std::fs::read(fixtures_dir().join(name)).unwrap_or_else(|_| panic!("{name}"));
+        decode(&bytes).unwrap_or_else(|error| panic!("cannot decode {name}: {error}"))
+    };
+    let plain = read("faxnone.tif");
+    for name in ["fax3.tif", "fax4.tif"] {
+        let coded = read(name);
+        assert_eq!((coded.width, coded.height), (plain.width, plain.height), "{name}");
+        assert_eq!(coded.pixels, plain.pixels, "{name} is not the page it was written from");
+    }
+}
+
+#[test]
 fn a_picture_with_a_predictor_is_the_same_picture_as_one_without() {
     // GDI+ hands back the differences rather than undoing them, so there is no
     // outside reading of this one to compare against either. What there is is
