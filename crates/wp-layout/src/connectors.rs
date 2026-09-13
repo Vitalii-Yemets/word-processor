@@ -131,6 +131,223 @@ pub fn connection_site(index: u32, x: f32, y: f32, width: f32, height: f32) -> P
     }
 }
 
+/// Which way a connector leaves a shape at one of its connection points.
+///
+/// Outwards, always: a connector fastened to the right of a shape leaves by the
+/// right, whatever is on the right. That is the whole of what keeps a route
+/// from setting off through the shape it belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Facing {
+    Up,
+    Left,
+    Down,
+    Right,
+}
+
+impl Facing {
+    /// Which way the connection point of that index faces, in the order the
+    /// format counts them. See [`connection_site`].
+    #[must_use]
+    pub fn of_site(index: u32) -> Self {
+        match index {
+            0 => Self::Up,
+            1 => Self::Left,
+            2 => Self::Down,
+            _ => Self::Right,
+        }
+    }
+
+    /// The same facing with the two measures swapped, for working a route out
+    /// on its side.
+    fn turned(self) -> Self {
+        match self {
+            Self::Up => Self::Left,
+            Self::Left => Self::Up,
+            Self::Down => Self::Right,
+            Self::Right => Self::Down,
+        }
+    }
+
+    fn is_upright(self) -> bool {
+        matches!(self, Self::Up | Self::Down)
+    }
+}
+
+/// One end of a route: where it is fastened, which way it leaves, and the box
+/// it has to keep out of.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Place {
+    pub at: Point,
+    pub faces: Facing,
+    /// The shape's box, as left, top, right and bottom.
+    pub shape: (f32, f32, f32, f32),
+}
+
+impl Place {
+    fn turned(self) -> Self {
+        let (left, top, right, bottom) = self.shape;
+        Self {
+            at: Point::new(self.at.y, self.at.x),
+            faces: self.faces.turned(),
+            shape: (top, left, bottom, right),
+        }
+    }
+}
+
+/// How a connector gets from one shape to the other.
+///
+/// # What it is for
+///
+/// A connector fastened to the right of one shape and the left of another
+/// standing to its left has nowhere sensible to go in a straight elbow: the
+/// line would leave the first shape and turn straight back through it. This
+/// lays the legs out so that each end leaves by the side it is fastened to and
+/// neither shape is crossed.
+///
+/// # How the cases are halved
+///
+/// A route that leaves the start upwards is the same route with the two
+/// measures swapped, so it is worked out on its side and turned back at the
+/// end. What is left is a start that leaves sideways, which is three cases:
+/// the two ends facing each other with room between them, an end that is
+/// entered from above or below, and everything else — which goes round by a
+/// lane clear of both shapes.
+#[must_use]
+pub fn route(from: Place, to: Place, stand_off: f32) -> Vec<Point> {
+    if from.faces.is_upright() {
+        let turned = route(from.turned(), to.turned(), stand_off);
+        return turned.into_iter().map(|at| Point::new(at.y, at.x)).collect();
+    }
+
+    let out = if from.faces == Facing::Right { stand_off } else { -stand_off };
+    let first = Point::new(from.at.x + out, from.at.y);
+    let last = match to.faces {
+        Facing::Right => Point::new(to.at.x + stand_off, to.at.y),
+        Facing::Left => Point::new(to.at.x - stand_off, to.at.y),
+        Facing::Down => Point::new(to.at.x, to.at.y + stand_off),
+        Facing::Up => Point::new(to.at.x, to.at.y - stand_off),
+    };
+    let boxes = [from.shape, to.shape];
+
+    // The two facing each other with room between them: out, across, in.
+    if !to.faces.is_upright() {
+        let facing_each_other = (out > 0.0 && to.faces == Facing::Left && first.x <= last.x)
+            || (out < 0.0 && to.faces == Facing::Right && first.x >= last.x);
+        if facing_each_other {
+            let middle = (first.x + last.x) / 2.0;
+            let places =
+                vec![from.at, Point::new(middle, from.at.y), Point::new(middle, to.at.y), to.at];
+            if clear_of(&places, &boxes) {
+                return tidied(places);
+            }
+        }
+    } else {
+        // An end entered from above or below: out, along, and down into it.
+        let places = vec![from.at, first, Point::new(last.x, first.y), last, to.at];
+        let far_enough = (out > 0.0 && last.x >= first.x) || (out < 0.0 && last.x <= first.x);
+        if far_enough && clear_of(&places, &boxes) {
+            return tidied(places);
+        }
+    }
+
+    // And the way round: out of both shapes, along a lane that is clear of
+    // them, and back in. Above them or below them, whichever is nearer to the
+    // two ends.
+    let (above, below) =
+        (from.shape.1.min(to.shape.1) - stand_off, from.shape.3.max(to.shape.3) + stand_off);
+    let middle = (from.at.y + to.at.y) / 2.0;
+    let lane = if (middle - above).abs() <= (middle - below).abs() { above } else { below };
+    let lane =
+        if to.faces.is_upright() && (to.at.y - lane).abs() < stand_off { middle } else { lane };
+
+    tidied(vec![from.at, first, Point::new(first.x, lane), Point::new(last.x, lane), last, to.at])
+}
+
+/// Whether a route keeps out of the boxes at either end of it.
+///
+/// The ends themselves sit on the edge of their own shapes, so the first and
+/// last steps of any route touch one: what is asked is whether a leg runs
+/// *through* a shape, which is what a route round them must not do.
+fn clear_of(places: &[Point], boxes: &[(f32, f32, f32, f32); 2]) -> bool {
+    const CLOSE: f32 = 0.5;
+    for pair in places.windows(2) {
+        let (one, two) = (pair[0], pair[1]);
+        for &(left, top, right, bottom) in boxes {
+            let (low_x, high_x) = (one.x.min(two.x), one.x.max(two.x));
+            let (low_y, high_y) = (one.y.min(two.y), one.y.max(two.y));
+            let across = low_x < right - CLOSE && high_x > left + CLOSE;
+            let down = low_y < bottom - CLOSE && high_y > top + CLOSE;
+            if across && down {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// A route with the steps that say nothing taken out: a place the same as the
+/// one before it, and a place in the middle of two others in a straight line
+/// with them.
+fn tidied(places: Vec<Point>) -> Vec<Point> {
+    const CLOSE: f32 = 0.01;
+    let mut out: Vec<Point> = Vec::with_capacity(places.len());
+    for at in places {
+        if out.last().is_some_and(|last: &Point| {
+            (last.x - at.x).abs() < CLOSE && (last.y - at.y).abs() < CLOSE
+        }) {
+            continue;
+        }
+        if out.len() >= 2 {
+            let (one, two) = (out[out.len() - 2], out[out.len() - 1]);
+            let straight = ((one.x - two.x).abs() < CLOSE && (two.x - at.x).abs() < CLOSE)
+                || ((one.y - two.y).abs() < CLOSE && (two.y - at.y).abs() < CLOSE);
+            if straight {
+                out.pop();
+            }
+        }
+        out.push(at);
+    }
+    out
+}
+
+/// The path a route is drawn as.
+///
+/// A curved connector takes the same route with its corners turned rather than
+/// cornered, which is the whole difference between the two families.
+#[must_use]
+pub fn route_path(places: &[Point], curved: bool) -> Path {
+    let mut path = Path::new();
+    let Some(first) = places.first() else {
+        return path;
+    };
+    path.move_to(*first);
+    if !curved || places.len() < 3 {
+        for at in places.iter().skip(1) {
+            path.line_to(*at);
+        }
+        return path;
+    }
+
+    // How far back from a corner the turn starts: a quarter of the shorter of
+    // the two legs that meet there, so a short leg is not turned away
+    // altogether.
+    for index in 1..places.len() - 1 {
+        let (before, corner, after) = (places[index - 1], places[index], places[index + 1]);
+        let back = (before.x - corner.x).hypot(before.y - corner.y);
+        let on = (after.x - corner.x).hypot(after.y - corner.y);
+        let reach = (back.min(on) / 4.0).max(0.01);
+        let towards = |other: Point, length: f32| {
+            let (dx, dy) = (other.x - corner.x, other.y - corner.y);
+            let span = dx.hypot(dy).max(0.001);
+            Point::new(corner.x + dx / span * length, corner.y + dy / span * length)
+        };
+        path.line_to(towards(before, reach));
+        path.quad_to(corner, towards(after, reach));
+    }
+    path.line_to(*places.last().expect("a route with a last place"));
+    path
+}
+
 /// Which end of a line something is drawn at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LineTip {
@@ -322,5 +539,92 @@ mod tests {
         // Which keeps the connector joined to the thing it names, and is nearer
         // the truth than leaving it where it was drawn.
         assert_eq!(connection_site(9, 10.0, 20.0, 100.0, 60.0), Point::new(60.0, 50.0));
+    }
+    /// A box, as the router is given one.
+    const fn shape(left: f32, top: f32, right: f32, bottom: f32) -> (f32, f32, f32, f32) {
+        (left, top, right, bottom)
+    }
+
+    /// Whether any leg of a route runs through a box rather than beside it.
+    fn runs_through(places: &[Point], (left, top, right, bottom): (f32, f32, f32, f32)) -> bool {
+        places.windows(2).any(|pair| {
+            let (one, two) = (pair[0], pair[1]);
+            let across = one.x.min(two.x) < right - 0.5 && one.x.max(two.x) > left + 0.5;
+            let down = one.y.min(two.y) < bottom - 0.5 && one.y.max(two.y) > top + 0.5;
+            across && down
+        })
+    }
+
+    #[test]
+    fn two_shapes_facing_each_other_are_joined_straight_across() {
+        // Nothing is in the way, so nothing is gone round: the shortest route
+        // is the right one.
+        let first = shape(0.0, 20.0, 100.0, 80.0);
+        let second = shape(200.0, 20.0, 300.0, 80.0);
+        let places = route(
+            Place { at: Point::new(100.0, 50.0), faces: Facing::Right, shape: first },
+            Place { at: Point::new(200.0, 50.0), faces: Facing::Left, shape: second },
+            10.0,
+        );
+        assert_eq!(places, vec![Point::new(100.0, 50.0), Point::new(200.0, 50.0)]);
+    }
+
+    #[test]
+    fn a_shape_standing_to_the_left_is_gone_round_rather_than_through() {
+        // The case the routing is for: fastened to the right of one shape and
+        // the left of another that stands to its left. A connector drawn from
+        // one corner of the box between them to the other would set off through
+        // the shape it came out of.
+        let first = shape(200.0, 20.0, 300.0, 80.0);
+        let second = shape(0.0, 120.0, 100.0, 180.0);
+        let places = route(
+            Place { at: Point::new(300.0, 50.0), faces: Facing::Right, shape: first },
+            Place { at: Point::new(0.0, 150.0), faces: Facing::Left, shape: second },
+            10.0,
+        );
+
+        assert_eq!(
+            places.first(),
+            Some(&Point::new(300.0, 50.0)),
+            "it starts where it is fastened"
+        );
+        assert_eq!(places.last(), Some(&Point::new(0.0, 150.0)), "and ends where it is fastened");
+        assert!(places[1].x > 300.0, "it should leave by the right: {places:?}");
+        assert!(!runs_through(&places, first), "it goes through the shape it came out of");
+        assert!(!runs_through(&places, second), "it goes through the shape it goes to");
+    }
+
+    #[test]
+    fn a_connector_fastened_underneath_leaves_downwards() {
+        // The flowchart case: the bottom of one box to the top of the next.
+        let first = shape(0.0, 0.0, 100.0, 60.0);
+        let second = shape(200.0, 200.0, 300.0, 260.0);
+        let places = route(
+            Place { at: Point::new(50.0, 60.0), faces: Facing::Down, shape: first },
+            Place { at: Point::new(250.0, 200.0), faces: Facing::Up, shape: second },
+            10.0,
+        );
+
+        assert!(places[1].y > 60.0, "it should leave downwards: {places:?}");
+        assert_eq!(places.last(), Some(&Point::new(250.0, 200.0)));
+        assert!(!runs_through(&places, first) && !runs_through(&places, second));
+    }
+
+    #[test]
+    fn a_route_is_drawn_with_corners_or_with_curves() {
+        use wp_raster::Command;
+
+        let places = vec![Point::new(0.0, 0.0), Point::new(50.0, 0.0), Point::new(50.0, 50.0)];
+        let cornered = route_path(&places, false);
+        let curved = route_path(&places, true);
+
+        assert!(
+            cornered.commands.iter().all(|step| !matches!(step, Command::QuadTo(..))),
+            "an elbow is drawn with corners"
+        );
+        assert!(
+            curved.commands.iter().any(|step| matches!(step, Command::QuadTo(..))),
+            "and a curved connector with curves"
+        );
     }
 }

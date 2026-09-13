@@ -564,6 +564,12 @@ pub struct PlacedShape {
     /// Which shapes the two ends of this one are fastened to, for a connector.
     /// See [`wp_docx::joins`].
     pub joins: wp_docx::joins::Joins,
+    /// The way a joined connector was routed round the shapes it joins, when it
+    /// had to be routed at all. Nothing for every other shape, and for a
+    /// connector that goes straight from one point to the other: what is drawn
+    /// then comes from the preset and the box, the same as any shape.
+    /// See [`crate::connectors::route`].
+    pub route: Option<wp_raster::Path>,
     /// Where in the document the drawing is, so a press on it can put the
     /// caret beside it and the commands that act on it can find it.
     pub at: Option<TextPosition>,
@@ -3704,6 +3710,7 @@ impl<'a> LayoutEngine<'a> {
             head_end: shape.head_end,
             id: shape.id,
             joins: shape.joins,
+            route: None,
             tail_end: shape.tail_end,
             fill: crate::paint::Paint::of(&shape.fill),
             outline: shape.outline.as_deref().and_then(Color::from_hex),
@@ -3812,6 +3819,7 @@ impl<'a> LayoutEngine<'a> {
                         head_end: shape.head_end,
                         id: shape.id,
                         joins: shape.joins,
+                        route: None,
                         tail_end: shape.tail_end,
                         fill: crate::paint::Paint::of(&shape.fill),
                         outline: shape.outline.as_deref().and_then(Color::from_hex),
@@ -4076,6 +4084,13 @@ impl<'a> LayoutEngine<'a> {
                 })
             };
 
+            let box_of = |join: wp_docx::joins::Join| {
+                boxes
+                    .iter()
+                    .find(|(id, ..)| *id == join.shape)
+                    .map(|(_, x, y, width, height)| (*x, *y, *x + *width, *y + *height))
+            };
+
             for shape in &mut page.shapes {
                 if shape.joins.is_nothing() {
                     continue;
@@ -4093,6 +4108,65 @@ impl<'a> LayoutEngine<'a> {
                 shape.height = (end.y - start.y).abs();
                 shape.flipped_across = end.x < start.x;
                 shape.flipped_down = end.y < start.y;
+
+                // And how it gets from the one to the other. A straight
+                // connector goes straight, whatever is in the way; an elbow or
+                // a curve is laid out leg by leg so that it leaves each shape
+                // by the side it is fastened to and crosses neither.
+                let bent = !matches!(
+                    shape.preset,
+                    crate::geometry::Preset::Line | crate::geometry::Preset::StraightConnector
+                );
+                let (Some(one), Some(two)) = (shape.joins.start, shape.joins.end) else {
+                    continue;
+                };
+                let (Some(from_box), Some(to_box)) = (box_of(one), box_of(two)) else {
+                    continue;
+                };
+                if !bent {
+                    continue;
+                }
+                let stand_off = shape.outline_weight.max(1.0) * 6.0;
+                let places = crate::connectors::route(
+                    crate::connectors::Place {
+                        at: start,
+                        faces: crate::connectors::Facing::of_site(one.site),
+                        shape: from_box,
+                    },
+                    crate::connectors::Place {
+                        at: end,
+                        faces: crate::connectors::Facing::of_site(two.site),
+                        shape: to_box,
+                    },
+                    stand_off,
+                );
+                let curved = matches!(
+                    shape.preset,
+                    crate::geometry::Preset::CurvedConnector2
+                        | crate::geometry::Preset::CurvedConnector3
+                        | crate::geometry::Preset::CurvedConnector4
+                        | crate::geometry::Preset::CurvedConnector5
+                );
+                shape.route = Some(crate::connectors::route_path(&places, curved));
+                // The flips say which corner of the box a preset starts from,
+                // and a route says where every corner of it goes: a route drawn
+                // mirrored would be drawn somewhere neither shape is. They stay
+                // on the shape in the file, where a preset is still what Word
+                // draws it from.
+                shape.flipped_across = false;
+                shape.flipped_down = false;
+                // A route may go outside the two points it joins, and the box
+                // is what the rest of the program believes about where a
+                // drawing is. Widened to hold the whole of it, or half a
+                // connector would be outside what anybody could take hold of.
+                for at in &places {
+                    let right = (shape.x + shape.width).max(at.x);
+                    let bottom = (shape.y + shape.height).max(at.y);
+                    shape.x = shape.x.min(at.x);
+                    shape.y = shape.y.min(at.y);
+                    shape.width = right - shape.x;
+                    shape.height = bottom - shape.y;
+                }
             }
         }
     }
@@ -5019,6 +5093,7 @@ impl LayoutEngine<'_> {
                     head_end: shape.head_end,
                     id: shape.id,
                     joins: shape.joins,
+                    route: None,
                     tail_end: shape.tail_end,
                     fill: crate::paint::Paint::of(&shape.fill),
                     outline: shape.outline.as_deref().and_then(Color::from_hex),

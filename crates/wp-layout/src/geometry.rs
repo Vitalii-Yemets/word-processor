@@ -1041,7 +1041,7 @@ pub fn outline_in(
     // An open shape has no inside, so its line is laid *along* it rather than
     // round it: the band round nothing is nothing.
     if !preset.is_closed() {
-        return thick_path(&path_in(preset, adjusts, x, y, width, height), weight);
+        return band_along(&path_in(preset, adjusts, x, y, width, height), weight);
     }
 
     // A shape whose line does not go round its edge is drawn with its lines
@@ -1263,13 +1263,18 @@ fn band(path: &mut Path, cx: f32, cy: f32, rx: f32, ry: f32, from: f32, to: f32,
 }
 
 /// The band that draws an open shape: a rectangle laid along every piece of it,
-/// and a square at every turn.
+/// and a patch at every turn.
 ///
-/// The squares are what keeps a corner from opening up: two bands meeting at an
+/// The patches are what keeps a corner from opening up: two bands meeting at an
 /// angle cover everything but a notch on the outside of it, and a line drawn
-/// with notches in it is a line drawn wrong. They are square rather than round
-/// because that is the join the format falls back on.
-fn thick_path(path: &Path, weight: f32) -> Path {
+/// with notches in it is a line drawn wrong.
+///
+/// Said out loud rather than kept here, because a connector routed round the
+/// shapes it joins is drawn from a path of its own rather than from its preset,
+/// and it still has to be drawn with a line of the width the document asked
+/// for. See [`crate::connectors::route`].
+#[must_use]
+pub fn band_along(path: &Path, weight: f32) -> Path {
     let mut band = Path::new();
     for run in flattened(path) {
         for pair in run.windows(2) {

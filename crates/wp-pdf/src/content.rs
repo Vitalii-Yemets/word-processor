@@ -147,26 +147,34 @@ fn write_drawing(
                 fill(out, &path, colour, height, drawing);
             }
             if let Some(colour) = shape.outline {
-                let path = wp_layout::geometry::outline_in(
-                    shape.preset,
-                    &shape.adjusts,
-                    shape.x,
-                    shape.y,
-                    shape.width,
-                    shape.height,
-                    shape.outline_weight,
-                );
-                fill(out, &path, colour, height, drawing);
+                // A routed connector is drawn from its route, the same as on
+                // the screen.
+                let along = shape.route.clone().unwrap_or_else(|| {
+                    wp_layout::geometry::path_in(
+                        shape.preset,
+                        &shape.adjusts,
+                        shape.x,
+                        shape.y,
+                        shape.width,
+                        shape.height,
+                    )
+                });
+                let band = if shape.route.is_some() {
+                    wp_layout::geometry::band_along(&along, shape.outline_weight)
+                } else {
+                    wp_layout::geometry::outline_in(
+                        shape.preset,
+                        &shape.adjusts,
+                        shape.x,
+                        shape.y,
+                        shape.width,
+                        shape.height,
+                        shape.outline_weight,
+                    )
+                };
+                fill(out, &band, colour, height, drawing);
 
                 // And the arrowheads, which are drawn with the same line.
-                let along = wp_layout::geometry::path_in(
-                    shape.preset,
-                    &shape.adjusts,
-                    shape.x,
-                    shape.y,
-                    shape.width,
-                    shape.height,
-                );
                 for (tip, end) in [
                     (wp_layout::connectors::LineTip::Head, shape.head_end),
                     (wp_layout::connectors::LineTip::Tail, shape.tail_end),

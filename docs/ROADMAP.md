@@ -2233,15 +2233,32 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   through the shape it came out of, because the elbow is drawn inside the box
   between the two points and there is nowhere else for it to go.
 
-- [ ] **D23. Routing an elbow round the shapes it joins.** A connector leaves
+- [x] **D23. Routing an elbow round the shapes it joins.** A connector leaves
   each shape by the side it is fastened to and comes back to the other the same
-  way, and the legs between are laid so that neither shape is crossed. Word does
-  this by swapping the connector between `bentConnector2`, `3`, `4` and `5` as
-  the two shapes move about, and by putting the bends outside the box between
-  the two points when there is no room for them inside it.
+  way, and the legs between are laid so that neither shape is crossed.
   *Done when:* a connector fastened to the right of one shape and the left of
   another standing to its left goes round both of them rather than back through
   the one it came out of.
+  A route that leaves the start upwards is the same route with the two measures
+  swapped, so it is worked out on its side and turned back at the end. That
+  halves the cases, and what is left is three: the two ends facing each other
+  with room between them, an end entered from above or below, and everything
+  else — which goes round by a lane clear of both shapes, above them or below
+  them, whichever is nearer. A route is taken only if no leg of it runs through
+  either shape; the lane is what is left when none of the short ways is clear.
+  A routed connector is drawn from its route and not from its preset, so the
+  flips come off it: they say which corner of the box a preset starts from, and
+  a route already says where every corner of it goes. A route drawn mirrored is
+  a route drawn somewhere neither shape is, which is what the first attempt drew.
+  The box a routed connector is given is widened to hold the whole route. A
+  route may go outside the two points it joins, and the box is what the rest of
+  the program believes about where a drawing is: half a connector would
+  otherwise be outside anything anybody could take hold of.
+  *Not done:* the file keeps the preset and the handles it came with. Word
+  encodes a route by swapping the connector between `bentConnector2`, `3`, `4`
+  and `5`, turning it a quarter when it leaves upwards, and putting the bends
+  outside the box — and none of that is written back, so Word opens a document
+  saved here and routes the connector its own way between the same two points.
 
 ## E — The rest of the text engine
 

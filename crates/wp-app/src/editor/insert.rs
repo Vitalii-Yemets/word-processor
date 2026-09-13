@@ -985,9 +985,11 @@ impl Editor {
                 };
                 let mut boxes = Vec::new();
                 for (pair, (across, down)) in
-                    [(1_600_200i64, 0i64), (2_057_400, 457_200)].into_iter().enumerate()
+                    [(1_600_200i64, 0i64), (2_057_400, 457_200), (-1_600_200, 685_800)]
+                        .into_iter()
+                        .enumerate()
                 {
-                    let step = pair as i64 * 1_828_800;
+                    let step = pair as i64 * 1_371_600;
                     let first = wp_docx::shapes::Shape {
                         name: format!("First {pair}"),
                         id: pair as u32 * 10 + 1,
@@ -997,13 +999,13 @@ impl Editor {
                         fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
                         outline: Some("1F3864".to_owned()),
                         outline_emu: 9_525,
-                        anchor: Some(floats(0, step)),
+                        anchor: Some(floats(1_828_800, step)),
                         ..wp_docx::shapes::Shape::default()
                     };
                     let second = wp_docx::shapes::Shape {
                         name: format!("Second {pair}"),
                         id: pair as u32 * 10 + 2,
-                        anchor: Some(floats(across, step + down)),
+                        anchor: Some(floats(1_828_800 + across, step + down)),
                         ..first.clone()
                     };
                     let connector = wp_docx::shapes::Shape {
