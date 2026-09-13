@@ -82,6 +82,7 @@ pub mod rules;
 pub mod search;
 pub mod sections;
 pub mod settings;
+pub mod shapeeffects;
 pub mod shapes;
 pub mod signature;
 pub mod sorting;

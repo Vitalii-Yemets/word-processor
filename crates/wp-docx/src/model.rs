@@ -691,7 +691,10 @@ pub enum RunContent {
     /// A picture sitting in the line of text.
     Picture(Picture),
     /// A shape or a text box sitting in the line of text.
-    Shape(crate::shapes::Shape),
+    /// Boxed, because a shape carries everything a shape can carry — its
+    /// text, its fill, its handles, what is at the ends of its line, what it
+    /// is drawn with — and every other thing a run can hold is a few words.
+    Shape(Box<crate::shapes::Shape>),
     /// Several drawings written as one.
     ///
     /// Read but not written from here: a group's element is carried through

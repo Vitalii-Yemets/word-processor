@@ -682,7 +682,7 @@ pub(crate) fn read_run(element: &Element) -> Run {
                 } else if let Some(chart) = read_chart_reference(child) {
                     content.push(RunContent::Chart(chart));
                 } else if let Some(shape) = crate::shapes::read_shape(child) {
-                    content.push(RunContent::Shape(shape));
+                    content.push(RunContent::Shape(Box::new(shape)));
                 } else if let Some(picture) = read_picture(child) {
                     content.push(RunContent::Picture(picture));
                 }

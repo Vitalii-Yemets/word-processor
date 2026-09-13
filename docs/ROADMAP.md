@@ -2045,11 +2045,38 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   its middle because that is all a PDF content stream of this program's can
   carry so far.
 
-- [ ] **D13. The shape effects.** `a:effectLst`: the outer and inner shadow, the
+- [x] **D13. The shape effects.** `a:effectLst`: the outer and inner shadow, the
   glow, the soft edge and the reflection, drawn as effects on a shape rather
   than the approximation the letters use. A real blur is the piece of work
   underneath all of them.
   *Done when:* a shape with each effect is drawn as Word draws it.
+  The blur came first, because every one of them is made of it. Three passes of
+  a box blur, which is what everything that blurs quickly does: one box on its
+  own looks like a box, and three of them in a row are close enough to a
+  Gaussian that the difference cannot be seen — and each pass costs one addition
+  and one subtraction per pixel however wide the blur is, which is what makes a
+  wide blur affordable at all.
+  Each effect is then a few words over the shape's own coverage. The shadow is
+  the coverage moved and blurred. The glow is the coverage blurred and then made
+  stronger, because a plain blur is faint everywhere and a glow is solid against
+  the shape. The inner shadow is the coverage turned inside out, moved, blurred
+  and held back to the shape, which is the shadow of everything outside it laid
+  within it. The soft edge is the shape drawn *through* its own blurred
+  coverage. The reflection is the shape again, mirrored about the bottom of what
+  was drawn and fading downwards.
+  Mirrored about the bottom of what was **drawn**, not of the shape's own box:
+  the path has the page's corner and the scroll in it already, and the first
+  attempt reflected the shape onto the paragraph above it.
+  The values are kept as the format states them — English metric units, sixtieths
+  of a degree, hundred-thousandths — and turned into pixels only where drawing
+  happens, because how big a pixel is depends on the zoom and a document read at
+  one zoom and saved at another must not come out with different numbers in it.
+  A shape in a run is boxed now. It carries everything a shape can carry and
+  every other thing a run holds is a few words.
+  *Not done:* a PDF fills in one colour, so what is written there is the shadow
+  without its blur — the shape again, offset, in the shadow's colour. Drawing a
+  blurred effect into a PDF means writing a picture of it, which is the
+  F-series work on what a PDF can carry.
 
 - [ ] **D14. Three dimensions.** `a:scene3d` and `a:sp3d`: the bevels, the
   extrusion and its depth, the material, the lighting and the camera. Word

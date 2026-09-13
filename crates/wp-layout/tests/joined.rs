@@ -58,7 +58,7 @@ fn document(second_across: i64, second_down: i64) -> Document {
         .into_iter()
         .map(|shape| Run {
             properties: wp_docx::model::RunProperties::default(),
-            content: vec![RunContent::Shape(shape)],
+            content: vec![RunContent::Shape(Box::new(shape))],
             field: None,
             revision: None,
             format_change: None,
@@ -152,7 +152,7 @@ fn a_connector_fastened_to_nothing_stays_where_it_was_put() {
     let mut body = Body::default();
     body.blocks.push(Block::Paragraph(Paragraph::from_runs(vec![Run {
         properties: wp_docx::model::RunProperties::default(),
-        content: vec![RunContent::Shape(loose)],
+        content: vec![RunContent::Shape(Box::new(loose))],
         field: None,
         revision: None,
         format_change: None,

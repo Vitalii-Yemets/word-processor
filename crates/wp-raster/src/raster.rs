@@ -76,6 +76,172 @@ impl Mask {
     pub fn is_blank(&self) -> bool {
         self.coverage.iter().all(|&value| value == 0)
     }
+
+    /// A mask of a given size with nothing in it.
+    #[must_use]
+    pub fn empty(width: usize, height: usize) -> Self {
+        Self { width, height, coverage: vec![0; width * height] }
+    }
+
+    /// The same coverage blurred.
+    ///
+    /// # Why three passes of a box
+    ///
+    /// A box blur on its own looks like a box: a shadow blurred that way has
+    /// square corners and a visible edge where the box stops. Three of them in
+    /// a row is close enough to a Gaussian that the difference cannot be seen,
+    /// and each pass costs one addition and one subtraction per pixel however
+    /// wide the blur is — which is what makes a wide blur affordable at all.
+    ///
+    /// The mask is not made bigger: a blur spreads coverage outwards, so
+    /// whatever is to be blurred should be rasterized with room round it
+    /// already. A blur with no room to spread into is a blur cut off square,
+    /// which is the thing this is for avoiding.
+    #[must_use]
+    pub fn blurred(&self, radius: f32) -> Self {
+        // Three boxes whose widths add up to the radius asked for: the standard
+        // way of choosing them, so that the three together stand for a Gaussian
+        // of that radius.
+        let reach = radius.max(0.0);
+        if reach < 0.5 || self.width == 0 || self.height == 0 {
+            return self.clone();
+        }
+        let box_of = (reach * 0.9).round().max(1.0) as usize;
+
+        let mut coverage = self.coverage.clone();
+        for _ in 0..3 {
+            coverage = run_across(&coverage, self.width, self.height, box_of);
+            coverage = run_down(&coverage, self.width, self.height, box_of);
+        }
+        Self { width: self.width, height: self.height, coverage }
+    }
+
+    /// The coverage turned inside out: what was covered is not, and what was
+    /// not is.
+    ///
+    /// An inner shadow is a shadow of everything *outside* the shape, laid
+    /// inside it, which is what this is for.
+    #[must_use]
+    pub fn inverted(&self) -> Self {
+        Self {
+            width: self.width,
+            height: self.height,
+            coverage: self.coverage.iter().map(|value| 255 - value).collect(),
+        }
+    }
+
+    /// The same coverage moved, in a mask of the same size.
+    ///
+    /// What falls off the edge is lost, which is what makes this the right
+    /// thing for a shadow: the mask was made with room round the shape for
+    /// exactly this, and a shadow that wanted more room than that was asked for
+    /// is a shadow drawn wrong either way.
+    #[must_use]
+    pub fn shifted(&self, across: i32, down: i32) -> Self {
+        let mut coverage = vec![0u8; self.coverage.len()];
+        for y in 0..self.height {
+            let from_y = y as i32 - down;
+            if from_y < 0 || from_y >= self.height as i32 {
+                continue;
+            }
+            for x in 0..self.width {
+                let from_x = x as i32 - across;
+                if from_x < 0 || from_x >= self.width as i32 {
+                    continue;
+                }
+                coverage[y * self.width + x] =
+                    self.coverage[from_y as usize * self.width + from_x as usize];
+            }
+        }
+        Self { width: self.width, height: self.height, coverage }
+    }
+
+    /// Two coverages multiplied: what both of them cover.
+    ///
+    /// The other mask is taken from the same corner as this one, and anything
+    /// outside it covers nothing.
+    #[must_use]
+    pub fn times(&self, other: &Self) -> Self {
+        let coverage = (0..self.height)
+            .flat_map(|y| (0..self.width).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                let one = u32::from(self.at(x, y));
+                let two = u32::from(other.at(x, y));
+                ((one * two + 127) / 255) as u8
+            })
+            .collect();
+        Self { width: self.width, height: self.height, coverage }
+    }
+
+    /// The same coverage made stronger, to a limit of solid.
+    ///
+    /// A glow is a blur that does not fade away as fast as a blur does: Word's
+    /// is solid against the shape and thins outwards, and a plain blur of the
+    /// shape is faint everywhere.
+    #[must_use]
+    pub fn strengthened(&self, times: f32) -> Self {
+        let times = times.max(0.0);
+        Self {
+            width: self.width,
+            height: self.height,
+            coverage: self
+                .coverage
+                .iter()
+                .map(|value| (f32::from(*value) * times).min(255.0) as u8)
+                .collect(),
+        }
+    }
+}
+
+/// One box-blur pass along the rows, by a running total.
+fn run_across(coverage: &[u8], width: usize, height: usize, reach: usize) -> Vec<u8> {
+    let mut out = vec![0u8; coverage.len()];
+    let span = reach * 2 + 1;
+    for y in 0..height {
+        let row = y * width;
+        // The total of the window, which starts hanging off the left-hand end:
+        // the pixels outside the mask count as nothing, which is what lets a
+        // shadow fade at the edge of what was rasterized.
+        let mut total: u32 = 0;
+        for x in 0..=reach.min(width.saturating_sub(1)) {
+            total += u32::from(coverage[row + x]);
+        }
+        for x in 0..width {
+            out[row + x] = (total / span as u32) as u8;
+            let leaving = x.checked_sub(reach);
+            if let Some(leaving) = leaving {
+                total -= u32::from(coverage[row + leaving]);
+            }
+            let arriving = x + reach + 1;
+            if arriving < width {
+                total += u32::from(coverage[row + arriving]);
+            }
+        }
+    }
+    out
+}
+
+/// And one down the columns.
+fn run_down(coverage: &[u8], width: usize, height: usize, reach: usize) -> Vec<u8> {
+    let mut out = vec![0u8; coverage.len()];
+    let span = reach * 2 + 1;
+    for x in 0..width {
+        let mut total: u32 = 0;
+        for y in 0..=reach.min(height.saturating_sub(1)) {
+            total += u32::from(coverage[y * width + x]);
+        }
+        for y in 0..height {
+            out[y * width + x] = (total / span as u32) as u8;
+            if let Some(leaving) = y.checked_sub(reach) {
+                total -= u32::from(coverage[leaving * width + x]);
+            }
+            let arriving = y + reach + 1;
+            if arriving < height {
+                total += u32::from(coverage[arriving * width + x]);
+            }
+        }
+    }
+    out
 }
 
 /// Accumulates paths, then produces the coverage they add up to.
@@ -532,5 +698,84 @@ mod rule_tests {
         let mask = rasterizer.finish_by(Rule::EvenOdd);
         assert_eq!(covered(&mask, 10, 10), 0, "the middle should be a hole");
         assert_eq!(covered(&mask, 2, 2), 255, "and the rest still filled");
+    }
+}
+
+#[cfg(test)]
+mod blur_tests {
+    use super::*;
+
+    /// A mask with one solid square in the middle of it.
+    fn square(size: usize, from: usize, to: usize) -> Mask {
+        let mut coverage = vec![0u8; size * size];
+        for y in from..to {
+            for x in from..to {
+                coverage[y * size + x] = 255;
+            }
+        }
+        Mask { width: size, height: size, coverage }
+    }
+
+    #[test]
+    fn a_blur_spreads_coverage_outside_what_was_covered() {
+        let mask = square(40, 15, 25);
+        let blurred = mask.blurred(4.0);
+        assert_eq!(mask.at(12, 20), 0, "nothing was there to begin with");
+        assert!(blurred.at(12, 20) > 0, "and the blur should have reached it");
+    }
+
+    #[test]
+    fn a_blur_fades_outwards_rather_than_stopping() {
+        // What tells a blur from a box: each step out is fainter than the last.
+        let blurred = square(60, 20, 40).blurred(6.0);
+        let near = blurred.at(18, 30);
+        let far = blurred.at(14, 30);
+        let further = blurred.at(10, 30);
+        assert!(near > far && far > further, "{near} {far} {further}");
+    }
+
+    #[test]
+    fn a_blur_keeps_the_middle_of_a_wide_shape_solid() {
+        // A shadow with a hole in the middle would be a shadow of an outline.
+        let blurred = square(80, 20, 60).blurred(5.0);
+        assert_eq!(blurred.at(40, 40), 255);
+    }
+
+    #[test]
+    fn a_blur_of_nothing_is_nothing() {
+        assert!(Mask::empty(20, 20).blurred(5.0).is_blank());
+    }
+
+    #[test]
+    fn a_blur_of_no_radius_changes_nothing() {
+        let mask = square(20, 5, 15);
+        assert_eq!(mask.blurred(0.0).coverage(), mask.coverage());
+    }
+
+    #[test]
+    fn turning_a_mask_inside_out_covers_what_it_did_not() {
+        let mask = square(10, 3, 7);
+        let inside_out = mask.inverted();
+        assert_eq!(inside_out.at(0, 0), 255);
+        assert_eq!(inside_out.at(5, 5), 0);
+    }
+
+    #[test]
+    fn two_masks_multiplied_cover_what_both_of_them_do() {
+        let one = square(10, 0, 6);
+        let two = square(10, 4, 10);
+        let both = one.times(&two);
+        assert_eq!(both.at(5, 5), 255, "where the two overlap");
+        assert_eq!(both.at(1, 1), 0, "and where only one of them covers");
+    }
+
+    #[test]
+    fn a_strengthened_mask_is_stronger_but_never_more_than_solid() {
+        let mask = square(10, 3, 7).blurred(2.0);
+        let stronger = mask.strengthened(3.0);
+        assert!(stronger.at(2, 5) > mask.at(2, 5), "it should be stronger");
+        // And held at solid rather than wrapping round to nothing, which would
+        // leave a hole in the middle of a glow.
+        assert_eq!(mask.strengthened(10.0).at(5, 5), 255);
     }
 }

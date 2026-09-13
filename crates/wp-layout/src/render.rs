@@ -379,22 +379,52 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
                 Some(turn) => path.transformed(&turn),
                 None => path,
             };
-            // The shadow first, under everything: an offset copy of whatever
-            // the shape's outline encloses. It is offset after the turn rather
-            // than before it, because the light does not turn with the shape:
-            // a sign turned on its side still casts its shadow downwards.
-            if let Some((colour, distance)) = shape.shadow {
-                let path = turned(crate::geometry::path_in(
-                    shape.preset,
-                    &shape.adjusts,
-                    x,
-                    y,
-                    shape.width,
-                    shape.height,
-                ))
-                .transformed(&Transform::translate(distance, distance));
-                canvas.fill_path(&path, colour);
+            // What the shape covers, which everything drawn round it is worked
+            // out from. It is turned with the shape but what falls on it is
+            // not: the light does not turn with a sign, so a sign on its side
+            // still casts its shadow downwards.
+            let area = turned(crate::geometry::path_in(
+                shape.preset,
+                &shape.adjusts,
+                x,
+                y,
+                shape.width,
+                shape.height,
+            ));
+
+            // The theme's own shadow, for a shape whose document says nothing
+            // about its effects: an offset copy and no blur, which is what a
+            // theme's effect style amounts to here.
+            if shape.effects.is_nothing() {
+                if let Some((colour, distance)) = shape.shadow {
+                    let path = area.transformed(&Transform::translate(distance, distance));
+                    canvas.fill_path(&path, colour);
+                }
+            } else {
+                draw_under(canvas, shape, &area);
             }
+            // A soft edge is the shape drawn through its own coverage, blurred:
+            // solid in the middle and fading to nothing at the edge. It fades
+            // outwards as well, but the fill is held to the shape anyway, so
+            // what shows is the fade inwards — which is the soft edge.
+            let softly = (shape.effects.soft_edge > 0.0)
+                .then(|| coverage_of(&area, 1.0))
+                .flatten()
+                .map(|(mask, at_x, at_y)| (mask.blurred(shape.effects.soft_edge), at_x, at_y));
+            let soften = |colour: Color, px: usize, py: usize| match &softly {
+                Some((mask, at_x, at_y)) => {
+                    let (column, row) = (px as i32 - at_x, py as i32 - at_y);
+                    let coverage = if column < 0 || row < 0 {
+                        0
+                    } else {
+                        mask.at(column as usize, row as usize)
+                    };
+                    let alpha = (u32::from(colour.alpha) * u32::from(coverage) + 127) / 255;
+                    Color::rgba(colour.red, colour.green, colour.blue, alpha as u8)
+                }
+                None => colour,
+            };
+
             if !shape.fill.is_nothing() {
                 let path = turned(crate::geometry::path_in(
                     shape.preset,
@@ -413,9 +443,15 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
                 canvas.fill_path_using(&path, wp_raster::Rule::Nonzero, |px, py| {
                     let across = (px as f32 - x) / width;
                     let down = (py as f32 - y) / height;
-                    fill.at_pixel(px, py, across.clamp(0.0, 1.0), down.clamp(0.0, 1.0))
+                    let colour =
+                        fill.at_pixel(px, py, across.clamp(0.0, 1.0), down.clamp(0.0, 1.0));
+                    soften(colour, px, py)
                 });
             }
+            // The shadow inside it, over the fill and under the line: a shadow
+            // that fell over the line would make the line look like a hole too.
+            draw_inside(canvas, shape, &area);
+
             if let Some(outline) = shape.outline {
                 // A connector that had to be routed round the shapes it joins
                 // is drawn from the route rather than from its preset: what it
@@ -445,7 +481,10 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
                         shape.outline_weight,
                     )
                 };
-                canvas.fill_path(&turned(band), outline);
+                let band = turned(band);
+                canvas.fill_path_using(&band, wp_raster::Rule::Nonzero, |px, py| {
+                    soften(outline, px, py)
+                });
 
                 // And what is drawn at the ends of that line. They are worked
                 // out from the shape and turned with it, so an arrow on a
@@ -462,6 +501,127 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
             }
         }
     }
+}
+
+/// The coverage of a path, and where the top left of it lands on the page.
+///
+/// Only as big as the path and the room asked for round it: a mask the size of
+/// the page for every effect on every shape would be a page's worth of work per
+/// shadow.
+fn coverage_of(path: &Path, room: f32) -> Option<(wp_raster::Mask, i32, i32)> {
+    let mut low = (f32::MAX, f32::MAX);
+    let mut high = (f32::MIN, f32::MIN);
+    for at in path.points() {
+        low = (low.0.min(at.x), low.1.min(at.y));
+        high = (high.0.max(at.x), high.1.max(at.y));
+    }
+    if low.0 > high.0 {
+        return None;
+    }
+    let room = room.max(0.0).ceil();
+    let left = (low.0 - room).floor();
+    let top = (low.1 - room).floor();
+    let width = (high.0 + room - left).ceil().max(1.0);
+    let height = (high.1 + room - top).ceil().max(1.0);
+    // A mask of a few million pixels is a shape nobody asked to be drawn that
+    // big; the effects on it are left off rather than the program stopping.
+    if width * height > 16_000_000.0 {
+        return None;
+    }
+
+    let mut raster = wp_raster::Rasterizer::new(width as usize, height as usize);
+    raster.fill(&path.transformed(&Transform::translate(-left, -top)));
+    Some((raster.finish(), left as i32, top as i32))
+}
+
+/// The shadow, the glow and the reflection, which are drawn before the shape
+/// itself and therefore under it.
+fn draw_under(canvas: &mut Canvas, shape: &crate::PlacedShape, area: &Path) {
+    let effects = &shape.effects;
+
+    // The reflection first, because it is furthest from the shape: the shape
+    // upside down about its own bottom edge, fading downwards.
+    if let Some(reflection) = effects.reflection {
+        // The bottom of what is drawn, and not the bottom of the shape's own
+        // box: the path has the page's own corner and the scroll in it
+        // already, and a reflection mirrored about a line somewhere else lands
+        // somewhere else.
+        let (top, bottom) = area
+            .points()
+            .fold((f32::MAX, f32::MIN), |(top, bottom), at| (top.min(at.y), bottom.max(at.y)));
+        let tall = (bottom - top).max(1.0);
+        let flip = Transform::translate(0.0, -bottom)
+            .then(&Transform::scale(1.0, -1.0))
+            .then(&Transform::translate(0.0, bottom + reflection.below));
+        let mirrored = area.transformed(&flip);
+        if let Some((mask, at_x, at_y)) = coverage_of(&mirrored, reflection.blur + 1.0) {
+            let mask = mask.blurred(reflection.blur);
+            // Which colour: the fill's own at the middle of the shape, because
+            // a reflection is the shape again and not a shadow of it.
+            let colour = shape.fill.at_pixel(0, 0, 0.5, 0.5);
+            let fade = (tall * reflection.fades_by).max(1.0);
+            for row in 0..mask.height() {
+                let down = (at_y + row as i32) as f32 - (bottom + reflection.below);
+                let share = 1.0 - (down / fade).clamp(0.0, 1.0);
+                let alpha = (f32::from(reflection.start) * share) as u8;
+                if alpha == 0 {
+                    continue;
+                }
+                let colour = Color::rgba(colour.red, colour.green, colour.blue, alpha);
+                let (at_x, at_y) = (at_x, at_y + row as i32);
+                if at_y < 0 {
+                    continue;
+                }
+                for column in 0..mask.width() {
+                    let coverage = mask.at(column, row);
+                    let across = at_x + column as i32;
+                    if coverage > 0 && across >= 0 {
+                        canvas.blend(across as usize, at_y as usize, colour, coverage);
+                    }
+                }
+            }
+        }
+    }
+
+    // Then the shadow it casts, which is the shape's own coverage moved and
+    // blurred.
+    if let Some(shadow) = effects.outer_shadow {
+        let moved = area.transformed(&Transform::translate(shadow.across, shadow.down));
+        if let Some((mask, at_x, at_y)) = coverage_of(&moved, shadow.blur + 1.0) {
+            canvas.draw_mask(&mask.blurred(shadow.blur), at_x, at_y, shadow.colour);
+        }
+    }
+
+    // And the glow round it, which is the same blurred and then made stronger:
+    // a glow is solid against the shape and thins outwards, and a plain blur is
+    // faint everywhere.
+    if let Some(glow) = effects.glow {
+        if let Some((mask, at_x, at_y)) = coverage_of(area, glow.reach + 1.0) {
+            let spread = mask.blurred(glow.reach / 2.0).strengthened(2.5);
+            canvas.draw_mask(&spread, at_x, at_y, glow.colour);
+        }
+    }
+}
+
+/// The shadow drawn inside the shape, which goes over its fill.
+///
+/// The shadow of everything *outside* the shape, laid inside it: the coverage
+/// turned inside out, moved, blurred, and then held to the shape itself so that
+/// none of it falls outside.
+fn draw_inside(canvas: &mut Canvas, shape: &crate::PlacedShape, area: &Path) {
+    let Some(shadow) = shape.effects.inner_shadow else {
+        return;
+    };
+    let room = shadow.blur + shadow.across.abs() + shadow.down.abs() + 1.0;
+    let Some((mask, at_x, at_y)) = coverage_of(area, room) else {
+        return;
+    };
+    // The same coverage moved, turned inside out and blurred: what falls on the
+    // inside of the shape when the light comes from the other side. Held to the
+    // shape itself at the end, so that none of it falls outside.
+    let moved = mask.shifted(shadow.across.round() as i32, shadow.down.round() as i32);
+    let inside = moved.inverted().blurred(shadow.blur).times(&mask);
+    canvas.draw_mask(&inside, at_x, at_y, shadow.colour);
 }
 
 /// How a shape is turned where it stands, in page coordinates.

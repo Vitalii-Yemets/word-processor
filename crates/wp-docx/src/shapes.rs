@@ -59,6 +59,10 @@ pub struct Shape {
     /// line. See [`crate::lines`].
     pub head_end: crate::lines::LineEnd,
     pub tail_end: crate::lines::LineEnd,
+    /// What the shape is drawn with besides its fill and its line: the shadow
+    /// under it, the glow round it, the soft edge, the reflection. See
+    /// [`crate::shapeeffects`].
+    pub effects: crate::shapeeffects::Effects,
     /// The paragraphs inside, which is what makes a shape a text box.
     pub text: Vec<Paragraph>,
     /// What the shape is called, which is what the selection pane would list.
@@ -99,6 +103,7 @@ impl Default for Shape {
             outline_emu: 0,
             head_end: crate::lines::LineEnd::default(),
             tail_end: crate::lines::LineEnd::default(),
+            effects: crate::shapeeffects::Effects::default(),
             text: Vec::new(),
             name: "Shape".to_owned(),
             id: 0,
@@ -274,6 +279,7 @@ pub fn read_shape(drawing: &Element) -> Option<Shape> {
         shape.adjusts = read_adjusts(geometry);
     }
     shape.fill = properties.map(crate::fills::read_fill).unwrap_or_default();
+    shape.effects = properties.map(crate::shapeeffects::read_effects).unwrap_or_default();
 
     if let Some(line) = properties.and_then(|properties| child(properties, "ln")) {
         shape.outline_emu = line.attribute_by_name("w").and_then(|w| w.parse().ok()).unwrap_or(0);
@@ -430,6 +436,11 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
         }
     }
     properties.push_element(line);
+    // And what it is drawn with besides the two of them, which the schema
+    // wants after the line and before anything three-dimensional.
+    if let Some(list) = crate::shapeeffects::effects_element(&shape.effects) {
+        properties.push_element(list);
+    }
     wsp.push_element(properties);
 
     // The shape takes the theme's second effect style, which is what the
@@ -808,7 +819,7 @@ fn gather_shapes(block: &crate::model::Block, out: &mut Vec<crate::shapes::Shape
             for run in &paragraph.runs {
                 for piece in &run.content {
                     if let crate::model::RunContent::Shape(shape) = piece {
-                        out.push(shape.clone());
+                        out.push((**shape).clone());
                     }
                 }
             }

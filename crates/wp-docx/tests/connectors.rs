@@ -161,7 +161,7 @@ fn the_file_follows_a_shape_that_moved() {
             .into_iter()
             .map(|shape| Run {
                 properties: wp_docx::model::RunProperties::default(),
-                content: vec![RunContent::Shape(shape)],
+                content: vec![RunContent::Shape(Box::new(shape))],
                 field: None,
                 revision: None,
                 format_change: None,
@@ -192,4 +192,74 @@ fn the_file_follows_a_shape_that_moved() {
     // not an edit, and a document that marked itself modified every time it was
     // looked at would never stop asking to be saved.
     assert!(!document.rejoin_connectors(), "it was put back twice");
+}
+
+#[test]
+fn what_a_shape_is_drawn_with_besides_its_fill_is_read() {
+    use wp_docx::shapeeffects::Effects;
+
+    let drawing = r#"<w:drawing><wp:inline><wp:extent cx="914400" cy="457200"/>
+<wp:docPr id="1" name="Box"/>
+<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+<wps:wsp><wps:cNvPr id="2" name="Box"/><wps:spPr>
+<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+<a:effectLst>
+<a:outerShdw blurRad="63500" dist="38100" dir="2700000"><a:srgbClr val="000000"><a:alpha val="40000"/></a:srgbClr></a:outerShdw>
+<a:glow rad="139700"><a:srgbClr val="4472C4"/></a:glow>
+<a:softEdge rad="112395"/>
+</a:effectLst>
+</wps:spPr></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing>"#;
+    let document = Document::open(&document_with(drawing)).expect("a readable document");
+    let shape = document.shapes().into_iter().next().expect("the shape");
+
+    let shadow = shape.effects.outer_shadow.clone().expect("the shadow");
+    assert_eq!(shadow.colour, "000000");
+    assert_eq!(shadow.alpha, 40_000, "two fifths of a colour");
+    assert_eq!(
+        (shadow.blur_emu, shadow.distance_emu, shadow.direction),
+        (63_500, 38_100, 2_700_000)
+    );
+
+    let glow = shape.effects.glow.clone().expect("the glow");
+    assert_eq!(glow.radius_emu, 139_700);
+    assert_eq!(glow.alpha, 100_000, "a colour that says nothing is solid");
+
+    assert_eq!(shape.effects.soft_edge_emu, 112_395);
+    assert!(shape.effects.inner_shadow.is_none());
+    assert!(!shape.effects.is_nothing());
+    assert!(Effects::default().is_nothing());
+}
+
+#[test]
+fn a_shape_this_program_writes_carries_what_it_is_drawn_with() {
+    use wp_docx::shapeeffects::{Effects, Reflection, Shadow};
+
+    let shape = Shape {
+        preset: "roundRect".to_owned(),
+        width_emu: 914_400,
+        height_emu: 457_200,
+        effects: Effects {
+            inner_shadow: Some(Shadow {
+                colour: "112233".to_owned(),
+                alpha: 55_000,
+                blur_emu: 50_800,
+                distance_emu: 25_400,
+                direction: 16_200_000,
+            }),
+            reflection: Some(Reflection {
+                blur_emu: 6_350,
+                start_alpha: 52_000,
+                end_alpha: 300,
+                end_at: 35_000,
+                distance_emu: 0,
+            }),
+            ..Effects::default()
+        },
+        ..Shape::default()
+    };
+    let mut document = Document::open(&document_with("<w:t>words</w:t>")).expect("a document");
+    document.insert_shape(&shape);
+
+    let read = document.shapes().into_iter().next().expect("the shape back");
+    assert_eq!(read.effects, shape.effects);
 }

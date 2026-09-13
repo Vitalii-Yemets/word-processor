@@ -555,6 +555,10 @@ pub struct PlacedShape {
     /// The shadow under it, from the document theme, and how far it falls in
     /// pixels. See [`wp_docx::theme::Effect`].
     pub shadow: Option<(Color, f32)>,
+    /// What it is drawn with besides its fill and its line, with every
+    /// measurement already in pixels: the shadows, the glow, the soft edge and
+    /// the reflection. See [`Effects`].
+    pub effects: Effects,
     /// The glyphs of the text inside, already placed relative to the page.
     pub text: Vec<PositionedGlyph>,
     /// What the drawing is called, which is what a list of them shows.
@@ -589,6 +593,121 @@ pub struct PlacedShape {
     pub turn: f32,
     pub flipped_across: bool,
     pub flipped_down: bool,
+}
+
+/// What a shape is drawn with besides its fill and its line, in pixels.
+///
+/// The document states these in English metric units and in
+/// hundred-thousandths, because that is what the file says and what a file
+/// saved again has to say. Drawing them wants pixels and colours, and the
+/// turning of the one into the other belongs here, where how big a pixel is
+/// happens to be known. See [`wp_docx::shapeeffects`].
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Effects {
+    pub outer_shadow: Option<Shadow>,
+    pub inner_shadow: Option<Shadow>,
+    pub glow: Option<Glow>,
+    /// How far in from its edge the shape fades away.
+    pub soft_edge: f32,
+    pub reflection: Option<Reflection>,
+}
+
+/// A shadow, inside the shape or outside it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shadow {
+    pub colour: Color,
+    pub blur: f32,
+    /// How far it falls, already worked out into across and down.
+    pub across: f32,
+    pub down: f32,
+}
+
+/// A colour spreading out of the shape's edge.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Glow {
+    pub colour: Color,
+    pub reach: f32,
+}
+
+/// The shape again, upside down and fading.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reflection {
+    pub blur: f32,
+    /// How solid it is where it starts, and how far down it has faded away.
+    pub start: u8,
+    pub fades_by: f32,
+    /// How far below the shape it begins.
+    pub below: f32,
+}
+
+impl Effects {
+    /// The document's own numbers, in pixels and colours.
+    #[must_use]
+    pub(crate) fn of(effects: &wp_docx::shapeeffects::Effects, scale: f32) -> Self {
+        // A pixel per English metric unit, by way of the point.
+        let pixels = |emu: i64| emu as f32 / wp_docx::shapes::EMU_PER_POINT as f32 * scale;
+        let shadow = |shadow: &wp_docx::shapeeffects::Shadow| {
+            // The direction is measured clockwise from three o'clock, in
+            // sixtieths of a degree, which is the same way round as a canvas
+            // counts: down the page is a quarter turn on.
+            let angle = (shadow.direction as f32 / 60_000.0).to_radians();
+            let distance = pixels(shadow.distance_emu);
+            Shadow {
+                colour: tinted(&shadow.colour, shadow.alpha),
+                blur: pixels(shadow.blur_emu),
+                across: distance * angle.cos(),
+                down: distance * angle.sin(),
+            }
+        };
+        Self {
+            outer_shadow: effects.outer_shadow.as_ref().map(&shadow),
+            inner_shadow: effects.inner_shadow.as_ref().map(&shadow),
+            glow: effects.glow.as_ref().map(|glow| Glow {
+                colour: tinted(&glow.colour, glow.alpha),
+                reach: pixels(glow.radius_emu),
+            }),
+            soft_edge: pixels(effects.soft_edge_emu),
+            reflection: effects.reflection.as_ref().map(|reflection| Reflection {
+                blur: pixels(reflection.blur_emu),
+                start: (reflection.start_alpha.clamp(0, 100_000) * 255 / 100_000) as u8,
+                // How far down it has faded to nothing, as a share of the
+                // shape's own height.
+                fades_by: reflection.end_at.max(1) as f32 / 100_000.0,
+                below: pixels(reflection.distance_emu),
+            }),
+        }
+    }
+
+    /// Whether there is anything here at all, which is the usual answer.
+    #[must_use]
+    pub fn is_nothing(&self) -> bool {
+        self.outer_shadow.is_none()
+            && self.inner_shadow.is_none()
+            && self.glow.is_none()
+            && self.soft_edge <= 0.0
+            && self.reflection.is_none()
+    }
+
+    /// How far outside its own box the shape reaches because of these.
+    ///
+    /// A shadow falls outside the shape and a glow spreads out of it, and what
+    /// is drawn outside the box is what a redraw of that box would leave
+    /// behind.
+    #[must_use]
+    pub fn reach(&self) -> f32 {
+        let shadow = self
+            .outer_shadow
+            .map_or(0.0, |shadow| shadow.blur + shadow.across.abs().max(shadow.down.abs()));
+        let glow = self.glow.map_or(0.0, |glow| glow.reach);
+        shadow.max(glow)
+    }
+}
+
+/// A colour with an amount of it, as the format says one.
+fn tinted(colour: &str, alpha: i32) -> Color {
+    let solid = Color::from_hex(colour).unwrap_or(Color::rgb(0, 0, 0));
+    let alpha = (alpha.clamp(0, 100_000) * 255 / 100_000) as u8;
+    Color::rgba(solid.red, solid.green, solid.blue, alpha)
 }
 
 /// A shape drawn on a page that is not a rectangle.
@@ -3399,7 +3518,7 @@ impl<'a> LayoutEngine<'a> {
                         group: None,
                         math: None,
                         chart: None,
-                        shape: Some((Box::new(shape.clone()), height)),
+                        shape: Some((shape.clone(), height)),
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -3711,6 +3830,7 @@ impl<'a> LayoutEngine<'a> {
             id: shape.id,
             joins: shape.joins,
             route: None,
+            effects: Effects::of(&shape.effects, scale),
             tail_end: shape.tail_end,
             fill: crate::paint::Paint::of(&shape.fill),
             outline: shape.outline.as_deref().and_then(Color::from_hex),
@@ -3820,6 +3940,7 @@ impl<'a> LayoutEngine<'a> {
                         id: shape.id,
                         joins: shape.joins,
                         route: None,
+                        effects: Effects::of(&shape.effects, scale),
                         tail_end: shape.tail_end,
                         fill: crate::paint::Paint::of(&shape.fill),
                         outline: shape.outline.as_deref().and_then(Color::from_hex),
@@ -5094,6 +5215,7 @@ impl LayoutEngine<'_> {
                     id: shape.id,
                     joins: shape.joins,
                     route: None,
+                    effects: Effects::of(&shape.effects, self.pixels_per_point()),
                     tail_end: shape.tail_end,
                     fill: crate::paint::Paint::of(&shape.fill),
                     outline: shape.outline.as_deref().and_then(Color::from_hex),

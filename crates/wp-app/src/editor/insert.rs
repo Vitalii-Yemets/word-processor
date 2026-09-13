@@ -1138,6 +1138,88 @@ impl Editor {
                 ));
                 self.handle_grid(&cells, 4);
             }
+            // One shape drawn with each of the effects the format can put on
+            // one: the shadow under it, the shadow inside it, the glow, the
+            // soft edge and the reflection, and one with none of them to
+            // compare them against.
+            "effects" => {
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                use wp_docx::shapeeffects::{Effects, Glow, Reflection, Shadow};
+
+                let shadow = |distance: i64, blur: i64| Shadow {
+                    colour: "000000".to_owned(),
+                    alpha: 45_000,
+                    blur_emu: blur,
+                    distance_emu: distance,
+                    direction: 2_700_000,
+                };
+                let all = [
+                    Effects::default(),
+                    Effects { outer_shadow: Some(shadow(152_400, 152_400)), ..Effects::default() },
+                    Effects { inner_shadow: Some(shadow(101_600, 101_600)), ..Effects::default() },
+                    Effects {
+                        glow: Some(Glow {
+                            colour: "FF0000".to_owned(),
+                            alpha: 70_000,
+                            radius_emu: 228_600,
+                        }),
+                        ..Effects::default()
+                    },
+                    Effects { soft_edge_emu: 152_400, ..Effects::default() },
+                    Effects {
+                        reflection: Some(Reflection {
+                            blur_emu: 25_400,
+                            start_alpha: 60_000,
+                            end_alpha: 300,
+                            end_at: 55_000,
+                            distance_emu: 0,
+                        }),
+                        ..Effects::default()
+                    },
+                ];
+
+                const CELL: i64 = 1_371_600;
+                let sheet = wp_docx::shapes::Shape {
+                    name: "Sheet".to_owned(),
+                    preset: "rect".to_owned(),
+                    width_emu: 3 * CELL,
+                    height_emu: 2 * CELL + 457_200,
+                    fill: wp_docx::fills::Fill::Solid("FFFFFF".to_owned()),
+                    outline: None,
+                    anchor: Some(Anchor {
+                        wrap: Wrap::None,
+                        horizontal: Placement::Offset(0),
+                        vertical: Placement::Offset(0),
+                        ..Anchor::default()
+                    }),
+                    ..wp_docx::shapes::Shape::default()
+                };
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.insert_shape(&sheet);
+
+                for (index, effects) in all.into_iter().enumerate() {
+                    let shape = wp_docx::shapes::Shape {
+                        name: format!("Effect {index}"),
+                        preset: "roundRect".to_owned(),
+                        width_emu: 914_400,
+                        height_emu: 685_800,
+                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                        outline: Some("1F3864".to_owned()),
+                        outline_emu: 9_525,
+                        effects,
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset((index % 3) as i64 * CELL + 228_600),
+                            vertical: Placement::Offset((index / 3) as i64 * CELL + 228_600),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+                self.relayout();
+            }
             // One shape taken hold of, so that the yellow handles it can be
             // changed by are there to look at.
             "held" => {

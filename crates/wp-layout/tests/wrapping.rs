@@ -21,7 +21,7 @@ fn document(anchor: Option<Anchor>) -> Document {
         let shape = Shape::preset("rect", 144.0, 108.0).floating(anchor);
         runs.push(Run {
             properties: wp_docx::model::RunProperties::default(),
-            content: vec![RunContent::Shape(shape)],
+            content: vec![RunContent::Shape(Box::new(shape))],
             field: None,
             revision: None,
             format_change: None,
@@ -143,7 +143,7 @@ fn a_drawing_in_the_line_does_take_room() {
         if with_shape {
             runs.push(Run {
                 properties: wp_docx::model::RunProperties::default(),
-                content: vec![RunContent::Shape(Shape::preset("rect", 144.0, 108.0))],
+                content: vec![RunContent::Shape(Box::new(Shape::preset("rect", 144.0, 108.0)))],
                 field: None,
                 revision: None,
                 format_change: None,
@@ -184,7 +184,7 @@ fn shaped(preset: &str, wrap: Wrap) -> Document {
     body.blocks.push(Block::Paragraph(Paragraph::from_runs(vec![
         Run {
             properties: wp_docx::model::RunProperties::default(),
-            content: vec![RunContent::Shape(shape)],
+            content: vec![RunContent::Shape(Box::new(shape))],
             field: None,
             revision: None,
             format_change: None,

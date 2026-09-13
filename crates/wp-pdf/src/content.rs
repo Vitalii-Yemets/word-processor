@@ -120,7 +120,16 @@ fn write_drawing(
             drawing.images.push((name, take_apart(&picture.image)));
         }
         wp_layout::Drawing::Shape(shape) => {
-            if let Some((colour, distance)) = shape.shadow {
+            // The shadow, flat: a PDF fills in one colour, so a blur would have
+            // to be written as a picture of itself. What is drawn here is the
+            // shape again, offset, in the shadow's colour — which is the shadow
+            // without the blur, and is what the theme's own shadow amounts to
+            // anyway. Drawing a blurred shadow properly is the roadmap's
+            // F-series work on what a PDF can carry.
+            let cast = shape.effects.outer_shadow.map_or(shape.shadow, |shadow| {
+                Some((shadow.colour, shadow.across.max(shadow.down)))
+            });
+            if let Some((colour, distance)) = cast {
                 let path = wp_layout::geometry::path_in(
                     shape.preset,
                     &shape.adjusts,

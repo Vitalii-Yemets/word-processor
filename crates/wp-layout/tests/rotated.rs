@@ -26,7 +26,7 @@ fn document(turned: Turned) -> Document {
     let runs = vec![
         Run {
             properties: wp_docx::model::RunProperties::default(),
-            content: vec![RunContent::Shape(shape)],
+            content: vec![RunContent::Shape(Box::new(shape))],
             field: None,
             revision: None,
             format_change: None,
