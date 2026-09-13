@@ -30,6 +30,7 @@ mod common;
 pub mod gdef;
 pub mod gpos;
 pub mod gsub;
+pub mod indic;
 pub mod joining;
 
 use wp_font::{Font, GlyphId};
@@ -85,6 +86,25 @@ pub fn script_of(text: &str) -> [u8; 4] {
     *b"latn"
 }
 
+/// Whether a run has to be shaped whole rather than a character at a time.
+///
+/// Three things ask for it, and each of them is invisible one character at a
+/// time: a script written joined, where the shape of a letter is decided by
+/// its neighbours; a mark, whose place is decided by the letter it sits on;
+/// and a script that is not drawn in the order it is written, where the
+/// letters have to be rearranged before the font is asked anything.
+#[must_use]
+pub fn needs_shaping(text: &str) -> bool {
+    text.chars()
+        .any(|character| is_joining_script(character) || is_mark(character) || reorders(character))
+}
+
+/// Whether a character belongs to a script drawn in an order of its own.
+#[must_use]
+pub fn reorders(character: char) -> bool {
+    matches!(character as u32, 0x0900..=0x097F)
+}
+
 /// Turns text into glyphs, applying whatever the font offers for its script.
 ///
 /// The characters are mapped to glyphs first and the font's rules applied
@@ -127,7 +147,18 @@ pub fn shape_with(font: &Font<'_>, text: &str, features: &[[u8; 4]]) -> Vec<Shap
         position(font, &script_of(text), &mut out, features.contains(b"kern"));
         return out;
     };
-    let script = script_of(text);
+    let mut script = script_of(text);
+
+    // Devanagari is not drawn in the order it is written, and no substitution
+    // table can say so: the text has to be rearranged before the font is asked
+    // anything. See [`indic`].
+    if script == *b"deva" {
+        script = indic::tag_in(&table);
+        let (glyphs, clusters) = indic::shape(font, &table, &script, text);
+        let mut out = zip(glyphs, clusters);
+        position(font, &script, &mut out, features.contains(b"kern"));
+        return out;
+    }
 
     // Composing and decomposing first, which is what the format says: a font
     // uses it to say that a letter and the mark under it are written as one
@@ -186,7 +217,11 @@ fn position(font: &Font<'_>, script: &[u8; 4], shaped: &mut [Shaped], kern: bool
         // Then the marks onto their letters, then the marks onto each other,
         // which is the order the format lists them in and the order they
         // depend on each other in.
-        for feature in [b"kern", b"mark", b"mkmk"] {
+        // The marks above and below, and the spacing between the pieces of a
+        // syllable, are the same question as `mark` and `mkmk` asked by the
+        // scripts that reorder. A font that does not use them says nothing
+        // under them and nothing happens.
+        for feature in [b"kern", b"mark", b"mkmk", b"abvm", b"blwm", b"dist"] {
             if feature == b"kern" && !kern {
                 continue;
             }

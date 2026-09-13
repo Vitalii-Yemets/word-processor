@@ -2653,12 +2653,69 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   kind on the same walk, and the next script work — **E1** — needs none of
   them.
 
-- [ ] **E1. Indic reordering.** Devanagari, Bengali, Tamil, Telugu and the rest:
-  a syllable is reordered before it is drawn, and the rules differ per script.
-  Rests on **E11** and **E12**, which are both done now: the rules that say
-  when a substitution applies, and the table that says where the marks go. What
-  is left is the reordering itself, which is neither of those — it is what the
-  text says rearranged before the font is asked anything.
+- [x] **E1. Indic reordering: Devanagari.** The syllable, which consonant of it
+  the rest hangs on, and the order its pieces are drawn in — with the font's
+  own forms asked for in the order the format lays down, around that.
+  *Done when:* the vowel sign of कि comes out before the consonant it is
+  stored after, and the र् of a cluster comes out at the end of it.
+  Every other script this program draws is drawn in the order it is stored.
+  Devanagari is not, and no substitution table can say so: a substitution
+  replaces glyphs where they stand. The text has to be rearranged first.
+  Two things move. The vowel signs written to the left — ि and ॎ — are stored
+  after the consonant and drawn before the whole cluster, not merely before the
+  consonant: क्कि is drawn sign, half-form, letter. And a syllable that begins
+  with र् is not a syllable beginning with an R: that R is a hook drawn over
+  the *end* of the syllable, after the letter it hangs on and after whatever is
+  written under that, and before the vowel signs written to the right.
+  Which letter the rest hangs on is its own question. It is the last letter of
+  the syllable — except that an R at the end of a cluster is a tail drawn under
+  the letter before it rather than a letter of its own, and except that the
+  hook at the front is not a letter at all. A joiner written after the halant
+  asks for the letter rather than the hook, and is given it.
+  The forms are asked for in the order the format lays down and each of its own
+  part of the syllable: the dot that makes another consonant and the conjuncts
+  first, while everything is still where it was written; then the hook, asked
+  of the first two glyphs and nowhere else; then the half forms, asked only of
+  what stands before the letter the syllable hangs on, and the forms written
+  under and after it, asked only of what follows — because a font will spell a
+  half form out of any consonant and a halant, and would make one where a form
+  below the line belongs. Then the order changes. Then the forms that depend on
+  that order: `pres`, `abvs`, `blws`, `psts`, `haln`.
+  A glyph goes where the character it came from goes, and a form made of two
+  characters carries the first of them — which is how the reordering reaches
+  glyphs that no longer stand one to a character.
+  The script has two names in a font: the scripts that reorder were given new
+  tags in 2005 and a font may carry either, so the new one is asked for first
+  and the old one is the fallback. And `abvm`, `blwm` and `dist` join the
+  positioning features, which is where a font says how far above a letter its
+  marks go.
+  *Proved by:* the splitting and the order, in twenty tests that spell out the
+  rule each one stands for; and, through the shaper itself, that the pieces
+  come out in the drawn order with every glyph still saying which character it
+  came from.
+  *Not done:* what needs a font this machine has not got. The build image
+  carries DejaVu and nothing else, and DejaVu has no Devanagari at all, so the
+  half forms, the conjuncts and the hook are asked for and there is nothing to
+  answer. The tests that need such a font skip themselves and run where one
+  exists — Windows has Nirmala UI — but nothing here has been *seen* drawn.
+  That is the one thing this stage cannot close, and it wants a Devanagari font
+  in the build image.
+  *Also not done:* the other nine scripts written this way — see **E13** — and
+  the two things reordering leaves behind: a syllable whose sign has nothing to
+  hang on, which Word draws round a dotted circle and this draws as it stands;
+  and where the caret lands inside a syllable whose letters are drawn out of
+  order, which is a question of clusters rather than of glyphs.
+
+- [ ] **E13. The other scripts that reorder.** Bengali, Gurmukhi, Gujarati,
+  Oriya, Tamil, Telugu, Kannada, Malayalam and Sinhala. They share the shape of
+  the rules **E1** now has — a syllable, a letter the rest hangs on, pieces
+  drawn in an order of their own — and differ in every detail of them: where
+  the hook goes (some put it at the front, some after the base, some at the
+  very end), which consonants take a form below the line, and the vowel signs
+  written in two pieces, one either side of the consonant, which have to be
+  split before the font is asked anything. Each needs its own reading of the
+  same tables, and the block of each is a hundred and twenty-eight characters
+  to be categorised by hand as Devanagari's was.
 - [ ] **E2. Thai and Lao clustering**, and the line breaking they need, which is
   by dictionary rather than by rule.
 - [ ] **E3. Hyphenation.** Breaking inside a word, with pattern data per

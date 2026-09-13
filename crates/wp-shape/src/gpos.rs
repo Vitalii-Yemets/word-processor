@@ -96,6 +96,12 @@ impl<'a> Positions<'a> {
         self.tables.lookups_for(script, feature)
     }
 
+    /// Whether the font says anything under a script at all.
+    #[must_use]
+    pub fn has_script(&self, script: &[u8; 4]) -> bool {
+        self.tables.has_script(script)
+    }
+
     /// Applies one lookup to a run, in place.
     pub fn apply(&self, index: usize, run: &mut Run<'_>, definitions: Option<&Definitions<'_>>) {
         let Some((kind, flags, subtables)) = self.tables.lookup(index) else {

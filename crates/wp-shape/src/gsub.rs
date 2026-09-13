@@ -52,6 +52,27 @@ impl<'a> Substitutions<'a> {
         self.tables.lookups_for(script, feature)
     }
 
+    /// Whether the font says anything under a script at all.
+    #[must_use]
+    pub fn has_script(&self, script: &[u8; 4]) -> bool {
+        self.tables.has_script(script)
+    }
+
+    /// Applies a lookup at the front of a run and nowhere else.
+    ///
+    /// What a rule about one place needs: the scripts that reorder ask for a
+    /// form of the first two glyphs of a syllable, or of the pair either side
+    /// of a halant, and a lookup let loose on the run would give every such
+    /// pair the same form.
+    pub fn apply_at_start(
+        &self,
+        index: usize,
+        glyphs: &mut Vec<GlyphId>,
+        clusters: &mut Vec<usize>,
+    ) -> bool {
+        self.run(index, glyphs, clusters, 0, true)
+    }
+
     /// Applies one lookup to a run of glyphs, in place.
     ///
     /// Returns whether anything changed, so a caller can tell a feature that

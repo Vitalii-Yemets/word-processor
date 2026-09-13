@@ -91,6 +91,16 @@ impl<'a> Tables<'a> {
         found
     }
 
+    /// Whether the font says anything at all under a script.
+    ///
+    /// Which matters where one script has two names: the scripts that reorder
+    /// were given new tags in 2005, and a font may carry either. Asking under
+    /// the wrong one finds nothing and draws the letters in the order they
+    /// were typed.
+    pub fn has_script(&self, script: &[u8; 4]) -> bool {
+        self.default_language(script).is_some()
+    }
+
     /// The default language system of a script, if the font has that script.
     fn default_language(&self, script: &[u8; 4]) -> Option<usize> {
         let count = usize::from(u16_at(self.data, self.scripts)?);

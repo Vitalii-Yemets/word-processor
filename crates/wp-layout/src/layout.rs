@@ -4846,14 +4846,13 @@ impl<'a> LayoutEngine<'a> {
         // Not a run drawn in capitals, though: what is drawn there is not what
         // is stored, and a ligature made of what is drawn would point at the
         // wrong characters.
-        // And so does a run with a mark in it. Where an accent goes is said by
-        // the font as a pair of points to be brought together — one on the
-        // letter, one on the mark — and neither is visible a character at a
-        // time. A mark shaped on its own is drawn at the edge of whatever came
-        // before it, which is where a reader sees it is wrong.
+        // And so does a run with a mark in it, and one in a script that is not
+        // drawn in the order it is written: where an accent goes, and which
+        // letter of a syllable comes first, are both invisible a character at
+        // a time. See [`wp_shape::needs_shaping`].
         let joined = text.chars().any(wp_shape::is_joining_script);
-        let marked = text.chars().any(wp_shape::is_mark);
-        if joined || marked || (!style.features.is_empty() && style.caps == Caps::None) {
+        let whole = wp_shape::needs_shaping(text);
+        if whole || (!style.features.is_empty() && style.caps == Caps::None) {
             if let Some(glyphs) = self.shape_joined(text, style, base_offset, joined) {
                 return glyphs;
             }
@@ -5011,10 +5010,12 @@ impl<'a> LayoutEngine<'a> {
     fn face_for_joining(&mut self, text: &str, style: &RunStyle) -> Option<usize> {
         let first = text
             .chars()
-            .find(|character| wp_shape::is_joining_script(*character))
-            // A run that is not joined but carries a mark is shaped for the
-            // sake of the mark, and what has to be drawable is the letter the
-            // mark sits on, which is the first character of it.
+            .find(|character| {
+                wp_shape::is_joining_script(*character) || wp_shape::reorders(*character)
+            })
+            // A run that is neither joined nor reordered is shaped for the
+            // sake of a mark in it, and what has to be drawable is the letter
+            // the mark sits on, which is the first character of it.
             .or_else(|| text.chars().next())?;
 
         // A face without the letters cannot have the rules for joining them.

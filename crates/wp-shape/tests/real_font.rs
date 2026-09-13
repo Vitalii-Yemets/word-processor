@@ -321,3 +321,104 @@ fn a_mark_is_drawn_over_its_letter_and_not_beside_it() {
         (letter_left, letter_right)
     );
 }
+
+/// Whatever font this machine has: for the tests below, which are about the
+/// order glyphs come out in rather than about which glyphs they are.
+fn any_font() -> Option<Vec<u8>> {
+    for path in font_files() {
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        if Font::parse(&bytes).is_ok() {
+            return Some(bytes);
+        }
+    }
+    None
+}
+
+#[test]
+fn devanagari_is_drawn_in_the_order_it_is_read() {
+    // कि is stored consonant-then-sign and drawn sign-then-consonant. Which
+    // glyphs a font has for them is beside the point here: what is being
+    // tested is that the pieces come out in the order they are drawn, and
+    // every glyph says which character it came from.
+    let Some(bytes) = any_font() else { return };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    let shaped = shape(&font, "\u{0915}\u{093F}");
+    let clusters: Vec<usize> = shaped.iter().map(|entry| entry.cluster).collect();
+    assert_eq!(clusters, vec![3, 0], "the vowel sign was left after the consonant");
+}
+
+#[test]
+fn the_hook_of_a_cluster_is_drawn_at_the_end_of_it() {
+    // र्क: the r is stored first and drawn last.
+    let Some(bytes) = any_font() else { return };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    let shaped = shape(&font, "\u{0930}\u{094D}\u{0915}");
+    let clusters: Vec<usize> = shaped.iter().map(|entry| entry.cluster).collect();
+    assert_eq!(clusters, vec![6, 0, 3], "the hook was left at the front");
+}
+
+#[test]
+fn devanagari_that_needs_no_moving_is_not_moved() {
+    let Some(bytes) = any_font() else { return };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    // का: consonant then a sign written to the right of it.
+    let shaped = shape(&font, "\u{0915}\u{093E}");
+    let clusters: Vec<usize> = shaped.iter().map(|entry| entry.cluster).collect();
+    assert_eq!(clusters, vec![0, 3]);
+}
+
+/// The first font on this machine that can both draw Devanagari and shape it.
+fn devanagari_font() -> Option<(Vec<u8>, String)> {
+    for path in font_files() {
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        let Ok(font) = Font::parse(&bytes) else { continue };
+        if font.glyph_for('\u{0915}').is_none() {
+            continue;
+        }
+        let known = font
+            .substitution_table()
+            .and_then(Substitutions::parse)
+            .is_some_and(|table| wp_shape::indic::TAGS.iter().any(|tag| table.has_script(tag)));
+        if !known {
+            continue;
+        }
+        let name = font.full_name().unwrap_or_else(|| path.display().to_string());
+        drop(font);
+        return Some((bytes, name));
+    }
+    None
+}
+
+#[test]
+fn a_font_with_devanagari_rules_draws_a_cluster_as_fewer_glyphs_than_it_has_letters() {
+    // क्क is two consonants joined by a halant, and a font that knows the
+    // script draws it as one conjunct or as a half form and a letter — in
+    // either case as fewer glyphs than the three characters written.
+    let Some((bytes, name)) = devanagari_font() else {
+        eprintln!("no font with Devanagari rules on this machine; skipping");
+        return;
+    };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    let shaped = shape(&font, "\u{0915}\u{094D}\u{0915}");
+    assert!(
+        shaped.len() < 3,
+        "{name} drew a joined cluster as {} glyphs, one for each character",
+        shaped.len()
+    );
+}
+
+#[test]
+fn a_font_with_devanagari_rules_makes_the_hook_one_glyph() {
+    let Some((bytes, name)) = devanagari_font() else { return };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    // र्क: the r and the halant become the hook, so three characters come out
+    // as two glyphs, and the hook is drawn after the consonant.
+    let shaped = shape(&font, "\u{0930}\u{094D}\u{0915}");
+    assert_eq!(shaped.len(), 2, "{name} did not make the hook one glyph");
+    assert_eq!(shaped[0].cluster, 6, "{name} drew the hook first");
+}
