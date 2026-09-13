@@ -1165,6 +1165,10 @@ pub(crate) struct RunStyle {
     /// Whether the letters are drawn as capitals, and whether the ones that
     /// were already small are drawn smaller. See [`Caps`].
     caps: Caps,
+    /// Which language's rules the capitals of this run follow. The capital of
+    /// a Turkish i is not the capital of an English one. See
+    /// [`wp_docx::casing`].
+    casing: wp_docx::casing::Tailoring,
     /// How wide the letters are drawn, as a fraction of their own width.
     /// One for text at its natural width, which is nearly all of it.
     stretch: f32,
@@ -1206,13 +1210,13 @@ pub(crate) struct RunStyle {
 fn drawn_as(character: char, style: &RunStyle) -> SmallCaps {
     match style.caps {
         Caps::None => SmallCaps::One(character, style.size),
-        Caps::All => SmallCaps::of(character, style.size),
+        Caps::All => SmallCaps::of(character, style.size, style.casing),
         Caps::Small => {
             // A letter that was already a capital — or is not a letter at all —
             // stays the size it was. Only what was small is drawn small.
             let size =
                 if character.is_lowercase() { style.size * SMALL_CAPS_RATIO } else { style.size };
-            SmallCaps::of(character, size)
+            SmallCaps::of(character, size, style.casing)
         }
     }
 }
@@ -1221,22 +1225,20 @@ fn drawn_as(character: char, style: &RunStyle) -> SmallCaps {
 /// overwhelmingly common case of exactly one.
 enum SmallCaps {
     One(char, f32),
-    /// A capital that runs to several characters, walked through the iterator
-    /// the standard library gives for it.
-    Several(core::char::ToUppercase, f32),
+    /// A capital that runs to several characters — ß is SS — or to none at
+    /// all, which is what happens to an accent a language drops in capitals.
+    Several(std::vec::IntoIter<char>, f32),
     Done,
 }
 
 impl SmallCaps {
-    /// The uppercase of a character at a given size, as one or several.
-    fn of(character: char, size: f32) -> Self {
-        let mut upper = character.to_uppercase();
-        // The first is peeled off so that the usual answer — one character —
-        // never touches the iterator again.
-        match (upper.next(), upper.len()) {
-            (Some(only), 0) => Self::One(only, size),
-            (Some(_), _) => Self::Several(character.to_uppercase(), size),
-            (None, _) => Self::One(character, size),
+    /// The capitals of a character at a given size, in the language it is
+    /// written in.
+    fn of(character: char, size: f32, casing: wp_docx::casing::Tailoring) -> Self {
+        let mut capitals = wp_docx::casing::upper_char(character, casing);
+        match capitals.len() {
+            1 => Self::One(capitals.remove(0), size),
+            _ => Self::Several(capitals.into_iter(), size),
         }
     }
 }
@@ -1251,9 +1253,9 @@ impl Iterator for SmallCaps {
                 *self = Self::Done;
                 Some(answer)
             }
-            Self::Several(upper, size) => {
+            Self::Several(capitals, size) => {
                 let size = *size;
-                upper.next().map(|character| (character, size))
+                capitals.next().map(|character| (character, size))
             }
             Self::Done => None,
         }
@@ -1273,6 +1275,7 @@ impl RunStyle {
             face,
             size,
             color,
+            casing: wp_docx::casing::Tailoring::Default,
             highlight: None,
             effect: None,
             underline: false,
@@ -4705,6 +4708,11 @@ impl<'a> LayoutEngine<'a> {
             strike: properties.strike,
             double_strike: properties.double_strike,
             right_to_left: properties.right_to_left,
+            // Which language's rules its capitals follow, taken from the same
+            // tag the proofing tools read.
+            casing: wp_docx::casing::Tailoring::of(
+                properties.language.as_deref().unwrap_or_default(),
+            ),
             caps: if properties.small_caps {
                 Caps::Small
             } else if properties.caps {

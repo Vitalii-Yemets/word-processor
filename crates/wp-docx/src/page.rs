@@ -283,12 +283,17 @@ impl Document {
     }
 
     /// Changes the case of the selection, the way Word's `Aa` button does.
+    ///
+    /// In the language the selection is written in: the capital of a Turkish i
+    /// is not the capital of an English one, and Word asks the same question
+    /// of `w:lang` before it answers. See [`crate::casing`].
     pub fn change_case(&mut self, wanted: CaseChange) -> bool {
         let text = self.selected_text();
         if text.is_empty() {
             return false;
         }
-        let changed = wanted.applied_to(&text);
+        let tailoring = crate::casing::Tailoring::of(&self.language_here());
+        let changed = wanted.applied_to(&text, tailoring);
         if changed == text {
             return false;
         }
@@ -365,40 +370,56 @@ impl CaseChange {
 
     /// The text with this case applied.
     #[must_use]
-    pub fn applied_to(self, text: &str) -> String {
+    pub fn applied_to(self, text: &str, tailoring: crate::casing::Tailoring) -> String {
+        use crate::casing::{lower, upper};
+
         match self {
-            Self::Lower => text.to_lowercase(),
-            Self::Upper => text.to_uppercase(),
+            Self::Lower => lower(text, tailoring),
+            Self::Upper => upper(text, tailoring),
             // Whichever case each letter is in, the other one. A character with
             // no case of its own is left alone.
             Self::Toggle => text
                 .chars()
                 .flat_map(|character| {
+                    let mut one = [0u8; 4];
+                    let one = character.encode_utf8(&mut one);
                     if character.is_uppercase() {
-                        character.to_lowercase().collect::<Vec<_>>()
+                        lower(one, tailoring).chars().collect::<Vec<_>>()
                     } else {
-                        character.to_uppercase().collect::<Vec<_>>()
+                        upper(one, tailoring).chars().collect::<Vec<_>>()
                     }
                 })
                 .collect(),
-            Self::Sentence => cased(text, |character| matches!(character, '.' | '!' | '?')),
+            Self::Sentence => {
+                cased(text, tailoring, |character| matches!(character, '.' | '!' | '?'))
+            }
             Self::Capitalize => {
-                cased(text, |character| character.is_whitespace() || character == '-')
+                cased(text, tailoring, |character| character.is_whitespace() || character == '-')
             }
         }
     }
 }
 
 /// Lower-cases everything and puts a capital after each break.
-fn cased(text: &str, is_break: impl Fn(char) -> bool) -> String {
+///
+/// Each letter is put through the language's own rules rather than the
+/// standard's: capitalising a Turkish word has to give the dotted capital, the
+/// same as making the whole of it capitals would.
+fn cased(
+    text: &str,
+    tailoring: crate::casing::Tailoring,
+    is_break: impl Fn(char) -> bool,
+) -> String {
     let mut out = String::with_capacity(text.len());
     let mut starting = true;
     for character in text.chars() {
+        let mut one = [0u8; 4];
+        let one = character.encode_utf8(&mut one);
         if starting && character.is_alphabetic() {
-            out.extend(character.to_uppercase());
+            out.push_str(&crate::casing::upper(one, tailoring));
             starting = false;
         } else {
-            out.extend(character.to_lowercase());
+            out.push_str(&crate::casing::lower(one, tailoring));
         }
         if is_break(character) {
             starting = true;
@@ -413,32 +434,52 @@ mod tests {
 
     #[test]
     fn upper_and_lower_are_what_they_say() {
-        assert_eq!(CaseChange::Upper.applied_to("one Two"), "ONE TWO");
-        assert_eq!(CaseChange::Lower.applied_to("One TWO"), "one two");
+        assert_eq!(
+            CaseChange::Upper.applied_to("one Two", crate::casing::Tailoring::Default),
+            "ONE TWO"
+        );
+        assert_eq!(
+            CaseChange::Lower.applied_to("One TWO", crate::casing::Tailoring::Default),
+            "one two"
+        );
     }
 
     #[test]
     fn sentence_case_capitalizes_after_a_full_stop() {
         assert_eq!(
-            CaseChange::Sentence.applied_to("one two. THREE four! five"),
+            CaseChange::Sentence
+                .applied_to("one two. THREE four! five", crate::casing::Tailoring::Default),
             "One two. Three four! Five"
         );
     }
 
     #[test]
     fn capitalize_each_word_does_exactly_that() {
-        assert_eq!(CaseChange::Capitalize.applied_to("the quick-brown fox"), "The Quick-Brown Fox");
+        assert_eq!(
+            CaseChange::Capitalize
+                .applied_to("the quick-brown fox", crate::casing::Tailoring::Default),
+            "The Quick-Brown Fox"
+        );
     }
 
     #[test]
     fn toggle_case_swaps_every_letter() {
-        assert_eq!(CaseChange::Toggle.applied_to("Hello World"), "hELLO wORLD");
+        assert_eq!(
+            CaseChange::Toggle.applied_to("Hello World", crate::casing::Tailoring::Default),
+            "hELLO wORLD"
+        );
     }
 
     #[test]
     fn a_character_with_no_case_is_left_alone() {
-        assert_eq!(CaseChange::Toggle.applied_to("a1б!"), "A1Б!");
-        assert_eq!(CaseChange::Upper.applied_to("привет"), "ПРИВЕТ");
+        assert_eq!(
+            CaseChange::Toggle.applied_to("a1б!", crate::casing::Tailoring::Default),
+            "A1Б!"
+        );
+        assert_eq!(
+            CaseChange::Upper.applied_to("привет", crate::casing::Tailoring::Default),
+            "ПРИВЕТ"
+        );
     }
 
     #[test]

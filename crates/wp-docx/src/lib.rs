@@ -41,6 +41,7 @@ pub mod authorities;
 pub mod bibliography;
 pub mod bookmarks;
 pub mod captions;
+pub mod casing;
 pub mod cells;
 pub mod chart;
 pub mod clipboard;

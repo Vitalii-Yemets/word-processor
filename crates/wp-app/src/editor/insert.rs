@@ -1220,6 +1220,38 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // The same letters put into capitals, in three languages that
+            // disagree about what a capital is.
+            "casing" => {
+                use wp_docx::page::CaseChange;
+
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                for (language, word) in [
+                    ("tr-TR", "istanbul"),
+                    ("en-GB", "istanbul"),
+                    ("el-GR", "\u{03AC}\u{03BD}\u{03B8}\u{03C1}\u{03C9}\u{03C0}\u{03BF}\u{03C2}"),
+                    ("de-DE", "stra\u{00DF}e"),
+                ] {
+                    let start = self.document.caret();
+                    self.document.type_text(word);
+                    let end = self.document.caret();
+                    self.document.set_caret(start);
+                    self.document.extend_selection_to(end);
+                    self.document.set_language(language);
+                    // Word's Aa button: the text itself is rewritten.
+                    self.document.change_case(CaseChange::Upper);
+                    self.document.clear_selection();
+                    self.document.type_text(&format!("  {word} ({language})"));
+                    self.document.press_enter();
+                }
+
+                let end = self.document.caret();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.extend_selection_to(end);
+                self.document.set_size(20.0);
+                self.document.clear_selection();
+                self.relayout();
+            }
             // A word with its reading set over it, every way the file can ask
             // for the two to be lined up.
             "ruby" => {

@@ -2860,9 +2860,40 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   corner of the square.
   Worth doing after the engine's own axes are a thing it can be asked about
   rather than a thing it assumes.
-- [ ] **E5. Case mapping with language tailoring.** Turkish `i` and `İ`, German
-  `ß`, Greek final sigma, and Word's Change Case following the paragraph's
-  language.
+- [x] **E5. Case mapping with language tailoring.** The capital of a letter is
+  not the same everywhere, so both places this program makes one — Word's
+  Change Case, which rewrites the text, and `w:caps`, which only draws it —
+  ask the document what language the letters are in first.
+  *Done when:* the same eight letters give İSTANBUL in a Turkish run and
+  ISTANBUL in an English one, from the same button.
+  Four rules, and each is about the writing rather than about the letters.
+  In Turkish and Azerbaijani the dotted and the dotless i are two letters, not
+  two shapes of one: the capital of `i` is `İ` and the small letter of `I` is
+  `ı`, and a Turkish word put into capitals the English way says a different
+  word. Greek drops its accents in capitals — άνθρωπος is ΑΝΘΡΩΠΟΣ — and keeps
+  the dialytika, which is not an accent but a mark saying two vowels are read
+  apart. Lithuanian keeps the dot on an i under an accent where every other
+  language drops it, so the dot is written back in as a mark of its own.
+  And two rules belong to no language: ß becomes SS, one letter becoming two,
+  and a sigma at the end of a word is written ς. Both of those the standard
+  library already knows and both are left to it — the point of naming them here
+  is that they must keep working under the three tailorings above, which is
+  what the tests hold them to.
+  The two halves have to agree. Change Case rewrites what the document says;
+  `w:caps` leaves the text alone and draws capitals over it. A Turkish word
+  drawn one way and written the other looks right until somebody turns the
+  capitals off — so the drawing goes through the same rules, one letter at a
+  time, and a test holds the letter-at-a-time answer to the word-at-a-time one.
+  All five of Word's buttons ask: not only UPPERCASE and lowercase but
+  Capitalize Each Word, Sentence case and tOGGLE cASE, each of which makes a
+  capital or a small letter somewhere.
+  *Not done:* the same question asked by everything else that folds case. A
+  case-insensitive search folds with the standard's rules and not the
+  document's, so searching a Turkish document for "istanbul" will not find
+  "ISTANBUL" — the fold wants the same tailoring, and where it should come from
+  for text that spans runs in two languages is the part worth thinking about
+  rather than the arithmetic. And the rest of Lithuanian, whose full rules run
+  to a dozen cases of which the two common ones are here.
 - [ ] **E6. Word segmentation for Chinese and Japanese.** A dictionary, because
   there is no rule: it is what a double click selects and what the word count
   counts.
