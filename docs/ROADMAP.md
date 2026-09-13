@@ -2608,30 +2608,57 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   is checked against whatever font the machine really has.
   *Not done:* where the mark then lands. See **E12**.
 
-- [ ] **E12. The positioning table.** `GPOS`, which is not read at all: the
-  font's table is found and passed over, and the only kerning read is the old
-  `kern` table that modern fonts no longer write. So a font whose kerning is in
-  `GPOS` — which is most of them — is set unkerned, and a combining mark is
-  drawn where its own width puts it rather than where the font says it belongs:
-  the proof scene for **E11** shows the dot of an `i` landing beside the letter
-  instead of over it.
-  What it needs: single and pair positioning, with the class-based pairs that
-  carry most of a font's kerning; cursive attachment, which is what makes
-  Arabic join at the right height; mark-to-base, mark-to-ligature and
-  mark-to-mark attachment, which is where a combining mark belongs; and the
-  same contextual and chaining rules as **E11**, which `GPOS` has its own
-  copies of. It also needs `GDEF`, because the lookup flags that say "pass over
-  the marks" cannot be obeyed without knowing which glyphs are marks — and the
-  shaper ignores those flags today, for every script.
-  And the layout has to carry it: a glyph placed by `GPOS` has an offset of its
-  own from where the advances would have put it, which nothing in the line
-  keeps yet.
+- [x] **E12. The positioning table.** `GPOS` and `GDEF`, which were not read at
+  all: the tables were found and passed over, and the only kerning read was the
+  old `kern` table that fonts written this century no longer carry.
+  *Done when:* a pair the font kerns is set closer than its widths, and an
+  accent is drawn over its letter rather than beside it.
+  Two things came out of it and neither is decoration. The first is kerning:
+  DejaVu keeps it in a class-based pair lookup and its old table says nothing,
+  so every document drawn here was set at the plain widths however much trouble
+  the designer took. The second is where a mark goes. A combining accent is
+  drawn without moving the pen, so left alone it lands at the right-hand edge
+  of the letter before it — which is exactly what the proof for **E11** showed.
+  Where it belongs is written as two points, one on the letter and one on the
+  mark, to be brought together.
+  What is read: single and pair adjustment, by glyph and by class; mark onto a
+  letter, mark onto a piece of a ligature, and mark onto another mark; and the
+  extension lookups the rest is hidden behind in any large font. `GDEF` comes
+  with it, because none of the mark rules can be followed without knowing which
+  glyphs are marks: a mark's letter is the nearest thing before it that is not
+  itself a mark, and the lookup flags that say "pass over the marks" — which is
+  what lets a font kern the letters either side of an accent — cannot be obeyed
+  without the same answer.
+  The arithmetic that matters is the travel. A mark is drawn where the pen has
+  already reached, so what its offset has to do is take that travel back and
+  then put the mark's own point on the letter's — counting the kerning, which
+  is why the kerning is applied first and the marks after it.
+  The walk through a script, a feature and a lookup is the same in both tables,
+  so it is written once now and both use it: two copies would be two things to
+  keep in step, and the day they drifted one table would be read with the
+  other's arithmetic.
+  The layout carries it: a glyph has an offset from where the advances put it,
+  the line places it there, and a PDF written from that page keeps it — the
+  writer already begins a new run wherever a glyph goes backwards or sits off
+  the baseline, which is exactly what a mark does.
+  A run with a mark in it is now shaped whole rather than a character at a
+  time. Where an accent goes cannot be seen one character at a time: the letter
+  and the mark have to be in front of the shaper together.
+  *Not done:* cursive attachment, which is what joins Arabic at the right
+  height; the contextual and chaining kinds, which `GPOS` has its own copies of
+  and which nothing here reads yet; the tables of per-size corrections, which
+  are for screens of a stated number of dots to the inch; and the mark
+  filtering sets, which are the other half of the flag that keeps one group of
+  marks. Named here rather than given an item of their own: each is a lookup
+  kind on the same walk, and the next script work — **E1** — needs none of
+  them.
 
 - [ ] **E1. Indic reordering.** Devanagari, Bengali, Tamil, Telugu and the rest:
   a syllable is reordered before it is drawn, and the rules differ per script.
-  Rests on **E11**, which is done, and on **E12**, which is not: the reordering
-  and the features can be right and the marks will still land by their own
-  widths until the positioning table is read.
+  Rests on **E11** and **E12**, which are both done now: the rules that say
+  when a substitution applies, and the table that says where the marks go. What
+  is left is the reordering itself, which is neither of those — it is what the
+  text says rearranged before the font is asked anything.
 - [ ] **E2. Thai and Lao clustering**, and the line breaking they need, which is
   by dictionary rather than by rule.
 - [ ] **E3. Hyphenation.** Breaking inside a word, with pattern data per

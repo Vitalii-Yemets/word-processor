@@ -1300,6 +1300,11 @@ struct ShapedGlyph {
     face: usize,
     glyph: GlyphId,
     advance: f32,
+    /// Where it is drawn from where the pen stands, which is nothing for
+    /// nearly every glyph and is the whole of where a mark goes. Right and up
+    /// are positive, as the font says them. See [`wp_shape::Placement`].
+    x_offset: f32,
+    y_offset: f32,
     /// Byte offset of the character it draws, within the paragraph text.
     offset: usize,
     /// Byte length of that character.
@@ -4841,8 +4846,14 @@ impl<'a> LayoutEngine<'a> {
         // Not a run drawn in capitals, though: what is drawn there is not what
         // is stored, and a ligature made of what is drawn would point at the
         // wrong characters.
+        // And so does a run with a mark in it. Where an accent goes is said by
+        // the font as a pair of points to be brought together — one on the
+        // letter, one on the mark — and neither is visible a character at a
+        // time. A mark shaped on its own is drawn at the edge of whatever came
+        // before it, which is where a reader sees it is wrong.
         let joined = text.chars().any(wp_shape::is_joining_script);
-        if joined || (!style.features.is_empty() && style.caps == Caps::None) {
+        let marked = text.chars().any(wp_shape::is_mark);
+        if joined || marked || (!style.features.is_empty() && style.caps == Caps::None) {
             if let Some(glyphs) = self.shape_joined(text, style, base_offset, joined) {
                 return glyphs;
             }
@@ -4866,7 +4877,16 @@ impl<'a> LayoutEngine<'a> {
                         let units = f32::from(font.units_per_em());
                         let mut advance = f32::from(font.advance(glyph)) * size / units;
                         if let Some(previous) = previous.filter(|_| style.kern) {
-                            advance += f32::from(font.kerning(previous, glyph)) * size / units;
+                            // The positioning table first and the old one only
+                            // if it says nothing: a font that carries both
+                            // means the same thing twice.
+                            let by = wp_shape::kerning_between(
+                                font,
+                                &wp_shape::script_of(text),
+                                previous,
+                                glyph,
+                            );
+                            advance += by as f32 * size / units;
                         }
                         chosen = Some((style.face, glyph, advance));
                     }
@@ -4890,6 +4910,8 @@ impl<'a> LayoutEngine<'a> {
                         glyphs.push(ShapedGlyph {
                             face,
                             glyph,
+                            x_offset: 0.0,
+                            y_offset: 0.0,
                             // Letters drawn wider take up more room, and the
                             // room asked for between them is the same width
                             // wherever it is measured. Hidden text takes up
@@ -4955,7 +4977,10 @@ impl<'a> LayoutEngine<'a> {
                 // will do better than an empty box.
                 return None;
             }
-            let advance = f32::from(font.advance(entry.glyph)) * style.size / units;
+            // The glyph's own width, and whatever the font's positioning rules
+            // added to it: kerning arrives here.
+            let scale = style.size / units;
+            let advance = (f32::from(font.advance(entry.glyph)) + entry.x_advance as f32) * scale;
             // A glyph reaches to wherever the next one starts, so a ligature
             // covers every character that went into it.
             let length = shaped
@@ -4967,6 +4992,8 @@ impl<'a> LayoutEngine<'a> {
                 face,
                 glyph: entry.glyph,
                 advance: advance * style.stretch + style.letter_spacing,
+                x_offset: entry.x_offset as f32 * scale * style.stretch,
+                y_offset: entry.y_offset as f32 * scale,
                 offset: base_offset + entry.cluster,
                 character: text[entry.cluster..].chars().next().unwrap_or('\u{FFFD}'),
                 length: length.max(1),
@@ -4982,7 +5009,13 @@ impl<'a> LayoutEngine<'a> {
 
     /// A face that can both draw a joined script and shape it.
     fn face_for_joining(&mut self, text: &str, style: &RunStyle) -> Option<usize> {
-        let first = text.chars().find(|character| wp_shape::is_joining_script(*character))?;
+        let first = text
+            .chars()
+            .find(|character| wp_shape::is_joining_script(*character))
+            // A run that is not joined but carries a mark is shaped for the
+            // sake of the mark, and what has to be drawable is the letter the
+            // mark sits on, which is the first character of it.
+            .or_else(|| text.chars().next())?;
 
         // A face without the letters cannot have the rules for joining them.
         let usable = self.font(style.face).is_some_and(|font| {
@@ -5363,8 +5396,11 @@ impl LayoutEngine<'_> {
                 page.glyphs.push(PositionedGlyph {
                     face: glyph.face,
                     glyph: glyph.glyph,
-                    x,
-                    baseline: glyph_baseline,
+                    // Where the pen stands, moved by what the font said about
+                    // this glyph: down the page is positive here and up is
+                    // positive in a font, so the one is taken from the other.
+                    x: x + glyph.x_offset,
+                    baseline: glyph_baseline - glyph.y_offset,
                     advance: glyph.advance,
                     // The glyph's own size rather than the run's: a small
                     // capital is drawn smaller than the capitals beside it.

@@ -26,15 +26,21 @@
 
 #![forbid(unsafe_code)]
 
+mod common;
+pub mod gdef;
+pub mod gpos;
 pub mod gsub;
 pub mod joining;
 
 use wp_font::{Font, GlyphId};
 
+pub use gdef::{Definitions, Kind};
+pub use gpos::{Placement, Positions};
 pub use gsub::Substitutions;
-pub use joining::{forms, is_joining_script, joining_of, Form, Joining};
+pub use joining::{forms, is_joining_script, is_mark, joining_of, Form, Joining};
 
-/// One glyph, and which character of the original text it came from.
+/// One glyph, which character of the original text it came from, and where it
+/// goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Shaped {
     pub glyph: GlyphId,
@@ -45,6 +51,17 @@ pub struct Shaped {
     /// caret has to land between characters either way, so what is carried is
     /// where the glyph came from rather than a count of anything.
     pub cluster: usize,
+    /// Where it is drawn from where the advances would have put it, in font
+    /// units: right and up are positive.
+    ///
+    /// Nothing for nearly every glyph. An accent is the case it exists for: it
+    /// is drawn without moving the pen, so left alone it lands at the edge of
+    /// the letter before it instead of on it.
+    pub x_offset: i32,
+    pub y_offset: i32,
+    /// What to add to the glyph's own width before the pen moves on, in font
+    /// units. This is where kerning arrives.
+    pub x_advance: i32,
 }
 
 /// Which script a run of text is in, as an OpenType tag.
@@ -76,8 +93,10 @@ pub fn script_of(text: &str) -> [u8; 4] {
 #[must_use]
 pub fn shape(font: &Font<'_>, text: &str) -> Vec<Shaped> {
     // What a script written joined needs, applied whether or not anybody asked:
-    // in Arabic these are not an embellishment, they are the writing.
-    shape_with(font, text, &[*b"calt", *b"liga"])
+    // in Arabic these are not an embellishment, they are the writing. And the
+    // kerning, which a font of a joined script uses to set the letters at the
+    // distances its designer meant.
+    shape_with(font, text, &[*b"calt", *b"liga", *b"kern"])
 }
 
 /// The same, asking the font for exactly the features named.
@@ -102,7 +121,11 @@ pub fn shape_with(font: &Font<'_>, text: &str, features: &[[u8; 4]]) -> Vec<Shap
     }
 
     let Some(table) = font.substitution_table().and_then(Substitutions::parse) else {
-        return zip(glyphs, clusters);
+        // No rules for which glyph; there may still be rules for where it
+        // goes, and a mark in the wrong place is as wrong either way.
+        let mut out = zip(glyphs, clusters);
+        position(font, &script_of(text), &mut out, features.contains(b"kern"));
+        return out;
     };
     let script = script_of(text);
 
@@ -133,7 +156,91 @@ pub fn shape_with(font: &Font<'_>, text: &str, features: &[[u8; 4]]) -> Vec<Shap
         }
     }
 
-    zip(glyphs, clusters)
+    let mut out = zip(glyphs, clusters);
+    // And then where each of them goes, which is the other table.
+    position(font, &script, &mut out, features.contains(b"kern"));
+    out
+}
+
+/// Works out where each glyph goes, once it is known which glyphs they are.
+///
+/// Two things come out of this and neither is decoration: the kerning, which
+/// every font written this century keeps in the positioning table rather than
+/// in the old one; and where a mark belongs, which is the difference between
+/// an accent on a letter and an accent beside it.
+fn position(font: &Font<'_>, script: &[u8; 4], shaped: &mut [Shaped], kern: bool) {
+    let glyphs: Vec<GlyphId> = shaped.iter().map(|entry| entry.glyph).collect();
+    let advances: Vec<i32> = glyphs.iter().map(|glyph| i32::from(font.advance(*glyph))).collect();
+
+    let table = font.positioning_table().and_then(gpos::Positions::parse);
+    let mut kerned = false;
+
+    if let Some(table) = table {
+        let definitions = font.definitions_table().and_then(gdef::Definitions::parse);
+        let mut placements = vec![gpos::Placement::default(); glyphs.len()];
+        let mut run =
+            gpos::Run { glyphs: &glyphs, advances: &advances, placements: &mut placements };
+
+        // The kerning first, because where a mark goes is worked out from how
+        // far the pen has travelled and the kerning is part of that travel.
+        // Then the marks onto their letters, then the marks onto each other,
+        // which is the order the format lists them in and the order they
+        // depend on each other in.
+        for feature in [b"kern", b"mark", b"mkmk"] {
+            if feature == b"kern" && !kern {
+                continue;
+            }
+            let lookups = table.lookups_for(script, feature);
+            if feature == b"kern" && !lookups.is_empty() {
+                kerned = true;
+            }
+            for lookup in lookups {
+                table.apply(lookup, &mut run, definitions.as_ref());
+            }
+        }
+
+        for (entry, placement) in shaped.iter_mut().zip(placements) {
+            entry.x_offset = placement.x_offset;
+            entry.y_offset = placement.y_offset;
+            entry.x_advance = placement.x_advance;
+        }
+    }
+
+    // A font that says nothing about kerning in the new table may still say it
+    // in the old one, which is where every font said it before 1997 and where
+    // a good many still do.
+    if kern && !kerned {
+        for index in 1..shaped.len() {
+            let by = font.kerning(glyphs[index - 1], glyphs[index]);
+            shaped[index - 1].x_advance += i32::from(by);
+        }
+    }
+}
+
+/// What the font would put between two glyphs, for a caller that shapes one
+/// character at a time.
+///
+/// The positioning table first and the old one only if it says nothing: a font
+/// that carries both means the same thing twice, and counting both would kern
+/// twice as hard as the designer asked.
+#[must_use]
+pub fn kerning_between(font: &Font<'_>, script: &[u8; 4], left: GlyphId, right: GlyphId) -> i32 {
+    if let Some(table) = font.positioning_table().and_then(gpos::Positions::parse) {
+        let lookups = table.lookups_for(script, b"kern");
+        if !lookups.is_empty() {
+            let glyphs = [left, right];
+            let advances = [i32::from(font.advance(left)), i32::from(font.advance(right))];
+            let mut placements = [gpos::Placement::default(); 2];
+            let definitions = font.definitions_table().and_then(gdef::Definitions::parse);
+            let mut run =
+                gpos::Run { glyphs: &glyphs, advances: &advances, placements: &mut placements };
+            for lookup in lookups {
+                table.apply(lookup, &mut run, definitions.as_ref());
+            }
+            return placements[0].x_advance;
+        }
+    }
+    i32::from(font.kerning(left, right))
 }
 
 /// Applies a feature to one glyph, leaving the rest of the run alone.
@@ -167,7 +274,11 @@ fn apply_to_one(
 }
 
 fn zip(glyphs: Vec<GlyphId>, clusters: Vec<usize>) -> Vec<Shaped> {
-    glyphs.into_iter().zip(clusters).map(|(glyph, cluster)| Shaped { glyph, cluster }).collect()
+    glyphs
+        .into_iter()
+        .zip(clusters)
+        .map(|(glyph, cluster)| Shaped { glyph, cluster, x_offset: 0, y_offset: 0, x_advance: 0 })
+        .collect()
 }
 
 #[cfg(test)]

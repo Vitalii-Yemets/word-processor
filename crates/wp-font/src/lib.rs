@@ -200,6 +200,7 @@ pub struct Font<'a> {
     /// Glyph substitution and positioning, which shaping needs.
     gsub: Option<TableRange>,
     gpos: Option<TableRange>,
+    gdef: Option<TableRange>,
     name: Option<TableRange>,
     os2: Option<TableRange>,
     character_map: CharacterMap,
@@ -270,6 +271,7 @@ impl<'a> Font<'a> {
         let mut kern = None;
         let mut gsub = None;
         let mut gpos = None;
+        let mut gdef = None;
         let mut name = None;
         let mut os2 = None;
 
@@ -297,6 +299,7 @@ impl<'a> Font<'a> {
                 b"kern" => kern = Some(range),
                 b"GSUB" => gsub = Some(range),
                 b"GPOS" => gpos = Some(range),
+                b"GDEF" => gdef = Some(range),
                 b"name" => name = Some(range),
                 b"OS/2" => os2 = Some(range),
                 _ => {}
@@ -346,6 +349,7 @@ impl<'a> Font<'a> {
             kern,
             gsub,
             gpos,
+            gdef,
             name,
             os2,
             character_map,
@@ -577,6 +581,17 @@ impl<'a> Font<'a> {
     #[must_use]
     pub fn positioning_table(&self) -> Option<&'a [u8]> {
         self.raw_table(self.gpos)
+    }
+
+    /// What the font says about its own glyphs, if it says anything.
+    ///
+    /// Which of them are letters and which are marks that sit on letters. The
+    /// positioning rules cannot be followed without it: where an accent
+    /// belongs is decided by finding the letter before it, and finding that
+    /// means knowing what is a letter.
+    #[must_use]
+    pub fn definitions_table(&self) -> Option<&'a [u8]> {
+        self.raw_table(self.gdef)
     }
 
     fn raw_table(&self, range: Option<TableRange>) -> Option<&'a [u8]> {

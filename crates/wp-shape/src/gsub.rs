@@ -31,119 +31,25 @@
 
 use wp_font::GlyphId;
 
+use crate::common::{u16_at, u32_at, Tables};
+
 /// A parsed substitution table, ready to be asked for features.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Substitutions<'a> {
-    data: &'a [u8],
-    scripts: usize,
-    features: usize,
-    lookups: usize,
-}
-
-fn u16_at(data: &[u8], at: usize) -> Option<u16> {
-    let bytes = data.get(at..at + 2)?;
-    Some(u16::from_be_bytes([bytes[0], bytes[1]]))
-}
-
-fn u32_at(data: &[u8], at: usize) -> Option<u32> {
-    let bytes = data.get(at..at + 4)?;
-    Some(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-}
-
-fn tag_at(data: &[u8], at: usize) -> Option<[u8; 4]> {
-    let bytes = data.get(at..at + 4)?;
-    Some([bytes[0], bytes[1], bytes[2], bytes[3]])
+    tables: Tables<'a>,
 }
 
 impl<'a> Substitutions<'a> {
     /// Reads the header of a `GSUB` table.
     #[must_use]
     pub fn parse(data: &'a [u8]) -> Option<Self> {
-        // Major version one; the minor version only adds an optional list this
-        // does not use.
-        if u16_at(data, 0)? != 1 {
-            return None;
-        }
-        Some(Self {
-            scripts: usize::from(u16_at(data, 4)?),
-            features: usize::from(u16_at(data, 6)?),
-            lookups: usize::from(u16_at(data, 8)?),
-            data,
-        })
+        Tables::parse(data).map(|tables| Self { tables })
     }
 
     /// The lookups a feature uses, for a given script.
-    ///
-    /// The default language system is used: a font that distinguishes Urdu from
-    /// Arabic offers both, and picking the default gives the letters everyone
-    /// agrees on rather than nothing.
     #[must_use]
     pub fn lookups_for(&self, script: &[u8; 4], feature: &[u8; 4]) -> Vec<usize> {
-        let Some(language) = self.default_language(script) else {
-            return Vec::new();
-        };
-
-        let count = usize::from(u16_at(self.data, language + 4).unwrap_or(0));
-        let mut found = Vec::new();
-
-        for index in 0..count {
-            let Some(feature_index) = u16_at(self.data, language + 6 + index * 2) else {
-                break;
-            };
-            let entry = self.features + 2 + usize::from(feature_index) * 6;
-            if tag_at(self.data, entry) != Some(*feature) {
-                continue;
-            }
-
-            let Some(offset) = u16_at(self.data, entry + 4) else { continue };
-            let table = self.features + usize::from(offset);
-            let lookup_count = usize::from(u16_at(self.data, table + 2).unwrap_or(0));
-            for lookup in 0..lookup_count {
-                if let Some(index) = u16_at(self.data, table + 4 + lookup * 2) {
-                    found.push(usize::from(index));
-                }
-            }
-        }
-
-        found
-    }
-
-    /// The default language system of a script, if the font has that script.
-    fn default_language(&self, script: &[u8; 4]) -> Option<usize> {
-        let count = usize::from(u16_at(self.data, self.scripts)?);
-        for index in 0..count {
-            let entry = self.scripts + 2 + index * 6;
-            if tag_at(self.data, entry)? != *script {
-                continue;
-            }
-            let table = self.scripts + usize::from(u16_at(self.data, entry + 4)?);
-            let default = u16_at(self.data, table)?;
-            if default == 0 {
-                return None;
-            }
-            return Some(table + usize::from(default));
-        }
-        None
-    }
-
-    /// Where a lookup's table begins, and what type it is.
-    fn lookup(&self, index: usize) -> Option<(u16, Vec<usize>)> {
-        let count = usize::from(u16_at(self.data, self.lookups)?);
-        if index >= count {
-            return None;
-        }
-        let table = self.lookups + usize::from(u16_at(self.data, self.lookups + 2 + index * 2)?);
-        let kind = u16_at(self.data, table)?;
-
-        let subtable_count = usize::from(u16_at(self.data, table + 4)?);
-        let mut subtables = Vec::with_capacity(subtable_count);
-        for at in 0..subtable_count {
-            if let Some(offset) = u16_at(self.data, table + 6 + at * 2) {
-                subtables.push(table + usize::from(offset));
-            }
-        }
-
-        Some((kind, subtables))
+        self.tables.lookups_for(script, feature)
     }
 
     /// Applies one lookup to a run of glyphs, in place.
@@ -184,7 +90,7 @@ impl<'a> Substitutions<'a> {
         if depth > Self::DEPTH {
             return false;
         }
-        let Some((kind, subtables)) = self.lookup(index) else {
+        let Some((kind, _flags, subtables)) = self.tables.lookup(index) else {
             return false;
         };
         self.run_subtables(kind, &subtables, glyphs, clusters, depth, only_first)
@@ -219,8 +125,8 @@ impl<'a> Substitutions<'a> {
             // for sixteen-bit offsets can still say where its rules are. What
             // it points at is an ordinary subtable of the kind it names.
             7 => subtables.iter().any(|at| {
-                let Some(real) = u16_at(self.data, at + 2) else { return false };
-                let Some(offset) = u32_at(self.data, at + 4) else { return false };
+                let Some(real) = u16_at(self.tables.data, at + 2) else { return false };
+                let Some(offset) = u32_at(self.tables.data, at + 4) else { return false };
                 if real == 7 {
                     // An extension pointing at an extension is a font pointing
                     // at itself; the format forbids it and this stops rather
@@ -236,19 +142,19 @@ impl<'a> Substitutions<'a> {
 
     /// One glyph replaced by one other.
     fn apply_single(&self, at: usize, glyphs: &mut [GlyphId], only_first: bool) -> bool {
-        let Some(format) = u16_at(self.data, at) else { return false };
-        let Some(coverage) = u16_at(self.data, at + 2) else { return false };
+        let Some(format) = u16_at(self.tables.data, at) else { return false };
+        let Some(coverage) = u16_at(self.tables.data, at + 2) else { return false };
         let coverage = at + usize::from(coverage);
         let mut changed = false;
 
         let reach = if only_first { glyphs.len().min(1) } else { glyphs.len() };
         for glyph in glyphs.iter_mut().take(reach) {
-            let Some(index) = self.covered(coverage, *glyph) else { continue };
+            let Some(index) = self.tables.covered(coverage, *glyph) else { continue };
             let replacement = match format {
                 // A single number added to every covered glyph.
-                1 => u16_at(self.data, at + 4).map(|delta| glyph.0.wrapping_add(delta)),
+                1 => u16_at(self.tables.data, at + 4).map(|delta| glyph.0.wrapping_add(delta)),
                 // One replacement listed per covered glyph.
-                2 => u16_at(self.data, at + 6 + index * 2),
+                2 => u16_at(self.tables.data, at + 6 + index * 2),
                 _ => None,
             };
             if let Some(replacement) = replacement {
@@ -269,10 +175,10 @@ impl<'a> Substitutions<'a> {
         clusters: &mut Vec<usize>,
         only_first: bool,
     ) -> bool {
-        if u16_at(self.data, at) != Some(1) {
+        if u16_at(self.tables.data, at) != Some(1) {
             return false;
         }
-        let Some(coverage) = u16_at(self.data, at + 2) else { return false };
+        let Some(coverage) = u16_at(self.tables.data, at + 2) else { return false };
         let coverage = at + usize::from(coverage);
         let mut changed = false;
 
@@ -281,22 +187,22 @@ impl<'a> Substitutions<'a> {
             if only_first && index > 0 {
                 break;
             }
-            let Some(covered) = self.covered(coverage, glyphs[index]) else {
+            let Some(covered) = self.tables.covered(coverage, glyphs[index]) else {
                 index += 1;
                 continue;
             };
-            let Some(offset) = u16_at(self.data, at + 6 + covered * 2) else {
+            let Some(offset) = u16_at(self.tables.data, at + 6 + covered * 2) else {
                 index += 1;
                 continue;
             };
             let sequence = at + usize::from(offset);
-            let count = usize::from(u16_at(self.data, sequence).unwrap_or(0));
+            let count = usize::from(u16_at(self.tables.data, sequence).unwrap_or(0));
 
             if kind == 3 {
                 // A choice of alternates. Without a way for the user to pick
                 // one, the first is the font designer's own default.
                 if count > 0 {
-                    if let Some(replacement) = u16_at(self.data, sequence + 2) {
+                    if let Some(replacement) = u16_at(self.tables.data, sequence + 2) {
                         glyphs[index] = GlyphId(replacement);
                         changed = true;
                     }
@@ -307,7 +213,7 @@ impl<'a> Substitutions<'a> {
 
             let mut replacements = Vec::with_capacity(count);
             for at_index in 0..count {
-                if let Some(glyph) = u16_at(self.data, sequence + 2 + at_index * 2) {
+                if let Some(glyph) = u16_at(self.tables.data, sequence + 2 + at_index * 2) {
                     replacements.push(GlyphId(glyph));
                 }
             }
@@ -336,10 +242,10 @@ impl<'a> Substitutions<'a> {
         clusters: &mut Vec<usize>,
         only_first: bool,
     ) -> bool {
-        if u16_at(self.data, at) != Some(1) {
+        if u16_at(self.tables.data, at) != Some(1) {
             return false;
         }
-        let Some(coverage) = u16_at(self.data, at + 2) else { return false };
+        let Some(coverage) = u16_at(self.tables.data, at + 2) else { return false };
         let coverage = at + usize::from(coverage);
         let mut changed = false;
 
@@ -348,25 +254,25 @@ impl<'a> Substitutions<'a> {
             if only_first && index > 0 {
                 break;
             }
-            let Some(covered) = self.covered(coverage, glyphs[index]) else {
+            let Some(covered) = self.tables.covered(coverage, glyphs[index]) else {
                 index += 1;
                 continue;
             };
-            let Some(offset) = u16_at(self.data, at + 6 + covered * 2) else {
+            let Some(offset) = u16_at(self.tables.data, at + 6 + covered * 2) else {
                 index += 1;
                 continue;
             };
             let set = at + usize::from(offset);
-            let count = usize::from(u16_at(self.data, set).unwrap_or(0));
+            let count = usize::from(u16_at(self.tables.data, set).unwrap_or(0));
 
             let mut replaced = false;
             for entry in 0..count {
-                let Some(ligature_offset) = u16_at(self.data, set + 2 + entry * 2) else {
+                let Some(ligature_offset) = u16_at(self.tables.data, set + 2 + entry * 2) else {
                     continue;
                 };
                 let ligature = set + usize::from(ligature_offset);
-                let Some(glyph) = u16_at(self.data, ligature) else { continue };
-                let components = usize::from(u16_at(self.data, ligature + 2).unwrap_or(0));
+                let Some(glyph) = u16_at(self.tables.data, ligature) else { continue };
+                let components = usize::from(u16_at(self.tables.data, ligature + 2).unwrap_or(0));
                 if components == 0 || index + components > glyphs.len() {
                     continue;
                 }
@@ -374,7 +280,7 @@ impl<'a> Substitutions<'a> {
                 // The first component is the glyph already matched; the rest
                 // are listed and have to follow it exactly.
                 let matches = (1..components).all(|step| {
-                    u16_at(self.data, ligature + 2 + step * 2)
+                    u16_at(self.tables.data, ligature + 2 + step * 2)
                         .is_some_and(|wanted| glyphs[index + step].0 == wanted)
                 });
                 if !matches {
@@ -410,7 +316,7 @@ impl<'a> Substitutions<'a> {
         depth: usize,
         only_first: bool,
     ) -> bool {
-        let Some(format) = u16_at(self.data, at) else { return false };
+        let Some(format) = u16_at(self.tables.data, at) else { return false };
         let mut changed = false;
         let mut index = 0usize;
 
@@ -449,7 +355,7 @@ impl<'a> Substitutions<'a> {
         depth: usize,
         only_first: bool,
     ) -> bool {
-        let Some(format) = u16_at(self.data, at) else { return false };
+        let Some(format) = u16_at(self.tables.data, at) else { return false };
         let mut changed = false;
         let mut index = 0usize;
 
@@ -488,33 +394,35 @@ impl<'a> Substitutions<'a> {
         index: usize,
         glyphs: &[GlyphId],
     ) -> Option<(usize, Vec<(usize, usize)>)> {
-        let coverage = at + usize::from(u16_at(self.data, at + 2)?);
-        let covered = self.covered(coverage, glyphs[index])?;
+        let coverage = at + usize::from(u16_at(self.tables.data, at + 2)?);
+        let covered = self.tables.covered(coverage, glyphs[index])?;
 
         // By glyph, the rule set is chosen by where the first glyph sits in
         // the coverage; by class, by what class it is in.
         let (sets_at, chosen) = if format == 1 {
             (at + 6, covered)
         } else {
-            let classes = at + usize::from(u16_at(self.data, at + 4)?);
-            (at + 8, usize::from(self.class_of(classes, glyphs[index])))
+            let classes = at + usize::from(u16_at(self.tables.data, at + 4)?);
+            (at + 8, usize::from(self.tables.class_of(classes, glyphs[index])))
         };
-        let count = usize::from(u16_at(self.data, sets_at - 2)?);
+        let count = usize::from(u16_at(self.tables.data, sets_at - 2)?);
         if chosen >= count {
             return None;
         }
-        let offset = u16_at(self.data, sets_at + chosen * 2)?;
+        let offset = u16_at(self.tables.data, sets_at + chosen * 2)?;
         if offset == 0 {
             return None;
         }
         let set = at + usize::from(offset);
 
-        let rules = usize::from(u16_at(self.data, set)?);
+        let rules = usize::from(u16_at(self.tables.data, set)?);
         for rule in 0..rules {
-            let Some(offset) = u16_at(self.data, set + 2 + rule * 2) else { continue };
+            let Some(offset) = u16_at(self.tables.data, set + 2 + rule * 2) else { continue };
             let rule = set + usize::from(offset);
-            let Some(length) = u16_at(self.data, rule).map(usize::from) else { continue };
-            let Some(records) = u16_at(self.data, rule + 2).map(usize::from) else { continue };
+            let Some(length) = u16_at(self.tables.data, rule).map(usize::from) else { continue };
+            let Some(records) = u16_at(self.tables.data, rule + 2).map(usize::from) else {
+                continue;
+            };
             if length == 0 || index + length > glyphs.len() {
                 continue;
             }
@@ -522,14 +430,14 @@ impl<'a> Substitutions<'a> {
             // The first glyph is the one already matched by the coverage, so
             // the sequence lists the rest.
             let follows = (1..length).all(|step| {
-                let Some(wanted) = u16_at(self.data, rule + 4 + (step - 1) * 2) else {
+                let Some(wanted) = u16_at(self.tables.data, rule + 4 + (step - 1) * 2) else {
                     return false;
                 };
                 if format == 1 {
                     glyphs[index + step].0 == wanted
                 } else {
-                    let classes = at + usize::from(u16_at(self.data, at + 4).unwrap_or(0));
-                    self.class_of(classes, glyphs[index + step]) == wanted
+                    let classes = at + usize::from(u16_at(self.tables.data, at + 4).unwrap_or(0));
+                    self.tables.class_of(classes, glyphs[index + step]) == wanted
                 }
             });
             if !follows {
@@ -548,14 +456,14 @@ impl<'a> Substitutions<'a> {
         index: usize,
         glyphs: &[GlyphId],
     ) -> Option<(usize, Vec<(usize, usize)>)> {
-        let length = usize::from(u16_at(self.data, at + 2)?);
-        let records = usize::from(u16_at(self.data, at + 4)?);
+        let length = usize::from(u16_at(self.tables.data, at + 2)?);
+        let records = usize::from(u16_at(self.tables.data, at + 4)?);
         if length == 0 || index + length > glyphs.len() {
             return None;
         }
         for step in 0..length {
-            let coverage = at + usize::from(u16_at(self.data, at + 6 + step * 2)?);
-            self.covered(coverage, glyphs[index + step])?;
+            let coverage = at + usize::from(u16_at(self.tables.data, at + 6 + step * 2)?);
+            self.tables.covered(coverage, glyphs[index + step])?;
         }
         Some((length, self.records(at + 6 + length * 2, records)))
     }
@@ -568,8 +476,8 @@ impl<'a> Substitutions<'a> {
         index: usize,
         glyphs: &[GlyphId],
     ) -> Option<(usize, Vec<(usize, usize)>)> {
-        let coverage = at + usize::from(u16_at(self.data, at + 2)?);
-        let covered = self.covered(coverage, glyphs[index])?;
+        let coverage = at + usize::from(u16_at(self.tables.data, at + 2)?);
+        let covered = self.tables.covered(coverage, glyphs[index])?;
 
         // The three class definitions of the class-based kind: what comes
         // before, what is matched, and what comes after. Each may class the
@@ -578,25 +486,25 @@ impl<'a> Substitutions<'a> {
         {
             (at + 6, covered, 0, 0, 0)
         } else {
-            let backtrack = at + usize::from(u16_at(self.data, at + 4)?);
-            let input = at + usize::from(u16_at(self.data, at + 6)?);
-            let lookahead = at + usize::from(u16_at(self.data, at + 8)?);
-            let chosen = usize::from(self.class_of(input, glyphs[index]));
+            let backtrack = at + usize::from(u16_at(self.tables.data, at + 4)?);
+            let input = at + usize::from(u16_at(self.tables.data, at + 6)?);
+            let lookahead = at + usize::from(u16_at(self.tables.data, at + 8)?);
+            let chosen = usize::from(self.tables.class_of(input, glyphs[index]));
             (at + 12, chosen, backtrack, input, lookahead)
         };
-        let count = usize::from(u16_at(self.data, sets_at - 2)?);
+        let count = usize::from(u16_at(self.tables.data, sets_at - 2)?);
         if chosen >= count {
             return None;
         }
-        let offset = u16_at(self.data, sets_at + chosen * 2)?;
+        let offset = u16_at(self.tables.data, sets_at + chosen * 2)?;
         if offset == 0 {
             return None;
         }
         let set = at + usize::from(offset);
 
-        let rules = usize::from(u16_at(self.data, set)?);
+        let rules = usize::from(u16_at(self.tables.data, set)?);
         for rule in 0..rules {
-            let Some(offset) = u16_at(self.data, set + 2 + rule * 2) else { continue };
+            let Some(offset) = u16_at(self.tables.data, set + 2 + rule * 2) else { continue };
             let rule = set + usize::from(offset);
             let matched = self.chained_rule_matches(
                 format,
@@ -626,49 +534,49 @@ impl<'a> Substitutions<'a> {
             if format == 1 {
                 glyph.0 == wanted
             } else {
-                self.class_of(class_at, glyph) == wanted
+                self.tables.class_of(class_at, glyph) == wanted
             }
         };
 
         // What comes before, written nearest first, which is why it is read
         // backwards from where the match begins.
-        let backtrack = usize::from(u16_at(self.data, rule)?);
+        let backtrack = usize::from(u16_at(self.tables.data, rule)?);
         if backtrack > index {
             return None;
         }
         for step in 0..backtrack {
-            let wanted = u16_at(self.data, rule + 2 + step * 2)?;
+            let wanted = u16_at(self.tables.data, rule + 2 + step * 2)?;
             if !same(wanted, glyphs[index - 1 - step], backtrack_classes) {
                 return None;
             }
         }
 
         let mut at = rule + 2 + backtrack * 2;
-        let length = usize::from(u16_at(self.data, at)?);
+        let length = usize::from(u16_at(self.tables.data, at)?);
         if length == 0 || index + length > glyphs.len() {
             return None;
         }
         for step in 1..length {
-            let wanted = u16_at(self.data, at + 2 + (step - 1) * 2)?;
+            let wanted = u16_at(self.tables.data, at + 2 + (step - 1) * 2)?;
             if !same(wanted, glyphs[index + step], input_classes) {
                 return None;
             }
         }
 
         at += 2 + (length - 1) * 2;
-        let lookahead = usize::from(u16_at(self.data, at)?);
+        let lookahead = usize::from(u16_at(self.tables.data, at)?);
         if index + length + lookahead > glyphs.len() {
             return None;
         }
         for step in 0..lookahead {
-            let wanted = u16_at(self.data, at + 2 + step * 2)?;
+            let wanted = u16_at(self.tables.data, at + 2 + step * 2)?;
             if !same(wanted, glyphs[index + length + step], lookahead_classes) {
                 return None;
             }
         }
 
         at += 2 + lookahead * 2;
-        let records = usize::from(u16_at(self.data, at)?);
+        let records = usize::from(u16_at(self.tables.data, at)?);
         Some((length, self.records(at + 2, records)))
     }
 
@@ -679,37 +587,37 @@ impl<'a> Substitutions<'a> {
         index: usize,
         glyphs: &[GlyphId],
     ) -> Option<(usize, Vec<(usize, usize)>)> {
-        let backtrack = usize::from(u16_at(self.data, at + 2)?);
+        let backtrack = usize::from(u16_at(self.tables.data, at + 2)?);
         if backtrack > index {
             return None;
         }
         for step in 0..backtrack {
-            let coverage = at + usize::from(u16_at(self.data, at + 4 + step * 2)?);
-            self.covered(coverage, glyphs[index - 1 - step])?;
+            let coverage = at + usize::from(u16_at(self.tables.data, at + 4 + step * 2)?);
+            self.tables.covered(coverage, glyphs[index - 1 - step])?;
         }
 
         let mut walk = at + 4 + backtrack * 2;
-        let length = usize::from(u16_at(self.data, walk)?);
+        let length = usize::from(u16_at(self.tables.data, walk)?);
         if length == 0 || index + length > glyphs.len() {
             return None;
         }
         for step in 0..length {
-            let coverage = at + usize::from(u16_at(self.data, walk + 2 + step * 2)?);
-            self.covered(coverage, glyphs[index + step])?;
+            let coverage = at + usize::from(u16_at(self.tables.data, walk + 2 + step * 2)?);
+            self.tables.covered(coverage, glyphs[index + step])?;
         }
 
         walk += 2 + length * 2;
-        let lookahead = usize::from(u16_at(self.data, walk)?);
+        let lookahead = usize::from(u16_at(self.tables.data, walk)?);
         if index + length + lookahead > glyphs.len() {
             return None;
         }
         for step in 0..lookahead {
-            let coverage = at + usize::from(u16_at(self.data, walk + 2 + step * 2)?);
-            self.covered(coverage, glyphs[index + length + step])?;
+            let coverage = at + usize::from(u16_at(self.tables.data, walk + 2 + step * 2)?);
+            self.tables.covered(coverage, glyphs[index + length + step])?;
         }
 
         walk += 2 + lookahead * 2;
-        let records = usize::from(u16_at(self.data, walk)?);
+        let records = usize::from(u16_at(self.tables.data, walk)?);
         Some((length, self.records(walk + 2, records)))
     }
 
@@ -718,8 +626,8 @@ impl<'a> Substitutions<'a> {
     fn records(&self, at: usize, count: usize) -> Vec<(usize, usize)> {
         let mut out = Vec::with_capacity(count);
         for index in 0..count {
-            let Some(place) = u16_at(self.data, at + index * 4) else { break };
-            let Some(lookup) = u16_at(self.data, at + index * 4 + 2) else { break };
+            let Some(place) = u16_at(self.tables.data, at + index * 4) else { break };
+            let Some(lookup) = u16_at(self.tables.data, at + index * 4 + 2) else { break };
             out.push((usize::from(place), usize::from(lookup)));
         }
         out
@@ -762,83 +670,6 @@ impl<'a> Substitutions<'a> {
             }
         }
         changed
-    }
-
-    /// Which class a glyph is in, which is how a rule is written once for a
-    /// whole set of them. Anything a definition does not name is class zero.
-    fn class_of(&self, at: usize, glyph: GlyphId) -> u16 {
-        match u16_at(self.data, at) {
-            // A run of glyphs starting at one, with a class each.
-            Some(1) => {
-                let Some(first) = u16_at(self.data, at + 2) else { return 0 };
-                let Some(count) = u16_at(self.data, at + 4) else { return 0 };
-                if glyph.0 < first || glyph.0 >= first + count {
-                    return 0;
-                }
-                let index = usize::from(glyph.0 - first);
-                u16_at(self.data, at + 6 + index * 2).unwrap_or(0)
-            }
-            // Ranges, each with the class its glyphs are in.
-            Some(2) => {
-                let Some(count) = u16_at(self.data, at + 2) else { return 0 };
-                for index in 0..usize::from(count) {
-                    let entry = at + 4 + index * 6;
-                    let (Some(first), Some(last), Some(class)) = (
-                        u16_at(self.data, entry),
-                        u16_at(self.data, entry + 2),
-                        u16_at(self.data, entry + 4),
-                    ) else {
-                        return 0;
-                    };
-                    if glyph.0 >= first && glyph.0 <= last {
-                        return class;
-                    }
-                }
-                0
-            }
-            _ => 0,
-        }
-    }
-
-    /// Where a glyph sits in a coverage table, if it is in one at all.
-    ///
-    /// Coverage is how every lookup says which glyphs it applies to, and the
-    /// index it gives back is how the lookup finds the matching entry in its
-    /// own list.
-    fn covered(&self, at: usize, glyph: GlyphId) -> Option<usize> {
-        match u16_at(self.data, at)? {
-            // A sorted list of the glyphs themselves.
-            1 => {
-                let count = usize::from(u16_at(self.data, at + 2)?);
-                let mut low = 0usize;
-                let mut high = count;
-                while low < high {
-                    let middle = (low + high) / 2;
-                    let found = u16_at(self.data, at + 4 + middle * 2)?;
-                    match found.cmp(&glyph.0) {
-                        core::cmp::Ordering::Less => low = middle + 1,
-                        core::cmp::Ordering::Greater => high = middle,
-                        core::cmp::Ordering::Equal => return Some(middle),
-                    }
-                }
-                None
-            }
-            // Ranges, each carrying the index its first glyph stands at.
-            2 => {
-                let count = usize::from(u16_at(self.data, at + 2)?);
-                for index in 0..count {
-                    let entry = at + 4 + index * 6;
-                    let first = u16_at(self.data, entry)?;
-                    let last = u16_at(self.data, entry + 2)?;
-                    if glyph.0 >= first && glyph.0 <= last {
-                        let start = u16_at(self.data, entry + 4)?;
-                        return Some(usize::from(start) + usize::from(glyph.0 - first));
-                    }
-                }
-                None
-            }
-            _ => None,
-        }
     }
 }
 

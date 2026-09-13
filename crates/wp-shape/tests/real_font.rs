@@ -216,3 +216,108 @@ fn a_letter_with_nothing_on_it_is_left_as_it_is() {
     let alone = shape(&font, "i");
     assert_eq!(plain[0].glyph, alone[0].glyph, "a rule about marks changed a letter");
 }
+
+/// The first font on this machine that kerns through its positioning table.
+fn kerning_font() -> Option<(Vec<u8>, String)> {
+    for path in font_files() {
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        let Ok(font) = Font::parse(&bytes) else { continue };
+        let has_letters = font.glyph_for('A').is_some() && font.glyph_for('V').is_some();
+        let kerns = font
+            .positioning_table()
+            .and_then(wp_shape::Positions::parse)
+            .is_some_and(|table| !table.lookups_for(b"latn", b"kern").is_empty());
+        if !has_letters || !kerns {
+            continue;
+        }
+        let name = font.full_name().unwrap_or_else(|| path.display().to_string());
+        drop(font);
+        return Some((bytes, name));
+    }
+    None
+}
+
+#[test]
+fn a_pair_the_font_kerns_is_set_closer_than_its_widths() {
+    let Some((bytes, name)) = kerning_font() else {
+        eprintln!("no font kerning through its positioning table here; skipping");
+        return;
+    };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    // A and V lean away from each other, so every font that kerns at all kerns
+    // this pair, and kerns it negative.
+    let shaped = shape(&font, "AV");
+    assert_eq!(shaped.len(), 2);
+    assert!(shaped[0].x_advance < 0, "{name} set AV at its full widths: {}", shaped[0].x_advance);
+
+    // And a pair it says nothing about is left at its widths.
+    let plain = shape(&font, "AH");
+    assert_eq!(plain[0].x_advance, 0, "{name} kerned a pair it has no rule for");
+}
+
+#[test]
+fn the_old_kern_table_is_not_counted_twice() {
+    let Some((bytes, name)) = kerning_font() else { return };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    let (a, v) = (font.glyph_for('A').expect("A"), font.glyph_for('V').expect("V"));
+    let through_shaping = shape(&font, "AV")[0].x_advance;
+    let asked_directly = wp_shape::kerning_between(&font, b"latn", a, v);
+    assert_eq!(
+        through_shaping, asked_directly,
+        "{name}: shaping and asking gave different answers"
+    );
+    // The old table is the fallback and not an addition: whatever it says, the
+    // answer is the new table's.
+    assert!(asked_directly < 0);
+}
+
+#[test]
+fn a_mark_is_drawn_over_its_letter_and_not_beside_it() {
+    let Some((bytes, name)) = composing_font() else { return };
+    let font = Font::parse(&bytes).expect("a readable font");
+    let Some(table) = font.positioning_table().and_then(wp_shape::Positions::parse) else {
+        eprintln!("{name} has no positioning table; skipping");
+        return;
+    };
+    if table.lookups_for(b"latn", b"mark").is_empty() {
+        eprintln!("{name} says nothing about where marks go; skipping");
+        return;
+    }
+
+    // The letter is drawn first and the mark after it, with the pen already
+    // past the letter. Where the mark belongs is back over the letter, so what
+    // the font says has to be negative by about the letter's own width.
+    let shaped = shape(&font, "e\u{0301}");
+    assert_eq!(shaped.len(), 2);
+    let letter = i32::from(font.advance(shaped[0].glyph));
+    let mark = shaped[1];
+    assert!(
+        mark.x_offset < 0,
+        "{name}: the accent was left at the edge of the letter ({} units)",
+        mark.x_offset
+    );
+
+    // And it lands over the letter rather than past either end of it. Where
+    // the ink of a mark sits inside its own glyph is the font's business — a
+    // mark is often drawn to the left of its own origin — so the check is on
+    // the ink and not on the origin.
+    let ink = |glyph| {
+        font.outline(glyph)
+            .ok()
+            .flatten()
+            .map(|outline| (i32::from(outline.bounds.min_x), i32::from(outline.bounds.max_x)))
+    };
+    let (Some((letter_left, letter_right)), Some((mark_left, mark_right))) =
+        (ink(shaped[0].glyph), ink(mark.glyph))
+    else {
+        return;
+    };
+    let drawn = (letter + mark.x_offset + mark_left, letter + mark.x_offset + mark_right);
+    assert!(
+        drawn.0 >= letter_left - 50 && drawn.1 <= letter_right + 50,
+        "{name}: the accent is drawn at {drawn:?}, the letter at {:?}",
+        (letter_left, letter_right)
+    );
+}

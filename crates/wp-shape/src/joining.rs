@@ -196,6 +196,17 @@ pub fn joining_of(character: char) -> Joining {
     Joining::NonJoining
 }
 
+/// Whether a character hangs on the one before it rather than standing on its
+/// own.
+///
+/// The same table the joining rules look through, asked a different way: a
+/// mark joins nothing, and where it is drawn is decided by the letter it
+/// belongs to rather than by the pen.
+#[must_use]
+pub fn is_mark(character: char) -> bool {
+    joining_of(character) == Joining::Transparent
+}
+
 /// Whether a character belongs to a script written joined.
 #[must_use]
 pub fn is_joining_script(character: char) -> bool {
