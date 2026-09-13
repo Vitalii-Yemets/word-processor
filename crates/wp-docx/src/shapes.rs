@@ -63,6 +63,11 @@ pub struct Shape {
     /// under it, the glow round it, the soft edge, the reflection. See
     /// [`crate::shapeeffects`].
     pub effects: crate::shapeeffects::Effects,
+    /// What makes it solid rather than flat: the bevel round its edge and the
+    /// depth behind it, and the scene it is seen and lit in. See
+    /// [`crate::depth`].
+    pub depth: crate::depth::Depth,
+    pub scene: crate::depth::Scene,
     /// The paragraphs inside, which is what makes a shape a text box.
     pub text: Vec<Paragraph>,
     /// What the shape is called, which is what the selection pane would list.
@@ -104,6 +109,8 @@ impl Default for Shape {
             head_end: crate::lines::LineEnd::default(),
             tail_end: crate::lines::LineEnd::default(),
             effects: crate::shapeeffects::Effects::default(),
+            depth: crate::depth::Depth::default(),
+            scene: crate::depth::Scene::default(),
             text: Vec::new(),
             name: "Shape".to_owned(),
             id: 0,
@@ -280,6 +287,8 @@ pub fn read_shape(drawing: &Element) -> Option<Shape> {
     }
     shape.fill = properties.map(crate::fills::read_fill).unwrap_or_default();
     shape.effects = properties.map(crate::shapeeffects::read_effects).unwrap_or_default();
+    shape.depth = properties.map(crate::depth::read_depth).unwrap_or_default();
+    shape.scene = properties.map(crate::depth::read_scene).unwrap_or_default();
 
     if let Some(line) = properties.and_then(|properties| child(properties, "ln")) {
         shape.outline_emu = line.attribute_by_name("w").and_then(|w| w.parse().ok()).unwrap_or(0);
@@ -440,6 +449,14 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     // wants after the line and before anything three-dimensional.
     if let Some(list) = crate::shapeeffects::effects_element(&shape.effects) {
         properties.push_element(list);
+    }
+    // Then the scene it stands in and what makes it solid, in that order: the
+    // schema asks for the room before the thing standing in it.
+    if let Some(scene) = crate::depth::scene_element(&shape.scene) {
+        properties.push_element(scene);
+    }
+    if let Some(solid) = crate::depth::depth_element(&shape.depth) {
+        properties.push_element(solid);
     }
     wsp.push_element(properties);
 

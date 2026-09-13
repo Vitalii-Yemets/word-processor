@@ -48,6 +48,7 @@ pub mod comments;
 pub mod compare;
 pub mod contents;
 pub mod cover;
+pub mod depth;
 pub mod diagram;
 pub mod edit;
 pub mod effects;

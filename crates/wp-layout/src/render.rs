@@ -425,6 +425,12 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
                 None => colour,
             };
 
+            // The depth behind the face, drawn before it and therefore under
+            // it.
+            if !shape.solid.is_flat() {
+                draw_depth(canvas, shape, &area);
+            }
+
             if !shape.fill.is_nothing() {
                 let path = turned(crate::geometry::path_in(
                     shape.preset,
@@ -451,6 +457,12 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
             // The shadow inside it, over the fill and under the line: a shadow
             // that fell over the line would make the line look like a hole too.
             draw_inside(canvas, shape, &area);
+
+            // And the bevel round the face, which is light on one side and
+            // dark on the other.
+            if shape.solid.bevel > 0.0 {
+                draw_bevel(canvas, shape, x, y);
+            }
 
             if let Some(outline) = shape.outline {
                 // A connector that had to be routed round the shapes it joins
@@ -622,6 +634,83 @@ fn draw_inside(canvas: &mut Canvas, shape: &crate::PlacedShape, area: &Path) {
     let moved = mask.shifted(shadow.across.round() as i32, shadow.down.round() as i32);
     let inside = moved.inverted().blurred(shadow.blur).times(&mask);
     canvas.draw_mask(&inside, at_x, at_y, shadow.colour);
+}
+
+/// The depth behind a shape: the face again and again, stepped back the way the
+/// scene is turned.
+///
+/// # Why copies rather than sides
+///
+/// Because the sides of a solid seen flat on *are* the face swept along the
+/// depth, and sweeping a shape of curves and corners into a band means working
+/// out its silhouette from the direction it is swept in. Stepping the shape
+/// back a pixel at a time fills the same area, and the step is a pixel because
+/// anything coarser leaves the sides striped.
+fn draw_depth(canvas: &mut Canvas, shape: &crate::PlacedShape, area: &Path) {
+    let solid = shape.solid;
+    let reach = solid.across.hypot(solid.down);
+    if reach <= 0.0 {
+        return;
+    }
+    // What the sides are: the colour the document gives, or the shape's own
+    // fill taken darker, which is what a side away from the light looks like.
+    let sides = solid.sides.unwrap_or_else(|| {
+        let face = shape.fill.at_pixel(0, 0, 0.5, 0.5);
+        Color::rgba(
+            (u32::from(face.red) * 2 / 3) as u8,
+            (u32::from(face.green) * 2 / 3) as u8,
+            (u32::from(face.blue) * 2 / 3) as u8,
+            face.alpha,
+        )
+    });
+
+    let steps = reach.ceil().max(1.0) as usize;
+    for step in (1..=steps).rev() {
+        let along = step as f32 / steps as f32;
+        let at = area.transformed(&Transform::translate(solid.across * along, solid.down * along));
+        canvas.fill_path(&at, sides);
+    }
+}
+
+/// The bevel round the face of a solid: the edge rolled over, lit from one
+/// side.
+///
+/// The band is the shape's own outline at the width of the bevel. Which half of
+/// that band catches the light is worked out by moving the shape: shift it away
+/// from the light and the edge it leaves uncovered is the edge the light falls
+/// on.
+fn draw_bevel(canvas: &mut Canvas, shape: &crate::PlacedShape, x: f32, y: f32) {
+    let solid = shape.solid;
+    let band = crate::geometry::outline_in(
+        shape.preset,
+        &shape.adjusts,
+        x,
+        y,
+        shape.width,
+        shape.height,
+        solid.bevel,
+    );
+    let Some((band, at_x, at_y)) = coverage_of(&band, 1.0) else {
+        return;
+    };
+    let Some((face, face_x, face_y)) = coverage_of(
+        &crate::geometry::path_in(shape.preset, &shape.adjusts, x, y, shape.width, shape.height),
+        1.0,
+    ) else {
+        return;
+    };
+    // Both are wanted in the same frame.
+    let face = face.shifted(face_x - at_x, face_y - at_y);
+    let step = solid.bevel.ceil().max(1.0) as i32;
+
+    // The light comes from above and to the left, which is where Word's own
+    // lighting comes from unless a document says otherwise.
+    let lit = band.times(&face.shifted(step, step).inverted());
+    let shaded = band.times(&face.shifted(-step, -step).inverted());
+    let white = Color::rgba(255, 255, 255, (200.0 * solid.shine) as u8);
+    let black = Color::rgba(0, 0, 0, (150.0 * solid.shine) as u8);
+    canvas.draw_mask(&lit, at_x, at_y, white);
+    canvas.draw_mask(&shaded, at_x, at_y, black);
 }
 
 /// How a shape is turned where it stands, in page coordinates.

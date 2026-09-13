@@ -2078,11 +2078,32 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   blurred effect into a PDF means writing a picture of it, which is the
   F-series work on what a PDF can carry.
 
-- [ ] **D14. Three dimensions.** `a:scene3d` and `a:sp3d`: the bevels, the
-  extrusion and its depth, the material, the lighting and the camera. Word
-  draws these flat when it cannot manage them, and so could this — but a bevel
-  is the one most documents use and is worth drawing properly.
+- [x] **D14. Three dimensions.** `a:scene3d` and `a:sp3d`: the bevels, the
+  extrusion and its depth, the material, the lighting and the camera.
   *Done when:* a shape with a bevel and a depth is drawn with them.
+  Two elements and not one, because one of them belongs to the shape and the
+  other to the room it stands in. How thick a shape is and what its edge is
+  rolled to are its own; where the scene is looked at from and lit from is
+  shared by everything in it.
+  The depth is the face again and again, stepped back the way the scene is
+  turned, with the face laid over them. The sides of a solid seen flat on *are*
+  the face swept along the depth, and sweeping a shape of curves and corners
+  into a band means working out its silhouette from the direction of the sweep;
+  stepping it back a pixel at a time fills the same area, and a pixel at a time
+  because anything coarser leaves the sides striped.
+  The bevel is the shape's own outline band at the width of the bevel, lit on
+  one side and shaded on the other. Which half catches the light is worked out
+  by moving the shape: shift it away from the light, and the edge it leaves
+  uncovered is the edge the light falls on. What it is made of settles how hard
+  that light is — metal takes a sharp edge and matte hardly shows one.
+  A depth with no turn at all is a depth nobody can see, because it goes
+  straight back. Word draws it that way too, and the bevel is what shows
+  instead.
+  *Not done:* the face itself is not turned. A shape rotated right round in Word
+  is a shape seen at an angle, and drawing that is drawing a different shape —
+  the outline of a solid seen from a corner — rather than the same one with
+  something added. The camera is read, kept and written back, and what it is
+  used for is the direction the depth goes in.
 
 - [x] **D15. Block arrows.** The twenty-eight arrows of Word's gallery: the four
   straight ones, the bent and the curved, the striped and the notched, the

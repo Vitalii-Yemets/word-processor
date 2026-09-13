@@ -1220,6 +1220,92 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // What makes a shape solid: a bevel, a depth, and both together,
+            // beside the same shape drawn flat.
+            "solid" => {
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                use wp_docx::depth::{Bevel, Depth, Scene};
+
+                let bevel =
+                    || Bevel { width_emu: 114_300, height_emu: 76_200, kind: "circle".to_owned() };
+                let turned = Scene {
+                    camera: "orthographicFront".to_owned(),
+                    // A quarter of the way round to the right and a little
+                    // forwards, which is where a depth begins to show.
+                    longitude: 1_800_000,
+                    latitude: 900_000,
+                    light: "threePt".to_owned(),
+                    light_from: "t".to_owned(),
+                    ..Scene::default()
+                };
+                let all = [
+                    (Depth::default(), Scene::default(), "Flat"),
+                    (
+                        Depth {
+                            bevel_top: Some(bevel()),
+                            material: "plastic".to_owned(),
+                            ..Depth::default()
+                        },
+                        Scene::default(),
+                        "Bevel",
+                    ),
+                    (Depth { extrusion_emu: 457_200, ..Depth::default() }, turned.clone(), "Depth"),
+                    (
+                        Depth {
+                            bevel_top: Some(bevel()),
+                            extrusion_emu: 457_200,
+                            extrusion_colour: Some("2F528F".to_owned()),
+                            material: "metal".to_owned(),
+                            ..Depth::default()
+                        },
+                        turned,
+                        "Both",
+                    ),
+                ];
+
+                const CELL: i64 = 1_600_200;
+                let sheet = wp_docx::shapes::Shape {
+                    name: "Sheet".to_owned(),
+                    preset: "rect".to_owned(),
+                    width_emu: 2 * CELL,
+                    height_emu: 2 * CELL,
+                    fill: wp_docx::fills::Fill::Solid("FFFFFF".to_owned()),
+                    outline: None,
+                    anchor: Some(Anchor {
+                        wrap: Wrap::None,
+                        horizontal: Placement::Offset(0),
+                        vertical: Placement::Offset(0),
+                        ..Anchor::default()
+                    }),
+                    ..wp_docx::shapes::Shape::default()
+                };
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.insert_shape(&sheet);
+
+                for (index, (depth, scene, name)) in all.into_iter().enumerate() {
+                    let shape = wp_docx::shapes::Shape {
+                        name: name.to_owned(),
+                        preset: "roundRect".to_owned(),
+                        width_emu: 1_028_700,
+                        height_emu: 800_100,
+                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                        outline: Some("1F3864".to_owned()),
+                        outline_emu: 9_525,
+                        depth,
+                        scene,
+                        anchor: Some(Anchor {
+                            wrap: Wrap::None,
+                            horizontal: Placement::Offset((index % 2) as i64 * CELL + 285_750),
+                            vertical: Placement::Offset((index / 2) as i64 * CELL + 342_900),
+                            ..Anchor::default()
+                        }),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+                self.relayout();
+            }
             // One shape taken hold of, so that the yellow handles it can be
             // changed by are there to look at.
             "held" => {

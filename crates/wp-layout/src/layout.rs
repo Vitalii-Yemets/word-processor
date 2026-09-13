@@ -559,6 +559,8 @@ pub struct PlacedShape {
     /// measurement already in pixels: the shadows, the glow, the soft edge and
     /// the reflection. See [`Effects`].
     pub effects: Effects,
+    /// What makes it solid rather than flat, in pixels. See [`Solid`].
+    pub solid: Solid,
     /// The glyphs of the text inside, already placed relative to the page.
     pub text: Vec<PositionedGlyph>,
     /// What the drawing is called, which is what a list of them shows.
@@ -708,6 +710,85 @@ fn tinted(colour: &str, alpha: i32) -> Color {
     let solid = Color::from_hex(colour).unwrap_or(Color::rgb(0, 0, 0));
     let alpha = (alpha.clamp(0, 100_000) * 255 / 100_000) as u8;
     Color::rgba(solid.red, solid.green, solid.blue, alpha)
+}
+
+/// What makes a shape solid rather than flat, in pixels.
+///
+/// # How a solid is drawn without drawing in three dimensions
+///
+/// The depth is a run of copies of the shape stepped back along the way the
+/// scene is turned, in the colour of its sides, with the face laid over them:
+/// that is what a solid looks like from the front, and it is all that an
+/// orthographic camera — the one nearly every document uses — can show. The
+/// bevel is a band round the edge of the face, light on the side the light
+/// comes from and dark on the other.
+///
+/// What this does not do is turn the face itself. A shape turned right round in
+/// Word is a shape seen at an angle, and drawing that means drawing a shape
+/// nobody asked this program to draw yet. See the roadmap.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Solid {
+    /// How far back the shape goes, and which way that is on the screen.
+    pub depth: f32,
+    pub across: f32,
+    pub down: f32,
+    /// The colour of the sides, or nothing to take the shape's own fill and
+    /// darken it.
+    pub sides: Option<Color>,
+    /// How wide the bevel round the face is, and how hard its light is.
+    pub bevel: f32,
+    pub shine: f32,
+}
+
+impl Solid {
+    /// The document's own numbers, in pixels.
+    #[must_use]
+    pub(crate) fn of(
+        depth: &wp_docx::depth::Depth,
+        scene: &wp_docx::depth::Scene,
+        scale: f32,
+    ) -> Self {
+        if depth.is_flat() {
+            return Self::default();
+        }
+        let pixels = |emu: i64| emu as f32 / wp_docx::shapes::EMU_PER_POINT as f32 * scale;
+        // Which way the depth goes on the screen: the scene's own turn, seen
+        // flat on. Turned round to the right, the far end of the shape is to
+        // the left of the near one; tipped forwards, it is above.
+        let longitude = (scene.longitude as f32 / 60_000.0).to_radians();
+        let latitude = (scene.latitude as f32 / 60_000.0).to_radians();
+        let depth_pixels = pixels(depth.extrusion_emu);
+        // A solid with no turn at all is looked at straight on, and a depth
+        // straight back is a depth nobody can see. Word draws it that way too,
+        // and the bevel is what shows instead.
+        let (across, down) = (-longitude.sin() * depth_pixels, latitude.sin() * depth_pixels);
+
+        let bevel = depth
+            .bevel_top
+            .as_ref()
+            .map_or(0.0, |bevel| pixels(bevel.width_emu.max(bevel.height_emu)));
+        Self {
+            depth: depth_pixels,
+            across,
+            down,
+            sides: depth.extrusion_colour.as_deref().and_then(Color::from_hex),
+            bevel,
+            // What it is made of, which is what the light does on it: metal
+            // takes a hard edge and matte hardly shows one.
+            shine: match depth.material.as_str() {
+                "metal" => 1.0,
+                "matte" | "dkEdge" | "softEdge" => 0.45,
+                _ => 0.7,
+            },
+        }
+    }
+
+    /// Whether there is anything solid about it, which for most shapes there is
+    /// not.
+    #[must_use]
+    pub fn is_flat(&self) -> bool {
+        self.depth <= 0.0 && self.bevel <= 0.0
+    }
 }
 
 /// A shape drawn on a page that is not a rectangle.
@@ -3831,6 +3912,7 @@ impl<'a> LayoutEngine<'a> {
             joins: shape.joins,
             route: None,
             effects: Effects::of(&shape.effects, scale),
+            solid: Solid::of(&shape.depth, &shape.scene, scale),
             tail_end: shape.tail_end,
             fill: crate::paint::Paint::of(&shape.fill),
             outline: shape.outline.as_deref().and_then(Color::from_hex),
@@ -3941,6 +4023,7 @@ impl<'a> LayoutEngine<'a> {
                         joins: shape.joins,
                         route: None,
                         effects: Effects::of(&shape.effects, scale),
+                        solid: Solid::of(&shape.depth, &shape.scene, scale),
                         tail_end: shape.tail_end,
                         fill: crate::paint::Paint::of(&shape.fill),
                         outline: shape.outline.as_deref().and_then(Color::from_hex),
@@ -5216,6 +5299,7 @@ impl LayoutEngine<'_> {
                     joins: shape.joins,
                     route: None,
                     effects: Effects::of(&shape.effects, self.pixels_per_point()),
+                    solid: Solid::of(&shape.depth, &shape.scene, self.pixels_per_point()),
                     tail_end: shape.tail_end,
                     fill: crate::paint::Paint::of(&shape.fill),
                     outline: shape.outline.as_deref().and_then(Color::from_hex),
