@@ -918,6 +918,11 @@ pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> El
             // Nor a chart: it is a part of the package, carried through in
             // its own element rather than rebuilt from the model.
             RunContent::Chart(_) => {}
+            // Nor a diagram, which is five parts and a frame that names four
+            // relationships: rebuilding the frame from the model would have to
+            // invent those, and the frame that is already there names the ones
+            // the package has.
+            RunContent::Diagram(_) => {}
             // Nor a group. A group holds pictures, so rebuilding one from the
             // model would throw away everything a picture's element says that
             // this program does not model — see [`crate::group`]. Making and

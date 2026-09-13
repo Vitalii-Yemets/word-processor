@@ -110,6 +110,23 @@ impl Document {
                 });
             }
         }
+
+        // A diagram is one drawing however many boxes it holds, and the words
+        // in those boxes are not a description of what the diagram says: a
+        // screen reader reading "Plan. Draw. Check." has said the words and
+        // not what they mean.
+        for diagram in self.diagrams() {
+            if diagram.description.trim().is_empty() {
+                let named =
+                    if diagram.name.is_empty() { "A diagram" } else { diagram.name.as_str() };
+                out.push(Finding {
+                    severity: Severity::Error,
+                    problem: format!("{named} has no description"),
+                    paragraph: None,
+                    advice: "Describe what it shows, so a screen reader can say it",
+                });
+            }
+        }
     }
 
     /// Heading levels that skip.

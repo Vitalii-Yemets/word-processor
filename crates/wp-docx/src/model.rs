@@ -706,6 +706,12 @@ pub enum RunContent {
     /// Only the reference: the chart lives in a part of its own, the same way
     /// a picture does. See [`crate::chart`].
     Chart(ChartReference),
+    /// A diagram — SmartArt — drawn in the line of text.
+    ///
+    /// Only the reference again, and a diagram keeps more behind it than
+    /// anything else does: five parts, of which this names the first. See
+    /// [`crate::diagram`].
+    Diagram(DiagramReference),
     /// An equation.
     ///
     /// Not inside the run when it is written: an equation is a sibling of the
@@ -719,6 +725,37 @@ pub enum RunContent {
         id: i32,
         endnote: bool,
     },
+}
+
+/// Which diagram a frame points at, and how much room it was given.
+///
+/// The data model's relationship and no other: the layout, the style and the
+/// colours are reached through the frame as well, but what is drawn comes out
+/// of the data model and the drawing hanging off it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DiagramReference {
+    /// The relationship of the main document that reaches the data model.
+    pub relationship: String,
+    /// What the drawing is called, which is what a list of drawings shows.
+    pub name: String,
+    /// What it shows, said in words, for anyone who cannot see it.
+    pub description: String,
+    /// In English metric units, as DrawingML measures a drawing.
+    pub width_emu: i64,
+    pub height_emu: i64,
+}
+
+impl DiagramReference {
+    /// The width in points, which is what the layout works in.
+    #[must_use]
+    pub fn width_points(&self) -> f64 {
+        self.width_emu as f64 / crate::EMU_PER_INCH as f64 * 72.0
+    }
+
+    #[must_use]
+    pub fn height_points(&self) -> f64 {
+        self.height_emu as f64 / crate::EMU_PER_INCH as f64 * 72.0
+    }
 }
 
 /// Which chart a drawing points at, and how much room it was given.
@@ -923,6 +960,7 @@ impl Run {
                 | RunContent::Shape(_)
                 | RunContent::Group(_)
                 | RunContent::Chart(_)
+                | RunContent::Diagram(_)
                 | RunContent::NoteReference { .. } => {}
                 // An equation reads as the line it was typed on, which is
                 // what a person searching for it would look for.

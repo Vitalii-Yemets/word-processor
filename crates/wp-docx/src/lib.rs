@@ -2466,6 +2466,45 @@ impl Document {
         Ok(id)
     }
 
+    /// Puts one of a diagram's parts into the package.
+    pub(crate) fn add_diagram_part(&mut self, name: &str, content_type: &str, xml: String) {
+        self.package.add_part(name, content_type, xml.into_bytes());
+    }
+
+    /// Points the document at one of a diagram's parts.
+    pub(crate) fn point_at_diagram(
+        &mut self,
+        name: &str,
+        relationship: &str,
+    ) -> Result<String, Error> {
+        let mut relationships = self
+            .package
+            .relationships(&self.main_part)
+            .unwrap_or_else(|_| Relationships::new(&self.main_part));
+        let target = name.strip_prefix("word/").unwrap_or(name).to_owned();
+        let id = relationships.add(relationship, &target, TargetMode::Internal).id.clone();
+        self.package.set_relationships(&relationships)?;
+        Ok(id)
+    }
+
+    /// Points one part of the package at another.
+    ///
+    /// Every part may have relationships of its own, and some must: the
+    /// drawing a diagram was laid out into is reached from the diagram's data
+    /// model and from nowhere else.
+    pub(crate) fn point_part_at(
+        &mut self,
+        source: &str,
+        target: &str,
+        relationship: &str,
+    ) -> Result<String, Error> {
+        let mut relationships =
+            self.package.relationships(source).unwrap_or_else(|_| Relationships::new(source));
+        let id = relationships.add(relationship, target, TargetMode::Internal).id.clone();
+        self.package.set_relationships(&relationships)?;
+        Ok(id)
+    }
+
     /// Where a relationship of the main document points, as a part name.
     #[must_use]
     pub fn relationship_target(&self, id: &str) -> Option<String> {

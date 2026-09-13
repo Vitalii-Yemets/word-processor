@@ -1220,6 +1220,20 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // A diagram of each arrangement, drawn out of the parts the
+            // document keeps it in rather than out of the model that wrote it.
+            "diagrams" => {
+                use wp_docx::diagram::Arrangement;
+
+                let room = self.text_width_emu();
+                for arrangement in Arrangement::ALL {
+                    let items: Vec<String> =
+                        ["Plan", "Draw", "Check"].iter().map(|item| (*item).to_owned()).collect();
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    let _ = self.document.insert_diagram(*arrangement, &items, room);
+                }
+                self.relayout();
+            }
             // Two series drawn every way a chart can be drawn, each with a key
             // naming the series and the number written on every point.
             "charts" => {

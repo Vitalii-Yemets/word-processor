@@ -679,6 +679,8 @@ pub(crate) fn read_run(element: &Element) -> Run {
                 // whole group as whatever it found inside it.
                 if let Some(group) = crate::group::read_group(child) {
                     content.push(RunContent::Group(group));
+                } else if let Some(diagram) = read_diagram_reference(child) {
+                    content.push(RunContent::Diagram(diagram));
                 } else if let Some(chart) = read_chart_reference(child) {
                     content.push(RunContent::Chart(chart));
                 } else if let Some(shape) = crate::shapes::read_shape(child) {
@@ -892,6 +894,37 @@ fn read_chart_reference(drawing: &Element) -> Option<crate::model::ChartReferenc
     let id = reference.attribute(Some(RELATIONSHIPS), "id")?.to_owned();
     let (width, height) = drawing_extent(drawing);
     Some(crate::model::ChartReference { relationship: id, width_emu: width, height_emu: height })
+}
+
+/// Reads the diagram a frame points at, if it points at one.
+///
+/// The same as a chart, and for the same reason: what is behind the frame is
+/// parts of the package, and reading them needs the package. `dgm:relIds`
+/// names four relationships; the data model's is the one everything else is
+/// reached from.
+#[must_use]
+fn read_diagram_reference(drawing: &Element) -> Option<crate::model::DiagramReference> {
+    let ids = find_named(drawing, "relIds")?;
+    let data = ids.attribute(Some(RELATIONSHIPS), "dm")?.to_owned();
+    let (width, height) = drawing_extent(drawing);
+
+    // The name and the description are the drawing's own rather than the
+    // diagram's: what a screen reader says about a diagram is said here, the
+    // same as for a picture.
+    let properties = find_named(drawing, "docPr");
+    let attribute = |name: &str| {
+        properties
+            .and_then(|properties| properties.attribute_by_name(name))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    Some(crate::model::DiagramReference {
+        relationship: data,
+        name: attribute("name"),
+        description: attribute("descr"),
+        width_emu: width,
+        height_emu: height,
+    })
 }
 
 /// The first element under one with a given local name, whatever its namespace.

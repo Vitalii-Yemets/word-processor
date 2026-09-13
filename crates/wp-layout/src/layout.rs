@@ -3538,6 +3538,45 @@ impl<'a> LayoutEngine<'a> {
                         end_offset: *offset,
                     });
                 }
+                RunContent::Diagram(reference) => {
+                    paragraph_text.push(' ');
+                    // A diagram takes one character of the paragraph, exactly
+                    // as a chart does. What is drawn is the shapes it was last
+                    // laid out into, which live in parts of their own — so the
+                    // document is needed here, and what comes back is a group,
+                    // because a group is what a drawing of several shapes is.
+                    let start = *offset;
+                    *offset += 1;
+
+                    let scale = self.pixels_per_point();
+                    let width = (reference.width_points() as f32 * scale).max(1.0);
+                    let height = (reference.height_points() as f32 * scale).max(1.0);
+                    let drawn = document.diagram(reference).and_then(|diagram| diagram.drawing);
+                    if let Some(group) = &drawn {
+                        self.decode_group(group, document);
+                    }
+
+                    items.push(Item {
+                        glyphs: Vec::new(),
+                        width,
+                        is_space: false,
+                        breaks_before: true,
+                        is_tab: false,
+                        aligned_tab: None,
+                        picture: None,
+                        picture_anchor: None,
+                        picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
+                        group: drawn.map(|group| (Box::new(group), height)),
+                        math: None,
+                        chart: None,
+                        shape: None,
+                        hard_break: None,
+                        style: style_index,
+                        start_offset: start,
+                        end_offset: *offset,
+                    });
+                }
                 RunContent::Math(math) => {
                     paragraph_text.push(' ');
                     // An equation takes one character of the paragraph, exactly

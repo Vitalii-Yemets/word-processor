@@ -2289,8 +2289,49 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the whole plot when reading, which is what Word's own button means: a chart
   with the numbers on half its series is not something Word can make.
   *Not done:* the rest of what a chart is — see **D24**.
-- [ ] **D5. SmartArt.** The diagram layouts, which are a language of their own
-  in the file format.
+- [x] **D5. SmartArt: the parts a diagram is kept in.** `dgm:relIds` and the
+  five parts behind it — the data model, the layout, the quick style, the
+  colours, and the drawing Word made the last time it followed the layout.
+  Read, drawn, and written.
+  *Done when:* a diagram made here is SmartArt when Word opens it, and a
+  diagram made in Word is drawn here as Word drew it rather than as an empty
+  space.
+  A diagram used to be a heap of shapes. The module said so at the top of the
+  file — press the button, get four boxes with arrows between them, and Word
+  opens them as drawings that will never re-lay themselves out. That was a
+  stated trade, and this is the end of it: what is written now is the five
+  parts, and what Word opens is a diagram it offers to restyle, recolour and
+  retype.
+  Reading one is the other half. The data model is the words and how they are
+  related — points, connections, and an order — and it is read into a tree,
+  because a tree is what it is: a hierarchy hangs its boxes under the first,
+  and a row of them hangs everything under the document. The points the layout
+  engine left behind and the connections that say which shape drew what are
+  passed over; a connection that points at its own source is read and not
+  followed for ever.
+  What is drawn is the drawing. It is the fifth part, the one the schema has no
+  room for — it hangs off the data model through the extension list — and it is
+  shapes with places, colours and words in them. Drawing that is drawing what
+  Word drew; the alternative is running the layout language and drawing
+  something that nearly agrees with Word. So a diagram out of a Word document
+  is drawn exactly as Word laid it out, and it is drawn as a group, because a
+  group is what a drawing of several shapes is and the group is already placed,
+  measured and drawn.
+  The colours in that drawing are named and not stated: `a:schemeClr val="accent1"`
+  with a lightening or a darkening written under it, which is how one colour
+  list draws six boxes in six colours. Those are resolved here against the
+  document's theme, shifts and all — shade, tint, and the ones said in hue,
+  saturation and lightness, which the colour goes round into and back out of.
+  A drawing read without that is a diagram drawn as a row of empty outlines.
+  A tree is drawn with a stem out of the box above, a run across, and a drop
+  into each box below — bars, and not any of the bent connectors, every one of
+  which leaves its shape sideways because what it joins is one shape's side to
+  another's.
+  And a diagram is one drawing however many boxes it holds, so the
+  accessibility check asks it for a description the way it asks a picture:
+  the words in the boxes are not a description of what the diagram says.
+  *Not done:* the layout language itself and everything that needs it — see
+  **D25**.
 - [ ] **D6. Ink and media.** What a document holds when somebody drew on it or
   put a video in it.
 
@@ -2398,6 +2439,47 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   unchanged, but every key that is not a pie's is drawn in a row under the plot
   whatever it says, because putting it at any of the four sides means laying the
   plot out four ways.
+
+- [ ] **D25. The layout language, and editing a diagram.** `layout1.xml` is
+  read here for one thing — the name of the arrangement it is — and the rest of
+  it is not run: the algorithms, the constraints, the rules, the conditions and
+  the `forEach` that walk the data model and place a shape for every point. A
+  diagram whose file carries no drawing and whose layout is one of the hundred
+  and thirty in the gallery is drawn as the list of what it says, which is the
+  words in the right order and the wrong picture.
+  That language is what the rest of SmartArt stands on: re-laying a diagram out
+  when its words change, the text pane that types into it, promoting and
+  demoting a box, adding and removing one, changing a diagram from one
+  arrangement to another, and the two tabs Word shows when a diagram is
+  selected. None of those can be done by moving shapes about, because what they
+  change is the model and what draws the model is the layout.
+  The quick style and the colour list are written and not read: what is drawn
+  is the drawing's own colours, and a diagram whose file has lost its drawing
+  is drawn in the theme's first accent whatever its colour part asks for. The
+  drawing is never rewritten either — nothing here changes a diagram yet, and
+  the moment something does, the drawing it was laid out into is stale.
+  What a shape of a drawing may carry and this does not read: a gradient or a
+  picture where the fill is, the `dsp:style` that names the theme's line and
+  fill by index, and `dsp:txXfrm` — the rectangle the words go in, which is not
+  the shape's own for a shape whose middle is not where its room is.
+  And the layout definition written here is this program's own, simpler than
+  the gallery's. What Word draws from it when the words change has not been
+  checked against Word itself; the picture does not depend on it, because the
+  drawing is written too.
+
+- [ ] **D26. A shape drawn in the theme's colours.** `a:schemeClr` where a
+  colour is asked for. A diagram's drawing has this now — the slot and the
+  shifts written under it, resolved against the document's theme — and every
+  other shape does not: a shape Word filled with accent 1 rather than with
+  four hex digits is read here as a shape with no fill and drawn as an outline.
+  Word writes that fill for every shape from its own gallery, so this is most
+  of the shapes in most documents.
+  The resolving belongs where the theme is known, which is not where a shape is
+  read: a fill is read out of an element with no package in reach. So the fill
+  has to carry what the file said — the slot and its shifts — and be resolved
+  when it is drawn, which is one more thing a fill can be and one more place
+  that has to ask the theme. The arithmetic itself is done and tested; it is in
+  the diagram module and belongs beside the theme.
 
 ## E — The rest of the text engine
 

@@ -60,14 +60,15 @@ impl Editor {
         }
 
         let room = self.text_width_emu();
-        let drawn = self.document.insert_diagram(self.diagram_arrangement, &items, room);
-        if drawn == 0 {
-            return self.report("The diagram could not be drawn");
+        match self.document.insert_diagram(self.diagram_arrangement, &items, room) {
+            Ok(true) => {
+                self.relayout();
+                self.reveal_caret();
+                let named = self.diagram_arrangement.label();
+                self.edited(true, &format!("{named}, {} boxes", items.len()))
+            }
+            Ok(false) => self.report("The diagram could not be drawn"),
+            Err(error) => self.report(&format!("The diagram could not be drawn: {error}")),
         }
-
-        self.relayout();
-        self.reveal_caret();
-        let named = self.diagram_arrangement.label();
-        self.edited(true, &format!("{named}, {} boxes", items.len()))
     }
 }
