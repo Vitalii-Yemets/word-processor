@@ -109,6 +109,28 @@ pub(crate) fn path_in(
     Some(path)
 }
 
+/// Where a shape offers to be joined, counted the way the format counts them.
+///
+/// # Which point is which
+///
+/// The first four of nearly every preset are the top, the left, the bottom and
+/// the right, in that order, and that is what this answers for every shape. A
+/// few presets offer more than four — a triangle offers its corners as well —
+/// and an index this program does not know is taken to the middle of the shape:
+/// a connector joined to the middle of the thing it names is still joined to
+/// it, which is nearer the truth than a connector left where it was drawn.
+#[must_use]
+pub fn connection_site(index: u32, x: f32, y: f32, width: f32, height: f32) -> Point {
+    let (mx, my) = (x + width / 2.0, y + height / 2.0);
+    match index {
+        0 => Point::new(mx, y),
+        1 => Point::new(x, my),
+        2 => Point::new(mx, y + height),
+        3 => Point::new(x + width, my),
+        _ => Point::new(mx, my),
+    }
+}
+
 /// Which end of a line something is drawn at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LineTip {
@@ -281,5 +303,24 @@ mod tests {
             reach(EndSize::Small, EndSize::Small) < reach(EndSize::Large, EndSize::Large),
             "the sizes make no difference"
         );
+    }
+    #[test]
+    fn the_first_four_connection_points_are_the_four_sides() {
+        // The order the format counts them in: the top, the left, the bottom,
+        // the right. A connector fastened to the second point of a box and
+        // drawn to the fourth would cross the box itself if the order here
+        // were wrong.
+        let at = |index| connection_site(index, 10.0, 20.0, 100.0, 60.0);
+        assert_eq!(at(0), Point::new(60.0, 20.0), "the top");
+        assert_eq!(at(1), Point::new(10.0, 50.0), "the left");
+        assert_eq!(at(2), Point::new(60.0, 80.0), "the bottom");
+        assert_eq!(at(3), Point::new(110.0, 50.0), "the right");
+    }
+
+    #[test]
+    fn a_connection_point_nobody_knows_is_the_middle_of_the_shape() {
+        // Which keeps the connector joined to the thing it names, and is nearer
+        // the truth than leaving it where it was drawn.
+        assert_eq!(connection_site(9, 10.0, 20.0, 100.0, 60.0), Point::new(60.0, 50.0));
     }
 }

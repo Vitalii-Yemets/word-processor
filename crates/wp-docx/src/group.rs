@@ -80,9 +80,14 @@ pub struct Member {
 }
 
 /// What a group holds.
+///
+/// The shape is boxed and the picture is not: a shape carries everything a
+/// shape can carry — its text, its fill, its handles, what is at the ends of
+/// its line — and a group of pictures would otherwise be as big as a group of
+/// shapes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Inside {
-    Shape(Shape),
+    Shape(Box<Shape>),
     Picture(Picture),
     /// A group of its own. Word lets a group hold a group, and a diagram
     /// pasted as drawings arrives as several levels of them.
@@ -247,7 +252,7 @@ fn read_into(wgp: &Element, group: &mut Group) {
 /// and are not drawings.
 fn inside(element: &Element) -> Option<Inside> {
     match element.local_name() {
-        "wsp" => crate::shapes::read_shape(element).map(Inside::Shape),
+        "wsp" => crate::shapes::read_shape(element).map(|shape| Inside::Shape(Box::new(shape))),
         "pic" => crate::read::read_picture(element).map(Inside::Picture),
         "grpSp" => Some(Inside::Group(Box::new(read_nested(element)))),
         _ => None,
@@ -785,7 +790,7 @@ mod tests {
             y_emu: y,
             width_emu: width,
             height_emu: height,
-            what: Inside::Shape(Shape::default()),
+            what: Inside::Shape(Box::default()),
         }
     }
 

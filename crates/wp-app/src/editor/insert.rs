@@ -968,6 +968,73 @@ impl Editor {
                     .collect();
                 self.shape_grid(&shapes, 6);
             }
+            // Two boxes with a connector fastened between them, drawn twice:
+            // the second pair has its right-hand box somewhere else, and the
+            // connector follows it without being told to. Both connectors are
+            // saved with the same useless box of their own.
+            "connected" => {
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                use wp_docx::joins::{Join, Joins};
+                use wp_docx::lines::{EndKind, LineEnd};
+
+                let floats = |across: i64, down: i64| Anchor {
+                    wrap: Wrap::None,
+                    horizontal: Placement::Offset(across),
+                    vertical: Placement::Offset(down),
+                    ..Anchor::default()
+                };
+                let mut boxes = Vec::new();
+                for (pair, (across, down)) in
+                    [(1_600_200i64, 0i64), (2_057_400, 457_200)].into_iter().enumerate()
+                {
+                    let step = pair as i64 * 1_828_800;
+                    let first = wp_docx::shapes::Shape {
+                        name: format!("First {pair}"),
+                        id: pair as u32 * 10 + 1,
+                        preset: "roundRect".to_owned(),
+                        width_emu: 1_143_000,
+                        height_emu: 457_200,
+                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                        outline: Some("1F3864".to_owned()),
+                        outline_emu: 9_525,
+                        anchor: Some(floats(0, step)),
+                        ..wp_docx::shapes::Shape::default()
+                    };
+                    let second = wp_docx::shapes::Shape {
+                        name: format!("Second {pair}"),
+                        id: pair as u32 * 10 + 2,
+                        anchor: Some(floats(across, step + down)),
+                        ..first.clone()
+                    };
+                    let connector = wp_docx::shapes::Shape {
+                        name: format!("Connector {pair}"),
+                        id: pair as u32 * 10 + 3,
+                        preset: "bentConnector3".to_owned(),
+                        width_emu: 228_600,
+                        height_emu: 228_600,
+                        fill: wp_docx::fills::Fill::None,
+                        outline: Some("C00000".to_owned()),
+                        outline_emu: 19_050,
+                        tail_end: LineEnd { kind: EndKind::Triangle, ..LineEnd::default() },
+                        joins: Joins {
+                            start: Some(Join { shape: pair as u32 * 10 + 1, site: 3 }),
+                            end: Some(Join { shape: pair as u32 * 10 + 2, site: 1 }),
+                        },
+                        // Saved somewhere useless on purpose: what it is
+                        // fastened to is what says where it goes.
+                        anchor: Some(floats(4_572_000, 4_572_000)),
+                        ..first.clone()
+                    };
+                    boxes.push(first);
+                    boxes.push(second);
+                    boxes.push(connector);
+                }
+                for shape in &boxes {
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(shape);
+                }
+                self.relayout();
+            }
             // The lines and connectors, each with an arrowhead on its tail, and
             // then one line drawn with each of the six things the format can
             // put at the end of one.

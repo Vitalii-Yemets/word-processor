@@ -2203,16 +2203,45 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Done when:* dragging a handle changes the shape and writes a value Word
   reads back as the same shape.
 
-- [ ] **D22. Connectors that stay joined.** `wps:cNvCnPr` with `a:stCxn` and
+- [x] **D22. Connectors that stay joined.** `wps:cNvCnPr` with `a:stCxn` and
   `a:endCxn`: which drawing each end of a connector is fastened to, and at which
-  of that shape's connection points. Read them; give every drawing the id the
-  file knows it by, so an end can name one; work out where each preset puts its
-  connection points; and place a joined connector from the two points it is
-  fastened to rather than from the box it was saved with. Then write that box
-  back when a drawing moves, so the file says what the screen shows. And the
-  routing that keeps an elbow out of the shapes at either end of it.
+  of that shape's connection points.
   *Done when:* two shapes joined by each kind of connector stay joined when
   either is moved, and Word opens the saved file with them still joined.
+  A line drawn between two shapes is a line: move either shape and it stays
+  where it was, pointing at nothing. A connector is *fastened* to them, and the
+  file says so. So the box a connector was saved with is only the answer from
+  the last time anybody worked out where it should be — and it is worked out
+  again at layout time rather than believed. A pass of its own, after everything
+  is placed, because a connector may be laid out before the shapes it joins and
+  where it goes depends on where they went.
+  Which way round it is drawn comes out of the same arithmetic. A connector runs
+  from one corner of its box to the opposite one, so the box alone cannot say
+  which corner is the start; an end fastened to a shape on the right is the same
+  connector mirrored, and that is what the flips are for.
+  The id is the one on the shape's own properties, `wps:cNvPr/@id`, and not the
+  one on the drawing that wraps it: two different numbers live a few elements
+  apart in the same file and only one of them is the one a connector names.
+  The screen and the file are two different things, so the box is written back
+  when a drawing is moved. A document moved about here and saved would otherwise
+  open in Word with its connectors back where they used to be, which is the sort
+  of thing that makes a program untrustworthy with somebody else's work. Asking
+  again when nothing has moved changes nothing: a document that marked itself
+  modified every time it was looked at would never stop asking to be saved.
+  *Not done:* the routing, which is **D23**. A connector fastened to the right
+  of one shape and the left of another that is further left will run back
+  through the shape it came out of, because the elbow is drawn inside the box
+  between the two points and there is nowhere else for it to go.
+
+- [ ] **D23. Routing an elbow round the shapes it joins.** A connector leaves
+  each shape by the side it is fastened to and comes back to the other the same
+  way, and the legs between are laid so that neither shape is crossed. Word does
+  this by swapping the connector between `bentConnector2`, `3`, `4` and `5` as
+  the two shapes move about, and by putting the bends outside the box between
+  the two points when there is no room for them inside it.
+  *Done when:* a connector fastened to the right of one shape and the left of
+  another standing to its left goes round both of them rather than back through
+  the one it came out of.
 
 ## E — The rest of the text engine
 

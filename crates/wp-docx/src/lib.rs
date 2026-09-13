@@ -61,6 +61,7 @@ pub mod furniture;
 pub mod gallery;
 pub mod group;
 mod history;
+pub mod joins;
 pub mod languages;
 pub mod lines;
 pub mod links;

@@ -63,6 +63,12 @@ pub struct Shape {
     pub text: Vec<Paragraph>,
     /// What the shape is called, which is what the selection pane would list.
     pub name: String,
+    /// The number the file knows it by: `wps:cNvPr/@id`, which is what a
+    /// connector names when it says which shape it is fastened to.
+    pub id: u32,
+    /// Which shapes the two ends of this connector are fastened to, for a
+    /// shape that is a connector. See [`crate::joins`].
+    pub joins: crate::joins::Joins,
     /// Where it floats, or `None` when it sits in the line of text.
     pub anchor: Option<crate::anchor::Anchor>,
     /// What it shows, said in words.
@@ -95,6 +101,8 @@ impl Default for Shape {
             tail_end: crate::lines::LineEnd::default(),
             text: Vec::new(),
             name: "Shape".to_owned(),
+            id: 0,
+            joins: crate::joins::Joins::default(),
             anchor: None,
             description: String::new(),
             rotation: 0,
@@ -217,7 +225,14 @@ pub fn read_shape(drawing: &Element) -> Option<Shape> {
     let wsp = find(drawing, "wsp")?;
     let mut shape = Shape { anchor: crate::anchor::read_anchor(drawing), ..Shape::default() };
 
+    // What a connector is fastened to, which is on its own non-visual
+    // properties: a shape with those is a connector and a shape without them
+    // is not.
+    if let Some(properties) = find(wsp, "cNvCnPr") {
+        shape.joins = crate::joins::read_joins(properties);
+    }
     if let Some(properties) = find(wsp, "cNvPr") {
+        shape.id = properties.attribute_by_name("id").and_then(|id| id.parse().ok()).unwrap_or(0);
         if let Some(name) = properties.attribute_by_name("name") {
             shape.name = name.to_owned();
         }
@@ -351,10 +366,20 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     wsp.declarations.push((Some("wps".to_owned()), WPS.to_owned()));
 
     let mut visible = Element::new("wps:cNvPr", Some(WPS));
-    visible.set_attribute("id", "1");
+    visible.set_attribute("id", &shape.id.max(1).to_string());
     visible.set_attribute("name", &shape.name);
     wsp.push_element(visible);
-    wsp.push_element(Element::new("wps:cNvSpPr", Some(WPS)));
+    // A connector says so here, and says what it is fastened to. Everything
+    // else says it is an ordinary shape.
+    if shape.joins.is_nothing() && !shape.preset.contains("onnector") {
+        wsp.push_element(Element::new("wps:cNvSpPr", Some(WPS)));
+    } else {
+        let mut connector = Element::new("wps:cNvCnPr", Some(WPS));
+        for element in crate::joins::join_elements(shape.joins) {
+            connector.push_element(element);
+        }
+        wsp.push_element(connector);
+    }
 
     let mut properties = Element::new("wps:spPr", Some(WPS));
 
@@ -571,6 +596,175 @@ impl Document {
             gather_shapes(block, &mut out);
         }
         out
+    }
+}
+
+impl Document {
+    /// Every shape in the document with the place in the text it sits at.
+    ///
+    /// The place is what every command that changes a drawing is given, so a
+    /// pass that walks the shapes in order to change one needs both halves.
+    #[must_use]
+    pub fn shape_places(&self) -> Vec<(crate::TextPosition, crate::shapes::Shape)> {
+        let mut out = Vec::new();
+        for index in 0..self.body().blocks.len() {
+            let Some(paragraph) = self.paragraph_element(index) else { continue };
+            let mut offset = 0usize;
+            walk_shape_places(paragraph, index, &mut offset, &mut out);
+        }
+        out
+    }
+
+    /// Puts every connector fastened to a shape back where that shape is.
+    ///
+    /// # Why this is done at all, when the screen is already right
+    ///
+    /// Because the screen and the file are two different things. Where a joined
+    /// connector is *drawn* follows from where the shapes it is fastened to
+    /// went, and that is worked out afresh every time the document is laid out.
+    /// The file still says the box it was saved with — so a document moved
+    /// about here and then saved would open in Word with its connectors back
+    /// where they used to be, which is the sort of thing that makes a program
+    /// untrustworthy with somebody else's work.
+    ///
+    /// # What it leaves alone
+    ///
+    /// Connectors with an end fastened to nothing, and connectors whose shapes
+    /// are not both placed by an offset from the same thing. Two drawings
+    /// placed in different frames — one from the margin and one from the page —
+    /// have no common measure in the model, and guessing one would move the
+    /// connector somewhere neither shape is.
+    pub fn rejoin_connectors(&mut self) -> bool {
+        let places = self.shape_places();
+        // Where each shape's box is, in the measure its anchor is stated in.
+        let boxes: Vec<(
+            u32,
+            crate::anchor::Relative,
+            crate::anchor::Relative,
+            i64,
+            i64,
+            i64,
+            i64,
+        )> = places
+            .iter()
+            .filter(|(_, shape)| shape.id != 0)
+            .filter_map(|(_, shape)| {
+                let anchor = shape.anchor.as_ref()?;
+                let (
+                    crate::anchor::Placement::Offset(across),
+                    crate::anchor::Placement::Offset(down),
+                ) = (&anchor.horizontal, &anchor.vertical)
+                else {
+                    return None;
+                };
+                Some((
+                    shape.id,
+                    anchor.horizontal_from,
+                    anchor.vertical_from,
+                    *across,
+                    *down,
+                    shape.width_emu,
+                    shape.height_emu,
+                ))
+            })
+            .collect();
+
+        let mut changed = false;
+        for (at, shape) in &places {
+            if shape.joins.is_nothing() {
+                continue;
+            }
+            let Some(anchor) = shape.anchor.as_ref() else { continue };
+            let Some(start) = shape.joins.start.and_then(|join| site_of(&boxes, join)) else {
+                continue;
+            };
+            let Some(end) = shape.joins.end.and_then(|join| site_of(&boxes, join)) else {
+                continue;
+            };
+            if start.0 != end.0 || start.1 != end.1 {
+                // The two shapes are placed from different things.
+                continue;
+            }
+            let (across, down) = (start.2.min(end.2), start.3.min(end.3));
+            let (width, height) = ((end.2 - start.2).abs(), (end.3 - start.3).abs());
+
+            let mut moved = anchor.clone();
+            moved.horizontal_from = start.0;
+            moved.vertical_from = start.1;
+            moved.horizontal = crate::anchor::Placement::Offset(across);
+            moved.vertical = crate::anchor::Placement::Offset(down);
+            // Which way round it is drawn: an end fastened to a shape on the
+            // right is the same connector mirrored.
+            let flipped_across = end.2 < start.2;
+            let flipped_down = end.3 < start.3;
+
+            let same = anchor.horizontal == moved.horizontal
+                && anchor.vertical == moved.vertical
+                && anchor.horizontal_from == moved.horizontal_from
+                && anchor.vertical_from == moved.vertical_from
+                && shape.width_emu == width
+                && shape.height_emu == height
+                && shape.flipped_across == flipped_across
+                && shape.flipped_down == flipped_down;
+            if same {
+                continue;
+            }
+
+            changed |= self.set_anchor_at(*at, Some(&moved));
+            changed |= self.set_drawing_size_at(*at, width, height);
+            changed |= self.set_drawing_turn_at(
+                *at,
+                crate::floating::Turned { rotation: shape.rotation, flipped_across, flipped_down },
+            );
+        }
+        changed
+    }
+}
+
+/// Where one end of a connector is fastened, in the measure its shape is placed
+/// in: what it is placed from, and the point itself.
+fn site_of(
+    boxes: &[(u32, crate::anchor::Relative, crate::anchor::Relative, i64, i64, i64, i64)],
+    join: crate::joins::Join,
+) -> Option<(crate::anchor::Relative, crate::anchor::Relative, i64, i64)> {
+    let (_, from_x, from_y, across, down, width, height) =
+        *boxes.iter().find(|(id, ..)| *id == join.shape)?;
+    // The same four points the layout uses, in the format's own order: the
+    // top, the left, the bottom, the right. See
+    // [`wp_layout::connectors::connection_site`].
+    let (x, y) = match join.site {
+        0 => (across + width / 2, down),
+        1 => (across, down + height / 2),
+        2 => (across + width / 2, down + height),
+        3 => (across + width, down + height / 2),
+        _ => (across + width / 2, down + height / 2),
+    };
+    Some((from_x, from_y, x, y))
+}
+
+/// Finds every shape in an element, counting the offsets as the caret does.
+fn walk_shape_places(
+    element: &Element,
+    paragraph: usize,
+    offset: &mut usize,
+    out: &mut Vec<(crate::TextPosition, crate::shapes::Shape)>,
+) {
+    for node in &element.children {
+        let Some(child) = node.as_element() else { continue };
+        if child.namespace.as_deref() == Some(read::W)
+            && matches!(child.local_name(), "drawing" | "pict" | "object")
+        {
+            if let Some(shape) = read_shape(child) {
+                out.push((crate::TextPosition::new(paragraph, *offset), shape));
+            }
+            *offset += 1;
+            continue;
+        }
+        if child.namespace.as_deref() == Some(read::W) && child.local_name() == "t" {
+            *offset += child.text_content().len();
+            continue;
+        }
+        walk_shape_places(child, paragraph, offset, out);
     }
 }
 

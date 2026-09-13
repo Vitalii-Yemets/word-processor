@@ -636,6 +636,12 @@ impl Editor {
         if !changed {
             return Response::Ignored;
         }
+        // A drawing that has moved takes the connectors fastened to it with
+        // it. The screen would follow the join anyway, because the layout works
+        // one out afresh every time; this is so that the file says the same
+        // thing, and a document saved here opens in Word with its connectors
+        // where they are on the screen.
+        self.document.rejoin_connectors();
         self.relayout();
         self.needs_redraw = true;
         Response::Redraw

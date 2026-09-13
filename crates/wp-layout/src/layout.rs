@@ -559,6 +559,11 @@ pub struct PlacedShape {
     pub text: Vec<PositionedGlyph>,
     /// What the drawing is called, which is what a list of them shows.
     pub name: String,
+    /// The number the file knows it by, which is what a connector names.
+    pub id: u32,
+    /// Which shapes the two ends of this one are fastened to, for a connector.
+    /// See [`wp_docx::joins`].
+    pub joins: wp_docx::joins::Joins,
     /// Where in the document the drawing is, so a press on it can put the
     /// caret beside it and the commands that act on it can find it.
     pub at: Option<TextPosition>,
@@ -1739,6 +1744,7 @@ impl<'a> LayoutEngine<'a> {
 
         // And the text inside every shape, which is a document of its own and
         // so is laid out once the outer one has stopped moving.
+        Self::rejoin_connectors(&mut pages);
         self.fill_shapes(&mut pages, document);
         pages
     }
@@ -3696,6 +3702,8 @@ impl<'a> LayoutEngine<'a> {
             preset: crate::geometry::Preset::from_word(&shape.preset),
             adjusts: crate::geometry::Adjusts::from_pairs(&shape.adjusts),
             head_end: shape.head_end,
+            id: shape.id,
+            joins: shape.joins,
             tail_end: shape.tail_end,
             fill: crate::paint::Paint::of(&shape.fill),
             outline: shape.outline.as_deref().and_then(Color::from_hex),
@@ -3802,6 +3810,8 @@ impl<'a> LayoutEngine<'a> {
                         preset: crate::geometry::Preset::from_word(&shape.preset),
                         adjusts: crate::geometry::Adjusts::from_pairs(&shape.adjusts),
                         head_end: shape.head_end,
+                        id: shape.id,
+                        joins: shape.joins,
                         tail_end: shape.tail_end,
                         fill: crate::paint::Paint::of(&shape.fill),
                         outline: shape.outline.as_deref().and_then(Color::from_hex),
@@ -3815,7 +3825,7 @@ impl<'a> LayoutEngine<'a> {
                         at,
                         depth,
                         over_text,
-                        source: Some(Box::new(shape.clone())),
+                        source: Some(shape.clone()),
                         turn: inside.radians(),
                         flipped_across: inside.flipped_across,
                         flipped_down: inside.flipped_down,
@@ -4034,6 +4044,59 @@ impl<'a> LayoutEngine<'a> {
         let share = (alpha as f32 / 100_000.0 * 255.0).clamp(0.0, 255.0) as u8;
         Some((Color::rgba(0, 0, 0, share), (points * scale).max(1.0)))
     }
+    /// Puts every joined connector where the shapes it is fastened to are.
+    ///
+    /// A pass of its own, after everything is placed: a connector may be laid
+    /// out before the shapes it joins, and where it goes depends on where they
+    /// went. The box it was saved with is only the answer from the last time
+    /// anybody worked this out, which is why it is worked out again rather than
+    /// believed.
+    ///
+    /// # Which way round it is drawn
+    ///
+    /// A connector is drawn from one corner of its box to the opposite one, so
+    /// the box alone cannot say which corner is the start. That is what the
+    /// flips are for: an end fastened to a shape on the left is drawn from the
+    /// left, and one fastened to a shape on the right is the same connector
+    /// mirrored.
+    fn rejoin_connectors(pages: &mut [Page]) {
+        for page in pages.iter_mut() {
+            // Where every shape on the page is, by the number the file knows it
+            // by. Gathered first because a connector may name a shape that
+            // comes after it.
+            let boxes: Vec<(u32, f32, f32, f32, f32)> = page
+                .shapes
+                .iter()
+                .filter(|shape| shape.id != 0)
+                .map(|shape| (shape.id, shape.x, shape.y, shape.width, shape.height))
+                .collect();
+            let site_of = |join: wp_docx::joins::Join| {
+                boxes.iter().find(|(id, ..)| *id == join.shape).map(|(_, x, y, width, height)| {
+                    crate::connectors::connection_site(join.site, *x, *y, *width, *height)
+                })
+            };
+
+            for shape in &mut page.shapes {
+                if shape.joins.is_nothing() {
+                    continue;
+                }
+                // An end fastened to nothing stays where the connector was
+                // drawn; one fastened to a shape goes to that shape.
+                let corner = wp_raster::Point::new(shape.x, shape.y);
+                let far = wp_raster::Point::new(shape.x + shape.width, shape.y + shape.height);
+                let start = shape.joins.start.and_then(site_of).unwrap_or(corner);
+                let end = shape.joins.end.and_then(site_of).unwrap_or(far);
+
+                shape.x = start.x.min(end.x);
+                shape.y = start.y.min(end.y);
+                shape.width = (end.x - start.x).abs();
+                shape.height = (end.y - start.y).abs();
+                shape.flipped_across = end.x < start.x;
+                shape.flipped_down = end.y < start.y;
+            }
+        }
+    }
+
     /// Lays out the text inside every shape on every page.
     ///
     /// A pass of its own, after the body: the text in a shape is a document in
@@ -4954,6 +5017,8 @@ impl LayoutEngine<'_> {
                     preset: crate::geometry::Preset::from_word(&shape.preset),
                     adjusts: crate::geometry::Adjusts::from_pairs(&shape.adjusts),
                     head_end: shape.head_end,
+                    id: shape.id,
+                    joins: shape.joins,
                     tail_end: shape.tail_end,
                     fill: crate::paint::Paint::of(&shape.fill),
                     outline: shape.outline.as_deref().and_then(Color::from_hex),
