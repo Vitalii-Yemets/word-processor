@@ -96,12 +96,59 @@ pub struct Chart {
     pub kind: Kind,
     /// The heading over the chart. Empty for none.
     pub title: String,
-    /// What the series is called, which is what a legend would say.
-    pub series: String,
-    /// The names along the bottom, and the numbers they stand for. The two are
-    /// the same length: a category with no number is not a category.
+    /// The names along the bottom, which every series shares: a chart draws one
+    /// set of categories and a number from each series against each of them.
     pub categories: Vec<String>,
+    /// The series themselves, in the order the file gives them.
+    pub series: Vec<Series>,
+    /// Where the key goes, or nothing for a chart drawn without one.
+    pub legend: Option<Legend>,
+    /// Whether the number is written on each point.
+    pub labels: bool,
+}
+
+/// One run of numbers, with the name a key would call it by.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Series {
+    pub name: String,
+    /// One number per category. A series with fewer is drawn as far as it
+    /// goes, because that is what the file says and not something to make up.
     pub values: Vec<f64>,
+}
+
+/// Where the key sits.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Legend {
+    #[default]
+    Right,
+    Bottom,
+    Left,
+    Top,
+}
+
+impl Legend {
+    /// The name the format gives it.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Right => "r",
+            Self::Bottom => "b",
+            Self::Left => "l",
+            Self::Top => "t",
+        }
+    }
+
+    /// And reading one back. A place nobody knows is the right-hand side, which
+    /// is where the format puts a key that says nothing.
+    #[must_use]
+    pub fn from_word(word: &str) -> Self {
+        match word {
+            "b" => Self::Bottom,
+            "l" => Self::Left,
+            "t" => Self::Top,
+            _ => Self::Right,
+        }
+    }
 }
 
 impl Chart {
@@ -128,28 +175,40 @@ impl Chart {
         Self {
             kind,
             title: title.trim().to_owned(),
-            series: "Series 1".to_owned(),
             categories,
-            values,
+            series: vec![Series { name: "Series 1".to_owned(), values }],
+            // One series needs no key to tell it from the others, which is
+            // what Word decides for the same chart — except a pie, whose key
+            // names the slices and without which it says nothing at all.
+            legend: (kind == Kind::Pie).then_some(Legend::Right),
+            labels: false,
         }
     }
 
     /// Whether there is anything to draw.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
+        self.series.iter().all(|series| series.values.is_empty())
     }
 
-    /// The largest number in it, which is what the axis has to reach.
+    /// The largest number anywhere in it, which is what the axis has to reach.
     #[must_use]
     pub fn largest(&self) -> f64 {
-        self.values.iter().copied().fold(0.0, f64::max)
+        self.series.iter().flat_map(|series| series.values.iter().copied()).fold(0.0, f64::max)
     }
 
-    /// And the total, which is what a pie divides up.
+    /// And the total of the first series, which is what a pie divides up: a pie
+    /// of several series would be several pies.
     #[must_use]
     pub fn total(&self) -> f64 {
-        self.values.iter().sum()
+        self.series.first().map_or(0.0, |series| series.values.iter().sum())
+    }
+
+    /// How many points the longest series has, which is how many slots the
+    /// categories are drawn in.
+    #[must_use]
+    pub fn points(&self) -> usize {
+        self.series.iter().map(|series| series.values.len()).max().unwrap_or(0)
     }
 }
 
@@ -179,7 +238,9 @@ pub fn chart_xml(chart: &Chart) -> String {
         out.push_str("<c:grouping val=\"clustered\"/>");
     }
     out.push_str("<c:varyColors val=\"0\"/>");
-    out.push_str(&series_xml(chart));
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&series_xml(chart, series, index));
+    }
     if chart.kind.has_axes() {
         out.push_str("<c:axId val=\"1\"/><c:axId val=\"2\"/>");
     }
@@ -194,16 +255,42 @@ pub fn chart_xml(chart: &Chart) -> String {
              <c:delete val=\"0\"/><c:axPos val=\"l\"/><c:crossAx val=\"1\"/></c:valAx>",
         );
     }
-    out.push_str("</c:plotArea><c:plotVisOnly val=\"1\"/></c:chart></c:chartSpace>");
+    out.push_str("</c:plotArea>");
+    // The key, which is what says which series is which. After the plot area
+    // and before what is drawn of the plot, which is the order the schema asks
+    // for.
+    if let Some(legend) = chart.legend {
+        out.push_str(&format!(
+            "<c:legend><c:legendPos val=\"{}\"/><c:overlay val=\"0\"/></c:legend>",
+            legend.word()
+        ));
+    }
+    out.push_str("<c:plotVisOnly val=\"1\"/></c:chart></c:chartSpace>");
     out
 }
 
-/// The one series: its name, its categories and its numbers.
-fn series_xml(chart: &Chart) -> String {
-    let mut out = String::from("<c:ser><c:idx val=\"0\"/><c:order val=\"0\"/>");
-    out.push_str("<c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:ptCount val=\"1\"/>");
-    out.push_str(&format!("<c:pt idx=\"0\"><c:v>{}</c:v></c:pt>", escape(&chart.series)));
+/// One series: its name, the categories it shares, and its numbers.
+///
+/// The column it says it came from is worked out from its place among the
+/// series, because the numbers are written in full and the reference is there
+/// for Word's own grid rather than for anything here.
+fn series_xml(chart: &Chart, series: &Series, index: usize) -> String {
+    let column = char::from(b'B' + (index % 24) as u8);
+    let mut out = format!("<c:ser><c:idx val=\"{index}\"/><c:order val=\"{index}\"/>");
+    out.push_str(&format!(
+        "<c:tx><c:strRef><c:f>Sheet1!${column}$1</c:f><c:strCache><c:ptCount val=\"1\"/>"
+    ));
+    out.push_str(&format!("<c:pt idx=\"0\"><c:v>{}</c:v></c:pt>", escape(&series.name)));
     out.push_str("</c:strCache></c:strRef></c:tx>");
+    // Whether the numbers are written on the points, which the format says per
+    // series even though Word asks it of the whole chart.
+    if chart.labels {
+        out.push_str(
+            "<c:dLbls><c:showLegendKey val=\"0\"/><c:showVal val=\"1\"/>\
+             <c:showCatName val=\"0\"/><c:showSerName val=\"0\"/>\
+             <c:showPercent val=\"0\"/><c:showBubbleSize val=\"0\"/></c:dLbls>",
+        );
+    }
 
     // The names, written out in full so the chart draws without the workbook.
     out.push_str("<c:cat><c:strRef><c:f>Sheet1!$A$2:$A$");
@@ -215,11 +302,11 @@ fn series_xml(chart: &Chart) -> String {
     }
     out.push_str("</c:strCache></c:strRef></c:cat>");
 
-    out.push_str("<c:val><c:numRef><c:f>Sheet1!$B$2:$B$");
-    out.push_str(&(chart.values.len() + 1).to_string());
+    out.push_str(&format!("<c:val><c:numRef><c:f>Sheet1!${column}$2:${column}$"));
+    out.push_str(&(series.values.len() + 1).to_string());
     out.push_str("</c:f><c:numCache><c:formatCode>General</c:formatCode>");
-    out.push_str(&format!("<c:ptCount val=\"{}\"/>", chart.values.len()));
-    for (index, value) in chart.values.iter().enumerate() {
+    out.push_str(&format!("<c:ptCount val=\"{}\"/>", series.values.len()));
+    for (index, value) in series.values.iter().enumerate() {
         out.push_str(&format!("<c:pt idx=\"{index}\"><c:v>{value}</c:v></c:pt>"));
     }
     out.push_str("</c:numCache></c:numRef></c:val></c:ser>");
@@ -262,21 +349,55 @@ pub fn read_chart(root: &Element) -> Option<Chart> {
         _ => kind,
     };
 
-    let series = drawn.child(Some(CHART_NAMESPACE), "ser")?;
-    let categories = cached_strings(series.child(Some(CHART_NAMESPACE), "cat"));
-    let values = cached_numbers(series.child(Some(CHART_NAMESPACE), "val"));
-    let name = cached_strings(series.child(Some(CHART_NAMESPACE), "tx"))
-        .into_iter()
-        .next()
-        .unwrap_or_default();
+    // Every series, in the order the file gives them. The categories are the
+    // first series' — they are the same for all of them, and a file that
+    // disagrees with itself is believed at its first word.
+    let mut categories = Vec::new();
+    let mut series = Vec::new();
+    for element in drawn.children_named(Some(CHART_NAMESPACE), "ser") {
+        let values = cached_numbers(element.child(Some(CHART_NAMESPACE), "val"));
+        let name = cached_strings(element.child(Some(CHART_NAMESPACE), "tx"))
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        if categories.is_empty() {
+            categories = cached_strings(element.child(Some(CHART_NAMESPACE), "cat"));
+        }
+        series.push(Series { name, values });
+    }
+    if series.is_empty() {
+        return None;
+    }
 
     // The names and the numbers are written separately and may not match, so
-    // there is one name per number: the extra ones are dropped and the missing
+    // there is one name per point: the extra ones are dropped and the missing
     // ones are blank.
-    let mut categories = categories;
-    categories.resize(values.len(), String::new());
+    let points = series.iter().map(|one| one.values.len()).max().unwrap_or(0);
+    categories.resize(points, String::new());
 
-    Some(Chart { kind, title: chart_title(chart), series: name, categories, values })
+    // The key, and whether the numbers are written on the points. Either may be
+    // said anywhere among the series, so the whole chart is asked.
+    let legend = chart.child(Some(CHART_NAMESPACE), "legend").map(|element| {
+        element
+            .child(Some(CHART_NAMESPACE), "legendPos")
+            .and_then(|position| position.attribute(None, "val"))
+            .map_or(Legend::Right, Legend::from_word)
+    });
+    let labels = shows_values(drawn);
+
+    Some(Chart { kind, title: chart_title(chart), categories, series, legend, labels })
+}
+
+/// Whether anything in the plot says the numbers are written on the points.
+///
+/// Asked of the whole of it rather than of one series, because the format says
+/// it per series and Word asks it of the chart: a chart with the numbers on
+/// half its series is not something Word's own buttons can make.
+fn shows_values(drawn: &Element) -> bool {
+    if drawn.is(Some(CHART_NAMESPACE), "showVal") {
+        return drawn.attribute(None, "val").is_some_and(|value| value == "1" || value == "true");
+    }
+    drawn.child_elements().any(shows_values)
 }
 
 /// The heading over a chart, if it has one.
@@ -470,27 +591,27 @@ mod tests {
     fn numbers_are_read_out_of_the_line_they_were_typed_on() {
         let chart = sample();
         assert_eq!(chart.categories, vec!["North", "South", "East"]);
-        assert_eq!(chart.values, vec![10.0, 20.0, 5.0]);
+        assert_eq!(chart.series[0].values, vec![10.0, 20.0, 5.0]);
         assert_eq!(chart.title, "Sales");
     }
 
     #[test]
     fn a_number_with_a_comma_for_a_point_is_still_a_number() {
         let chart = Chart::parse(Kind::Column, "", "a=1,5");
-        assert_eq!(chart.values, vec![1.5]);
+        assert_eq!(chart.series[0].values, vec![1.5]);
     }
 
     #[test]
     fn a_bare_number_is_a_bar_with_no_name() {
         let chart = Chart::parse(Kind::Column, "", "4; 5");
-        assert_eq!(chart.values, vec![4.0, 5.0]);
+        assert_eq!(chart.series[0].values, vec![4.0, 5.0]);
         assert_eq!(chart.categories, vec!["", ""]);
     }
 
     #[test]
     fn something_that_is_not_a_number_is_left_out() {
         let chart = Chart::parse(Kind::Column, "", "a=1; b=hello; c=3");
-        assert_eq!(chart.values, vec![1.0, 3.0]);
+        assert_eq!(chart.series[0].values, vec![1.0, 3.0]);
         assert_eq!(chart.categories, vec!["a", "c"]);
     }
 
@@ -521,7 +642,7 @@ mod tests {
             let tree = wp_xml::tree::XmlTree::parse(&xml).expect("parsing");
             let read = read_chart(&tree.root).expect("a chart");
             assert_eq!(read.kind, *kind, "{}", kind.label());
-            assert_eq!(read.values, chart.values, "{}", kind.label());
+            assert_eq!(read.series[0].values, chart.series[0].values, "{}", kind.label());
             assert_eq!(read.categories, chart.categories, "{}", kind.label());
         }
     }
@@ -545,5 +666,82 @@ mod tests {
     fn a_part_that_is_not_a_chart_is_not_read_as_one() {
         let tree = wp_xml::tree::XmlTree::parse("<hello/>").expect("parsing");
         assert_eq!(read_chart(&tree.root), None);
+    }
+    /// A chart of two series, read back out of what this program writes.
+    fn two_series() -> Chart {
+        Chart {
+            kind: Kind::Column,
+            title: "Sales".to_owned(),
+            categories: vec!["North".to_owned(), "South".to_owned()],
+            series: vec![
+                Series { name: "Last year".to_owned(), values: vec![3.0, 5.0] },
+                Series { name: "This year".to_owned(), values: vec![4.0, 2.0] },
+            ],
+            legend: Some(Legend::Bottom),
+            labels: true,
+        }
+    }
+
+    #[test]
+    fn a_chart_of_several_series_survives_being_written_and_read_back() {
+        let written = chart_xml(&two_series());
+        let tree = wp_xml::tree::XmlTree::parse(&written).expect("the chart parses");
+        let read = read_chart(&tree.root).expect("a chart");
+        assert_eq!(read, two_series());
+    }
+
+    #[test]
+    fn every_series_keeps_its_own_name_and_numbers() {
+        let written = chart_xml(&two_series());
+        let tree = wp_xml::tree::XmlTree::parse(&written).expect("the chart parses");
+        let read = read_chart(&tree.root).expect("a chart");
+
+        assert_eq!(read.series.len(), 2, "both series should come back");
+        assert_eq!(read.series[1].name, "This year");
+        assert_eq!(read.series[1].values, vec![4.0, 2.0]);
+        // And the categories are the chart's, not each series'.
+        assert_eq!(read.categories, vec!["North".to_owned(), "South".to_owned()]);
+    }
+
+    #[test]
+    fn the_largest_number_is_the_largest_of_all_of_them() {
+        // What the value axis has to reach: a second series taller than the
+        // first is a chart drawn off the top otherwise.
+        assert!((two_series().largest() - 5.0).abs() < f64::EPSILON);
+        assert_eq!(two_series().points(), 2);
+    }
+
+    #[test]
+    fn a_chart_with_no_key_says_so_by_saying_nothing() {
+        let plain = Chart { legend: None, labels: false, ..two_series() };
+        let written = chart_xml(&plain);
+        assert!(!written.contains("c:legend"), "a key was written for a chart with none");
+        assert!(!written.contains("showVal"), "labels were written for a chart with none");
+
+        let tree = wp_xml::tree::XmlTree::parse(&written).expect("the chart parses");
+        let read = read_chart(&tree.root).expect("a chart");
+        assert_eq!(read.legend, None);
+        assert!(!read.labels);
+    }
+
+    #[test]
+    fn one_typed_line_is_still_one_series() {
+        // What the chart dialog makes: a chart of one series needs no key to
+        // tell it from the others.
+        let typed = Chart::parse(Kind::Column, "Sales", "North=3; South=5");
+        assert_eq!(typed.series.len(), 1);
+        assert_eq!(typed.series[0].values, vec![3.0, 5.0]);
+        assert_eq!(typed.legend, None);
+    }
+
+    #[test]
+    fn a_typed_pie_is_given_the_key_that_names_its_slices() {
+        // A pie draws its categories and nothing else says which slice is
+        // which, so the key is the only thing that makes it readable.
+        let pie = Chart::parse(Kind::Pie, "Sales", "North=3; South=5");
+        assert_eq!(pie.legend, Some(Legend::Right));
+
+        let column = Chart::parse(Kind::Column, "Sales", "North=3; South=5");
+        assert_eq!(column.legend, None, "one column series names itself along the bottom");
     }
 }

@@ -76,7 +76,7 @@ impl Editor {
                 self.relayout();
                 self.reveal_caret();
                 let named = self.chart_kind.label();
-                self.edited(inserted, &format!("{named} chart, {} points", chart.values.len()))
+                self.edited(inserted, &format!("{named} chart, {} points", chart.points()))
             }
             Err(error) => self.report(&format!("The chart could not be drawn: {error}")),
         }

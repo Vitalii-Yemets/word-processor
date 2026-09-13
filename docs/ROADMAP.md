@@ -2255,8 +2255,40 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   rather than those tables. Where the two agree the handle is used; where they
   do not, using it would draw a shape the number does not mean. That is **D21**
   along with the handles themselves.
-- [ ] **D4. Charts.** The chart types beyond those drawn today, their axes,
-  legends, labels and the data table behind them.
+- [x] **D4. Charts: several series, the key, and the numbers on the points.**
+  A chart part with more than one `c:ser` in it, read and written whole, drawn
+  the way Word draws it, with `c:legend` saying which series is which and
+  `c:dLbls` putting the number on every point.
+  *Done when:* a chart of two series opens here showing both, with a key naming
+  them and the numbers on them, and Word opens the saved file showing the same.
+  A chart was one series until today: one name, one run of numbers, one colour.
+  The file format never said so — `c:ser` repeats, and a reader that takes the
+  first and stops is a reader that silently drops half of what somebody drew.
+  Now every series is read in the order the file gives them, and the categories
+  are taken from the first, because they are the same for all of them and a file
+  that disagrees with itself is believed at its first word.
+  Several series change what drawing means. Columns and bars share one slot per
+  category between them — Word calls it clustered, and it is how a chart of
+  several series is read at all; the slot is the width the one column used to
+  have, divided by the number of series. A line chart draws one line per series
+  in its own colour, which is what the key then names. A pie draws the first
+  series and no other: a pie of several series would be several pies, and the
+  format has a chart type of its own for that.
+  The key is measured before the plot is laid out and drawn after it. Measured
+  first because the room it takes has to come off the plot — a key drawn over a
+  plot laid out as though there were no key sits on the bottom row of numbers.
+  Drawn after because it is drawn where the plot is not.
+  A pie's key is the other key: it names the slices rather than the series,
+  because a pie *is* one series and its slices are the categories. So a pie
+  keeps its names down the side, where there is room for as many of them as
+  there are slices, and every other chart puts its key in a row under the plot.
+  And a pie typed into the chart bar is given that key without being asked: a
+  pie with nothing naming its slices says nothing at all, which is what Word
+  decides for the same chart.
+  `c:dLbls` is written per series, which is what the format says, and asked of
+  the whole plot when reading, which is what Word's own button means: a chart
+  with the numbers on half its series is not something Word can make.
+  *Not done:* the rest of what a chart is — see **D24**.
 - [ ] **D5. SmartArt.** The diagram layouts, which are a language of their own
   in the file format.
 - [ ] **D6. Ink and media.** What a document holds when somebody drew on it or
@@ -2348,6 +2380,24 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   and `5`, turning it a quarter when it leaves upwards, and putting the bends
   outside the box — and none of that is written back, so Word opens a document
   saved here and routes the connector its own way between the same two points.
+
+- [ ] **D24. The rest of what a chart is.** What **D4** left, named:
+  the chart types beyond the four drawn today — stacked and hundred-percent
+  columns and bars, area, scatter, bubble, doughnut, radar, surface, and the
+  combinations Word offers as one chart; `c:dTable`, the table of the numbers
+  drawn under the plot; `c:numFmt`, the number format on an axis and on a label,
+  without which money is drawn as a bare number; the rest of what a label may
+  say — the category name, the series name, the percentage, and the leader line
+  drawn to a label that had to be moved off its slice; `c:spPr` on a series and
+  `c:dPt` on a point, which is a chart whose colours the document chose rather
+  than the palette; the scale on a value axis stated by the file rather than
+  worked out from the numbers; and the workbook behind the chart in
+  `xl/embeddings`, which is what Word opens when somebody asks to edit the data
+  and what it rewrites the caches from.
+  And the key's own place: `c:legendPos` is read and written and comes back
+  unchanged, but every key that is not a pie's is drawn in a row under the plot
+  whatever it says, because putting it at any of the four sides means laying the
+  plot out four ways.
 
 ## E — The rest of the text engine
 

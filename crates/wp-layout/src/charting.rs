@@ -28,6 +28,8 @@ const TITLE_SHARE: f32 = 0.14;
 const LABEL_SHARE: f32 = 0.12;
 /// And how much of the width the numbers up the side take.
 const AXIS_SHARE: f32 = 0.14;
+/// How much of the height a key along the bottom takes.
+const KEY_SHARE: f32 = 0.14;
 /// The room left round the whole thing.
 const MARGIN: f32 = 6.0;
 /// How much of a slot a bar fills, leaving the rest as the gap between bars.
@@ -132,13 +134,91 @@ pub fn draw(
         top += height * TITLE_SHARE;
     }
 
+    // A key takes room from the plot, so it is measured out before anything is
+    // drawn and drawn after: a plot laid out over the key would have its
+    // bottom row of numbers behind it.
+    let mut bottom = bottom;
+    if chart.legend.is_some() && !chart.series.is_empty() && chart.kind != Kind::Pie {
+        bottom -= height * KEY_SHARE;
+    }
+
     match chart.kind {
         Kind::Pie => pie(shaper, chart, left, top, right, bottom, size, palette, &mut out),
         Kind::Column => columns(shaper, chart, left, top, right, bottom, size, palette, &mut out),
         Kind::Bar => bars(shaper, chart, left, top, right, bottom, size, palette, &mut out),
         Kind::Line => line(shaper, chart, left, top, right, bottom, size, palette, &mut out),
     }
+
+    // A pie has its key beside it and every other chart has its key under it,
+    // because a pie names its slices and the rest name their series: the names
+    // are as long as the categories and there are as many of them as there are
+    // slices, which is a column and not a row.
+    if chart.legend.is_some() && chart.kind != Kind::Pie {
+        key(shaper, chart, left, bottom, right, size, palette, &mut out);
+    }
     out
+}
+
+/// The key: a square of each series' colour with its name beside it, in a row
+/// under the plot. What a pie needs is the other key, down the side, because a
+/// pie is one series and its slices are the categories.
+///
+/// Under it wherever the file asks for it. Word puts a key at any of the four
+/// sides; a key along the bottom is the one that costs the plot least, and
+/// putting it where the file says means laying the plot out four ways. Named in
+/// the roadmap.
+#[allow(clippy::too_many_arguments)]
+fn key(
+    shaper: &mut dyn ChartShaper,
+    chart: &Chart,
+    left: f32,
+    top: f32,
+    right: f32,
+    size: f32,
+    palette: &Palette,
+    out: &mut ChartDrawing,
+) {
+    let baseline = top + size * 1.6;
+    // Measured first, so the row can be centred: a key that started at the left
+    // edge would sit under one end of the plot rather than under the plot.
+    let mut widths = Vec::new();
+    let mut total = 0.0;
+    for series in &chart.series {
+        let (_, width) = shaper.shape_label(&series.name, 0.0, -1000.0, size, palette.text);
+        widths.push(width);
+        total += width + size * 2.4;
+    }
+    let mut at = left + ((right - left) - total).max(0.0) / 2.0;
+    for (index, series) in chart.series.iter().enumerate() {
+        out.rules.push(rectangle(
+            at,
+            baseline - size * 0.7,
+            size * 0.7,
+            size * 0.7,
+            accent(palette, index),
+        ));
+        let (glyphs, _) = shaper.shape_label(&series.name, at + size, baseline, size, palette.text);
+        out.glyphs.extend(glyphs);
+        at += widths[index] + size * 2.4;
+    }
+}
+
+/// The number written on a point, when the chart asks for its labels.
+fn label(
+    shaper: &mut dyn ChartShaper,
+    chart: &Chart,
+    value: f64,
+    at: (f32, f32),
+    size: f32,
+    palette: &Palette,
+    out: &mut ChartDrawing,
+) {
+    if !chart.labels {
+        return;
+    }
+    let (middle_x, baseline) = at;
+    let (glyphs, width) = shaper.shape_label(&number(value), 0.0, baseline, size, palette.text);
+    out.glyphs.extend(shifted(glyphs, middle_x - width / 2.0));
 }
 
 /// Moves glyphs sideways, which is how a label is centred after measuring.
@@ -232,18 +312,35 @@ fn columns(
         return;
     }
 
-    let slot = (right - plot_left) / chart.values.len() as f32;
-    let bar = slot * BAR_SHARE;
-    for (index, value) in chart.values.iter().enumerate() {
-        let share = (*value / largest).clamp(0.0, 1.0) as f32;
-        let tall = (plot_bottom - top) * share;
-        let x = plot_left + slot * index as f32 + (slot - bar) / 2.0;
-        out.rules.push(rectangle(x, plot_bottom - tall, bar, tall, accent(palette, index)));
+    // One slot per category, shared out between the series: two series put two
+    // columns side by side in the slot, which is what Word calls clustered and
+    // is how a chart of several series is read.
+    let slot = (right - plot_left) / chart.points().max(1) as f32;
+    let run = chart.series.len().max(1) as f32;
+    let bar = slot * BAR_SHARE / run;
+    for index in 0..chart.points() {
+        let slot_left = plot_left + slot * index as f32;
+        for (which, series) in chart.series.iter().enumerate() {
+            let Some(value) = series.values.get(index) else { continue };
+            let share = (*value / largest).clamp(0.0, 1.0) as f32;
+            let tall = (plot_bottom - top) * share;
+            let x = slot_left + (slot - bar * run) / 2.0 + bar * which as f32;
+            out.rules.push(rectangle(x, plot_bottom - tall, bar, tall, accent(palette, which)));
+            label(
+                shaper,
+                chart,
+                *value,
+                (x + bar / 2.0, plot_bottom - tall - size * 0.4),
+                size * 0.85,
+                palette,
+                out,
+            );
+        }
 
         if let Some(name) = chart.categories.get(index).filter(|name| !name.is_empty()) {
             let (glyphs, width) =
                 shaper.shape_label(name, 0.0, plot_bottom + size + 4.0, size, palette.text);
-            out.glyphs.extend(shifted(glyphs, x + (bar - width) / 2.0));
+            out.glyphs.extend(shifted(glyphs, slot_left + (slot - width) / 2.0));
         }
     }
 }
@@ -269,17 +366,36 @@ fn bars(
         return;
     }
 
-    let slot = (plot_bottom - top) / chart.values.len() as f32;
-    let thick = slot * BAR_SHARE;
-    for (index, value) in chart.values.iter().enumerate() {
-        let share = (*value / largest).clamp(0.0, 1.0) as f32;
-        let wide = (right - plot_left) * share;
-        let y = top + slot * index as f32 + (slot - thick) / 2.0;
-        out.rules.push(rectangle(plot_left, y, wide, thick, accent(palette, index)));
+    let slot = (plot_bottom - top) / chart.points().max(1) as f32;
+    let run = chart.series.len().max(1) as f32;
+    let thick = slot * BAR_SHARE / run;
+    for index in 0..chart.points() {
+        let slot_top = top + slot * index as f32;
+        for (which, series) in chart.series.iter().enumerate() {
+            let Some(value) = series.values.get(index) else { continue };
+            let share = (*value / largest).clamp(0.0, 1.0) as f32;
+            let wide = (right - plot_left) * share;
+            let y = slot_top + (slot - thick * run) / 2.0 + thick * which as f32;
+            out.rules.push(rectangle(plot_left, y, wide, thick, accent(palette, which)));
+            label(
+                shaper,
+                chart,
+                *value,
+                (plot_left + wide + size, y + thick / 2.0 + size / 3.0),
+                size * 0.85,
+                palette,
+                out,
+            );
+        }
 
         if let Some(name) = chart.categories.get(index).filter(|name| !name.is_empty()) {
-            let (glyphs, width) =
-                shaper.shape_label(name, 0.0, y + thick / 2.0 + size / 3.0, size, palette.text);
+            let (glyphs, width) = shaper.shape_label(
+                name,
+                0.0,
+                slot_top + slot / 2.0 + size / 3.0,
+                size,
+                palette.text,
+            );
             out.glyphs.extend(shifted(glyphs, (plot_left - width - 4.0).max(left)));
         }
     }
@@ -308,27 +424,35 @@ fn line(
 
     // One point per value, spread across the plot with half a slot at each end
     // so the first and last are not on the axes.
-    let slot = (right - plot_left) / chart.values.len().max(1) as f32;
+    let slot = (right - plot_left) / chart.points().max(1) as f32;
     let point_at = |index: usize, value: f64| {
         let share = (value / largest).clamp(0.0, 1.0) as f32;
         (plot_left + slot * (index as f32 + 0.5), plot_bottom - (plot_bottom - top) * share)
     };
 
-    let colour = accent(palette, 0);
-    let mut previous: Option<(f32, f32)> = None;
-    for (index, value) in chart.values.iter().enumerate() {
-        let (x, y) = point_at(index, *value);
-        if let Some((last_x, last_y)) = previous {
-            out.paths.push((thick_line(last_x, last_y, x, y, LINE), colour));
+    // One line per series, each in its own colour: that is what tells them
+    // apart, and what the key names.
+    for (which, series) in chart.series.iter().enumerate() {
+        let colour = accent(palette, which);
+        let mut previous: Option<(f32, f32)> = None;
+        for (index, value) in series.values.iter().enumerate() {
+            let (x, y) = point_at(index, *value);
+            if let Some((last_x, last_y)) = previous {
+                out.paths.push((thick_line(last_x, last_y, x, y, LINE), colour));
+            }
+            // A dot at each point, so a single value is still visible.
+            out.rules.push(rectangle(x - LINE, y - LINE, LINE * 2.0, LINE * 2.0, colour));
+            previous = Some((x, y));
+            label(shaper, chart, *value, (x, y - size * 0.6), size * 0.85, palette, out);
         }
-        // A dot at each point, so a single value is still visible.
-        out.rules.push(rectangle(x - LINE, y - LINE, LINE * 2.0, LINE * 2.0, colour));
-        previous = Some((x, y));
+    }
 
+    for index in 0..chart.points() {
         if let Some(name) = chart.categories.get(index).filter(|name| !name.is_empty()) {
             let (glyphs, width) =
                 shaper.shape_label(name, 0.0, plot_bottom + size + 4.0, size, palette.text);
-            out.glyphs.extend(shifted(glyphs, x - width / 2.0));
+            out.glyphs
+                .extend(shifted(glyphs, plot_left + slot * (index as f32 + 0.5) - width / 2.0));
         }
     }
 }
@@ -367,21 +491,42 @@ fn pie(
         return;
     }
 
-    // The pie fills the shorter side, with room down the right for the names.
-    let room = (right - left) * 0.62;
+    // The pie fills the shorter side, with room down the right for the names —
+    // and the whole width when the chart asks for no key, because then there
+    // are no names to leave room for.
+    let room = if chart.legend.is_some() { (right - left) * 0.62 } else { right - left };
     let diameter = room.min(bottom - top);
     let radius = diameter / 2.0;
     let centre_x = left + radius;
     let centre_y = top + (bottom - top) / 2.0;
 
     // From the top, clockwise, which is where a pie starts.
+    // The first series and no other: a pie of several series would be several
+    // pies, and the format has a chart type of its own for that.
+    let first = chart.series.first().map(|series| series.values.clone()).unwrap_or_default();
     let mut angle = -core::f32::consts::FRAC_PI_2;
-    for (index, value) in chart.values.iter().enumerate() {
+    for (index, value) in first.iter().enumerate() {
         let share = (*value / total) as f32;
         let sweep = share * core::f32::consts::TAU;
         out.paths.push((slice(centre_x, centre_y, radius, angle, sweep), accent(palette, index)));
         angle += sweep;
 
+        // The number on the slice, halfway out along the middle of it, where
+        // there is room for it inside the colour.
+        let middle = angle - sweep / 2.0;
+        label(
+            shaper,
+            chart,
+            *value,
+            (centre_x + middle.cos() * radius * 0.62, centre_y + middle.sin() * radius * 0.62),
+            size * 0.85,
+            palette,
+            out,
+        );
+
+        if chart.legend.is_none() {
+            continue;
+        }
         if let Some(name) = chart.categories.get(index).filter(|name| !name.is_empty()) {
             // The names down the right, each beside a square of its colour.
             let baseline = top + size * 1.6 * (index as f32 + 1.0);

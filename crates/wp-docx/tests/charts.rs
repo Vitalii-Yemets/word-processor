@@ -76,7 +76,7 @@ fn the_numbers_read_back_out_of_the_part() {
     assert_eq!(chart.kind, Kind::Column);
     assert_eq!(chart.title, "Sales");
     assert_eq!(chart.categories, vec!["North", "South", "East"]);
-    assert_eq!(chart.values, vec![10.0, 20.0, 5.0]);
+    assert_eq!(chart.series[0].values, vec![10.0, 20.0, 5.0]);
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn every_kind_of_chart_survives_being_saved_and_reopened() {
         let id = reference_in(&document).expect("a chart reference");
         let read = document.chart(&id).expect("the chart");
         assert_eq!(read.kind, *kind, "{}", kind.label());
-        assert_eq!(read.values, chart.values, "{}", kind.label());
+        assert_eq!(read.series[0].values, chart.series[0].values, "{}", kind.label());
     }
 }
 

@@ -1220,6 +1220,32 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // Two series drawn every way a chart can be drawn, each with a key
+            // naming the series and the number written on every point.
+            "charts" => {
+                use wp_docx::chart::{Chart, Kind, Legend, Series};
+
+                for kind in Kind::ALL {
+                    let chart = Chart {
+                        kind: *kind,
+                        title: format!("{} chart", kind.label()),
+                        categories: vec!["North".to_owned(), "South".to_owned(), "East".to_owned()],
+                        series: vec![
+                            Series { name: "Last year".to_owned(), values: vec![3.0, 5.0, 4.0] },
+                            Series { name: "This year".to_owned(), values: vec![4.0, 2.0, 6.0] },
+                        ],
+                        legend: Some(Legend::Bottom),
+                        labels: true,
+                    };
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    let _ = self.document.insert_chart(
+                        &chart,
+                        wp_docx::EMU_PER_INCH * 3,
+                        wp_docx::EMU_PER_INCH * 2,
+                    );
+                }
+                self.relayout();
+            }
             // What makes a shape solid: a bevel, a depth, and both together,
             // beside the same shape drawn flat.
             "solid" => {
