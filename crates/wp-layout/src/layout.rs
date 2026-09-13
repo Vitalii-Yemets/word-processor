@@ -480,6 +480,9 @@ pub struct PlacedImage {
     /// What it is called in a list of the document's drawings: the name the
     /// file gives it, and "Picture" for one that carries none.
     pub name: String,
+    /// Whether this is the frame of a video, which is drawn with the play sign
+    /// over it that says so.
+    pub video: bool,
 }
 
 /// One cell of a table, as the page holds it.
@@ -1383,10 +1386,14 @@ pub(crate) struct Item {
     /// How far round the picture is turned, and whether it is mirrored. A
     /// shape carries its own; this is where a picture's lives.
     picture_turn: wp_docx::floating::Turned,
+    /// Whether the picture is the frame of a video kept somewhere else.
+    picture_video: bool,
     /// An equation drawn in the line, with the height it takes up.
     math: Option<(Box<crate::math::MathBox>, f32)>,
     /// A chart drawn in the line, with the height it takes up.
     chart: Option<(Box<crate::charting::ChartDrawing>, f32)>,
+    /// Strokes somebody drew, with the height they take up.
+    ink: Option<(Box<crate::inking::InkDrawing>, f32)>,
     /// A shape drawn in the line, with the height it takes up.
     shape: Option<(Box<wp_docx::shapes::Shape>, f32)>,
     /// A group of drawings in the line, with the height it takes up.
@@ -1952,6 +1959,7 @@ impl<'a> LayoutEngine<'a> {
         // so is laid out once the outer one has stopped moving.
         Self::rejoin_connectors(&mut pages);
         self.fill_shapes(&mut pages, document);
+        mark_videos(&mut pages);
         pages
     }
 
@@ -3403,10 +3411,12 @@ impl<'a> LayoutEngine<'a> {
                             picture_anchor: None,
                             picture_name: None,
                             picture_turn: wp_docx::floating::Turned::default(),
+                            picture_video: false,
                             group: None,
                             shape: None,
                             math: None,
                             chart: None,
+                            ink: None,
                             hard_break: None,
                             style: style_index,
                             start_offset: start,
@@ -3432,9 +3442,11 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
                         group: None,
                         math: None,
                         chart: None,
+                        ink: None,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3463,9 +3475,11 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
                         group: None,
                         math: None,
                         chart: None,
+                        ink: None,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3494,9 +3508,11 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
                         group: None,
                         math: None,
                         chart: None,
+                        ink: None,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3528,9 +3544,63 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
                         group: None,
                         math: None,
                         chart: drawn.map(|drawing| (Box::new(drawing), height)),
+                        ink: None,
+                        shape: None,
+                        hard_break: None,
+                        style: style_index,
+                        start_offset: start,
+                        end_offset: *offset,
+                    });
+                }
+                RunContent::Ink(reference) => {
+                    paragraph_text.push(' ');
+                    // Ink takes one character of the paragraph, the same as
+                    // every other drawing: it is one thing the caret can stand
+                    // either side of. The strokes are in a part of their own,
+                    // which is why the document is needed here.
+                    let start = *offset;
+                    *offset += 1;
+
+                    let scale = self.pixels_per_point();
+                    let drawn = document.ink(&reference.relationship);
+                    // How big the ink is drawn: what the run says, and when it
+                    // says nothing, how big what was drawn is.
+                    let (width_emu, height_emu) = match (reference.width_emu, reference.height_emu)
+                    {
+                        (width, height) if width > 0 && height > 0 => (width, height),
+                        _ => drawn
+                            .as_ref()
+                            .and_then(wp_docx::ink::Ink::bounds)
+                            .map(|(left, top, right, bottom)| (right - left, bottom - top))
+                            .unwrap_or((0, 0)),
+                    };
+                    let points = |emu: i64| emu as f32 / 914_400.0 * 72.0 * scale;
+                    let width = points(width_emu).max(1.0);
+                    let height = points(height_emu).max(1.0);
+                    let drawing = drawn
+                        .filter(|ink| !ink.is_empty())
+                        .map(|ink| crate::inking::draw(&ink, width, height));
+
+                    items.push(Item {
+                        glyphs: Vec::new(),
+                        width,
+                        is_space: false,
+                        breaks_before: true,
+                        is_tab: false,
+                        aligned_tab: None,
+                        picture: None,
+                        picture_anchor: None,
+                        picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
+                        group: None,
+                        math: None,
+                        chart: None,
+                        ink: drawing.map(|drawing| (Box::new(drawing), height)),
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3567,9 +3637,11 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
                         group: drawn.map(|group| (Box::new(group), height)),
                         math: None,
                         chart: None,
+                        ink: None,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3600,10 +3672,12 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
                         group: None,
                         shape: None,
                         math: Some((Box::new(laid), height)),
                         chart: None,
+                        ink: None,
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -3638,9 +3712,11 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
                         group: None,
                         math: None,
                         chart: None,
+                        ink: None,
                         shape: Some((shape.clone(), height)),
                         hard_break: None,
                         style: style_index,
@@ -3676,9 +3752,11 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
                         group: Some((Box::new(group.clone()), height)),
                         math: None,
                         chart: None,
+                        ink: None,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3720,10 +3798,12 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: picture.anchor.clone(),
                         picture_name: picture.description.clone(),
                         picture_turn: picture.turned,
+                        picture_video: picture.video,
                         group: None,
                         shape: None,
                         math: None,
                         chart: None,
+                        ink: None,
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -3745,9 +3825,11 @@ impl<'a> LayoutEngine<'a> {
                         picture_anchor: None,
                         picture_name: None,
                         picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
                         group: None,
                         math: None,
                         chart: None,
+                        ink: None,
                         shape: None,
                         hard_break: Some(*kind),
                         style: style_index,
@@ -4108,6 +4190,7 @@ impl<'a> LayoutEngine<'a> {
                         } else {
                             picture.description.clone().unwrap_or_default()
                         },
+                        video: picture.video,
                     });
                 }
                 wp_docx::group::Inside::Group(inner) => {
@@ -5408,6 +5491,15 @@ impl LayoutEngine<'_> {
                     false,
                 );
                 x += item.width;
+            } else if let Some((drawing, _)) = &item.ink {
+                // Ink is laid out already, in a box of its own: putting it on
+                // the line is moving that box to where the line is. It hangs
+                // from the baseline the way a picture does.
+                let moved = drawing.translated(x, baseline - item_height(item));
+                page.paths.extend(
+                    moved.paths.into_iter().map(|(path, color)| PlacedPath { path, color }),
+                );
+                x += item.width;
             } else if let Some((drawing, _)) = &item.chart {
                 // A chart is laid out already, in a box of its own; putting it
                 // on the line is moving that box to where the line is. It hangs
@@ -5458,6 +5550,7 @@ impl LayoutEngine<'_> {
                         flipped_across: item.picture_turn.flipped_across,
                         flipped_down: item.picture_turn.flipped_down,
                         name: picture_name(item),
+                        video: item.picture_video,
                     });
                     continue;
                 }
@@ -5475,6 +5568,7 @@ impl LayoutEngine<'_> {
                     flipped_across: item.picture_turn.flipped_across,
                     flipped_down: item.picture_turn.flipped_down,
                     name: picture_name(item),
+                    video: item.picture_video,
                 });
                 x += item.width;
             } else if item.is_tab {
@@ -6145,6 +6239,12 @@ fn line_metrics(line: &Line, items: &[Item], styles: &[RunStyle]) -> (f32, f32, 
             ascent = ascent.max(*chart_height);
             height = height.max(*chart_height + descent);
         }
+        // And so does ink, which is a drawing like any other as far as the
+        // line is concerned.
+        if let Some((_, ink_height)) = &items[index].ink {
+            ascent = ascent.max(*ink_height);
+            height = height.max(*ink_height + descent);
+        }
         if let Some((laid, _)) = &items[index].math {
             ascent = ascent.max(laid.ascent);
             descent = descent.max(laid.descent);
@@ -6245,6 +6345,76 @@ fn run_edges(run: &Run) -> (Option<char>, Option<char>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page holding one picture, which may or may not be a video.
+    fn page_with_picture(video: bool) -> Page {
+        let mut page = Page { width: 600.0, height: 800.0, ..Page::default() };
+        page.images.push(PlacedImage {
+            x: 100.0,
+            y: 100.0,
+            width: 200.0,
+            height: 120.0,
+            image: Rc::new(wp_image::Image::empty(2, 2)),
+            depth: 0,
+            over_text: false,
+            at: None,
+            turn: 0.0,
+            flipped_across: false,
+            flipped_down: false,
+            name: "Video 1".to_owned(),
+            video,
+        });
+        page
+    }
+
+    #[test]
+    fn a_video_is_drawn_with_the_play_sign_over_it() {
+        let mut pages = [page_with_picture(true)];
+        mark_videos(&mut pages);
+        // The circle and the triangle in it.
+        assert_eq!(pages[0].paths.len(), 2);
+        assert_eq!(pages[0].paths[1].color, Color::WHITE);
+        assert!(pages[0].paths[0].color.alpha < 255, "the sign hides what is under it");
+    }
+
+    #[test]
+    fn the_play_sign_sits_in_the_middle_of_the_frame() {
+        let mut pages = [page_with_picture(true)];
+        mark_videos(&mut pages);
+
+        let mut bounds = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for (path, _) in pages[0].paths.iter().map(|placed| (&placed.path, placed.color)) {
+            for command in &path.commands {
+                let points = match command {
+                    wp_raster::Command::MoveTo(point) | wp_raster::Command::LineTo(point) => {
+                        vec![*point]
+                    }
+                    wp_raster::Command::QuadTo(one, two) => vec![*one, *two],
+                    wp_raster::Command::CubicTo(one, two, three) => vec![*one, *two, *three],
+                    wp_raster::Command::Close => Vec::new(),
+                };
+                for point in points {
+                    bounds.0 = bounds.0.min(point.x);
+                    bounds.1 = bounds.1.min(point.y);
+                    bounds.2 = bounds.2.max(point.x);
+                    bounds.3 = bounds.3.max(point.y);
+                }
+            }
+        }
+        let (middle_x, middle_y) = ((bounds.0 + bounds.2) / 2.0, (bounds.1 + bounds.3) / 2.0);
+        assert!((middle_x - 200.0).abs() < 2.0, "the sign is at {middle_x} across");
+        assert!((middle_y - 160.0).abs() < 2.0, "the sign is at {middle_y} down");
+        // And inside the picture, which is what makes it a sign on the video
+        // rather than a mark beside it.
+        assert!(bounds.0 >= 100.0 && bounds.2 <= 300.0);
+    }
+
+    #[test]
+    fn an_ordinary_picture_is_left_alone() {
+        let mut pages = [page_with_picture(false)];
+        mark_videos(&mut pages);
+        assert!(pages[0].paths.is_empty());
+    }
 
     #[test]
     fn text_splits_into_words_and_spaces() {
@@ -7231,6 +7401,9 @@ fn split_item(items: &mut Vec<Item>, levels: &mut Vec<u8>, index: usize, availab
     if item.chart.is_some() || item.shape.is_some() || item.group.is_some() {
         return false;
     }
+    if item.ink.is_some() {
+        return false;
+    }
 
     // How many glyphs fit, counted to cluster boundaries: a glyph whose
     // character is the same as the one before it belongs with it.
@@ -7385,7 +7558,55 @@ fn date_part(stamp: &str) -> String {
     stamp.split('T').next().unwrap_or_default().to_owned()
 }
 
+/// Puts the play sign over every picture that stands for a video.
+///
+/// A pass of its own, after everything is placed, because a video may be in
+/// the line or floating or inside a group, and what has to be true of all
+/// three is the same: the sign goes over the middle of the frame, and it goes
+/// over it rather than under it, which is what drawing it after the picture
+/// and into the paths does.
+///
+/// Word draws the same sign, and it is the only thing that tells a video from
+/// a picture of one.
+fn mark_videos(pages: &mut [Page]) {
+    use wp_raster::{Path, Point};
+
+    for page in pages.iter_mut() {
+        let mut badges = Vec::new();
+        for image in page.images.iter().filter(|image| image.video) {
+            let middle_x = image.x + image.width / 2.0;
+            let middle_y = image.y + image.height / 2.0;
+            // A fifth of the shorter side, which is what Word's own sign comes
+            // to on a frame of any size.
+            let radius = image.width.min(image.height) * 0.2;
+            if radius < 2.0 {
+                continue;
+            }
+
+            let mut circle = Path::new();
+            crate::geometry::ellipse(&mut circle, middle_x, middle_y, radius, radius);
+            // Dark and see-through, so a bright frame and a dark one both show
+            // the sign and both still show what is under it.
+            badges.push(PlacedPath { path: circle, color: Color::rgba(0, 0, 0, 170) });
+
+            // The triangle, pointing the way a video plays. Set a little right
+            // of the middle, because a triangle centred on its own box looks
+            // left of centre inside a circle.
+            let reach = radius * 0.45;
+            let mut triangle = Path::new();
+            triangle.move_to(Point::new(middle_x - reach * 0.7 + reach * 0.25, middle_y - reach));
+            triangle.line_to(Point::new(middle_x + reach + reach * 0.25, middle_y));
+            triangle.line_to(Point::new(middle_x - reach * 0.7 + reach * 0.25, middle_y + reach));
+            triangle.close();
+            badges.push(PlacedPath { path: triangle, color: Color::WHITE });
+        }
+        page.paths.extend(badges);
+    }
+}
+
 /// How tall an item is, for the things that hang from the baseline.
 fn item_height(item: &Item) -> f32 {
-    item.chart.as_ref().map_or(0.0, |(_, height)| *height)
+    let chart = item.chart.as_ref().map_or(0.0, |(_, height)| *height);
+    let ink = item.ink.as_ref().map_or(0.0, |(_, height)| *height);
+    chart.max(ink)
 }

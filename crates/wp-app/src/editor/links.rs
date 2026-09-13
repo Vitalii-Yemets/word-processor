@@ -67,7 +67,19 @@ impl Editor {
     /// A place in the document is gone to; an address is handed to the desktop,
     /// which knows what the person opens pages with.
     pub(super) fn follow_link(&mut self) -> Response {
-        let Some(link) = self.document.hyperlink_here() else { return Response::Ignored };
+        // A drawing carries its link inside itself rather than in an element
+        // round it, so it is asked separately. A video from the web is exactly
+        // this: a picture of the video, and the address of the video on it.
+        let Some(link) = self.document.hyperlink_here().or_else(|| {
+            self.document.drawing_link_here().map(|address| wp_docx::links::Link {
+                destination: Destination::Address(address),
+                text: String::new(),
+                paragraph: self.document.caret().paragraph,
+                range: (0, 0),
+            })
+        }) else {
+            return Response::Ignored;
+        };
         match link.destination {
             Destination::Place(place) => {
                 let Some(mark) = self.document.bookmark(&place) else {
@@ -92,6 +104,9 @@ impl Editor {
     /// What the status bar says about the link under the caret, if any.
     #[must_use]
     pub(super) fn link_note(&self) -> Option<String> {
+        if let Some(address) = self.document.drawing_link_here() {
+            return Some(format!("{address} — Ctrl+click to follow"));
+        }
         let link = self.document.hyperlink_here()?;
         Some(match link.destination {
             Destination::Address(address) => format!("{address} — Ctrl+click to follow"),

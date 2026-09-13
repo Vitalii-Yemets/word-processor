@@ -253,7 +253,7 @@ impl Document {
     }
 
     /// The same, named for the one caller that wants a picture's.
-    fn picture_drawing_at(&self, at: TextPosition) -> Option<&Element> {
+    pub(crate) fn picture_drawing_at(&self, at: TextPosition) -> Option<&Element> {
         self.drawing_element_at(at)
     }
 
@@ -613,7 +613,7 @@ fn walk_drawings<'a>(
 }
 
 /// The same, to change it.
-fn walk_drawings_mut(
+pub(crate) fn walk_drawings_mut(
     element: &mut Element,
     offset: &mut usize,
     wanted: usize,

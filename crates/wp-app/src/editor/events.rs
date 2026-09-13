@@ -769,7 +769,9 @@ impl Editor {
             // because everything below moves the caret and moving the caret is
             // what drops a selection.
             self.document.add_selection_at(position);
-            if self.document.hyperlink_here().is_some() {
+            if self.document.hyperlink_here().is_some()
+                || self.document.drawing_link_here().is_some()
+            {
                 self.document.clear_selection();
                 return self.follow_link();
             }

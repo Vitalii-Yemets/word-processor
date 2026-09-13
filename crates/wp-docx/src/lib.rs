@@ -62,6 +62,7 @@ pub mod furniture;
 pub mod gallery;
 pub mod group;
 mod history;
+pub mod ink;
 pub mod joins;
 pub mod languages;
 pub mod lines;
@@ -95,6 +96,7 @@ pub mod tablestyles;
 pub mod theme;
 pub mod translate;
 pub mod typography;
+pub mod video;
 pub mod watermark;
 pub mod words;
 
@@ -2466,13 +2468,13 @@ impl Document {
         Ok(id)
     }
 
-    /// Puts one of a diagram's parts into the package.
-    pub(crate) fn add_diagram_part(&mut self, name: &str, content_type: &str, xml: String) {
+    /// Puts a part into the package with the content type it needs.
+    pub(crate) fn add_package_part(&mut self, name: &str, content_type: &str, xml: String) {
         self.package.add_part(name, content_type, xml.into_bytes());
     }
 
-    /// Points the document at one of a diagram's parts.
-    pub(crate) fn point_at_diagram(
+    /// Points the document at a part of the package.
+    pub(crate) fn point_at_part(
         &mut self,
         name: &str,
         relationship: &str,

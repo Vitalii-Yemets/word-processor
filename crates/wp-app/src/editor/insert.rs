@@ -1220,6 +1220,94 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // A video from the web: its frame, drawn with the play sign over
+            // it that says what it stands for.
+            "video" => {
+                // The frame is made here rather than fetched: a proof should
+                // need nothing beside the program, and this program does not
+                // talk to the network.
+                let mut canvas =
+                    wp_raster::Canvas::filled(320, 180, wp_raster::Color::rgb(0x1F, 0x28, 0x38));
+                for y in 0..180i32 {
+                    for x in 0..320i32 {
+                        let shade = (24 + (x + y) / 6) as u8;
+                        canvas.fill_rect(x, y, 1, 1, wp_raster::Color::rgb(shade, shade + 8, 0x50));
+                    }
+                }
+                let bytes = wp_raster::encode_png(&canvas);
+
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                let _ = self.document.insert_web_video(
+                    &bytes,
+                    "png",
+                    "https://example.org/watch",
+                    wp_docx::EMU_PER_INCH * 3,
+                    wp_docx::EMU_PER_INCH * 27 / 16,
+                );
+                self.relayout();
+            }
+            // Ink: strokes read back out of the part they were written to,
+            // drawn as the pen drew them.
+            "ink" => {
+                use wp_docx::ink::{Ink, Stroke};
+
+                let pen = |colour: &str, width: i64, points: Vec<(i64, i64)>| Stroke {
+                    colour: colour.to_owned(),
+                    width_emu: width,
+                    transparency: 0,
+                    flat: false,
+                    points,
+                };
+
+                // A tick, in two strokes of a blue pen.
+                let tick = Ink {
+                    strokes: vec![
+                        pen("0070C0", 27_000, vec![(0, 180_000), (110_000, 300_000)]),
+                        pen("0070C0", 27_000, vec![(110_000, 300_000), (330_000, 0)]),
+                    ],
+                };
+
+                // A line drawn by hand, which is where a pen shows: hundreds
+                // of points, and the band has to follow every turn of them.
+                let mut wave = Vec::new();
+                for step in 0..=120 {
+                    let along = step as f64 / 120.0;
+                    let x = (along * 1_800_000.0) as i64;
+                    let y = (180_000.0 + (along * core::f64::consts::PI * 6.0).sin() * 120_000.0)
+                        as i64;
+                    wave.push((x, y));
+                }
+                let hand = Ink { strokes: vec![pen("C00000", 18_000, wave)] };
+
+                // A highlighter over a word written in pencil: the words under
+                // it have to show through.
+                let mut scribble = Vec::new();
+                for step in 0..=60 {
+                    let along = step as f64 / 60.0;
+                    let x = (along * 900_000.0) as i64;
+                    let y =
+                        (150_000.0 + (along * core::f64::consts::PI * 4.0).cos() * 90_000.0) as i64;
+                    scribble.push((x, y));
+                }
+                let marked = Ink {
+                    strokes: vec![
+                        pen("3B3B3B", 14_000, scribble),
+                        Stroke {
+                            colour: "FFFF00".to_owned(),
+                            width_emu: 220_000,
+                            transparency: 110,
+                            flat: true,
+                            points: vec![(30_000, 150_000), (870_000, 150_000)],
+                        },
+                    ],
+                };
+
+                for ink in [&tick, &hand, &marked] {
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    let _ = self.document.insert_ink(ink);
+                }
+                self.relayout();
+            }
             // A diagram of each arrangement, drawn out of the parts the
             // document keeps it in rather than out of the model that wrote it.
             "diagrams" => {

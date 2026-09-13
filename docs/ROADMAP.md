@@ -2332,8 +2332,58 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the words in the boxes are not a description of what the diagram says.
   *Not done:* the layout language itself and everything that needs it — see
   **D25**.
-- [ ] **D6. Ink and media.** What a document holds when somebody drew on it or
-  put a video in it.
+- [x] **D6. Ink and media as the file keeps them.** `w14:contentPart` and the
+  InkML part behind it; `wp15:webVideoPr` and the frame it marks. Read, drawn
+  and written.
+  *Done when:* a document somebody drew on opens here showing what they drew,
+  and a video in a document shows its frame with the play sign over it and
+  follows its address when pressed.
+  The way in was a thing neither of them: **markup compatibility**. Word writes
+  a drawing twice — once as what it means, and once as what a reader too old to
+  know the first can draw instead — and wraps the pair in `mc:AlternateContent`.
+  Nothing here read that. Everything from the shapes gallery arrives wrapped
+  that way, so every shape and every text box Word itself made was invisible in
+  this program: not misdrawn, not there. Now the choices are read in turn and
+  the first that comes to anything is kept, and the fallback is read when none
+  of them did — which is the format's own rule, asked the only way a reader can
+  answer it.
+  That had to be done twice, in two layers. The reader says what a run holds;
+  the layer that counts the characters of a paragraph says where the caret may
+  stand. A drawing counted by one and not by the other is every offset after it
+  out by one, so both walk the alternatives the same way and both count ink as
+  the one character it is.
+  **Ink** is a part of its own, written in InkML, which is the W3C's format and
+  not Microsoft's. A stroke is written mostly as how far the pen moved rather
+  than where it is: the first point outright and the rest as differences, with
+  a prefix saying which kind each number is — and a number with no prefix going
+  on in whatever kind the last one for that channel was. That last rule is the
+  whole of the encoding: without it every unprefixed number reads as a position
+  and a line of handwriting comes out as a scribble round the origin. The
+  prefix separates as well, which is why `'-4'-1` is two numbers.
+  The pens are read too: the colour, the width in hundredths of a millimetre,
+  and what makes a highlighter a highlighter — a flat tip and a raster
+  operation that leaves what is under it showing. A highlighter is drawn
+  see-through, so the words under it are still words.
+  Drawn as a band along every turn the pen took, fitted into the room the file
+  says the ink takes and centred in what is left: the fit is the same both
+  ways, because handwriting stretched to fill a box is somebody else's
+  handwriting.
+  And written: the part, the relationship, the run that points at it, and the
+  declaration that says a reader which does not know the extension may pass it
+  over — without which a strict reader stops at the ink and the document does
+  not open at all.
+  **A video from the web** is not a video. It is a still of one, the address it
+  plays from, and the markup that would embed a player: Word puts the frame in
+  as an ordinary picture, the address on the drawing as a link, and an
+  extension beside it saying the picture stands for something more. All three
+  are read, the frame is drawn with the play sign over it — a fifth of the
+  shorter side, dark and see-through, with the triangle set a little right of
+  the middle because a triangle centred on its own box looks left of centre
+  inside a circle — and Ctrl and a press follows the address. A picture carries
+  its link inside itself rather than in an element round it, so a linked
+  picture of any kind is followed now and not only a video.
+  *Not done:* drawing ink here, playing anything, and media kept inside the
+  document — see **D27**.
 
 - [x] **D21. The adjust handles.** The yellow diamonds themselves: where each
   preset puts them, drawing them on the chosen shape, dragging one, the shape
@@ -2480,6 +2530,40 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   when it is drawn, which is one more thing a fill can be and one more place
   that has to ask the theme. The arithmetic itself is done and tested; it is in
   the diagram module and belongs beside the theme.
+
+- [ ] **D27. Drawing ink, and the media a document carries inside it.** What
+  **D6** left.
+  Nothing in this program draws ink: the strokes can be read, drawn and
+  written, and the only way to make any is to hand the model a stroke. What is
+  missing is Word's Draw tab — the pens and their colours and widths, the
+  highlighter, the eraser that takes a whole stroke and the one that rubs part
+  of it out, drawing with the pointer, and the two things Word does afterwards:
+  ink to shape, and ink to text.
+  The pressure channel is read past. A pen reports how hard it was pressed and
+  Word draws a stroke that swells and thins with it; a stroke drawn here is the
+  same width from end to end.
+  Where ink goes is not where the file says. `w14:xfrm` carries an offset as
+  well as a size, and only the size is used: ink is drawn in the line the run
+  sits on, at the size the file gives it. A note written across a paragraph in
+  Word is drawn beside that paragraph here.
+  The relationship written for an ink part is the one Word uses for a content
+  part. Nothing read here depends on it — a relationship is followed by its id
+  — and Word is the reader that does; it has not been checked against Word.
+  **Inserting a video** here still writes a link and not a frame, and says so:
+  a frame is a still of the video, and this program does not talk to the
+  network and cannot fetch one. What it can do, and now does, is show the frame
+  a document already carries. The way out of that is the same way out of every
+  other fetching: somewhere to say what this program may reach and what it may
+  not.
+  **Media kept inside the document** is not read at all: a sound or a film
+  embedded as an object — `w:object` with an OLE object behind it, which is
+  what Insert > Object makes — and `a:videoFile` or the 2010 media extension on
+  a picture, which is what a video dragged into a document becomes. Each of
+  those shows in Word as a picture with a control over it, and each plays when
+  pressed. Nothing here plays anything: sound and moving pictures are a
+  different machine from the one that draws a page, and what this program would
+  honestly do first is show the frame and offer the file to whatever the person
+  plays such things with.
 
 ## E — The rest of the text engine
 

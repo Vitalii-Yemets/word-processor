@@ -73,7 +73,7 @@ fn picture_of(document: &Document) -> wp_docx::model::Picture {
         .iter()
         .flat_map(|run| run.content.iter())
         .find_map(|piece| match piece {
-            RunContent::Picture(picture) => Some(picture.clone()),
+            RunContent::Picture(picture) => Some((**picture).clone()),
             _ => None,
         })
         .expect("a picture in the paragraph")

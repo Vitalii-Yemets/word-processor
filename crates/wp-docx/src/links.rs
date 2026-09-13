@@ -191,6 +191,25 @@ impl Document {
         out
     }
 
+    /// Where a press on the drawing beside the caret goes, if it goes anywhere.
+    ///
+    /// A picture is a link as often as a word is, and it says so inside itself
+    /// rather than by being wrapped in anything: `a:hlinkClick` on the
+    /// drawing. Which is why this is asked separately from the links in the
+    /// text — there is no element round the drawing to find.
+    ///
+    /// The address comes back as the file states it, because a relationship
+    /// that leaves the package holds the whole of what it points at.
+    #[must_use]
+    pub fn drawing_link_here(&self) -> Option<String> {
+        let at = self.drawing_place_here()?;
+        let drawing = self.picture_drawing_at(at)?;
+        let id = crate::read::drawing_link(drawing)?;
+        let relationships = self.package().relationships(self.main_part()).ok()?;
+        let target = relationships.by_id(&id)?.target.clone();
+        (!target.is_empty()).then_some(target)
+    }
+
     /// The link the caret is inside, if it is inside one.
     #[must_use]
     pub fn hyperlink_here(&self) -> Option<Link> {
@@ -287,7 +306,7 @@ impl Document {
     }
 
     /// The relationship id for an address, making one if there is not one.
-    fn link_relationship(&mut self, address: &str) -> Option<String> {
+    pub(crate) fn link_relationship(&mut self, address: &str) -> Option<String> {
         let main_part = self.main_part().to_owned();
         let mut relationships = self
             .package()

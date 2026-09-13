@@ -88,7 +88,7 @@ pub struct Member {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Inside {
     Shape(Box<Shape>),
-    Picture(Picture),
+    Picture(Box<Picture>),
     /// A group of its own. Word lets a group hold a group, and a diagram
     /// pasted as drawings arrives as several levels of them.
     Group(Box<Group>),
@@ -253,7 +253,9 @@ fn read_into(wgp: &Element, group: &mut Group) {
 fn inside(element: &Element) -> Option<Inside> {
     match element.local_name() {
         "wsp" => crate::shapes::read_shape(element).map(|shape| Inside::Shape(Box::new(shape))),
-        "pic" => crate::read::read_picture(element).map(Inside::Picture),
+        "pic" => {
+            crate::read::read_picture(element).map(|picture| Inside::Picture(Box::new(picture)))
+        }
         "grpSp" => Some(Inside::Group(Box::new(read_nested(element)))),
         _ => None,
     }

@@ -289,27 +289,27 @@ impl Document {
         // The drawing first, because the data model has to name it, and it is
         // the data model's own relationship that reaches it rather than the
         // document's.
-        self.add_diagram_part(&drawing, DRAWING_CONTENT_TYPE, drawing_xml(&places, &fill, &paper));
+        self.add_package_part(&drawing, DRAWING_CONTENT_TYPE, drawing_xml(&places, &fill, &paper));
         // Beside the data model rather than under the document: the drawing is
         // the data model's own, and a relationship written from anywhere else
         // would point at it from the wrong part.
         let drawn_id =
             self.point_part_at(&data, &format!("drawing{index}.xml"), DRAWING_RELATIONSHIP)?;
 
-        self.add_diagram_part(
+        self.add_package_part(
             &data,
             DATA_CONTENT_TYPE,
             data_model_xml(arrangement, &items, &drawn_id),
         );
-        self.add_diagram_part(&layout, LAYOUT_CONTENT_TYPE, layout_xml(arrangement));
-        self.add_diagram_part(&quick_style, STYLE_CONTENT_TYPE, quick_style_xml());
-        self.add_diagram_part(&colours, COLORS_CONTENT_TYPE, colours_xml());
+        self.add_package_part(&layout, LAYOUT_CONTENT_TYPE, layout_xml(arrangement));
+        self.add_package_part(&quick_style, STYLE_CONTENT_TYPE, quick_style_xml());
+        self.add_package_part(&colours, COLORS_CONTENT_TYPE, colours_xml());
 
         let ids = Ids {
-            data: self.point_at_diagram(&data, DATA_RELATIONSHIP)?,
-            layout: self.point_at_diagram(&layout, LAYOUT_RELATIONSHIP)?,
-            style: self.point_at_diagram(&quick_style, STYLE_RELATIONSHIP)?,
-            colours: self.point_at_diagram(&colours, COLORS_RELATIONSHIP)?,
+            data: self.point_at_part(&data, DATA_RELATIONSHIP)?,
+            layout: self.point_at_part(&layout, LAYOUT_RELATIONSHIP)?,
+            style: self.point_at_part(&quick_style, STYLE_RELATIONSHIP)?,
+            colours: self.point_at_part(&colours, COLORS_RELATIONSHIP)?,
         };
 
         let prefix = self.prefix();

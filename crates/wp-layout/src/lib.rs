@@ -36,6 +36,7 @@ mod device;
 mod flowchart;
 pub mod geometry;
 pub mod handles;
+pub mod inking;
 mod layout;
 mod library;
 pub mod math;

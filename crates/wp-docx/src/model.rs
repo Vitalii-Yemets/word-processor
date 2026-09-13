@@ -689,7 +689,7 @@ pub enum RunContent {
     /// the margins move: the stops would have to be moved, and this does not.
     PositionTab(TabAlignment),
     /// A picture sitting in the line of text.
-    Picture(Picture),
+    Picture(Box<Picture>),
     /// A shape or a text box sitting in the line of text.
     /// Boxed, because a shape carries everything a shape can carry — its
     /// text, its fill, its handles, what is at the ends of its line, what it
@@ -706,6 +706,11 @@ pub enum RunContent {
     /// Only the reference: the chart lives in a part of its own, the same way
     /// a picture does. See [`crate::chart`].
     Chart(ChartReference),
+    /// Ink: strokes somebody drew, in a part of their own.
+    ///
+    /// Only the reference again. What the strokes are is InkML, which is not
+    /// this format at all. See [`crate::ink`].
+    Ink(InkReference),
     /// A diagram — SmartArt — drawn in the line of text.
     ///
     /// Only the reference again, and a diagram keeps more behind it than
@@ -725,6 +730,38 @@ pub enum RunContent {
         id: i32,
         endnote: bool,
     },
+}
+
+/// Which ink a run points at, and how big it is drawn.
+///
+/// A size of nothing means the file stated none, and then the ink is as big as
+/// what was drawn: a stroke has an extent of its own whether or not anything
+/// says so.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct InkReference {
+    /// The relationship of the main document that reaches the ink part.
+    pub relationship: String,
+    /// What the ink is called, and what it shows, for anyone who cannot see
+    /// it. Word writes both when somebody fills them in and neither when
+    /// nobody has.
+    pub name: String,
+    pub description: String,
+    /// In English metric units, as DrawingML measures a drawing.
+    pub width_emu: i64,
+    pub height_emu: i64,
+}
+
+impl InkReference {
+    /// The width in points, which is what the layout works in.
+    #[must_use]
+    pub fn width_points(&self) -> f64 {
+        self.width_emu as f64 / crate::EMU_PER_INCH as f64 * 72.0
+    }
+
+    #[must_use]
+    pub fn height_points(&self) -> f64 {
+        self.height_emu as f64 / crate::EMU_PER_INCH as f64 * 72.0
+    }
 }
 
 /// Which diagram a frame points at, and how much room it was given.
@@ -810,6 +847,18 @@ pub struct Picture {
     /// turning one changes that element where it stands. See
     /// [`crate::Document::set_drawing_turn_at`].
     pub turned: crate::floating::Turned,
+    /// Where a press on it goes, as the relationship that holds the address.
+    ///
+    /// A picture is a link as often as a word is: a logo that goes to the
+    /// company, a chart that goes to the figures it was made from.
+    pub link: Option<String>,
+    /// Whether what this is a picture of is a video kept somewhere else.
+    ///
+    /// Word's Online Video puts the frame it could fetch in the document and
+    /// the address of the video beside it, and draws a play sign over the
+    /// frame. The frame is an ordinary picture; this is what says it stands
+    /// for something more.
+    pub video: bool,
 }
 
 /// English Metric Units per inch, the unit drawings are measured in.
@@ -961,6 +1010,7 @@ impl Run {
                 | RunContent::Group(_)
                 | RunContent::Chart(_)
                 | RunContent::Diagram(_)
+                | RunContent::Ink(_)
                 | RunContent::NoteReference { .. } => {}
                 // An equation reads as the line it was typed on, which is
                 // what a person searching for it would look for.

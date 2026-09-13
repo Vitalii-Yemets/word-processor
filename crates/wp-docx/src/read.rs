@@ -633,9 +633,41 @@ pub(crate) fn read_run(element: &Element) -> Run {
 
     let mut content = Vec::new();
     for child in element.child_elements() {
-        if child.namespace.as_deref() != Some(W) {
-            continue;
+        read_run_piece(child, &mut content);
+    }
+
+    Run { properties, content, field: None, revision: None, format_change }
+}
+
+/// The namespace that says which of two ways of writing the same thing to read.
+pub(crate) const MC: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+
+/// Reads one child of a run into whatever it stands for.
+fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
+    // A drawing Word writes twice: once as what it means, and once as what a
+    // reader too old to know the first can draw instead. Everything from the
+    // shapes gallery arrives this way, and so does ink.
+    if child.local_name() == "AlternateContent"
+        && matches!(child.namespace.as_deref(), None | Some(MC))
+    {
+        read_alternate(child, content);
+        return;
+    }
+    // Ink is not in the word-processing namespace: it is an extension, and it
+    // says so by being written in the 2010 one.
+    if child.local_name() == "contentPart"
+        && matches!(child.namespace.as_deref(), Some(crate::ink::W14))
+    {
+        if let Some(reference) = crate::ink::read_reference(child) {
+            content.push(RunContent::Ink(reference));
         }
+        return;
+    }
+    if child.namespace.as_deref() != Some(W) {
+        return;
+    }
+
+    {
         match child.local_name() {
             // `w:delText` is text that was deleted: the same thing as `w:t`,
             // named differently so a reader that ignores deletions can.
@@ -686,14 +718,45 @@ pub(crate) fn read_run(element: &Element) -> Run {
                 } else if let Some(shape) = crate::shapes::read_shape(child) {
                     content.push(RunContent::Shape(Box::new(shape)));
                 } else if let Some(picture) = read_picture(child) {
-                    content.push(RunContent::Picture(picture));
+                    content.push(RunContent::Picture(Box::new(picture)));
                 }
             }
             _ => {}
         }
     }
+}
 
-    Run { properties, content, field: None, revision: None, format_change }
+/// Reads whichever of the ways of writing the same thing this program can read.
+///
+/// The rule the format states is to take the first choice whose extensions the
+/// reader knows and the fallback when it knows none of them. What is done here
+/// is the same rule asked the only way this program can answer it: every
+/// choice is read in turn and the first that comes to anything is kept, and
+/// the fallback is read when none of them did. A reader that knows an
+/// extension is a reader that gets something out of it.
+fn read_alternate(element: &Element, content: &mut Vec<RunContent>) {
+    let mut fallback = None;
+    for choice in element.child_elements() {
+        match choice.local_name() {
+            "Choice" => {
+                let mut found = Vec::new();
+                for child in choice.child_elements() {
+                    read_run_piece(child, &mut found);
+                }
+                if !found.is_empty() {
+                    content.extend(found);
+                    return;
+                }
+            }
+            "Fallback" => fallback = Some(choice),
+            _ => {}
+        }
+    }
+
+    let Some(fallback) = fallback else { return };
+    for child in fallback.child_elements() {
+        read_run_piece(child, content);
+    }
 }
 
 /// Reads who changed a run's formatting, out of the run's own properties.
@@ -753,6 +816,8 @@ pub(crate) fn read_picture(drawing: &Element) -> Option<Picture> {
         description,
         anchor: crate::anchor::read_anchor(drawing),
         turned: crate::floating::Turned::under(drawing),
+        link: drawing_link(drawing),
+        video: is_web_video(drawing),
     })
 }
 
@@ -883,6 +948,40 @@ fn math_run(element: &Element, field: Option<&str>, revision: Option<&Revision>)
     }
 }
 
+/// Where a press on a drawing goes, if it goes anywhere.
+///
+/// `a:hlinkClick`, which sits on the drawing's own properties or on the
+/// picture's. Either says the same thing, so the first one found is the
+/// answer.
+#[must_use]
+pub(crate) fn drawing_link(drawing: &Element) -> Option<String> {
+    fn search(element: &Element) -> Option<&Element> {
+        if element.local_name() == "hlinkClick" {
+            return Some(element);
+        }
+        element.child_elements().find_map(search)
+    }
+    let link = search(drawing)?;
+    let id = link.attribute(Some(RELATIONSHIPS), "id")?;
+    // A link with no relationship is how Word writes one that goes nowhere,
+    // which is what a video's own frame carries before anybody sets it.
+    (!id.is_empty()).then(|| id.to_owned())
+}
+
+/// Whether a drawing is the frame of a video kept somewhere else.
+///
+/// `wp15:webVideoPr`, in the extension list of the drawing's properties: the
+/// address, the size of the player and the markup that would embed it. What
+/// makes this a video rather than a picture is that element being there at
+/// all.
+#[must_use]
+fn is_web_video(drawing: &Element) -> bool {
+    fn search(element: &Element) -> bool {
+        element.local_name() == "webVideoPr" || element.child_elements().any(search)
+    }
+    search(drawing)
+}
+
 /// Reads the chart a drawing points at, if it points at one.
 ///
 /// Only the reference: the chart itself is a part of the package, and reading
@@ -947,4 +1046,130 @@ fn drawing_extent(drawing: &Element) -> (i64, i64) {
         extent.attribute(None, name).and_then(|text| text.trim().parse::<i64>().ok()).unwrap_or(0)
     };
     (read("cx"), read("cy"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(inside: &str) -> Run {
+        let xml = format!(
+            "<w:r xmlns:w=\"{W}\" xmlns:mc=\"{MC}\" xmlns:r=\"{rel}\" xmlns:wp=\"{wp}\" \
+             xmlns:a=\"{main}\" xmlns:wps=\"{wps}\" xmlns:w14=\"{w14}\" \
+             xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">{inside}</w:r>",
+            rel = crate::edit::RELATIONSHIPS,
+            wp = crate::edit::DRAWING_WORDPROCESSING,
+            main = crate::edit::DRAWING_MAIN,
+            wps = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+            w14 = crate::ink::W14,
+        );
+        let tree = wp_xml::tree::XmlTree::parse(&xml).expect("a run");
+        read_run(&tree.root)
+    }
+
+    /// A shape, written the way Word writes one inside a drawing.
+    const SHAPE: &str = "<w:drawing><wp:inline><wp:extent cx=\"914400\" cy=\"457200\"/>\
+         <wp:docPr id=\"1\" name=\"Rectangle 1\"/><a:graphic><a:graphicData \
+         uri=\"http://schemas.microsoft.com/office/word/2010/wordprocessingShape\">\
+         <wps:wsp><wps:cNvPr id=\"1\" name=\"Rectangle 1\"/><wps:spPr>\
+         <a:prstGeom prst=\"roundRect\"><a:avLst/></a:prstGeom></wps:spPr></wps:wsp>\
+         </a:graphicData></a:graphic></wp:inline></w:drawing>";
+
+    #[test]
+    fn a_shape_word_wrote_twice_is_read_once() {
+        // Everything from the shapes gallery arrives like this: what Word
+        // means first, and a picture of it for a reader too old to know.
+        let read = run(&format!(
+            "<mc:AlternateContent><mc:Choice Requires=\"wps\">{SHAPE}</mc:Choice>\
+             <mc:Fallback><w:pict/></mc:Fallback></mc:AlternateContent>"
+        ));
+        assert_eq!(read.content.len(), 1, "the shape was read twice or not at all");
+        let RunContent::Shape(shape) = &read.content[0] else { panic!("not a shape") };
+        assert_eq!(shape.preset, "roundRect");
+    }
+
+    #[test]
+    fn what_a_reader_cannot_use_falls_back_to_what_it_can() {
+        let read = run(&format!(
+            "<mc:AlternateContent><mc:Choice Requires=\"wpsomething\">\
+             <w14:somethingElse/></mc:Choice><mc:Fallback>{SHAPE}</mc:Fallback>\
+             </mc:AlternateContent>"
+        ));
+        assert_eq!(read.content.len(), 1);
+        assert!(matches!(read.content[0], RunContent::Shape(_)));
+    }
+
+    #[test]
+    fn a_run_that_points_at_ink_says_so() {
+        let read = run("<w14:contentPart r:id=\"rId8\"><w14:xfrm>\
+             <a:ext cx=\"914400\" cy=\"457200\"/></w14:xfrm></w14:contentPart>");
+        assert_eq!(read.content.len(), 1);
+        let RunContent::Ink(reference) = &read.content[0] else { panic!("not ink") };
+        assert_eq!(reference.relationship, "rId8");
+        assert_eq!(reference.width_emu, 914_400);
+    }
+
+    #[test]
+    fn ink_written_the_way_word_writes_it_is_read_the_same() {
+        // Word wraps it, because a reader that cannot draw ink should draw the
+        // picture of it underneath instead.
+        let read = run("<mc:AlternateContent><mc:Choice Requires=\"wps\">\
+             <w14:contentPart r:id=\"rId8\"/></mc:Choice>\
+             <mc:Fallback><w:pict/></mc:Fallback></mc:AlternateContent>");
+        assert_eq!(read.content.len(), 1);
+        assert!(matches!(read.content[0], RunContent::Ink(_)));
+    }
+
+    #[test]
+    fn the_words_of_a_run_are_still_the_words() {
+        let read = run("<w:t>hello</w:t><w:tab/><w:t>there</w:t>");
+        assert_eq!(read.content.len(), 3);
+        assert_eq!(read.plain_text(), "hello\tthere");
+    }
+    /// The frame of a video, written the way Word writes one: a picture, the
+    /// address it plays from, and the extension that says it is a video.
+    const VIDEO: &str = "<w:drawing><wp:inline><wp:extent cx=\"914400\" cy=\"514350\"/>\
+         <wp:docPr id=\"2\" name=\"Video 2\"><a:hlinkClick r:id=\"rId5\"/><a:extLst>\
+         <a:ext uri=\"{C809E66F-F1BF-436E-b5F7-EEA9579F0CBA}\">\
+         <wp15:webVideoPr xmlns:wp15=\"http://schemas.microsoft.com/office/word/2012/wordprocessingDrawing\" \
+         embeddedHtml=\"&lt;iframe&gt;&lt;/iframe&gt;\" h=\"360\" w=\"640\"/>\
+         </a:ext></a:extLst></wp:docPr><a:graphic><a:graphicData \
+         uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic>\
+         <pic:blipFill><a:blip r:embed=\"rId4\"/></pic:blipFill></pic:pic>\
+         </a:graphicData></a:graphic></wp:inline></w:drawing>";
+
+    #[test]
+    fn a_video_from_the_web_is_read_as_one() {
+        let read = run(VIDEO);
+        assert_eq!(read.content.len(), 1);
+        let RunContent::Picture(picture) = &read.content[0] else { panic!("not a picture") };
+        assert!(picture.video, "the frame of a video was read as an ordinary picture");
+        assert_eq!(picture.link.as_deref(), Some("rId5"), "the address was not read");
+        assert_eq!(picture.relationship, "rId4", "the frame itself was not read");
+    }
+
+    #[test]
+    fn an_ordinary_picture_is_not_a_video() {
+        let read = run("<w:drawing><wp:inline><wp:extent cx=\"100\" cy=\"100\"/>\
+             <wp:docPr id=\"1\" name=\"Picture 1\"/><a:graphic><a:graphicData \
+             uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">\
+             <pic:pic><pic:blipFill><a:blip r:embed=\"rId4\"/></pic:blipFill></pic:pic>\
+             </a:graphicData></a:graphic></wp:inline></w:drawing>");
+        let RunContent::Picture(picture) = &read.content[0] else { panic!("not a picture") };
+        assert!(!picture.video);
+        assert_eq!(picture.link, None);
+    }
+
+    #[test]
+    fn a_link_that_goes_nowhere_is_no_link() {
+        // What Word writes on a picture whose link was taken off again.
+        let read = run("<w:drawing><wp:inline><wp:extent cx=\"100\" cy=\"100\"/>\
+             <wp:docPr id=\"1\" name=\"Picture 1\"><a:hlinkClick r:id=\"\"/></wp:docPr>\
+             <a:graphic><a:graphicData \
+             uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">\
+             <pic:pic><pic:blipFill><a:blip r:embed=\"rId4\"/></pic:blipFill></pic:pic>\
+             </a:graphicData></a:graphic></wp:inline></w:drawing>");
+        let RunContent::Picture(picture) = &read.content[0] else { panic!("not a picture") };
+        assert_eq!(picture.link, None);
+    }
 }

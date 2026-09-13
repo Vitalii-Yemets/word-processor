@@ -347,7 +347,7 @@ mod tests {
         let mut whole = paragraph();
         whole.runs.push(Run {
             properties: RunProperties::default(),
-            content: vec![RunContent::Picture(crate::model::Picture::default())],
+            content: vec![RunContent::Picture(Box::default())],
             field: None,
             revision: None,
             format_change: None,
@@ -369,7 +369,7 @@ mod tests {
         let mut whole = paragraph();
         whole.runs.push(Run {
             properties: RunProperties::default(),
-            content: vec![RunContent::Picture(crate::model::Picture::default())],
+            content: vec![RunContent::Picture(Box::default())],
             field: None,
             revision: None,
             format_change: None,

@@ -190,6 +190,13 @@ pub(crate) fn atomic_text(element: &Element) -> Option<&'static str> {
     {
         return Some("\u{1}");
     }
+    // So does ink, and it is not in the word-processing namespace either: it
+    // is an extension. See [`crate::ink`].
+    if element.namespace.as_deref() == Some(crate::ink::W14)
+        && element.local_name() == "contentPart"
+    {
+        return Some("\u{1}");
+    }
     if element.namespace.as_deref() != Some(W) {
         return None;
     }
@@ -397,11 +404,26 @@ fn walk_text_pieces(
 
     for (index, node) in element.children.iter().enumerate() {
         let Node::Element(child) = node else { continue };
-        // Everything but WordprocessingML is skipped, except an equation: it
-        // is in a namespace of its own and stands for one character of the
-        // text, so it has to be counted.
+        // Everything Word wrote twice — once as what it means and once as what
+        // an older reader can draw — is one thing in the text, and which of
+        // the two is counted has to be the one the reader read, or every
+        // offset after it is out by one. See [`crate::read`].
+        if child.local_name() == "AlternateContent"
+            && matches!(child.namespace.as_deref(), None | Some(crate::read::MC))
+        {
+            path.push(index);
+            walk_alternate(child, path, offset, pieces, in_field || in_complex);
+            path.pop();
+            continue;
+        }
+
+        // Everything but WordprocessingML is skipped, except an equation and
+        // ink: each is in a namespace of its own and stands for one character
+        // of the text, so both have to be counted.
         let is_math = child.namespace.as_deref() == Some(crate::math::MATH_NAMESPACE);
-        if child.namespace.as_deref() != Some(W) && !is_math {
+        let is_ink = child.namespace.as_deref() == Some(crate::ink::W14)
+            && child.local_name() == "contentPart";
+        if child.namespace.as_deref() != Some(W) && !is_math && !is_ink {
             continue;
         }
 
@@ -453,6 +475,44 @@ fn walk_text_pieces(
         }
         path.pop();
     }
+}
+
+/// Walks whichever of the ways of writing the same thing was read.
+///
+/// The same rule the reader follows, asked the same way: the first choice that
+/// comes to anything, and the fallback when none of them did. Two layers
+/// counting the characters of a paragraph differently is a caret that lands a
+/// character out from where it was put.
+fn walk_alternate(
+    element: &Element,
+    path: &mut Vec<usize>,
+    offset: &mut usize,
+    pieces: &mut Vec<TextPiece>,
+    in_field: bool,
+) {
+    let mut fallback = None;
+    for (index, node) in element.children.iter().enumerate() {
+        let Node::Element(child) = node else { continue };
+        match child.local_name() {
+            "Choice" => {
+                let before = pieces.len();
+                path.push(index);
+                walk_text_pieces(child, path, offset, pieces, in_field);
+                path.pop();
+                if pieces.len() > before {
+                    return;
+                }
+            }
+            "Fallback" => fallback = Some(index),
+            _ => {}
+        }
+    }
+
+    let Some(index) = fallback else { return };
+    let Some(Node::Element(child)) = element.children.get(index) else { return };
+    path.push(index);
+    walk_text_pieces(child, path, offset, pieces, in_field);
+    path.pop();
 }
 
 /// Resolves a child path back to an element.
@@ -918,6 +978,10 @@ pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> El
             // Nor a chart: it is a part of the package, carried through in
             // its own element rather than rebuilt from the model.
             RunContent::Chart(_) => {}
+            // Nor ink: the strokes are a part of their own, written in a
+            // format that is not this one, and the run that points at them is
+            // carried through as it was read.
+            RunContent::Ink(_) => {}
             // Nor a diagram, which is five parts and a frame that names four
             // relationships: rebuilding the frame from the model would have to
             // invent those, and the frame that is already there names the ones
