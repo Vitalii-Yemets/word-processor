@@ -203,6 +203,11 @@ pub(crate) fn atomic_text(element: &Element) -> Option<&'static str> {
     match element.local_name() {
         "tab" => Some("\t"),
         "br" => Some("\n"),
+        // The hyphens Word writes as elements stand for one character each,
+        // and the character is the one they mean: an offset means the same
+        // thing whether the document spells it as an element or as text.
+        "softHyphen" => Some("\u{00AD}"),
+        "noBreakHyphen" => Some("\u{2011}"),
         // A picture stands in the text as one character, so the caret can be
         // put either side of it and Backspace can reach it. U+0001 rather than
         // the object replacement character because it has to be one byte long:

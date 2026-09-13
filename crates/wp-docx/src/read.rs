@@ -689,6 +689,12 @@ fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
                 content.push(RunContent::Break(kind));
             }
             "tab" => content.push(RunContent::Tab),
+            // The two hyphens that are not the hyphen key. Word writes each as
+            // an element of its own rather than as the character it stands
+            // for, and a reader that passes over them loses what the writer
+            // said about where the word may break.
+            "softHyphen" => content.push(RunContent::Text("\u{00AD}".to_owned())),
+            "noBreakHyphen" => content.push(RunContent::Text("\u{2011}".to_owned())),
             "ptab" => {
                 // Word writes left, center or right; anything else is not an
                 // alignment tab this program can place, and an ordinary tab is

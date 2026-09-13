@@ -242,6 +242,29 @@ impl Document {
         self.set_setting_value("hyphenationZone", twips.map(|value| value.to_string()).as_deref())
     }
 
+    /// How many lines in a row may end with a hyphen, or `None` for as many as
+    /// it takes.
+    ///
+    /// Word's "Limit consecutive hyphens to". A stack of hyphens down the
+    /// right-hand edge is what typesetters call a ladder, and this is the
+    /// control that stops one.
+    #[must_use]
+    pub fn consecutive_hyphen_limit(&self) -> Option<i32> {
+        self.setting_value("consecutiveHyphenLimit")
+            .and_then(|value| value.parse().ok())
+            // Word writes nought for no limit, which is the same thing said
+            // the other way.
+            .filter(|value: &i32| *value > 0)
+    }
+
+    /// Sets that limit.
+    pub fn set_consecutive_hyphen_limit(&mut self, lines: Option<i32>) -> bool {
+        self.set_setting_value(
+            "consecutiveHyphenLimit",
+            lines.filter(|value| *value > 0).map(|value| value.to_string()).as_deref(),
+        )
+    }
+
     // --- The colour of the page -----------------------------------------------
 
     /// The colour behind the text, as six hex digits.

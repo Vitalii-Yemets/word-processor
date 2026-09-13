@@ -1305,6 +1305,12 @@ struct ShapedGlyph {
     /// are positive, as the font says them. See [`wp_shape::Placement`].
     x_offset: f32,
     y_offset: f32,
+    /// Whether it takes its place in the text and draws nothing.
+    ///
+    /// The optional hyphen is the one that does: it is a mark the writer put
+    /// inside a word to say the word may be broken there, and it is drawn only
+    /// if the line is broken there — by the line, not by the glyph.
+    invisible: bool,
     /// Byte offset of the character it draws, within the paragraph text.
     offset: usize,
     /// Byte length of that character.
@@ -1399,6 +1405,14 @@ pub(crate) struct Item {
     chart: Option<(Box<crate::charting::ChartDrawing>, f32)>,
     /// Strokes somebody drew, with the height they take up.
     ink: Option<(Box<crate::inking::InkDrawing>, f32)>,
+    /// How wide the hyphen is that would be drawn if the line ended here.
+    ///
+    /// Nothing for almost every item. An item that ends with an optional
+    /// hyphen — the mark a writer puts inside a word to say it may be broken
+    /// there — carries the width of the hyphen that is then drawn, which is
+    /// what makes the room for it before the line is settled rather than
+    /// after.
+    hyphen: f32,
     /// A shape drawn in the line, with the height it takes up.
     shape: Option<(Box<wp_docx::shapes::Shape>, f32)>,
     /// A group of drawings in the line, with the height it takes up.
@@ -3398,6 +3412,15 @@ impl<'a> LayoutEngine<'a> {
                         let start = *offset;
                         let glyphs = self.shape(&chunk.text, style, start);
                         let width = glyphs.iter().map(|glyph| glyph.advance).sum();
+                        // A chunk ends with an optional hyphen only where the
+                        // writer put one, and a break is allowed after every
+                        // one of them — so such a chunk is a place a line may
+                        // end, and the hyphen is what is drawn if it does.
+                        let drawn_hyphen = if chunk.text.ends_with('\u{00AD}') {
+                            self.hyphen_width(style)
+                        } else {
+                            0.0
+                        };
                         let taken = if number + 1 == chunks.len() {
                             left
                         } else {
@@ -3422,6 +3445,7 @@ impl<'a> LayoutEngine<'a> {
                             math: None,
                             chart: None,
                             ink: None,
+                            hyphen: drawn_hyphen,
                             hard_break: None,
                             style: style_index,
                             start_offset: start,
@@ -3452,6 +3476,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        hyphen: 0.0,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3485,6 +3510,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        hyphen: 0.0,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3518,6 +3544,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        hyphen: 0.0,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3554,6 +3581,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: drawn.map(|drawing| (Box::new(drawing), height)),
                         ink: None,
+                        hyphen: 0.0,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3606,6 +3634,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: drawing.map(|drawing| (Box::new(drawing), height)),
+                        hyphen: 0.0,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3647,6 +3676,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        hyphen: 0.0,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3683,6 +3713,7 @@ impl<'a> LayoutEngine<'a> {
                         math: Some((Box::new(laid), height)),
                         chart: None,
                         ink: None,
+                        hyphen: 0.0,
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -3722,6 +3753,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        hyphen: 0.0,
                         shape: Some((shape.clone(), height)),
                         hard_break: None,
                         style: style_index,
@@ -3762,6 +3794,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        hyphen: 0.0,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3809,6 +3842,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        hyphen: 0.0,
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -3835,6 +3869,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        hyphen: 0.0,
                         shape: None,
                         hard_break: Some(*kind),
                         style: style_index,
@@ -4854,7 +4889,7 @@ impl<'a> LayoutEngine<'a> {
         let whole = wp_shape::needs_shaping(text);
         if whole || (!style.features.is_empty() && style.caps == Caps::None) {
             if let Some(glyphs) = self.shape_joined(text, style, base_offset, joined) {
-                return glyphs;
+                return hide_optional_hyphens(glyphs);
             }
         }
 
@@ -4911,6 +4946,7 @@ impl<'a> LayoutEngine<'a> {
                             glyph,
                             x_offset: 0.0,
                             y_offset: 0.0,
+                            invisible: false,
                             // Letters drawn wider take up more room, and the
                             // room asked for between them is the same width
                             // wherever it is measured. Hidden text takes up
@@ -4935,7 +4971,7 @@ impl<'a> LayoutEngine<'a> {
         // Which way round the glyphs go is not decided here: it belongs to the
         // paragraph, not the run, and the bidirectional algorithm settles it
         // once the whole paragraph is known. See [`wp_bidi`].
-        glyphs
+        hide_optional_hyphens(glyphs)
     }
 
     /// Shapes text in a joined script, if a face can be found that knows how.
@@ -4993,6 +5029,7 @@ impl<'a> LayoutEngine<'a> {
                 advance: advance * style.stretch + style.letter_spacing,
                 x_offset: entry.x_offset as f32 * scale * style.stretch,
                 y_offset: entry.y_offset as f32 * scale,
+                invisible: false,
                 offset: base_offset + entry.cluster,
                 character: text[entry.cluster..].chars().next().unwrap_or('\u{FFFD}'),
                 length: length.max(1),
@@ -5004,6 +5041,19 @@ impl<'a> LayoutEngine<'a> {
         // round a piece of text goes is settled once for the whole paragraph,
         // by the bidirectional algorithm. See [`wp_bidi`].
         Some(glyphs)
+    }
+
+    /// How wide the hyphen is that ends a broken word, in this style.
+    ///
+    /// Measured through the same shaping as everything else, so a hyphen in a
+    /// stretched or letter-spaced run is as wide there as it is anywhere.
+    fn hyphen_width(&mut self, style: &RunStyle) -> f32 {
+        self.shape("-", style, 0).iter().map(|glyph| glyph.advance).sum()
+    }
+
+    /// The hyphen itself, ready to be put at the end of a broken line.
+    fn hyphen_glyph(&mut self, style: &RunStyle, offset: usize) -> Option<ShapedGlyph> {
+        self.shape("-", style, offset).into_iter().next()
     }
 
     /// A face that can both draw a joined script and shape it.
@@ -5268,6 +5318,22 @@ impl LayoutEngine<'_> {
     }
 }
 
+/// Makes the optional hyphens of a run take no room and draw nothing.
+///
+/// The character is a mark about the word rather than a letter of it: Word
+/// shows it only when the marks are shown, and draws a hyphen for it only
+/// where a line is broken at it. It keeps its place in the run so that the
+/// caret can still be moved over it and a click still lands beside it.
+fn hide_optional_hyphens(mut glyphs: Vec<ShapedGlyph>) -> Vec<ShapedGlyph> {
+    for glyph in &mut glyphs {
+        if glyph.character == '\u{00AD}' {
+            glyph.advance = 0.0;
+            glyph.invisible = true;
+        }
+    }
+    glyphs
+}
+
 /// How wide the stretch after a tab is.
 fn segment_width(following: Following<'_>) -> f32 {
     following.items[following.from..following.end]
@@ -5360,6 +5426,10 @@ impl LayoutEngine<'_> {
             .map(|position| line.items.start + position)
             .collect();
 
+        // Where the hyphen goes, if this line broke a word in half: the place
+        // the last word ends, and the style it was written in.
+        let mut broken_at: Option<(f32, usize, usize)> = None;
+
         for index in visual {
             let item = &items[index];
             let style = &styles[item.style];
@@ -5415,9 +5485,17 @@ impl LayoutEngine<'_> {
                     // so the caret can still be moved through it and a click
                     // still lands in the right place — which is what happens in
                     // Word when the marks are turned back on.
-                    invisible: style.hidden,
+                    invisible: style.hidden || glyph.invisible,
                 });
                 x += glyph.advance;
+            }
+
+            // A word broken at an optional hyphen is drawn with the hyphen the
+            // writer asked for — and only then. The last line of a paragraph
+            // ends where the words end, and an optional hyphen there is
+            // nothing at all.
+            if item.hyphen > 0.0 && index + 1 == line.last_visible && line.items.end < items.len() {
+                broken_at = Some((x, item.style, item.end_offset));
             }
             if let Some((shape, height)) = &item.shape {
                 // A drawing that floats is not on the line at all: it is put
@@ -5707,6 +5785,38 @@ impl LayoutEngine<'_> {
                         height: thickness,
                         color: style.color,
                     });
+                }
+            }
+        }
+
+        // The hyphen that says a word was broken. It belongs to the line
+        // rather than to any item of it — the writer wrote a mark, not a
+        // hyphen, and what turns one into the other is the line ending there.
+        if let Some((at, style_index, offset)) = broken_at {
+            if let Some(style) = styles.get(style_index).cloned() {
+                if let Some(glyph) = self.hyphen_glyph(&style, offset) {
+                    page.glyphs.push(PositionedGlyph {
+                        face: glyph.face,
+                        glyph: glyph.glyph,
+                        x: at,
+                        baseline: baseline - style.raise,
+                        advance: glyph.advance,
+                        size: glyph.size,
+                        stretch: style.stretch,
+                        color: style.color,
+                        effect: style.effect,
+                        // It points at the mark it was drawn for, and covers
+                        // none of the text: the mark itself is already a
+                        // character of the line, and a click on the hyphen
+                        // lands beside it rather than inside anything.
+                        source: TextPosition::new(
+                            placement.paragraph,
+                            offset.saturating_sub('\u{00AD}'.len_utf8()),
+                        ),
+                        source_length: 0,
+                        invisible: false,
+                    });
+                    x += glyph.advance;
                 }
             }
         }
@@ -7361,12 +7471,16 @@ fn break_next_line_fitting(items: &[Item], start: usize, available: f32, must_fi
         }
 
         let would_be = used + item.width;
+        // What the line costs if it ends here: an item that ends with an
+        // optional hyphen has a hyphen drawn after it, and a line measured
+        // without it is a line with a hyphen hanging past the margin.
+        let closed = would_be + item.hyphen;
         // Nothing on the line yet and this will not fit: for a piece that has
         // somewhere to pass the word on to, the piece stays empty.
-        if must_fit && would_be > available && used == 0.0 && !item.is_space {
+        if must_fit && closed > available && used == 0.0 && !item.is_space {
             return Line { items: first..first, last_visible: first };
         }
-        if would_be > available && used > 0.0 && !item.is_space {
+        if closed > available && used > 0.0 && !item.is_space {
             if item.breaks_before {
                 return Line { items: first..index, last_visible };
             }

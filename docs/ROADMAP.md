@@ -2763,9 +2763,54 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   a Thai word and counting the words of a Thai paragraph — all the same
   missing thing, named under **E6** where the same dictionary is wanted for
   Chinese and Japanese.
-- [ ] **E3. Hyphenation.** Breaking inside a word, with pattern data per
-  language, and Word's controls: automatic, manual, hyphenation zone, limit
-  consecutive hyphens.
+- [x] **E3. Hyphenation: the hyphens a document carries.** The optional hyphen
+  and the non-breaking hyphen — the two marks a writer puts inside a word to
+  say where it may break and where it may not — read, written, drawn and
+  broken at. And every one of Word's hyphenation settings read and written.
+  *Done when:* a word with an optional hyphen in it breaks there and shows a
+  hyphen at the break, and shows nothing at all anywhere else.
+  The optional hyphen is the awkward one, because what is drawn for it depends
+  on where the line ends. In the middle of a line it is nothing: no ink, no
+  width, and a document full of them is set exactly as a document without them.
+  At the end of a line it is a hyphen. So the mark keeps its place in the run —
+  the caret can be moved over it and a click lands beside it — and draws
+  nothing; and the *line*, when it breaks at one, draws the hyphen. It belongs
+  to the line rather than to any glyph of it, which is what the code says.
+  The room for that hyphen is made before the line is settled rather than
+  after. A line is measured by what it would cost if it ended at this piece,
+  and a piece that ends with an optional hyphen costs a hyphen more — measured
+  afterwards, the hyphen hangs in the margin.
+  Word writes both marks as elements rather than as the characters they stand
+  for — `w:softHyphen` and `w:noBreakHyphen` — and neither was read: a document
+  from Word lost every one of them, which is to say it lost every place its
+  writer had said the word may break. Each is read as the character it means
+  and counts as one character of the text, so every offset after it is right.
+  The settings are all there now: automatic on or off, the zone, whether words
+  in capitals are left alone, and the limit on how many lines in a row may end
+  with a hyphen — where nought means no limit, which is what Word writes for
+  it.
+  *Not done:* hyphenating a word nobody marked — see **E14**.
+
+- [ ] **E14. Automatic hyphenation.** Breaking a word nowhere anybody said it
+  may break, which is what Word's Automatic does and what this cannot do yet.
+  It needs pattern data: the standard way is Liang's algorithm, which holds a
+  few thousand patterns per language — `hy3phen`, `.ad4der` — and takes the
+  odd-numbered ones as the places a word may break. The algorithm is a few
+  dozen lines. The patterns are the whole of it, they differ per language, and
+  this program has none: it cannot reach the network to fetch any, and a set
+  invented here would break words where no dictionary of the language says
+  they break, which is worse than not breaking them at all.
+  So what this wants first is a decision about where such data comes from and
+  where it lives — beside the program, in the image, asked for at runtime —
+  and that decision is the same one **E6** needs for the Chinese and Japanese
+  word dictionary and **E2** for the Thai one. Three items, one missing thing.
+  What waits on it: the hyphenation zone, which says how close to the margin a
+  line must come before a word is broken; the limit on consecutive hyphens,
+  which is read and written and not yet obeyed because nothing here makes
+  enough hyphens for it to bite; leaving words in capitals alone; the
+  paragraph's own "never break the words in this one"; and Word's Layout tab
+  menu — Automatic, Manual, Hyphenation Options — which is not there at all,
+  because a menu whose two commands do nothing is worse than no menu.
 - [ ] **E4. Vertical writing and ruby.** Japanese set vertically, and the small
   annotations above it.
 - [ ] **E5. Case mapping with language tailoring.** Turkish `i` and `İ`, German

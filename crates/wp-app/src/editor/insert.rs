@@ -1220,6 +1220,27 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // The optional hyphen: nothing at all in the middle of a line, a
+            // hyphen at the end of one.
+            "hyphens" => {
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                let word = "hy\u{00AD}phen\u{00AD}a\u{00AD}tion";
+                self.document.type_text(&format!(
+                    "The same paragraph twice. {word} {word} {word} {word} {word} {word}."
+                ));
+                self.document.press_enter();
+                let plain = "hyphenation";
+                self.document.type_text(&format!(
+                    "The same paragraph twice. {plain} {plain} {plain} {plain} {plain} {plain}."
+                ));
+
+                let end = self.document.caret();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.extend_selection_to(end);
+                self.document.set_size(20.0);
+                self.document.clear_selection();
+                self.relayout();
+            }
             // The scripts that are not drawn the way they are stored, and the
             // one that is written without spaces between its words.
             "scripts" => {

@@ -61,6 +61,10 @@ pub enum Class {
     /// Thai and Lao: written without spaces between the words, and broken by
     /// rules of their own. See [`starts_syllable`].
     Complex,
+    /// The optional hyphen: a place inside a word where the writer says a line
+    /// may be broken. It is drawn only if the line is broken there, and is
+    /// otherwise nothing at all.
+    SoftHyphen,
     /// A hyphen, which a line may be broken after.
     Hyphen,
     /// Something a break is allowed after: an en dash, a slash, an ideographic
@@ -90,6 +94,7 @@ pub fn class_of(character: char) -> Class {
         // A space, and the ones that are not spaces at all.
         0x0020 => return Class::Space,
         0x00A0 | 0x2007 | 0x2011 | 0x202F | 0x2060 => return Class::Glue,
+        0x00AD => return Class::SoftHyphen,
         0x0009 => return Class::BreakAfter,
         _ => {}
     }
@@ -167,6 +172,17 @@ pub fn may_break(before: char, after: char) -> bool {
     }
     if left == Class::Numeric && right == Class::Alphabetic {
         return false;
+    }
+
+    // LB6 as it applies to the optional hyphen: the writer put it there to say
+    // a line may be broken inside this word, so it may — after it and never
+    // before it, the same as any other hyphen. What makes it different is what
+    // is drawn, which is the layout's business rather than this one's.
+    if right == Class::SoftHyphen {
+        return false;
+    }
+    if left == Class::SoftHyphen {
+        return true;
     }
 
     // LB21: a break is allowed after a hyphen and before a break-before, and
@@ -573,5 +589,42 @@ mod thai {
         for after in ['\u{0EB0}', '\u{0EB2}', '\u{0EB3}'] {
             assert!(!may_break('\u{0E81}', after), "{after:?} was left to begin a line");
         }
+    }
+}
+
+#[cfg(test)]
+mod hyphens {
+    use super::*;
+
+    const SOFT: char = '\u{00AD}';
+    const HARD: char = '\u{2011}';
+
+    #[test]
+    fn a_line_may_be_broken_after_an_optional_hyphen() {
+        // Which is the whole of what it is for: the writer marking a place
+        // inside a word where a break would be all right.
+        assert!(may_break(SOFT, 'd'));
+        assert!(!may_break('n', SOFT), "a line ended before the hyphen rather than after it");
+    }
+
+    #[test]
+    fn a_non_breaking_hyphen_is_not_a_place_to_break() {
+        // The other half of the pair: a hyphen that is part of the word and
+        // must not end a line, which is what a telephone number needs.
+        assert!(!may_break(HARD, '5'));
+        assert!(!may_break('5', HARD));
+    }
+
+    #[test]
+    fn an_ordinary_hyphen_still_breaks_after_itself() {
+        assert!(may_break('-', 'k'));
+        assert!(!may_break('l', '-'));
+    }
+
+    #[test]
+    fn the_places_in_a_hyphenated_word_are_where_the_hyphens_are() {
+        let text = format!("hy{SOFT}phen{SOFT}ation");
+        // After each optional hyphen, and nowhere else inside the word.
+        assert_eq!(opportunities(&text), vec![4, 10]);
     }
 }
