@@ -19,11 +19,9 @@
 //!
 //! [UAX #29]: https://www.unicode.org/reports/tr29/
 
-use crate::grapheme;
-
 /// What a character does to the boundary beside it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Class {
+pub(crate) enum Class {
     /// Punctuation, symbols, and everything else that is a word of its own.
     Other,
     CarriageReturn,
@@ -206,125 +204,12 @@ fn pieces(text: &str) -> Vec<Piece> {
 }
 
 /// The class of one character.
-fn class_of(character: char) -> Class {
-    let code = character as u32;
-    match code {
-        0x000D => return Class::CarriageReturn,
-        0x000A => return Class::LineFeed,
-        0x000B | 0x000C | 0x0085 | 0x2028 | 0x2029 => return Class::Newline,
-        0x200D => return Class::Joiner,
-        0x0022 => return Class::DoubleQuote,
-        0x0027 => return Class::SingleQuote,
-        0x1F1E6..=0x1F1FF => return Class::Regional,
-        _ => {}
-    }
-
-    for (first, last, class) in RANGES {
-        if code >= *first && code <= *last {
-            return *class;
-        }
-    }
-
-    if grapheme::is_mark(character) {
-        Class::Ignored
-    } else if character.is_whitespace() {
-        Class::Space
-    } else if character.is_numeric() {
-        Class::Numeric
-    } else if character.is_alphabetic() {
-        Class::Letter
-    } else if grapheme::is_pictographic(character) {
-        Class::Pictographic
-    } else {
-        Class::Other
-    }
+///
+/// The table behind this is generated from the character database, so there is
+/// no character it does not know.
+pub(crate) fn class_of(character: char) -> Class {
+    crate::tables::word_class_of(character)
 }
-
-/// The characters whose class is not the one their category would give.
-const RANGES: &[(u32, u32, Class)] = &[
-    // The characters that draw nothing and are read over as if they were not
-    // there: the soft hyphen, the direction marks, the byte order mark.
-    (0x00AD, 0x00AD, Class::Ignored),
-    (0x061C, 0x061C, Class::Ignored),
-    (0x180E, 0x180E, Class::Ignored),
-    (0x200B, 0x200C, Class::Ignored),
-    (0x200E, 0x200F, Class::Ignored),
-    (0x202A, 0x202E, Class::Ignored),
-    (0x2060, 0x2064, Class::Ignored),
-    (0x2066, 0x206F, Class::Ignored),
-    (0xFEFF, 0xFEFF, Class::Ignored),
-    (0xFFF9, 0xFFFB, Class::Ignored),
-    // The punctuation that can sit inside a word or a number.
-    (0x002C, 0x002C, Class::MidNumber),
-    (0x002E, 0x002E, Class::MidBoth),
-    (0x003A, 0x003A, Class::MidLetter),
-    (0x003B, 0x003B, Class::MidNumber),
-    (0x005F, 0x005F, Class::Connector),
-    (0x00B7, 0x00B7, Class::MidLetter),
-    (0x037E, 0x037E, Class::MidNumber),
-    (0x0387, 0x0387, Class::MidLetter),
-    (0x0589, 0x0589, Class::MidNumber),
-    (0x055F, 0x055F, Class::MidLetter),
-    (0x05F4, 0x05F4, Class::MidLetter),
-    (0x060C, 0x060D, Class::MidNumber),
-    (0x066C, 0x066C, Class::MidNumber),
-    (0x07F8, 0x07F8, Class::MidNumber),
-    (0x2018, 0x2019, Class::MidBoth),
-    (0x2024, 0x2024, Class::MidBoth),
-    (0x2027, 0x2027, Class::MidLetter),
-    (0x203F, 0x2040, Class::Connector),
-    (0x2044, 0x2044, Class::MidNumber),
-    (0x2054, 0x2054, Class::Connector),
-    (0xFE10, 0xFE10, Class::MidNumber),
-    (0xFE13, 0xFE13, Class::MidLetter),
-    (0xFE14, 0xFE14, Class::MidNumber),
-    (0xFE33, 0xFE34, Class::Connector),
-    (0xFE4D, 0xFE4F, Class::Connector),
-    (0xFE50, 0xFE50, Class::MidNumber),
-    (0xFE52, 0xFE52, Class::MidBoth),
-    (0xFE54, 0xFE54, Class::MidNumber),
-    (0xFE55, 0xFE55, Class::MidLetter),
-    (0xFF07, 0xFF07, Class::MidBoth),
-    (0xFF0C, 0xFF0C, Class::MidNumber),
-    (0xFF0E, 0xFF0E, Class::MidBoth),
-    (0xFF1A, 0xFF1A, Class::MidLetter),
-    (0xFF1B, 0xFF1B, Class::MidNumber),
-    (0xFF3F, 0xFF3F, Class::Connector),
-    // Hebrew, which the quotation mark rules are about.
-    (0x05D0, 0x05F2, Class::Hebrew),
-    (0xFB1D, 0xFB4F, Class::Hebrew),
-    // The scripts written without spaces, where every character is a word of
-    // its own as far as these rules go.
-    //
-    // Which is the standard's answer and not a shrug: it is what a double
-    // click selects and what a word count counts, and it is the *only* answer
-    // available without a dictionary of the language. 私 and は are two words
-    // to these rules and one to a reader; telling the two apart is what the
-    // dictionary would be for. See the roadmap.
-    (0x2E80, 0x2EFF, Class::Other),   // the radicals
-    (0x2F00, 0x2FDF, Class::Other),   // the Kangxi radicals
-    (0x3005, 0x3007, Class::Other),   // the iteration mark and the zero
-    (0x3021, 0x3029, Class::Other),   // the Suzhou numerals
-    (0x3040, 0x309A, Class::Other),   // hiragana, and the two sound marks
-    (0x309D, 0x309F, Class::Other),   // the hiragana iteration marks
-    (0x3400, 0x4DBF, Class::Other),   // the ideographs, extension A
-    (0x4E00, 0x9FFF, Class::Other),   // and the ones everybody uses
-    (0xF900, 0xFAFF, Class::Other),   // the compatibility ideographs
-    (0x20000, 0x3FFFF, Class::Other), // and the extensions beyond the basic plane
-    // Katakana, which is written in words even where the rest is not.
-    (0x30A1, 0x30FA, Class::Katakana),
-    (0x30FC, 0x30FF, Class::Katakana),
-    (0x31F0, 0x31FF, Class::Katakana),
-    (0x32D0, 0x32FE, Class::Katakana),
-    (0x3300, 0x3357, Class::Katakana),
-    (0xFF66, 0xFF9D, Class::Katakana),
-    // A space that separates words. A non-breaking space is not one: it is
-    // there precisely to hold two words together.
-    (0x0020, 0x0020, Class::Space),
-    (0x00A0, 0x00A0, Class::Other),
-    (0x2007, 0x2007, Class::Other),
-    (0x202F, 0x202F, Class::Other),
-];
 
 #[cfg(test)]
 mod tests {

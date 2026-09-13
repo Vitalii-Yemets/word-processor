@@ -17,7 +17,9 @@ FROM rust:1.98.0-bookworm
 # for Thai could be written and tested, and nothing could be drawn with them to
 # look at. Lohit, TLWG and IPA are the smallest set that answers for the three
 # scripts whose rules are written out in this program: Devanagari, Thai and
-# Japanese.
+# Japanese. Nanum answers for Korean, whose syllables the line breaking rules
+# now separate: without it the one thing the generated tables added there could
+# not be looked at, and the sample document's Korean line drew nothing at all.
 # None of them is linked into the product or shipped with it; the program reads
 # whatever fonts the machine it runs on has.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -29,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-lohit-deva \
         fonts-thai-tlwg \
         fonts-ipafont-gothic \
+        fonts-nanum \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add x86_64-pc-windows-gnu \

@@ -38,6 +38,7 @@
 
 pub mod class;
 pub mod mirror;
+mod tables;
 
 pub use class::{class_of, Class};
 pub use mirror::mirrored;

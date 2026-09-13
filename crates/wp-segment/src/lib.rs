@@ -27,6 +27,7 @@
 #![forbid(unsafe_code)]
 
 mod grapheme;
+mod tables;
 mod word;
 
 /// Where the character after an offset begins.
@@ -140,5 +141,61 @@ mod counting {
         // Word counts "well-known" as two, because the hyphen is a break
         // between words rather than a letter inside one.
         assert_eq!(count_words("well-known"), 2);
+    }
+}
+
+/// What the generated tables added: the scripts nobody listed by hand, which
+/// used to fall through to "an ordinary character standing on its own".
+#[cfg(test)]
+mod coverage {
+    use crate::{character_boundaries, word_boundaries};
+
+    /// The characters of a string, as the pieces a caret steps over.
+    fn characters(text: &str) -> Vec<&str> {
+        let bounds = character_boundaries(text);
+        bounds.windows(2).map(|pair| &text[pair[0]..pair[1]]).collect()
+    }
+
+    fn words(text: &str) -> Vec<&str> {
+        let bounds = word_boundaries(text);
+        bounds.windows(2).map(|pair| &text[pair[0]..pair[1]]).collect()
+    }
+
+    #[test]
+    fn every_character_there_is_has_both_classes() {
+        for code in 0..=0x10FFFFu32 {
+            if let Some(character) = char::from_u32(code) {
+                let _ = crate::tables::grapheme_class_of(character);
+                let _ = crate::tables::word_class_of(character);
+            }
+        }
+        assert!(crate::tables::in_order(), "a table is out of order");
+    }
+
+    #[test]
+    fn a_vowel_sign_belongs_to_its_consonant_in_every_script() {
+        // Devanagari was written down by hand. Telugu, Khmer and Balinese were
+        // not, and a caret that stepped between a consonant and its vowel sign
+        // in any of them would land in the middle of a letter.
+        assert_eq!(characters("\u{0C15}\u{0C3F}").len(), 1, "Telugu");
+        assert_eq!(characters("\u{1780}\u{17B6}").len(), 1, "Khmer");
+        assert_eq!(characters("\u{1B33}\u{1B35}").len(), 1, "Balinese");
+    }
+
+    #[test]
+    fn a_letter_of_a_script_nobody_listed_is_still_a_letter() {
+        // Cherokee, Tifinagh and Osage are alphabets; a word written in one is
+        // a word, not a row of separate characters.
+        assert_eq!(words("\u{13A0}\u{13A1}\u{13A2}"), vec!["\u{13A0}\u{13A1}\u{13A2}"]);
+        assert_eq!(words("\u{2D30}\u{2D31}"), vec!["\u{2D30}\u{2D31}"]);
+        assert_eq!(words("\u{104B0}\u{104B1}"), vec!["\u{104B0}\u{104B1}"]);
+    }
+
+    #[test]
+    fn the_digits_of_every_script_are_numbers() {
+        // Which matters because a number holds together across a full stop and
+        // a comma, and a letter does not.
+        assert_eq!(words("\u{0967}.\u{0968}"), vec!["\u{0967}.\u{0968}"], "Devanagari");
+        assert_eq!(words("\u{0669}.\u{0660}"), vec!["\u{0669}.\u{0660}"], "Arabic-Indic");
     }
 }

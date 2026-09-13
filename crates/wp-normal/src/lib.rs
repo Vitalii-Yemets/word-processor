@@ -24,11 +24,15 @@
 //!
 //! # What is covered
 //!
-//! The letters people actually type: the Latin alphabets of Europe, Greek and
-//! Cyrillic. Vietnamese, the Indic scripts, the Hebrew and Arabic points and
-//! the Hangul syllables have canonical decompositions too and are not here yet;
-//! text in them is left exactly as it was, which is the one safe thing to do
-//! with text this table does not know.
+//! Every character Unicode gives a canonical decomposition, generated from the
+//! character database — the Latin alphabets of Europe, Greek and Cyrillic,
+//! Vietnamese with its two marks on one letter, the Indic scripts, the Hebrew
+//! and Arabic points, and the Hangul syllables, which are not a table at all
+//! but arithmetic.
+//!
+//! Not the compatibility decompositions. A superscript two is not a two and a
+//! ligature is not the letters it is drawn from: pulling those apart changes
+//! what the text says, and nothing here asks for it.
 //!
 //! # Example
 //!
@@ -81,7 +85,7 @@ pub fn compose(text: &str) -> String {
             // drawn in between, and joining across it would move it.
             let blocked = last_class != 0 && last_class >= class;
             if !blocked {
-                if let Some(joined) = table::composed(out[at], character) {
+                if let Some(joined) = composed(out[at], character) {
                     out[at] = joined;
                     continue;
                 }
@@ -112,27 +116,107 @@ pub fn has_marks(text: &str) -> bool {
     text.chars().any(|character| combining_class(character) != 0)
 }
 
-/// How a character is written when it is pulled apart, if it can be.
+/// How a character is written when it is pulled apart, if it can be: the
+/// character it starts from, and the mark drawn on it where there is one.
+///
+/// A few hundred characters are simply another character rather than a letter
+/// and a mark — the angstrom sign is an A with a ring, the ohm sign an omega,
+/// and the compatibility ideographs are the unified ideographs they duplicate.
+/// Those come back with no mark.
 #[must_use]
-pub fn decomposed(character: char) -> Option<(char, char)> {
-    table::decomposed(character)
+pub fn decomposed(character: char) -> Option<(char, Option<char>)> {
+    if let Some(parts) = hangul::decomposed(character) {
+        return Some(parts);
+    }
+    if let Ok(at) = table::PAIRS.binary_search_by_key(&character, |(made, _, _)| *made) {
+        let (_, base, mark) = table::PAIRS[at];
+        return Some((base, Some(mark)));
+    }
+    table::SINGLES
+        .binary_search_by_key(&character, |(made, _)| *made)
+        .ok()
+        .map(|at| (table::SINGLES[at].1, None))
 }
 
 /// The character a letter and a mark make together, if there is one.
 #[must_use]
 pub fn composed(base: char, mark: char) -> Option<char> {
-    table::composed(base, mark)
+    if let Some(joined) = hangul::composed(base, mark) {
+        return Some(joined);
+    }
+    table::COMPOSABLE
+        .binary_search_by_key(&(base, mark), |(first, second, _)| (*first, *second))
+        .ok()
+        .map(|at| table::COMPOSABLE[at].2)
 }
 
 /// Pulls one character apart, and its parts in turn: `ǻ` is `å` and an acute,
 /// and `å` is `a` and a ring.
 fn expand(character: char, out: &mut Vec<char>) {
-    match table::decomposed(character) {
+    match decomposed(character) {
         Some((base, mark)) => {
             expand(base, out);
-            out.push(mark);
+            if let Some(mark) = mark {
+                expand(mark, out);
+            }
         }
         None => out.push(character),
+    }
+}
+
+/// Korean, which is not in the table because it does not need to be.
+///
+/// A Hangul syllable is a leading consonant, a vowel and sometimes a trailing
+/// consonant, and the character for the syllable is worked out from the three
+/// by arithmetic. Unicode does the same and leaves all eleven thousand of them
+/// out of its decomposition table; this does too, and the table stays a table
+/// of the characters that really are exceptions.
+mod hangul {
+    const FIRST_SYLLABLE: u32 = 0xAC00;
+    const FIRST_LEADING: u32 = 0x1100;
+    const FIRST_VOWEL: u32 = 0x1161;
+    /// One before the first trailing consonant: a syllable with none is
+    /// counted as having trailing consonant nought.
+    const BEFORE_TRAILING: u32 = 0x11A7;
+    const LEADING: u32 = 19;
+    const VOWELS: u32 = 21;
+    const TRAILING: u32 = 28;
+    const SYLLABLES: u32 = LEADING * VOWELS * TRAILING;
+
+    /// A syllable as the syllable without its trailing consonant and that
+    /// consonant, or as its leading consonant and its vowel.
+    pub(super) fn decomposed(character: char) -> Option<(char, Option<char>)> {
+        let code = character as u32;
+        let index = code.checked_sub(FIRST_SYLLABLE).filter(|at| *at < SYLLABLES)?;
+
+        let trailing = index % TRAILING;
+        if trailing != 0 {
+            let without = char::from_u32(code - trailing)?;
+            return Some((without, char::from_u32(BEFORE_TRAILING + trailing)));
+        }
+        let leading = char::from_u32(FIRST_LEADING + index / (VOWELS * TRAILING))?;
+        let vowel = char::from_u32(FIRST_VOWEL + (index % (VOWELS * TRAILING)) / TRAILING)?;
+        Some((leading, Some(vowel)))
+    }
+
+    /// And the other way round.
+    pub(super) fn composed(base: char, mark: char) -> Option<char> {
+        let (base, mark) = (base as u32, mark as u32);
+
+        if let (Some(leading), Some(vowel)) =
+            (base.checked_sub(FIRST_LEADING), mark.checked_sub(FIRST_VOWEL))
+        {
+            if leading < LEADING && vowel < VOWELS {
+                return char::from_u32(FIRST_SYLLABLE + (leading * VOWELS + vowel) * TRAILING);
+            }
+        }
+
+        let index = base.checked_sub(FIRST_SYLLABLE).filter(|at| *at < SYLLABLES)?;
+        let trailing = mark.checked_sub(BEFORE_TRAILING)?;
+        if index % TRAILING == 0 && (1..TRAILING).contains(&trailing) {
+            return char::from_u32(base + trailing);
+        }
+        None
     }
 }
 
@@ -163,24 +247,8 @@ fn order(characters: &mut [char]) {
 /// Zero means it is not a mark at all but a character that stands on its own.
 #[must_use]
 pub fn combining_class(character: char) -> u8 {
-    match character as u32 {
-        0x0334..=0x0338 => 1,
-        0x0316..=0x0319 | 0x031C..=0x0320 | 0x0323..=0x0326 | 0x0329..=0x0333 => 220,
-        0x0339..=0x033C | 0x0347..=0x0349 | 0x034D..=0x034E | 0x0353..=0x0356 => 220,
-        0x0359..=0x035A => 220,
-        0x0321..=0x0322 | 0x0327..=0x0328 => 202,
-        0x031B => 216,
-        0x0315 | 0x031A | 0x0358 => 232,
-        0x035C | 0x035F | 0x0362 => 233,
-        0x035D..=0x035E | 0x0360..=0x0361 => 234,
-        0x0345 => 240,
-        // Everything else in the combining blocks is drawn above the letter,
-        // which is where most marks go.
-        0x0300..=0x036F | 0x0483..=0x0487 | 0x0591..=0x05BD => 230,
-        _ => 0,
-    }
+    table::combining_class(character)
 }
-
 #[cfg(test)]
 mod tests {
     use super::{combining_class, compose, decompose, has_marks};
@@ -229,7 +297,7 @@ mod tests {
 
     #[test]
     fn every_letter_in_the_table_survives_the_round_trip() {
-        for (composed_char, _, _) in super::table::ENTRIES {
+        for (_, _, composed_char) in super::table::COMPOSABLE {
             let text = composed_char.to_string();
             let apart = decompose(&text);
             assert_ne!(apart, text, "{composed_char} did not come apart");
@@ -242,13 +310,13 @@ mod tests {
         // If "É" is "E" and an acute, then "é" must be "e" and an acute: the
         // one is the other in lower case, mark and all. A test rather than a
         // reading, because a table this long is not read carefully by anybody.
-        for (composed_char, base, mark) in super::table::ENTRIES {
+        for (composed_char, base, mark) in super::table::PAIRS {
             let mut lower = composed_char.to_lowercase();
             let (Some(single), None) = (lower.next(), lower.next()) else { continue };
             if single == *composed_char {
                 continue;
             }
-            let Some((lower_base, lower_mark)) = super::table::decomposed(single) else {
+            let Some((lower_base, Some(lower_mark))) = super::decomposed(single) else {
                 panic!(
                     "{composed_char} comes apart but {single}, which is its lower case, does not"
                 )
@@ -270,5 +338,61 @@ mod tests {
         assert_eq!(combining_class('\u{0301}'), 230, "an acute is drawn above");
         assert_eq!(combining_class('\u{0327}'), 202, "a cedilla is drawn below");
         assert_eq!(combining_class('a'), 0, "a letter is not a mark");
+    }
+
+    #[test]
+    fn every_character_there_is_has_a_combining_class() {
+        for code in 0..=0x10FFFFu32 {
+            if let Some(character) = char::from_u32(code) {
+                let _ = combining_class(character);
+            }
+        }
+        assert!(super::table::in_order(), "the table is out of order");
+    }
+
+    #[test]
+    fn the_scripts_the_hand_written_table_left_out_come_apart_too() {
+        // Vietnamese, which stacks two marks on one letter; the Hebrew points;
+        // and the Arabic ones. None of them was in the table written by hand,
+        // so a search for a Vietnamese word missed it if it had been typed the
+        // other way.
+        // The dot below is drawn nearer the letter than the circumflex, so it
+        // is written first however it was typed.
+        assert_eq!(decompose("\u{1EC7}"), "e\u{0323}\u{0302}", "Vietnamese");
+        assert_eq!(decompose("\u{FB2E}"), "\u{05D0}\u{05B7}", "Hebrew with a point");
+        assert_eq!(decompose("\u{0622}"), "\u{0627}\u{0653}", "Arabic with a madda");
+        assert_eq!(compose("e\u{0302}\u{0323}"), "\u{1EC7}", "typed in the other order");
+    }
+
+    #[test]
+    fn a_hangul_syllable_comes_apart_into_its_letters() {
+        // Eleven thousand syllables that are in no table: the character is
+        // worked out from the three letters by arithmetic, and Unicode leaves
+        // them out of its own table for the same reason.
+        assert_eq!(decompose("\u{D55C}"), "\u{1112}\u{1161}\u{11AB}", "한");
+        assert_eq!(compose("\u{1112}\u{1161}\u{11AB}"), "\u{D55C}");
+        // And one without a trailing consonant.
+        assert_eq!(decompose("\u{AC00}"), "\u{1100}\u{1161}");
+        assert_eq!(compose("\u{1100}\u{1161}"), "\u{AC00}");
+    }
+
+    #[test]
+    fn a_character_that_is_simply_another_character_becomes_it() {
+        // The angstrom sign was encoded twice over, and Unicode says the two
+        // are the same character. Text holding one and text holding the other
+        // have to compare equal.
+        assert_eq!(compose("\u{212B}"), "\u{00C5}", "the angstrom sign is an A with a ring");
+        assert_eq!(compose("\u{2126}"), "\u{03A9}", "the ohm sign is an omega");
+        assert_eq!(decompose("\u{212B}"), "A\u{030A}");
+    }
+
+    #[test]
+    fn what_unicode_forbids_putting_back_together_stays_apart() {
+        // Some characters come apart and may never be made again: the standard
+        // keeps a list of them, because making one back would change what the
+        // text says or would undo a decision a later version took back.
+        let apart = decompose("\u{0344}");
+        assert_eq!(apart, "\u{0308}\u{0301}");
+        assert_eq!(compose(&apart), apart, "a forbidden character was made again");
     }
 }

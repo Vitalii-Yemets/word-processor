@@ -18,9 +18,15 @@
 //!
 //! The part of [UAX #14] that decides these cases: each character is given a
 //! class, and the classes either side of a possible break say whether it is
-//! allowed. The standard's full pair table is forty classes square and settles
-//! a great many cases that never arise in a document; what is here is the
-//! classes that do arise, and every rule is named where it is applied.
+//! allowed. Which class each character has is generated from the character
+//! database, so every character there is has one.
+//!
+//! There are fewer classes here than the standard names. Its pair table is
+//! forty classes square and settles a great many cases that never arise in a
+//! document; the classes here are the ones that do arise, and each of the
+//! standard's is folded into the nearest of them by a list in
+//! `tools/unicode/generate.rs` — which is therefore where to read what the
+//! folding costs.
 //!
 //! Hyphenation — breaking *inside* a word, at a place the language allows — is
 //! a different problem needing pattern data per language, and is not here.
@@ -36,6 +42,8 @@
 //! ```
 
 #![forbid(unsafe_code)]
+
+mod tables;
 
 /// What a character does to a break beside it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,33 +93,18 @@ pub enum Class {
 }
 
 /// The class of one character.
+///
+/// The table behind this is generated from the character database and covers
+/// every code point there is, so there is no character it does not know. The
+/// one thing decided here rather than there is the optional hyphen: the
+/// standard puts it with the ordinary hyphens, and this program has to tell it
+/// apart from them because it is drawn only where a line is broken.
 #[must_use]
 pub fn class_of(character: char) -> Class {
-    let code = character as u32;
-    match code {
-        // The breaks the text itself asks for.
-        0x000A | 0x000B | 0x000C | 0x000D | 0x0085 | 0x2028 | 0x2029 => return Class::Mandatory,
-        // A space, and the ones that are not spaces at all.
-        0x0020 => return Class::Space,
-        0x00A0 | 0x2007 | 0x2011 | 0x202F | 0x2060 => return Class::Glue,
-        0x00AD => return Class::SoftHyphen,
-        0x0009 => return Class::BreakAfter,
-        _ => {}
+    if character == '\u{00AD}' {
+        return Class::SoftHyphen;
     }
-
-    for (first, last, class) in RANGES {
-        if code >= *first && code <= *last {
-            return *class;
-        }
-    }
-
-    if character.is_ascii_digit() {
-        Class::Numeric
-    } else if character.is_whitespace() {
-        Class::Space
-    } else {
-        Class::Alphabetic
-    }
+    tables::class_of(character)
 }
 
 /// Whether a line may be broken between two characters.
@@ -294,124 +287,6 @@ pub fn opportunities(text: &str) -> Vec<usize> {
     }
     out
 }
-
-/// The ranges that are not ordinary letters.
-///
-/// Read as: everything from `first` to `last` behaves this way at a line break.
-const RANGES: &[(u32, u32, Class)] = &[
-    // Thai and Lao, which are written without spaces between the words.
-    (0x0E01, 0x0E3A, Class::Complex),
-    (0x0E40, 0x0E4E, Class::Complex),
-    (0x0E81, 0x0EBC, Class::Complex),
-    (0x0EC0, 0x0ECD, Class::Complex),
-    // The punctuation that clings to what comes before it.
-    (0x0021, 0x0021, Class::Close),
-    (0x002C, 0x002C, Class::Close),
-    (0x002E, 0x002E, Class::Close),
-    (0x003A, 0x003B, Class::Close),
-    (0x003F, 0x003F, Class::Close),
-    (0x0029, 0x0029, Class::Close),
-    (0x005D, 0x005D, Class::Close),
-    (0x007D, 0x007D, Class::Close),
-    (0x00BB, 0x00BB, Class::Close),
-    (0x2019, 0x2019, Class::Close),
-    (0x201D, 0x201D, Class::Close),
-    (0x203A, 0x203A, Class::Close),
-    // And the openings, which nothing may be broken away from.
-    (0x0028, 0x0028, Class::Open),
-    (0x005B, 0x005B, Class::Open),
-    (0x007B, 0x007B, Class::Open),
-    (0x00AB, 0x00AB, Class::Open),
-    (0x00BF, 0x00BF, Class::Open),
-    (0x2018, 0x2018, Class::Open),
-    (0x201C, 0x201C, Class::Open),
-    (0x2039, 0x2039, Class::Open),
-    // The quotation mark that could be either.
-    (0x0022, 0x0022, Class::Quote),
-    (0x0027, 0x0027, Class::Quote),
-    // Hyphens, and the dashes a break is allowed after.
-    (0x002D, 0x002D, Class::Hyphen),
-    (0x058A, 0x058A, Class::Hyphen),
-    (0x2010, 0x2010, Class::Hyphen),
-    (0x2012, 0x2014, Class::BreakAfter),
-    (0x002F, 0x002F, Class::BreakAfter),
-    (0x2026, 0x2026, Class::NonStarter),
-    // The signs that go before and after a number.
-    (0x0024, 0x0024, Class::Prefix),
-    (0x00A3, 0x00A5, Class::Prefix),
-    (0x20A0, 0x20BF, Class::Prefix),
-    (0x0025, 0x0025, Class::Postfix),
-    (0x00B0, 0x00B0, Class::Postfix),
-    (0x2030, 0x2030, Class::Postfix),
-    (0x2103, 0x2103, Class::Postfix),
-    // The Japanese and Chinese punctuation that may not begin a line.
-    (0x3001, 0x3002, Class::Close),
-    (0x30FB, 0x30FB, Class::NonStarter),
-    (0xFF01, 0xFF01, Class::Close),
-    (0xFF0C, 0xFF0C, Class::Close),
-    (0xFF0E, 0xFF0E, Class::Close),
-    (0xFF1A, 0xFF1B, Class::Close),
-    (0xFF1F, 0xFF1F, Class::Close),
-    (0xFF09, 0xFF09, Class::Close),
-    (0xFF3D, 0xFF3D, Class::Close),
-    (0xFF5D, 0xFF5D, Class::Close),
-    (0x3009, 0x3009, Class::Close),
-    (0x300B, 0x300B, Class::Close),
-    (0x300D, 0x300D, Class::Close),
-    (0x300F, 0x300F, Class::Close),
-    (0x3011, 0x3011, Class::Close),
-    (0x3015, 0x3015, Class::Close),
-    (0x3019, 0x3019, Class::Close),
-    (0x301B, 0x301B, Class::Close),
-    // And the ones that may not end a line.
-    (0x3008, 0x3008, Class::Open),
-    (0x300A, 0x300A, Class::Open),
-    (0x300C, 0x300C, Class::Open),
-    (0x300E, 0x300E, Class::Open),
-    (0x3010, 0x3010, Class::Open),
-    (0x3014, 0x3014, Class::Open),
-    (0x3018, 0x3018, Class::Open),
-    (0x301A, 0x301A, Class::Open),
-    (0xFF08, 0xFF08, Class::Open),
-    (0xFF3B, 0xFF3B, Class::Open),
-    (0xFF5B, 0xFF5B, Class::Open),
-    // The small kana and the marks that belong to the syllable before them.
-    (0x3041, 0x3041, Class::NonStarter),
-    (0x3043, 0x3043, Class::NonStarter),
-    (0x3045, 0x3045, Class::NonStarter),
-    (0x3047, 0x3047, Class::NonStarter),
-    (0x3049, 0x3049, Class::NonStarter),
-    (0x3063, 0x3063, Class::NonStarter),
-    (0x3083, 0x3083, Class::NonStarter),
-    (0x3085, 0x3085, Class::NonStarter),
-    (0x3087, 0x3087, Class::NonStarter),
-    (0x308E, 0x308E, Class::NonStarter),
-    (0x3095, 0x3096, Class::NonStarter),
-    (0x309B, 0x309E, Class::NonStarter),
-    (0x30A1, 0x30A1, Class::NonStarter),
-    (0x30A3, 0x30A3, Class::NonStarter),
-    (0x30A5, 0x30A5, Class::NonStarter),
-    (0x30A7, 0x30A7, Class::NonStarter),
-    (0x30A9, 0x30A9, Class::NonStarter),
-    (0x30C3, 0x30C3, Class::NonStarter),
-    (0x30E3, 0x30E3, Class::NonStarter),
-    (0x30E5, 0x30E5, Class::NonStarter),
-    (0x30E7, 0x30E7, Class::NonStarter),
-    (0x30EE, 0x30EE, Class::NonStarter),
-    (0x30F5, 0x30F6, Class::NonStarter),
-    (0x30FC, 0x30FE, Class::NonStarter),
-    // The ideographs and the syllabaries themselves, which break between.
-    (0x1100, 0x11FF, Class::Ideograph),
-    (0x2E80, 0x303F, Class::Ideograph),
-    (0x3040, 0x30FF, Class::Ideograph),
-    (0x3400, 0x4DBF, Class::Ideograph),
-    (0x4E00, 0x9FFF, Class::Ideograph),
-    (0xA960, 0xA97F, Class::Ideograph),
-    (0xAC00, 0xD7FF, Class::Ideograph),
-    (0xF900, 0xFAFF, Class::Ideograph),
-    (0xFF00, 0xFF60, Class::Ideograph),
-    (0x20000, 0x3FFFF, Class::Ideograph),
-];
 
 #[cfg(test)]
 mod tests {
@@ -626,5 +501,63 @@ mod hyphens {
         let text = format!("hy{SOFT}phen{SOFT}ation");
         // After each optional hyphen, and nowhere else inside the word.
         assert_eq!(opportunities(&text), vec![4, 10]);
+    }
+}
+
+/// What the generated table added: the scripts and the planes nobody listed by
+/// hand, which used to fall through to "a letter" and so were never broken.
+#[cfg(test)]
+mod coverage {
+    use super::*;
+
+    #[test]
+    fn every_character_there_is_has_a_class() {
+        for code in 0..=0x10FFFFu32 {
+            if let Some(character) = char::from_u32(code) {
+                let _ = class_of(character);
+            }
+        }
+        assert!(tables::in_order(), "the table is out of order");
+    }
+
+    #[test]
+    fn ideographs_outside_the_first_plane_are_still_ideographs() {
+        // Extension B and the rest live above U+FFFF. A hand-written table
+        // that stopped at the common ranges made a page of them one
+        // unbreakable word.
+        assert_eq!(class_of('\u{20000}'), Class::Ideograph);
+        assert!(may_break('\u{20000}', '\u{20001}'));
+    }
+
+    #[test]
+    fn the_syllabaries_are_broken_between_syllables() {
+        // Yi and Hangul are both written without spaces, and both wrap.
+        assert!(may_break('\u{A000}', '\u{A001}'), "Yi");
+        assert!(may_break('\u{AC00}', '\u{AC01}'), "Hangul");
+    }
+
+    #[test]
+    fn a_hangul_syllable_spelled_in_jamo_is_not_broken_apart() {
+        // The consonants and vowels of one syllable are one syllable; a line
+        // broken between them reads as nonsense.
+        assert!(!may_break('\u{1100}', '\u{1161}'));
+        assert!(!may_break('\u{1161}', '\u{11A8}'));
+    }
+
+    #[test]
+    fn a_mark_never_begins_a_line() {
+        // The standard gives a combining mark the class of the letter it is
+        // drawn on; here it is simply a letter, which comes to the same thing
+        // at a break.
+        assert!(!may_break('a', '\u{0301}'));
+        assert!(!may_break('\u{0915}', '\u{093F}'), "a Devanagari vowel sign");
+    }
+
+    #[test]
+    fn tibetan_breaks_at_its_own_mark() {
+        // The tsheg is what separates Tibetan syllables, and the standard says
+        // a line may be broken after it.
+        assert_eq!(class_of('\u{0F0B}'), Class::BreakAfter);
+        assert!(may_break('\u{0F0B}', '\u{0F40}'));
     }
 }

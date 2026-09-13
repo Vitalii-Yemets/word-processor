@@ -125,9 +125,13 @@ colour and bitmap glyph tables — items **E8** to **E10**.
 - **Segmentation** (UAX #29) — `wp-segment`: grapheme cluster and word
   boundaries, which is what the caret steps by and what a double click selects.
 - **Normalization** (UAX #15) — `wp-normal`: the two ways of writing an accented
-  letter, made one, for the Latin alphabets of Europe, Greek and Cyrillic.
+  letter, made one, for every character Unicode gives a canonical decomposition.
 
-The rest of the text engine is items **E1** to **E7**.
+The tables all four of those search are generated from the character database by
+`tools/generate-unicode-tables.sh` and committed, so they cover every character
+and the program still builds from its own source alone.
+
+The rest of the text engine is items **E1** to **E16**.
 
 ## Stage 5 — Layout and rendering — what the program draws today ✅
 
@@ -2922,9 +2926,73 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   **E2** and the hyphenation patterns of **E14**. Three items, one decision:
   where data of that kind comes from and where it lives. Until then this
   program says what the letters say, and says it the same way everywhere.
-- [ ] **E7. The full Unicode tables.** The subsets written by hand for bidi,
+- [x] **E7. The full Unicode tables.** The subsets written by hand for bidi,
   breaking, segmentation and normalization become generated, committed tables
-  covering every character, checked against the conformance files.
+  covering every character.
+  *Done when:* a character in a script nobody thought to write down behaves as
+  the standard says, rather than as though it were English.
+  Four tables were written by hand, from the standard, one range at a time, and
+  every one of them was a subset with a default underneath it. Everything the
+  bidirectional table did not name read left to right. Everything the line
+  break table did not name was a letter, so a page of ideographs from any plane
+  but the first was one unbreakable word. Everything the grapheme table did not
+  name stood on its own, so a caret walked between a Telugu consonant and its
+  vowel sign. And the normalization table held Latin, Greek and Cyrillic, so a
+  search for a Vietnamese word missed it if it had been typed the other way.
+  They are now generated. `tools/unicode/generate.rs`, run by
+  `tools/generate-unicode-tables.sh`, reads the character database and writes
+  `crates/wp-bidi/src/tables.rs`, `crates/wp-break/src/tables.rs`,
+  `crates/wp-segment/src/tables.rs` and `crates/wp-normal/src/table.rs`. The
+  database comes from Perl, which carries the whole of it already parsed into
+  files of ranges, and the build image carries Perl: nothing is downloaded and
+  nothing is installed. The output is committed, so the program still builds
+  from its own source and from no crates at all.
+  Each table is written as the runs it falls into — where a run begins, and the
+  value holding until the next one — which is what makes "every character"
+  structurally true: there is no gap left for a character to fall into, and a
+  test walks all 1,114,112 of them to say so.
+  What that added, in the order it shows: the right-to-left scripts nobody had
+  listed — N'Ko, Samaritan, Cypriot, Adlam — and the unassigned code points
+  that take their block's direction, so a line of Hebrew with a hole in it
+  still reads right to left; the ideographs above U+FFFF, the Yi syllabary and
+  Hangul, which now wrap; the vowel signs of every Indic and South East Asian
+  script, which now belong to their consonant; the digits of every script,
+  which now hold together across a full stop; and the whole of canonical
+  normalization — Vietnamese, the Hebrew and Arabic points, the characters that
+  are simply another character, and the eleven thousand Hangul syllables, which
+  are not a table at all but arithmetic and are done as such.
+  A Korean font went into the build image with it. The line breaking rules now
+  separate Hangul syllables, and without a font that draws them the one thing
+  the generated table added there could not be looked at — the sample
+  document's own Korean line drew nothing at all.
+  *Not done:* the line breaking classes are still this program's own and fewer
+  than the standard's. Each of UAX #14's is folded into the nearest of them
+  by a list in the generator, so what the folding costs can be read off it, and
+  **E16** is the rest.
+  *Not done:* the compatibility decompositions. A superscript two is not a two
+  and a ligature is not its letters; NFKC and NFKD change what the text says,
+  and nothing here asks for them.
+  *Not done:* the version. The database in the build image is Unicode 14.0.0,
+  so characters added since are unassigned as far as these tables are concerned
+  — which is the standard's own answer for them, but not the current one.
+  The conformance suites were part of this item's wording and are **K3**, which
+  is where they belong: they are separate files — `BidiTest.txt`,
+  `BidiCharacterTest.txt`, `LineBreakTest.txt`, `GraphemeBreakTest.txt`,
+  `WordBreakTest.txt`, `NormalizationTest.txt` — and Perl does not carry them,
+  so running them needs the same decision about where data comes from that
+  **E2**, **E6** and **E14** are waiting on.
+- [ ] **E16. Line breaking with the standard's own classes.** UAX #14 names
+  about forty and this program keeps seventeen, folding the rest into them by a
+  list in `tools/unicode/generate.rs`. What the folding costs, named: LB9,
+  which gives a combining mark the class of the letter it is drawn on, so a
+  mark after an opening bracket is treated as a letter rather than as the
+  bracket; LB30b, which forbids a break between an emoji and its skin tone, is
+  approximated by making the tone a non-starter; B2, the em dash, allows a
+  break before it as well as after and here allows only after; SY, the solidus,
+  is broken after even between two digits, where LB25 forbids it; and the
+  Korean jamo are letters, so a syllable spelled out in them is never broken
+  anywhere. The item is the standard's own class set and its pair table, and
+  the rules written against them rather than against a fold.
 - [ ] **E8. CFF and CFF2 outlines.** PostScript-flavoured fonts, which a good
   many documents ask for.
 - [ ] **E9. Variable fonts.** The axes, the named instances, and the deltas.
@@ -3017,8 +3085,15 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 - [ ] **K2. Page images compared against Word's.** A fidelity score per
   document rather than a pass or a fail, tracked over time so that it can be
   seen to improve.
-- [ ] **K3. The Unicode conformance suites** run against the text engine, once
-  **E7** has replaced the hand-written tables.
+- [ ] **K3. The Unicode conformance suites** run against the text engine.
+  **E7** has replaced the hand-written tables, so there is now something worth
+  holding to the standard's own answers. What is needed is the files:
+  `BidiTest.txt` and `BidiCharacterTest.txt`, `LineBreakTest.txt`,
+  `GraphemeBreakTest.txt` and `WordBreakTest.txt`, and `NormalizationTest.txt`.
+  The character database in the build image is Perl's, and Perl does not carry
+  those — they are test data rather than character data. So this is the same
+  decision as **E2**, **E6** and **E14**: where data of that kind comes from
+  and where it lives.
 
 ---
 
