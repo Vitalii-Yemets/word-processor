@@ -2811,8 +2811,55 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   paragraph's own "never break the words in this one"; and Word's Layout tab
   menu — Automatic, Manual, Hyphenation Options — which is not there at all,
   because a menu whose two commands do nothing is worse than no menu.
-- [ ] **E4. Vertical writing and ruby.** Japanese set vertically, and the small
-  annotations above it.
+- [x] **E4. Ruby: the reading printed over a word.** `w:ruby` — Word's Phonetic
+  Guide — read, drawn, written, and kept through an edit.
+  *Done when:* a document with 漢字 and かんじ over it shows both, at the right
+  sizes, lined up the way the file asks.
+  A ruby is two pieces of text, not one: each half has its own font, size and
+  colour, and only the lower one is part of the sentence. So the word under the
+  reading is what the document says there — what a search finds, what the word
+  count counts, what the caret walks through in two steps and not five — and
+  the reading is an annotation about it.
+  That last part is where the work was. A ruby is *one piece* of the paragraph:
+  the reading takes no offsets at all, and the word under it is not a place to
+  type into. Typing at the end of 漢字 writes the next word; it does not make
+  the ruby longer. Without that rule the second ruby put into a line lands
+  inside the first one's base — which is exactly what the proof render showed
+  before the rule was written down, as four readings shared out one kana each
+  between four words.
+  Laying it out is putting two lines of different lengths one over the other.
+  Whichever is narrower is spread inside the room the pair takes, four ways as
+  the file may ask: centred, against either end, or distributed — between the
+  letters, or with a gap at each end as well, which is Word's default and what
+  keeps a one-kana reading off the edge. Both halves are shaped through the
+  same machinery as everything else, at the size their own runs ask for; a
+  reading shaped a second way would drift from the words beside it.
+  And the line is told: a reading sits above the line, so the line has to be as
+  tall as the reading — or it is drawn over the words of the line before.
+  **A Japanese font went into the build image** with this, for the same reason
+  Devanagari and Thai fonts went in with **E1** and **E2**: the rules could be
+  written and tested and nothing could be drawn with them to look at. The proof
+  shows the four alignments side by side, and a short reading spread over a
+  long word.
+  *Not done:* Word's Phonetic Guide dialog, which is how a person makes one
+  — the reading can be put in from the model and not yet from the ribbon. And
+  the other half of what this item used to be: see **E15**.
+
+- [ ] **E15. Vertical writing.** Japanese set down the page rather than across
+  it: `w:textDirection` on a section, a frame or a table cell, and
+  `w:eastAsianLayout` for the words inside it that are turned or squeezed.
+  This is not a feature of the text engine, it is a second engine. Every line
+  in this program runs left to right along a baseline, wraps at a width and
+  stacks downwards; vertical writing runs top to bottom along a *column*, wraps
+  at a height and stacks leftwards — and the page, the margins, the columns,
+  the tables, the drawings, the caret and every click land in a space with its
+  axes swapped. The rest of it is detail on top of that: which characters are
+  turned on their side and which are not, the Latin word set sideways inside a
+  vertical line, the two-digit number set upright in one square
+  (`w:eastAsianLayout` with `w:vert`), and the punctuation that changes its
+  corner of the square.
+  Worth doing after the engine's own axes are a thing it can be asked about
+  rather than a thing it assumes.
 - [ ] **E5. Case mapping with language tailoring.** Turkish `i` and `İ`, German
   `ß`, Greek final sigma, and Word's Change Case following the paragraph's
   language.

@@ -1405,6 +1405,8 @@ pub(crate) struct Item {
     chart: Option<(Box<crate::charting::ChartDrawing>, f32)>,
     /// Strokes somebody drew, with the height they take up.
     ink: Option<(Box<crate::inking::InkDrawing>, f32)>,
+    /// A word with its reading set over it, and the height it takes up.
+    ruby: Option<(Box<crate::ruby::RubyBox>, f32)>,
     /// How wide the hyphen is that would be drawn if the line ended here.
     ///
     /// Nothing for almost every item. An item that ends with an optional
@@ -3445,6 +3447,7 @@ impl<'a> LayoutEngine<'a> {
                             math: None,
                             chart: None,
                             ink: None,
+                            ruby: None,
                             hyphen: drawn_hyphen,
                             hard_break: None,
                             style: style_index,
@@ -3476,6 +3479,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         shape: None,
                         hard_break: None,
@@ -3510,6 +3514,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         shape: None,
                         hard_break: None,
@@ -3544,6 +3549,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         shape: None,
                         hard_break: None,
@@ -3581,6 +3587,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: drawn.map(|drawing| (Box::new(drawing), height)),
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         shape: None,
                         hard_break: None,
@@ -3634,6 +3641,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: drawing.map(|drawing| (Box::new(drawing), height)),
+                        ruby: None,
                         hyphen: 0.0,
                         shape: None,
                         hard_break: None,
@@ -3676,8 +3684,47 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         shape: None,
+                        hard_break: None,
+                        style: style_index,
+                        start_offset: start,
+                        end_offset: *offset,
+                    });
+                }
+                RunContent::Ruby(ruby) => {
+                    // The word under the reading is the text: its characters
+                    // are the document's and the caret walks through them. The
+                    // reading's are not counted at all — it is an annotation
+                    // about the word rather than part of the sentence.
+                    let word = ruby.plain_text();
+                    paragraph_text.push_str(&word);
+                    let start = *offset;
+                    *offset += word.len();
+
+                    let laid = self.ruby_box(ruby, style, start, paragraph_index);
+                    let width = laid.width;
+                    let height = laid.ascent + laid.descent;
+                    items.push(Item {
+                        glyphs: Vec::new(),
+                        width,
+                        is_space: false,
+                        breaks_before: true,
+                        is_tab: false,
+                        aligned_tab: None,
+                        picture: None,
+                        picture_anchor: None,
+                        picture_name: None,
+                        picture_turn: wp_docx::floating::Turned::default(),
+                        picture_video: false,
+                        group: None,
+                        shape: None,
+                        math: None,
+                        chart: None,
+                        ink: None,
+                        ruby: Some((Box::new(laid), height)),
+                        hyphen: 0.0,
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -3713,6 +3760,7 @@ impl<'a> LayoutEngine<'a> {
                         math: Some((Box::new(laid), height)),
                         chart: None,
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         hard_break: None,
                         style: style_index,
@@ -3753,6 +3801,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         shape: Some((shape.clone(), height)),
                         hard_break: None,
@@ -3794,6 +3843,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         shape: None,
                         hard_break: None,
@@ -3842,6 +3892,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         hard_break: None,
                         style: style_index,
@@ -3869,6 +3920,7 @@ impl<'a> LayoutEngine<'a> {
                         math: None,
                         chart: None,
                         ink: None,
+                        ruby: None,
                         hyphen: 0.0,
                         shape: None,
                         hard_break: Some(*kind),
@@ -4674,6 +4726,85 @@ impl<'a> LayoutEngine<'a> {
         })
     }
 
+    /// Lays a word out with its reading over it.
+    ///
+    /// Both halves are shaped through the same machinery as any other text —
+    /// the same fonts, the same rules, the same marks — and only then put one
+    /// over the other. A reading shaped a second way would drift from the
+    /// words beside it.
+    fn ruby_box(
+        &mut self,
+        ruby: &wp_docx::ruby::Ruby,
+        style: &RunStyle,
+        base_offset: usize,
+        paragraph: usize,
+    ) -> crate::ruby::RubyBox {
+        let scale = self.pixels_per_point();
+
+        // Each half is set at the size its own runs ask for, and at what the
+        // ruby's properties say when they ask for nothing: the properties
+        // describe the pair and the runs are what is drawn.
+        let mut lower = style.clone();
+        if let Some(half_points) = own_size(&ruby.base).or(ruby.properties.base_size_half_points) {
+            lower.size = half_points as f32 / 2.0 * scale;
+        }
+        let word = self.ruby_half(&ruby.plain_text(), &lower, base_offset, paragraph);
+
+        // The reading is set smaller: at the size it asks for, and at half the
+        // word's when it asks for nothing, which is the proportion Word uses.
+        let mut smaller = style.clone();
+        smaller.size = match own_size(&ruby.annotation).or(ruby.properties.size_half_points) {
+            Some(half_points) => half_points as f32 / 2.0 * scale,
+            None => lower.size / 2.0,
+        };
+        // Every glyph of the reading points at the word it belongs to, so a
+        // press on the reading puts the caret beside the word rather than
+        // inside something the document does not have.
+        let reading = self.ruby_half(&ruby.reading(), &smaller, base_offset, paragraph);
+
+        // How far above the line it sits. The file says it in half-points from
+        // the baseline; a file that says nothing gets the word's own height,
+        // which is where a reading clears the letters under it.
+        let raise = match ruby.properties.raise_half_points {
+            Some(half_points) => (half_points as f32 / 2.0 * scale).max(word.ascent),
+            None => word.ascent,
+        };
+        crate::ruby::lay_out(word, reading, ruby.properties.align, raise)
+    }
+
+    /// One half of a ruby, shaped and measured from nothing.
+    fn ruby_half(
+        &mut self,
+        text: &str,
+        style: &RunStyle,
+        base_offset: usize,
+        paragraph: usize,
+    ) -> crate::ruby::Half {
+        let shaped = self.shape(text, style, base_offset);
+        let (ascent, descent) = self.text_extents(style.face, style.size);
+
+        let mut glyphs = Vec::with_capacity(shaped.len());
+        let mut x = 0.0f32;
+        for glyph in &shaped {
+            glyphs.push(PositionedGlyph {
+                face: glyph.face,
+                glyph: glyph.glyph,
+                x: x + glyph.x_offset,
+                baseline: -glyph.y_offset,
+                advance: glyph.advance,
+                size: glyph.size,
+                stretch: style.stretch,
+                color: style.color,
+                effect: style.effect,
+                source: TextPosition::new(paragraph, glyph.offset),
+                source_length: glyph.length,
+                invisible: style.hidden || glyph.invisible,
+            });
+            x += glyph.advance;
+        }
+        crate::ruby::Half { glyphs, width: x, ascent, descent }
+    }
+
     /// Lays an equation out at the size of the run it sits in.
     fn math_box(&mut self, math: &wp_docx::math::Math, style: &RunStyle) -> crate::math::MathBox {
         let mut shaper = EngineShaper { engine: self, face: style.face };
@@ -5318,6 +5449,11 @@ impl LayoutEngine<'_> {
     }
 }
 
+/// What size a ruby's runs ask to be set at, if they ask.
+fn own_size(runs: &[wp_docx::model::Run]) -> Option<i32> {
+    runs.iter().find_map(|run| run.properties.size_half_points).map(|size| size as i32)
+}
+
 /// Makes the optional hyphens of a run take no room and draw nothing.
 ///
 /// The character is a mark about the word rather than a letter of it: Word
@@ -5625,6 +5761,11 @@ impl LayoutEngine<'_> {
                     moved.paths.into_iter().map(|(path, color)| PlacedPath { path, color }),
                 );
                 page.glyphs.extend(moved.glyphs);
+                x += item.width;
+            } else if let Some((laid, _)) = &item.ruby {
+                // Laid out already, against a baseline of its own: putting it
+                // on the line is moving it to this one.
+                page.glyphs.extend(laid.placed(x, baseline));
                 x += item.width;
             } else if let Some((laid, _)) = &item.math {
                 // An equation is laid out already, against a baseline of its
@@ -6393,6 +6534,13 @@ fn line_metrics(line: &Line, items: &[Item], styles: &[RunStyle]) -> (f32, f32, 
             height = height.max(*ink_height + descent);
         }
         if let Some((laid, _)) = &items[index].math {
+            ascent = ascent.max(laid.ascent);
+            descent = descent.max(laid.descent);
+            height = height.max(laid.ascent + laid.descent);
+        }
+        // A reading sits above the line, so the line has to be tall enough for
+        // it — or it is drawn over the words of the line before.
+        if let Some((laid, _)) = &items[index].ruby {
             ascent = ascent.max(laid.ascent);
             descent = descent.max(laid.descent);
             height = height.max(laid.ascent + laid.descent);
@@ -7552,7 +7700,7 @@ fn split_item(items: &mut Vec<Item>, levels: &mut Vec<u8>, index: usize, availab
     if item.chart.is_some() || item.shape.is_some() || item.group.is_some() {
         return false;
     }
-    if item.ink.is_some() {
+    if item.ink.is_some() || item.ruby.is_some() {
         return false;
     }
 

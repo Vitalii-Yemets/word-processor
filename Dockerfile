@@ -15,7 +15,9 @@ FROM rust:1.98.0-bookworm
 # held against. DejaVu answers for Latin, Arabic and Hebrew and has nothing for
 # the scripts that are written in syllables — so the rules for Devanagari and
 # for Thai could be written and tested, and nothing could be drawn with them to
-# look at. Lohit and TLWG are the smallest pair that answers for those two.
+# look at. Lohit, TLWG and IPA are the smallest set that answers for the three
+# scripts whose rules are written out in this program: Devanagari, Thai and
+# Japanese.
 # None of them is linked into the product or shipped with it; the program reads
 # whatever fonts the machine it runs on has.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-dejavu-core \
         fonts-lohit-deva \
         fonts-thai-tlwg \
+        fonts-ipafont-gothic \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add x86_64-pc-windows-gnu \

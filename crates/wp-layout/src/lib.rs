@@ -42,6 +42,7 @@ mod library;
 pub mod math;
 pub mod paint;
 mod render;
+pub mod ruby;
 mod tablefit;
 
 pub use device::{Device, Unprintable};

@@ -706,6 +706,12 @@ pub enum RunContent {
     /// Only the reference: the chart lives in a part of its own, the same way
     /// a picture does. See [`crate::chart`].
     Chart(ChartReference),
+    /// A word with its reading printed over it.
+    ///
+    /// Two lists of runs rather than a string: both halves are text, with
+    /// their own fonts and sizes, and only the lower one is part of the
+    /// sentence. See [`crate::ruby`].
+    Ruby(Box<crate::ruby::Ruby>),
     /// Ink: strokes somebody drew, in a part of their own.
     ///
     /// Only the reference again. What the strokes are is InkML, which is not
@@ -1012,6 +1018,9 @@ impl Run {
                 | RunContent::Diagram(_)
                 | RunContent::Ink(_)
                 | RunContent::NoteReference { .. } => {}
+                // The word under the reading is what the document says here;
+                // the reading is not part of the sentence.
+                RunContent::Ruby(ruby) => out.push_str(&ruby.plain_text()),
                 // An equation reads as the line it was typed on, which is
                 // what a person searching for it would look for.
                 RunContent::Math(math) => out.push_str(&math.plain_text()),

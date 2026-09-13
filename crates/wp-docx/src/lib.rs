@@ -80,6 +80,7 @@ pub mod proofing;
 pub mod properties;
 mod read;
 pub mod revisions;
+pub mod ruby;
 pub mod rules;
 pub mod search;
 pub mod sections;

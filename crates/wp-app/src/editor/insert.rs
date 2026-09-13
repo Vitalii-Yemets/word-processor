@@ -1220,6 +1220,36 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // A word with its reading set over it, every way the file can ask
+            // for the two to be lined up.
+            "ruby" => {
+                use wp_docx::ruby::{Align, Ruby};
+
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                for (align, label) in [
+                    (Align::DistributeSpace, " spread  "),
+                    (Align::Center, " centred  "),
+                    (Align::Left, " left  "),
+                    (Align::Right, " right  "),
+                ] {
+                    let mut ruby = Ruby::over("\u{6F22}\u{5B57}", "\u{304B}\u{3093}\u{3058}", 44);
+                    ruby.properties.align = align;
+                    self.document.insert_ruby(&ruby);
+                    self.document.type_text(label);
+                }
+                // And one the other way about: a short word under a long
+                // reading, where the room is shared out the other way.
+                let mut ruby = Ruby::over("Nagoya", "\u{540D}\u{53E4}\u{5C4B}", 44);
+                ruby.properties.align = Align::DistributeSpace;
+                self.document.insert_ruby(&ruby);
+
+                let end = self.document.caret();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.extend_selection_to(end);
+                self.document.set_size(22.0);
+                self.document.clear_selection();
+                self.relayout();
+            }
             // The optional hyphen: nothing at all in the middle of a line, a
             // hyphen at the end of one.
             "hyphens" => {

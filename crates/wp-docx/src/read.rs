@@ -689,6 +689,14 @@ fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
                 content.push(RunContent::Break(kind));
             }
             "tab" => content.push(RunContent::Tab),
+            // A word with its reading over it. Both halves are runs of their
+            // own, so this is read rather than skipped: skipping it would lose
+            // the word as well as the reading.
+            "ruby" => {
+                if let Some(ruby) = crate::ruby::read_ruby(child) {
+                    content.push(RunContent::Ruby(Box::new(ruby)));
+                }
+            }
             // The two hyphens that are not the hyphen key. Word writes each as
             // an element of its own rather than as the character it stands
             // for, and a reader that passes over them loses what the writer

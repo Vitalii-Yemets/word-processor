@@ -438,6 +438,33 @@ fn walk_text_pieces(
             continue;
         }
 
+        // A word with its reading over it is one piece of the paragraph: the
+        // word is text the document says and the reading is an annotation
+        // about it, so counting the reading's letters would put every offset
+        // after it out by as many as the reading is long.
+        //
+        // And it is one piece rather than a place to walk into: inside a ruby
+        // is not somewhere anything is typed. Typing at the end of one puts a
+        // word after the ruby, which is what Word does — a reader who types
+        // after 漢字 is writing the next word, not adding to the one with the
+        // reading over it.
+        if child.local_name() == "ruby" && child.namespace.as_deref() == Some(W) {
+            let text = ruby_base_text(child);
+            if !text.is_empty() {
+                path.push(index);
+                pieces.push(TextPiece {
+                    path: path.clone(),
+                    text: text.clone(),
+                    start: *offset,
+                    atomic: true,
+                    in_field: in_field || in_complex,
+                });
+                path.pop();
+                *offset += text.len();
+            }
+            continue;
+        }
+
         if child.local_name() == "r" {
             match crate::fields::marker_of(child) {
                 Some(crate::fields::Marker::Separate) => {
@@ -518,6 +545,12 @@ fn walk_alternate(
     path.push(index);
     walk_text_pieces(child, path, offset, pieces, in_field);
     path.pop();
+}
+
+/// The word under a reading: what the document says where a ruby stands.
+fn ruby_base_text(ruby: &Element) -> String {
+    let Some(base) = ruby.child(Some(W), "rubyBase") else { return String::new() };
+    crate::position::paragraph_text(base)
 }
 
 /// Resolves a child path back to an element.
@@ -1005,6 +1038,12 @@ pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> El
             // written out from the model.
             RunContent::Shape(shape) => {
                 element.push_element(crate::shapes::shape_element(shape, prefix));
+            }
+            // A ruby is written out from the model: it is two lists of runs
+            // and nothing else — no part, no relationship — so nothing is lost
+            // by rebuilding it.
+            RunContent::Ruby(ruby) => {
+                element.push_element(crate::ruby::ruby_element(ruby, prefix));
             }
             RunContent::NoteReference { id, endnote } => {
                 let local = if *endnote { "endnoteReference" } else { "footnoteReference" };
