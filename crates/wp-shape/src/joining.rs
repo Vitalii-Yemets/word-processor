@@ -164,6 +164,20 @@ const TRANSPARENT: &[(u32, u32)] = &[
     (0x0859, 0x085B),
     (0x08D3, 0x08E1),
     (0x08E3, 0x0902),
+    // The vowels and tone marks of Devanagari, which hang on their consonant
+    // and are placed by the font rather than by the pen.
+    (0x093C, 0x093C),
+    (0x0941, 0x0948),
+    (0x094D, 0x094D),
+    (0x0951, 0x0957),
+    (0x0962, 0x0963),
+    // Thai and Lao: the vowels written above and below, and the tone marks.
+    (0x0E31, 0x0E31),
+    (0x0E34, 0x0E3A),
+    (0x0E47, 0x0E4E),
+    (0x0EB1, 0x0EB1),
+    (0x0EB4, 0x0EBC),
+    (0x0EC8, 0x0ECD),
     (0x200B, 0x200F),
     (0x2060, 0x2064),
     (0xFE00, 0xFE0F),
@@ -363,5 +377,28 @@ mod tests {
             shapes("\u{0628}\u{0633}\u{0645}"),
             vec![Form::Initial, Form::Medial, Form::Final]
         );
+    }
+    #[test]
+    fn the_marks_of_the_scripts_written_with_them_are_marks() {
+        // Which is what sends a run of them to be shaped whole, so that the
+        // font can say where each mark goes rather than the pen putting it at
+        // the edge of the letter before it.
+        for character in [
+            '\u{0E48}', // a Thai tone mark
+            '\u{0E34}', // a Thai vowel written above
+            '\u{0EC8}', // a Lao tone mark
+            '\u{094D}', // the Devanagari halant
+            '\u{0941}', // a Devanagari vowel written below
+            '\u{0300}', // a combining grave, which was always one
+        ] {
+            assert!(is_mark(character), "{character:?} was not read as a mark");
+        }
+    }
+
+    #[test]
+    fn a_letter_is_not_a_mark() {
+        for character in ['\u{0E01}', '\u{0E40}', '\u{0915}', 'a', '\u{0628}'] {
+            assert!(!is_mark(character), "{character:?} was read as a mark");
+        }
     }
 }

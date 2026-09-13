@@ -1220,6 +1220,38 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // The scripts that are not drawn the way they are stored, and the
+            // one that is written without spaces between its words.
+            "scripts" => {
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                // Devanagari: a vowel sign written to the left, a cluster of
+                // two consonants, and a syllable that begins with the hook.
+                self.document.type_text("कि क्क र्क र्कि हिन्दी");
+                self.document.press_enter();
+                // Thai: a sentence with no spaces in it, which can only wrap
+                // if the breaking rules know where a syllable begins.
+                // Long enough that it has to wrap, which it can only do if
+                // the breaking rules know where a Thai syllable begins.
+                let sentence = "\u{0E09}\u{0E31}\u{0E19}\u{0E01}\u{0E34}\u{0E19}\u{0E01}\
+                     \u{0E23}\u{0E30}\u{0E08}\u{0E01}\u{0E44}\u{0E14}\u{0E49}\u{0E01}\u{0E34}\
+                     \u{0E19}\u{0E41}\u{0E25}\u{0E49}\u{0E27}\u{0E44}\u{0E21}\u{0E48}\u{0E40}\
+                     \u{0E08}\u{0E47}\u{0E1A}"
+                    .repeat(3);
+                self.document.type_text(&sentence);
+                self.document.press_enter();
+                // And the stack: a tall consonant, a vowel over it, a tone
+                // mark over that.
+                self.document.type_text(
+                    "\u{0E1B}\u{0E34}\u{0E48} \u{0E01}\u{0E34}\u{0E48} \u{0E19}\u{0E49}\u{0E33}",
+                );
+
+                let end = self.document.caret();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.extend_selection_to(end);
+                self.document.set_size(36.0);
+                self.document.clear_selection();
+                self.relayout();
+            }
             // What a font says to do when a mark lands on a letter. The i
             // loses its dot, because the font's own rule says so and two dots
             // on one letter is not what anybody wrote.

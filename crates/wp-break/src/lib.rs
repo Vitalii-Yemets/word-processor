@@ -58,6 +58,9 @@ pub enum Class {
     /// A character that may not begin a line, though it may end one: the small
     /// kana, the sound marks, the ellipsis.
     NonStarter,
+    /// Thai and Lao: written without spaces between the words, and broken by
+    /// rules of their own. See [`starts_syllable`].
+    Complex,
     /// A hyphen, which a line may be broken after.
     Hyphen,
     /// Something a break is allowed after: an en dash, a slash, an ideographic
@@ -187,9 +190,74 @@ pub fn may_break(before: char, after: char) -> bool {
         return true;
     }
 
+    // LB28a, the standard's "complex context": Thai and Lao are written
+    // without spaces between the words, and where one word ends is a matter
+    // for a dictionary. What can be known without one is where a syllable
+    // begins, and a break is allowed there — never inside a syllable, and
+    // never between a vowel written before its consonant and that consonant.
+    // See the note on [`starts_syllable`].
+    if left == Class::Complex && right == Class::Complex {
+        return starts_syllable(after) && !leads_a_syllable(before);
+    }
+    // Against anything else the standard resolves these to ordinary letters,
+    // so a Thai word is not broken away from the Latin one it is joined to.
+    if left == Class::Complex || right == Class::Complex {
+        return false;
+    }
+
     // LB28 and LB29: two letters, or a letter and a digit, are the inside of a
     // word and are never broken.
     false
+}
+
+/// Whether a character may begin a syllable of Thai or Lao.
+///
+/// # Why a syllable and not a word
+///
+/// Because a word cannot be found without a dictionary. Thai is written with
+/// no spaces inside a sentence, and which of several readings of a run of
+/// letters is the intended one is a question about the language rather than
+/// about the letters: the standard says so outright, and Word ships a
+/// dictionary to answer it.
+///
+/// This program has none, and inventing one is not a thing a program may do.
+/// So what is offered is the next best true thing: a break wherever a syllable
+/// begins. Every word boundary is a syllable boundary, so no break is missed;
+/// some syllable boundaries are inside a word, so some breaks are offered that
+/// a Thai reader would not choose. A line broken inside a word reads badly; a
+/// line that cannot be broken at all runs off the page. Named in the roadmap.
+#[must_use]
+pub fn starts_syllable(character: char) -> bool {
+    !clings_to_what_precedes(character)
+}
+
+/// Whether a character is one of the vowels written to the left of the
+/// consonant it belongs to.
+///
+/// They are stored in the order they are drawn — unlike the scripts that
+/// reorder — so nothing has to move. But the consonant after one belongs with
+/// it, and a line broken between the two would put a vowel at the end of one
+/// line and its consonant at the start of the next.
+#[must_use]
+pub fn leads_a_syllable(character: char) -> bool {
+    matches!(character as u32, 0x0E40..=0x0E44 | 0x0EC0..=0x0EC4)
+}
+
+/// Whether a character hangs on the one before it: the tone marks, the vowels
+/// written above and below, and the two that are written after.
+fn clings_to_what_precedes(character: char) -> bool {
+    matches!(
+        character as u32,
+        // Thai. The vowels written above and below a consonant are the
+        // obvious ones — but so are the vowels written *after* it: ะ and า
+        // take room of their own on the line and are still part of the
+        // syllable, and a line beginning with one reads as badly as a line
+        // beginning with a tone mark. The repetition mark and the abbreviation
+        // mark follow a word and go with it.
+        0x0E2F..=0x0E3A | 0x0E45..=0x0E4E
+        // Lao, which is written the same way.
+        | 0x0EAF..=0x0EBC | 0x0EC6..=0x0ECD
+    )
 }
 
 /// Every place in a line where it may be broken, as byte offsets.
@@ -215,6 +283,11 @@ pub fn opportunities(text: &str) -> Vec<usize> {
 ///
 /// Read as: everything from `first` to `last` behaves this way at a line break.
 const RANGES: &[(u32, u32, Class)] = &[
+    // Thai and Lao, which are written without spaces between the words.
+    (0x0E01, 0x0E3A, Class::Complex),
+    (0x0E40, 0x0E4E, Class::Complex),
+    (0x0E81, 0x0EBC, Class::Complex),
+    (0x0EC0, 0x0ECD, Class::Complex),
     // The punctuation that clings to what comes before it.
     (0x0021, 0x0021, Class::Close),
     (0x002C, 0x002C, Class::Close),
@@ -407,5 +480,98 @@ mod tests {
     fn a_line_break_in_the_text_is_a_break_wherever_it_falls() {
         assert!(may_break('\n', 'a'));
         assert!(!may_break('a', '\n'), "nothing is broken away from the break itself");
+    }
+}
+
+#[cfg(test)]
+mod thai {
+    use super::*;
+
+    // A sentence of Thai: "I can eat glass" — ฉันกินกระจกได้, which is the
+    // sentence every script is tested with.
+    const KO: char = '\u{0E01}'; // the consonant k
+    const NO: char = '\u{0E19}'; // the consonant n
+    const CHO: char = '\u{0E09}'; // the consonant ch
+    const SARA_A: char = '\u{0E31}'; // the vowel written above
+    const SARA_AM: char = '\u{0E33}'; // the vowel written after
+    const SARA_I: char = '\u{0E34}'; // the vowel written above
+    const SARA_E: char = '\u{0E40}'; // the vowel written before
+    const MAI_EK: char = '\u{0E48}'; // a tone mark
+
+    #[test]
+    fn a_line_of_thai_may_be_broken_where_a_syllable_begins() {
+        // Which is what makes it wrap at all: written without spaces, a line
+        // of Thai that could only be broken at a space could not be broken.
+        assert!(may_break(NO, KO), "a consonant beginning a syllable is a break");
+        assert!(may_break(NO, SARA_E), "so is a vowel written before its consonant");
+    }
+
+    #[test]
+    fn a_syllable_is_never_broken_into() {
+        assert!(!may_break(KO, SARA_A), "a vowel was taken off its consonant");
+        assert!(!may_break(KO, SARA_I), "a vowel was taken off its consonant");
+        assert!(!may_break(KO, MAI_EK), "a tone mark was taken off its syllable");
+        assert!(!may_break(KO, SARA_AM), "a vowel written after was taken off it");
+        assert!(!may_break(SARA_A, MAI_EK), "a tone mark was taken off a vowel");
+    }
+
+    #[test]
+    fn a_vowel_written_before_its_consonant_keeps_it() {
+        // เก is stored in the order it is drawn, so nothing moves — but the
+        // two are one syllable, and a break between them would leave a vowel
+        // hanging at the end of a line.
+        assert!(!may_break(SARA_E, KO));
+        assert!(leads_a_syllable(SARA_E));
+    }
+
+    #[test]
+    fn thai_is_not_broken_from_the_latin_beside_it() {
+        // The standard resolves these to ordinary letters against anything
+        // that is not one of them, so a Thai word joined to a Latin one is
+        // one word.
+        assert!(!may_break(KO, 'a'));
+        assert!(!may_break('a', KO));
+    }
+
+    #[test]
+    fn a_space_still_breaks_and_a_full_stop_still_clings() {
+        assert!(may_break(' ', KO), "a space is a space in any script");
+        assert!(!may_break(KO, '.'), "a full stop began a line");
+    }
+
+    #[test]
+    fn a_run_of_thai_offers_a_break_before_every_consonant() {
+        // ฉันกิน is two words, and this offers three breaks: before each of
+        // the three consonants that are not carrying a vowel of their own.
+        // The one before the น that *ends* the first word is a break no Thai
+        // reader would choose — and telling it from the one that begins the
+        // second word is exactly what needs the dictionary this program has
+        // not got. Every real break is offered; some that are not real are
+        // offered too, and that is the trade, written down.
+        let text: String = [CHO, SARA_A, NO, KO, SARA_I, NO].iter().collect();
+        let found = opportunities(&text);
+        assert_eq!(found, vec![6, 9, 15], "{found:?}");
+    }
+
+    #[test]
+    fn lao_is_read_the_same_way() {
+        let (ko, sara_i, ko_lao) = ('\u{0E81}', '\u{0EB4}', '\u{0E81}');
+        assert!(!may_break(ko, sara_i));
+        assert!(may_break(sara_i, ko_lao));
+        assert!(leads_a_syllable('\u{0EC0}'));
+    }
+    #[test]
+    fn a_vowel_written_after_its_consonant_keeps_it_too() {
+        // ะ and า are written to the right of the consonant and take room of
+        // their own, which makes them look like letters — and they are not:
+        // a line beginning with one is a line beginning in the middle of a
+        // syllable.
+        for after in ['\u{0E30}', '\u{0E32}', '\u{0E33}'] {
+            assert!(!may_break(KO, after), "{after:?} was left to begin a line");
+        }
+        // And the Lao ones.
+        for after in ['\u{0EB0}', '\u{0EB2}', '\u{0EB3}'] {
+            assert!(!may_break('\u{0E81}', after), "{after:?} was left to begin a line");
+        }
     }
 }

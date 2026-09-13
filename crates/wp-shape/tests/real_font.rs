@@ -422,3 +422,75 @@ fn a_font_with_devanagari_rules_makes_the_hook_one_glyph() {
     assert_eq!(shaped.len(), 2, "{name} did not make the hook one glyph");
     assert_eq!(shaped[0].cluster, 6, "{name} drew the hook first");
 }
+
+/// The first font on this machine that can draw Thai and says where its marks
+/// go.
+fn thai_font() -> Option<(Vec<u8>, String)> {
+    for path in font_files() {
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        let Ok(font) = Font::parse(&bytes) else { continue };
+        if font.glyph_for('\u{0E01}').is_none() || font.glyph_for('\u{0E48}').is_none() {
+            continue;
+        }
+        let places = font
+            .positioning_table()
+            .and_then(wp_shape::Positions::parse)
+            .is_some_and(|table| !table.lookups_for(b"thai", b"mark").is_empty());
+        if !places {
+            continue;
+        }
+        let name = font.full_name().unwrap_or_else(|| path.display().to_string());
+        drop(font);
+        return Some((bytes, name));
+    }
+    None
+}
+
+#[test]
+fn a_thai_vowel_is_moved_off_a_consonant_that_reaches_up_into_it() {
+    // Thai stacks: a consonant, a vowel above it, and a tone mark above that.
+    // A Thai font draws its marks so that they land right where the pen
+    // leaves them for most consonants — and says, for the few that reach up
+    // into the place the vowel wants, where the vowel goes instead. ป is one
+    // of those: it has an ascender, and the vowel has to move aside.
+    let Some((bytes, name)) = thai_font() else {
+        eprintln!("no font with Thai rules on this machine; skipping");
+        return;
+    };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    let plain = shape(&font, "\u{0E01}\u{0E34}\u{0E48}");
+    let tall = shape(&font, "\u{0E1B}\u{0E34}\u{0E48}");
+    assert_eq!(tall.len(), 3, "{name}: a letter and two marks");
+    assert!(
+        tall[1].x_offset != plain[1].x_offset,
+        "{name}: the vowel sits in the same place over a letter that reaches into it"
+    );
+}
+
+#[test]
+fn a_thai_tone_mark_follows_the_vowel_it_stands_on() {
+    // The tone mark is the third storey: it sits on the vowel, not on the
+    // consonant, so wherever the vowel went the tone mark goes too. Without
+    // the mark-on-mark rules it would be left over the consonant with the
+    // vowel beside it.
+    let Some((bytes, name)) = thai_font() else { return };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    let plain = shape(&font, "\u{0E01}\u{0E34}\u{0E48}");
+    let tall = shape(&font, "\u{0E1B}\u{0E34}\u{0E48}");
+
+    // It moved with the vowel rather than staying where it would have been
+    // over an ordinary consonant.
+    assert_ne!(
+        tall[2].x_offset, plain[2].x_offset,
+        "{name}: the tone mark was left behind by the vowel it stands on"
+    );
+    // And it stayed with it: a tone mark a quarter of an em away from the
+    // vowel under it is a tone mark over the wrong part of the letter.
+    let apart = (tall[2].x_offset - tall[1].x_offset).abs();
+    assert!(
+        apart * 4 < i32::from(font.units_per_em()),
+        "{name}: the tone mark ended {apart} units from the vowel it stands on"
+    );
+}

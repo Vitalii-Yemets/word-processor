@@ -2693,13 +2693,11 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   rule each one stands for; and, through the shaper itself, that the pieces
   come out in the drawn order with every glyph still saying which character it
   came from.
-  *Not done:* what needs a font this machine has not got. The build image
-  carries DejaVu and nothing else, and DejaVu has no Devanagari at all, so the
-  half forms, the conjuncts and the hook are asked for and there is nothing to
-  answer. The tests that need such a font skip themselves and run where one
-  exists — Windows has Nirmala UI — but nothing here has been *seen* drawn.
-  That is the one thing this stage cannot close, and it wants a Devanagari font
-  in the build image.
+  *Seen drawn:* not at first. The build image carried DejaVu and nothing else,
+  and DejaVu has no Devanagari at all, so the half forms, the conjuncts and the
+  hook were asked for and nothing answered. A font went into the image with
+  **E2**, and with it the tests that had been skipping themselves run and the
+  proof render shows कि, क्क, र्क, र्कि and हिन्दी drawn as they are read.
   *Also not done:* the other nine scripts written this way — see **E13** — and
   the two things reordering leaves behind: a syllable whose sign has nothing to
   hang on, which Word draws round a dotted circle and this draws as it stands;
@@ -2716,8 +2714,55 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   split before the font is asked anything. Each needs its own reading of the
   same tables, and the block of each is a hundred and twenty-eight characters
   to be categorised by hand as Devanagari's was.
-- [ ] **E2. Thai and Lao clustering**, and the line breaking they need, which is
-  by dictionary rather than by rule.
+- [x] **E2. Thai and Lao: the syllable, and where a line may be broken.**
+  *Done when:* a paragraph of Thai wraps, and wraps where a syllable begins
+  rather than in the middle of one.
+  Thai is written with no spaces inside a sentence, and everything here classed
+  it as ordinary letters — which meant no break was allowed anywhere in a Thai
+  run, and a paragraph of it ran off the page rather than wrapping. That is the
+  defect this closes.
+  Where a *word* ends cannot be known without a dictionary: which of several
+  readings of a run of letters is meant is a question about the language, the
+  standard says so outright, and Word ships one to answer it. This program has
+  none and inventing one is not a thing a program may do. What can be known
+  without one is where a *syllable* begins, and a break is offered there.
+  Every word boundary is a syllable boundary, so no break that ought to exist
+  is missed; some that are offered fall inside a word, which a Thai reader
+  would not choose. A line broken inside a word reads badly and a line that
+  cannot be broken at all runs off the page, so the trade is made deliberately
+  and written down here.
+  What never breaks: a vowel or a tone mark from the consonant it hangs on, in
+  either direction. The vowels written *before* their consonant — เ แ โ ใ ไ —
+  are stored in the order they are drawn, so unlike Devanagari nothing has to
+  move, but the consonant after one belongs with it. And the vowels written
+  *after* — ะ and า — take room of their own on the line and look like letters,
+  which is exactly the trap: a line beginning with one begins in the middle of
+  a syllable. The proof render caught that one before this was written down.
+  Against anything that is not Thai or Lao the standard resolves these to
+  ordinary letters, so a Thai word joined to a Latin one is one word.
+  The marks are marks to the shaper now, which sends a run of them to be shaped
+  whole: a Thai font draws its marks so that they land right where the pen
+  leaves them for most consonants, and says where the vowel goes instead for
+  the few that reach up into it — ป has an ascender, and the vowel moves aside
+  by a tenth of an em. The tone mark over it then follows the vowel rather than
+  the consonant, which is the mark-on-mark rule of **E12** doing its work.
+  The same went in for the vowels and tone marks of Devanagari, which were not
+  in the table of marks either.
+  **And the build image has fonts now.** It carried DejaVu, which has nothing
+  for either script — so the rules of **E1** and of this could be written and
+  tested and *nothing could be drawn with them to look at*. Lohit Devanagari
+  and the TLWG Thai fonts are the smallest pair that answers, they go in beside
+  the `zip` and `unzip` the tests are already held against, and neither is
+  linked into the product or shipped with it. With them, the tests that skipped
+  themselves run: a Devanagari conjunct comes out as fewer glyphs than it has
+  letters, the hook comes out as one glyph drawn after its consonant, and the
+  Thai stack is placed by the font. And the proof render shows कि, क्क, र्क,
+  र्कि, हिन्दी and three lines of wrapped Thai — which is the half of **E1**
+  that stage could not close.
+  *Not done:* the dictionary, and with it word-level breaking, double-clicking
+  a Thai word and counting the words of a Thai paragraph — all the same
+  missing thing, named under **E6** where the same dictionary is wanted for
+  Chinese and Japanese.
 - [ ] **E3. Hyphenation.** Breaking inside a word, with pattern data per
   language, and Word's controls: automatic, manual, hyphenation zone, limit
   consecutive hyphens.
