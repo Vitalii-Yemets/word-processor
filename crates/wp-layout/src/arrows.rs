@@ -25,7 +25,7 @@
 
 use wp_raster::{Path, Point};
 
-use crate::geometry::{arc_into, Adjusts, Preset};
+use crate::geometry::{arc_into, fallback, share_of, Adjusts, Preset};
 
 /// An angle in degrees, as [`arc_into`] wants it.
 ///
@@ -172,8 +172,9 @@ fn along(path: &mut Path, box_: Box_, adjusts: &Adjusts, heads: &[Side], horizon
     // otherwise, which is what the format falls back on. Two heads that will
     // not both fit are cut to what there is room for, and that is what makes a
     // two-headed arrow in a square box come out as a diamond.
-    let head = (shorter * adjusts.share(2, 0.5)).min(length / heads_on.max(1) as f32);
-    let half = shorter * adjusts.share(1, 0.5) / 2.0;
+    let head =
+        (shorter * adjusts.share(2, share_of(fallback::HALF))).min(length / heads_on.max(1) as f32);
+    let half = shorter * adjusts.share(1, share_of(fallback::HALF)) / 2.0;
 
     // Along the arrow: where the shaft starts and ends. Across it: the edges of
     // the shaft, and the edges of the box, which a head's base stands on.

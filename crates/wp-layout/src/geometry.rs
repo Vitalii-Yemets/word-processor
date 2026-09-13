@@ -802,7 +802,8 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
             path.close();
         }
         Preset::LShape => {
-            let (arm_x, arm_y) = (width / 3.0, height / 3.0);
+            let arm = width.min(height) * adjusts.share(1, share_of(fallback::ARM));
+            let (arm_x, arm_y) = (arm, arm);
             path.move_to(point(left, top));
             path.line_to(point(left + arm_x, top));
             path.line_to(point(left + arm_x, bottom - arm_y));
@@ -813,7 +814,8 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
         }
         Preset::HalfFrame => {
             // Two sides of a frame, mitred where they meet.
-            let (arm_x, arm_y) = (width / 3.0, height / 3.0);
+            let arm = width.min(height) * adjusts.share(1, share_of(fallback::ARM));
+            let (arm_x, arm_y) = (arm, arm);
             path.move_to(point(left, top));
             path.line_to(point(right, top));
             path.line_to(point(right - arm_x, top + arm_y));
@@ -824,7 +826,10 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
         }
         Preset::Frame => {
             // All four sides, which is a rectangle with a rectangle cut out.
-            let (arm_x, arm_y) = (width / 8.0, height / 8.0);
+            // The border is as wide as it is deep, over the shorter side: a
+            // frame of two thicknesses is a frame nobody would cut.
+            let border = width.min(height) * adjusts.share(1, share_of(fallback::FRAME));
+            let (arm_x, arm_y) = (border, border);
             path.move_to(point(left, top));
             path.line_to(point(right, top));
             path.line_to(point(right, bottom));
@@ -840,32 +845,38 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
 
         // The ones made of arcs. Angles are measured the way a canvas measures
         // them: clockwise, from the three o'clock position.
-        Preset::Pie | Preset::Chord => wedge(
-            &mut path,
-            (left + right) / 2.0,
-            (top + bottom) / 2.0,
-            width / 2.0,
-            height / 2.0,
+        Preset::Pie | Preset::Chord => {
             // The two handles of these are the angles themselves, and the
-            // format measures an angle in sixtieths of a degree: three
-            // quarters of the way round is 16,200,000 of them, which is what
-            // both of these open to when nothing says otherwise.
-            adjusts.angle(1, 0.0),
-            adjusts.angle(2, core::f32::consts::PI * 1.5),
-            preset == Preset::Pie,
-        ),
+            // format measures an angle in sixtieths of a degree: three quarters
+            // of the way round is 16,200,000 of them, which is what both of
+            // these open to when nothing says otherwise.
+            let from = adjusts.angle(1, 0.0);
+            let to = forwards(from, adjusts.angle(2, core::f32::consts::PI * 1.5));
+            wedge(
+                &mut path,
+                (left + right) / 2.0,
+                (top + bottom) / 2.0,
+                width / 2.0,
+                height / 2.0,
+                from,
+                to,
+                preset == Preset::Pie,
+            );
+        }
         Preset::Arc => {
             // A quarter of the way round, and open: an arc has no inside, so it
             // is drawn as a band rather than filled. Its two handles are the
             // angles it runs between, as the pie's are.
+            let from = adjusts.angle(1, (270.0_f32).to_radians());
+            let to = forwards(from, adjusts.angle(2, 0.0));
             band(
                 &mut path,
                 (left + right) / 2.0,
                 (top + bottom) / 2.0,
                 width / 2.0,
                 height / 2.0,
-                adjusts.angle(1, -core::f32::consts::FRAC_PI_2),
-                adjusts.angle(2, 0.0),
+                from,
+                to,
                 width.min(height) / 16.0,
             );
         }
@@ -875,22 +886,22 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
             (top + bottom) / 2.0,
             width / 2.0,
             height / 2.0,
-            width.min(height) / 6.0,
+            width.min(height) * adjusts.share(1, share_of(fallback::RING)),
         ),
         Preset::NoSymbol => {
+            let rim = width.min(height) * adjusts.share(1, share_of(fallback::BAR));
             ring(
                 &mut path,
                 (left + right) / 2.0,
                 (top + bottom) / 2.0,
                 width / 2.0,
                 height / 2.0,
-                width.min(height) / 6.0,
+                rim,
             );
             // The bar across it, from one side of the ring to the other.
             let (cx, cy) = ((left + right) / 2.0, (top + bottom) / 2.0);
-            let (rx, ry) =
-                (width / 2.0 - width.min(height) / 6.0, height / 2.0 - width.min(height) / 6.0);
-            let thickness = width.min(height) / 12.0;
+            let (rx, ry) = (width / 2.0 - rim, height / 2.0 - rim);
+            let thickness = rim;
             let (sin, cos) = core::f32::consts::FRAC_PI_4.sin_cos();
             path.move_to(point(cx - rx * cos - thickness * sin, cy - ry * sin + thickness * cos));
             path.line_to(point(cx + rx * cos - thickness * sin, cy + ry * sin + thickness * cos));
@@ -898,20 +909,26 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
             path.line_to(point(cx - rx * cos + thickness * sin, cy - ry * sin - thickness * cos));
             path.close();
         }
-        Preset::BlockArc => band(
-            &mut path,
-            (left + right) / 2.0,
-            (top + bottom) / 2.0,
-            width / 2.0,
-            height / 2.0,
-            core::f32::consts::PI,
-            core::f32::consts::TAU,
-            width.min(height) / 4.0,
-        ),
+        Preset::BlockArc => {
+            let from = adjusts.angle(1, core::f32::consts::PI);
+            let to = forwards(from, adjusts.angle(2, core::f32::consts::TAU));
+            band(
+                &mut path,
+                (left + right) / 2.0,
+                (top + bottom) / 2.0,
+                width / 2.0,
+                height / 2.0,
+                from,
+                to,
+                width.min(height) * adjusts.share(3, share_of(fallback::RING)),
+            );
+        }
         Preset::Can => {
             // A cylinder seen from the side: the tube, and the ellipse that is
-            // its top seen at an angle.
-            let lid = height / 8.0;
+            // its top seen at an angle. The handle says how deep the lid is,
+            // over the shorter side and over the whole of the oval, so what
+            // shows above the tube is half of it.
+            let lid = width.min(height) * adjusts.share(1, share_of(fallback::RING)) / 2.0;
             let (cx, rx) = ((left + right) / 2.0, width / 2.0);
             path.move_to(point(left, top + lid));
             arc_into(
@@ -941,7 +958,7 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
         }
         Preset::Plaque => {
             // A rectangle with its corners taken *out* rather than in.
-            let reach = width.min(height) / 6.0;
+            let reach = width.min(height) * adjusts.share(1, share_of(fallback::CORNER));
             path.move_to(point(left + reach, top));
             path.line_to(point(right - reach, top));
             path.cubic_to(
@@ -1022,6 +1039,20 @@ pub fn path_in(preset: Preset, adjusts: &Adjusts, x: f32, y: f32, width: f32, he
     path
 }
 
+/// Where an arc stops, taken as forwards from where it starts.
+///
+/// The format states the two angles of a pie or an arc and sweeps from the one
+/// to the other the way the clock goes: a stop before the start is the long way
+/// round and not a sweep backwards. An arc from 270 degrees to 0 is the quarter
+/// at the top right, not three quarters drawn the other way about.
+fn forwards(from: f32, to: f32) -> f32 {
+    if to <= from {
+        to + core::f32::consts::TAU
+    } else {
+        to
+    }
+}
+
 /// The band that draws a shape's outline.
 ///
 /// The shape, and the shape a little smaller wound the other way — filled by
@@ -1085,13 +1116,44 @@ enum Corner {
     Rounded,
 }
 
-/// How far in a snip or a round reaches, as a fraction of the shorter side.
+/// What the format falls back on for each handle this program obeys, in the
+/// format's own unit: a hundred-thousandth of whatever that handle measures.
 ///
-/// A sixth, which is what the format's own definitions use for every one of
-/// these shapes when nothing says otherwise. It is a fraction of the *shorter*
-/// side and not of each: the corner has to be square, or a snip on a wide
-/// rectangle comes out as a long shallow wedge instead of a corner cut off.
-const CORNER: f32 = 1.0 / 6.0;
+/// # Why these are one set of numbers
+///
+/// Each is asked for twice — by the geometry that draws the shape, and by the
+/// handle that drags it. Two copies of the same number drift, and a handle that
+/// does not agree with the shape it belongs to jumps out from under the pointer
+/// the moment it is taken hold of. There is a test that says so: writing a
+/// handle's own value into a document draws the shape it was already drawn as.
+///
+/// They are fractions of the *shorter* side and not of each: a corner has to be
+/// square, or a snip on a wide rectangle comes out as a long shallow wedge
+/// instead of a corner cut off.
+pub(crate) mod fallback {
+    /// A sixth: the corner a rectangle is taken round or cut off by, and the
+    /// one a plaque is drawn with.
+    pub const CORNER: i32 = 16_667;
+    /// A quarter: the rim of a donut, the band of a block arc, and half the lid
+    /// of a can.
+    pub const RING: i32 = 25_000;
+    /// A third: the arm of a cross, an L or a half frame.
+    pub const ARM: i32 = 33_333;
+    /// An eighth: the border of a frame.
+    pub const FRAME: i32 = 12_500;
+    /// And the bar across a "no" symbol.
+    pub const BAR: i32 = 18_750;
+    /// Half: the shaft of a block arrow, and the head on the end of it.
+    pub const HALF: i32 = 50_000;
+}
+
+/// One of those as a fraction of one.
+pub(crate) const fn share_of(value: i32) -> f32 {
+    value as f32 / 100_000.0
+}
+
+/// How far in a snip or a round reaches, as a fraction of the shorter side.
+const CORNER: f32 = share_of(fallback::CORNER);
 
 /// How far in a corner is cut or taken round, with the handle taken into
 /// account.

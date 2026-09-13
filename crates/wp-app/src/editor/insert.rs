@@ -1138,6 +1138,32 @@ impl Editor {
                 ));
                 self.handle_grid(&cells, 4);
             }
+            // One shape taken hold of, so that the yellow handles it can be
+            // changed by are there to look at.
+            "held" => {
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+
+                let shape = wp_docx::shapes::Shape {
+                    name: "Held".to_owned(),
+                    preset: "roundRect".to_owned(),
+                    width_emu: 2_286_000,
+                    height_emu: 1_143_000,
+                    fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                    outline: Some("1F3864".to_owned()),
+                    outline_emu: 9_525,
+                    anchor: Some(Anchor {
+                        wrap: Wrap::None,
+                        horizontal: Placement::Offset(457_200),
+                        vertical: Placement::Offset(228_600),
+                        ..Anchor::default()
+                    }),
+                    ..wp_docx::shapes::Shape::default()
+                };
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.insert_shape(&shape);
+                self.relayout();
+                self.choose_drawing_here();
+            }
             // And the stars and banners: the run of the gallery from the first
             // explosion to the last wave.
             "banners" => {

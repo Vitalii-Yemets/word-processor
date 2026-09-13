@@ -172,21 +172,37 @@ fn roll_of(width: f32, height: f32) -> (f32, f32) {
 /// are the format's own: a five-pointed star dips to 0.382, which is the
 /// pentagram the golden ratio gives, and the more points a star has the less
 /// far in it dips, because the points would otherwise be too thin to see.
-const STARS: &[(Preset, usize, f32)] = &[
-    (Preset::Star4, 4, 0.25),
-    (Preset::Star, 5, 0.381_966),
-    (Preset::Star6, 6, 0.577_36),
-    (Preset::Star7, 7, 0.692_02),
-    (Preset::Star8, 8, 0.75),
-    (Preset::Star10, 10, 0.850_66),
-    (Preset::Star12, 12, 0.75),
-    (Preset::Star16, 16, 0.75),
-    (Preset::Star24, 24, 0.75),
-    (Preset::Star32, 32, 0.75),
+/// The dip is the format's own number, in the format's own unit: half the
+/// radius is 50,000, so a five-pointed star at 19,098 dips to the 0.382 the
+/// golden ratio gives. Kept as the number rather than as the fraction, because
+/// it is also what the handle that drags it is worth. See [`crate::handles`].
+const STARS: &[(Preset, usize, i32)] = &[
+    (Preset::Star4, 4, 12_500),
+    (Preset::Star, 5, 19_098),
+    (Preset::Star6, 6, 28_868),
+    (Preset::Star7, 7, 34_601),
+    (Preset::Star8, 8, 37_500),
+    (Preset::Star10, 10, 42_533),
+    (Preset::Star12, 12, 37_500),
+    (Preset::Star16, 16, 37_500),
+    (Preset::Star24, 24, 37_500),
+    (Preset::Star32, 32, 37_500),
 ];
 
 fn star_of(preset: Preset) -> Option<(usize, f32)> {
-    STARS.iter().find(|(it, ..)| *it == preset).map(|(_, points, inner)| (*points, *inner))
+    STARS
+        .iter()
+        .find(|(it, ..)| *it == preset)
+        .map(|(_, points, dip)| (*points, *dip as f32 / 50_000.0))
+}
+
+/// How far in a star dips when the document says nothing.
+///
+/// Asked for by the handle that drags it, so that the handle and the shape
+/// agree about where the dip is before anybody touches it. See
+/// [`crate::handles`].
+pub(crate) fn dip_of(preset: Preset) -> Option<f32> {
+    star_of(preset).map(|(_, inner)| inner)
 }
 
 /// A star of so many points, filling the box.

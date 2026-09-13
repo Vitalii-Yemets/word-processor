@@ -65,6 +65,10 @@ pub(super) enum Grip {
     Body,
     /// The round one above the top edge: the drawing turns.
     Turn,
+    /// One of the shape's own yellow handles: the shape changes, and neither
+    /// its size nor its place does. Which one, counted the way
+    /// [`wp_layout::handles::handles_in`] lists them.
+    Adjust(usize),
     /// A corner or an edge: the drawing changes size.
     TopLeft,
     Top,
@@ -104,6 +108,9 @@ impl Grip {
             // Above the box rather than on it; how far above is
             // [`TURN_REACH`], which a fraction of the box cannot say.
             Self::Turn => (0.5, 0.0),
+            // Wherever the shape says, which is not a fraction of the box
+            // either: see [`Editor::shape_handles`].
+            Self::Adjust(_) => (0.5, 0.5),
         }
     }
 
@@ -119,8 +126,9 @@ impl Grip {
             Self::BottomLeft => (1.0, 0.0, 0.0, 1.0),
             Self::Left => (1.0, 0.0, 0.0, 0.0),
             Self::Body => (1.0, 1.0, 1.0, 1.0),
-            // It turns the drawing and moves no edge of it.
-            Self::Turn => (0.0, 0.0, 0.0, 0.0),
+            // These two change the drawing without moving an edge of it: one
+            // turns it and one changes the shape itself.
+            Self::Turn | Self::Adjust(_) => (0.0, 0.0, 0.0, 0.0),
         }
     }
 
@@ -130,8 +138,9 @@ impl Grip {
             Self::Top | Self::Bottom => Cursor::ResizeVertical,
             Self::Left | Self::Right => Cursor::ResizeHorizontal,
             // The circling arrow Word shows is not one the shell offers; the
-            // hand at least says this is something to take hold of.
-            Self::Turn => Cursor::Hand,
+            // hand at least says this is something to take hold of, and the
+            // same goes for a yellow handle.
+            Self::Turn | Self::Adjust(_) => Cursor::Hand,
             // The corners want a diagonal pointer, which the shell does not
             // offer yet; the horizontal one at least says the edge can be
             // dragged.
@@ -411,6 +420,15 @@ impl Editor {
                     return Some((drawing.at, *grip));
                 }
             }
+            // The shape's own handles come before its body: they sit inside the
+            // box, and a press on one that fell through to the body would move
+            // the drawing instead of changing it.
+            for (index, handle) in self.shape_handles(&drawing).into_iter().enumerate() {
+                let at = handle.at();
+                if (px - at.x).abs() <= HANDLE && (py - at.y).abs() <= HANDLE {
+                    return Some((drawing.at, Grip::Adjust(index)));
+                }
+            }
             if px >= drawing.left
                 && px < drawing.left + drawing.width
                 && py >= drawing.top
@@ -420,6 +438,25 @@ impl Editor {
             }
         }
         None
+    }
+
+    /// The yellow handles of a chosen drawing, on the screen.
+    ///
+    /// Where each one sits is the shape's own business — a corner handle slides
+    /// along the top edge and a star's slides out from the middle — so the
+    /// shape is asked. See [`wp_layout::handles::handles_in`].
+    pub(super) fn shape_handles(&self, drawing: &OnPage) -> Vec<wp_layout::handles::Handle> {
+        let Some(shape) = self.document.shape_at(drawing.at) else { return Vec::new() };
+        let preset = wp_layout::geometry::Preset::from_word(&shape.preset);
+        let adjusts = wp_layout::geometry::Adjusts::from_pairs(&shape.adjusts);
+        wp_layout::handles::handles_in(
+            preset,
+            &adjusts,
+            drawing.left,
+            drawing.top,
+            drawing.width,
+            drawing.height,
+        )
     }
 
     /// Which pointer belongs over a point, when a drawing is chosen.
@@ -596,6 +633,10 @@ impl Editor {
         if drag.grip == Grip::Turn {
             return self.turn_by_handle(&drag, x, y);
         }
+        // And a yellow one changes the shape and neither moves nor resizes it.
+        if let Grip::Adjust(index) = drag.grip {
+            return self.adjust_by_handle(&drag, index, x, y);
+        }
 
         // How far the pointer has come, in points rather than pixels: the
         // document is measured in points and the zoom must not change how far
@@ -642,6 +683,34 @@ impl Editor {
         // thing, and a document saved here opens in Word with its connectors
         // where they are on the screen.
         self.document.rejoin_connectors();
+        self.relayout();
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// Moves the yellow handle a drag has hold of.
+    ///
+    /// The handle itself says what a place is worth, so a drag anywhere is a
+    /// value: it slides along its own line, and a pointer that has wandered off
+    /// that line counts for how far along it has come and no more. See
+    /// [`wp_layout::handles::Handle::value_at`].
+    fn adjust_by_handle(&mut self, drag: &ShapeDrag, index: usize, x: i32, y: i32) -> Response {
+        let Some(held) = drag.held.first() else { return Response::Ignored };
+        let Some(drawing) = self.chosen_drawing_boxes().into_iter().find(|box_| box_.at == held.at)
+        else {
+            return Response::Ignored;
+        };
+        let Some(handle) = self.shape_handles(&drawing).into_iter().nth(index) else {
+            return Response::Ignored;
+        };
+        let value = handle.value_at(wp_raster::Point::new(x as f32, y as f32));
+        // Held to what a shape can be: the format states these over a hundred
+        // thousandth, and a shape whose handle is dragged past what it means is
+        // a shape drawn inside out.
+        let value = value.clamp(0, 100_000);
+        if !self.document.set_adjust_at(held.at, handle.name, value) {
+            return Response::Ignored;
+        }
         self.relayout();
         self.needs_redraw = true;
         Response::Redraw
@@ -1250,6 +1319,101 @@ mod tests {
                 "{grip:?} is where another handle already is"
             );
         }
+    }
+
+    /// An editor showing one chosen rounded rectangle, which is a shape with a
+    /// handle of its own.
+    fn editor_with_a_handle() -> Editor {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Some words to flow round it")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+
+        let shape = wp_docx::shapes::Shape {
+            name: "Box".to_owned(),
+            preset: "roundRect".to_owned(),
+            width_emu: 1_828_800,
+            height_emu: 914_400,
+            fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+            anchor: Some(Anchor { wrap: Wrap::Square, ..Anchor::default() }),
+            ..wp_docx::shapes::Shape::default()
+        };
+        editor.document.set_caret(TextPosition::new(0, 0));
+        assert!(editor.document.insert_shape(&shape), "the shape went nowhere");
+        editor.relayout();
+        editor.choose_drawing_here();
+        editor
+    }
+
+    /// What the one shape's handle is worth in the document now.
+    fn corner_of(editor: &Editor) -> Option<i32> {
+        let at = editor.drawings_facing().first().copied().expect("a drawing").at;
+        editor.document.shape_at(at).and_then(|shape| shape.adjust("adj"))
+    }
+
+    #[test]
+    fn a_shape_that_can_be_changed_shows_a_handle_to_change_it_by() {
+        let editor = editor_with_a_handle();
+        let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
+        let handles = editor.shape_handles(&drawing);
+        assert_eq!(handles.len(), 1, "a rounded rectangle has one handle");
+
+        // On the top edge, a sixth of the shorter side in from the corner.
+        let at = handles[0].at();
+        assert!((at.y - drawing.top).abs() < 1.0, "it should sit on the top edge");
+        let along = (at.x - drawing.left) / drawing.height;
+        assert!((along - 1.0 / 6.0).abs() < 0.01, "it sits {along} of the way along");
+    }
+
+    #[test]
+    fn a_press_on_the_yellow_handle_takes_hold_of_it() {
+        // And not of the body underneath it, which would move the drawing
+        // instead of changing it.
+        let editor = editor_with_a_handle();
+        let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
+        let at = editor.shape_handles(&drawing)[0].at();
+        let grip = editor.grip_at(at.x as i32, at.y as i32);
+        assert_eq!(grip.map(|(_, grip)| grip), Some(Grip::Adjust(0)), "it took hold of {grip:?}");
+    }
+
+    #[test]
+    fn dragging_the_yellow_handle_changes_the_shape() {
+        let mut editor = editor_with_a_handle();
+        assert_eq!(corner_of(&editor), None, "a shape nobody has dragged says nothing");
+
+        let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
+        let at = editor.shape_handles(&drawing)[0].at();
+        assert!(
+            editor.press_on_shape(at.x as i32, at.y as i32, false),
+            "nothing was taken hold of"
+        );
+        // Further along the top edge: a rounder corner.
+        editor.drag_shape((drawing.left + drawing.height / 2.0) as i32, drawing.top as i32);
+        editor.release_shape();
+
+        let corner = corner_of(&editor).expect("the handle was written");
+        assert!(corner > 40_000, "the corner is {corner} and was dragged to half");
+    }
+
+    #[test]
+    fn one_drag_of_a_yellow_handle_is_one_thing_to_undo() {
+        let mut editor = editor_with_a_handle();
+        let drawing = editor.chosen_drawing_boxes().into_iter().next().expect("a chosen drawing");
+        let at = editor.shape_handles(&drawing)[0].at();
+
+        assert!(editor.press_on_shape(at.x as i32, at.y as i32, false));
+        // Several moves, as a real drag is.
+        for step in 1..=4 {
+            let along = drawing.left + drawing.height * (0.1 * step as f32 + 0.1);
+            editor.drag_shape(along as i32, drawing.top as i32);
+        }
+        editor.release_shape();
+        assert!(corner_of(&editor).is_some(), "the drag changed nothing");
+
+        editor.document.undo();
+        assert_eq!(corner_of(&editor), None, "one drag should be one thing to undo");
     }
 
     #[test]

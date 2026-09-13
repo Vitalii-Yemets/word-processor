@@ -594,6 +594,45 @@ impl Editor {
         let (turn_x, turn_y) = super::handles::turn_handle(&chosen);
         self.canvas.fill_rect(turn_x as i32, turn_y as i32, 1, (top - turn_y) as i32, colour);
         self.draw_round_handle(turn_x, turn_y, handle / 2.0 + 1.0, colour);
+
+        // The shape's own handles, which change the shape and not the box it
+        // sits in. Yellow diamonds, as Word draws them: a different colour and
+        // a different corner from the eight that change the size, because they
+        // do a different thing and land inside the drawing where the eight
+        // never do.
+        for held in self.shape_handles(&chosen) {
+            let at = held.at();
+            self.draw_diamond_handle(at.x, at.y, handle / 2.0 + 1.0);
+        }
+    }
+
+    /// A diamond standing on its point, drawn row by row.
+    ///
+    /// Yellow with a dark rim, which is the handle Word puts on a shape that
+    /// can be changed. Row by row for the same reason the round one is: a path
+    /// built and thrown away on every redraw to draw four short lines would be
+    /// four short lines dearly bought.
+    fn draw_diamond_handle(&mut self, middle_x: f32, middle_y: f32, reach: f32) {
+        const FILL: wp_raster::Color = wp_raster::Color::rgb(0xFF, 0xC0, 0x00);
+        const RIM: wp_raster::Color = wp_raster::Color::rgb(0x7F, 0x60, 0x00);
+
+        let from = (middle_y - reach).floor() as i32;
+        let to = (middle_y + reach).ceil() as i32;
+        for y in from..=to {
+            let down = (y as f32 + 0.5 - middle_y).abs();
+            let half = reach - down;
+            if half <= 0.0 {
+                continue;
+            }
+            let left = (middle_x - half).round() as i32;
+            let width = (half * 2.0).round().max(1.0) as i32;
+            self.canvas.fill_rect(left, y, width, 1, RIM);
+            // The same row a pixel narrower, which leaves the rim showing round
+            // the yellow.
+            if width > 2 {
+                self.canvas.fill_rect(left + 1, y, width - 2, 1, FILL);
+            }
+        }
     }
 
     /// A disc with a rim, drawn row by row.

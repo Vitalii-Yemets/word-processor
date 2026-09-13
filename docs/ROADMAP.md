@@ -2195,13 +2195,35 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 - [ ] **D6. Ink and media.** What a document holds when somebody drew on it or
   put a video in it.
 
-- [ ] **D21. The adjust handles.** The yellow diamonds themselves: where each
+- [x] **D21. The adjust handles.** The yellow diamonds themselves: where each
   preset puts them, drawing them on the chosen shape, dragging one, the shape
-  following under the pointer, the value written when the drag ends, and one
-  drag being one undo. And the presets listed under **D20** as not obeying
-  theirs, as the arithmetic behind each is worked out.
+  following under the pointer, the value written, and one drag being one undo.
   *Done when:* dragging a handle changes the shape and writes a value Word
   reads back as the same shape.
+  A handle has two questions to answer — where it sits for the value the
+  document gives, and what value it means when somebody drags it elsewhere — and
+  both come out of **one** description: the line it slides along, and what the
+  far end of that line is worth. Two answers written separately drift, and a
+  handle that jumps out from under the pointer as it is taken hold of is exactly
+  that drift.
+  The same goes for what a handle is worth when the document says nothing. Every
+  such value is now one number, in the format's own unit, asked for by the
+  geometry that draws the shape and by the handle that drags it. A test writes
+  each handle's own value into a document and checks the shape comes out
+  unchanged — and it caught three places where the two had already drifted: a
+  sixth against 16,667; a five-pointed star's dip against 19,098; and the arc,
+  whose handles are 270 degrees and 0. That last one is not drift but a rule:
+  **an arc sweeps forwards** from where it starts to where it stops, so 270 to 0
+  is the quarter at the top and not three quarters drawn backwards.
+  Nine more shapes obey their handles now: the can, the donut, the "no" symbol,
+  the frame, the cross, the L, the half frame, the plaque and the block arc.
+  *Not done:* the rest of the list under **D20** — the trapezoid's lean, the
+  ribbons' panel, the notched and striped arrows, the elbows and the curved
+  arrows, the teardrop, the moon, the chevron and the pentagon. And the
+  callouts, which are a different thing: they obey the handles that say where
+  their tail points, but there is no diamond to drag them by, because a tail is
+  one handle that moves both ways at once and writes two values — and a handle
+  here slides along a line and writes one.
 
 - [x] **D22. Connectors that stay joined.** `wps:cNvCnPr` with `a:stCxn` and
   `a:endCxn`: which drawing each end of a connector is fastened to, and at which

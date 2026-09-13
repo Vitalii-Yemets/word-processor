@@ -600,6 +600,39 @@ impl Document {
 }
 
 impl Document {
+    /// Moves one of a shape's handles.
+    ///
+    /// The name is the format's own for that handle — `adj` for a shape with
+    /// one and `adj1`, `adj2` and so on for a shape with several — and it comes
+    /// from whatever described the handle, so that a value written here is
+    /// found again by whatever drew it. A handle the shape already carries is
+    /// changed where it stands, so the rest of the list keeps the order the
+    /// document wrote it in.
+    ///
+    /// Returns whether anything changed: a handle dragged to where it already
+    /// was is not an edit.
+    pub fn set_adjust_at(&mut self, at: crate::TextPosition, name: &str, value: i32) -> bool {
+        let Some(mut shape) = self.shape_at(at) else { return false };
+        if shape.adjust(name) == Some(value) {
+            return false;
+        }
+        // Under whichever of the two names it is already written, or under the
+        // name it was asked for.
+        let also = match name {
+            "adj" => "adj1",
+            "adj1" => "adj",
+            other => other,
+        };
+        if let Some(entry) = shape.adjusts.iter_mut().find(|(it, _)| it == name || it == also) {
+            entry.1 = value;
+        } else {
+            shape.adjusts.push((name.to_owned(), value));
+        }
+        self.replace_shape_at(at, &shape)
+    }
+}
+
+impl Document {
     /// Every shape in the document with the place in the text it sits at.
     ///
     /// The place is what every command that changes a drawing is given, so a
