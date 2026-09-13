@@ -935,10 +935,12 @@ impl Editor {
 
 /// How many words a piece of text holds.
 ///
-/// Counted the way a person would: runs of anything that is not a space. Word
-/// counts the same way, which is what makes the two numbers agree.
+/// Asked of the same rules that decide what a double click selects, because
+/// the two answers have to be the same one. Counting the gaps instead would
+/// say that a page of Japanese — which has no gaps — is one word.
+/// See [`wp_segment::count_words`].
 pub(super) fn count_words(text: &str) -> usize {
-    text.split_whitespace().filter(|word| word.chars().any(char::is_alphanumeric)).count()
+    wp_segment::count_words(text)
 }
 
 /// Kept so the module can name the constant it needs.

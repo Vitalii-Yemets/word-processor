@@ -2894,9 +2894,34 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   for text that spans runs in two languages is the part worth thinking about
   rather than the arithmetic. And the rest of Lithuanian, whose full rules run
   to a dozen cases of which the two common ones are here.
-- [ ] **E6. Word segmentation for Chinese and Japanese.** A dictionary, because
-  there is no rule: it is what a double click selects and what the word count
-  counts.
+- [x] **E6. Words in the scripts written without spaces.** What can be known
+  without a dictionary — which is more than was here, and less than Word has.
+  *Done when:* a page of Japanese is not counted as one word, and a double
+  click in it takes what the rules say a word is.
+  Han and hiragana were classed as letters, which made every rule that joins
+  two letters join them: 私はガラスを食べられます came apart as three pieces
+  instead of ten, a double click took five characters at once, and a page of
+  Japanese counted as **one word**, because counting the gaps in a language
+  that has none gives one.
+  The standard says otherwise, and says the only thing that can be said without
+  a dictionary: each ideograph and each hiragana is a word of its own, and
+  katakana holds together — which is Japanese marking its own word boundaries,
+  since a borrowed word is written in katakana from end to end. That is now
+  what the rules say, and with it the double click, `Ctrl` and an arrow, a
+  whole-word search and the word count all change together, because all four
+  ask the same question.
+  The counting moved to where the question is answered. It used to split on
+  spaces in the drawing code; it is now one count of what the segmentation
+  says, which is why it can be right for both kinds of language at once. It
+  agrees with Word for Chinese and Japanese, where Word counts the characters
+  too — a Japanese document shows a far larger count than an English one of the
+  same length, and that is not a mistake in either program.
+  *Not done:* the dictionary. 私 and は are one word to a reader and two to
+  these rules, and telling those apart is a question about the language rather
+  than about the letters — the same missing thing as the Thai word breaks of
+  **E2** and the hyphenation patterns of **E14**. Three items, one decision:
+  where data of that kind comes from and where it lives. Until then this
+  program says what the letters say, and says it the same way everywhere.
 - [ ] **E7. The full Unicode tables.** The subsets written by hand for bidi,
   breaking, segmentation and normalization become generated, committed tables
   covering every character, checked against the conformance files.

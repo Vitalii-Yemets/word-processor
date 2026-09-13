@@ -293,6 +293,24 @@ const RANGES: &[(u32, u32, Class)] = &[
     // Hebrew, which the quotation mark rules are about.
     (0x05D0, 0x05F2, Class::Hebrew),
     (0xFB1D, 0xFB4F, Class::Hebrew),
+    // The scripts written without spaces, where every character is a word of
+    // its own as far as these rules go.
+    //
+    // Which is the standard's answer and not a shrug: it is what a double
+    // click selects and what a word count counts, and it is the *only* answer
+    // available without a dictionary of the language. 私 and は are two words
+    // to these rules and one to a reader; telling the two apart is what the
+    // dictionary would be for. See the roadmap.
+    (0x2E80, 0x2EFF, Class::Other),   // the radicals
+    (0x2F00, 0x2FDF, Class::Other),   // the Kangxi radicals
+    (0x3005, 0x3007, Class::Other),   // the iteration mark and the zero
+    (0x3021, 0x3029, Class::Other),   // the Suzhou numerals
+    (0x3040, 0x309A, Class::Other),   // hiragana, and the two sound marks
+    (0x309D, 0x309F, Class::Other),   // the hiragana iteration marks
+    (0x3400, 0x4DBF, Class::Other),   // the ideographs, extension A
+    (0x4E00, 0x9FFF, Class::Other),   // and the ones everybody uses
+    (0xF900, 0xFAFF, Class::Other),   // the compatibility ideographs
+    (0x20000, 0x3FFFF, Class::Other), // and the extensions beyond the basic plane
     // Katakana, which is written in words even where the rest is not.
     (0x30A1, 0x30FA, Class::Katakana),
     (0x30FC, 0x30FF, Class::Katakana),
@@ -395,5 +413,53 @@ mod tests {
     fn an_empty_paragraph_has_no_words_and_does_not_panic() {
         assert!(words("").is_empty());
         assert_eq!(at("", 0), 0..0);
+    }
+}
+
+#[cfg(test)]
+mod without_spaces {
+    use super::*;
+
+    /// The sentence every script is tested with, in Japanese: "I can eat
+    /// glass". Kanji, hiragana and a katakana word, with no spaces anywhere.
+    const GLASS: &str = "\u{79C1}\u{306F}\u{30AC}\u{30E9}\u{30B9}\u{3092}\u{98DF}\u{3079}\u{3089}\u{308C}\u{307E}\u{3059}";
+
+    fn pieces(text: &str) -> Vec<&str> {
+        let bounds = boundaries(text);
+        bounds.windows(2).map(|pair| &text[pair[0]..pair[1]]).collect()
+    }
+
+    #[test]
+    fn every_ideograph_is_a_word_of_its_own() {
+        // Which is what the standard says, and all that can be said without a
+        // dictionary: 私 and は are one word to a reader and two to these
+        // rules.
+        assert_eq!(pieces("\u{79C1}\u{306F}"), vec!["\u{79C1}", "\u{306F}"]);
+    }
+
+    #[test]
+    fn katakana_holds_together_because_it_is_written_in_words() {
+        // The one place Japanese marks its own word boundaries: a borrowed
+        // word is written in katakana from end to end.
+        assert_eq!(pieces(GLASS)[2], "\u{30AC}\u{30E9}\u{30B9}");
+    }
+
+    #[test]
+    fn a_sentence_comes_apart_character_by_character_but_for_that() {
+        // Twelve characters, ten pieces: the three katakana are one of them.
+        assert_eq!(pieces(GLASS).len(), 10);
+    }
+
+    #[test]
+    fn latin_in_the_middle_of_it_is_still_a_word() {
+        let mixed = "\u{79C1}\u{306F}Rust\u{3092}";
+        assert_eq!(pieces(mixed), vec!["\u{79C1}", "\u{306F}", "Rust", "\u{3092}"]);
+    }
+
+    #[test]
+    fn the_letters_of_a_language_written_with_spaces_are_not_taken_apart() {
+        // The rule above must not reach Korean, which is written in words with
+        // spaces between them and whose letters make syllables.
+        assert_eq!(pieces("\u{D55C}\u{AD6D}\u{C5B4}"), vec!["\u{D55C}\u{AD6D}\u{C5B4}"]);
     }
 }

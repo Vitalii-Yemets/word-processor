@@ -63,7 +63,82 @@ pub fn word_at(text: &str, offset: usize) -> core::ops::Range<usize> {
 /// The pieces between them are words, punctuation and gaps: everything is in
 /// one of them, so the boundaries can be walked in either direction without
 /// anything falling between.
+/// How many words a piece of text holds.
+///
+/// # Why this is not "count the spaces"
+///
+/// Because half the world writes without them. A Japanese sentence has no
+/// spaces in it at all, and counting its gaps gives one — which is the number
+/// this program used to show for a page of Japanese. What is counted here is
+/// what the segmentation says a word is, which for a script written without
+/// spaces is every character and for a katakana word is the word.
+///
+/// That is the same rule Word counts by, and it is why a Japanese document
+/// shows a far larger count than an English one of the same length: the
+/// characters are being counted, because without a dictionary of the language
+/// nothing else can be.
+///
+/// Punctuation and spaces are not words: a piece has to hold a letter or a
+/// digit to be counted.
+#[must_use]
+pub fn count_words(text: &str) -> usize {
+    let bounds = word_boundaries(text);
+    bounds
+        .windows(2)
+        .filter(|pair| text[pair[0]..pair[1]].chars().any(char::is_alphanumeric))
+        .count()
+}
+
 #[must_use]
 pub fn word_boundaries(text: &str) -> Vec<usize> {
     word::boundaries(text)
+}
+
+#[cfg(test)]
+mod counting {
+    use super::count_words;
+
+    #[test]
+    fn a_sentence_of_five_words_is_five() {
+        assert_eq!(count_words("A sentence of five words"), 5);
+    }
+
+    #[test]
+    fn punctuation_and_gaps_are_not_words() {
+        assert_eq!(count_words("Hello, world!  ---  "), 2);
+        assert_eq!(count_words("   "), 0);
+        assert_eq!(count_words(""), 0);
+    }
+
+    #[test]
+    fn a_number_is_a_word_and_keeps_its_point() {
+        assert_eq!(count_words("3.14 is pi"), 3);
+        assert_eq!(count_words("1,000 and 2,000"), 3);
+    }
+
+    #[test]
+    fn a_japanese_sentence_is_not_one_word() {
+        // Which is what counting the gaps said, because there are none. Every
+        // character is counted, and the katakana word is counted once.
+        let glass = "\u{79C1}\u{306F}\u{30AC}\u{30E9}\u{30B9}\u{3092}\u{98DF}\u{3079}\u{3089}\u{308C}\u{307E}\u{3059}";
+        assert_eq!(count_words(glass), 10);
+    }
+
+    #[test]
+    fn a_line_of_chinese_counts_its_characters() {
+        assert_eq!(count_words("\u{6211}\u{80FD}\u{541E}\u{4E0B}\u{73BB}\u{7483}"), 6);
+    }
+
+    #[test]
+    fn english_and_japanese_in_one_line_each_count_their_own_way() {
+        let mixed = "Rust \u{3067}\u{66F8}\u{304F}";
+        assert_eq!(count_words(mixed), 4, "one Latin word and three characters");
+    }
+
+    #[test]
+    fn a_hyphenated_word_is_two_the_way_word_counts_them() {
+        // Word counts "well-known" as two, because the hyphen is a break
+        // between words rather than a letter inside one.
+        assert_eq!(count_words("well-known"), 2);
+    }
 }

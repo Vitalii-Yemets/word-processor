@@ -1220,6 +1220,34 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // A language written without spaces between its words, and what
+            // the program can say about where they are.
+            "japanese" => {
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.type_text(
+                    "\u{79C1}\u{306F}\u{30AC}\u{30E9}\u{30B9}\u{3092}\u{98DF}\u{3079}\u{3089}\
+                     \u{308C}\u{307E}\u{3059}\u{3002}\u{305D}\u{308C}\u{306F}\u{79C1}\u{3092}\
+                     \u{50B7}\u{3064}\u{3051}\u{307E}\u{305B}\u{3093}\u{3002}",
+                );
+                self.document.press_enter();
+                self.document.type_text("Rust \u{3067}\u{66F8}\u{304F}: a line of both.");
+
+                let end = self.document.caret();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.extend_selection_to(end);
+                self.document.set_size(20.0);
+                self.document.set_language("ja-JP");
+                self.document.clear_selection();
+                // What a double click inside the katakana word selects, drawn
+                // by selecting exactly what the rules say it is: the word, and
+                // not the one character a click on a kanji would take.
+                if let Some(text) = self.document.paragraph_text(2) {
+                    let word = wp_segment::word_at(&text, 8);
+                    self.document.set_caret(wp_docx::TextPosition::new(2, word.start));
+                    self.document.extend_selection_to(wp_docx::TextPosition::new(2, word.end));
+                }
+                self.relayout();
+            }
             // The same letters put into capitals, in three languages that
             // disagree about what a capital is.
             "casing" => {
