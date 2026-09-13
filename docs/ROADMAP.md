@@ -1980,11 +1980,31 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   pens, which are drawn solid — a dashed line drawn solid is a line, where one
   drawn as nothing is a shape with a piece missing.
 
-- [ ] **D11. Text in a metafile.** The records that draw words, the fonts they
+- [x] **D11. Text in a metafile.** The records that draw words, the fonts they
   name and how those are matched against the fonts actually present, the
   alignment, and the escapement that turns a label on its side.
   *Done when:* a metafile with words in it draws them where an independent
   player puts them.
+  A picture decoder cannot know what fonts a machine has, and it should not:
+  that is the business of whatever opened the document, which has a list of them
+  already and a rule for what to fall back on. So the player **asks** — the
+  caller hands in somewhere to get letter shapes from, and the one that already
+  answers which face a paragraph is set in answers for a metafile too. A caller
+  with nothing to offer gets the picture with its shapes and without its words,
+  which is what `decode` does and says.
+  Making a font and using one are two things, in both formats: a file that made
+  a face and never took it up draws its words in whatever was in hand before,
+  and the test that first said "the words were not drawn" was right — it had
+  made the face and not selected it.
+  The rest is the file's own reckoning. A height stated as a positive number is
+  the whole line and not the letter. The point a record gives may be the left
+  end of the words, the right or the middle, and their top, their bottom or the
+  line they stand on. The escapement is in tenths of a degree and anticlockwise,
+  which is the other way round from a canvas, so the sign changes once and is
+  commented where it does.
+  A face that cannot draw every letter of a run draws none of it. Half a word in
+  one face and half in another is worse than a gap where the word was, and a gap
+  is what a reader can see is a gap.
 - [x] **D3. The preset shape geometries: the rectangles and the basic shapes.**
   A document does not carry the outline of a star; it carries the word `star5`
   and a box to fit it in, and every program that opens the document is expected
@@ -2010,9 +2030,8 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   rounded one is not, and no shape reaches outside the box it was given. That
   last one caught the heart and the moon, both of which did.
   *Not done:* Word's gallery groups its shapes into sections and this program
-  offers one flat list of them; and the adjustments — the yellow handles that
-  make a rounded corner rounder or an arrow's head wider — are not read, so each
-  shape is drawn at the proportions the format uses when nothing says otherwise.
+  offers one flat list of them. The adjustments were not read either when this
+  was written; they are **D20** and **D21** now, and they are.
 
 - [x] **D12. Gradients and patterns.** `a:gradFill` in its three kinds — linear,
   radial and along a path — with the stops and the angle; and `a:pattFill`, the

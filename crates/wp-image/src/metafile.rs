@@ -26,8 +26,8 @@
 
 use wp_raster::{Canvas, Color, Path, Point, Rule, Transform};
 
-/// A pen, a brush, or a slot that holds neither.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// A pen, a brush, a font, or a slot that holds none of them.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Object {
     /// A slot that has been made and not filled, or one that was deleted.
     #[default]
@@ -36,6 +36,103 @@ pub enum Object {
     Pen(Option<(Color, f32)>),
     /// What fills a shape, or nothing at all.
     Brush(Option<Color>),
+    /// What words are drawn in.
+    Font(LogFont),
+}
+
+/// The face a file asks for, as the file describes it.
+///
+/// What the file says and not what this machine has: a metafile recorded in
+/// 1994 asks for "MS Sans Serif", and which of the fonts actually here is
+/// nearest to that is somebody else's business. See [`Faces`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LogFont {
+    pub family: String,
+    /// How tall, in logical units. The file states this as the height of a
+    /// letter when it is negative and of the whole line when it is positive;
+    /// what is kept here is always the letter, because that is what a font is
+    /// asked for in.
+    pub size: f32,
+    pub bold: bool,
+    pub italic: bool,
+    /// How far round the line of words is turned, in tenths of a degree and
+    /// anticlockwise — which is how both formats measure it, and the other way
+    /// round from a canvas.
+    pub escapement: i32,
+}
+
+/// Where a metafile's words get their letter shapes from.
+///
+/// # Why this is asked for rather than looked up
+///
+/// Because what fonts a machine has is not something a picture decoder can
+/// know. A metafile names a face the way the program that recorded it knew it,
+/// and matching that against what is actually installed is the business of
+/// whatever opened the document — which has a list of them already, and a rule
+/// for what to fall back on. So the player asks, and a caller that has no fonts
+/// to offer gets a picture with its shapes and none of its words: see
+/// [`crate::decode`].
+pub trait Faces {
+    /// The face nearest what a record asked for, or nothing.
+    fn face(&self, family: &str, bold: bool, italic: bool) -> Option<wp_font::Font<'_>>;
+}
+
+/// A caller with no fonts to offer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NoFaces;
+
+impl Faces for NoFaces {
+    fn face(&self, _family: &str, _bold: bool, _italic: bool) -> Option<wp_font::Font<'_>> {
+        None
+    }
+}
+
+/// How a run of words is placed against the point a record gives.
+///
+/// The flags both formats share: which end of the words the point is, and
+/// whether it is their top, their bottom or the line they stand on.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Alignment(pub u16);
+
+impl Alignment {
+    /// How far back from the point the words start, as a share of their width.
+    #[must_use]
+    pub fn back(self) -> f32 {
+        match self.0 & 6 {
+            2 => 1.0,
+            6 => 0.5,
+            _ => 0.0,
+        }
+    }
+
+    /// Whether the point is the line the words stand on, rather than the top or
+    /// the bottom of them.
+    #[must_use]
+    pub fn on_the_baseline(self) -> bool {
+        self.0 & 24 == 24
+    }
+
+    /// Whether it is the bottom of them.
+    #[must_use]
+    pub fn at_the_bottom(self) -> bool {
+        self.0 & 24 == 8
+    }
+}
+
+/// Everything the records that draw words work from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Words {
+    pub colour: Color,
+    pub align: Alignment,
+    pub font: LogFont,
+}
+
+impl Default for Words {
+    fn default() -> Self {
+        // Black, which is what both formats draw words in until a record says
+        // otherwise.
+        Self { colour: Color::BLACK, align: Alignment::default(), font: LogFont::default() }
+    }
 }
 
 /// Everything a record can change or draw with.
@@ -58,6 +155,9 @@ pub struct State {
     /// The path being built between the records that begin and end one, when
     /// the file is building one.
     pub path: Option<Path>,
+    /// What the records that draw words work from: the colour, where the point
+    /// they are given sits against them, and the face they are drawn in.
+    pub words: Words,
 }
 
 impl State {
@@ -78,6 +178,7 @@ impl State {
             world: Transform::IDENTITY,
             rule: Rule::EvenOdd,
             path: None,
+            words: Words::default(),
         }
     }
 
@@ -95,9 +196,10 @@ impl State {
 
     /// Takes up whichever object a record names.
     pub fn select(&mut self, index: usize) {
-        match self.objects.get(index).copied().unwrap_or_default() {
+        match self.objects.get(index).cloned().unwrap_or_default() {
             Object::Pen(pen) => self.pen = pen,
             Object::Brush(brush) => self.brush = brush,
+            Object::Font(font) => self.words.font = font,
             Object::Empty => {}
         }
     }
@@ -124,6 +226,97 @@ impl State {
         let across = (along.x - origin.x).hypot(along.y - origin.y);
         let downwards = (down.x - origin.x).hypot(down.y - origin.y);
         ((across + downwards) / 2.0).max(0.0001)
+    }
+
+    /// Draws a run of words at a point, the way the file asks for it.
+    ///
+    /// # What settles where they go
+    ///
+    /// Three things, and all of them are the file's. The point itself, which
+    /// may be the left end of the words or their right or their middle. The
+    /// line they stand on, which may be that point or the top of them or the
+    /// bottom. And how far round they are turned, which the file states in
+    /// tenths of a degree anticlockwise — the other way from a canvas, so the
+    /// sign changes here.
+    ///
+    /// Nothing is drawn when there is no face to draw with. A picture missing
+    /// its words is a worse picture; a picture with its words in a face nobody
+    /// asked for would be a wrong one.
+    pub fn draw_words(&mut self, faces: &dyn Faces, x: f32, y: f32, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let asked = &self.words.font;
+        let Some(font) = faces
+            .face(&asked.family, asked.bold, asked.italic)
+            .or_else(|| faces.face("", asked.bold, asked.italic))
+        else {
+            return;
+        };
+
+        // How big the letters are on the canvas: the size the file states, in
+        // logical units, through the mapping in force.
+        let size = asked.size.abs().max(1.0) * self.scale();
+        let units = f32::from(font.units_per_em().max(1));
+        let scale = size / units;
+
+        // How wide the run is, which is what the alignment is measured from.
+        let glyphs: Vec<_> = text.chars().filter_map(|letter| font.glyph_for(letter)).collect();
+        if glyphs.len() != text.chars().count() {
+            // A face that cannot draw every letter of the run is a face that
+            // would draw the run wrong. Nothing rather than something wrong.
+            return;
+        }
+        let width: f32 = glyphs.iter().map(|glyph| f32::from(font.advance(*glyph)) * scale).sum();
+
+        let metrics = font.vertical_metrics();
+        let ascent = metrics.ascender as f32 * scale;
+        let descent = metrics.descender as f32 * scale;
+        let at = self.place(x, y);
+        // Where the pen starts: back from the point by as much of the run as
+        // the alignment asks for, and down to the line the letters stand on.
+        let start_x = at.x - width * self.words.align.back();
+        let start_y = if self.words.align.on_the_baseline() {
+            at.y
+        } else if self.words.align.at_the_bottom() {
+            at.y + descent
+        } else {
+            at.y + ascent
+        };
+
+        let turn = -(asked.escapement as f32 / 10.0).to_radians();
+        let colour = self.words.colour;
+        let mut pen = 0.0;
+        for glyph in glyphs {
+            if let Ok(Some(outline)) = font.outline(glyph) {
+                let mut path = Path::new();
+                for command in &outline.commands {
+                    match *command {
+                        wp_font::PathCommand::MoveTo(point) => {
+                            path.move_to(Point::new(point.x, point.y));
+                        }
+                        wp_font::PathCommand::LineTo(point) => {
+                            path.line_to(Point::new(point.x, point.y));
+                        }
+                        wp_font::PathCommand::QuadTo(control, point) => {
+                            path.quad_to(
+                                Point::new(control.x, control.y),
+                                Point::new(point.x, point.y),
+                            );
+                        }
+                        wp_font::PathCommand::Close => {
+                            path.close();
+                        }
+                    }
+                }
+                // The letter itself, then where it stands, then how far round
+                // the whole run is turned about where it began.
+                let placed = Transform::glyph(scale, start_x + pen, start_y)
+                    .then(&Transform::rotate_about(turn, start_x, start_y));
+                self.canvas.fill_path(&path.transformed(&placed), colour);
+            }
+            pen += f32::from(font.advance(glyph)) * scale;
+        }
     }
 
     /// Draws a shape: filled with the brush, then outlined with the pen.

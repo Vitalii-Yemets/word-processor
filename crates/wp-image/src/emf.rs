@@ -25,7 +25,9 @@
 
 use wp_raster::{Color, Path, Point, Rule, Transform};
 
-use crate::metafile::{brush_of, colour_of, ellipse, pen_of, rounded, Object, State};
+use crate::metafile::{
+    brush_of, colour_of, ellipse, pen_of, rounded, Alignment, Faces, LogFont, Object, State,
+};
 use crate::{check_size, Error, Image};
 
 /// The four bytes the header carries to say what it is.
@@ -82,8 +84,36 @@ fn float(data: &[u8], at: usize) -> Option<f32> {
     number(data, at).map(f32::from_bits)
 }
 
+/// A run of two-byte letters, which is how the newer format writes a name and
+/// the words it draws.
+///
+/// Stops at the first nothing, because a name is written into a field of a
+/// fixed size and what follows the name is that.
+fn wide(data: &[u8], at: usize, count: usize) -> String {
+    let mut out = String::new();
+    for index in 0..count {
+        let Some(bytes) = data.get(at + index * 2..at + index * 2 + 2) else {
+            break;
+        };
+        let value = u16::from_le_bytes([bytes[0], bytes[1]]);
+        if value == 0 {
+            break;
+        }
+        out.push(char::from_u32(u32::from(value)).unwrap_or('?'));
+    }
+    out
+}
+
 /// Plays an enhanced metafile back into pixels.
 pub fn decode(data: &[u8]) -> Result<Image, Error> {
+    decode_with(data, &crate::metafile::NoFaces)
+}
+
+/// The same, with somewhere to get letter shapes from.
+///
+/// A caller with no fonts to offer gets the picture without its words. See
+/// [`crate::metafile::Faces`].
+pub fn decode_with(data: &[u8], faces: &dyn Faces) -> Result<Image, Error> {
     if !is_emf(data) {
         return Err(Error::UnknownFormat);
     }
@@ -180,6 +210,51 @@ pub fn decode(data: &[u8]) -> Result<Image, Error> {
                 viewport.0 = signed(body, 8).unwrap_or(0) as f32;
                 viewport.1 = signed(body, 12).unwrap_or(0) as f32;
                 mapped = true;
+            }
+            // The colour words are drawn in, and where the point a word record
+            // gives sits against them.
+            24 => state.words.colour = colour_of(number(body, 8).unwrap_or(0)),
+            22 => state.words.align = Alignment(number(body, 8).unwrap_or(0) as u16),
+            // A face. The newer format writes the same description the older
+            // one does, in the same order, but with room for a name of
+            // thirty-two characters of two bytes each.
+            82 => {
+                let height = signed(body, 12).unwrap_or(0) as f32;
+                let escapement = signed(body, 20).unwrap_or(0);
+                let weight = signed(body, 28).unwrap_or(400);
+                let italic = body.get(32).copied().unwrap_or(0) != 0;
+                let family = wide(body, 40, 32);
+                state.add(Object::Font(LogFont {
+                    family,
+                    // Negative is the height of a letter and positive the
+                    // height of the whole line; the letter is what a font is
+                    // asked for in.
+                    size: if height < 0.0 { -height } else { height * 0.8 },
+                    bold: weight >= 600,
+                    italic,
+                    escapement,
+                }));
+            }
+            // Words at a point, written one byte a letter or two. Everything
+            // about the two records is the same but that.
+            83 | 84 => {
+                // The record holds a description of the run, which holds where
+                // the words are and how many: the offsets in it are from the
+                // start of the record.
+                let x = signed(body, 36).unwrap_or(0) as f32;
+                let y = signed(body, 40).unwrap_or(0) as f32;
+                let count = number(body, 44).unwrap_or(0) as usize;
+                let offset = number(body, 48).unwrap_or(0) as usize;
+                let text = if kind == 84 {
+                    wide(body, offset, count)
+                } else {
+                    body.get(offset..offset + count)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|byte| char::from(*byte))
+                        .collect()
+                };
+                state.draw_words(faces, x, y, &text);
             }
             // The transform the file states on top of everything else.
             35 => state.world = read_transform(body, 8),

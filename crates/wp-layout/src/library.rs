@@ -463,6 +463,21 @@ fn system_font_directories() -> Vec<PathBuf> {
     directories.into_iter().filter(|directory| directory.is_dir()).collect()
 }
 
+/// The fonts of this machine, offered to a metafile being played back.
+///
+/// A metafile names a face the way the program that recorded it knew it, and
+/// what is actually here is this library's business. The nearest face is what
+/// [`FontLibrary::select`] already answers for a document's own text, so a
+/// metafile gets the same answer a paragraph would.
+impl wp_image::metafile::Faces for FontLibrary {
+    fn face(&self, family: &str, bold: bool, italic: bool) -> Option<wp_font::Font<'_>> {
+        let wanted = (!family.is_empty()).then_some(family);
+        let index =
+            self.select(wanted, bold, italic).or_else(|| self.default_face(bold, italic))?;
+        self.face(index)?.font()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

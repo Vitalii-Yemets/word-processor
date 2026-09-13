@@ -9,8 +9,10 @@ license.workspace = true
 [dependencies]
 wp-deflate = { path = "../wp-deflate" }
 # The metafile formats are recordings of drawing, so playing one back means
-# drawing it.
+# drawing it -- and some of what they draw is words, which are letter shapes
+# out of a font.
 wp-raster = { path = "../wp-raster" }
+wp-font = { path = "../wp-font" }
 
 [lints]
 workspace = true

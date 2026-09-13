@@ -3109,9 +3109,12 @@ impl<'a> LayoutEngine<'a> {
             return known.clone();
         }
 
+        // The fonts of this machine go with the bytes: a metafile draws words
+        // as well as shapes, and the letters have to come from somewhere. See
+        // [`wp_image::metafile::Faces`].
         let decoded = document
             .embedded_part(&picture.relationship)
-            .and_then(|bytes| wp_image::decode(bytes).ok())
+            .and_then(|bytes| wp_image::decode_with(bytes, self.library).ok())
             .filter(|image| !image.is_empty())
             .map(Rc::new);
 

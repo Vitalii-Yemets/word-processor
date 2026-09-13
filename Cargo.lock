@@ -60,6 +60,7 @@ name = "wp-image"
 version = "0.0.1"
 dependencies = [
  "wp-deflate",
+ "wp-font",
  "wp-raster",
 ]
 

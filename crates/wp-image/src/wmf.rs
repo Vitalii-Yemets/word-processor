@@ -25,7 +25,9 @@
 
 use wp_raster::{Path, Point, Rule, Transform};
 
-use crate::metafile::{brush_of, colour_of, ellipse, pen_of, rounded, Object, State};
+use crate::metafile::{
+    brush_of, colour_of, ellipse, pen_of, rounded, Alignment, Faces, LogFont, Object, State,
+};
 use crate::{check_size, Error, Image};
 
 /// The four bytes a placeable metafile begins with.
@@ -68,6 +70,14 @@ pub fn is_wmf(data: &[u8]) -> bool {
 
 /// Plays a Windows metafile back into pixels.
 pub fn decode(data: &[u8]) -> Result<Image, Error> {
+    decode_with(data, &crate::metafile::NoFaces)
+}
+
+/// The same, with somewhere to get letter shapes from.
+///
+/// A caller with no fonts to offer gets the picture without its words. See
+/// [`crate::metafile::Faces`].
+pub fn decode_with(data: &[u8], faces: &dyn Faces) -> Result<Image, Error> {
     if !is_wmf(data) {
         return Err(Error::UnknownFormat);
     }
@@ -166,6 +176,64 @@ pub fn decode(data: &[u8]) -> Result<Image, Error> {
                 // when it is drawn with rather than here: the mapping may
                 // change between now and then.
                 state.add(Object::Pen(pen_of(style, width, colour)));
+            }
+            // The colour words are drawn in.
+            0x0209 => {
+                state.words.colour = colour_of(long(body, 0).unwrap_or(0));
+            }
+            // Where the point a word record gives sits against the words.
+            0x012E => {
+                state.words.align = Alignment(word(body, 0).unwrap_or(0));
+            }
+            // A face: how tall, how far round, how heavy, and its name. The
+            // name is the last of it and is as long as it is, up to the
+            // thirty-two bytes the format allows.
+            0x02FB => {
+                let height = f32::from(short(body, 0).unwrap_or(0));
+                let escapement = i32::from(short(body, 4).unwrap_or(0));
+                let weight = short(body, 8).unwrap_or(400);
+                let italic = body.get(10).copied().unwrap_or(0) != 0;
+                let family: String = body
+                    .get(18..)
+                    .unwrap_or_default()
+                    .iter()
+                    .take_while(|byte| **byte != 0)
+                    .map(|byte| char::from(*byte))
+                    .collect();
+                state.add(Object::Font(LogFont {
+                    family,
+                    // A height the file states as a positive number is the
+                    // whole line and not the letter; the letter is what a font
+                    // is asked for in, and four fifths of a line is near
+                    // enough what the difference comes to.
+                    size: if height < 0.0 { -height } else { height * 0.8 },
+                    bold: weight >= 600,
+                    italic,
+                    escapement,
+                }));
+            }
+            // Words at a point: how many of them, then the words themselves.
+            0x0521 => {
+                let count = usize::from(word(body, 0).unwrap_or(0));
+                let text = latin(body.get(2..2 + count).unwrap_or_default());
+                // The point comes after the words, and is written the second
+                // number first as every point in this format is.
+                let at = 2 + count + (count & 1);
+                let y = f32::from(short(body, at).unwrap_or(0));
+                let x = f32::from(short(body, at + 2).unwrap_or(0));
+                state.draw_words(faces, x, y, &text);
+            }
+            // The same with a rectangle round it and a list of widths, neither
+            // of which changes where the words go.
+            0x0A32 => {
+                let y = f32::from(short(body, 0).unwrap_or(0));
+                let x = f32::from(short(body, 2).unwrap_or(0));
+                let count = usize::from(word(body, 4).unwrap_or(0));
+                let options = word(body, 6).unwrap_or(0);
+                // The rectangle is there only when the options ask for one.
+                let at = 8 + if options & 0x0006 == 0 { 0 } else { 8 };
+                let text = latin(body.get(at..at + count).unwrap_or_default());
+                state.draw_words(faces, x, y, &text);
             }
             // A brush: a style, a colour, and a hatch nothing here draws.
             0x02FC => {
@@ -324,6 +392,15 @@ fn mapping(
         .then(&Transform::scale(across * scale, down * scale))
         .then(&Transform::translate(viewport.0 * scale, viewport.1 * scale))
         .then(&Transform::translate(HALF, HALF))
+}
+
+/// The letters of a string the older format wrote, which states them one byte
+/// each.
+///
+/// Read as Latin-1, which is what a byte in a metafile means when nothing says
+/// which code page it was written in — and nothing usually does.
+fn latin(bytes: &[u8]) -> String {
+    bytes.iter().take_while(|byte| **byte != 0).map(|byte| char::from(*byte)).collect()
 }
 
 #[cfg(test)]

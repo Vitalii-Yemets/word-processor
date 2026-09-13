@@ -142,15 +142,27 @@ impl Format {
 }
 
 /// Decodes a picture, whichever of the formats it is in.
+///
+/// A metafile decoded this way comes out without its words: drawing those means
+/// having letter shapes to draw them with, and what fonts a machine has is not
+/// something a picture decoder can know. See [`decode_with`].
 pub fn decode(data: &[u8]) -> Result<Image, Error> {
+    decode_with(data, &metafile::NoFaces)
+}
+
+/// The same, with somewhere to get letter shapes from.
+///
+/// Only the two metafile formats use it; the rest are pictures and have no
+/// words in them. See [`metafile::Faces`].
+pub fn decode_with(data: &[u8], faces: &dyn metafile::Faces) -> Result<Image, Error> {
     match Format::detect(data) {
         Some(Format::Png) => png::decode(data),
         Some(Format::Jpeg) => jpeg::decode(data),
         Some(Format::Bmp) => bmp::decode(data),
         Some(Format::Gif) => gif::decode(data),
         Some(Format::Tiff) => tiff::decode(data),
-        Some(Format::Emf) => emf::decode(data),
-        Some(Format::Wmf) => wmf::decode(data),
+        Some(Format::Emf) => emf::decode_with(data, faces),
+        Some(Format::Wmf) => wmf::decode_with(data, faces),
         None => Err(Error::UnknownFormat),
     }
 }
