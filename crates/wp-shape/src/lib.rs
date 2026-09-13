@@ -15,10 +15,14 @@
 //!
 //! # What is covered
 //!
-//! Arabic and Syriac joining, and ligatures wherever a font offers them. The
-//! Indic scripts need reordering within a syllable as well as substitution, and
-//! are not shaped yet — they are drawn as they are stored, which is wrong in a
-//! different way and is the next thing to do here.
+//! Arabic and Syriac joining, and ligatures wherever a font offers them; the
+//! composing a font asks for before anything else; and the rules that say
+//! *when* a rule applies — a glyph in this company becomes that — which most
+//! of what a large font knows is written in. See [`gsub`].
+//!
+//! The Indic scripts need reordering within a syllable as well as
+//! substitution, and are not shaped yet — they are drawn as they are stored,
+//! which is wrong in a different way and is the next thing to do here.
 
 #![forbid(unsafe_code)]
 
@@ -102,7 +106,16 @@ pub fn shape_with(font: &Font<'_>, text: &str, features: &[[u8; 4]]) -> Vec<Shap
     };
     let script = script_of(text);
 
-    // The joining forms first: which shape each letter takes is decided by the
+    // Composing and decomposing first, which is what the format says: a font
+    // uses it to say that a letter and the mark under it are written as one
+    // glyph, or that one character is drawn as two pieces. Every shaper
+    // applies it whether or not anybody asked, because what it says is not a
+    // refinement of the writing, it is the writing.
+    for lookup in table.lookups_for(&script, b"ccmp") {
+        table.apply(lookup, &mut glyphs, &mut clusters);
+    }
+
+    // The joining forms next: which shape each letter takes is decided by the
     // text, and the font is then asked for that shape.
     if characters.iter().any(|character| is_joining_script(*character)) {
         let wanted = forms(&characters);

@@ -1220,6 +1220,19 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // What a font says to do when a mark lands on a letter. The i
+            // loses its dot, because the font's own rule says so and two dots
+            // on one letter is not what anybody wrote.
+            "composing" => {
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.type_text("i\u{0307} i\u{0301} in fi");
+                let end = self.document.caret();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.extend_selection_to(end);
+                self.document.set_size(72.0);
+                self.document.clear_selection();
+                self.relayout();
+            }
             // A video from the web: its frame, drawn with the play sign over
             // it that says what it stands for.
             "video" => {

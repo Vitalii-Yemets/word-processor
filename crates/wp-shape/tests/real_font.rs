@@ -161,3 +161,58 @@ fn every_font_on_this_machine_is_read_without_panicking() {
 
     assert!(read > 0, "no fonts could be read on this machine at all");
 }
+
+/// The first font on this machine that says what to do when a mark lands on a
+/// letter — the composing rules, which every shaper applies before anything
+/// else.
+fn composing_font() -> Option<(Vec<u8>, String)> {
+    for path in font_files() {
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        let Ok(font) = Font::parse(&bytes) else { continue };
+        if font.glyph_for('i').is_none() || font.glyph_for('\u{0307}').is_none() {
+            continue;
+        }
+        let Some(table) = font.substitution_table().and_then(Substitutions::parse) else {
+            continue;
+        };
+        if table.lookups_for(b"latn", b"ccmp").is_empty() {
+            continue;
+        }
+        let name = font.full_name().unwrap_or_else(|| path.display().to_string());
+        drop(font);
+        return Some((bytes, name));
+    }
+    None
+}
+
+#[test]
+fn a_letter_loses_its_dot_when_a_mark_lands_on_it() {
+    // The rule is written as a context — this glyph, but only with that after
+    // it — and a shaper that cannot read one draws a dotted i with a second
+    // dot on top of it. The font's own answer is the dotless form.
+    let Some((bytes, name)) = composing_font() else {
+        eprintln!("no font with composing rules on this machine; skipping");
+        return;
+    };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    let alone = shape(&font, "i");
+    let marked = shape(&font, "i\u{0307}");
+    assert_eq!(alone.len(), 1);
+    assert_eq!(marked.len(), 2, "the mark should still be a glyph of its own");
+    assert_ne!(
+        alone[0].glyph, marked[0].glyph,
+        "{name}: the i kept its dot under a mark, so the two are drawn on top of each other"
+    );
+}
+
+#[test]
+fn a_letter_with_nothing_on_it_is_left_as_it_is() {
+    let Some((bytes, _)) = composing_font() else { return };
+    let font = Font::parse(&bytes).expect("a readable font");
+
+    // The same rule, not fired: what follows is a letter and not a mark.
+    let plain = shape(&font, "in");
+    let alone = shape(&font, "i");
+    assert_eq!(plain[0].glyph, alone[0].glyph, "a rule about marks changed a letter");
+}

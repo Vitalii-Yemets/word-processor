@@ -2567,8 +2567,71 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
 ## E — The rest of the text engine
 
+- [x] **E11. The lookups the shaper skipped.** Contextual, chaining contextual
+  and extension: the three kinds of `GSUB` lookup that were read far enough to
+  be passed over. Done before **E1** because the scripts that reorder are
+  written almost entirely in them — an Indic engine standing on a shaper that
+  cannot read a chaining rule would run features that do nothing.
+  *Done when:* a rule that fires only in company fires only in company, and a
+  font that writes its rules behind extension offsets is read like any other.
+  A contextual lookup is not a substitution. It is a rule about surroundings —
+  this glyph, but only between those two — and what it does is name *other*
+  lookups and the places in the match to run them at. So the shaper needed a
+  way to run a lookup at one place and nowhere else: a lookup let loose on the
+  run would change every letter like the one the rule pointed at, which is the
+  difference between a rule about a letter and a rule about a word.
+  Three ways of writing each of them, and all six are read: by glyph, one rule
+  per glyph that may begin a match; by class, so a rule about a whole set of
+  letters is written once; and by coverage, one set per place, which is how a
+  font says "any of these, then any of those". The chaining kind says the same
+  with a before and an after — the before written nearest-first, so it is read
+  backwards from where the match begins.
+  A nested lookup may make the run shorter: two glyphs becoming one is what a
+  ligature is. The places a rule named were counted before that happened, so
+  what each one did to the length is carried along and added to the places
+  still to come.
+  An extension lookup is none of these: it is a lookup that says what kind it
+  really is and points at that table with a thirty-two bit offset, which is how
+  a font too big for sixteen-bit offsets is written. A reader that skips
+  extensions skips most of what a large font says. One pointing at another is
+  refused — the format forbids it, and a font that wrote one could send a
+  reader round for ever; so could a rule naming itself, which is why a lookup
+  stops after eight steps into another.
+  And `ccmp` is applied now, before anything else, which is what the format
+  asks of every shaper: it is where a font says that a letter and the mark on
+  it are written as one glyph. The visible answer is in DejaVu: an `i` with a
+  mark above it loses its dot, because two dots on one letter is not what
+  anybody wrote. That rule is a chaining one, so nothing here could read it
+  before today.
+  The tables are built by hand in the tests, byte by byte, because no font to
+  hand is written so that each rule can be seen on its own; and the composing
+  is checked against whatever font the machine really has.
+  *Not done:* where the mark then lands. See **E12**.
+
+- [ ] **E12. The positioning table.** `GPOS`, which is not read at all: the
+  font's table is found and passed over, and the only kerning read is the old
+  `kern` table that modern fonts no longer write. So a font whose kerning is in
+  `GPOS` — which is most of them — is set unkerned, and a combining mark is
+  drawn where its own width puts it rather than where the font says it belongs:
+  the proof scene for **E11** shows the dot of an `i` landing beside the letter
+  instead of over it.
+  What it needs: single and pair positioning, with the class-based pairs that
+  carry most of a font's kerning; cursive attachment, which is what makes
+  Arabic join at the right height; mark-to-base, mark-to-ligature and
+  mark-to-mark attachment, which is where a combining mark belongs; and the
+  same contextual and chaining rules as **E11**, which `GPOS` has its own
+  copies of. It also needs `GDEF`, because the lookup flags that say "pass over
+  the marks" cannot be obeyed without knowing which glyphs are marks — and the
+  shaper ignores those flags today, for every script.
+  And the layout has to carry it: a glyph placed by `GPOS` has an offset of its
+  own from where the advances would have put it, which nothing in the line
+  keeps yet.
+
 - [ ] **E1. Indic reordering.** Devanagari, Bengali, Tamil, Telugu and the rest:
   a syllable is reordered before it is drawn, and the rules differ per script.
+  Rests on **E11**, which is done, and on **E12**, which is not: the reordering
+  and the features can be right and the marks will still land by their own
+  widths until the positioning table is read.
 - [ ] **E2. Thai and Lao clustering**, and the line breaking they need, which is
   by dictionary rather than by rule.
 - [ ] **E3. Hyphenation.** Breaking inside a word, with pattern data per
