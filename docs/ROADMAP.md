@@ -3251,9 +3251,58 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   reader keeps the flags and ignores the patterns, so a word a pattern would
   allow is underlined. Reading the patterns is a small matcher over the flags
   of each piece, and the pieces are already found for the simple flags.
-- [ ] **F2. Spelling as Word does it.** As-you-type checking, the wavy line, the
+- [x] **F2. Spelling as Word does it.** As-you-type checking, the wavy line, the
   right-click list of suggestions, add to dictionary, ignore all, custom
   dictionaries, per-language settings, and the settings that turn it off.
+  *Done when:* a right-click on a red underline offers the word that was meant,
+  a French quotation in an English essay is checked as French, and a word added
+  once is known in every document from then on.
+  The wavy line was there and so was "add to dictionary"; what was missing was
+  everything that makes a checker usable. A word underlined with nothing
+  offered in its place is a word the writer has to spell for themselves, which
+  is the one thing they could not do.
+  The offers come from `wp_dict::Dictionary::suggest`. Nearly every misspelling
+  is one slip — two letters the wrong way round, one left out, one too many,
+  one struck for another — so every word one slip away is tried and the ones
+  that are words are offered, in the order the slips happen, which is the order
+  a reader wants them in: the first offer is the one that gets taken. Before
+  those come the pairs the dictionary itself lists as common mistakes, and
+  after them a space, because "thequick" is two words with the space
+  forgotten. The offers keep the case of what was typed.
+  The right-click menu puts them at the top, as Word does, then Ignore All and
+  Add to Dictionary; the Spelling button walks the mistakes and offers the same.
+  Ignore All lasts while the document is open. Add to Dictionary lasts for
+  good: the word goes into `custom.dic` beside the settings, which is read back
+  when the program starts and laid over every dictionary it loads — Word's
+  `CUSTOM.DIC`, in the same place for the same reason.
+  A document is not written in one language, and now each run is checked
+  against the dictionary for the language it says it is in. The machine's
+  dictionaries are found as languages turn up in the text, the one for the
+  country first and any of the language failing that; a language with no
+  dictionary is left unchecked rather than underlined from end to end. A run
+  may also ask to be left alone altogether — `w:noProof`, for a line of code or
+  a name in no language — which the Language list now offers as Word's dialog
+  does, and the file keeps.
+  The settings that turn it off are three, and they are Word's three. "Mark
+  spelling mistakes as you type" is the program's and was there. "Hide spelling
+  errors in this document only" is the document's, kept in its settings as
+  `w:hideSpellingErrors` and honoured by whoever opens it next; its twin for
+  the other marks, `w:hideGrammaticalErrors`, is read as well. And the one on
+  the run, above.
+  As you type means after every keystroke, and a document of fifty thousand
+  words asked of the dictionary again at every keystroke is a document that
+  lags. So each paragraph's mistakes are remembered against its text and its
+  languages, and only a paragraph that is not what it was is checked afresh — a
+  paragraph that moved keeps its answer and gets its new number.
+  *Not done:* several custom dictionaries, and Word's dialog for choosing
+  which of them a word goes into and which language each is for. There is one,
+  it is for every language, and it lives where the settings do.
+  *Not done:* Change All — putting the same correction in everywhere the same
+  mistake was made. Each is corrected where it stands.
+  *Not done:* the ranking Word gives its offers, which knows how common each
+  word is. These are in the order the slips happen, which is right far more
+  often than not and wrong where a rare word is one slip nearer than a common
+  one.
 - [ ] **F3. Grammar.** A rule engine and the rules for at least one language,
   with the wavy line of its own colour and the explanation Word gives.
 - [ ] **F4. Thesaurus.**

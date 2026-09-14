@@ -29,8 +29,9 @@ impl Editor {
         // Looked for the first time anything is checked rather than at
         // startup: reading fifty thousand words is not work to do before the
         // window is even shown.
-        self.find_dictionary();
-        self.issues = self.document.proofing_issues(&self.dictionary);
+        self.find_dictionaries();
+        self.issues =
+            self.document.proofing_issues_cached(&self.dictionaries, &mut self.proofing_cache);
     }
 
     /// Shows or hides the underlining.
@@ -76,9 +77,10 @@ impl Editor {
         self.reveal_caret();
         self.needs_redraw = true;
 
-        match &issue.suggestion {
-            Some(_) => self.open_correction(&issue),
-            None => self.report(&format!("{}: {}", issue.kind.message(), issue.text)),
+        if issue.suggestion.is_some() || issue.kind.is_spelling() {
+            self.open_correction(&issue)
+        } else {
+            self.report(&format!("{}: {}", issue.kind.message(), issue.text))
         }
     }
 
@@ -88,16 +90,28 @@ impl Editor {
             return Response::Ignored;
         };
 
-        let mut items = Vec::new();
-        if let Some(suggestion) = &issue.suggestion {
-            items.push(if suggestion.is_empty() {
-                "Delete".to_owned()
-            } else {
-                format!("Change to “{suggestion}”")
-            });
-        }
+        // The spellings on offer first, as Word's pane lists them; then what
+        // else can be done. For a mistake that is not a spelling there is one
+        // correction, or none, and no dictionary to add to.
+        self.pending_spellings = if issue.kind.is_spelling() {
+            self.spellings_for(issue)
+        } else {
+            issue.suggestion.iter().cloned().collect()
+        };
+        let mut items: Vec<String> = self
+            .pending_spellings
+            .iter()
+            .map(|spelling| {
+                if spelling.is_empty() {
+                    "Delete".to_owned()
+                } else {
+                    format!("Change to “{spelling}”")
+                }
+            })
+            .collect();
         items.push("Ignore".to_owned());
         if issue.kind.is_spelling() {
+            items.push("Ignore All".to_owned());
             items.push("Add to Dictionary".to_owned());
         }
 
@@ -110,38 +124,28 @@ impl Editor {
     /// Does what was chosen about the mistake.
     pub(super) fn choose_correction(&mut self, index: usize) -> Response {
         self.popup = None;
-        let Some(issue) = self.pending_issue.take() else { return Response::Ignored };
+        let Some(issue) = self.pending_issue.clone() else { return Response::Ignored };
 
-        // The list is: the correction if there is one, then Ignore, then adding
-        // the word when it is a spelling.
-        let has_suggestion = issue.suggestion.is_some();
-        let at = if has_suggestion { index } else { index + 1 };
-
-        match at {
+        // The list is: the spellings on offer, then Ignore, then — for a
+        // spelling — Ignore All and adding the word.
+        let offered = self.pending_spellings.len();
+        if index < offered {
+            return self.take_spelling(index);
+        }
+        self.pending_issue = None;
+        match index - offered {
             0 => {
-                let Some(suggestion) = issue.suggestion else { return Response::Ignored };
-                let changed = self.document.paste(&suggestion);
-                self.relayout();
-                self.recheck_proofing();
-                self.reveal_caret();
-                self.edited(changed, "Corrected")
-            }
-            1 => {
                 self.document.clear_selection();
                 self.needs_redraw = true;
                 self.report("Left as it is")
             }
-            _ => {
-                self.dictionary.add(&issue.text);
-                self.document.clear_selection();
-                self.recheck_proofing();
-                self.needs_redraw = true;
-                self.report(&format!("{} added to the dictionary", issue.text))
-            }
+            1 if issue.kind.is_spelling() => self.ignore_everywhere(&issue.text),
+            _ => self.add_to_dictionary(&issue.text),
         }
     }
 
-    /// Finds a dictionary on this machine for the language being written in.
+    /// Finds dictionaries on this machine for the languages the document is
+    /// written in.
     ///
     /// No dictionary is shipped with this program: they are data with their own
     /// licences, exactly as typefaces are. What can be checked is whatever the
@@ -149,49 +153,147 @@ impl Editor {
     /// LibreOffice, on Windows whatever the reader has put beside the program —
     /// and nothing at all where there is none, which is the honest answer for a
     /// program with no words.
-    pub(super) fn find_dictionary(&mut self) {
-        if self.dictionary_searched {
-            return;
-        }
-        self.dictionary_searched = true;
+    ///
+    /// Asked again whenever the document is checked, because a run marked in
+    /// another language may have been pasted in since; but each language is
+    /// looked for once, so a language with no dictionary costs nothing after
+    /// the first time.
+    pub(super) fn find_dictionaries(&mut self) {
+        let mut wanted = self.document.languages_used();
+        wanted.push(self.document.language_here());
 
-        let installed = wp_dict::installed();
-        if installed.is_empty() {
-            return;
-        }
-
-        // The language the writing is in, where one of them is for it. The
-        // tag is written `en-GB` in a document and `en_GB` in a file name, and
-        // a dictionary for the language without the country will do where
-        // there is none for the country.
-        let wanted = self.document.language_here().replace('-', "_").to_lowercase();
-        let base = wanted.split('_').next().unwrap_or_default().to_owned();
-        let chosen = installed
-            .iter()
-            .find(|(name, _)| name.to_lowercase() == wanted)
-            .or_else(|| {
-                installed.iter().find(|(name, _)| {
-                    name.split('_').next().unwrap_or_default().eq_ignore_ascii_case(&base)
-                })
-            })
-            .or_else(|| installed.first());
-
-        let Some((name, path)) = chosen else { return };
-        match wp_dict::read_pair(path) {
-            Ok(words) => {
-                self.dictionary = Dictionary::from_words(words);
-                self.dictionary_name = Some(name.clone());
+        for tag in wanted {
+            let key = tag.replace('_', "-").to_lowercase();
+            if self.dictionaries.has_language(&key) || self.languages_searched.contains(&key) {
+                continue;
             }
-            Err(_) => self.dictionary_name = None,
+            self.languages_searched.insert(key.clone());
+
+            // The tag is written `en-GB` in a document and `en_GB` in a file
+            // name, and a dictionary for the language without the country will
+            // do where there is none for the country.
+            let installed = wp_dict::installed();
+            let base = key.split('-').next().unwrap_or_default().to_owned();
+            let found = installed
+                .iter()
+                .find(|(name, _)| name.replace('_', "-").to_lowercase() == key)
+                .or_else(|| {
+                    installed.iter().find(|(name, _)| {
+                        name.split('_').next().unwrap_or_default().eq_ignore_ascii_case(&base)
+                    })
+                });
+            let Some((name, path)) = found else { continue };
+            if let Ok(words) = wp_dict::read_pair(path) {
+                let mut dictionary = Dictionary::from_words(words);
+                for word in &self.custom_words {
+                    dictionary.add(word);
+                }
+                self.dictionaries.insert(&name.replace('_', "-"), dictionary);
+                self.proofing_cache.clear();
+            }
         }
+    }
+
+    /// Reads the reader's own dictionary: the words "Add to Dictionary" has
+    /// added over the years, kept beside the settings and outliving every
+    /// document.
+    pub(super) fn load_custom_dictionary(&mut self) {
+        let Some(path) = Self::custom_dictionary_path() else { return };
+        let Ok(text) = std::fs::read_to_string(&path) else { return };
+        for line in text.lines() {
+            let word = line.trim();
+            if !word.is_empty() {
+                self.custom_words.push(word.to_owned());
+            }
+        }
+    }
+
+    /// Where the reader's own dictionary lives: beside the settings, as Word
+    /// keeps its `CUSTOM.DIC` beside its own.
+    fn custom_dictionary_path() -> Option<std::path::PathBuf> {
+        Some(crate::settings::Settings::path()?.with_file_name("custom.dic"))
+    }
+
+    /// Adds a word to the dictionary for good.
+    ///
+    /// To the file as well as to memory, because "Add to Dictionary" means
+    /// every document from now on and not this one until it is closed.
+    pub(super) fn add_to_dictionary(&mut self, word: &str) -> Response {
+        self.dictionaries.add(word);
+        self.proofing_cache.clear();
+        if !self.custom_words.iter().any(|held| held == word) {
+            self.custom_words.push(word.to_owned());
+            if let Some(path) = Self::custom_dictionary_path() {
+                if let Some(directory) = path.parent() {
+                    let _ = std::fs::create_dir_all(directory);
+                }
+                let _ = std::fs::write(&path, self.custom_words.join("\n") + "\n");
+            }
+        }
+        self.document.clear_selection();
+        self.recheck_proofing();
+        self.needs_redraw = true;
+        self.report(&format!("{word} added to the dictionary"))
+    }
+
+    /// Leaves a word alone everywhere in this document, for as long as it is
+    /// open.
+    pub(super) fn ignore_everywhere(&mut self, word: &str) -> Response {
+        self.dictionaries.ignore(word);
+        self.proofing_cache.clear();
+        self.document.clear_selection();
+        self.recheck_proofing();
+        self.needs_redraw = true;
+        self.report(&format!("{word} ignored"))
+    }
+
+    /// The mistake under a point, if the checker has marked one there.
+    #[must_use]
+    pub(super) fn issue_at(&self, at: TextPosition) -> Option<Issue> {
+        self.issues
+            .iter()
+            .find(|issue| {
+                issue.paragraph == at.paragraph
+                    && at.offset >= issue.start
+                    && at.offset <= issue.end
+            })
+            .cloned()
+    }
+
+    /// What the writer probably meant by a misspelled word, in the language
+    /// it is written in.
+    #[must_use]
+    pub(super) fn spellings_for(&self, issue: &Issue) -> Vec<String> {
+        if !issue.kind.is_spelling() {
+            return Vec::new();
+        }
+        let language = self.document.language_at(TextPosition::new(issue.paragraph, issue.start));
+        self.dictionaries.suggest(&issue.text, &language)
+    }
+
+    /// Puts a spelling in place of the mistake it was offered for.
+    pub(super) fn take_spelling(&mut self, index: usize) -> Response {
+        let Some(issue) = self.pending_issue.take() else { return Response::Ignored };
+        let Some(spelling) = self.pending_spellings.get(index).cloned() else {
+            return Response::Ignored;
+        };
+        self.document.move_caret(TextPosition::new(issue.paragraph, issue.start), false);
+        self.document.move_caret(TextPosition::new(issue.paragraph, issue.end), true);
+        let changed = self.document.paste(&spelling);
+        self.relayout();
+        self.reveal_caret();
+        self.edited(changed, "Corrected")
     }
 
     /// Opens a dictionary by hand.
     ///
     /// A real one is two files — the word list and the affix rules that say
     /// what forms its words take — and choosing the word list finds the rules
-    /// beside it. A plain list of words is still read as a list of words,
-    /// because somebody's own list of names and jargon is exactly that.
+    /// beside it. It is filed under the language its name says, `en_GB.dic`
+    /// being English, so that text in that language is checked against it. A
+    /// plain list of words is still read as a list of words, because somebody's
+    /// own list of names and jargon is exactly that, and is used for whatever
+    /// language has nothing better.
     pub(super) fn load_dictionary(&mut self) -> Response {
         let filters = [
             FileFilter { label: "Dictionaries", pattern: "*.dic;*.txt" },
@@ -200,19 +302,22 @@ impl Editor {
         let Some(path) = wp_shell::dialog::open_file("Open a dictionary", &filters) else {
             return Response::Ignored;
         };
+        let name = path.file_stem().map(|name| name.to_string_lossy().into_owned());
 
-        self.dictionary_searched = true;
-        let rules = path.with_extension("aff");
-        if rules.exists() {
+        if path.with_extension("aff").exists() {
             return match wp_dict::read_pair(&path) {
                 Ok(words) => {
-                    self.dictionary = Dictionary::from_words(words);
-                    self.dictionary_name =
-                        path.file_stem().map(|name| name.to_string_lossy().into_owned());
+                    let mut dictionary = Dictionary::from_words(words);
+                    for word in &self.custom_words {
+                        dictionary.add(word);
+                    }
+                    let count = dictionary.len();
+                    let tag = name.clone().unwrap_or_default().replace('_', "-");
+                    self.dictionaries.insert(&tag, dictionary);
+                    self.proofing_cache.clear();
                     self.recheck_proofing();
                     self.needs_redraw = true;
-                    let name = self.dictionary_name.clone().unwrap_or_default();
-                    self.report(&format!("{name}: {} words and their forms", self.dictionary.len()))
+                    self.report(&format!("{tag}: {count} words and their forms"))
                 }
                 Err(error) => self.report(&format!("{error}")),
             };
@@ -223,12 +328,17 @@ impl Editor {
             Err(error) => return self.report(&format!("The list could not be read: {error}")),
         };
         let text = String::from_utf8_lossy(&bytes).into_owned();
-        self.dictionary = Dictionary::parse(&text);
-        self.dictionary_name = None;
+        let mut dictionary = Dictionary::parse(&text);
+        for word in &self.custom_words {
+            dictionary.add(word);
+        }
+        let count = dictionary.len();
+        self.dictionaries.insert("", dictionary);
+        self.proofing_cache.clear();
         self.recheck_proofing();
         self.needs_redraw = true;
 
-        self.report(&format!("{} words loaded", self.dictionary.len()))
+        self.report(&format!("{count} words loaded"))
     }
 
     /// Draws a wavy line under everything that is wrong.
@@ -329,5 +439,19 @@ impl Editor {
         }
         self.needs_redraw = true;
         self.report(finding.advice)
+    }
+}
+
+impl Editor {
+    /// Leaves the word under the menu alone everywhere.
+    pub(super) fn ignore_pending(&mut self) -> Response {
+        let Some(issue) = self.pending_issue.take() else { return Response::Ignored };
+        self.ignore_everywhere(&issue.text)
+    }
+
+    /// Adds the word under the menu to the dictionary.
+    pub(super) fn add_pending(&mut self) -> Response {
+        let Some(issue) = self.pending_issue.take() else { return Response::Ignored };
+        self.add_to_dictionary(&issue.text)
     }
 }

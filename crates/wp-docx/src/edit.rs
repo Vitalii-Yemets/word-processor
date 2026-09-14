@@ -70,6 +70,7 @@ pub(crate) const RUN_PROPERTY_ORDER: &[&str] = &[
     "strike",
     "dstrike",
     "vanish",
+    "noProof",
     "color",
     "spacing",
     "w",
@@ -874,6 +875,9 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
     }
     if let Some(state) = properties.hidden {
         element.push_element(toggle(prefix, "vanish", state));
+    }
+    if let Some(state) = properties.no_proof {
+        element.push_element(toggle(prefix, "noProof", state));
     }
     if let Some(scale) = properties.scale {
         element.push_element(valued(prefix, "w", &scale.to_string()));

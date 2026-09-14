@@ -471,6 +471,137 @@ impl Dictionary {
         })
     }
 
+    /// What the writer probably meant by a word the dictionary does not know.
+    ///
+    /// # How the guesses are made
+    ///
+    /// Nearly every misspelling is one slip: two letters the wrong way round,
+    /// one left out, one too many, or one struck for its neighbour on the
+    /// keyboard. So every word one such slip away is tried, and the ones that
+    /// are words are offered — in the order the slips happen, which is the
+    /// order a reader wants them in. Before any of that come the pairs the
+    /// dictionary itself lists as common mistakes, `ph` for `f` and the like,
+    /// because those are the ones a keyboard does not explain; and after it a
+    /// space, because "thequick" is two words with the space forgotten.
+    ///
+    /// The guesses keep the case of what was typed: a capitalised mistake gets
+    /// capitalised corrections.
+    #[must_use]
+    pub fn suggest(&self, word: &str) -> Vec<String> {
+        /// How many are offered. Word shows a handful, and the first is the
+        /// one that gets taken.
+        const MOST: usize = 8;
+        let lower = word.to_lowercase();
+        let mut found: Vec<String> = Vec::new();
+
+        let offer = |candidate: String, found: &mut Vec<String>| {
+            if found.len() >= MOST || candidate.is_empty() || candidate == lower {
+                return;
+            }
+            if self.spelled(&candidate)
+                && self.suggestable(&candidate)
+                && !found.contains(&candidate)
+            {
+                found.push(candidate);
+            }
+        };
+
+        // The word itself in another case: "london" for "London" is a slip of
+        // the shift key, not of the spelling.
+        if lower != word {
+            offer(lower.clone(), &mut found);
+        }
+        offer(capitalised(&lower), &mut found);
+
+        // The pairs the dictionary lists as things people get wrong.
+        for (from, to) in &self.replacements {
+            let mut at = 0;
+            while let Some(found_at) = lower[at..].find(from.as_str()) {
+                let start = at + found_at;
+                let mut candidate = String::with_capacity(lower.len());
+                candidate.push_str(&lower[..start]);
+                candidate.push_str(to);
+                candidate.push_str(&lower[start + from.len()..]);
+                offer(candidate, &mut found);
+                at = start + from.len();
+            }
+        }
+
+        let letters: Vec<char> = lower.chars().collect();
+        let joined = |pieces: &[&[char]]| -> String {
+            pieces.iter().flat_map(|piece| piece.iter()).collect()
+        };
+
+        // Two letters the wrong way round.
+        for at in 0..letters.len().saturating_sub(1) {
+            let mut swapped = letters.clone();
+            swapped.swap(at, at + 1);
+            offer(swapped.iter().collect(), &mut found);
+        }
+        // One letter too many.
+        for at in 0..letters.len() {
+            offer(joined(&[&letters[..at], &letters[at + 1..]]), &mut found);
+        }
+        // One letter left out, and one struck for another — tried with every
+        // letter the dictionary says its language uses, most common first. The
+        // left-out letter before the wrong one, because that is the commoner
+        // slip and because the first guess is the one that gets taken.
+        // Only the small letters: the word is tried in lower case and given
+        // back in the case it was typed, and a capital in the middle of a word
+        // is never what anybody meant.
+        let alphabet: Vec<char> = if self.try_letters.is_empty() {
+            ('a'..='z').collect()
+        } else {
+            self.try_letters.chars().filter(|letter| !letter.is_uppercase()).collect()
+        };
+        for at in 0..=letters.len() {
+            for letter in &alphabet {
+                offer(joined(&[&letters[..at], &[*letter], &letters[at..]]), &mut found);
+            }
+        }
+        for at in 0..letters.len() {
+            for letter in &alphabet {
+                if *letter == letters[at] {
+                    continue;
+                }
+                offer(joined(&[&letters[..at], &[*letter], &letters[at + 1..]]), &mut found);
+            }
+        }
+
+        // A space forgotten.
+        for at in 1..letters.len() {
+            let (head, tail): (String, String) =
+                (letters[..at].iter().collect(), letters[at..].iter().collect());
+            if head.chars().count() > 1
+                && tail.chars().count() > 1
+                && self.spelled(&head)
+                && self.spelled(&tail)
+                && found.len() < MOST
+            {
+                let candidate = format!("{head} {tail}");
+                if !found.contains(&candidate) {
+                    found.push(candidate);
+                }
+            }
+        }
+
+        // In the case the writer used.
+        let shouted = word.chars().count() > 1 && word.chars().all(|c| !c.is_lowercase());
+        let capital = word.chars().next().is_some_and(char::is_uppercase);
+        found
+            .into_iter()
+            .map(|candidate| {
+                if shouted {
+                    candidate.to_uppercase()
+                } else if capital {
+                    capitalised(&candidate)
+                } else {
+                    candidate
+                }
+            })
+            .collect()
+    }
+
     /// Whether a word is one the dictionary would rather not offer as a
     /// suggestion — a rude word, or a spelling it knows but nobody means.
     #[must_use]

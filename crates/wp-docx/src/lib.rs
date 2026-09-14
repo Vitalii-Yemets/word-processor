@@ -1853,6 +1853,7 @@ impl Document {
             caps: Some(resolved.caps),
             small_caps: Some(resolved.small_caps),
             hidden: Some(resolved.hidden),
+            no_proof: Some(resolved.no_proof),
             underline_color: resolved.underline_color,
             scale: Some(resolved.scale),
             spacing_twentieths: Some(resolved.spacing_twentieths),

@@ -287,6 +287,12 @@ pub enum Command {
     FinishMerge,
     Compare,
     Spelling,
+    /// One of the spellings offered for the word under the menu, by its place
+    /// in the list.
+    Correct(u8),
+    /// Leave this word alone everywhere in the document.
+    IgnoreAll,
+    AddToDictionary,
     ShowProofing,
     LoadDictionary,
     CheckAccessibility,

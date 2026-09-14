@@ -77,7 +77,7 @@ fn picture(arguments: &[String]) -> Result<(), String> {
         Document::open(&bytes).map_err(|error| format!("cannot open {document_path}: {error}"))?
     };
 
-    let mut editor = Editor::new(library, document, None);
+    let mut editor = Editor::opened(library, document, None);
     // The size comes first: an option that puts something on the screen has to
     // know how big the screen is before it can decide where.
     editor.handle(Event::Resized { width: width as u32, height: height as u32 });
@@ -141,7 +141,7 @@ fn start(path: Option<&str>) -> Result<(), String> {
         }
     };
 
-    let mut editor = Editor::new(library, document, file);
+    let mut editor = Editor::opened(library, document, file);
     // The window comes up the way it was left rather than the way it starts.
     editor.apply_settings(settings::Settings::load());
     let options =

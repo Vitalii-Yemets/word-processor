@@ -491,6 +491,7 @@ impl Styles {
             caps: accumulated.caps.unwrap_or(false),
             small_caps: accumulated.small_caps.unwrap_or(false),
             hidden: accumulated.hidden.unwrap_or(false),
+            no_proof: accumulated.no_proof.unwrap_or(false),
             underline_color: accumulated.underline_color,
             scale: accumulated.scale.unwrap_or(crate::typography::NORMAL_SCALE),
             spacing_twentieths: accumulated.spacing_twentieths.unwrap_or(0),

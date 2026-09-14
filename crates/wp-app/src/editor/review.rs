@@ -362,7 +362,16 @@ impl Editor {
 
         let here = self.document.language_here();
         let current = LANGUAGES.iter().position(|entry| entry.tag.eq_ignore_ascii_case(&here));
-        let items = LANGUAGES.iter().map(|entry| entry.name.to_owned()).collect();
+        let mut items: Vec<String> = LANGUAGES.iter().map(|entry| entry.name.to_owned()).collect();
+        // Word's Language dialog carries one more switch than the list: the
+        // stretch may ask not to be checked at all, which is what a line of
+        // code or a name in no language wants. Shown with its state, because a
+        // switch that does not say which way it is set is a guess.
+        let left_alone = self.document.character_format_here().no_proof;
+        items.push(format!(
+            "{} Do not check spelling or grammar",
+            if left_alone { "{2713}" } else { "{2003}" }
+        ));
         self.popup = Some(Popup::new(Choice::Language, items, current, left, top, 280.0));
         self.needs_redraw = true;
         Response::Redraw
@@ -371,6 +380,12 @@ impl Editor {
     /// Marks the selection as being in whichever language was chosen.
     pub(super) fn choose_language(&mut self, index: usize) -> Response {
         self.popup = None;
+        if index == LANGUAGES.len() {
+            let now = !self.document.character_format_here().no_proof;
+            let changed = self.document.set_no_proof(now);
+            let said = if now { "Not checked" } else { "Checked again" };
+            return self.finish_character_change(changed, said);
+        }
         let Some(entry) = LANGUAGES.get(index) else { return Response::Ignored };
         let changed = self.document.set_language(entry.tag);
         self.finish_character_change(changed, &format!("Language: {}", entry.name))

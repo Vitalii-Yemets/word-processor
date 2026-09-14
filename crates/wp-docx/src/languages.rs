@@ -166,6 +166,15 @@ impl Document {
         self.resolved_at_caret().language.unwrap_or_else(|| DEFAULT_TAG.to_owned())
     }
 
+    /// Asks for the selection, or what is typed next, to be checked or left
+    /// alone: `w:noProof`.
+    pub fn set_no_proof(&mut self, on: bool) -> bool {
+        self.apply_character_change(&RunProperties {
+            no_proof: Some(on),
+            ..RunProperties::default()
+        })
+    }
+
     /// Sets the proofing language of the selection, or of what is typed next.
     pub fn set_language(&mut self, tag: &str) -> bool {
         self.apply_character_change(&RunProperties {

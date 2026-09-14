@@ -326,6 +326,7 @@ fn run_satisfies(run: &Element, change: &RunProperties) -> bool {
         && same(change.caps.is_some(), direct.caps == change.caps)
         && same(change.small_caps.is_some(), direct.small_caps == change.small_caps)
         && same(change.hidden.is_some(), direct.hidden == change.hidden)
+        && same(change.no_proof.is_some(), direct.no_proof == change.no_proof)
         && same(change.underline_color.is_some(), direct.underline_color == change.underline_color)
         // The value that means "normal" is stored by writing nothing, so a run
         // asked for a hundred per cent when it says nothing already has it.
@@ -521,6 +522,9 @@ pub(crate) fn write_run_properties(
     }
     if let Some(state) = change.hidden {
         set_toggle(properties, "vanish", state, prefix);
+    }
+    if let Some(state) = change.no_proof {
+        set_toggle(properties, "noProof", state, prefix);
     }
     if let Some(underline) = &change.underline {
         properties.remove_children_named(Some(W), "u");

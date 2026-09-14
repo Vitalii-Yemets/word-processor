@@ -150,3 +150,36 @@ fn the_apostrophe_a_word_processor_types_is_the_one_the_list_holds() {
     assert!(dictionary.spelled("don\u{2019}t"), "the curly one is the same word");
     assert!(dictionary.spelled("it\u{2019}s"));
 }
+
+#[test]
+fn a_misspelling_is_offered_what_was_meant() {
+    // Each of these is one slip from a word, and the word has to be among the
+    // first few offered — not somewhere in a list of forty.
+    let dictionary = read(ENGLISH);
+    let first_few = |word: &str| dictionary.suggest(word).into_iter().take(3).collect::<Vec<_>>();
+
+    assert!(first_few("teh").contains(&"the".to_owned()), "{:?}", first_few("teh"));
+    assert!(first_few("recieve").contains(&"receive".to_owned()), "{:?}", first_few("recieve"));
+    assert!(first_few("walkd").contains(&"walked".to_owned()), "{:?}", first_few("walkd"));
+    assert!(first_few("housse").contains(&"house".to_owned()), "{:?}", first_few("housse"));
+}
+
+#[test]
+fn a_suggestion_keeps_the_case_of_what_was_typed() {
+    let dictionary = read(ENGLISH);
+    assert!(dictionary.suggest("Teh").contains(&"The".to_owned()));
+    assert!(dictionary.suggest("TEH").contains(&"THE".to_owned()));
+}
+
+#[test]
+fn two_words_run_together_are_offered_apart() {
+    let dictionary = read(ENGLISH);
+    let offered = dictionary.suggest("thequick");
+    assert!(offered.contains(&"the quick".to_owned()), "{offered:?}");
+}
+
+#[test]
+fn a_word_that_is_right_is_offered_nothing_of_itself() {
+    let dictionary = read(ENGLISH);
+    assert!(!dictionary.suggest("house").contains(&"house".to_owned()));
+}

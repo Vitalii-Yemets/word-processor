@@ -57,6 +57,7 @@ fn rich_body() -> Body {
                 caps: Some(false),
                 small_caps: Some(true),
                 hidden: Some(false),
+                no_proof: Some(false),
                 underline_color: Some("0070C0".to_owned()),
                 scale: Some(150),
                 spacing_twentieths: Some(-20),

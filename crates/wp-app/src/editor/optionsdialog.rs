@@ -52,6 +52,7 @@ const AUTOCORRECT: usize = 15;
 const AUTOCORRECT_SAID: usize = 16;
 const CORRECTING: usize = 17;
 const PROOFING: usize = 18;
+const HIDE_SPELLING: usize = 19;
 
 /// Which tab of the dialog Proofing is, so its button is drawn on that one.
 const TAB_PROOFING_PAGE: usize = 2;
@@ -107,6 +108,13 @@ impl Editor {
             },
             Field::Group("When correcting spelling".to_owned()),
             check("Mark spelling mistakes as you type", self.show_proofing),
+            // Word's wording, and Word's place for it: a setting of the document
+            // rather than of the program, kept in the file and honoured by
+            // whoever opens it next.
+            check(
+                "Hide spelling errors in this document only",
+                self.document.setting_is_on("hideSpellingErrors"),
+            ),
         ];
         // --- Quick Access Toolbar, and Customize Ribbon --------------------
         // Built elsewhere because they are two pages of lists rather than a
@@ -134,6 +142,7 @@ impl Editor {
             (AUTOCORRECT_SAID, "a line"),
             (CORRECTING, "a group"),
             (PROOFING, "a tick box"),
+            (HIDE_SPELLING, "a tick box"),
         ];
         kinds.extend(Self::customise_kinds());
         crate::chrome::dialog::check_rows("Options", &fields, &kinds);
@@ -195,6 +204,7 @@ impl Editor {
         // pages are joined, which is the other way round.
         self.joined_pages = !dialog.ticked(WHITE_SPACE);
         self.show_proofing = dialog.ticked(PROOFING);
+        self.document.set_setting_flag("hideSpellingErrors", dialog.ticked(HIDE_SPELLING));
 
         // The ribbon and the toolbar: the ticks are read out of the tree here,
         // and everything else was already put on the working copy by the

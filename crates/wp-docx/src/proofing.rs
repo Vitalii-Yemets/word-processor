@@ -9,11 +9,13 @@
 //! looks like. They are found here for any language, and they are the mistakes
 //! that most often survive proofreading, because the eye reads what was meant.
 //!
-//! Spelling proper needs a list of every word in the language, and there is no
-//! such list in this program. Word ships one for each language it supports and
-//! it is the larger part of what proofing costs. So spelling is checked when a
-//! list is given and left alone when it is not — rather than guessed at, which
-//! would underline correct words and teach people to ignore the underlining.
+//! Spelling proper needs a dictionary of the language, and none is shipped with
+//! this program: they are data with their own licences, as typefaces are. Word
+//! ships one for each language it supports and it is the larger part of what
+//! proofing costs. So spelling is checked against whatever dictionary the
+//! machine has for the language each run is in, and left alone where there is
+//! none — rather than guessed at, which would underline correct words and teach
+//! people to ignore the underlining.
 //!
 //! # What is deliberately not checked
 //!
@@ -21,9 +23,9 @@
 //! kind of question and needs the grammar of the language, not its words.
 //! Saying so is better than a check that fires on half of what it should.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use crate::Document;
+use crate::{Document, TextPosition};
 
 /// What kind of mistake was found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,26 +139,284 @@ impl Dictionary {
     pub fn add(&mut self, word: &str) {
         self.own.insert(word.to_lowercase());
     }
+
+    /// What the writer probably meant by a word this does not know.
+    #[must_use]
+    pub fn suggest(&self, word: &str) -> Vec<String> {
+        self.words.suggest(word)
+    }
+}
+
+/// The dictionaries a document is checked against: one for each language it
+/// is written in, and what the reader has told the checker to leave alone.
+///
+/// # Why more than one
+///
+/// Because a document is not written in one language. A French quotation in
+/// an English essay is French, and the document says so — every run carries
+/// its language — and checking it against English underlines every word of
+/// it. Word keeps a dictionary per language and picks by the run; so does
+/// this.
+#[derive(Clone, Debug, Default)]
+pub struct Dictionaries {
+    /// By language tag, lower-cased and with the hyphen the document uses.
+    by_language: HashMap<String, Dictionary>,
+    /// Words the reader said to ignore everywhere, which lasts as long as the
+    /// document is open: "Ignore All" is about this document, and adding to
+    /// the dictionary is about every document.
+    ignored: HashSet<String>,
+}
+
+impl Dictionaries {
+    /// One dictionary for everything, whatever language the text claims.
+    #[must_use]
+    pub fn single(dictionary: Dictionary) -> Self {
+        let mut out = Self::default();
+        out.insert("", dictionary);
+        out
+    }
+
+    /// Adds the dictionary for a language.
+    pub fn insert(&mut self, tag: &str, dictionary: Dictionary) {
+        self.by_language.insert(normalise(tag), dictionary);
+    }
+
+    /// Whether there is a dictionary for a language, or one near enough: the
+    /// one for the language without the country will do, and so will any
+    /// country's where the document names none.
+    #[must_use]
+    pub fn has_language(&self, tag: &str) -> bool {
+        self.for_language(tag).is_some()
+    }
+
+    /// The dictionary a run in a language is checked against.
+    #[must_use]
+    pub fn for_language(&self, tag: &str) -> Option<&Dictionary> {
+        let wanted = normalise(tag);
+        if let Some(found) = self.by_language.get(&wanted) {
+            return Some(found);
+        }
+        let base = wanted.split('-').next().unwrap_or_default();
+        if let Some(found) = self.by_language.get(base) {
+            return Some(found);
+        }
+        // Any dictionary of the same language: en-US for text marked en-GB
+        // where there is nothing better, which is what Word does too.
+        self.by_language
+            .iter()
+            .find(|(held, _)| held.split('-').next() == Some(base))
+            .map(|(_, dictionary)| dictionary)
+            // The one for no language at all, which is what a plain word list
+            // loaded by hand is.
+            .or_else(|| self.by_language.get(""))
+    }
+
+    /// The languages there are dictionaries for.
+    #[must_use]
+    pub fn languages(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.by_language.keys().cloned().collect();
+        out.sort();
+        out
+    }
+
+    /// Whether nothing at all can be checked.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.by_language.values().all(Dictionary::is_empty)
+    }
+
+    /// Leaves a word alone for the rest of this session, wherever it appears.
+    pub fn ignore(&mut self, word: &str) {
+        self.ignored.insert(word.to_lowercase());
+    }
+
+    #[must_use]
+    pub fn is_ignored(&self, word: &str) -> bool {
+        self.ignored.contains(&word.to_lowercase())
+    }
+
+    /// Adds a word to every dictionary, as "Add to Dictionary" does: the word
+    /// is the reader's and belongs to no language in particular.
+    pub fn add(&mut self, word: &str) {
+        if self.by_language.is_empty() {
+            self.by_language.insert(String::new(), Dictionary::default());
+        }
+        for dictionary in self.by_language.values_mut() {
+            dictionary.add(word);
+        }
+    }
+
+    /// What the writer probably meant by a word in a language.
+    #[must_use]
+    pub fn suggest(&self, word: &str, tag: &str) -> Vec<String> {
+        self.for_language(tag).map(|dictionary| dictionary.suggest(word)).unwrap_or_default()
+    }
+}
+
+/// A language tag the way the map keys it: `en-US` and `en_us` are one.
+fn normalise(tag: &str) -> String {
+    tag.trim().replace('_', "-").to_lowercase()
+}
+
+/// What was found in each paragraph last time, kept against what the
+/// paragraph was.
+#[derive(Clone, Debug, Default)]
+pub struct ProofingCache {
+    /// By a hash of the text and its languages; the issues inside are numbered
+    /// against the paragraph they were found in, not the document.
+    held: HashMap<u64, Vec<Issue>>,
+}
+
+impl ProofingCache {
+    fn key(text: &str, stretches: &[Stretch]) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        for stretch in stretches {
+            stretch.start.hash(&mut hasher);
+            stretch.end.hash(&mut hasher);
+            stretch.language.hash(&mut hasher);
+            stretch.no_proof.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// Forgets everything, which is what a change of dictionary calls for.
+    pub fn clear(&mut self) {
+        self.held.clear();
+    }
+}
+
+/// One stretch of a paragraph and how its text is to be checked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stretch {
+    pub start: usize,
+    pub end: usize,
+    /// The language the run says it is in, if it says.
+    pub language: Option<String>,
+    /// Whether the run asked to be left alone.
+    pub no_proof: bool,
 }
 
 impl Document {
     /// Every mistake in the document, in reading order.
+    ///
+    /// Each run is checked against the dictionary for the language it says it
+    /// is in, and a run that asked to be left alone is left alone. The
+    /// document itself may ask for the spelling marks or the others to be
+    /// hidden, which Word keeps in its settings and this honours.
     #[must_use]
-    pub fn proofing_issues(&self, dictionary: &Dictionary) -> Vec<Issue> {
+    pub fn proofing_issues(&self, dictionaries: &Dictionaries) -> Vec<Issue> {
+        self.proofing_issues_cached(dictionaries, &mut ProofingCache::default())
+    }
+
+    /// The same, remembering each paragraph's answer for as long as the
+    /// paragraph is unchanged.
+    ///
+    /// Checking is done again after every keystroke, because that is what "as
+    /// you type" means; but a keystroke changes one paragraph, and fifty
+    /// thousand words of the other paragraphs asked of the dictionary again
+    /// is what makes typing lag. So each paragraph's mistakes are kept against
+    /// its text and its languages, and only a paragraph that is not what it
+    /// was is checked afresh.
+    #[must_use]
+    pub fn proofing_issues_cached(
+        &self,
+        dictionaries: &Dictionaries,
+        cache: &mut ProofingCache,
+    ) -> Vec<Issue> {
+        let spelling = !self.setting_is_on("hideSpellingErrors");
+        let grammar = !self.setting_is_on("hideGrammaticalErrors");
+        if !spelling && !grammar {
+            return Vec::new();
+        }
+
+        let mut fresh = HashMap::new();
         let mut out = Vec::new();
         for index in 0..self.paragraph_count() {
             let Some(text) = self.paragraph_text(index) else { continue };
-            check_paragraph(index, &text, dictionary, &mut out);
+            let stretches = self.stretches_of(index, text.len());
+            let key = ProofingCache::key(&text, &stretches);
+
+            let found = match cache.held.remove(&key) {
+                Some(found) => found,
+                None => {
+                    let mut found = Vec::new();
+                    check_paragraph(0, &text, dictionaries, &stretches, &mut found);
+                    found
+                }
+            };
+            out.extend(
+                found
+                    .iter()
+                    .filter(|issue| if issue.kind.is_spelling() { spelling } else { grammar })
+                    .map(|issue| Issue { paragraph: index, ..issue.clone() }),
+            );
+            fresh.insert(key, found);
+        }
+        // What was not seen this time belongs to a paragraph that is gone.
+        cache.held = fresh;
+        out
+    }
+
+    /// How each stretch of a paragraph asks to be checked: which language it
+    /// is in, and whether it is to be checked at all.
+    fn stretches_of(&self, paragraph: usize, length: usize) -> Vec<Stretch> {
+        let Some(element) = self.paragraph_element(paragraph) else { return Vec::new() };
+        crate::format::runs_in_range(element, 0, length, &self.styles)
+            .into_iter()
+            .map(|(start, (end, resolved))| Stretch {
+                start,
+                end,
+                language: resolved.language,
+                no_proof: resolved.no_proof,
+            })
+            .collect()
+    }
+
+    /// Every language the document says any of its text is in, for finding a
+    /// dictionary for each.
+    #[must_use]
+    pub fn languages_used(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for index in 0..self.paragraph_count() {
+            let Some(text) = self.paragraph_text(index) else { continue };
+            for stretch in self.stretches_of(index, text.len()) {
+                if let Some(language) = stretch.language {
+                    if !out.contains(&language) {
+                        out.push(language);
+                    }
+                }
+            }
         }
         out
+    }
+
+    /// The language a word at a position is in, for asking what was meant by
+    /// it.
+    #[must_use]
+    pub fn language_at(&self, at: TextPosition) -> String {
+        let Some(text) = self.paragraph_text(at.paragraph) else {
+            return self.language_here();
+        };
+        self.stretches_of(at.paragraph, text.len())
+            .into_iter()
+            .find(|stretch| at.offset >= stretch.start && at.offset < stretch.end.max(1))
+            .and_then(|stretch| stretch.language)
+            .unwrap_or_else(|| self.language_here())
     }
 }
 
 /// Finds every mistake in one paragraph.
+///
+/// `stretches` says which language each part of the text is in and which
+/// parts are not to be checked; empty means all of it, in whatever language
+/// the dictionaries hold for none.
 pub fn check_paragraph(
     paragraph: usize,
     text: &str,
-    dictionary: &Dictionary,
+    dictionaries: &Dictionaries,
+    stretches: &[Stretch],
     out: &mut Vec<Issue>,
 ) {
     let words = words_of(text);
@@ -252,12 +512,27 @@ pub fn check_paragraph(
         }
     }
 
-    // And the spelling, when there is a dictionary to check it against.
-    if dictionary.is_empty() {
+    // And the spelling, when there is a dictionary to check it against — the
+    // one for the language each word is in.
+    if dictionaries.is_empty() {
         return;
     }
     for (start, end, word) in &words {
-        if !is_wordy(word) || dictionary.knows(word) {
+        if !is_wordy(word) || dictionaries.is_ignored(word) {
+            continue;
+        }
+        let stretch =
+            stretches.iter().find(|stretch| *start >= stretch.start && *start < stretch.end);
+        if stretch.is_some_and(|stretch| stretch.no_proof) {
+            continue;
+        }
+        let language = stretch.and_then(|stretch| stretch.language.as_deref()).unwrap_or("");
+        let Some(dictionary) = dictionaries.for_language(language) else {
+            // A language nobody has a dictionary for is not a language full of
+            // mistakes.
+            continue;
+        };
+        if dictionary.knows(word) {
             continue;
         }
         // A word in capitals is usually a name or an abbreviation, and Word
@@ -322,7 +597,7 @@ mod tests {
 
     fn issues(text: &str) -> Vec<Issue> {
         let mut out = Vec::new();
-        check_paragraph(0, text, &Dictionary::default(), &mut out);
+        check_paragraph(0, text, &Dictionaries::default(), &[], &mut out);
         out
     }
 
@@ -418,7 +693,13 @@ mod tests {
     fn a_word_the_dictionary_does_not_have_is_found() {
         let dictionary = Dictionary::parse("the\nfox\nis\na\nword\nnot\n");
         let mut out = Vec::new();
-        check_paragraph(0, "The qwertyuiop is not a word.", &dictionary, &mut out);
+        check_paragraph(
+            0,
+            "The qwertyuiop is not a word.",
+            &Dictionaries::single(dictionary),
+            &[],
+            &mut out,
+        );
 
         let unknown: Vec<&Issue> =
             out.iter().filter(|issue| issue.kind == Kind::UnknownWord).collect();
@@ -430,7 +711,13 @@ mod tests {
     fn a_word_in_capitals_is_left_alone() {
         let dictionary = Dictionary::parse("the\nis\nan\n");
         let mut out = Vec::new();
-        check_paragraph(0, "The BBC is an abbreviation.", &dictionary, &mut out);
+        check_paragraph(
+            0,
+            "The BBC is an abbreviation.",
+            &Dictionaries::single(dictionary),
+            &[],
+            &mut out,
+        );
         assert!(
             !out.iter().any(|issue| issue.text == "BBC"),
             "a name in capitals should not be underlined"
@@ -484,7 +771,7 @@ mod tests {
 /// of reading the affix rules is what happens to words nobody listed.
 #[cfg(test)]
 mod against_a_real_dictionary {
-    use super::{check_paragraph, Dictionary, Kind};
+    use super::{check_paragraph, Dictionaries, Dictionary, Kind};
 
     fn english() -> Dictionary {
         let path = std::path::Path::new("/usr/share/hunspell/en_US.dic");
@@ -501,7 +788,7 @@ mod against_a_real_dictionary {
     /// The words a paragraph is marked for, in order.
     fn marked(text: &str, dictionary: &Dictionary) -> Vec<String> {
         let mut out = Vec::new();
-        check_paragraph(0, text, dictionary, &mut out);
+        check_paragraph(0, text, &Dictionaries::single(dictionary.clone()), &[], &mut out);
         out.iter()
             .filter(|issue| issue.kind == Kind::UnknownWord)
             .map(|issue| issue.text.clone())
@@ -533,5 +820,191 @@ mod against_a_real_dictionary {
         assert_eq!(marked("Grzegorz wrote it.", &dictionary), vec!["Grzegorz"]);
         dictionary.add("Grzegorz");
         assert_eq!(marked("Grzegorz wrote it.", &dictionary), Vec::<String>::new());
+    }
+}
+
+/// What the settings and the languages of a document change about the
+/// checking, held to word lists written here so that the reading of the
+/// document — not of a dictionary — is what is tested.
+#[cfg(test)]
+mod by_language {
+    use super::{Dictionaries, Dictionary, Kind};
+    use crate::model::{Block, Body, Paragraph, Run};
+    use crate::Document;
+
+    /// A document of one paragraph made of the runs given, each in a language.
+    fn made_of(runs: &[(&str, Option<&str>)]) -> Document {
+        let mut body = Body::default();
+        let runs: Vec<Run> = runs
+            .iter()
+            .map(|(text, language)| match language {
+                Some(tag) => Run::text(text).in_language(tag),
+                None => Run::text(text),
+            })
+            .collect();
+        body.blocks.push(Block::Paragraph(Paragraph::from_runs(runs)));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        Document::open(&bytes).expect("reopening")
+    }
+
+    fn english_and_french() -> Dictionaries {
+        let mut dictionaries = Dictionaries::default();
+        dictionaries.insert("en-US", Dictionary::parse("the\nword\nis\nhere\nand\n"));
+        dictionaries.insert("fr-FR", Dictionary::parse("le\nmot\nest\nici\n"));
+        dictionaries
+    }
+
+    fn misspelt(document: &Document, dictionaries: &Dictionaries) -> Vec<String> {
+        document
+            .proofing_issues(dictionaries)
+            .into_iter()
+            .filter(|issue| issue.kind == Kind::UnknownWord)
+            .map(|issue| issue.text)
+            .collect()
+    }
+
+    #[test]
+    fn each_run_is_checked_against_the_dictionary_of_its_own_language() {
+        // A French quotation in an English document is French, and checking
+        // it against English underlines every word of it.
+        let document = made_of(&[("the word ", Some("en-US")), ("le mot", Some("fr-FR"))]);
+        assert_eq!(misspelt(&document, &english_and_french()), Vec::<String>::new());
+
+        let wrong = made_of(&[("the mot ", Some("en-US")), ("le word", Some("fr-FR"))]);
+        assert_eq!(misspelt(&wrong, &english_and_french()), vec!["mot", "word"]);
+    }
+
+    #[test]
+    fn a_language_with_no_dictionary_is_not_a_language_full_of_mistakes() {
+        let document = made_of(&[("the word ", Some("en-US")), ("das Wort", Some("de-DE"))]);
+        assert_eq!(misspelt(&document, &english_and_french()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_dictionary_for_the_language_serves_every_country_of_it() {
+        // en-GB text with only an en-US dictionary is checked against it, as
+        // Word does, rather than left unchecked.
+        let document = made_of(&[("the wrod", Some("en-GB"))]);
+        assert_eq!(misspelt(&document, &english_and_french()), vec!["wrod"]);
+    }
+
+    #[test]
+    fn a_run_that_asked_to_be_left_alone_is_left_alone() {
+        let mut document = made_of(&[("the wrod", Some("en-US"))]);
+        assert_eq!(misspelt(&document, &english_and_french()), vec!["wrod"]);
+
+        document.select_all();
+        assert!(document.set_no_proof(true));
+        assert_eq!(misspelt(&document, &english_and_french()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_document_may_ask_for_its_spelling_marks_to_be_hidden() {
+        // Word keeps this in the file, so whoever opens it next sees the same.
+        let mut document = made_of(&[("the wrod  here", Some("en-US"))]);
+        let issues = document.proofing_issues(&english_and_french());
+        assert!(issues.iter().any(|issue| issue.kind == Kind::UnknownWord));
+        assert!(issues.iter().any(|issue| issue.kind == Kind::DoubleSpace));
+
+        assert!(document.set_setting_flag("hideSpellingErrors", true));
+        let issues = document.proofing_issues(&english_and_french());
+        assert!(!issues.iter().any(|issue| issue.kind == Kind::UnknownWord), "still marked");
+        assert!(issues.iter().any(|issue| issue.kind == Kind::DoubleSpace), "the rest went too");
+
+        // And it survives being saved, because it is the document's.
+        let bytes = document.save().expect("saving");
+        let again = Document::open(&bytes).expect("reopening");
+        assert!(again.setting_is_on("hideSpellingErrors"));
+    }
+
+    #[test]
+    fn a_word_ignored_is_ignored_everywhere_and_a_word_added_is_known() {
+        let document = made_of(&[("the wrod and the wrod", Some("en-US"))]);
+        let mut dictionaries = english_and_french();
+        assert_eq!(misspelt(&document, &dictionaries), vec!["wrod", "wrod"]);
+
+        dictionaries.ignore("wrod");
+        assert_eq!(misspelt(&document, &dictionaries), Vec::<String>::new());
+
+        let mut fresh = english_and_french();
+        fresh.add("Wrod");
+        assert_eq!(misspelt(&document, &fresh), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_document_says_which_languages_it_is_written_in() {
+        let document = made_of(&[("the ", Some("en-US")), ("le ", Some("fr-FR")), ("das", None)]);
+        let mut used = document.languages_used();
+        used.sort();
+        assert!(used.contains(&"en-US".to_owned()), "{used:?}");
+        assert!(used.contains(&"fr-FR".to_owned()), "{used:?}");
+    }
+
+    #[test]
+    fn the_spellings_offered_are_in_the_language_of_the_word() {
+        let dictionaries = english_and_french();
+        assert_eq!(dictionaries.suggest("wrod", "en-US"), vec!["word"]);
+        assert_eq!(dictionaries.suggest("mto", "fr-FR"), vec!["mot"]);
+    }
+}
+
+#[cfg(test)]
+mod remembering {
+    use super::{Dictionaries, Dictionary, Kind, ProofingCache};
+    use crate::model::{Block, Body, Paragraph};
+    use crate::Document;
+
+    fn document(lines: &[&str]) -> Document {
+        let mut body = Body::default();
+        for line in lines {
+            body.blocks.push(Block::Paragraph(Paragraph::text(line)));
+        }
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        Document::open(&bytes).expect("reopening")
+    }
+
+    #[test]
+    fn a_paragraph_checked_once_is_remembered_by_what_it_says() {
+        let dictionaries = Dictionaries::single(Dictionary::parse("one\ntwo\n"));
+        let document = document(&["one twwo", "two"]);
+        let mut cache = ProofingCache::default();
+
+        let first = document.proofing_issues_cached(&dictionaries, &mut cache);
+        let spelling: Vec<_> = first.iter().filter(|issue| issue.kind.is_spelling()).collect();
+        assert_eq!(spelling.len(), 1);
+        assert_eq!(spelling[0].text, "twwo");
+        assert_eq!(cache.held.len(), 2, "one answer per paragraph");
+
+        // Asked again, the same answers come back — with the paragraph
+        // numbers they belong to, which is not what the cache holds.
+        let again = document.proofing_issues_cached(&dictionaries, &mut cache);
+        assert_eq!(again, first);
+    }
+
+    #[test]
+    fn a_paragraph_that_moved_keeps_its_answer_and_gets_its_new_number() {
+        let dictionaries = Dictionaries::single(Dictionary::parse("one\ntwo\n"));
+        let mut cache = ProofingCache::default();
+        let _ = document(&["two", "one twwo"]).proofing_issues_cached(&dictionaries, &mut cache);
+
+        // The same paragraphs the other way round: nothing is checked afresh,
+        // and the mistake is now in the first.
+        let swapped = document(&["one twwo", "two"]);
+        let issues = swapped.proofing_issues_cached(&dictionaries, &mut cache);
+        let spelling: Vec<_> = issues.iter().filter(|issue| issue.kind.is_spelling()).collect();
+        assert_eq!(spelling.len(), 1);
+        assert_eq!(spelling[0].paragraph, 0);
+        assert_eq!(spelling[0].kind, Kind::UnknownWord);
+    }
+
+    #[test]
+    fn a_paragraph_that_is_gone_is_forgotten() {
+        let dictionaries = Dictionaries::single(Dictionary::parse("one\ntwo\n"));
+        let mut cache = ProofingCache::default();
+        let _ =
+            document(&["one", "two", "three"]).proofing_issues_cached(&dictionaries, &mut cache);
+        assert_eq!(cache.held.len(), 3);
+        let _ = document(&["one"]).proofing_issues_cached(&dictionaries, &mut cache);
+        assert_eq!(cache.held.len(), 1);
     }
 }

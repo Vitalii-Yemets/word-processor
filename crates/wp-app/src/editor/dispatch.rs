@@ -305,6 +305,9 @@ impl Editor {
             // --- Proofing -----------------------------------------------------
             Command::Compare => self.compare_documents(),
             Command::Spelling => self.next_issue(),
+            Command::Correct(index) => self.take_spelling(index as usize),
+            Command::IgnoreAll => self.ignore_pending(),
+            Command::AddToDictionary => self.add_pending(),
             Command::ShowProofing => self.toggle_proofing(),
             Command::LoadDictionary => self.load_dictionary(),
             Command::CheckAccessibility => self.open_accessibility(),

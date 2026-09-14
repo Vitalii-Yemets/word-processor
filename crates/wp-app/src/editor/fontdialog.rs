@@ -316,6 +316,8 @@ impl Editor {
             small_caps: dialog.ticked(SMALL_CAPS),
             caps: dialog.ticked(ALL_CAPS),
             hidden: dialog.ticked(HIDDEN),
+            // Not on the Font dialog: Word keeps it on the Language one.
+            no_proof: self.document.character_format_here().no_proof,
             scale: number(&dialog.said(SCALE)).unwrap_or(f64::from(NORMAL_SCALE)).clamp(1.0, 600.0)
                 as u32,
             spacing_twentieths: (number(&dialog.said(SPACING)).unwrap_or(0.0) * 20.0).round()
@@ -462,6 +464,7 @@ pub(super) fn authored(wanted: &ResolvedRunProperties) -> RunProperties {
         small_caps: Some(wanted.small_caps),
         caps: Some(wanted.caps),
         hidden: Some(wanted.hidden),
+        no_proof: Some(wanted.no_proof),
         scale: Some(wanted.scale),
         spacing_twentieths: Some(wanted.spacing_twentieths),
         position_half_points: Some(wanted.position_half_points),

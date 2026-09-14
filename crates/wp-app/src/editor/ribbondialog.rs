@@ -36,7 +36,7 @@ use super::Editor;
 ///
 /// Checked where the dialog is built, so a field put in above them fails loudly
 /// rather than quietly making every row here point at the wrong thing.
-pub(super) const FIRST: usize = 19;
+pub(super) const FIRST: usize = 20;
 
 // The Quick Access Toolbar tab.
 pub(super) const TAB_QUICK: usize = FIRST;

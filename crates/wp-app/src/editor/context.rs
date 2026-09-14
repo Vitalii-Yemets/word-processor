@@ -28,24 +28,24 @@ use super::Editor;
 const WIDTH: f32 = 230.0;
 
 /// One line of the menu.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Entry {
     /// What it does, or nothing where the line is only a divider.
     command: Option<Command>,
-    label: &'static str,
+    label: String,
     icon: Icon,
     kind: Kind,
 }
 
 impl Entry {
     /// Something the menu offers.
-    fn item(command: Command, label: &'static str, icon: Icon) -> Self {
-        Self { command: Some(command), label, icon, kind: Kind::Choice }
+    fn item(command: Command, label: impl Into<String>, icon: Icon) -> Self {
+        Self { command: Some(command), label: label.into(), icon, kind: Kind::Choice }
     }
 
     /// A line between two groups of it.
     fn line() -> Self {
-        Self { command: None, label: "", icon: Icon::None, kind: Kind::Separator }
+        Self { command: None, label: String::new(), icon: Icon::None, kind: Kind::Separator }
     }
 
     /// The same entry, greyed out unless the condition holds.
@@ -82,11 +82,22 @@ impl Editor {
         }
 
         let entries = self.context_entries(x, y);
+        self.pending_issue = None;
+        self.pending_spellings = Vec::new();
+        // The word the checker marked under the pointer, and what it might
+        // have been meant as: kept beside the menu so that choosing one knows
+        // which word it is for.
+        if let Some(issue) = self.position_at(x, y).and_then(|at| self.issue_at(at)) {
+            if self.show_proofing {
+                self.pending_spellings = self.spellings_for(&issue);
+                self.pending_issue = Some(issue);
+            }
+        }
         if entries.is_empty() {
             return Response::Ignored;
         }
 
-        let items = entries.iter().map(|entry| entry.label.to_owned()).collect();
+        let items = entries.iter().map(|entry| entry.label.clone()).collect();
         let rows = entries.iter().map(|entry| Row::new(entry.kind, entry.icon)).collect();
         self.group_commands = entries.iter().map(|entry| entry.command).collect();
         // Under the pointer, which is where a context menu goes.
@@ -165,10 +176,43 @@ impl Editor {
         }
 
         // The spellings for a word the checker does not know, which is what a
-        // right-click on a red underline is for.
-        if self.misspelling_at(x, y) {
-            entries.push(Entry::line());
-            entries.push(Entry::item(Command::Spelling, "Spelling…", Icon::Spelling));
+        // right-click on a red underline is for: Word puts them at the top,
+        // then what else can be done about the word.
+        if let Some(issue) = self.position_at(x, y).and_then(|at| self.issue_at(at)) {
+            if self.show_proofing {
+                let mut spelling: Vec<Entry> = Vec::new();
+                if issue.kind.is_spelling() {
+                    for (index, offered) in self.spellings_for(&issue).iter().enumerate().take(5) {
+                        spelling.push(Entry::item(
+                            Command::Correct(index as u8),
+                            offered.clone(),
+                            Icon::Spelling,
+                        ));
+                    }
+                    if spelling.is_empty() {
+                        spelling.push(
+                            Entry::item(Command::Spelling, "(no spelling suggestions)", Icon::None)
+                                .only_if(false),
+                        );
+                    }
+                    spelling.push(Entry::line());
+                    spelling.push(Entry::item(Command::IgnoreAll, "Ignore All", Icon::None));
+                    spelling.push(Entry::item(
+                        Command::AddToDictionary,
+                        "Add to Dictionary",
+                        Icon::Spelling,
+                    ));
+                } else {
+                    spelling.push(Entry::item(
+                        Command::Spelling,
+                        issue.kind.message(),
+                        Icon::Spelling,
+                    ));
+                }
+                spelling.push(Entry::line());
+                spelling.append(&mut entries);
+                entries = spelling;
+            }
         }
 
         entries.extend([
@@ -200,17 +244,5 @@ impl Editor {
     #[must_use]
     fn can_paste(&self) -> bool {
         self.clipboard.is_some() || wp_shell::clipboard::text().is_some_and(|text| !text.is_empty())
-    }
-
-    /// Whether the point is on a word the spelling check has marked.
-    #[must_use]
-    fn misspelling_at(&self, x: i32, y: i32) -> bool {
-        if !self.show_proofing {
-            return false;
-        }
-        let Some(at) = self.position_at(x, y) else { return false };
-        self.issues.iter().any(|issue| {
-            issue.paragraph == at.paragraph && at.offset >= issue.start && at.offset <= issue.end
-        })
     }
 }

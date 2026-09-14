@@ -147,7 +147,8 @@ impl Document {
     ///
     /// An element that is there means yes unless it says otherwise, which is
     /// the rule every on-off property in the format follows.
-    pub(crate) fn setting_is_on(&self, local: &str) -> bool {
+    #[must_use]
+    pub fn setting_is_on(&self, local: &str) -> bool {
         self.settings_root()
             .and_then(|root| root.child(Some(read::W), local).map(read::on_off))
             .unwrap_or(false)
@@ -157,7 +158,7 @@ impl Document {
     ///
     /// Returns whether anything changed, so a command can say nothing happened
     /// rather than claim it did.
-    pub(crate) fn set_setting_flag(&mut self, local: &str, on: bool) -> bool {
+    pub fn set_setting_flag(&mut self, local: &str, on: bool) -> bool {
         let Some(mut root) = self.settings_root() else { return false };
         if root.child(Some(read::W), local).is_some_and(read::on_off) == on {
             return false;

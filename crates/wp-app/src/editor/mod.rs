@@ -279,11 +279,21 @@ pub struct Editor {
     /// Whether the writing is being checked, and what was found.
     show_proofing: bool,
     issues: Vec<wp_docx::proofing::Issue>,
-    dictionary: wp_docx::proofing::Dictionary,
-    /// Which dictionary was found on this machine, and whether looking for
-    /// one has been done at all.
-    dictionary_name: Option<String>,
-    dictionary_searched: bool,
+    /// One dictionary per language the document is written in, found on this
+    /// machine or opened by hand.
+    dictionaries: wp_docx::proofing::Dictionaries,
+    /// The languages looked for already, so a language with no dictionary is
+    /// not looked for again on every keystroke.
+    languages_searched: std::collections::HashSet<String>,
+    /// The reader's own words, added over the years and kept beside the
+    /// settings.
+    custom_words: Vec<String>,
+    /// The spellings on offer for the mistake under the menu, in the order
+    /// the menu lists them.
+    pending_spellings: Vec<String>,
+    /// What the checker found in each paragraph last time, so a keystroke
+    /// checks one paragraph and not the document.
+    proofing_cache: wp_docx::proofing::ProofingCache,
     /// The mistake a correction is being chosen for.
     pending_issue: Option<wp_docx::proofing::Issue>,
     /// The people a mail merge is for, read from the file beside the letter.
@@ -574,9 +584,11 @@ impl Editor {
             highlight_fields: false,
             show_proofing: true,
             issues: Vec::new(),
-            dictionary: wp_docx::proofing::Dictionary::default(),
-            dictionary_name: None,
-            dictionary_searched: false,
+            dictionaries: wp_docx::proofing::Dictionaries::default(),
+            languages_searched: std::collections::HashSet::new(),
+            custom_words: Vec::new(),
+            pending_spellings: Vec::new(),
+            proofing_cache: wp_docx::proofing::ProofingCache::default(),
             pending_issue: None,
             recipients: wp_docx::merge::Recipients::default(),
             recipient_file: None,
@@ -668,6 +680,19 @@ impl Editor {
             title: String::new(),
             needs_redraw: true,
         }
+    }
+
+    /// The same, with what the reader keeps between documents read in: the
+    /// settings, and the words they have added to the dictionary over the
+    /// years.
+    pub fn opened(
+        library: &'static FontLibrary,
+        document: Document,
+        file: Option<PathBuf>,
+    ) -> Self {
+        let mut editor = Self::new(library, document, file);
+        editor.load_custom_dictionary();
+        editor
     }
 
     /// Where the caret is. The document owns it, so undo can put it back.

@@ -183,6 +183,10 @@ pub struct RunProperties {
     /// with a dotted underline while the marks are showing and not at all
     /// otherwise.
     pub hidden: Option<bool>,
+    /// Text the spelling and grammar checks leave alone, `w:noProof`: a
+    /// stretch of code, a name, a quotation in a language nobody has a
+    /// dictionary for.
+    pub no_proof: Option<bool>,
     /// The colour of the underline, when it differs from the text's.
     pub underline_color: Option<String>,
     /// How wide the letters are drawn, as a percentage, `w:w`.
@@ -248,6 +252,7 @@ impl RunProperties {
             caps: other.caps.or(self.caps),
             small_caps: other.small_caps.or(self.small_caps),
             hidden: other.hidden.or(self.hidden),
+            no_proof: other.no_proof.or(self.no_proof),
             underline_color: other.underline_color.clone().or_else(|| self.underline_color.clone()),
             scale: other.scale.or(self.scale),
             spacing_twentieths: other.spacing_twentieths.or(self.spacing_twentieths),
@@ -278,6 +283,8 @@ pub struct ResolvedRunProperties {
     pub caps: bool,
     pub small_caps: bool,
     pub hidden: bool,
+    /// Whether the spelling and grammar checks leave this alone.
+    pub no_proof: bool,
     /// The colour of the underline, when it differs from the text's.
     pub underline_color: Option<String>,
     /// How wide the letters are drawn, as a percentage of their own width.
@@ -318,6 +325,7 @@ impl Default for ResolvedRunProperties {
             caps: false,
             small_caps: false,
             hidden: false,
+            no_proof: false,
             underline_color: None,
             scale: crate::typography::NORMAL_SCALE,
             spacing_twentieths: 0,

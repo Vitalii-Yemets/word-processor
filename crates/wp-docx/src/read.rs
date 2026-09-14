@@ -874,6 +874,7 @@ pub fn read_run_properties(properties: &Element) -> RunProperties {
             "caps" => result.caps = Some(on_off(property)),
             "smallCaps" => result.small_caps = Some(on_off(property)),
             "vanish" => result.hidden = Some(on_off(property)),
+            "noProof" => result.no_proof = Some(on_off(property)),
             // How wide the letters are drawn, how far apart, how far off the
             // line, and from what size the font's own kerning is used. Each is
             // measured differently; see [`crate::typography`].
