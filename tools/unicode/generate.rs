@@ -357,8 +357,13 @@ fn breaking_class(value: &str, code: u32) -> String {
         // zero width joiner that holds two emoji together.
         "GL" | "WJ" | "ZWJ" => "Glue",
         // What may not begin a line: the small kana, the ellipsis of the
-        // standard's IN, and the skin tone that belongs to the emoji before it.
-        "NS" | "CJ" | "IN" | "EM" => "NonStarter",
+        // standard's IN, the skin tone that belongs to the emoji before it,
+        // and the combining marks — an accent, a vowel sign, the selector that
+        // says which face of a character was meant — every one of which
+        // belongs to the character before it and cannot start a line without
+        // it. That is the half of LB9 that can be kept without knowing what
+        // the mark is drawn on.
+        "NS" | "CJ" | "IN" | "EM" | "CM" => "NonStarter",
         "HY" => "Hyphen",
         // What a break is allowed after: the standard's BA, the zero width
         // space, the solidus, the em dash, and the place an inline object sits.
@@ -376,11 +381,9 @@ fn breaking_class(value: &str, code: u32) -> String {
         // letter is at least never broken in the wrong place.
         "SA" if (0x0E00..=0x0EFF).contains(&code) => "Complex",
         // LB1 again: what is ambiguous, unknown or half of a surrogate reads as
-        // a letter. So do the combining marks — LB9, which gives a mark the
-        // class of the letter it is drawn on, is not kept here, and a mark is
-        // never a place to break anyway. So do the Korean jamo: breaking a
-        // syllable into its consonants is worse than not breaking it.
-        "SA" | "AI" | "AL" | "CM" | "HL" | "SG" | "XX" | "Unknown" | "JL" | "JV" | "JT" | "RI" => {
+        // a letter. So do the Korean jamo: breaking a syllable into its
+        // consonants is worse than not breaking it.
+        "SA" | "AI" | "AL" | "HL" | "SG" | "XX" | "Unknown" | "JL" | "JV" | "JT" | "RI" => {
             "Alphabetic"
         }
         _ => panic!("unknown line break class {value}"),
@@ -541,6 +544,27 @@ fn segmentation(ucd: &Path, root: &Path, version: &str) {
         "WORDS",
         "Word",
     ));
+
+    // And one property that is not a boundary at all, kept here because this is
+    // where the character tables live: whether a character is drawn as a
+    // coloured picture by default rather than as a letter.
+    let emoji = set(&ucd.join("lib/EPres/Y.pl"));
+    text.push_str(&table_of_pairs(
+        "/// The characters a reader expects to see as a coloured picture rather\n\
+         /// than as a letter. A rocket is one; a bare heart is not, and is drawn\n\
+         /// in the colour of the text until the writer asks otherwise.\n",
+        "EMOJI",
+        "",
+        &emoji,
+    ));
+    text.push_str(
+        "/// Whether a character is drawn as a picture by default.\n\
+         pub(crate) fn drawn_as_emoji(character: char) -> bool {\n    \
+         let code = character as u32;\n    \
+         let after = EMOJI.partition_point(|(first, _)| *first <= code);\n    \
+         after > 0 && EMOJI[after - 1].1 >= code\n\
+         }\n\n",
+    );
 
     text.push_str(&order_check(&["GRAPHEMES", "WORDS"]));
     write_out(root.join("crates/wp-segment/src/tables.rs"), &text);

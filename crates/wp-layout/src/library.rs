@@ -47,6 +47,9 @@ pub struct Face {
     /// Where on its axes this face sits, for a variable font: a file that is a
     /// whole family appears here once per place the designer named.
     variations: Option<Vec<f32>>,
+    /// Whether this face draws in colours of its own — an emoji font — which
+    /// is what decides where an emoji is taken from.
+    colour: bool,
 }
 
 impl Face {
@@ -194,6 +197,7 @@ impl FontLibrary {
                 cmap: description.cmap,
                 coverage: OnceCell::new(),
                 variations: description.variations,
+                colour: description.colour,
             });
             added += 1;
         }
@@ -313,6 +317,20 @@ impl FontLibrary {
         None
     }
 
+    /// A face that draws this character in colours of its own, if the machine
+    /// has one.
+    ///
+    /// What makes an emoji an emoji. A Latin font holds monochrome outlines for
+    /// a good many of them, and a document that took those would show a rocket
+    /// as a black shape — which is not what the writer meant and not what Word
+    /// shows.
+    #[must_use]
+    pub fn colour_face_for(&self, character: char) -> Option<(usize, GlyphId)> {
+        self.faces.iter().enumerate().filter(|(_, face)| face.colour).find_map(|(index, face)| {
+            face.coverage()?.glyph_for(character).map(|glyph| (index, glyph))
+        })
+    }
+
     /// Whether anything on this machine can draw a character.
     ///
     /// What a grid of symbols has to know before it draws a cell: a cell that
@@ -342,6 +360,7 @@ struct Description {
     /// Where on its axes this face sits, for a variable font. `None` for an
     /// ordinary one, which has nowhere to sit.
     variations: Option<Vec<f32>>,
+    colour: bool,
 }
 
 /// The faces a variable font holds: one for each place on its axes the
@@ -427,12 +446,14 @@ fn describe_faces(path: &Path) -> Vec<Description> {
             tables.iter().find(|(tag, _)| tag == wanted).map(|(_, range)| *range)
         };
 
-        // A face whose outlines cannot be read is no use for drawing. There are
-        // two tables they may be in — quadratic curves in `glyf`, PostScript
-        // ones in `CFF` — and a font has one or the other.
+        // A face nothing can be drawn from is no use. Outlines live in one of
+        // two tables — quadratic curves in `glyf`, PostScript ones in `CFF` —
+        // and a font has one or the other. A colour font may have neither and
+        // still draw: an emoji font of pictures is all picture.
         let quadratic = find(b"glyf").is_some() && find(b"loca").is_some();
         let postscript = find(b"CFF ").is_some() || find(b"CFF2").is_some();
-        if !quadratic && !postscript {
+        let pictures = find(b"CBDT").is_some() && find(b"CBLC").is_some();
+        if !quadratic && !postscript && !pictures {
             continue;
         }
 
@@ -468,6 +489,8 @@ fn describe_faces(path: &Path) -> Vec<Description> {
         // the designer named becomes a face here, because that is what a
         // document asks for and what a font menu lists.
         let cmap = find(b"cmap");
+        let colour =
+            find(b"COLR").is_some() || (find(b"CBDT").is_some() && find(b"CBLC").is_some());
         let instances = find(b"fvar")
             .and_then(|range| read_at(&mut file, range.offset as u64, range.length))
             .map(|fvar| wp_font::variations_from_tables(&fvar, &name_table).1)
@@ -481,6 +504,7 @@ fn describe_faces(path: &Path) -> Vec<Description> {
                 italic,
                 cmap,
                 variations: None,
+                colour,
             });
             continue;
         }
@@ -493,6 +517,7 @@ fn describe_faces(path: &Path) -> Vec<Description> {
                 italic,
                 cmap,
                 variations,
+                colour,
             });
         }
     }

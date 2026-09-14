@@ -65,7 +65,7 @@ pub fn write(pages: &[Page], library: &FontLibrary, title: &str) -> Vec<u8> {
     let mut page_ids = Vec::with_capacity(pages.len());
 
     for page in pages {
-        let drawing = content::of(page, &fonts.names);
+        let drawing = content::of(page, &fonts.names, library);
         let contents = writer.add_stream("", drawing.stream.as_bytes());
 
         // Only the fonts and pictures this page uses, so that a reader opening

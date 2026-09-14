@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 wp-deflate = { path = "../wp-deflate" }
 wp-font = { path = "../wp-font" }
+wp-image = { path = "../wp-image" }
 wp-layout = { path = "../wp-layout" }
 wp-raster = { path = "../wp-raster" }
 
@@ -18,3 +19,4 @@ workspace = true
 [dev-dependencies]
 wp-docx = { path = "../wp-docx" }
 wp-font = { path = "../wp-font" }
+wp-image = { path = "../wp-image" }

@@ -24,7 +24,9 @@ FROM rust:1.98.0-bookworm
 # CFF table rather than quadratic ones in glyf, which is what every .otf file
 # holds and what nothing on this image had until they were added. Inter is a
 # variable font - one file that is a whole family, with axes and deltas rather
-# than one weight - and nothing else here is.
+# than one weight - and nothing else here is. Noto Color Emoji draws its glyphs
+# as pictures rather than outlines, which is the other half of what an emoji
+# can be and cannot be tested without one.
 # None of them is linked into the product or shipped with it; the program reads
 # whatever fonts the machine it runs on has.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -39,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-nanum \
         fonts-urw-base35 \
         fonts-inter-variable \
+        fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add x86_64-pc-windows-gnu \

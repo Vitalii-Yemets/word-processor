@@ -28,12 +28,14 @@
 
 mod cff;
 mod cmap;
+mod colour;
 mod glyf;
 mod name;
 mod read;
 mod vary;
 
 pub use cmap::CharacterMap;
+pub use colour::{Bitmap, Layer, Rgba};
 pub use glyf::{Outline, PathCommand, Point};
 pub use vary::{Axis, Instance};
 
@@ -221,6 +223,12 @@ pub struct Font<'a> {
     avar: Option<TableRange>,
     gvar: Option<TableRange>,
     hvar: Option<TableRange>,
+    /// The tables of a font that draws in colour: the layers a glyph is made
+    /// of and the palettes they are drawn in, or the pictures themselves.
+    colr: Option<TableRange>,
+    cpal: Option<TableRange>,
+    cblc: Option<TableRange>,
+    cbdt: Option<TableRange>,
     /// Where this font has been set on its axes, already turned into the -1 to
     /// 1 the deltas are written against. `None` means where it was drawn.
     variations: Option<Vec<f32>>,
@@ -302,6 +310,10 @@ impl<'a> Font<'a> {
         let mut avar = None;
         let mut gvar = None;
         let mut hvar = None;
+        let mut colr = None;
+        let mut cpal = None;
+        let mut cblc = None;
+        let mut cbdt = None;
         let mut cmap = None;
         let mut kern = None;
         let mut gsub = None;
@@ -335,6 +347,10 @@ impl<'a> Font<'a> {
                 b"avar" => avar = Some(range),
                 b"gvar" => gvar = Some(range),
                 b"HVAR" => hvar = Some(range),
+                b"COLR" => colr = Some(range),
+                b"CPAL" => cpal = Some(range),
+                b"CBLC" => cblc = Some(range),
+                b"CBDT" => cbdt = Some(range),
                 b"cmap" => cmap = Some(range),
                 b"kern" => kern = Some(range),
                 b"GSUB" => gsub = Some(range),
@@ -391,6 +407,10 @@ impl<'a> Font<'a> {
             avar,
             gvar,
             hvar,
+            colr,
+            cpal,
+            cblc,
+            cbdt,
             variations: None,
             kern,
             gsub,
@@ -550,6 +570,35 @@ impl<'a> Font<'a> {
         let coordinates = self.variations.as_ref()?;
         let table = self.raw_table(self.gvar)?;
         vary::Outlines::parse(table).ok()?.deltas(glyph, coordinates, points, ends)
+    }
+
+    /// The layers a glyph is drawn from, where it is drawn from several.
+    ///
+    /// A colour emoji in a layered font is a dozen ordinary glyphs, each in its
+    /// own colour out of the font's palette; a layer with no colour is drawn in
+    /// whatever colour the text is. `None` for every glyph of an ordinary font
+    /// and for the letters of a colour one.
+    #[must_use]
+    pub fn colour_layers(&self, glyph: GlyphId) -> Option<Vec<Layer>> {
+        let colr = self.raw_table(self.colr)?;
+        colour::layers_of(colr, self.raw_table(self.cpal), glyph)
+    }
+
+    /// The picture a glyph is kept as, in a font that keeps pictures.
+    ///
+    /// `pixels_per_em` is the size the text is being drawn at; the nearest
+    /// size the font holds is given back, and it is the caller's to scale.
+    #[must_use]
+    pub fn bitmap(&self, glyph: GlyphId, pixels_per_em: u16) -> Option<Bitmap<'a>> {
+        let locations = self.raw_table(self.cblc)?;
+        let data = self.raw_table(self.cbdt)?;
+        colour::bitmap_of(locations, data, glyph, pixels_per_em)
+    }
+
+    /// Whether this font draws in colours of its own rather than in the text's.
+    #[must_use]
+    pub fn has_colour(&self) -> bool {
+        self.colr.is_some() || (self.cblc.is_some() && self.cbdt.is_some())
     }
 
     /// The outline of a glyph, in font units.
@@ -760,6 +809,15 @@ impl<'a> Font<'a> {
     #[must_use]
     pub fn has_outlines(&self) -> bool {
         self.cff.is_some() || (self.glyf.is_some() && self.loca.is_some())
+    }
+
+    /// Whether anything at all can be drawn with it.
+    ///
+    /// A font of colour bitmaps has no outlines and is still a font: every
+    /// emoji on an Android machine is one.
+    #[must_use]
+    pub fn can_be_drawn_with(&self) -> bool {
+        self.has_outlines() || self.has_colour()
     }
 
     /// Whether the outlines are PostScript ones, which matters to a program

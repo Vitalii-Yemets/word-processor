@@ -74,6 +74,7 @@ dependencies = [
  "wp-font",
  "wp-image",
  "wp-raster",
+ "wp-segment",
  "wp-shape",
  "wp-xml",
 ]
@@ -97,6 +98,7 @@ dependencies = [
  "wp-deflate",
  "wp-docx",
  "wp-font",
+ "wp-image",
  "wp-layout",
  "wp-raster",
 ]

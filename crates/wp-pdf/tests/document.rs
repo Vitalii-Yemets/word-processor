@@ -269,3 +269,33 @@ fn the_text_of_a_postscript_font_can_still_be_read_back() {
     let pdf = wp_pdf::write(&laid_out_in("Nimbus Sans", "Hamburgefonstiv"), library(), "Nimbus");
     assert_eq!(text_of(&pdf).trim(), "Hamburgefonstiv");
 }
+
+#[test]
+fn an_emoji_goes_into_the_file_as_the_picture_it_is() {
+    // A font that keeps its glyphs as pictures has no outlines to embed and
+    // nothing to fill: written as text the emoji would be missing from the
+    // page altogether, with nothing to say so.
+    let mut body = Body::default();
+    body.blocks.push(Block::Paragraph(Paragraph::text("Emoji \u{1F600} in a PDF \u{1F680}")));
+    let bytes = Document::create(&body).expect("a document").save().expect("saving");
+    let document = Document::open(&bytes).expect("reopening");
+    let mut engine = LayoutEngine::for_device(library(), Device::paper());
+    let pages = engine.layout_document(&document);
+
+    let pdf = wp_pdf::write(&pages, library(), "Emoji");
+    let text = String::from_utf8_lossy(&pdf);
+
+    // Two of them, each with a picture of how see-through it is: an emoji is
+    // mostly nothing, and a square of white behind every one of them would be
+    // worse than not drawing them at all.
+    assert!(text.contains("/Subtype /Image"), "no picture went into the file");
+    assert_eq!(text.matches("/SMask").count(), 2, "the emoji lost their transparency");
+    // The instructions are compressed, so the drawing itself is looked for in
+    // the stream rather than in the file.
+    let drawn =
+        streams(&pdf).into_iter().any(|stream| String::from_utf8_lossy(&stream).contains(" Do Q"));
+    assert!(drawn, "nothing draws the pictures");
+
+    // And the words are still words.
+    assert!(text_of(&pdf).contains("Emoji"));
+}

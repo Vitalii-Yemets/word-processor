@@ -199,3 +199,24 @@ mod coverage {
         assert_eq!(words("\u{0669}.\u{0660}"), vec!["\u{0669}.\u{0660}"], "Arabic-Indic");
     }
 }
+
+/// Whether a character is one a reader expects to see as a coloured picture
+/// rather than as a letter.
+///
+/// # Why this lives here
+///
+/// It is not a boundary, and this crate is about boundaries. It is here
+/// because it is a property of a character generated from the same database as
+/// everything else in this crate, and because the one question it answers —
+/// should this be drawn from a colour font — is asked where text is laid out,
+/// which already asks this crate where the words are.
+///
+/// The distinction it draws is Unicode's own and matters: a rocket is a
+/// picture and always was, while a heart is a piece of punctuation that a
+/// later standard also gave a picture to. A document holding a bare heart
+/// means the black one, and only a heart followed by the variation selector
+/// means the red one.
+#[must_use]
+pub fn drawn_as_emoji(character: char) -> bool {
+    tables::drawn_as_emoji(character)
+}

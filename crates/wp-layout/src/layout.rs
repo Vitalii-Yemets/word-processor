@@ -5008,9 +5008,109 @@ impl<'a> LayoutEngine<'a> {
         }
     }
 
+    /// Where a run changes between text and emoji.
+    ///
+    /// An emoji is taken from a font that draws it in colour whatever the run
+    /// asks for, so a run holding one is really several runs: shaping is a
+    /// question about one font, and this says where one font's stretch ends.
+    /// Empty when the run holds no emoji at all, which is nearly every run.
+    fn emoji_pieces(&self, text: &str) -> Vec<(core::ops::Range<usize>, bool)> {
+        let mut pieces: Vec<(core::ops::Range<usize>, bool)> = Vec::new();
+        let mut any = false;
+
+        for (at, character) in text.char_indices() {
+            // A variation selector belongs to the character before it, and says
+            // which of its two faces the writer meant.
+            let as_emoji = if matches!(character, '\u{FE0F}' | '\u{FE0E}') {
+                pieces.last().is_some_and(|(_, held)| *held)
+            } else {
+                let after = text[at + character.len_utf8()..].chars().next();
+                let wanted = match after {
+                    Some('\u{FE0F}') => true,
+                    Some('\u{FE0E}') => false,
+                    _ => wp_segment::drawn_as_emoji(character),
+                };
+                wanted && self.library.colour_face_for(character).is_some()
+            };
+            any |= as_emoji;
+
+            match pieces.last_mut() {
+                Some((range, held)) if *held == as_emoji => range.end = at + character.len_utf8(),
+                _ => pieces.push((at..at + character.len_utf8(), as_emoji)),
+            }
+        }
+
+        // Nothing to say where a run holds no emoji at all, which is nearly
+        // every run. One piece is still worth saying where that piece is the
+        // emoji: it is drawn from another font than the one the run asked for.
+        if !any {
+            return Vec::new();
+        }
+        pieces
+    }
+
+    /// A stretch of emoji, taken from whichever font draws them in colour.
+    ///
+    /// Nothing is shaped: an emoji is one character and one picture, and the
+    /// variation selector that asked for the picture draws nothing itself.
+    fn shape_emoji(
+        &mut self,
+        text: &str,
+        style: &RunStyle,
+        base_offset: usize,
+    ) -> Vec<ShapedGlyph> {
+        let mut glyphs = Vec::new();
+        for (at, character) in text.char_indices() {
+            let selector = matches!(character, '\u{FE0F}' | '\u{FE0E}');
+            let found = if selector {
+                None
+            } else {
+                self.library.colour_face_for(character).and_then(|(face, glyph)| {
+                    let font = self.font(face)?;
+                    let units = f32::from(font.units_per_em());
+                    let advance = f32::from(font.advance(glyph)) * style.size / units;
+                    Some((face, glyph, advance))
+                })
+            };
+            let (face, glyph, advance) = found.unwrap_or((style.face, GlyphId(0), 0.0));
+
+            glyphs.push(ShapedGlyph {
+                face,
+                glyph,
+                advance,
+                x_offset: 0.0,
+                y_offset: 0.0,
+                invisible: selector,
+                offset: base_offset + at,
+                length: character.len_utf8(),
+                character,
+                size: style.size,
+            });
+        }
+        glyphs
+    }
+
     /// Turns text into glyphs, falling back to another font per character when
     /// the chosen one has no glyph for it.
     fn shape(&mut self, text: &str, style: &RunStyle, base_offset: usize) -> Vec<ShapedGlyph> {
+        // An emoji comes from a colour font whatever the run asks for, so a
+        // run holding one is shaped in pieces: the emoji, and the text either
+        // side of them. A piece with no emoji in it splits no further.
+        let pieces = self.emoji_pieces(text);
+        if !pieces.is_empty() {
+            let mut out = Vec::new();
+            for (range, as_emoji) in pieces {
+                let piece = &text[range.clone()];
+                let at = base_offset + range.start;
+                out.extend(if as_emoji {
+                    self.shape_emoji(piece, style, at)
+                } else {
+                    self.shape(piece, style, at)
+                });
+            }
+            return out;
+        }
+
         // Text in a script that is written joined has to be shaped as a whole:
         // which glyph a letter takes depends on its neighbours, so it cannot be
         // decided a character at a time. So does a run that asked the font for
@@ -5042,26 +5142,53 @@ impl<'a> LayoutEngine<'a> {
             // several characters — the German ß is SS — draws several glyphs,
             // and every one of them points back at the one character it came
             // from, so the caret still lands where the text says it should.
+            // A variation selector after a character says which of its two
+            // faces the writer meant: U+FE0F the coloured picture, U+FE0E the
+            // letter. Without one, the character's own default decides — a
+            // rocket is a picture and a bare heart is punctuation.
+            let after = text[local + source.len_utf8()..].chars().next();
+            let as_emoji = match after {
+                Some('\u{FE0F}') => true,
+                Some('\u{FE0E}') => false,
+                _ => wp_segment::drawn_as_emoji(source),
+            };
+
             for (character, size) in drawn_as(source, style) {
                 let mut chosen = None;
 
-                if let Some(font) = self.font(style.face) {
-                    if let Some(glyph) = font.glyph_for(character) {
-                        let units = f32::from(font.units_per_em());
-                        let mut advance = f32::from(font.advance(glyph)) * size / units;
-                        if let Some(previous) = previous.filter(|_| style.kern) {
-                            // The positioning table first and the old one only
-                            // if it says nothing: a font that carries both
-                            // means the same thing twice.
-                            let by = wp_shape::kerning_between(
-                                font,
-                                &wp_shape::script_of(text),
-                                previous,
-                                glyph,
-                            );
-                            advance += by as f32 * size / units;
+                // An emoji is drawn from a font that draws it in colour
+                // wherever the machine has one, whatever face the run asks
+                // for: the Latin fonts hold monochrome outlines for many of
+                // them, and a black rocket is not what anybody meant.
+                if as_emoji {
+                    if let Some((face, glyph)) = self.library.colour_face_for(character) {
+                        if let Some(font) = self.font(face) {
+                            let units = f32::from(font.units_per_em());
+                            let advance = f32::from(font.advance(glyph)) * size / units;
+                            chosen = Some((face, glyph, advance));
                         }
-                        chosen = Some((style.face, glyph, advance));
+                    }
+                }
+
+                if chosen.is_none() {
+                    if let Some(font) = self.font(style.face) {
+                        if let Some(glyph) = font.glyph_for(character) {
+                            let units = f32::from(font.units_per_em());
+                            let mut advance = f32::from(font.advance(glyph)) * size / units;
+                            if let Some(previous) = previous.filter(|_| style.kern) {
+                                // The positioning table first and the old one
+                                // only if it says nothing: a font that carries
+                                // both means the same thing twice.
+                                let by = wp_shape::kerning_between(
+                                    font,
+                                    &wp_shape::script_of(text),
+                                    previous,
+                                    glyph,
+                                );
+                                advance += by as f32 * size / units;
+                            }
+                            chosen = Some((style.face, glyph, advance));
+                        }
                     }
                 }
 

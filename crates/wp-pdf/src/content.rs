@@ -15,7 +15,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use wp_layout::{Page, PositionedGlyph};
+use wp_layout::{FontLibrary, Page, PositionedGlyph};
 use wp_raster::{Color, Command, Path};
 
 use crate::writer::number;
@@ -45,7 +45,7 @@ pub(crate) struct Picture {
 }
 
 /// Turns a page into instructions.
-pub(crate) fn of(page: &Page, names: &BTreeMap<usize, String>) -> Drawing {
+pub(crate) fn of(page: &Page, names: &BTreeMap<usize, String>, library: &FontLibrary) -> Drawing {
     let mut drawing = Drawing::default();
     let mut out = String::new();
     let height = page.height;
@@ -80,7 +80,7 @@ pub(crate) fn of(page: &Page, names: &BTreeMap<usize, String>) -> Drawing {
         .chain(inside)
         .filter(|glyph| !glyph.invisible && glyph.size > 0.0)
         .collect();
-    write_text(&mut out, &glyphs, names, height, &mut drawing);
+    write_text(&mut out, &glyphs, names, library, height, &mut drawing);
 
     // What a person put in front of the text, over it, with the words inside a
     // shape written after the shape so they are not painted over.
@@ -89,7 +89,7 @@ pub(crate) fn of(page: &Page, names: &BTreeMap<usize, String>) -> Drawing {
         if let wp_layout::Drawing::Shape(shape) = placed {
             let glyphs: Vec<&PositionedGlyph> =
                 shape.text.iter().filter(|glyph| !glyph.invisible && glyph.size > 0.0).collect();
-            write_text(&mut out, &glyphs, names, height, &mut drawing);
+            write_text(&mut out, &glyphs, names, library, height, &mut drawing);
         }
     }
 
@@ -208,12 +208,22 @@ fn write_text(
     out: &mut String,
     glyphs: &[&PositionedGlyph],
     names: &BTreeMap<usize, String>,
+    library: &FontLibrary,
     height: f32,
     drawing: &mut Drawing,
 ) {
     let mut index = 0;
     while index < glyphs.len() {
         let first = glyphs[index];
+
+        // A glyph a font keeps as a picture is drawn as a picture. There is no
+        // outline to fill and no font to embed that would draw it: written as
+        // text it would be nothing at all on the page.
+        if write_picture_glyph(out, first, library, height, drawing) {
+            index += 1;
+            continue;
+        }
+
         let Some(name) = names.get(&first.face) else {
             index += 1;
             continue;
@@ -375,6 +385,47 @@ fn paint(colour: Color, drawing: &mut Drawing) -> String {
     out
 }
 
+/// A glyph a font keeps as a picture, drawn as one.
+///
+/// An emoji in a font of this kind is not an outline and cannot be written as
+/// text: there is nothing to fill. It goes into the file as a small picture in
+/// the place the glyph would have stood, which is what it is.
+fn write_picture_glyph(
+    out: &mut String,
+    glyph: &PositionedGlyph,
+    library: &FontLibrary,
+    height: f32,
+    drawing: &mut Drawing,
+) -> bool {
+    let Some(font) = library.face(glyph.face).and_then(|face| face.font()) else { return false };
+    let wanted = glyph.size.round().clamp(1.0, f32::from(u16::MAX)) as u16;
+    let Some(bitmap) = font.bitmap(glyph.glyph, wanted) else { return false };
+    let Ok(image) = wp_image::png::decode(bitmap.png) else { return false };
+    if image.width == 0 || image.height == 0 {
+        return false;
+    }
+
+    let scale = glyph.size / f32::from(bitmap.pixels_per_em.max(1));
+    let width = image.width as f32 * scale;
+    let tall = image.height as f32 * scale;
+    let left = glyph.x + f32::from(bitmap.bearing_x) * scale;
+    // A PDF measures up from the foot of the page and places a picture by its
+    // bottom edge; the layout measures down from the top and places a glyph by
+    // its baseline.
+    let bottom = height - (glyph.baseline - f32::from(bitmap.bearing_y) * scale) - tall;
+
+    let name = format!("Im{}", drawing.images.len());
+    out.push_str(&format!(
+        "q {} 0 0 {} {} {} cm /{name} Do Q\n",
+        number(width),
+        number(tall),
+        number(left),
+        number(bottom),
+    ));
+    drawing.images.push((name, take_apart(&image)));
+    true
+}
+
 /// Splits a picture into the colours and the transparency, which a PDF holds
 /// separately.
 fn take_apart(image: &wp_layout::Image) -> Picture {
@@ -394,7 +445,7 @@ fn take_apart(image: &wp_layout::Image) -> Picture {
 
 #[cfg(test)]
 mod tests {
-    use wp_layout::{Decoration, Page};
+    use wp_layout::{Decoration, FontLibrary, Page};
     use wp_raster::Color;
 
     use super::of;
@@ -415,7 +466,7 @@ mod tests {
             }],
             ..Page::default()
         };
-        let drawing = of(&page, &Default::default());
+        let drawing = of(&page, &Default::default(), &FontLibrary::new());
         assert!(drawing.stream.contains("5 86 20 4 re f"), "{}", drawing.stream);
     }
 
@@ -433,13 +484,13 @@ mod tests {
             }],
             ..Page::default()
         };
-        let drawing = of(&page, &Default::default());
+        let drawing = of(&page, &Default::default(), &FontLibrary::new());
         assert!(drawing.stream.contains("1 0 0.502 rg"), "{}", drawing.stream);
     }
 
     #[test]
     fn an_empty_page_draws_nothing() {
         let page = Page { width: 10.0, height: 10.0, ..Page::default() };
-        assert!(of(&page, &Default::default()).stream.is_empty());
+        assert!(of(&page, &Default::default(), &FontLibrary::new()).stream.is_empty());
     }
 }

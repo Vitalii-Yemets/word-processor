@@ -24,7 +24,15 @@ pub struct Renderer<'a> {
     library: &'a FontLibrary,
     /// Outlines in font units, keyed by face and glyph.
     outlines: HashMap<(usize, u16), Option<CachedOutline>>,
+    /// Which glyphs a coloured glyph is drawn from, and in what.
+    layers: HashMap<(usize, u16), Option<ColourLayers>>,
+    /// The pictures of a font that keeps its glyphs as pictures, decoded.
+    pictures: HashMap<(usize, u16), Option<CachedPicture>>,
 }
+
+/// Which glyphs a coloured glyph is drawn from, and in what: `None` where the
+/// layer takes the colour of the text around it.
+type ColourLayers = Vec<(GlyphId, Option<Color>)>;
 
 /// A glyph's outline together with the grid it was designed on.
 #[derive(Clone, Debug)]
@@ -33,10 +41,23 @@ struct CachedOutline {
     units_per_em: f32,
 }
 
+/// A glyph a font keeps as a picture, decoded to pixels.
+#[derive(Clone, Debug)]
+struct CachedPicture {
+    pixels: Vec<u8>,
+    width: usize,
+    height: usize,
+    /// The size the picture was drawn for, which is what says how far it has
+    /// to be scaled for the size the text is.
+    pixels_per_em: u16,
+    bearing_x: i8,
+    bearing_y: i8,
+}
+
 impl<'a> Renderer<'a> {
     #[must_use]
     pub fn new(library: &'a FontLibrary) -> Self {
-        Self { library, outlines: HashMap::new() }
+        Self { library, outlines: HashMap::new(), layers: HashMap::new(), pictures: HashMap::new() }
     }
 
     /// Draws a page onto a new canvas.
@@ -223,6 +244,13 @@ impl<'a> Renderer<'a> {
                 continue;
             }
 
+            // A font may hold this glyph as a picture, or as a stack of other
+            // glyphs each in its own colour. Either way it is not one shape in
+            // the colour of the text.
+            if self.draw_coloured(canvas, glyph, x, baseline, turn) {
+                continue;
+            }
+
             let Some(cached) = self.outline(glyph.face, glyph.glyph) else {
                 continue;
             };
@@ -285,6 +313,113 @@ impl<'a> Renderer<'a> {
                 .then(transform);
             canvas.fill_path(&cached.path.transformed(&placed), glyph.color);
         }
+    }
+
+    /// Draws a glyph that a font holds in colours of its own.
+    ///
+    /// Returns whether it did: a letter in an ordinary font is not one of
+    /// these, and is drawn the way every letter is.
+    fn draw_coloured(
+        &mut self,
+        canvas: &mut Canvas,
+        glyph: &PositionedGlyph,
+        x: f32,
+        baseline: f32,
+        turn: Option<Transform>,
+    ) -> bool {
+        // A picture is drawn square on or not at all: a turned emoji would
+        // need the pixels turned with it, and nothing yet asks for one.
+        if turn.is_none() {
+            if let Some(picture) = self.picture(glyph.face, glyph.glyph, glyph.size) {
+                let scale = glyph.size / f32::from(picture.pixels_per_em.max(1));
+                let width = (picture.width as f32 * scale).round().max(1.0) as usize;
+                let height = (picture.height as f32 * scale).round().max(1.0) as usize;
+                let left = x + f32::from(picture.bearing_x) * scale;
+                let top = baseline - f32::from(picture.bearing_y) * scale;
+                canvas.draw_pixels(
+                    &picture.pixels,
+                    picture.width,
+                    picture.height,
+                    left.round() as i32,
+                    top.round() as i32,
+                    width,
+                    height,
+                );
+                return true;
+            }
+        }
+
+        let Some(layers) = self.layers(glyph.face, glyph.glyph) else { return false };
+        if layers.is_empty() {
+            return false;
+        }
+
+        // Each layer is an ordinary glyph in a colour of its own, drawn in the
+        // order the font gives: the first is at the back.
+        for (id, colour) in layers {
+            let Some(cached) = self.outline(glyph.face, id) else { continue };
+            let scale = glyph.size / cached.units_per_em;
+            let mut transform = Transform::stretched_glyph(scale, glyph.stretch, x, baseline);
+            if let Some(turn) = turn {
+                transform = transform.then(&turn);
+            }
+            canvas.fill_path(&cached.path.transformed(&transform), colour.unwrap_or(glyph.color));
+        }
+        true
+    }
+
+    /// The layers of a glyph, read once and kept.
+    fn layers(&mut self, face: usize, glyph: GlyphId) -> Option<ColourLayers> {
+        let key = (face, glyph.0);
+        if !self.layers.contains_key(&key) {
+            let read = self.read_layers(face, glyph);
+            self.layers.insert(key, read);
+        }
+        self.layers.get(&key).cloned().flatten()
+    }
+
+    fn read_layers(&self, face: usize, glyph: GlyphId) -> Option<ColourLayers> {
+        let font = self.library.face(face)?.font()?;
+        Some(
+            font.colour_layers(glyph)?
+                .into_iter()
+                .map(|layer| {
+                    let colour = layer.colour.map(|colour| {
+                        Color::rgba(colour.red, colour.green, colour.blue, colour.alpha)
+                    });
+                    (layer.glyph, colour)
+                })
+                .collect(),
+        )
+    }
+
+    /// The picture of a glyph, decoded once and kept.
+    ///
+    /// A font of pictures holds several sizes; the one nearest what is being
+    /// drawn is taken, decoded, and then scaled to whatever size is wanted, so
+    /// the decoding is paid for once however many times the emoji appears.
+    fn picture(&mut self, face: usize, glyph: GlyphId, size: f32) -> Option<&CachedPicture> {
+        let key = (face, glyph.0);
+        if !self.pictures.contains_key(&key) {
+            let read = self.read_picture(face, glyph, size);
+            self.pictures.insert(key, read);
+        }
+        self.pictures.get(&key)?.as_ref()
+    }
+
+    fn read_picture(&self, face: usize, glyph: GlyphId, size: f32) -> Option<CachedPicture> {
+        let font = self.library.face(face)?.font()?;
+        let wanted = size.round().clamp(1.0, f32::from(u16::MAX)) as u16;
+        let bitmap = font.bitmap(glyph, wanted)?;
+        let image = wp_image::png::decode(bitmap.png).ok()?;
+        Some(CachedPicture {
+            pixels: image.pixels,
+            width: image.width,
+            height: image.height,
+            pixels_per_em: bitmap.pixels_per_em,
+            bearing_x: bitmap.bearing_x,
+            bearing_y: bitmap.bearing_y,
+        })
     }
 
     /// The outline of a glyph in font units, read once and kept.

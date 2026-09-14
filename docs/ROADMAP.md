@@ -117,8 +117,13 @@ A variable font — one file that is a whole family — is read as the family it
 the axes, the named instances, and the deltas that move the outlines and the
 widths along them.
 
-*Not done:* colour and bitmap glyph tables, which is item **E10**, and cutting a
-PostScript font down for a PDF, which is **E17**.
+A colour font draws in colour: the layers of a `COLR` glyph in the palette its
+font names, and the pictures of a `CBDT` one as pictures, on the screen and in
+a PDF.
+
+*Not done:* the rest of what a colour glyph can be — gradients, `sbix`, `SVG` —
+which is item **E18**, and cutting a PostScript font down for a PDF, which is
+**E17**.
 
 ## Stage 4 — Text engine — the part every document needs ✅
 
@@ -138,7 +143,7 @@ The tables all four of those search are generated from the character database by
 `tools/generate-unicode-tables.sh` and committed, so they cover every character
 and the program still builds from its own source alone.
 
-The rest of the text engine is items **E1** to **E17**.
+The rest of the text engine is items **E1** to **E18**.
 
 ## Stage 5 — Layout and rendering — what the program draws today ✅
 
@@ -2990,11 +2995,11 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   **E2**, **E6** and **E14** are waiting on.
 - [ ] **E16. Line breaking with the standard's own classes.** UAX #14 names
   about forty and this program keeps seventeen, folding the rest into them by a
-  list in `tools/unicode/generate.rs`. What the folding costs, named: LB9,
-  which gives a combining mark the class of the letter it is drawn on, so a
-  mark after an opening bracket is treated as a letter rather than as the
-  bracket; LB30b, which forbids a break between an emoji and its skin tone, is
-  approximated by making the tone a non-starter; B2, the em dash, allows a
+  list in `tools/unicode/generate.rs`. What the folding costs, named: the half
+  of LB9 that gives a combining mark the class of the letter it is drawn on —
+  the other half, that a mark may not begin a line, is kept; LB30b, which
+  forbids a break between an emoji and its skin tone, is approximated by
+  making the tone a non-starter; B2, the em dash, allows a
   break before it as well as after and here allows only after; SY, the solidus,
   is broken after even between two digits, where LB25 forbids it; and the
   Korean jamo are letters, so a syllable spelled out in them is never broken
@@ -3120,7 +3125,69 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   machinery takes any coordinates, but nothing in a `.docx` can say them and
   Word offers no way to ask — a document names a weight, and a weight is an
   instance.
-- [ ] **E10. Colour and bitmap glyphs.** Emoji, in colour, as Word draws them.
+- [x] **E10. Colour and bitmap glyphs.** Emoji, in colour, as Word draws them.
+  *Done when:* a document with an emoji in it shows the emoji, on the screen
+  and in the PDF, and a bare heart is still a heart.
+  An ordinary glyph is an outline filled with the colour of the text. That is
+  no use for an emoji: a yellow face with brown eyes is neither one shape nor
+  one colour. Fonts answer it two ways and this program read neither, so a
+  rocket came out as whatever monochrome outline some Latin font happened to
+  hold — or as nothing.
+  `crates/wp-font/src/colour.rs` reads both. `COLR` says a glyph is really
+  several other glyphs drawn one on top of another and `CPAL` holds the
+  palettes they are drawn in, which is what Windows does and therefore what
+  Word draws. `CBDT` and `CBLC` hold a PNG per glyph per size, which is what
+  Android does and what Noto Color Emoji is; a picture does not scale, so the
+  font holds several sizes and the nearest large enough is taken and scaled.
+  One palette entry number is not a colour at all: `0xFFFF` means "whatever
+  colour the text is", which is how a layered glyph keeps part of itself in the
+  document's own colour.
+  Choosing the font is half of it. Two things decide, and they are Unicode's
+  own: whether the character is drawn as a picture by default — a rocket is, a
+  heart is not — and whether a variation selector after it overrides that.
+  `wp_segment::drawn_as_emoji` is the first, generated from the character
+  database like everything else there; the layout reads the selector. A run
+  holding an emoji is therefore shaped in pieces, because shaping is a question
+  about one font and the emoji comes from another than the run asked for.
+  A line break had to be fixed for it. A combining mark was folded into "a
+  letter", so a line could break between a character and the selector that says
+  which face of it was meant — which split them into different runs and lost
+  the answer. A mark is now what it is: something that may not begin a line.
+  That is the half of UAX #14's LB9 that can be kept without knowing what the
+  mark is drawn on, and it was wrong for every accent and every vowel sign as
+  well, not only for emoji.
+  A PDF gets the pictures as pictures. There is no outline to fill and no font
+  to embed that would draw one, so an emoji written as text is missing from the
+  page with nothing to say so; it goes in as a small image in the place the
+  glyph would have stood, with the mask that says how see-through it is —
+  without which every emoji would sit in a white square.
+  Noto Color Emoji went into the build image, because none of this can be
+  believed without a font that really does it. The layered side is held to a
+  hand-built `COLR` and `CPAL` instead: there is no layered font to be had on
+  this image, and Segoe UI Emoji belongs to Microsoft.
+  *Not done:* `COLR` version 1 — the gradients, transforms and compositing a
+  newer layered font may use. The list of plain layers is in the same place in
+  both versions, so such a font still draws; what it loses is the shading. That
+  is **E18**.
+  *Not done:* `sbix` and `SVG `, the two other ways a font may hold a colour
+  glyph — Apple's pictures and Adobe's drawings. Neither has a font on this
+  image to be held to, and a reader nobody has ever run is a claim rather than
+  a feature. Also **E18**.
+  *Not done:* a layered emoji in a PDF. The font embeds like any other and the
+  reader draws the glyph the font names as its base, which is one layer of
+  several. Drawing them all means keeping every layer's glyph in the cut-down
+  font and writing one text run per colour — small work, and not work to do
+  blind.
+- [ ] **E18. The rest of what a colour glyph can be.** Three things **E10**
+  left. `COLR` version 1: the gradients, the transforms and the compositing
+  modes a layered glyph may be drawn with, which a font using them loses here
+  and shows flat. `sbix`: Apple's table of pictures per glyph per size, the
+  same idea as `CBDT` with the sizes listed rather than indexed. `SVG `: a
+  drawing per glyph, which needs the drawing language rather than a table —
+  `wp-svg` is already here and would be what reads it. Each needs a font of
+  its kind on the build image to be held to, which is the first thing to
+  settle; and with the layers understood, a layered emoji can go into a PDF as
+  its layers rather than as its base glyph.
 
 ## F — Proofing
 
