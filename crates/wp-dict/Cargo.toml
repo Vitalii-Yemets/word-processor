@@ -1,0 +1,10 @@
+[package]
+name = "wp-dict"
+description = "Reading the open dictionary formats: the word list and the affix rules"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true

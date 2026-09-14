@@ -3191,9 +3191,66 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
 ## F — Proofing
 
-- [ ] **F1. Real dictionaries.** Reading the open dictionary formats — the
+- [x] **F1. Real dictionaries.** Reading the open dictionary formats — the
   affix rules and the word list — so that a language's inflections are known
   rather than a fixed list of words.
+  *Done when:* "She walked quickly to the biggest houses" has nothing underlined
+  in it, and none of those words is in any list.
+  English has about fifty thousand words and about two hundred thousand forms
+  of them. This program held a list and nothing else, so it underlined every
+  plural, every past tense and every comparative anybody wrote — and a checker
+  that underlines correct words teaches the reader to ignore the underlining,
+  which is worse than no checker at all.
+  A real dictionary is two files. The word list says `walk/DSG`: the word, and
+  letters naming the rules it may take. The affix file says what each letter
+  means — rule `G` puts `ing` on the end of anything not ending in `e`. Fifty
+  thousand entries and a hundred rules cover the two hundred thousand forms,
+  and a language with real morphology is possible at all.
+  `crates/wp-dict` reads them. The format is Hunspell's, which is what
+  LibreOffice, Firefox, Chrome and macOS all read and what every free
+  dictionary is published in. A word is checked backwards: looked up as typed,
+  and failing that, every rule that could have produced it is undone — take the
+  ending off, put back what the rule stripped, and ask whether *that* is a word
+  allowed to take the rule. A word may carry a prefix and a suffix at once, and
+  a suffix may carry the right to another suffix, so the undoing goes two deep.
+  The flags that say what a stem is are read too, and each of them is a wrong
+  answer if it is not: a stem that is no word on its own, a spelling the
+  language forbids though a rule would make it, a word that keeps its own case,
+  a word that exists only inside a longer one. So is the rewriting the file
+  asks for before a word is looked up, which every English dictionary uses for
+  one thing — the curly apostrophe a word processor types is the straight one
+  the word list holds, and without it every "don't" anybody writes is
+  underlined.
+  Compounding as far as the simple flags express it, which is what lets German
+  write several nouns as one and have the result be a word.
+  No dictionary is shipped, on exactly the terms no typeface is: they are data
+  with their own licences. The program looks where the machine keeps them —
+  beside itself, or where LibreOffice's are — and takes the one for the
+  language being written in, or the one the reader opens by hand. Where there
+  is none it checks no spelling, which is the honest answer for a program with
+  no words.
+  Two dictionaries went into the build image for the tests, because a reader of
+  this kind cannot be believed against a dictionary written for the test: fifty
+  thousand English stems are asked for one at a time, and the forms of them,
+  and the misspellings that must still be caught.
+  *Not done:* the suggestions. What to offer in place of a word nobody knows is
+  **F2**, and the data it needs — the letters to try, the pairs to swap — is
+  read and kept for it.
+  *Not done:* the compound rules written as patterns rather than as flags,
+  which is how a dictionary says "a digit, then a digit, then `th`". English
+  uses them for the ordinal numbers, so `11th` is underlined and `eleventh` is
+  not. Named as **F7**.
+  *Not done:* dictionaries in an encoding other than UTF-8 or Latin-1. The file
+  says which it is in, and one this cannot read is refused with the encoding
+  named rather than read as rubbish — which would be a dictionary of words
+  nobody ever typed.
+- [ ] **F7. The compound rules.** A dictionary may say how words join as a
+  pattern over flags rather than as a flag on each word: `COMPOUNDRULE n*1t`
+  is what makes `11th` and `21st` right and `11st` wrong. English uses it only
+  for the ordinal numbers; Hungarian and Korean use it for the language. The
+  reader keeps the flags and ignores the patterns, so a word a pattern would
+  allow is underlined. Reading the patterns is a small matcher over the flags
+  of each piece, and the pieces are already found for the simple flags.
 - [ ] **F2. Spelling as Word does it.** As-you-type checking, the wavy line, the
   right-click list of suggestions, add to dictionary, ignore all, custom
   dictionaries, per-language settings, and the settings that turn it off.

@@ -159,8 +159,9 @@ fn whats_new() -> Body {
 
     body.blocks.push(heading(2, "Writing"));
     body.blocks.push(line(
-        "Tracked changes and comments, spelling against a word list you supply, \
-         word count, an accessibility check, and comparing two documents.",
+        "Tracked changes and comments, spelling against whatever dictionary this \
+         machine has, word count, an accessibility check, and comparing two \
+         documents.",
     ));
 
     body.blocks.push(heading(2, "New in this version"));

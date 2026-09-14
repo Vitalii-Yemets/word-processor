@@ -8,6 +8,7 @@ members = [
     "crates/wp-segment",
     "crates/wp-cli",
     "crates/wp-deflate",
+    "crates/wp-dict",
     "crates/wp-docx",
     "crates/wp-font",
     "crates/wp-image",

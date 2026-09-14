@@ -11,6 +11,7 @@ name = "word-processor"
 path = "src/main.rs"
 
 [dependencies]
+wp-dict = { path = "../wp-dict" }
 wp-docx = { path = "../wp-docx" }
 wp-segment = { path = "../wp-segment" }
 wp-layout = { path = "../wp-layout" }

@@ -77,53 +77,65 @@ pub struct Issue {
     pub suggestion: Option<String>,
 }
 
-/// The words a language is known to have.
+/// The words a language is known to have, and the rules for making their
+/// forms.
 ///
-/// Empty until somebody gives it a list, and an empty one checks no spelling
-/// at all — which is the honest thing for a program with no dictionary to do.
+/// Empty until somebody gives it a dictionary, and an empty one checks no
+/// spelling at all — which is the honest thing for a program with none to do.
+/// See [`wp_dict`] for what a real one is and why a word list alone is not it.
 #[derive(Clone, Debug, Default)]
 pub struct Dictionary {
-    words: HashSet<String>,
+    words: wp_dict::Dictionary,
+    /// What the reader has added by hand, which outlives a change of
+    /// dictionary because it is theirs and not the language's.
+    own: HashSet<String>,
 }
 
 impl Dictionary {
-    /// Reads a list of words, one to a line.
+    /// Reads a plain list of words, one to a line.
     ///
-    /// Anything after a slash on a line is ignored, so a Hunspell dictionary's
-    /// word list can be used as it stands — the affix rules after the slash are
-    /// not applied, which means some forms of a word will be missed, and that
-    /// is written here rather than found out.
+    /// What somebody's own list of names and jargon looks like. A real
+    /// dictionary is two files and is read by [`Dictionary::read`].
     #[must_use]
     pub fn parse(text: &str) -> Self {
-        let words = text
-            .lines()
-            .map(|line| line.split('/').next().unwrap_or_default().trim())
-            .filter(|word| !word.is_empty() && !word.chars().all(|c| c.is_ascii_digit()))
-            .map(str::to_lowercase)
-            .collect();
-        Self { words }
+        Self { words: wp_dict::Dictionary::from_list(text), own: HashSet::new() }
     }
 
-    /// Whether the list has anything in it.
+    /// Reads a real dictionary: the word list and the affix rules that say
+    /// what forms its words take.
+    pub fn read(affix: &[u8], words: &[u8]) -> Result<Self, wp_dict::Error> {
+        Ok(Self::from_words(wp_dict::Dictionary::read(affix, words)?))
+    }
+
+    /// The same from a dictionary already read, which is what a program that
+    /// found one on the machine has.
+    #[must_use]
+    pub fn from_words(words: wp_dict::Dictionary) -> Self {
+        Self { words, own: HashSet::new() }
+    }
+
+    /// Whether anything is known at all.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.words.is_empty()
+        self.words.is_empty() && self.own.is_empty()
     }
 
+    /// How many stems are held. Not how many words are known, which is a far
+    /// larger number and is what the rules are for.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.words.len()
+        self.words.stems() + self.own.len()
     }
 
-    /// Whether a word is in the list.
+    /// Whether a word is one the language has.
     #[must_use]
     pub fn knows(&self, word: &str) -> bool {
-        self.words.contains(&word.to_lowercase())
+        self.own.contains(&word.to_lowercase()) || self.words.spelled(word)
     }
 
     /// Adds a word, as "Add to Dictionary" does.
     pub fn add(&mut self, word: &str) {
-        self.words.insert(word.to_lowercase());
+        self.own.insert(word.to_lowercase());
     }
 }
 
@@ -462,5 +474,64 @@ mod tests {
         for kind in [Kind::RepeatedWord, Kind::MissingCapital, Kind::DoubleSpace] {
             assert!(!kind.is_spelling(), "{}", kind.message());
         }
+    }
+}
+
+/// What a real dictionary changes about the checking.
+///
+/// The rest of this file's tests are held to a word list written for them.
+/// These are held to the dictionary the machine has, because the whole point
+/// of reading the affix rules is what happens to words nobody listed.
+#[cfg(test)]
+mod against_a_real_dictionary {
+    use super::{check_paragraph, Dictionary, Kind};
+
+    fn english() -> Dictionary {
+        let path = std::path::Path::new("/usr/share/hunspell/en_US.dic");
+        let words = wp_dict::read_pair(path).unwrap_or_else(|error| {
+            panic!(
+                "cannot read {}: {error}\n\
+                 the build image should install hunspell-en-us",
+                path.display()
+            )
+        });
+        Dictionary::from_words(words)
+    }
+
+    /// The words a paragraph is marked for, in order.
+    fn marked(text: &str, dictionary: &Dictionary) -> Vec<String> {
+        let mut out = Vec::new();
+        check_paragraph(0, text, dictionary, &mut out);
+        out.iter()
+            .filter(|issue| issue.kind == Kind::UnknownWord)
+            .map(|issue| issue.text.clone())
+            .collect()
+    }
+
+    #[test]
+    fn the_forms_of_a_word_are_not_underlined() {
+        // Every one of these is a form no word list holds, and a checker
+        // without the rules underlines all of them — which teaches the reader
+        // to ignore the underlining, and that is worse than no checker.
+        let dictionary = english();
+        let text = "She walked quickly to the biggest houses and tried opening them.";
+        assert_eq!(marked(text, &dictionary), Vec::<String>::new());
+    }
+
+    #[test]
+    fn what_is_really_wrong_is_still_underlined() {
+        let dictionary = english();
+        let text = "I definately recieve teh letter.";
+        assert_eq!(marked(text, &dictionary), vec!["definately", "recieve", "teh"]);
+    }
+
+    #[test]
+    fn a_word_added_by_hand_outlives_the_dictionary_it_was_added_to() {
+        // "Add to Dictionary" is the reader's, not the language's: it must
+        // still hold when another language's dictionary is loaded.
+        let mut dictionary = english();
+        assert_eq!(marked("Grzegorz wrote it.", &dictionary), vec!["Grzegorz"]);
+        dictionary.add("Grzegorz");
+        assert_eq!(marked("Grzegorz wrote it.", &dictionary), Vec::<String>::new());
     }
 }

@@ -6,6 +6,7 @@ version = 3
 name = "wp-app"
 version = "0.0.1"
 dependencies = [
+ "wp-dict",
  "wp-docx",
  "wp-image",
  "wp-layout",
@@ -40,9 +41,14 @@ name = "wp-deflate"
 version = "0.0.1"
 
 [[package]]
+name = "wp-dict"
+version = "0.0.1"
+
+[[package]]
 name = "wp-docx"
 version = "0.0.1"
 dependencies = [
+ "wp-dict",
  "wp-image",
  "wp-normal",
  "wp-opc",

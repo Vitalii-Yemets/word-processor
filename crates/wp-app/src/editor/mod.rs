@@ -280,6 +280,10 @@ pub struct Editor {
     show_proofing: bool,
     issues: Vec<wp_docx::proofing::Issue>,
     dictionary: wp_docx::proofing::Dictionary,
+    /// Which dictionary was found on this machine, and whether looking for
+    /// one has been done at all.
+    dictionary_name: Option<String>,
+    dictionary_searched: bool,
     /// The mistake a correction is being chosen for.
     pending_issue: Option<wp_docx::proofing::Issue>,
     /// The people a mail merge is for, read from the file beside the letter.
@@ -571,6 +575,8 @@ impl Editor {
             show_proofing: true,
             issues: Vec::new(),
             dictionary: wp_docx::proofing::Dictionary::default(),
+            dictionary_name: None,
+            dictionary_searched: false,
             pending_issue: None,
             recipients: wp_docx::merge::Recipients::default(),
             recipient_file: None,

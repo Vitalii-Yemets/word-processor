@@ -26,6 +26,10 @@ impl Editor {
             self.issues = Vec::new();
             return;
         }
+        // Looked for the first time anything is checked rather than at
+        // startup: reading fifty thousand words is not work to do before the
+        // window is even shown.
+        self.find_dictionary();
         self.issues = self.document.proofing_issues(&self.dictionary);
     }
 
@@ -137,15 +141,82 @@ impl Editor {
         }
     }
 
-    /// Reads a list of words to check spelling against.
+    /// Finds a dictionary on this machine for the language being written in.
+    ///
+    /// No dictionary is shipped with this program: they are data with their own
+    /// licences, exactly as typefaces are. What can be checked is whatever the
+    /// machine already has — on Linux whatever was installed beside
+    /// LibreOffice, on Windows whatever the reader has put beside the program —
+    /// and nothing at all where there is none, which is the honest answer for a
+    /// program with no words.
+    pub(super) fn find_dictionary(&mut self) {
+        if self.dictionary_searched {
+            return;
+        }
+        self.dictionary_searched = true;
+
+        let installed = wp_dict::installed();
+        if installed.is_empty() {
+            return;
+        }
+
+        // The language the writing is in, where one of them is for it. The
+        // tag is written `en-GB` in a document and `en_GB` in a file name, and
+        // a dictionary for the language without the country will do where
+        // there is none for the country.
+        let wanted = self.document.language_here().replace('-', "_").to_lowercase();
+        let base = wanted.split('_').next().unwrap_or_default().to_owned();
+        let chosen = installed
+            .iter()
+            .find(|(name, _)| name.to_lowercase() == wanted)
+            .or_else(|| {
+                installed.iter().find(|(name, _)| {
+                    name.split('_').next().unwrap_or_default().eq_ignore_ascii_case(&base)
+                })
+            })
+            .or_else(|| installed.first());
+
+        let Some((name, path)) = chosen else { return };
+        match wp_dict::read_pair(path) {
+            Ok(words) => {
+                self.dictionary = Dictionary::from_words(words);
+                self.dictionary_name = Some(name.clone());
+            }
+            Err(_) => self.dictionary_name = None,
+        }
+    }
+
+    /// Opens a dictionary by hand.
+    ///
+    /// A real one is two files — the word list and the affix rules that say
+    /// what forms its words take — and choosing the word list finds the rules
+    /// beside it. A plain list of words is still read as a list of words,
+    /// because somebody's own list of names and jargon is exactly that.
     pub(super) fn load_dictionary(&mut self) -> Response {
         let filters = [
-            FileFilter { label: "Word lists", pattern: "*.dic;*.txt" },
+            FileFilter { label: "Dictionaries", pattern: "*.dic;*.txt" },
             FileFilter { label: "All files", pattern: "*.*" },
         ];
-        let Some(path) = wp_shell::dialog::open_file("Open a word list", &filters) else {
+        let Some(path) = wp_shell::dialog::open_file("Open a dictionary", &filters) else {
             return Response::Ignored;
         };
+
+        self.dictionary_searched = true;
+        let rules = path.with_extension("aff");
+        if rules.exists() {
+            return match wp_dict::read_pair(&path) {
+                Ok(words) => {
+                    self.dictionary = Dictionary::from_words(words);
+                    self.dictionary_name =
+                        path.file_stem().map(|name| name.to_string_lossy().into_owned());
+                    self.recheck_proofing();
+                    self.needs_redraw = true;
+                    let name = self.dictionary_name.clone().unwrap_or_default();
+                    self.report(&format!("{name}: {} words and their forms", self.dictionary.len()))
+                }
+                Err(error) => self.report(&format!("{error}")),
+            };
+        }
 
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -153,6 +224,7 @@ impl Editor {
         };
         let text = String::from_utf8_lossy(&bytes).into_owned();
         self.dictionary = Dictionary::parse(&text);
+        self.dictionary_name = None;
         self.recheck_proofing();
         self.needs_redraw = true;
 
