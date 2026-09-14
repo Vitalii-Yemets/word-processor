@@ -199,7 +199,7 @@ part of **C12**.
 | Word List | reads a dictionary from a file | ≈ Word manages several custom dictionaries in a dialog |
 | Word Count | says how many words | ≈ Word's dialog counts pages, characters, paragraphs and lines |
 | Check Accessibility | lists what would stop somebody reading it | ✓ |
-| Translate | translates the selection | ≈ Word translates through a service; this does what it can offline |
+| Translate | Translate Selection: what the words are in another language, from a bilingual dictionary on the machine; Translate Document: with a glossary; Translator Preferences: which language | ≈ Word translates through a service; this does what can be done without one |
 | Language | sets the language of the selection | ≈ Word has proofing language and language preferences |
 | New, Delete, Previous, Next, Show Comments | the comment machinery | ✓ |
 | Track Changes | records what is edited | ≈ Word's button drops a menu, and can lock tracking with a password |

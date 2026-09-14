@@ -207,7 +207,7 @@ impl Editor {
 
 /// A word given the case of another: capitalised where it was, shouted where
 /// it was.
-fn match_case(word: &str, like: &str) -> String {
+pub(super) fn match_case(word: &str, like: &str) -> String {
     let shouted = like.chars().count() > 1 && like.chars().all(|c| !c.is_lowercase());
     let capital = like.chars().next().is_some_and(char::is_uppercase);
     if shouted {

@@ -1300,6 +1300,7 @@ impl Editor {
             Choice::Forward => return self.open_arrange(true),
             Choice::Backward => return self.open_arrange(false),
             Choice::Markup => return self.open_markup_menu(),
+            Choice::Translate => return self.open_translate_menu(),
             Choice::BorderStyle => return self.open_border_styles(),
             Choice::Font => Command::ChooseFont,
             Choice::Size => Command::ChooseSize,
@@ -1324,6 +1325,7 @@ impl Editor {
             Choice::MergeField => Command::InsertMergeField,
             Choice::Correction => Command::Spelling,
             Choice::Synonym => Command::Thesaurus,
+            Choice::Translation => Command::Translate,
             Choice::Accessibility => Command::CheckAccessibility,
             // The menu the right button opens hangs where the pointer was, not
             // under a button of the ribbon.
@@ -1453,6 +1455,8 @@ impl Editor {
             | Choice::MergeField
             | Choice::Correction
             | Choice::Synonym
+            | Choice::Translate
+            | Choice::Translation
             | Choice::Accessibility
             | Choice::Context
             | Choice::Group
@@ -1550,6 +1554,8 @@ impl Editor {
             Choice::MergeField => self.choose_merge_field(index),
             Choice::Correction => self.choose_correction(index),
             Choice::Synonym => self.take_synonym(index),
+            Choice::Translate => self.choose_translate(index),
+            Choice::Translation => self.take_translation(index),
             Choice::Accessibility => self.choose_accessibility(index),
             Choice::Context => self.choose_context_entry(index),
             Choice::Group => self.choose_group_command(index),

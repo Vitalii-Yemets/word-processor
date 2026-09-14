@@ -61,6 +61,8 @@ pub(super) enum Asking {
     PageBorders,
     /// Which corrections are made as text is typed.
     AutoCorrect,
+    /// Which language to translate into.
+    Translator,
     /// The words those corrections must leave alone, which is a dialog of its
     /// own behind the one above.
     Exceptions,
@@ -152,6 +154,7 @@ impl Editor {
             Some(Asking::Formula) => self.apply_formula(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),
             Some(Asking::AutoCorrect) => self.apply_autocorrect_dialog(&dialog),
+            Some(Asking::Translator) => self.apply_translator_preferences(&dialog),
             Some(Asking::PageBorders) => self.apply_page_borders(&dialog),
             // Word's Symbol dialog is answered by its Insert button rather
             // than by OK, so there is nothing left to do when it shuts.

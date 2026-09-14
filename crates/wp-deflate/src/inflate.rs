@@ -253,6 +253,40 @@ pub fn inflate_limited(data: &[u8], max_output: usize) -> Result<Vec<u8>, Error>
     Ok(out)
 }
 
+/// Decompresses one piece of a stream that was flushed in pieces.
+///
+/// A dictzip file — the `.dict.dz` a dictd dictionary is kept in — is one
+/// gzip stream written with a full flush every few kilobytes, so that a piece
+/// of it can be inflated on its own without inflating everything before it.
+/// A piece has no final block: it ends where the flush left it, at an empty
+/// stored block. So the blocks are read until the piece has given the bytes
+/// it holds, or the input runs out — either of which is the end of it.
+pub fn inflate_piece(data: &[u8], holds: usize) -> Result<Vec<u8>, Error> {
+    let mut reader = BitReader::new(data);
+    let mut out = Vec::with_capacity(holds);
+
+    while out.len() < holds && reader.byte_position() < data.len() {
+        let is_final = reader.read(1)? == 1;
+        match reader.read(2)? {
+            0 => inflate_stored(&mut reader, &mut out, holds)?,
+            1 => {
+                let (literal, distance) = fixed_trees();
+                inflate_block(&mut reader, &mut out, &literal, &distance, holds)?;
+            }
+            2 => {
+                let (literal, distance) = read_dynamic_trees(&mut reader)?;
+                inflate_block(&mut reader, &mut out, &literal, &distance, holds)?;
+            }
+            _ => return Err(Error::ReservedBlockType),
+        }
+        if is_final {
+            break;
+        }
+    }
+
+    Ok(out)
+}
+
 /// Stored block: align to a byte, read LEN/~LEN, copy the bytes verbatim.
 fn inflate_stored(
     reader: &mut BitReader<'_>,

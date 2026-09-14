@@ -44,6 +44,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bilingual;
 pub mod thesaurus;
 
 use std::collections::{HashMap, HashSet};

@@ -305,6 +305,13 @@ pub struct Editor {
     /// word, or nothing for a heading; and which word that is.
     pending_synonyms: Vec<Option<String>>,
     pending_word: Option<(usize, core::ops::Range<usize>)>,
+    /// The bilingual dictionaries opened so far, by the languages each is from
+    /// and to; nothing where there is none. See [`translate`].
+    bilinguals: std::collections::HashMap<(String, String), Option<wp_dict::bilingual::Bilingual>>,
+    /// What each line of the list of meanings puts in place of which word.
+    pending_translations: Vec<Option<(usize, core::ops::Range<usize>, String)>>,
+    /// The languages the Translator Preferences dialog offers, in its order.
+    pending_targets: Vec<String>,
     /// The mistake a correction is being chosen for.
     pending_issue: Option<wp_docx::proofing::Issue>,
     /// The people a mail merge is for, read from the file beside the letter.
@@ -606,6 +613,9 @@ impl Editor {
             thesauri: std::collections::HashMap::new(),
             pending_synonyms: Vec::new(),
             pending_word: None,
+            bilinguals: std::collections::HashMap::new(),
+            pending_translations: Vec::new(),
+            pending_targets: Vec::new(),
             pending_issue: None,
             recipients: wp_docx::merge::Recipients::default(),
             recipient_file: None,

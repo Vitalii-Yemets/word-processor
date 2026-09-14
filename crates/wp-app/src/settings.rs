@@ -68,6 +68,8 @@ pub struct Settings {
     pub white_space: Option<bool>,
     /// What unit measurements are shown in, by name. See [`crate::measure`].
     pub unit: Option<String>,
+    /// Which language Translate translates into, as a two-letter code.
+    pub translate_to: Option<String>,
     /// Which corrections are made as text is typed, and the replacements.
     ///
     /// Kept here because it is about the person and not about the document:
@@ -205,6 +207,7 @@ impl Settings {
                 "gridlines" => settings.gridlines = parse_flag(value),
                 "white-space" => settings.white_space = parse_flag(value),
                 "unit" => settings.unit = Some(value.to_owned()),
+                "translate-to" => settings.translate_to = Some(value.to_owned()),
                 // Says that the replacements below are the whole list. It has
                 // to be said out loud, because a person who deletes the last
                 // replacement leaves a file with nothing to read, and nothing
@@ -309,6 +312,9 @@ impl Settings {
         }
         if let Some(unit) = &self.unit {
             write("unit", unit.clone());
+        }
+        if let Some(to) = &self.translate_to {
+            write("translate-to", to.clone());
         }
         if let Some(name) = &self.theme_colors {
             write("theme-colors", name.clone());
@@ -472,6 +478,7 @@ mod tests {
             gridlines: Some(true),
             white_space: Some(false),
             unit: Some("centimetres".to_owned()),
+            translate_to: Some("de".to_owned()),
             autocorrect: Some(crate::autocorrect::AutoCorrect::default()),
             recent: vec![
                 "C:\\Documents\\Report, final.docx".to_owned(),

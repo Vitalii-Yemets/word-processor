@@ -43,6 +43,9 @@ version = "0.0.1"
 [[package]]
 name = "wp-dict"
 version = "0.0.1"
+dependencies = [
+ "wp-deflate",
+]
 
 [[package]]
 name = "wp-docx"

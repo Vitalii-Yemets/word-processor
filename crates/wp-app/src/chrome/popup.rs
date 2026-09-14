@@ -35,6 +35,10 @@ pub enum Choice {
     AutoCorrectOption,
     /// The words that mean what a word means, by meaning.
     Synonym,
+    /// Translate Selection, Translate Document, Translator Preferences.
+    Translate,
+    /// What the words selected are in another language, sense by sense.
+    Translation,
 
     // --- What the buttons with an arrow drop -------------------------------
     /// Where an alignment tab goes.

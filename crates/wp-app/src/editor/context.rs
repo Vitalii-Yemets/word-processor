@@ -242,6 +242,10 @@ impl Editor {
             }
         }
 
+        // And what it is in another language, which Word offers here too.
+        entries.push(Entry::line());
+        entries.push(Entry::item(Command::TranslateSelection, "Translate", Icon::Translate));
+
         entries.extend([
             Entry::line(),
             Entry::item(Command::ChooseFont, "Font…", Icon::Letter),

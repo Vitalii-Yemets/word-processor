@@ -261,6 +261,17 @@ impl Editor {
                 self.relayout();
                 self.open_correction_options();
             }
+            // A word looked up in the other language, with the list open, for
+            // the same reason again.
+            "translate" => {
+                self.ribbon.tab = crate::chrome::ribbon::Tab::Review;
+                let (width, height) = (self.view_width as usize, self.view_height as usize);
+                self.draw(width, height);
+                let text = self.document.paragraph_text(3).unwrap_or_default();
+                let at = text.find("text").unwrap_or(0);
+                self.document.set_caret(wp_docx::TextPosition::new(3, at + 1));
+                self.translate_selection();
+            }
             "table" => {
                 self.document.insert_table(3, 3);
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;

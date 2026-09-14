@@ -257,6 +257,9 @@ static MENUS: &[Menu] = &[
     // Word's Show Markup is a plain dropdown: there is no such thing as "the
     // markup", only the three kinds of it, and each is switched on its own.
     Menu { command: Command::ShowMarkup, choice: Choice::Markup, split: false },
+    // Word's Translate is a plain dropdown too: the selection, the document,
+    // or the preferences, and nothing the face could do on its own.
+    Menu { command: Command::Translate, choice: Choice::Translate, split: false },
     // Word's two Arrange buttons: the face moves the drawing one place through
     // the pile, and the arrow beside it offers the two longer moves.
     Menu { command: Command::BringForward, choice: Choice::Forward, split: true },
@@ -1194,6 +1197,8 @@ impl Ribbon {
                     | Choice::TextEffect
                     | Choice::Envelope
                     | Choice::Synonym
+                    | Choice::Translate
+                    | Choice::Translation
                     | Choice::Label => String::new(),
                 };
                 let line = engine.simple_line(&text, left + 6.0, top + 17.0, 8.5, color);

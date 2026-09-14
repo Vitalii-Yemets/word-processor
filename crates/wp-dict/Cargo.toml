@@ -6,5 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[dependencies]
+# Workspace-internal only: the dictzip a bilingual dictionary is kept in is
+# one gzip stream, and inflating it is what wp-deflate is for.
+wp-deflate = { path = "../wp-deflate" }
+
 [lints]
 workspace = true

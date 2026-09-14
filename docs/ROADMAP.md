@@ -3430,8 +3430,47 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   once; and its Actions tab. The box appears when the pointer rests on the
   word; Word shows a thin blue bar first and the box when the pointer reaches
   the bar, which is one hover more than this does.
-- [ ] **F6. Translation.** What Word's Translate does, in so far as it can be
+- [x] **F6. Translation.** What Word's Translate does, in so far as it can be
   done without sending the document to somebody else's computer.
+  Word's button is a menu of three — Translate Selection, Translate Document,
+  Translator Preferences — and all three send the text to Microsoft's servers.
+  This program talks to nobody, so each does what can be done on the machine,
+  and the module says why at the top.
+  *Done:* `wp-dict::bilingual` reads a bilingual dictionary in dictd's
+  format, which is what the free ones — FreeDict's, from the Ding and
+  Wiktionary lists — are published in: the `.index` of headword, offset and
+  length in dictd's base 64, and the `.dict.dz`, a gzip stream flushed every
+  few kilobytes with a table of the pieces in its header, so an entry is read
+  by inflating its piece and not the fifteen megabytes before it
+  (`wp_deflate::inflate_piece`, a piece having no final block). An entry is
+  read as the Ding dictionaries write one — the translations with their part
+  of speech in angle brackets and their field in square ones, the note, the
+  examples in quotes — and as it stands where a dictionary is written some
+  other way. `installed()` finds them where dictd keeps them, by the two
+  three-letter codes in the name, given back as the two-letter ones the
+  document's languages use. The build image has FreeDict's English-German
+  dictionary, on the same terms as the fonts and the spelling dictionaries:
+  test data, never shipped; the real-file tests read entries from all over
+  the file, including across piece boundaries.
+  Translate Selection lists, under the button, what the selection is in the
+  other language: the stretch as a whole where the dictionary has it ("give
+  up"), else word by word, each word a heading with its senses under it —
+  translation, kind of word, the dictionary's remark — and choosing a sense
+  puts it in place of that word, in the word's case. The language it is from
+  is the language of the text; the language it is to is what Translator
+  Preferences says, from among the dictionaries the machine has, kept in the
+  settings file, or the first dictionary from that language. No dictionary
+  says so, and says which there are. Translate is on the right-click menu
+  too, where Word has it. Translate Document is the glossary — a file of
+  `source = target` lines applied through the document, which is the part of
+  translating a document a machine does reliably — and says so.
+  `--picture … translate` draws the list.
+  *Not done, and named here:* machine translation of sentences, which
+  nothing on a machine can do without a model, and which this program would
+  not do by posting the document somewhere; a dictionary for another pair on
+  the build image, which is the same want as the spelling dictionaries'; the
+  Translator pane as a pane, with its own text box, for the reason **F4**
+  gives for the thesaurus.
 
 ## G — The files Word can open
 
