@@ -22,7 +22,9 @@ FROM rust:1.98.0-bookworm
 # not be looked at, and the sample document's Korean line drew nothing at all.
 # The URW set is the other kind of font altogether: PostScript outlines in a
 # CFF table rather than quadratic ones in glyf, which is what every .otf file
-# holds and what nothing on this image had until they were added.
+# holds and what nothing on this image had until they were added. Inter is a
+# variable font - one file that is a whole family, with axes and deltas rather
+# than one weight - and nothing else here is.
 # None of them is linked into the product or shipped with it; the program reads
 # whatever fonts the machine it runs on has.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,6 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-ipafont-gothic \
         fonts-nanum \
         fonts-urw-base35 \
+        fonts-inter-variable \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add x86_64-pc-windows-gnu \

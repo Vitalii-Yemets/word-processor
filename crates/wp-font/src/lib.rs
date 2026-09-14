@@ -31,9 +31,11 @@ mod cmap;
 mod glyf;
 mod name;
 mod read;
+mod vary;
 
 pub use cmap::CharacterMap;
 pub use glyf::{Outline, PathCommand, Point};
+pub use vary::{Axis, Instance};
 
 use read::Reader;
 
@@ -105,6 +107,18 @@ pub struct TableRange {
 /// hundreds of megabytes; the mapping alone is a few kilobytes.
 pub fn character_map_from_table(table: &[u8]) -> Result<CharacterMap, Error> {
     CharacterMap::parse(table, 0)
+}
+
+/// Reads the axes and named instances of a variable font from its own tables.
+///
+/// The catalogue reads a few tables of each font file rather than the whole of
+/// it, and a variable font is several faces in one file: this is how it finds
+/// out which, without loading it.
+#[must_use]
+pub fn variations_from_tables(fvar: &[u8], name_table: &[u8]) -> (Vec<Axis>, Vec<Instance>) {
+    let names = |id: u16| name::find(name_table, 0, id);
+    let read = vary::Axes::parse(fvar, &names).unwrap_or_default();
+    (read.axes, read.instances)
 }
 
 /// Reads the family name out of a `name` table on its own.
@@ -201,6 +215,15 @@ pub struct Font<'a> {
     /// PostScript outlines, and whether they are the newer version of the
     /// table. A font has one kind of outline or the other, never both.
     cff: Option<(TableRange, bool)>,
+    /// The tables of a variable font: which axes it has, how they bend, and
+    /// how the outlines and the widths move along them.
+    fvar: Option<TableRange>,
+    avar: Option<TableRange>,
+    gvar: Option<TableRange>,
+    hvar: Option<TableRange>,
+    /// Where this font has been set on its axes, already turned into the -1 to
+    /// 1 the deltas are written against. `None` means where it was drawn.
+    variations: Option<Vec<f32>>,
     kern: Option<TableRange>,
     /// Glyph substitution and positioning, which shaping needs.
     gsub: Option<TableRange>,
@@ -275,6 +298,10 @@ impl<'a> Font<'a> {
         let mut loca = None;
         let mut glyf = None;
         let mut cff = None;
+        let mut fvar = None;
+        let mut avar = None;
+        let mut gvar = None;
+        let mut hvar = None;
         let mut cmap = None;
         let mut kern = None;
         let mut gsub = None;
@@ -304,6 +331,10 @@ impl<'a> Font<'a> {
                 b"loca" => loca = Some(range),
                 b"glyf" => glyf = Some(range),
                 b"CFF " | b"CFF2" => cff = Some((range, tag == *b"CFF2")),
+                b"fvar" => fvar = Some(range),
+                b"avar" => avar = Some(range),
+                b"gvar" => gvar = Some(range),
+                b"HVAR" => hvar = Some(range),
                 b"cmap" => cmap = Some(range),
                 b"kern" => kern = Some(range),
                 b"GSUB" => gsub = Some(range),
@@ -356,6 +387,11 @@ impl<'a> Font<'a> {
             loca,
             glyf,
             cff,
+            fvar,
+            avar,
+            gvar,
+            hvar,
+            variations: None,
             kern,
             gsub,
             gpos,
@@ -403,9 +439,21 @@ impl<'a> Font<'a> {
     }
 
     /// How far the pen moves after drawing a glyph, in font units.
+    ///
+    /// A variable font set away from where it was drawn moves this too: a
+    /// heavier letter is a wider one, and text measured without that is text
+    /// set at the wrong width.
     #[must_use]
     pub fn advance(&self, glyph: GlyphId) -> u16 {
-        self.advance_checked(glyph).unwrap_or(0)
+        let width = f32::from(self.advance_checked(glyph).unwrap_or(0));
+        (width + self.advance_delta(glyph)).max(0.0).round() as u16
+    }
+
+    /// How much wider or narrower this glyph is at this font's setting.
+    fn advance_delta(&self, glyph: GlyphId) -> f32 {
+        let Some(coordinates) = self.variations.as_ref() else { return 0.0 };
+        let Some(table) = self.raw_table(self.hvar) else { return 0.0 };
+        vary::Advances::parse(table).map_or(0.0, |advances| advances.delta(glyph, coordinates))
     }
 
     fn advance_checked(&self, glyph: GlyphId) -> Option<u16> {
@@ -422,6 +470,88 @@ impl<'a> Font<'a> {
         Reader::at(self.data, offset).ok()?.u16().ok()
     }
 
+    /// The axes this font can be set along, if it is a variable one.
+    ///
+    /// Empty for an ordinary font, which is one typeface and not a family of
+    /// them.
+    #[must_use]
+    pub fn axes(&self) -> Vec<vary::Axis> {
+        self.axes_and_instances().axes
+    }
+
+    /// The places on those axes the designer gave names to, which is what a
+    /// font menu lists: "Thin", "SemiBold", "Condensed Black".
+    #[must_use]
+    pub fn instances(&self) -> Vec<vary::Instance> {
+        self.axes_and_instances().instances
+    }
+
+    /// Whether the file is a family rather than a typeface.
+    #[must_use]
+    pub fn is_variable(&self) -> bool {
+        self.fvar.is_some()
+    }
+
+    /// Whether this font has been set anywhere but where it was drawn.
+    #[must_use]
+    pub fn is_varied(&self) -> bool {
+        self.variations.is_some()
+    }
+
+    /// The same font set to a place on its axes, given in the axes' own units
+    /// and in their own order — which is the order [`Font::axes`] gives them
+    /// and the order an instance's coordinates are in.
+    ///
+    /// An ordinary font comes back unchanged: there is nowhere to set it to.
+    #[must_use]
+    pub fn varied(&self, coordinates: &[f32]) -> Self {
+        let axes = self.axes_and_instances();
+        if axes.axes.is_empty() {
+            return self.clone();
+        }
+        let normalized = axes.normalize(coordinates, self.raw_table(self.avar));
+        // Where every axis is left at its default the font is the font, and
+        // saying otherwise would cost every glyph a search through the deltas.
+        let moved = normalized.iter().any(|value| *value != 0.0);
+        Self { variations: moved.then_some(normalized), ..self.clone() }
+    }
+
+    /// The axes and instances, read afresh. Both are asked for once per font
+    /// rather than per glyph, so the table is not kept parsed.
+    fn axes_and_instances(&self) -> vary::Axes {
+        let Some(table) = self.raw_table(self.fvar) else { return vary::Axes::default() };
+        let names = |id: u16| self.name(id);
+        vary::Axes::parse(table, &names).unwrap_or_default()
+    }
+
+    /// How far each piece of a composite glyph moves at this font's setting.
+    ///
+    /// A composite is drawn from other glyphs, and its own deltas move where
+    /// each of them goes rather than any point inside them: as a letter grows
+    /// heavier its accent moves up to clear it.
+    pub(crate) fn component_deltas(&self, glyph: GlyphId, offsets: &[Point]) -> Option<Vec<Point>> {
+        let coordinates = self.variations.as_ref()?;
+        let table = self.raw_table(self.gvar)?;
+        // No contours, and so nothing worked out for the pieces left alone:
+        // that is what the format says for a composite.
+        vary::Outlines::parse(table).ok()?.deltas(glyph, coordinates, offsets, &[])
+    }
+
+    /// How far each point of a glyph moves at this font's setting of the axes.
+    ///
+    /// `None` where nothing moves, which is every glyph of an ordinary font and
+    /// most glyphs of a variable one at its default.
+    pub(crate) fn point_deltas(
+        &self,
+        glyph: GlyphId,
+        points: &[Point],
+        ends: &[usize],
+    ) -> Option<Vec<Point>> {
+        let coordinates = self.variations.as_ref()?;
+        let table = self.raw_table(self.gvar)?;
+        vary::Outlines::parse(table).ok()?.deltas(glyph, coordinates, points, ends)
+    }
+
     /// The outline of a glyph, in font units.
     ///
     /// The same commands whichever kind of outline the font keeps: a caller
@@ -435,7 +565,7 @@ impl<'a> Font<'a> {
                 .get(range.offset..range.offset + range.length)
                 .ok_or(Error::OutOfBounds)?;
             let table = if second { cff::Cff::parse2(data)? } else { cff::Cff::parse(data)? };
-            return table.outline(glyph);
+            return table.outline(glyph, self.variations.as_deref().unwrap_or(&[]));
         }
         if self.glyf.is_none() || self.loca.is_none() {
             return Err(Error::UnsupportedOutlineFormat);
@@ -540,6 +670,13 @@ impl<'a> Font<'a> {
         }
 
         None
+    }
+
+    /// One string of the `name` table, by the number a table refers to it by.
+    #[must_use]
+    pub fn name(&self, id: u16) -> Option<String> {
+        let range = self.name?;
+        name::find(self.data, range.offset, id)
     }
 
     /// The family name, as the font declares it.

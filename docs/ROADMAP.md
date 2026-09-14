@@ -113,8 +113,12 @@ the system, which is what Word does too.
 Outlines are read from both tables a font may keep them in: `glyf` and `CFF`,
 the quadratic kind and the PostScript one.
 
-*Not done:* variable fonts and colour and bitmap glyph tables — items **E9** and
-**E10** — and cutting a PostScript font down for a PDF, which is **E17**.
+A variable font — one file that is a whole family — is read as the family it is:
+the axes, the named instances, and the deltas that move the outlines and the
+widths along them.
+
+*Not done:* colour and bitmap glyph tables, which is item **E10**, and cutting a
+PostScript font down for a PDF, which is **E17**.
 
 ## Stage 4 — Text engine — the part every document needs ✅
 
@@ -3063,7 +3067,59 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   charstrings that are wanted, following the subroutines they call, renumbering
   what is left against the bias, and writing the INDEXes and dictionaries back
   out. The glyph numbering must not move, because the page refers to it.
-- [ ] **E9. Variable fonts.** The axes, the named instances, and the deltas.
+- [x] **E9. Variable fonts.** The axes, the named instances, and the deltas.
+  *Done when:* a document set in a weight that exists only as a place on an
+  axis is drawn at that weight, and measured at it.
+  A variable font is one file that is a whole family. It has axes — weight,
+  width, slant, optical size — and a pile of deltas saying how every point of
+  every glyph moves as each axis is turned, so the file holds every weight
+  between Thin and Black rather than nine of them. Windows ships several and
+  every font Google Fonts serves is one. This program read the outlines the
+  designer happened to draw and ignored the rest: a document set in Thin came
+  out Regular, and nothing said so.
+  `crates/wp-font/src/vary.rs` reads the lot. `fvar` names the axes and the
+  named instances — the places the designer thought worth a name, which is what
+  a font menu lists. `avar` bends an axis between its ends, so that the middle
+  of Weight is where the designer says rather than halfway. `gvar` holds the
+  deltas for the outlines. `HVAR` holds them for the advance widths, because a
+  heavier letter is a wider letter and text measured without that breaks its
+  lines in the wrong places. And `CFF2`'s `blend`, which was reading its
+  operands and throwing them away, now spends them.
+  Two parts of it are not simply reading. A delta is not stored for every
+  point: a font stores them where the shape needs them and leaves the rest to
+  be worked out from their neighbours, within one contour, each coordinate on
+  its own. Get that wrong and a letter tears open at every point the font did
+  not trouble to mention. And a delta does not apply everywhere: each belongs to
+  a region of the axes — from here, peaking there, to there — and how much of it
+  applies is a product across the axes of how far in the setting is. Both are
+  here, and both are held to a real font rather than to a reading of the table.
+  A composite letter varies twice over. Each piece varies as a glyph of its own,
+  and the composite has deltas saying where each piece then goes — as a letter
+  grows heavier its accent moves up to clear it. A glyph also stops being the
+  size it says it is once its points move, so a varied one is measured rather
+  than believed.
+  The catalogue lists every named instance as a face. That is what makes a
+  document work: it asks for "Inter SemiBold", which is a place on an axis and
+  not a file, and Word lists them the same way. The style is read off the
+  instance's own name rather than off the file's flags, because a font with a
+  slant axis is upright where it stands and still holds an instance called
+  Italic.
+  Inter went into the build image for it: nothing else there is a variable font,
+  and nothing about this can be believed without one. Nine weights of it are
+  drawn in a test, every glyph at every named instance, and the widths are held
+  to grow with the weight. `CFF2` has no such font to be held to — there is none
+  on the image — so the hand-built table grew an axis, and blending is checked
+  at the default, halfway along and at the far end.
+  *Not done:* `MVAR`, the table that varies the font's own metrics — the
+  ascender, the descender, the underline. A line of Black is set to the line
+  height of Regular. It is a small table and the store that reads it is already
+  here; what is missing is the tags and where each goes.
+  *Not done:* `STAT`, which says how the instances of a family relate to one
+  another. Nothing here needs it yet: the names come from `fvar`.
+  *Not done:* setting an axis to a place the designer did not name. The
+  machinery takes any coordinates, but nothing in a `.docx` can say them and
+  Word offers no way to ask — a document names a weight, and a weight is an
+  instance.
 - [ ] **E10. Colour and bitmap glyphs.** Emoji, in colour, as Word draws them.
 
 ## F — Proofing

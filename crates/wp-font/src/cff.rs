@@ -70,11 +70,11 @@ pub(crate) struct Cff<'a> {
     /// The scale a font applies to its own design grid, where it is not the
     /// usual one. Written as the two diagonal entries.
     matrix: Option<(f64, f64)>,
-    /// How many deltas each set of variations carries per value, which is the
-    /// one thing a charstring needs of them to be read at all: the `blend`
-    /// operator says how many values it is blending but not how many deltas
-    /// follow each, and without that the stack cannot be unwound.
-    regions: Vec<usize>,
+    /// The deltas an axis of a variable font spends, and the regions they
+    /// belong to. A `blend` says how many values it is blending but not how
+    /// many deltas follow each, so without this the stack cannot even be
+    /// unwound.
+    store: Option<crate::vary::Store<'a>>,
 }
 
 /// One private dictionary: the local subroutines it names.
@@ -124,7 +124,7 @@ impl<'a> Cff<'a> {
             select,
             charset,
             matrix: top.matrix(),
-            regions: Vec::new(),
+            store: None,
         })
     }
 
@@ -143,9 +143,10 @@ impl<'a> Cff<'a> {
 
         let charstrings = Index::parse(data, top.offset(KEY_CHARSTRINGS)?, true)?;
         let (private, select) = Self::cid_dictionaries(data, &top, charstrings.count)?;
-        let regions = match top.get(KEY_VSTORE).and_then(|values| values.first().copied()) {
-            Some(at) if at > 0.0 => region_counts(data, at as usize)?,
-            _ => Vec::new(),
+        let store = match top.get(KEY_VSTORE).and_then(|values| values.first().copied()) {
+            // A CFF2 writes the store with its own length in front of it.
+            Some(at) if at > 0.0 => Some(crate::vary::Store::parse(data, at as usize + 2)?),
+            _ => None,
         };
 
         Ok(Self {
@@ -155,7 +156,7 @@ impl<'a> Cff<'a> {
             select,
             charset: None,
             matrix: top.matrix(),
-            regions,
+            store,
         })
     }
 
@@ -208,9 +209,13 @@ impl<'a> Cff<'a> {
     /// The outline of one glyph.
     ///
     /// `None` where the glyph draws nothing, which is what a space is.
-    pub(crate) fn outline(&self, glyph: GlyphId) -> Result<Option<Outline>, Error> {
+    pub(crate) fn outline(
+        &self,
+        glyph: GlyphId,
+        coordinates: &[f32],
+    ) -> Result<Option<Outline>, Error> {
         let mut pen = Pen::default();
-        self.run(glyph, &mut pen)?;
+        self.run(glyph, coordinates, &mut pen)?;
         pen.finish();
 
         if pen.commands.is_empty() {
@@ -225,7 +230,7 @@ impl<'a> Cff<'a> {
     }
 
     /// Runs one glyph's charstring into a pen.
-    fn run(&self, glyph: GlyphId, pen: &mut Pen) -> Result<(), Error> {
+    fn run(&self, glyph: GlyphId, coordinates: &[f32], pen: &mut Pen) -> Result<(), Error> {
         let Some(code) = self.charstrings.get(u32::from(glyph.0)) else {
             return Ok(());
         };
@@ -234,14 +239,25 @@ impl<'a> Cff<'a> {
 
         let mut state = Machine {
             cff: self,
+            coordinates,
             local: private.local,
             stack: Vec::with_capacity(MAX_STACK),
             stems: 0,
             width_seen: false,
             depth: 0,
-            variations: 0,
+            blend: self.blend_vector(0, coordinates),
         };
         state.execute(code, pen)
+    }
+
+    /// How much of each region of one set of variations applies at a setting
+    /// of the axes. Empty for a font with no variations, which is every `CFF`
+    /// of the older kind.
+    fn blend_vector(&self, set: usize, coordinates: &[f32]) -> Vec<f32> {
+        match &self.store {
+            Some(store) => store.scalars(set, coordinates),
+            None => Vec::new(),
+        }
     }
 
     /// The glyph whose name is a given standard string, which is how `seac`
@@ -353,37 +369,6 @@ impl<'a> Index<'a> {
             32768
         }
     }
-}
-
-/// How many deltas each set of variations carries per value.
-///
-/// The whole store says what every axis does to every number in the font, and
-/// none of that is read here: at the default instance every delta is nought.
-/// What is read is how many of them there are, because the `blend` operator
-/// says how many values it blends and leaves the reader to work out how many
-/// deltas follow — and a reader that guesses wrong unwinds the stack wrongly
-/// and draws rubbish rather than nothing.
-fn region_counts(data: &[u8], at: usize) -> Result<Vec<usize>, Error> {
-    // A CFF2 writes the store with its length in front of it.
-    let mut reader = Reader::at(data, at)?;
-    reader.skip(2)?;
-    let store = reader.position();
-
-    let mut reader = Reader::at(data, store)?;
-    if reader.u16()? != 1 {
-        return Ok(Vec::new());
-    }
-    reader.skip(4)?; // where the regions themselves are
-    let sets = reader.u16()? as usize;
-
-    let mut counts = Vec::with_capacity(sets);
-    for _ in 0..sets {
-        let offset = reader.u32()? as usize;
-        let mut set = Reader::at(data, store.checked_add(offset).ok_or(Error::OutOfBounds)?)?;
-        set.skip(4)?; // how many items, and how many of their deltas are short
-        counts.push(set.u16()? as usize);
-    }
-    Ok(counts)
 }
 
 /// One offset out of an INDEX's array, which is one to four bytes wide.
@@ -701,14 +686,16 @@ impl Pen {
 /// mask is.
 struct Machine<'a, 'f> {
     cff: &'a Cff<'f>,
+    coordinates: &'a [f32],
     local: Option<Index<'f>>,
     stack: Vec<f32>,
     stems: usize,
     width_seen: bool,
     depth: u8,
-    /// Which set of variations a blend is using, which a charstring may change
-    /// as it goes.
-    variations: usize,
+    /// How much of each region applies, for the set of variations the
+    /// charstring is currently using. A charstring may change which set that
+    /// is as it goes.
+    blend: Vec<f32>,
 }
 
 impl Machine<'_, '_> {
@@ -851,7 +838,8 @@ impl Machine<'_, '_> {
                 // CFF2's two: which set of deltas to use, and the deltas
                 // themselves.
                 15 => {
-                    self.variations = self.stack.pop().unwrap_or(0.0).max(0.0) as usize;
+                    let set = self.stack.pop().unwrap_or(0.0).max(0.0) as usize;
+                    self.blend = self.cff.blend_vector(set, self.coordinates);
                     self.stack.clear();
                 }
                 16 => self.blend(),
@@ -939,11 +927,11 @@ impl Machine<'_, '_> {
 
         pen.finish();
         let mut letter = Pen::default();
-        self.cff.run(base, &mut letter)?;
+        self.cff.run(base, self.coordinates, &mut letter)?;
         letter.finish();
 
         let mut mark = Pen::default();
-        self.cff.run(accent, &mut mark)?;
+        self.cff.run(accent, self.coordinates, &mut mark)?;
         mark.finish();
         shift(&mut mark.commands, dx, dy);
 
@@ -1015,9 +1003,11 @@ impl Machine<'_, '_> {
     /// CFF2's `blend`: so many values, then that many deltas for each of them,
     /// one per region of the variation set in use.
     ///
-    /// At the default instance every delta is nought, so the values stay where
-    /// they are and the deltas are dropped — but they have to be counted to be
-    /// dropped, and anything pushed before the blend has to be left alone.
+    /// Each value is moved by its own deltas, each spent in proportion to how
+    /// much of its region applies; the deltas are then dropped and the values
+    /// left. At the default instance nothing applies and the values stay where
+    /// they were — but the deltas still have to be counted to be dropped, and
+    /// whatever was pushed before the blend has to be left alone.
     fn blend(&mut self) {
         let count = self.stack.pop().unwrap_or(0.0);
         if count < 0.0 {
@@ -1025,14 +1015,22 @@ impl Machine<'_, '_> {
             return;
         }
         let count = count as usize;
-        let regions = self.cff.regions.get(self.variations).copied().unwrap_or(0);
+        let regions = self.blend.len();
         let deltas = count.saturating_mul(regions);
-        if deltas > self.stack.len() {
+        if deltas > self.stack.len() || count > self.stack.len() - deltas {
             self.stack.clear();
             return;
         }
-        // The deltas sit behind the values, and only they go.
-        self.stack.truncate(self.stack.len() - deltas);
+
+        let first = self.stack.len() - deltas - count;
+        for value in 0..count {
+            let mut moved = self.stack[first + value];
+            for (region, scalar) in self.blend.iter().enumerate() {
+                moved += self.stack[first + count + value * regions + region] * scalar;
+            }
+            self.stack[first + value] = moved;
+        }
+        self.stack.truncate(first + count);
     }
 
     /// Counts a stem hint operator's stems, and takes the width if it is there.
@@ -1220,12 +1218,16 @@ mod tests {
         let data_at = 12 + 4 + 6 * u32::from(regions);
         store.extend_from_slice(&data_at.to_be_bytes());
 
-        // The regions themselves, which are never read: one axis, and for each
-        // region the three values that say where it applies.
+        // The regions themselves: one axis, and for each region the three
+        // values that say where its influence starts, is whole, and ends. They
+        // all reach the far end of the axis, so at the far end they apply in
+        // full and at the near end not at all.
         store.extend_from_slice(&1u16.to_be_bytes());
         store.extend_from_slice(&regions.to_be_bytes());
         for _ in 0..regions {
-            store.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            store.extend_from_slice(&0i16.to_be_bytes()); // starts at the default
+            store.extend_from_slice(&0x4000i16.to_be_bytes()); // whole at the end
+            store.extend_from_slice(&0x4000i16.to_be_bytes()); // and stops there
         }
 
         // And the set that names them.
@@ -1311,7 +1313,8 @@ mod tests {
     fn a_cff2_table_draws_what_its_charstring_says() {
         let data = table(square(), 2);
         let table = Cff::parse2(&data).expect("a table that parses");
-        let outline = table.outline(GlyphId(1)).expect("a glyph that draws").expect("an outline");
+        let outline =
+            table.outline(GlyphId(1), &[]).expect("a glyph that draws").expect("an outline");
 
         assert_eq!(
             corners(&outline),
@@ -1325,8 +1328,8 @@ mod tests {
     fn a_glyph_with_no_charstring_draws_nothing() {
         let data = table(square(), 2);
         let table = Cff::parse2(&data).unwrap();
-        assert!(table.outline(GlyphId(0)).unwrap().is_none());
-        assert!(table.outline(GlyphId(7)).unwrap().is_none());
+        assert!(table.outline(GlyphId(0), &[]).unwrap().is_none());
+        assert!(table.outline(GlyphId(7), &[]).unwrap().is_none());
     }
 
     #[test]
@@ -1355,7 +1358,7 @@ mod tests {
 
         let data = table(code, REGIONS);
         let table = Cff::parse2(&data).unwrap();
-        let outline = table.outline(GlyphId(1)).unwrap().expect("an outline");
+        let outline = table.outline(GlyphId(1), &[]).unwrap().expect("an outline");
         assert_eq!(
             corners(&outline),
             vec![(100.0, 100.0), (300.0, 100.0), (300.0, 300.0), (100.0, 300.0)]
@@ -1369,8 +1372,51 @@ mod tests {
             // Whatever it makes of a piece of a table, it must not panic: a
             // font file is data from outside the program.
             if let Ok(table) = Cff::parse2(&data[..length]) {
-                let _ = table.outline(GlyphId(1));
+                let _ = table.outline(GlyphId(1), &[]);
             }
         }
+    }
+
+    #[test]
+    fn blending_away_from_the_default_moves_what_was_drawn() {
+        // The other half of a variable font: an axis turned all the way spends
+        // every delta in full. Here the square is drawn two hundred wide with
+        // a delta of a hundred on each of its two regions, so at the far end of
+        // the axis it comes out four hundred wide.
+        const REGIONS: u16 = 2;
+        let mut code = Vec::new();
+        code.extend(small(100));
+        code.extend(small(100));
+        code.push(21);
+
+        let values = [200, 0, 0, 200, -200, 0];
+        for value in values {
+            code.extend(small(value));
+        }
+        // Each value's deltas: one per region, and only the two that make the
+        // square wider and taller are anything but nought.
+        for value in values {
+            for _ in 0..REGIONS {
+                code.extend(small(if value == 200 { 100 } else { 0 }));
+            }
+        }
+        code.extend(small(values.len() as i32));
+        code.push(16); // blend
+        code.push(5); // rlineto
+
+        let data = table(code, REGIONS);
+        let table = Cff::parse2(&data).unwrap();
+
+        // Where the axis has not been moved, the square is the square.
+        let drawn = table.outline(GlyphId(1), &[]).unwrap().expect("an outline");
+        assert_eq!(drawn.bounds, Bounds { min_x: 100, min_y: 100, max_x: 300, max_y: 300 });
+
+        // And at the far end of it, both regions apply in full.
+        let far = table.outline(GlyphId(1), &[1.0]).unwrap().expect("an outline");
+        assert_eq!(far.bounds, Bounds { min_x: 100, min_y: 100, max_x: 500, max_y: 500 });
+
+        // Halfway along, half of each.
+        let middle = table.outline(GlyphId(1), &[0.5]).unwrap().expect("an outline");
+        assert_eq!(middle.bounds, Bounds { min_x: 100, min_y: 100, max_x: 400, max_y: 400 });
     }
 }

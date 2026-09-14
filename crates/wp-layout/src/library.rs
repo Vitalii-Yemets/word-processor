@@ -44,6 +44,9 @@ pub struct Face {
     cmap: Option<TableRange>,
     /// Which characters this face can draw, read from that table alone.
     coverage: OnceCell<CharacterMap>,
+    /// Where on its axes this face sits, for a variable font: a file that is a
+    /// whole family appears here once per place the designer named.
+    variations: Option<Vec<f32>>,
 }
 
 impl Face {
@@ -53,7 +56,11 @@ impl Face {
     /// per face rather than once per glyph.
     #[must_use]
     pub fn font(&self) -> Option<Font<'_>> {
-        Font::parse_index(self.bytes()?, self.index).ok()
+        let font = Font::parse_index(self.bytes()?, self.index).ok()?;
+        Some(match &self.variations {
+            Some(coordinates) => font.varied(coordinates),
+            None => font,
+        })
     }
 
     /// Which characters this face covers.
@@ -186,6 +193,7 @@ impl FontLibrary {
                 data: OnceCell::new(),
                 cmap: description.cmap,
                 coverage: OnceCell::new(),
+                variations: description.variations,
             });
             added += 1;
         }
@@ -331,6 +339,61 @@ struct Description {
     bold: bool,
     italic: bool,
     cmap: Option<TableRange>,
+    /// Where on its axes this face sits, for a variable font. `None` for an
+    /// ordinary one, which has nowhere to sit.
+    variations: Option<Vec<f32>>,
+}
+
+/// The faces a variable font holds: one for each place on its axes the
+/// designer named.
+///
+/// # Why a file becomes several faces
+///
+/// Because that is what a font menu shows and what a document names. A
+/// variable font is one file holding every weight from Thin to Black, and a
+/// document asking for "Inter SemiBold" is asking for a place on an axis, not
+/// for a file. Word lists them the same way.
+///
+/// The four names that fit the ordinary styles — Regular, Bold, Italic, Bold
+/// Italic — become the family itself with those flags set, because that is how
+/// a document asks for them. Every other name becomes a family of its own,
+/// which is how a font menu lists it.
+fn instance_faces(
+    family: &str,
+    bold: bool,
+    italic: bool,
+    instances: &[wp_font::Instance],
+) -> Vec<(String, bool, bool, Option<Vec<f32>>)> {
+    let mut out = Vec::with_capacity(instances.len());
+    for instance in instances {
+        let Some(name) = instance.name.as_deref() else { continue };
+
+        // The style is read off the name rather than off the file, because the
+        // file says what its default instance is and this is not that. A font
+        // with a slant axis is upright where it stands and holds an instance
+        // called Italic.
+        let mut words: Vec<&str> = name.split_whitespace().collect();
+        let slanted = words.iter().any(|word| {
+            word.eq_ignore_ascii_case("italic") || word.eq_ignore_ascii_case("oblique")
+        });
+        words.retain(|word| {
+            !word.eq_ignore_ascii_case("italic")
+                && !word.eq_ignore_ascii_case("oblique")
+                && !word.eq_ignore_ascii_case("regular")
+        });
+        let heavy = words.len() == 1 && words[0].eq_ignore_ascii_case("bold");
+        if heavy {
+            words.clear();
+        }
+
+        let named = if words.is_empty() {
+            family.to_owned()
+        } else {
+            format!("{family} {}", words.join(" "))
+        };
+        out.push((named, bold || heavy, italic || slanted, Some(instance.coordinates.clone())));
+    }
+    out
 }
 
 /// Reads just enough of a font file to catalogue the faces in it.
@@ -401,13 +464,37 @@ fn describe_faces(path: &Path) -> Vec<Description> {
             }
         }
 
-        descriptions.push(Description {
-            index: index as u32,
-            family,
-            bold,
-            italic,
-            cmap: find(b"cmap"),
-        });
+        // A variable font is a family in one file: every place on its axes
+        // the designer named becomes a face here, because that is what a
+        // document asks for and what a font menu lists.
+        let cmap = find(b"cmap");
+        let instances = find(b"fvar")
+            .and_then(|range| read_at(&mut file, range.offset as u64, range.length))
+            .map(|fvar| wp_font::variations_from_tables(&fvar, &name_table).1)
+            .unwrap_or_default();
+
+        if instances.is_empty() {
+            descriptions.push(Description {
+                index: index as u32,
+                family,
+                bold,
+                italic,
+                cmap,
+                variations: None,
+            });
+            continue;
+        }
+        for (family, bold, italic, variations) in instance_faces(&family, bold, italic, &instances)
+        {
+            descriptions.push(Description {
+                index: index as u32,
+                family,
+                bold,
+                italic,
+                cmap,
+                variations,
+            });
+        }
     }
 
     descriptions
@@ -516,5 +603,42 @@ mod tests {
         assert_eq!(library.add_file(Path::new("Cargo.toml")), 0);
         assert_eq!(library.add_file(Path::new("does-not-exist.ttf")), 0);
         assert!(library.is_empty());
+    }
+
+    /// Every weight of a variable font is a family a document can ask for.
+    ///
+    /// Which is the point of cataloguing them separately: a document written in
+    /// Inter SemiBold names a place on an axis, and without this it would get
+    /// whichever weight the designer happened to draw first.
+    #[test]
+    fn the_weights_of_a_variable_font_are_families_of_their_own() {
+        let mut library = FontLibrary::new();
+        let added =
+            library.add_file(Path::new("/usr/share/fonts/truetype/inter-vf/Inter-roman.var.ttf"));
+        if added == 0 {
+            // The build image should have it; a machine without it has nothing
+            // to say here rather than a failure to report.
+            return;
+        }
+
+        let families = library.families();
+        assert!(families.contains(&"Inter"), "{families:?}");
+        assert!(families.contains(&"Inter Thin"), "{families:?}");
+        assert!(families.contains(&"Inter Black"), "{families:?}");
+
+        // And each of them draws a different letter, which is the only thing
+        // that makes the list worth having.
+        let ink = |family: &str| -> f32 {
+            let index = library.select(Some(family), false, false).expect("a face");
+            let face = library.face(index).expect("a face");
+            let font = face.font().expect("a font");
+            let glyph = font.glyph_for('n').expect("a letter");
+            let outline = font.outline(glyph).expect("an outline").expect("something drawn");
+            f32::from(outline.bounds.max_x - outline.bounds.min_x)
+                * f32::from(outline.bounds.max_y - outline.bounds.min_y)
+        };
+        let thin = ink("Inter Thin");
+        let black = ink("Inter Black");
+        assert!(black > thin, "Black covers {black} and Thin {thin}");
     }
 }

@@ -113,16 +113,60 @@ fn outline_at_depth(
     };
 
     let mut result = if contour_count >= 0 {
-        Outline { commands: read_simple(&mut reader, contour_count as usize, end)?, bounds }
+        Outline {
+            commands: read_simple(font, glyph, &mut reader, contour_count as usize, end)?,
+            bounds,
+        }
     } else {
-        Outline { commands: read_composite(font, &mut reader, depth)?, bounds }
+        Outline { commands: read_composite(font, glyph, &mut reader, depth)?, bounds }
     };
 
     if result.commands.is_empty() {
         return Ok(None);
     }
-    result.bounds = bounds;
+    // A glyph says how big it is, and that is right until the axes of a
+    // variable font move its points. Then it has to be measured.
+    result.bounds = if font.is_varied() { reach_of(&result.commands) } else { bounds };
     Ok(Some(result))
+}
+
+/// How far a set of commands reaches, for a glyph that no longer matches the
+/// size its own header declares.
+fn reach_of(commands: &[PathCommand]) -> Bounds {
+    let mut min = Point::new(f32::MAX, f32::MAX);
+    let mut max = Point::new(f32::MIN, f32::MIN);
+    let mut seen = false;
+    let mut reach = |point: Point| {
+        seen = true;
+        min.x = min.x.min(point.x);
+        min.y = min.y.min(point.y);
+        max.x = max.x.max(point.x);
+        max.y = max.y.max(point.y);
+    };
+    for command in commands {
+        match *command {
+            PathCommand::MoveTo(point) | PathCommand::LineTo(point) => reach(point),
+            PathCommand::QuadTo(control, point) => {
+                reach(control);
+                reach(point);
+            }
+            PathCommand::CubicTo(first, second, point) => {
+                reach(first);
+                reach(second);
+                reach(point);
+            }
+            PathCommand::Close => {}
+        }
+    }
+    if !seen {
+        return Bounds::default();
+    }
+    Bounds {
+        min_x: min.x.floor() as i16,
+        min_y: min.y.floor() as i16,
+        max_x: max.x.ceil() as i16,
+        max_y: max.y.ceil() as i16,
+    }
 }
 
 /// A point as the file stores it, before curves are worked out.
@@ -133,6 +177,8 @@ struct ContourPoint {
 }
 
 fn read_simple(
+    font: &Font<'_>,
+    glyph: GlyphId,
     reader: &mut Reader<'_>,
     contour_count: usize,
     end_of_glyph: usize,
@@ -199,7 +245,7 @@ fn read_simple(
         ys.push(y);
     }
 
-    let points: Vec<ContourPoint> = flags
+    let mut points: Vec<ContourPoint> = flags
         .iter()
         .zip(xs)
         .zip(ys)
@@ -208,6 +254,18 @@ fn read_simple(
             on_curve: flag & ON_CURVE != 0,
         })
         .collect();
+
+    // And then wherever the axes of a variable font have been set moves them.
+    // This is the one place it can be done: after the points are read and
+    // before they are turned into curves, because a delta is a delta of a
+    // point and there are no points either side of here.
+    let positions: Vec<Point> = points.iter().map(|point| point.position).collect();
+    if let Some(deltas) = font.point_deltas(glyph, &positions, &contour_ends) {
+        for (point, delta) in points.iter_mut().zip(deltas) {
+            point.position.x += delta.x;
+            point.position.y += delta.y;
+        }
+    }
 
     let mut commands = Vec::new();
     let mut first = 0usize;
@@ -264,12 +322,21 @@ fn emit_contour(points: &[ContourPoint], out: &mut Vec<PathCommand>) {
 
 /// A composite glyph is built out of other glyphs, each placed by a transform.
 /// Accented letters are made this way: one "e", one acute accent, moved.
+/// One piece of a composite glyph: which glyph it is drawn from, where it
+/// goes, and how it is turned or scaled on the way.
+struct Component {
+    glyph: GlyphId,
+    offset: Point,
+    transform: (f32, f32, f32, f32),
+}
+
 fn read_composite(
     font: &Font<'_>,
+    glyph: GlyphId,
     reader: &mut Reader<'_>,
     depth: usize,
 ) -> Result<Vec<PathCommand>, Error> {
-    let mut commands = Vec::new();
+    let mut parts = Vec::new();
 
     loop {
         let flags = reader.u16()?;
@@ -285,7 +352,7 @@ fn read_composite(
         // the component wildly.
         let (dx, dy) = if flags & ARGS_ARE_XY != 0 { (dx, dy) } else { (0.0, 0.0) };
 
-        let (a, b, c, d) = if flags & HAS_SCALE != 0 {
+        let transform = if flags & HAS_SCALE != 0 {
             let scale = reader.f2dot14()?;
             (scale, 0.0, 0.0, scale)
         } else if flags & HAS_X_AND_Y_SCALE != 0 {
@@ -296,28 +363,42 @@ fn read_composite(
             (1.0, 0.0, 0.0, 1.0)
         };
 
-        if let Some(child) = outline_at_depth(font, component, depth + 1)? {
-            let transform = |point: Point| Point {
-                x: a * point.x + c * point.y + dx,
-                y: b * point.x + d * point.y + dy,
-            };
-            for command in child.commands {
-                commands.push(match command {
-                    PathCommand::MoveTo(point) => PathCommand::MoveTo(transform(point)),
-                    PathCommand::LineTo(point) => PathCommand::LineTo(transform(point)),
-                    PathCommand::QuadTo(control, point) => {
-                        PathCommand::QuadTo(transform(control), transform(point))
-                    }
-                    PathCommand::CubicTo(first, second, point) => {
-                        PathCommand::CubicTo(transform(first), transform(second), transform(point))
-                    }
-                    PathCommand::Close => PathCommand::Close,
-                });
-            }
-        }
-
+        parts.push(Component { glyph: component, offset: Point::new(dx, dy), transform });
         if flags & MORE_COMPONENTS == 0 {
             break;
+        }
+    }
+
+    // A composite has deltas of its own, and they are deltas of where each
+    // piece goes rather than of any point: as a letter grows heavier its accent
+    // moves. Each piece counts as one point, and nothing is worked out for the
+    // pieces that were left alone.
+    let offsets: Vec<Point> = parts.iter().map(|part| part.offset).collect();
+    if let Some(deltas) = font.component_deltas(glyph, &offsets) {
+        for (part, delta) in parts.iter_mut().zip(deltas) {
+            part.offset.x += delta.x;
+            part.offset.y += delta.y;
+        }
+    }
+
+    let mut commands = Vec::new();
+    for part in &parts {
+        let Some(child) = outline_at_depth(font, part.glyph, depth + 1)? else { continue };
+        let (a, b, c, d) = part.transform;
+        let at = |point: Point| Point {
+            x: a * point.x + c * point.y + part.offset.x,
+            y: b * point.x + d * point.y + part.offset.y,
+        };
+        for command in child.commands {
+            commands.push(match command {
+                PathCommand::MoveTo(point) => PathCommand::MoveTo(at(point)),
+                PathCommand::LineTo(point) => PathCommand::LineTo(at(point)),
+                PathCommand::QuadTo(control, point) => PathCommand::QuadTo(at(control), at(point)),
+                PathCommand::CubicTo(first, second, point) => {
+                    PathCommand::CubicTo(at(first), at(second), at(point))
+                }
+                PathCommand::Close => PathCommand::Close,
+            });
         }
     }
 
