@@ -60,11 +60,11 @@ struct Message {
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-struct Rect {
-    left: i32,
-    top: i32,
-    right: i32,
-    bottom: i32,
+pub(crate) struct Rect {
+    pub(crate) left: i32,
+    pub(crate) top: i32,
+    pub(crate) right: i32,
+    pub(crate) bottom: i32,
 }
 
 #[repr(C)]
@@ -201,6 +201,8 @@ const MESSAGE_TIMER: u32 = 0x0113;
 const MESSAGE_SYSTEM_KEY_DOWN: u32 = 0x0104;
 const MESSAGE_SYSTEM_KEY_UP: u32 = 0x0105;
 const MESSAGE_SYSTEM_CHAR: u32 = 0x0106;
+/// The system, or a screen reader through it, asking what the window is.
+const MESSAGE_GET_OBJECT: u32 = 0x003D;
 // The input method: a composition starting, changing and ending, the
 // context being set, and the requests it makes of the window.
 const MESSAGE_IME_START_COMPOSITION: u32 = 0x010D;
@@ -412,7 +414,7 @@ extern "system" {
     fn PostMessageW(window: Handle, message: u32, word: WordParam, long: LongParam) -> i32;
     fn BeginPaint(window: Handle, paint: *mut PaintStruct) -> Handle;
     fn EndPaint(window: Handle, paint: *const PaintStruct) -> i32;
-    fn InvalidateRect(window: Handle, area: *const Rect, erase: i32) -> i32;
+    pub(crate) fn InvalidateRect(window: Handle, area: *const Rect, erase: i32) -> i32;
     fn GetClientRect(window: Handle, area: *mut Rect) -> i32;
     fn LoadCursorW(instance: Handle, name: *const u16) -> Handle;
     fn SetCursor(cursor: Handle) -> Handle;
@@ -431,7 +433,7 @@ extern "system" {
     fn TrackMouseEvent(track: *mut TrackMouse) -> i32;
     fn SystemParametersInfoW(action: u32, param: u32, data: *mut c_void, update: u32) -> i32;
     pub(crate) fn ScreenToClient(window: Handle, point: *mut Point) -> i32;
-    fn ClientToScreen(window: Handle, point: *mut Point) -> i32;
+    pub(crate) fn ClientToScreen(window: Handle, point: *mut Point) -> i32;
     /// Routes mouse messages to this window even when the pointer leaves it,
     /// which is what lets a selection keep growing during a drag.
     fn SetCapture(window: Handle) -> Handle;
@@ -637,7 +639,7 @@ fn point_at(window: Handle) {
 /// dead rather than carry on — so the second is turned away instead. What it is
 /// is always a message about the window, never a keystroke or a press: those
 /// wait in the queue, which is not read again until this one is done with.
-fn with_application<R>(work: impl FnOnce(&mut dyn App) -> R) -> Option<R> {
+pub(crate) fn with_application<R>(work: impl FnOnce(&mut dyn App) -> R) -> Option<R> {
     APPLICATION.with(|slot| {
         let Ok(mut held) = slot.try_borrow_mut() else { return None };
         held.as_mut().map(|app| work(app.as_mut()))
@@ -935,7 +937,7 @@ unsafe fn composition_attributes(
 }
 
 /// The window this thread owns, for a dialog to be modal to.
-fn owner_window() -> Handle {
+pub(crate) fn owner_window() -> Handle {
     WINDOW.with(std::cell::Cell::get)
 }
 
@@ -1239,9 +1241,14 @@ unsafe extern "system" fn window_procedure(
             }
             0
         }
+        // A screen reader asking for the window's own description of itself.
+        MESSAGE_GET_OBJECT if long == crate::uia::ROOT_OBJECT_ID => {
+            crate::uia::root_provider(window, word, long)
+        }
         MESSAGE_DESTROY => {
             KillTimer(window, TICK_TIMER);
             crate::dragdrop::unregister_window(window);
+            crate::uia::forget_window(window);
             // One window closing is one view closing. The program ends when the
             // last of them goes, not the first.
             WINDOWS.with(|slot| slot.borrow_mut().retain(|found| *found != window));

@@ -15,20 +15,15 @@ use std::ffi::c_void;
 use std::path::PathBuf;
 
 use crate::clipboard::Contents;
+use crate::com::{
+    Guid, HResult, E_NOINTERFACE, E_NOTIMPL, E_OUTOFMEMORY, E_POINTER, S_FALSE, S_OK,
+};
 use crate::windows::{
     deliver, wide, GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, Handle, Point,
     RegisterClipboardFormatW, ScreenToClient, MEMORY_MOVEABLE,
 };
 use crate::{DragEffect, Event};
 
-type HResult = i32;
-
-const S_OK: HResult = 0;
-const S_FALSE: HResult = 1;
-const E_NOTIMPL: HResult = 0x8000_4001_u32 as i32;
-const E_NOINTERFACE: HResult = 0x8000_4002_u32 as i32;
-const E_POINTER: HResult = 0x8000_4003_u32 as i32;
-const E_OUTOFMEMORY: HResult = 0x8007_000E_u32 as i32;
 const DV_E_FORMATETC: HResult = 0x8004_0064_u32 as i32;
 const OLE_E_ADVISENOTSUPPORTED: HResult = 0x8004_0003_u32 as i32;
 const DATA_S_SAMEFORMATETC: HResult = 0x0004_0130;
@@ -50,25 +45,12 @@ const TYMED_HGLOBAL: u32 = 1;
 const DVASPECT_CONTENT: u32 = 1;
 const DATADIR_GET: u32 = 1;
 
-/// A COM interface identifier.
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Guid {
-    data1: u32,
-    data2: u16,
-    data3: u16,
-    data4: [u8; 8],
-}
+use crate::com::IID_IUNKNOWN;
 
-const fn standard(data1: u32) -> Guid {
-    Guid { data1, data2: 0, data3: 0, data4: [0xC0, 0, 0, 0, 0, 0, 0, 0x46] }
-}
-
-const IID_IUNKNOWN: Guid = standard(0x0000_0000);
-const IID_IENUMFORMATETC: Guid = standard(0x0000_0103);
-const IID_IDATAOBJECT: Guid = standard(0x0000_010E);
-const IID_IDROPSOURCE: Guid = standard(0x0000_0121);
-const IID_IDROPTARGET: Guid = standard(0x0000_0122);
+const IID_IENUMFORMATETC: Guid = Guid::standard(0x0000_0103);
+const IID_IDATAOBJECT: Guid = Guid::standard(0x0000_010E);
+const IID_IDROPSOURCE: Guid = Guid::standard(0x0000_0121);
+const IID_IDROPTARGET: Guid = Guid::standard(0x0000_0122);
 /// An identifier of this program's own, which only its own data object
 /// answers to: how a drop is known to have come from this window.
 const IID_OWN_DATA: Guid = Guid {

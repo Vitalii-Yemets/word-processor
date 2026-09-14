@@ -1,5 +1,6 @@
 //! The editor: what the window shows, and what every command does to it.
 
+mod accessible;
 pub(crate) mod align;
 mod appearance;
 mod arrange;
@@ -232,6 +233,9 @@ pub struct Editor {
     /// Where something another program is dragging over the page would
     /// land, while it is over the page.
     foreign_drop: Option<TextPosition>,
+    /// The selection as a screen reader was last told of it, so that it is
+    /// told again only when the selection moves.
+    reader_selection: Option<(TextPosition, Option<(TextPosition, TextPosition)>)>,
     /// When and where the last double click was, so a third click can be told
     /// from a first. See [`selecting`].
     last_double_click: Option<(std::time::Instant, i32, i32)>,
@@ -590,6 +594,7 @@ impl Editor {
             pending_text_drag: None,
             text_drag: None,
             foreign_drop: None,
+            reader_selection: None,
             last_double_click: None,
             drag_by: selecting::Granularity::default(),
             clipboard: None,

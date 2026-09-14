@@ -21,7 +21,11 @@
 use wp_raster::Canvas;
 
 #[cfg(windows)]
+mod com;
+#[cfg(windows)]
 mod dragdrop;
+#[cfg(windows)]
+mod uia;
 #[cfg(windows)]
 mod windows;
 
@@ -200,6 +204,15 @@ pub enum CompositionAttribute {
     Converted,
     Target,
     Error,
+}
+
+/// Tells the screen reader that the document's selection moved, so that it
+/// reads what the caret is on now. Called whenever the selection changes.
+pub fn selection_changed() {
+    #[cfg(windows)]
+    {
+        uia::selection_changed();
+    }
 }
 
 /// How a drag this program gave ended.
@@ -403,6 +416,91 @@ pub trait App {
     /// application can keep one buffer and reuse it, instead of allocating a
     /// window-sized image on every repaint.
     fn draw(&mut self, width: usize, height: usize) -> &Canvas;
+
+    /// What is on the window, for a screen reader: every control a person
+    /// could reach, in reading order. See [`accessibility`].
+    fn accessible_elements(&mut self) -> Vec<accessibility::Element> {
+        Vec::new()
+    }
+
+    /// Carries out what pressing an element does.
+    fn accessible_invoke(&mut self, id: u64) -> Response {
+        let _ = id;
+        Response::Ignored
+    }
+
+    /// The document's text and selection, for a screen reader to read.
+    fn accessible_text(&mut self) -> Option<accessibility::TextState> {
+        None
+    }
+
+    /// Selects a stretch of the document, by character offsets into the
+    /// text [`App::accessible_text`] gives.
+    fn accessible_select(&mut self, start: usize, end: usize) -> Response {
+        let _ = (start, end);
+        Response::Ignored
+    }
+
+    /// Where a stretch of the document's text is on the window, as
+    /// rectangles in pixels of the drawing area: one per line it covers.
+    fn accessible_rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
+        let _ = (start, end);
+        Vec::new()
+    }
+}
+
+/// What a screen reader is told about the window.
+///
+/// A window that draws every control itself is a blank rectangle to a
+/// screen reader unless it says what is in it. This is what it says: each
+/// control with its kind, its name, where it is and what it does, and the
+/// document as text with a selection in it. The Windows shell puts this
+/// through UI Automation; another platform's shell would put it through
+/// its own tree.
+pub mod accessibility {
+    /// The kind of control an element is: what a screen reader calls it and
+    /// how it lets a person work it.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Role {
+        /// A button that does something when pressed.
+        Button,
+        /// A button that is on or off.
+        Toggle,
+        /// One tab of the ribbon.
+        TabItem,
+        /// The document being edited.
+        Document,
+        /// Words that only say something.
+        Text,
+    }
+
+    /// One control on the window.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Element {
+        /// The same for the same control from one asking to the next.
+        pub id: u64,
+        pub role: Role,
+        pub name: String,
+        /// The letter that reaches it from the keyboard, if one does.
+        pub access_key: String,
+        /// Left, top, width, height, in pixels of the drawing area.
+        pub rect: (i32, i32, i32, i32),
+        /// Chosen, for a tab; on, for a toggle.
+        pub selected: bool,
+        pub enabled: bool,
+        /// Whether keys go to it.
+        pub focused: bool,
+    }
+
+    /// The document's text as a screen reader reads it.
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    pub struct TextState {
+        /// The whole text, one line break between paragraphs.
+        pub text: String,
+        /// The selection, as character offsets into the text; equal when
+        /// nothing is selected.
+        pub selection: (usize, usize),
+    }
 }
 
 /// The pointer shapes a window can ask for.

@@ -3908,8 +3908,44 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   in a folder; dropping a document into the text as an object, which is
   what Word's Insert ▸ Object does; more than one document dropped at
   once, of which the first opens; the Linux side, which is **H6**'s.
-- [ ] **H4. Accessibility.** UI Automation on Windows, AT-SPI on Linux: a screen
+- [x] **H4. Accessibility.** UI Automation on Windows, AT-SPI on Linux: a screen
   reader has to be able to read the document and drive the ribbon.
+  *Done:* the Windows side. The window answers the system's request for
+  its root provider with a UI Automation provider of its own — the root, a
+  fragment for each control, and the patterns — written out as COM objects
+  against the documented tables, since no binding library is used; the
+  little of COM the shell speaks is in one place now, and the drag and
+  drop of **H3** speaks it too. What the window says: the ribbon's tabs
+  as tab items with their access keys, chosen or not, which a screen
+  reader opens; the open tab's buttons as buttons named as their tips
+  name them — "Bold", not the B on the face — with their shortcuts, the
+  ones that are on or off as toggles that say which, which a screen reader
+  presses; the document as a document with the keyboard, which is the Text
+  pattern: the whole text, the selection, ranges that move and expand by
+  character, word, paragraph and document, that are read back, compared,
+  searched, given their rectangles on the screen line by line, and
+  selected; and the status strip's buttons. Each control is found by its
+  place on the screen, by its runtime id, and by walking from one to the
+  next; the one with the keyboard is known; a press is announced as
+  invoked; and every time the caret moves the screen reader is told the
+  selection changed, so it reads what the caret is on. The editor gives
+  all of it through the shell's accessibility methods on the application,
+  and is held to: the tabs, the buttons and the document are described
+  with their names, places and states; pressing the Insert tab opens it
+  and pressing Bold makes the selection bold and the toggle say so; the
+  text is read with its selection, offsets map to places and back, a
+  selection is set from offsets, and a word has its rectangles. The
+  screen reader itself cannot run in the build image, so the provider is
+  held to compiling against the Windows ABI and the units tested.
+  *Not done, and named here:* the Linux side, AT-SPI, which is **H6**'s
+  and waits on a Linux shell; lines as the layout breaks them (the Text
+  pattern's line unit is the paragraph); the attributes of a range (bold,
+  font, size — every one answers "not supported"); the panes, dialogs,
+  menus and lists as elements, which are reached today by the keyboard
+  through the document's own key handling but are not described; the
+  ribbon's boxes as edit controls; the rulers and the scroll bar; and
+  announcing anything but the selection and a press — a dialog opening,
+  a status message.
 - [ ] **H5. High DPI and several monitors.** Per-monitor scaling, and the window
   moving between monitors of different scales without redrawing wrongly.
 - [ ] **H6. The Linux shell.** X11 and Wayland: window, input, clipboard,

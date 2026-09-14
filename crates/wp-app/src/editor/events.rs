@@ -566,6 +566,27 @@ impl App for Editor {
         self.paint(width, height);
         self.canvas()
     }
+
+    // What a screen reader is told. See [`super::accessible`].
+    fn accessible_elements(&mut self) -> Vec<wp_shell::accessibility::Element> {
+        Editor::accessible_elements(self)
+    }
+
+    fn accessible_invoke(&mut self, id: u64) -> Response {
+        Editor::accessible_invoke(self, id)
+    }
+
+    fn accessible_text(&mut self) -> Option<wp_shell::accessibility::TextState> {
+        Some(Editor::accessible_text(self))
+    }
+
+    fn accessible_select(&mut self, start: usize, end: usize) -> Response {
+        Editor::accessible_select(self, start, end)
+    }
+
+    fn accessible_rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
+        Editor::accessible_rects(self, start, end)
+    }
 }
 
 impl Editor {

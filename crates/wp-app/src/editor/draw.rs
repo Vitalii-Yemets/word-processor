@@ -733,8 +733,10 @@ impl Editor {
         let (x, y) = (x as i32, y as i32);
         let (width, height) = (caret_width.ceil().max(1.0) as i32, caret_height.ceil() as i32);
         // The input method's candidate list opens beside the caret, so it is
-        // told where the caret is each time the caret is drawn.
+        // told where the caret is each time the caret is drawn; and a screen
+        // reader is told when the caret has moved, so it reads the new line.
         wp_shell::place_composition(x, y, height);
+        self.note_selection_for_reader();
         let under = self.canvas.copy_rect(x, y, width, height);
         if self.caret_on {
             self.canvas.fill_rect(x, y, width, height, self.theme.caret);
