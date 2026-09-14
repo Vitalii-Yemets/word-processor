@@ -3353,7 +3353,35 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   words side by side, in that language, with what Word calls each — and a
   reader of the language to say which are mistakes. Russian, German and French
   first, being the languages this program's dictionaries already know.
-- [ ] **F4. Thesaurus.**
+- [x] **F4. Thesaurus.** Shift+F7, the button on the Review tab, and Synonyms
+  on the right-click menu: the words that mean what the word at the caret
+  means, grouped by which of its meanings they share, with the opposites
+  marked, and any of them put in place of the word with one choice.
+  *Done when:* a right-click on "happy" offers "glad", and choosing it leaves
+  "Glad" where "Happy" stood.
+  The words come from whatever thesaurus the machine has, in the open format
+  LibreOffice reads — `crates/wp-dict/src/thesaurus.rs` — on the same terms as
+  the dictionaries: none is shipped, the one for the language of the word is
+  used, and where there is none the program says so rather than showing an
+  empty list. The file is eighteen megabytes, and an index beside it says where
+  each word begins, so a word is read by seeking to it rather than by reading
+  the file to find it. A thesaurus tells meanings apart — "bright" the lamp and
+  "bright" the child — and so does the list, one heading per meaning with its
+  part of speech.
+  The Review tab's Proofing group now has Word's four: Spelling, Thesaurus, the
+  marks, and the dictionary — the last renamed from "Word List", which it
+  stopped being at **F1**. The function keys arrived with it, because Word has
+  always had them and a person who has used Word reaches for them: F7 for the
+  spelling, Shift+F7 for the thesaurus, F12 and Shift+F12 for Save As and Save,
+  F1 for the help.
+  *Not done:* the pane. Word's thesaurus is a pane down the side with a search
+  box and a trail of the words looked up; this is a list under the button,
+  which is what the program has for lists. A pane of its own is the same
+  question as the styles and navigation panes already answered, and is worth
+  asking again when the pane holds more than a list.
+  *Not done:* a thesaurus for a language other than English on the build
+  image, which is the same want as the dictionaries': the reading is the same
+  for every language, and the file is not.
 - [ ] **F5. AutoCorrect and AutoFormat as you type.** The replacement table,
   the capitalisation rules, smart quotes, dashes, lists that start themselves,
   and the little box that lets a person undo one of them.

@@ -308,6 +308,8 @@ impl Editor {
             Command::Correct(index) => self.take_spelling(index as usize),
             Command::IgnoreAll => self.ignore_pending(),
             Command::AddToDictionary => self.add_pending(),
+            Command::Thesaurus => self.open_thesaurus(),
+            Command::Synonym(index) => self.take_synonym(index as usize),
             Command::ShowProofing => self.toggle_proofing(),
             Command::LoadDictionary => self.load_dictionary(),
             Command::CheckAccessibility => self.open_accessibility(),

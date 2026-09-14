@@ -293,6 +293,10 @@ pub enum Command {
     /// Leave this word alone everywhere in the document.
     IgnoreAll,
     AddToDictionary,
+    /// The words that mean what the word at the caret means.
+    Thesaurus,
+    /// One of them, by its place in the list.
+    Synonym(u8),
     ShowProofing,
     LoadDictionary,
     CheckAccessibility,

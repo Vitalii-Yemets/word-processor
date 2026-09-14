@@ -183,3 +183,38 @@ fn a_word_that_is_right_is_offered_nothing_of_itself() {
     let dictionary = read(ENGLISH);
     assert!(!dictionary.suggest("house").contains(&"house".to_owned()));
 }
+
+#[test]
+fn a_real_thesaurus_says_what_else_a_word_could_have_been() {
+    // Held to the thesaurus LibreOffice ships, because a reader of this kind
+    // cannot be believed against a file written for the test: a hundred and
+    // forty thousand entries, some of them a hundred synonyms long.
+    let path = Path::new("/usr/share/mythes/th_en_US_v2.dat");
+    let thesaurus = wp_dict::thesaurus::Thesaurus::open(path).unwrap_or_else(|error| {
+        panic!(
+            "cannot open {}: {error}\nthe build image should install mythes-en-us",
+            path.display()
+        )
+    });
+    assert!(thesaurus.words() > 100_000);
+
+    let senses = thesaurus.senses("happy");
+    assert!(!senses.is_empty());
+    let all: Vec<&str> =
+        senses.iter().flat_map(|sense| sense.synonyms.iter().map(String::as_str)).collect();
+    assert!(all.contains(&"glad"), "{all:?}");
+    assert!(
+        senses.iter().any(|sense| sense.antonyms.iter().any(|word| word == "unhappy")),
+        "the antonym is marked as one"
+    );
+    // The meanings are told apart: "bright" the light and "bright" the mind.
+    let bright = thesaurus.senses("bright");
+    assert!(bright.len() > 1, "{bright:?}");
+    assert!(thesaurus.senses("xqzv").is_empty());
+}
+
+#[test]
+fn the_thesaurus_on_this_machine_is_found() {
+    let installed = wp_dict::thesaurus::installed();
+    assert!(installed.iter().any(|(language, _)| language == "en-US"), "{installed:?}");
+}

@@ -1192,6 +1192,7 @@ impl Ribbon {
                     | Choice::MatchColumn
                     | Choice::TextEffect
                     | Choice::Envelope
+                    | Choice::Synonym
                     | Choice::Label => String::new(),
                 };
                 let line = engine.simple_line(&text, left + 6.0, top + 17.0, 8.5, color);
@@ -1747,8 +1748,9 @@ static REVIEW_GROUPS: &[Group] = &[
         label: "Proofing",
         items: &[
             Item::Large(Command::Spelling, Icon::Spelling, "Spelling"),
+            Item::Large(Command::Thesaurus, Icon::Thesaurus, "Thesaurus"),
             Item::Large(Command::ShowProofing, Icon::ShowMarkup, "Show Marks"),
-            Item::Large(Command::LoadDictionary, Icon::Thesaurus, "Word List"),
+            Item::Large(Command::LoadDictionary, Icon::Citation, "Dictionary"),
             Item::Large(Command::WordCount, Icon::WordCount, "Word Count"),
         ],
         launcher: None,

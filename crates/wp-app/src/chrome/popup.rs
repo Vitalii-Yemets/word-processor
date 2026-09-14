@@ -30,6 +30,8 @@ pub enum Choice {
     Watermark,
     /// The ways the thing just pasted could have been pasted instead.
     PasteOption,
+    /// The words that mean what a word means, by meaning.
+    Synonym,
 
     // --- What the buttons with an arrow drop -------------------------------
     /// Where an alignment tab goes.

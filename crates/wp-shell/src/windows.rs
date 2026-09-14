@@ -1870,6 +1870,10 @@ fn key_from_code(code: u32) -> Option<Key> {
     if (0x30..=0x39).contains(&code) {
         return char::from_u32(code).map(Key::Digit);
     }
+    // The function keys, F1 to F12, which follow one another.
+    if (0x70..=0x7B).contains(&code) {
+        return Some(Key::Function((code - 0x70 + 1) as u8));
+    }
     Some(match code {
         KEY_UP => Key::Up,
         KEY_DOWN => Key::Down,

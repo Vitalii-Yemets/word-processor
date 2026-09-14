@@ -81,6 +81,7 @@ mod tablework;
 mod tabsdialog;
 mod theme_effects;
 mod themes;
+mod thesaurus;
 mod translate;
 mod video;
 mod views;
@@ -297,6 +298,13 @@ pub struct Editor {
     /// The mistakes of grammar the reader said to leave alone, by what they
     /// were called and what they said, for as long as the document is open.
     ignored_findings: std::collections::HashSet<(String, String)>,
+    /// The thesaurus for each language asked about, opened once; `None` for a
+    /// language the machine has none for, so it is not looked for again.
+    thesauri: std::collections::HashMap<String, Option<wp_dict::thesaurus::Thesaurus>>,
+    /// What each line of the open list of synonyms would put in place of the
+    /// word, or nothing for a heading; and which word that is.
+    pending_synonyms: Vec<Option<String>>,
+    pending_word: Option<(usize, core::ops::Range<usize>)>,
     /// The mistake a correction is being chosen for.
     pending_issue: Option<wp_docx::proofing::Issue>,
     /// The people a mail merge is for, read from the file beside the letter.
@@ -593,6 +601,9 @@ impl Editor {
             pending_spellings: Vec::new(),
             proofing_cache: wp_docx::proofing::ProofingCache::default(),
             ignored_findings: std::collections::HashSet::new(),
+            thesauri: std::collections::HashMap::new(),
+            pending_synonyms: Vec::new(),
+            pending_word: None,
             pending_issue: None,
             recipients: wp_docx::merge::Recipients::default(),
             recipient_file: None,

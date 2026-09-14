@@ -1307,6 +1307,7 @@ impl Editor {
             Choice::Recipient => Command::EditRecipientList,
             Choice::MergeField => Command::InsertMergeField,
             Choice::Correction => Command::Spelling,
+            Choice::Synonym => Command::Thesaurus,
             Choice::Accessibility => Command::CheckAccessibility,
             // The menu the right button opens hangs where the pointer was, not
             // under a button of the ribbon.
@@ -1434,6 +1435,7 @@ impl Editor {
             | Choice::Recipient
             | Choice::MergeField
             | Choice::Correction
+            | Choice::Synonym
             | Choice::Accessibility
             | Choice::Context
             | Choice::Group
@@ -1529,6 +1531,7 @@ impl Editor {
             Choice::Recipient => self.choose_recipient(index),
             Choice::MergeField => self.choose_merge_field(index),
             Choice::Correction => self.choose_correction(index),
+            Choice::Synonym => self.take_synonym(index),
             Choice::Accessibility => self.choose_accessibility(index),
             Choice::Context => self.choose_context_entry(index),
             Choice::Group => self.choose_group_command(index),
@@ -1834,6 +1837,14 @@ impl Editor {
 
         let extend = modifiers.shift;
         match key {
+            // The function keys Word has always had, which a person who has
+            // used Word reaches for without thinking.
+            Key::Function(7) if modifiers.shift => self.run(Command::Thesaurus),
+            Key::Function(7) => self.run(Command::Spelling),
+            Key::Function(12) if modifiers.shift => self.run(Command::Save),
+            Key::Function(12) => self.run(Command::SaveAs),
+            Key::Function(1) => self.run(Command::ShowTraining),
+            Key::Function(_) => Response::Ignored,
             Key::Left => {
                 self.document.caret_left(extend);
                 self.moved()

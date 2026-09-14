@@ -56,6 +56,10 @@ pub enum Key {
     /// this is here for the shortcuts that use it — Word's non-breaking space
     /// is Ctrl+Shift+Space, and there is no other way to reach it.
     Space,
+    /// A function key, by its number: F7 is `Function(7)`. Word puts the
+    /// spelling check on F7 and the thesaurus on Shift+F7, and a person who
+    /// has used Word reaches for them.
+    Function(u8),
 }
 
 /// Which modifier keys were held down.

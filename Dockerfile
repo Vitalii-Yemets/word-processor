@@ -33,8 +33,9 @@ FROM rust:1.98.0-bookworm
 # The dictionaries are here for the same reason and on the same terms: a
 # spelling checker that reads the affix rules cannot be believed against a
 # dictionary written for the test. English shows the ordinary case, German the
-# one where words are written run together. Neither is shipped with the
-# product; the program reads whatever the machine has.
+# one where words are written run together. The thesaurus is the same again
+# for the words that mean the same. None is shipped with the product; the
+# program reads whatever the machine has.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         mingw-w64 \
         file \
@@ -50,6 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-noto-color-emoji \
         hunspell-en-us \
         hunspell-de-de \
+        mythes-en-us \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add x86_64-pc-windows-gnu \

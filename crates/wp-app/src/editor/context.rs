@@ -81,9 +81,11 @@ impl Editor {
             }
         }
 
-        let entries = self.context_entries(x, y);
         self.pending_issue = None;
         self.pending_spellings = Vec::new();
+        self.pending_synonyms = Vec::new();
+        self.pending_word = None;
+        let entries = self.context_entries(x, y);
         // The word the checker marked under the pointer, and what it might
         // have been meant as: kept beside the menu so that choosing one knows
         // which word it is for.
@@ -136,7 +138,7 @@ impl Editor {
     /// across the menu — which is how Word's is laid out and how anybody's eye
     /// finds "Cut" without reading the whole thing.
     #[must_use]
-    fn context_entries(&self, x: i32, y: i32) -> Vec<Entry> {
+    fn context_entries(&mut self, x: i32, y: i32) -> Vec<Entry> {
         // A drawing first: a right-click on a picture is about the picture,
         // whatever the text round it is doing.
         if self.drawing_under(x, y).is_some() {
@@ -216,6 +218,27 @@ impl Editor {
                 spelling.push(Entry::line());
                 spelling.append(&mut entries);
                 entries = spelling;
+            }
+        }
+
+        // The words that mean what the word under the pointer means, a
+        // handful of them, and the rest behind Thesaurus — which is where
+        // Word keeps them, one level down.
+        if let Some(at) = self.position_at(x, y) {
+            let synonyms = self.synonyms_at(at);
+            if !synonyms.is_empty() {
+                entries.push(Entry::line());
+                entries.push(
+                    Entry::item(Command::Thesaurus, "Synonyms", Icon::Thesaurus).only_if(false),
+                );
+                for (index, synonym) in synonyms.iter().enumerate() {
+                    entries.push(Entry::item(
+                        Command::Synonym(index as u8),
+                        format!("    {synonym}"),
+                        Icon::None,
+                    ));
+                }
+                entries.push(Entry::item(Command::Thesaurus, "    Thesaurus…", Icon::None));
             }
         }
 

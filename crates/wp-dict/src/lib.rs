@@ -44,6 +44,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod thesaurus;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -956,7 +958,7 @@ pub fn read_pair(words: &Path) -> Result<Dictionary, Error> {
 }
 
 /// Where dictionaries are kept, by operating system.
-fn search_paths() -> Vec<PathBuf> {
+pub(crate) fn search_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if let Ok(beside) = std::env::current_exe() {
         if let Some(directory) = beside.parent() {
