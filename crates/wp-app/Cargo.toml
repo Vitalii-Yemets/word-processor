@@ -22,6 +22,7 @@ wp-svg = { path = "../wp-svg" }
 wp-shell = { path = "../wp-shell" }
 wp-doc = { path = "../wp-doc" }
 wp-html = { path = "../wp-html" }
+wp-odt = { path = "../wp-odt" }
 wp-rtf = { path = "../wp-rtf" }
 wp-text = { path = "../wp-text" }
 

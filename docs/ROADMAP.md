@@ -3702,7 +3702,44 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   pictures (the shape tables); bookmarks; fields other than links, read as
   their result; revision marks; the properties streams; the Word 95 and
   earlier layouts, whose block has no piece table; and encrypted files.
-- [ ] **G6. ODT.** Read and write, which is what an open format is for.
+- [x] **G6. ODT.** Read and write, which is what an open format is for.
+  *Done:* `wp-odt`, a crate of its own, over `wp-zip` and `wp-xml`. The
+  package: `mimetype` first and stored, as the standard says, then the
+  manifest, `content.xml`, `styles.xml`, `meta.xml` and the pictures
+  under `Pictures/`. Reading: the fonts declared, the named styles from
+  `styles.xml` and the automatic ones from `content.xml` folded parent
+  first — an automatic style keeping the name and outline level of the
+  style it builds on, so that a heading with a page break is still a
+  heading; paragraphs and headings, with their alignment, indents, spacing,
+  line spacing, keep and break flags; spans with their text style —
+  bold, italic, the underlines, strike, size, font, colour, highlight,
+  superscript and subscript, caps, small caps, hidden; tabs, line breaks,
+  runs of spaces; lists by the element round the paragraph or the style's
+  own, bulleted or numbered by the list style's level; tables with their
+  column widths, cells of any blocks; pictures in frames with their size,
+  from the package or inline as base64; links; the first page layout's
+  size and margins; the title. Writing: the reverse of it, with one
+  automatic style per distinct paragraph and text formatting, the two
+  lists as list styles, tables with column styles, headings and the title
+  as their named styles, links as the Internet link style, the page as the
+  master page's layout.
+  Held to the other implementation: LibreOffice writes a page of everything
+  a document holds to ODT and this reader gets its text, styles,
+  formatting, lists, table, picture, link and page back; LibreOffice reads
+  a package this writer made, and the text it gives back is the text that
+  went in — the bullet in front, which is the list proved — and the Word
+  file it makes from it keeps the heading, the centring, the bold, the
+  list and the table. Two LibreOffices starting at once fall over each
+  other, so the tests take turns. The Open dialog offers OpenDocument
+  Text and Save As lists it last, as Word does; an `.odt` is not in
+  Compatibility Mode; the command line and `wp text`, `render` and `pdf`
+  read it.
+  *Not done, and named here:* headers and footers, footnotes, endnotes and
+  comments; tracked changes; sections and columns; frames that are not
+  pictures, shapes and text boxes; fields other than links; cell merging,
+  cell borders and shading; nested tables; character styles by name (they
+  are read into the run and written as automatic styles); bookmarks;
+  tables of contents; the settings part.
 - [ ] **G7. PDF import.** Word does it; it is text extraction and reflow.
 - [ ] **G8. Writing the binary `.doc`.** Word 97-2003 Document in Save As:
   the compound file written — header, FAT, directory, mini stream — and a

@@ -36,6 +36,7 @@ pub const DOCUMENT_FILTERS: &[wp_shell::dialog::FileFilter] = &[
         pattern: "*.htm;*.html;*.mht;*.mhtml",
     },
     wp_shell::dialog::FileFilter { label: "Text Files (*.txt)", pattern: "*.txt" },
+    wp_shell::dialog::FileFilter { label: "OpenDocument Text (*.odt)", pattern: "*.odt" },
     wp_shell::dialog::FileFilter { label: "All files (*.*)", pattern: "*.*" },
 ];
 
@@ -60,6 +61,7 @@ pub const SAVE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
         label: "Single File Web Page (*.mht;*.mhtml)",
         pattern: "*.mht;*.mhtml",
     },
+    wp_shell::dialog::FileFilter { label: "OpenDocument Text (*.odt)", pattern: "*.odt" },
 ];
 
 /// The kind a path's extension asks for, if it asks for one of the four.
@@ -84,6 +86,15 @@ pub fn is_doc_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("doc"))
+}
+
+/// Whether a path names an OpenDocument Text package, which is read and
+/// written as one — a package too, but not a Word one.
+#[must_use]
+pub fn is_odt_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("odt"))
 }
 
 /// Whether a path names a web page, a single-file one or not.
@@ -217,6 +228,31 @@ impl Editor {
             let _ = self.document.mark_saved();
             self.file = Some(path.to_path_buf());
             self.status = format!("Saved {} as Rich Text Format", path.display());
+            self.update_title();
+            self.remember_recent(path);
+            return true;
+        }
+        // An OpenDocument package holds what the model holds, in its own
+        // words; the Word package is not kept.
+        if is_odt_path(path) {
+            let bytes = match wp_odt::save(&self.document) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    let message = format!("Cannot save: {error}");
+                    wp_shell::dialog::show_error(&message);
+                    self.status = message;
+                    return false;
+                }
+            };
+            if let Err(error) = std::fs::write(path, &bytes) {
+                let message = format!("Cannot write {}: {error}", path.display());
+                wp_shell::dialog::show_error(&message);
+                self.status = message;
+                return false;
+            }
+            let _ = self.document.mark_saved();
+            self.file = Some(path.to_path_buf());
+            self.status = format!("Saved {} as OpenDocument Text", path.display());
             self.update_title();
             self.remember_recent(path);
             return true;
@@ -437,6 +473,10 @@ impl Editor {
             .and_then(|bytes| {
                 if is_doc_path(&path) {
                     return wp_doc::open(&bytes)
+                        .map_err(|error| format!("Cannot open {}: {error}", path.display()));
+                }
+                if is_odt_path(&path) {
+                    return wp_odt::open(&bytes)
                         .map_err(|error| format!("Cannot open {}: {error}", path.display()));
                 }
                 match (rich, web) {
@@ -666,6 +706,35 @@ mod tests {
         editor.open_path(&path);
         assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
         assert_eq!(editor.document_name(), "letter.rtf");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 1));
+        assert!(editor.document.character_format_here().bold, "the bold was lost");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn an_opendocument_package_is_saved_and_opened_as_one() {
+        let folder = folder("odt");
+        let path = folder.join("letter.odt");
+        let mut editor = editor("Dear reader");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, 4));
+        editor.document.apply_run_formatting(&wp_docx::model::RunProperties {
+            bold: Some(true),
+            ..Default::default()
+        });
+        assert!(editor.write_document(&path));
+        let written = std::fs::read(&path).unwrap();
+        assert!(written.starts_with(b"PK"), "not a package");
+        assert!(
+            written[30..].starts_with(b"mimetypeapplication/vnd.oasis.opendocument.text"),
+            "the mimetype is not first and stored"
+        );
+        assert!(!editor.title.contains("[Compatibility Mode]"), "{}", editor.title);
+
+        let mut editor = self::editor("");
+        editor.open_path(&path);
+        assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
+        assert_eq!(editor.document_name(), "letter.odt");
         editor.document.set_caret(wp_docx::TextPosition::new(0, 1));
         assert!(editor.document.character_format_here().bold, "the bold was lost");
         let _ = std::fs::remove_dir_all(folder);

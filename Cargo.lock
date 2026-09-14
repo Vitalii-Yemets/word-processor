@@ -12,6 +12,7 @@ dependencies = [
  "wp-html",
  "wp-image",
  "wp-layout",
+ "wp-odt",
  "wp-pdf",
  "wp-raster",
  "wp-rtf",
@@ -37,6 +38,7 @@ dependencies = [
  "wp-docx",
  "wp-html",
  "wp-layout",
+ "wp-odt",
  "wp-opc",
  "wp-pdf",
  "wp-raster",
@@ -122,6 +124,16 @@ dependencies = [
 [[package]]
 name = "wp-normal"
 version = "0.0.1"
+
+[[package]]
+name = "wp-odt"
+version = "0.0.1"
+dependencies = [
+ "wp-docx",
+ "wp-image",
+ "wp-xml",
+ "wp-zip",
+]
 
 [[package]]
 name = "wp-opc"

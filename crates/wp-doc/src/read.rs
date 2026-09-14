@@ -86,8 +86,6 @@ struct Piece {
 #[derive(Clone, Debug, Default)]
 struct Style {
     name: String,
-    /// One for a paragraph style, two for a character style.
-    kind: u8,
     base: u16,
     papx: Vec<u8>,
     chpx: Vec<u8>,
@@ -367,7 +365,7 @@ fn parse_style(std: &[u8], base_size: usize) -> Style {
             chpx = group.to_vec();
         }
     }
-    Style { name, kind, base, papx, chpx }
+    Style { name, base, papx, chpx }
 }
 
 /// The fonts, by index: the font table's names.
@@ -820,11 +818,7 @@ impl Builder<'_> {
                     if let Some(field) = self.fields.pop() {
                         let code = field.code.trim();
                         if let Some(rest) = code.strip_prefix("HYPERLINK") {
-                            let address = rest
-                                .split_whitespace()
-                                .find(|piece| !piece.starts_with('\\'))
-                                .map(|piece| piece.trim_matches('"').to_owned())
-                                .unwrap_or_default();
+                            let address = link_address(rest);
                             if !address.is_empty()
                                 && field.paragraph == paragraph
                                 && offset > field.start

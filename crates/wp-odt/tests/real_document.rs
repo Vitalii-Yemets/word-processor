@@ -1,14 +1,15 @@
-//! Tests against a binary document written by somebody else.
+//! Tests against packages written and read by somebody else.
 //!
-//! A file written by the reader's own author proves the author's
-//! understanding and nothing else. LibreOffice is in the build image to
-//! write the files these tests read: a page of everything a document holds,
-//! converted to Word 97 by an implementation that is not this one.
+//! LibreOffice is in the build image for this: it writes the package this
+//! reader is held to, and it reads the package this writer makes — which is
+//! the only proof a writer of an open format can have short of every
+//! other program that reads it.
 
+use std::path::Path;
 use std::process::{Command, Output};
 use std::sync::Mutex;
 
-use wp_docx::model::{Alignment, Block, RunContent, Underline, VerticalAlignment};
+use wp_docx::model::{Alignment, Block, RunContent, Underline};
 
 /// Two LibreOffices starting at once fall over each other even with
 /// profiles of their own, so they take turns.
@@ -21,7 +22,7 @@ fn run(command: &mut Command) -> std::io::Result<Output> {
 
 const PAGE: &str = r##"<html><head><meta charset="utf-8"><title>Sample</title></head><body>
 <h1>A heading</h1>
-<p>Hello, <b>world</b> &#8212; caf&eacute; <i>italic</i> <u>under</u> <s>struck</s> <span style="color:#FF0000">red</span> <span style="font-size:14pt;font-family:'Times New Roman'">Times 14</span> <sup>sup</sup> <span style="background:#FFFF00">high</span>.</p>
+<p>Hello, <b>world</b> &#8212; caf&eacute; <i>italic</i> <u>under</u> <s>struck</s> <span style="color:#FF0000">red</span> <span style="font-size:14pt;font-family:'Times New Roman'">Times 14</span> <span style="background:#FFFF00">high</span>.</p>
 <p style="text-align:center">Centred paragraph.</p>
 <p style="text-align:justify;margin-left:1in;text-indent:0.5in">Indented and justified paragraph that goes on for a while so that it wraps onto more than one line of the page.</p>
 <ul><li>Milk</li><li>Bread</li></ul>
@@ -32,55 +33,47 @@ const PAGE: &str = r##"<html><head><meta charset="utf-8"><title>Sample</title></
 </body></html>
 "##;
 
-/// LibreOffice, converting to Word 97 into a folder — with a profile of its
-/// own in that folder, because two of it running at once share one
-/// otherwise and the second refuses to start.
-fn soffice(folder: &std::path::Path) -> Command {
+/// LibreOffice converting into a folder, with a profile of its own there
+/// so that the next one to run finds no lock left behind.
+fn soffice(folder: &Path, format: &str) -> Command {
     let mut command = Command::new("soffice");
     command
         .arg(format!("-env:UserInstallation=file://{}/profile", folder.display()))
-        .args(["--headless", "--convert-to", "doc:MS Word 97", "--outdir"])
+        .args(["--headless", "--convert-to", format, "--outdir"])
         .arg(folder);
     command
 }
 
-/// The page as a Word 97 document, written by LibreOffice.
-fn converted() -> Vec<u8> {
-    let folder = std::env::temp_dir().join(format!("wp-doc-{}", std::process::id()));
+fn folder(name: &str) -> std::path::PathBuf {
+    let folder = std::env::temp_dir().join(format!("wp-odt-{}-{name}", std::process::id()));
     let _ = std::fs::create_dir_all(&folder);
+    folder
+}
+
+#[test]
+fn a_package_from_libreoffice_reads_to_its_text_and_formatting() {
+    let folder = folder("read");
     let page = folder.join("sample.html");
-    std::fs::write(&page, PAGE).expect("the page written");
-    let status = run(soffice(&folder).arg(&page)).unwrap_or_else(|error| {
+    std::fs::write(&page, PAGE).unwrap();
+    let output = run(soffice(&folder, "odt").arg(&page)).unwrap_or_else(|error| {
         panic!(
             "cannot run soffice: {error}\nthe build image should install libreoffice-writer-nogui"
         )
     });
-    assert!(status.status.success(), "soffice failed: {}", String::from_utf8_lossy(&status.stderr));
-    let bytes = std::fs::read(folder.join("sample.doc")).expect("the document converted");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let bytes = std::fs::read(folder.join("sample.odt")).expect("converted");
     let _ = std::fs::remove_dir_all(&folder);
-    bytes
-}
 
-fn document_and_reading() -> (wp_docx::Document, wp_doc::Reading) {
-    let bytes = converted();
-    let reading = wp_doc::read(&bytes).expect("read");
-    let document = wp_doc::open(&bytes).expect("opened");
-    (document, reading)
-}
-
-#[test]
-fn a_real_document_reads_to_its_text_and_formatting() {
-    let (document, reading) = document_and_reading();
-    let blocks = &reading.body.blocks;
-
+    let document = wp_odt::open(&bytes).expect("opened");
+    let body = document.body();
+    let blocks = &body.blocks;
     let Block::Paragraph(heading) = &blocks[0] else { panic!("{blocks:?}") };
     assert_eq!(heading.plain_text(), "A heading");
     assert_eq!(heading.properties.style.as_deref(), Some("Heading1"));
-
     let Block::Paragraph(hello) = &blocks[1] else { panic!() };
     assert_eq!(
         hello.plain_text(),
-        "Hello, world \u{2014} caf\u{e9} italic under struck red Times 14 sup high."
+        "Hello, world \u{2014} caf\u{e9} italic under struck red Times 14 high."
     );
     let run = |text: &str| {
         hello
@@ -96,119 +89,115 @@ fn a_real_document_reads_to_its_text_and_formatting() {
     assert_eq!(run("red").properties.color.as_deref(), Some("FF0000"));
     assert_eq!(run("Times 14").properties.font.as_deref(), Some("Times New Roman"));
     assert_eq!(run("Times 14").properties.size_half_points, Some(28));
-    // LibreOffice writes a superscript as text raised by so many points,
-    // not as Word's superscript switch; either is the word up in the air.
-    let sup = &run("sup").properties;
-    assert!(
-        sup.vertical_align == Some(VerticalAlignment::Superscript)
-            || sup.position_half_points.is_some_and(|raised| raised > 0),
-        "{sup:?}"
-    );
     assert_eq!(run("high").properties.highlight.as_deref(), Some("yellow"));
-
     let Block::Paragraph(centred) = &blocks[2] else { panic!() };
     assert_eq!(centred.properties.alignment, Some(Alignment::Center));
     let Block::Paragraph(indented) = &blocks[3] else { panic!() };
     assert_eq!(indented.properties.alignment, Some(Alignment::Both));
     assert_eq!(indented.properties.indent_start, Some(1440));
     assert_eq!(indented.properties.indent_first_line, Some(720));
-
     let Block::Paragraph(milk) = &blocks[4] else { panic!() };
     assert_eq!(milk.plain_text(), "Milk");
     assert_eq!(milk.properties.numbering.map(|n| n.id), Some(wp_docx::BULLET_LIST));
     let Block::Paragraph(first) = &blocks[6] else { panic!() };
-    assert_eq!(first.plain_text(), "First");
     assert_eq!(first.properties.numbering.map(|n| n.id), Some(wp_docx::NUMBERED_LIST));
-
     let Block::Table(table) = &blocks[8] else { panic!("no table: {:?}", blocks[8].plain_text()) };
-    assert_eq!(table.rows.len(), 2);
-    assert_eq!(table.rows[0].cells.len(), 3);
     assert_eq!(table.rows[1].cells[2].blocks[0].plain_text(), "3.60");
-    assert!(
-        table.rows[0].cells.iter().all(|cell| cell.width.is_some_and(|w| w > 0)),
-        "{:?}",
-        table.grid
-    );
-
+    assert_eq!(table.grid.len(), 3);
     let Block::Paragraph(picture) = &blocks[9] else { panic!() };
-    assert_eq!(
-        picture.plain_text(),
-        format!("A picture: {} and a link after it.", wp_doc::PICTURE_MARK)
-    );
-    assert_eq!(reading.pictures.len(), 1);
     assert!(
-        reading.pictures[0].bytes.starts_with(b"\x89PNG"),
-        "the picture's bytes are not the PNG"
-    );
-    assert_eq!(reading.pictures[0].extension, "png");
-    assert_eq!(reading.links.len(), 1);
-    assert_eq!(reading.links[0].address, "https://example.com/");
-
-    let Block::Paragraph(unicode) = &blocks[10] else { panic!() };
-    assert_eq!(unicode.plain_text(), "Привет, мир \u{2014} Unicode text.");
-
-    // And as a document: the picture in, the link over its word.
-    let links = document.hyperlinks();
-    assert_eq!(links.len(), 1, "{links:?}");
-    assert_eq!(links[0].text, "link");
-    let has_picture = document.body().paragraphs().iter().any(|paragraph| {
-        paragraph
+        picture
             .runs
             .iter()
-            .any(|run| run.content.iter().any(|c| matches!(c, RunContent::Picture(_))))
-    });
-    assert!(has_picture, "the picture was not put in");
+            .any(|run| run.content.iter().any(|c| matches!(c, RunContent::Picture(_)))),
+        "no picture"
+    );
+    let links = document.hyperlinks();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].text, "link");
+    let Block::Paragraph(unicode) = &blocks[10] else { panic!() };
+    assert_eq!(unicode.plain_text(), "Привет, мир \u{2014} Unicode text.");
     let (width, height) = document.page_size();
-    assert!(width > 10000 && height > width, "the page was not read: {width}x{height}");
+    assert!(width > 10000 && height > width, "{width}x{height}");
 }
 
-/// A document this program wrote, taken through LibreOffice to Word 97 and
-/// read back: the round trip a person makes when they send a file to
-/// somebody with an old Word.
+/// A package this program wrote, read by LibreOffice: converted to plain
+/// text and to Word, and what comes back is what went in.
 #[test]
-fn a_document_of_this_programs_own_survives_the_old_format() {
+fn a_package_of_this_programs_own_is_read_by_libreoffice() {
     use wp_docx::model::{Body, NumberingReference, Paragraph, Run};
 
     let mut body = Body::default();
-    body.blocks.push(Block::Paragraph(Paragraph::text("The Title").with_style("Title")));
     body.blocks.push(Block::Paragraph(Paragraph::text("Chapter one").with_style("Heading1")));
     let mut bold = Run::text("Bold");
     bold.properties.bold = Some(true);
-    let mut paragraph =
-        Paragraph::from_runs(vec![bold, Run::text(" and plain, with a tab\tafter.")]);
-    paragraph.properties.alignment = Some(Alignment::End);
+    let mut paragraph = Paragraph::from_runs(vec![
+        bold,
+        Run::text(" and plain, caf\u{e9} \u{2014} \u{201C}quoted\u{201D}."),
+    ]);
+    paragraph.properties.alignment = Some(Alignment::Center);
     body.blocks.push(Block::Paragraph(paragraph));
     let mut item = Paragraph::text("A bullet");
     item.properties.numbering = Some(NumberingReference { id: wp_docx::BULLET_LIST, level: 0 });
     body.blocks.push(Block::Paragraph(item));
-    let docx = wp_docx::Document::create(&body).expect("a document").save().expect("saved");
+    let table = wp_docx::model::Table {
+        rows: vec![wp_docx::model::TableRow {
+            cells: vec![
+                wp_docx::model::TableCell::text("One"),
+                wp_docx::model::TableCell::text("Two"),
+            ],
+            ..Default::default()
+        }],
+        grid: vec![2000, 3000],
+        ..Default::default()
+    };
+    body.blocks.push(Block::Table(Box::new(table)));
+    body.blocks.push(Block::Paragraph(Paragraph::text("The end.")));
+    let document = wp_docx::Document::create(&body).expect("a document");
+    let package = wp_odt::save(&document).expect("saved");
 
-    let folder = std::env::temp_dir().join(format!("wp-doc-own-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&folder);
-    let source = folder.join("own.docx");
-    std::fs::write(&source, docx).unwrap();
-    let output = run(soffice(&folder).arg(&source)).expect("soffice runs");
+    let folder = folder("write");
+    let source = folder.join("own.odt");
+    std::fs::write(&source, &package).unwrap();
+    let output =
+        run(soffice(&folder, "txt:Text (encoded):UTF8").arg(&source)).expect("soffice runs");
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    let bytes = std::fs::read(folder.join("own.doc")).expect("converted");
+    let text = std::fs::read_to_string(folder.join("own.txt")).expect("converted to text");
+    let output = run(soffice(&folder, "docx").arg(&source)).expect("soffice runs");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let docx = std::fs::read(folder.join("own.docx")).expect("converted to Word");
     let _ = std::fs::remove_dir_all(&folder);
 
-    let reading = wp_doc::read(&bytes).expect("read");
-    let blocks = &reading.body.blocks;
+    // LibreOffice writes a byte order mark first, and writes a list item
+    // with its bullet in front, which is the proof that the list was read.
+    let lines: Vec<&str> = text.trim_start_matches('\u{feff}').lines().map(str::trim).collect();
     assert_eq!(
-        reading.body.plain_text(),
-        "The Title\nChapter one\nBold and plain, with a tab\tafter.\nA bullet"
+        lines,
+        vec![
+            "Chapter one",
+            "Bold and plain, caf\u{e9} \u{2014} \u{201C}quoted\u{201D}.",
+            "\u{2022} A bullet",
+            "One",
+            "Two",
+            "The end."
+        ],
+        "{text:?}"
     );
-    let Block::Paragraph(title) = &blocks[0] else { panic!() };
-    assert_eq!(title.properties.style.as_deref(), Some("Title"));
-    let Block::Paragraph(heading) = &blocks[1] else { panic!() };
-    assert_eq!(heading.properties.style.as_deref(), Some("Heading1"));
-    let Block::Paragraph(paragraph) = &blocks[2] else { panic!() };
-    assert_eq!(paragraph.properties.alignment, Some(Alignment::End));
-    assert_eq!(paragraph.runs[0].properties.bold, Some(true));
+    let reopened = wp_docx::Document::open(&docx).expect("the Word file LibreOffice made");
+    let back = reopened.body();
+    let Block::Paragraph(heading) = &back.blocks[0] else { panic!() };
+    assert_eq!(heading.plain_text(), "Chapter one");
+    let Block::Paragraph(paragraph) = &back.blocks[1] else { panic!() };
+    assert_eq!(paragraph.properties.alignment, Some(Alignment::Center));
     assert!(
-        paragraph.runs.iter().any(|run| run.content.iter().any(|c| matches!(c, RunContent::Tab))),
-        "the tab was lost"
+        paragraph
+            .runs
+            .iter()
+            .any(|run| run.properties.bold == Some(true) && run.plain_text().contains("Bold")),
+        "{:?}",
+        paragraph.runs
     );
-    let Block::Paragraph(item) = &blocks[3] else { panic!() };
-    assert_eq!(item.properties.numbering.map(|n| n.id), Some(wp_docx::BULLET_LIST));
+    let Block::Paragraph(item) = &back.blocks[2] else { panic!() };
+    assert!(item.properties.numbering.is_some(), "the bullet was lost");
+    assert!(back.blocks.iter().any(|block| matches!(block, Block::Table(_))), "the table was lost");
 }

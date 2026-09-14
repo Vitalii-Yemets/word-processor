@@ -1,0 +1,18 @@
+[package]
+name = "wp-odt"
+description = "OpenDocument Text: reading and writing the open format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Workspace-internal only. The document model, the ZIP the package is in, the
+# XML its parts are in, and the picture formats a picture can be in.
+wp-docx = { path = "../wp-docx" }
+wp-image = { path = "../wp-image" }
+wp-xml = { path = "../wp-xml" }
+wp-zip = { path = "../wp-zip" }
+
+[lints]
+workspace = true

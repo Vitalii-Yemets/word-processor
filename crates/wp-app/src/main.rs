@@ -151,6 +151,10 @@ fn start(path: Option<&str>) -> Result<(), String> {
                 let document =
                     wp_rtf::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))?;
                 (document, Some(PathBuf::from(path)), file_name(path))
+            } else if editor::is_odt_path(Path::new(path)) {
+                let document =
+                    wp_odt::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))?;
+                (document, Some(PathBuf::from(path)), file_name(path))
             } else if editor::is_template_path(Path::new(path)) {
                 let document = Document::from_template(&bytes, Some(path))
                     .map_err(|error| format!("cannot open {path}: {error}"))?;
