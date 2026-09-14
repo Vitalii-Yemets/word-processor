@@ -7,7 +7,8 @@ use crate::part_name::{is_relationships_part, normalize, relationships_part_for}
 use crate::relationships::{Relationships, RELATIONSHIPS_CONTENT_TYPE};
 use crate::{
     Error, CONTENT_TYPES_PART, MAIN_DOCUMENT_CONTENT_TYPE, MAIN_DOCUMENT_MACRO_CONTENT_TYPE,
-    MAIN_DOCUMENT_TEMPLATE_CONTENT_TYPE, OFFICE_DOCUMENT_RELATIONSHIP,
+    MAIN_DOCUMENT_MACRO_TEMPLATE_CONTENT_TYPE, MAIN_DOCUMENT_TEMPLATE_CONTENT_TYPE,
+    OFFICE_DOCUMENT_RELATIONSHIP,
 };
 
 /// One entry of the package, kept exactly as it was stored.
@@ -199,6 +200,7 @@ impl Package {
             MAIN_DOCUMENT_CONTENT_TYPE,
             MAIN_DOCUMENT_MACRO_CONTENT_TYPE,
             MAIN_DOCUMENT_TEMPLATE_CONTENT_TYPE,
+            MAIN_DOCUMENT_MACRO_TEMPLATE_CONTENT_TYPE,
         ] {
             if let Some(name) = self.content_types.parts_with_type(content_type).next() {
                 if self.part(name).is_some() {

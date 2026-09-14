@@ -22,6 +22,7 @@ mod effects;
 mod equation;
 mod events;
 pub(crate) mod files;
+pub use files::is_template_path;
 mod fontdialog;
 mod formuladialog;
 mod furnitureedit;

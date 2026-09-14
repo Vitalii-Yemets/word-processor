@@ -130,14 +130,27 @@ impl Editor {
         }
     }
 
-    /// Word's New. There is one thing to make, and it says so.
+    /// Word's New: a blank document, and a document from each of the person's
+    /// own templates — Word's Personal tab, which lists what is in the folder
+    /// templates are saved to.
     fn new_page(&self) -> Contents {
+        let mut rows = vec![Row::new(
+            "Blank document",
+            "An empty document in the theme new documents are made with",
+        )];
+        for path in personal_templates() {
+            let name = path.file_stem().and_then(|name| name.to_str()).unwrap_or(UNTITLED);
+            let folder =
+                path.parent().map(|folder| folder.display().to_string()).unwrap_or_default();
+            rows.push(Row::new(name, format!("A document from the template in {folder}")));
+        }
         Contents {
             heading: String::from("New"),
-            rows: vec![Row::new(
-                "Blank document",
-                "An empty document in the theme new documents are made with",
-            )],
+            rows_heading: String::from("Personal"),
+            // The blank document is above the heading, because it is not one
+            // of the person's templates; Word has it the same way.
+            rows_heading_at: 1,
+            rows,
             ..Contents::default()
         }
     }
@@ -353,7 +366,16 @@ impl Editor {
             }
             Place::New => {
                 self.close_backstage();
-                self.new_document()
+                if index == 0 {
+                    return self.new_document();
+                }
+                let Some(template) = personal_templates().get(index - 1).cloned() else {
+                    return Response::Ignored;
+                };
+                if !self.may_discard() {
+                    return Response::Ignored;
+                }
+                self.new_from_template(&template)
             }
             Place::Open => self.open_from_page(index),
             Place::SaveAs => self.save_from_page(index),
@@ -404,10 +426,39 @@ impl Editor {
             Some(path) => path.file_name().map(std::ffi::OsStr::to_os_string),
             None => None,
         };
-        let suggested = folder.join(name.unwrap_or_else(|| format!("{UNTITLED}.docx").into()));
+        let suggested = folder.join(name.unwrap_or_else(|| self.untitled_name().into()));
         self.save_into(&suggested);
         self.close_backstage()
     }
+}
+
+/// The templates the person has saved, which Word's New page lists as
+/// Personal: every template in the folder templates are saved to, by name.
+///
+/// Word's folder, under Documents, which is where its Save As puts a template
+/// unless told otherwise. Nothing there, or no such folder, is an empty list
+/// and not an error: most people have never saved a template.
+#[must_use]
+pub(super) fn personal_templates() -> Vec<PathBuf> {
+    let Some(folder) = personal_templates_folder() else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&folder) else { return Vec::new() };
+    let mut found: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| super::files::is_template_path(path))
+        .collect();
+    found.sort_by_key(|path| path.file_name().map(|name| name.to_ascii_lowercase()));
+    found
+}
+
+/// Where Word keeps a person's own templates: `Custom Office Templates` under
+/// their documents.
+fn personal_templates_folder() -> Option<PathBuf> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()
+        .filter(|value| !value.is_empty())?;
+    Some(PathBuf::from(home).join("Documents").join("Custom Office Templates"))
 }
 
 /// A file's size the way a person says it.

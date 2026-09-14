@@ -3474,8 +3474,45 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
 ## G — The files Word can open
 
-- [ ] **G1. The other OOXML files.** `.docm`, `.dotx`, `.dotm`: templates and
+- [x] **G1. The other OOXML files.** `.docm`, `.dotx`, `.dotm`: templates and
   macro-enabled documents, which differ in their content types and their parts.
+  The four are one package with one line of difference: the content type of
+  the main part, which says whether the file is a document or a template and
+  whether it may hold macros. A macro-enabled file carries them as
+  `word/vbaProject.bin`, reached from the main part; the other two cannot,
+  and Word refuses to write it into them.
+  *Done:* `wp_docx::kinds` — `Kind` with its content type, extension and
+  Word's label for each; `Document::kind`, `set_kind`, `has_macros`,
+  `remove_macros`, `attached_template`, `attach_template`, `from_template`.
+  `.dotm` was the one content type `wp-opc` did not know; it does now, and a
+  relationship can be taken away. Saving picks the kind from the extension:
+  the Save As list is Word's four in Word's order, opens on the kind the
+  document is, and a name typed without an extension takes the extension of
+  the type chosen, which is what "Save as type" means. A document saved as
+  `.dotx` is a template from then on. Saving a document with macros as a
+  kind that cannot hold them asks first, in Word's words, and then takes
+  them out — the part, its type, and the relationship — rather than writing
+  a file Word would not; saved as `.docm` or `.dotm` the macros survive the
+  round trip untouched. The Open dialog offers the four together and apart.
+  A template opened is a document made from it, which is Word's verb on a
+  template: from the command line — the shell's New — and from the New page,
+  which lists the person's own templates under Personal, from the folder
+  Word saves them to (`Documents\Custom Office Templates`). The document is
+  untitled, is a plain document whatever the template was (the macros stay
+  in the template, which the document is attached to), is not counted as
+  changed until something is typed, and remembers the template as Word
+  writes it: `w:attachedTemplate` in the settings, through an external
+  relationship to a `file:///` address. File ▸ Open on a template opens the
+  template itself, for editing it, as Word's does. `wp new` writes whichever
+  of the four the extension asks for and `wp info` names the kind.
+  *Not done, and named here:* the styles updated from the attached template
+  (Developer ▸ Document Template ▸ Automatically update), which is the other
+  half of what the attachment is for; the Normal template — Word makes every
+  blank document from `Normal.dotm` and keeps the person's defaults in it,
+  where this program keeps them in the settings; a template's own building
+  blocks, which are **J6**, and macros running, which is **J7**. The shell
+  association that makes double-clicking a `.dotx` say New is the
+  installer's to write, and there is no installer yet.
 - [ ] **G2. Plain text**, with encoding detection and the dialog Word shows when
   it is not sure.
 - [ ] **G3. RTF.** Read and write. It is the format everything else exports to.

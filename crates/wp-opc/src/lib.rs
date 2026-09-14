@@ -50,6 +50,10 @@ pub const MAIN_DOCUMENT_MACRO_CONTENT_TYPE: &str =
 pub const MAIN_DOCUMENT_TEMPLATE_CONTENT_TYPE: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml";
 
+/// The same part in a macro-enabled template (`.dotm`).
+pub const MAIN_DOCUMENT_MACRO_TEMPLATE_CONTENT_TYPE: &str =
+    "application/vnd.ms-word.template.macroEnabledTemplate.main+xml";
+
 /// Relationship type of the package's main document part.
 pub const OFFICE_DOCUMENT_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";

@@ -128,9 +128,18 @@ fn start(path: Option<&str>) -> Result<(), String> {
         Some(path) => {
             let bytes =
                 std::fs::read(path).map_err(|error| format!("cannot read {path}: {error}"))?;
-            let document =
-                Document::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))?;
-            (document, Some(PathBuf::from(path)), file_name(path))
+            // A template given to the program is a document to make from it,
+            // which is what Word does with one double-clicked: the template
+            // stays as it was, and the new document is untitled.
+            if editor::is_template_path(Path::new(path)) {
+                let document = Document::from_template(&bytes, Some(path))
+                    .map_err(|error| format!("cannot open {path}: {error}"))?;
+                (document, None, "Document".to_owned())
+            } else {
+                let document = Document::open(&bytes)
+                    .map_err(|error| format!("cannot open {path}: {error}"))?;
+                (document, Some(PathBuf::from(path)), file_name(path))
+            }
         }
         None => {
             // Started with no file, so there is something to look at rather than

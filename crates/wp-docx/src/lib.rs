@@ -65,6 +65,7 @@ pub mod group;
 mod history;
 pub mod ink;
 pub mod joins;
+pub mod kinds;
 pub mod languages;
 pub mod lines;
 pub mod links;

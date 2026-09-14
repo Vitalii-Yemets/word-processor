@@ -173,6 +173,13 @@ impl Relationships {
         self.entries.last().expect("just pushed")
     }
 
+    /// Takes a relationship away. Returns whether there was one to take.
+    pub fn remove(&mut self, id: &str) -> bool {
+        let before = self.entries.len();
+        self.entries.retain(|relationship| relationship.id != id);
+        self.entries.len() != before
+    }
+
     /// Writes the part back out.
     pub fn to_xml(&self) -> Result<String, wp_xml::Error> {
         let mut writer = Writer::with_capacity(256 + self.entries.len() * 128);

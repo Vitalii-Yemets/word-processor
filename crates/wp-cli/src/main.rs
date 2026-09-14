@@ -114,7 +114,8 @@ fn print_usage() {
         "\
 Usage: wp <command>
 
-  new <file.docx>              create a demonstration document
+  new <file.docx>              create a demonstration document; .docm, .dotx
+                               and .dotm make the other three kinds
   info <file.docx>             show the package structure
   text <file.docx>             print the document text
   outline <file.docx>          print the structure with formatting
@@ -164,8 +165,16 @@ fn open(path: &str) -> Result<Document, String> {
 
 /// Writes a document that exercises the features the model supports.
 fn create(path: &str) -> Result<(), String> {
-    let document = Document::create(&demonstration_body())
+    let mut document = Document::create(&demonstration_body())
         .map_err(|error| format!("cannot build the document: {error}"))?;
+    // The extension says which of the four kinds to write.
+    if let Some(kind) = Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(wp_docx::kinds::Kind::of_extension)
+    {
+        document.set_kind(kind);
+    }
     let bytes = document.save().map_err(|error| format!("cannot save: {error}"))?;
 
     write(path, &bytes)?;
@@ -182,6 +191,11 @@ fn info(path: &str) -> Result<(), String> {
     let package = document.package();
 
     outln!("main document part: {}", document.main_part());
+    outln!(
+        "kind: {}{}",
+        document.kind().label(),
+        if document.has_macros() { ", with macros" } else { "" }
+    );
     outln!();
     outln!("{:<44} {:>10}  {}", "PART", "BYTES", "CONTENT TYPE");
 

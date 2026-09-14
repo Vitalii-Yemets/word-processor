@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use wp_docx::kinds::Kind;
 use wp_docx::model::{Block, Body, Paragraph};
 use wp_docx::Document;
 use wp_shell::Response;
@@ -12,11 +13,53 @@ use super::Editor;
 /// What a document with no file of its own is called.
 pub const UNTITLED: &str = "Document";
 
-/// The file types the open and save dialogs offer.
+/// The file types the Open dialog offers: Word's four, together and apart.
 pub const DOCUMENT_FILTERS: &[wp_shell::dialog::FileFilter] = &[
-    wp_shell::dialog::FileFilter { label: "Word documents (*.docx)", pattern: "*.docx" },
+    wp_shell::dialog::FileFilter {
+        label: "Word documents (*.docx;*.docm;*.dotx;*.dotm)",
+        pattern: "*.docx;*.docm;*.dotx;*.dotm",
+    },
+    wp_shell::dialog::FileFilter { label: "Word Document (*.docx)", pattern: "*.docx" },
+    wp_shell::dialog::FileFilter {
+        label: "Word Macro-Enabled Document (*.docm)",
+        pattern: "*.docm",
+    },
+    wp_shell::dialog::FileFilter { label: "Word Template (*.dotx)", pattern: "*.dotx" },
+    wp_shell::dialog::FileFilter {
+        label: "Word Macro-Enabled Template (*.dotm)",
+        pattern: "*.dotm",
+    },
     wp_shell::dialog::FileFilter { label: "All files (*.*)", pattern: "*.*" },
 ];
+
+/// And the ones Save As offers, which are the kinds a document can be made
+/// into, in the order Word lists them. The extension follows the kind chosen:
+/// that is what "Save as type" means.
+pub const SAVE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
+    wp_shell::dialog::FileFilter { label: "Word Document (*.docx)", pattern: "*.docx" },
+    wp_shell::dialog::FileFilter {
+        label: "Word Macro-Enabled Document (*.docm)",
+        pattern: "*.docm",
+    },
+    wp_shell::dialog::FileFilter { label: "Word Template (*.dotx)", pattern: "*.dotx" },
+    wp_shell::dialog::FileFilter {
+        label: "Word Macro-Enabled Template (*.dotm)",
+        pattern: "*.dotm",
+    },
+];
+
+/// The kind a path's extension asks for, if it asks for one of the four.
+#[must_use]
+pub fn kind_of_path(path: &Path) -> Option<Kind> {
+    path.extension().and_then(|extension| extension.to_str()).and_then(Kind::of_extension)
+}
+
+/// Whether a path names a template, which is opened by making a document
+/// from it rather than by opening it.
+#[must_use]
+pub fn is_template_path(path: &Path) -> bool {
+    kind_of_path(path).is_some_and(Kind::is_template)
+}
 
 impl Editor {
     /// What the document is called, for the caption and for asking about it.
@@ -47,7 +90,27 @@ impl Editor {
     }
 
     /// Writes the document to a path. Returns whether it got there.
+    ///
+    /// The path's extension says which of the four kinds the file is to be,
+    /// and the document is made that kind before it is written: a document
+    /// saved as `.dotx` is a template from then on. A kind that cannot hold
+    /// macros is asked about first, in Word's words, when there are macros
+    /// to lose.
     fn write_document(&mut self, path: &Path) -> bool {
+        if let Some(kind) = kind_of_path(path) {
+            if !kind.allows_macros() && self.document.has_macros() {
+                let question = format!(
+                    "The following features cannot be saved in macro-free documents:\n\n    \u{2022} VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {} as a macro-free document?",
+                    path.file_name().and_then(|name| name.to_str()).unwrap_or(UNTITLED)
+                );
+                if !wp_shell::dialog::ask_yes_no(&question) {
+                    self.status = String::from("Not saved");
+                    return false;
+                }
+            }
+            self.document.set_kind(kind);
+        }
+
         let bytes = match self.document.save() {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -96,9 +159,14 @@ impl Editor {
     }
 
     pub(super) fn save_as_now(&mut self) -> bool {
-        let suggested =
-            self.file.clone().unwrap_or_else(|| PathBuf::from(format!("{UNTITLED}.docx")));
+        let suggested = self.file.clone().unwrap_or_else(|| PathBuf::from(self.untitled_name()));
         self.save_into(&suggested)
+    }
+
+    /// What a document with no file of its own would be saved as: the kind it
+    /// is, which is what the Save As list opens on.
+    pub(super) fn untitled_name(&self) -> String {
+        format!("{UNTITLED}.{}", self.document.kind().extension())
     }
 
     /// Asks where the document goes, starting at a path already worked out.
@@ -107,7 +175,7 @@ impl Editor {
     /// name is not, and the dialog opens where the folder is rather than
     /// wherever it happened to be last.
     pub(super) fn save_into(&mut self, suggested: &Path) -> bool {
-        match wp_shell::dialog::save_file("Save as", DOCUMENT_FILTERS, Some(suggested)) {
+        match wp_shell::dialog::save_file("Save as", SAVE_FILTERS, Some(suggested)) {
             Some(path) => self.write_document(&path),
             None => {
                 self.status = String::from("Not saved");
@@ -181,11 +249,43 @@ impl Editor {
         self.open_path(&path)
     }
 
+    /// Makes a new document from a template, which is what opening a template
+    /// from the shell does: Word's verb on a `.dotx` is New, not Open, and the
+    /// template stays as it was. The document is untitled, remembers the
+    /// template it came from, and is saved as a document.
+    ///
+    /// Whoever calls this has already asked about unsaved changes.
+    pub(super) fn new_from_template(&mut self, path: &Path) -> Response {
+        let made = std::fs::read(path)
+            .map_err(|error| format!("Cannot read {}: {error}", path.display()))
+            .and_then(|bytes| {
+                Document::from_template(&bytes, path.to_str())
+                    .map_err(|error| format!("Cannot open {}: {error}", path.display()))
+            });
+        match made {
+            Ok(document) => {
+                self.set_document(document, None);
+                self.status = format!("New document from {}", path.display());
+                self.remember_recent(path);
+                Response::Redraw
+            }
+            Err(message) => {
+                wp_shell::dialog::show_error(&message);
+                self.status = message;
+                self.needs_redraw = true;
+                Response::Redraw
+            }
+        }
+    }
+
     /// Opens a document whose path is already known.
     ///
     /// The Open page's list of documents opened lately goes straight here: it
     /// knows the path, so asking for it again through a file dialog would be
     /// asking a question that has already been answered.
+    ///
+    /// A template is opened as itself here, for editing it: this is File ▸
+    /// Open, and the template is what was asked for.
     ///
     /// Whoever calls this has already asked about unsaved changes.
     pub(super) fn open_path(&mut self, path: &Path) -> Response {
@@ -318,4 +418,89 @@ pub(crate) fn timestamp() -> String {
     }
 
     format!("{year:04}-{:02}-{:02}T{hour:02}:{minute:02}:{second:02}Z", month + 1, days + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Event};
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    fn editor(text: &str) -> Editor {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text(text)));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor
+    }
+
+    /// A folder of this test's own, because the tests run side by side.
+    fn folder(name: &str) -> PathBuf {
+        let folder = std::env::temp_dir().join(format!("wp-kinds-{}-{name}", std::process::id()));
+        let _ = std::fs::create_dir_all(&folder);
+        folder
+    }
+
+    #[test]
+    fn the_extension_says_which_kind_the_file_becomes() {
+        let folder = folder("extension");
+        let mut editor = editor("A letter");
+        assert_eq!(editor.untitled_name(), "Document.docx");
+
+        let template = folder.join("Letter.dotx");
+        assert!(editor.write_document(&template));
+        assert_eq!(editor.document.kind(), Kind::Template);
+        assert_eq!(editor.untitled_name(), "Document.dotx");
+        let reopened = Document::open(&std::fs::read(&template).unwrap()).unwrap();
+        assert_eq!(reopened.kind(), Kind::Template, "the file is not a template");
+
+        let macro_document = folder.join("Letter.docm");
+        assert!(editor.write_document(&macro_document));
+        assert_eq!(editor.document.kind(), Kind::MacroEnabledDocument);
+        assert_eq!(editor.document_name(), "Letter.docm");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_template_opened_makes_a_document_and_stays_as_it_was() {
+        let folder = folder("template");
+        let template = folder.join("Letter.dotm");
+        let mut editor = editor("Dear");
+        assert!(editor.write_document(&template));
+        let before = std::fs::read(&template).unwrap();
+
+        editor.new_from_template(&template);
+        assert!(editor.file.is_none(), "the template itself is what is open");
+        assert_eq!(editor.document.kind(), Kind::Document);
+        assert_eq!(editor.document_name(), UNTITLED);
+        assert!(!editor.document.is_modified());
+        assert_eq!(editor.document.plain_text().trim_end(), "Dear");
+        assert_eq!(
+            editor.document.attached_template().as_deref(),
+            template.to_str(),
+            "the document does not know where it came from"
+        );
+        assert_eq!(std::fs::read(&template).unwrap(), before, "the template was changed");
+
+        // File ▸ Open on the same template opens the template itself.
+        editor.open_path(&template);
+        assert_eq!(editor.document.kind(), Kind::MacroEnabledTemplate);
+        assert_eq!(editor.document_name(), "Letter.dotm");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_path_names_its_kind() {
+        assert_eq!(kind_of_path(Path::new("C:/a/b.DOTX")), Some(Kind::Template));
+        assert_eq!(kind_of_path(Path::new("b.docx")), Some(Kind::Document));
+        assert_eq!(kind_of_path(Path::new("b.txt")), None);
+        assert!(is_template_path(Path::new("b.dotm")));
+        assert!(!is_template_path(Path::new("b.docm")));
+    }
 }

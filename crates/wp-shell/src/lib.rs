@@ -482,6 +482,20 @@ pub mod dialog {
         }
     }
 
+    /// Asks a question with two answers: yes, or anything else.
+    #[must_use]
+    pub fn ask_yes_no(question: &str) -> bool {
+        #[cfg(windows)]
+        {
+            crate::windows::ask_yes_no(question)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = question;
+            false
+        }
+    }
+
     /// Tells the user something went wrong.
     pub fn show_error(message: &str) {
         #[cfg(windows)]

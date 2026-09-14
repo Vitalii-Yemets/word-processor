@@ -249,6 +249,7 @@ const PATH_BUFFER: usize = 32768;
 
 // Message box styles and the answers they give back.
 const MB_YES_NO_CANCEL: u32 = 0x0000_0003;
+const MB_YES_NO: u32 = 0x0000_0004;
 const MB_OK: u32 = 0x0000_0000;
 const MB_ICON_WARNING: u32 = 0x0000_0030;
 const MB_ICON_ERROR: u32 = 0x0000_0010;
@@ -1272,8 +1273,17 @@ pub(crate) fn choose_file(
 
     let filter = filter_string(filters);
     let title = wide(title);
-    // The extension added when the user types a name without one.
-    let default_extension = wide("docx");
+
+    // The type list opens on the type the suggested name has, which is how
+    // Word's Save As opens on "Word Template" for a template: the list and the
+    // name agree, and a person who changes neither gets what they had.
+    let starting_filter = suggested
+        .and_then(|path| path.extension())
+        .and_then(|extension| extension.to_str())
+        .and_then(|extension| {
+            filters.iter().position(|filter| filter_has_extension(filter.pattern, extension))
+        })
+        .map_or(1, |index| index as u32 + 1);
 
     let mut buffer = vec![0u16; PATH_BUFFER];
     if let Some(path) = suggested {
@@ -1292,7 +1302,7 @@ pub(crate) fn choose_file(
         filter: filter.as_ptr(),
         custom_filter: core::ptr::null_mut(),
         max_custom_filter: 0,
-        filter_index: 1,
+        filter_index: starting_filter,
         file: buffer.as_mut_ptr(),
         max_file: buffer.len() as u32,
         file_title: core::ptr::null_mut(),
@@ -1306,7 +1316,10 @@ pub(crate) fn choose_file(
             | if saving { OFN_OVERWRITE_PROMPT } else { OFN_FILE_MUST_EXIST },
         file_offset: 0,
         file_extension: 0,
-        default_extension: default_extension.as_ptr(),
+        // No extension is filled in by the system: the one the chosen type
+        // calls for is put on below, which the system cannot do for a list
+        // of several types.
+        default_extension: core::ptr::null(),
         custom_data: 0,
         hook: core::ptr::null_mut(),
         template_name: core::ptr::null(),
@@ -1335,7 +1348,34 @@ pub(crate) fn choose_file(
     if length == 0 {
         return None;
     }
-    Some(std::path::PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length])))
+    let mut path = std::path::PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length]));
+
+    // A name typed without an extension gets the extension of the type that
+    // was chosen in the list, which is what "Save as type" means.
+    if saving && path.extension().is_none() {
+        let chosen = filters.get(arguments.filter_index.saturating_sub(1) as usize);
+        if let Some(extension) = chosen.and_then(|filter| first_extension(filter.pattern)) {
+            path.set_extension(extension);
+        }
+    }
+    Some(path)
+}
+
+/// Whether a filter's pattern - `*.docx`, or `*.dotx;*.dotm` - names an
+/// extension.
+fn filter_has_extension(pattern: &str, extension: &str) -> bool {
+    pattern.split(';').any(|one| {
+        one.trim().strip_prefix("*.").is_some_and(|named| named.eq_ignore_ascii_case(extension))
+    })
+}
+
+/// The first extension a filter's pattern names, if it names one rather than
+/// everything.
+fn first_extension(pattern: &str) -> Option<&str> {
+    pattern.split(';').find_map(|one| {
+        let named = one.trim().strip_prefix("*.")?;
+        (!named.is_empty() && named != "*").then_some(named)
+    })
 }
 
 /// Asks whether to save changes, and what to do if not.
@@ -1361,6 +1401,18 @@ pub(crate) fn ask_to_save(name: &str) -> crate::dialog::Answer {
         // throw the user's work away.
         _ => crate::dialog::Answer::Cancel,
     }
+}
+
+/// Asks a question with two answers. Anything but yes is no, because a
+/// dialog that could not be shown is not consent.
+pub(crate) fn ask_yes_no(question: &str) -> bool {
+    let text = wide(question);
+    let caption = wide("Word Processor");
+    // SAFETY: both strings outlive the call, which copies what it needs.
+    let answer = unsafe {
+        MessageBoxW(owner_window(), text.as_ptr(), caption.as_ptr(), MB_YES_NO | MB_ICON_WARNING)
+    };
+    answer == ID_YES
 }
 
 /// Shows a message the user has to acknowledge.
