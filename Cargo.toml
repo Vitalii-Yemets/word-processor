@@ -13,6 +13,7 @@ members = [
     "crates/wp-font",
     "crates/wp-grammar",
     "crates/wp-image",
+    "crates/wp-rtf",
     "crates/wp-shape",
     "crates/wp-text",
     "crates/wp-svg",

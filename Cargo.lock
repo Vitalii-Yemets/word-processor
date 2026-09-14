@@ -12,6 +12,7 @@ dependencies = [
  "wp-layout",
  "wp-pdf",
  "wp-raster",
+ "wp-rtf",
  "wp-segment",
  "wp-shell",
  "wp-svg",
@@ -35,6 +36,7 @@ dependencies = [
  "wp-opc",
  "wp-pdf",
  "wp-raster",
+ "wp-rtf",
 ]
 
 [[package]]
@@ -123,6 +125,15 @@ name = "wp-raster"
 version = "0.0.1"
 dependencies = [
  "wp-deflate",
+]
+
+[[package]]
+name = "wp-rtf"
+version = "0.0.1"
+dependencies = [
+ "wp-docx",
+ "wp-image",
+ "wp-text",
 ]
 
 [[package]]

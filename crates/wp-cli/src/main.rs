@@ -158,6 +158,14 @@ fn write(path: &str, bytes: &[u8]) -> Result<(), String> {
 
 fn open(path: &str) -> Result<Document, String> {
     let bytes = read(path)?;
+    // A Rich Text file is read as one; everything else is a package.
+    let rich = Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("rtf"));
+    if rich {
+        return wp_rtf::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"));
+    }
     Document::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))
 }
 

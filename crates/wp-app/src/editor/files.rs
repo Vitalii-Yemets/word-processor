@@ -29,6 +29,7 @@ pub const DOCUMENT_FILTERS: &[wp_shell::dialog::FileFilter] = &[
         label: "Word Macro-Enabled Template (*.dotm)",
         pattern: "*.dotm",
     },
+    wp_shell::dialog::FileFilter { label: "Rich Text Format (*.rtf)", pattern: "*.rtf" },
     wp_shell::dialog::FileFilter { label: "Text Files (*.txt)", pattern: "*.txt" },
     wp_shell::dialog::FileFilter { label: "All files (*.*)", pattern: "*.*" },
 ];
@@ -47,6 +48,7 @@ pub const SAVE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
         label: "Word Macro-Enabled Template (*.dotm)",
         pattern: "*.dotm",
     },
+    wp_shell::dialog::FileFilter { label: "Rich Text Format (*.rtf)", pattern: "*.rtf" },
     wp_shell::dialog::FileFilter { label: "Plain Text (*.txt)", pattern: "*.txt" },
 ];
 
@@ -54,6 +56,15 @@ pub const SAVE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
 #[must_use]
 pub fn kind_of_path(path: &Path) -> Option<Kind> {
     path.extension().and_then(|extension| extension.to_str()).and_then(Kind::of_extension)
+}
+
+/// Whether a path names a Rich Text file, which is read and written as one
+/// rather than as a package.
+#[must_use]
+pub fn is_rtf_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("rtf"))
 }
 
 /// Whether a path names a template, which is opened by making a document
@@ -80,10 +91,14 @@ impl Editor {
     /// Only when it has actually changed: the caption is set through the
     /// window, and doing that on every keystroke would be work for nothing.
     pub(super) fn update_title(&mut self) {
+        // A Rich Text file is in Compatibility Mode, and Word's caption says
+        // so: what it holds is what the older format can hold.
+        let compatibility = self.file.as_deref().is_some_and(is_rtf_path);
         let wanted = format!(
-            "{}{} — Word Processor",
+            "{}{}{} — Word Processor",
             if self.document.is_modified() { "*" } else { "" },
-            self.document_name()
+            self.document_name(),
+            if compatibility { " [Compatibility Mode]" } else { "" }
         );
         if wanted != self.title {
             wp_shell::set_title(&wanted);
@@ -104,6 +119,23 @@ impl Editor {
         if super::textfiles::is_text_path(path) {
             self.begin_text_save(path);
             return false;
+        }
+        // A Rich Text file is written as one: what the model holds, as RTF,
+        // and nothing of the package.
+        if is_rtf_path(path) {
+            let bytes = wp_rtf::write(&self.document);
+            if let Err(error) = std::fs::write(path, &bytes) {
+                let message = format!("Cannot write {}: {error}", path.display());
+                wp_shell::dialog::show_error(&message);
+                self.status = message;
+                return false;
+            }
+            let _ = self.document.mark_saved();
+            self.file = Some(path.to_path_buf());
+            self.status = format!("Saved {} as Rich Text Format", path.display());
+            self.update_title();
+            self.remember_recent(path);
+            return true;
         }
         if let Some(kind) = kind_of_path(path) {
             if !kind.allows_macros() && self.document.has_macros() {
@@ -314,10 +346,11 @@ impl Editor {
                 }
             };
         }
+        let rich = is_rtf_path(&path);
         let opened = std::fs::read(&path)
             .map_err(|error| format!("Cannot read {}: {error}", path.display()))
             .and_then(|bytes| {
-                Document::open(&bytes)
+                if rich { wp_rtf::open(&bytes) } else { Document::open(&bytes) }
                     .map_err(|error| format!("Cannot open {}: {error}", path.display()))
             });
 
@@ -516,6 +549,31 @@ mod tests {
         editor.open_path(&template);
         assert_eq!(editor.document.kind(), Kind::MacroEnabledTemplate);
         assert_eq!(editor.document_name(), "Letter.dotm");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_rich_text_file_is_saved_and_opened_as_one() {
+        let folder = folder("rtf");
+        let path = folder.join("letter.rtf");
+        let mut editor = editor("Dear reader");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, 4));
+        editor.document.apply_run_formatting(&wp_docx::model::RunProperties {
+            bold: Some(true),
+            ..Default::default()
+        });
+        assert!(editor.write_document(&path));
+        let written = std::fs::read(&path).unwrap();
+        assert!(written.starts_with(br"{\rtf1"), "not an RTF file");
+        assert!(editor.title.contains("[Compatibility Mode]"), "{}", editor.title);
+
+        let mut editor = self::editor("");
+        editor.open_path(&path);
+        assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
+        assert_eq!(editor.document_name(), "letter.rtf");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 1));
+        assert!(editor.document.character_format_here().bold, "the bold was lost");
         let _ = std::fs::remove_dir_all(folder);
     }
 

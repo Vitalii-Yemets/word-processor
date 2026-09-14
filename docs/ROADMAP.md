@@ -3552,7 +3552,54 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   when sure; Word's red marks on the characters the encoding cannot write,
   which this counts instead; opening a file of any extension as text
   (Word's "Recover Text from Any File"), where this goes by `.txt`.
-- [ ] **G3. RTF.** Read and write. It is the format everything else exports to.
+- [x] **G3. RTF.** Read and write. It is the format everything else exports to.
+  Every word processor since 1987 reads it and writes it, the clipboard
+  carries formatted text as it, and a file from Word begins with a hundred
+  lines of groups a reader has no use for and has to walk past.
+  *Done:* `wp-rtf`, a crate of its own. A lexer that cuts the file into
+  groups, control words with their numbers, control symbols and bytes; a
+  reader that is a stack of states and one pass over the tokens, where a
+  group inherits the formatting of the one it is in and gives it back at its
+  end, and a group beginning `\*` that names a destination the reader does
+  not know is skipped whole — which is what the star is for, and what lets
+  Word's `\themedata`, `\latentstyles`, `\rsidtbl`, `\datastore` and the rest
+  go by. The font table with each font's charset, which decides the code
+  page of the text in that font over the document's `\ansicpg`, read
+  through `wp-text`; `\u` with its stand-in skipped as `\uc` says, and a
+  character past the plane put together from its two halves; the colour
+  table; the stylesheet, with Word's names mapped to the styles every
+  document here has; the list table and its overrides, so a paragraph's
+  `\ls` becomes the bulleted or the numbered list by its first level's
+  `\levelnfc`. Paragraph formatting (alignment, indents, spacing, line
+  spacing with `\slmult`, keep and page-break flags, outline level, tab
+  stops with their alignment and leader), character formatting (bold,
+  italic, the underlines, strikes, size, font, colour, highlight by Word's
+  sixteen, super- and subscript, caps, hidden, language), the special
+  characters with control words of their own, tables from `\trowd`,
+  `\cellx`, `\cell` and `\row` with their widths and grid, pictures from
+  `\pict` as PNG or JPEG at their `\picwgoal` size, and `HYPERLINK` fields
+  as links. `open` makes a document of it, putting the pictures in where
+  their marks were and the links over their text, moved by what a picture
+  measures in the text. The writer goes the other way: Word's header with
+  the fonts, colours, styles and the two lists, `\'hh` for the Western
+  page and `\u` with a question mark for the rest, the special characters
+  as their control words, tables row by row, pictures as hex with
+  `\picwgoal`, links as fields with the runs split at their edges, and the
+  list text in its own group so a reader that knows no lists still shows
+  the bullet. What is written is read back, formatting and all.
+  The Open dialog offers Rich Text Format; Save As offers it; a `.rtf`
+  opened is in Compatibility Mode and the caption says so, as Word's does;
+  `wp text`, `render` and `pdf` read `.rtf` too. A file cut down from what
+  Word 2016 writes reads to its text with its heading style, its bold run
+  and its paragraph spacing.
+  *Not done, and named here:* headers and footers, footnotes, sections and
+  page setup, nested tables and cell merging, table borders and shading,
+  paragraph borders and shading, drawings (`\shp`) and metafile pictures,
+  fields other than links (the dates, the page numbers, the tables of
+  contents are read as their result text), bookmarks, comments and
+  revision marks, right-to-left text, character and table styles, and the
+  clipboard as RTF, which is **H2**'s question. Each is one more destination
+  or one more control word in the same reader.
 - [ ] **G4. HTML and MHT.** Read and write, including the mess Word itself
   writes.
 - [ ] **G5. The binary `.doc`.** [MS-DOC] over [MS-CFB]: the compound file, the

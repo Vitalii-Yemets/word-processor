@@ -1,0 +1,17 @@
+[package]
+name = "wp-rtf"
+description = "Rich Text Format: reading what Word and everything else writes, and writing it back"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Workspace-internal only. The document model to read into and write from,
+# the code pages the text is in, and the picture formats a picture can be in.
+wp-docx = { path = "../wp-docx" }
+wp-image = { path = "../wp-image" }
+wp-text = { path = "../wp-text" }
+
+[lints]
+workspace = true
