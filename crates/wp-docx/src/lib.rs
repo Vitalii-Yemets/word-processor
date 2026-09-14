@@ -2414,6 +2414,34 @@ impl Document {
         width_emu: i64,
         height_emu: i64,
     ) -> Result<bool, Error> {
+        self.record(EditKind::Structural, self.caret, false);
+        let id = self.adopt_picture(bytes, extension)?;
+
+        let prefix = self.prefix();
+        let drawing = edit::drawing_element(&id, width_emu, height_emu, prefix.as_deref());
+        let inserted = position::insert_element_at(
+            &mut self.tree.root,
+            self.caret,
+            drawing,
+            prefix.as_deref(),
+        );
+
+        if inserted {
+            self.caret = TextPosition::new(self.caret.paragraph, self.caret.offset + 1);
+            self.anchor = None;
+            self.modified = true;
+        }
+        Ok(inserted)
+    }
+
+    /// Takes a picture into the package without putting it anywhere in the
+    /// text: the bytes become a part and a relationship points at them,
+    /// and the relationship's id is given back for a drawing to refer to.
+    ///
+    /// What a paste from another program needs: the pasted paragraphs refer
+    /// to pictures by relationship, so the pictures have to be here before
+    /// the paragraphs are.
+    pub fn adopt_picture(&mut self, bytes: &[u8], extension: &str) -> Result<String, Error> {
         let content_type = match extension.to_ascii_lowercase().as_str() {
             "png" => "image/png",
             "jpg" | "jpeg" => "image/jpeg",
@@ -2440,7 +2468,6 @@ impl Document {
             index += 1;
         };
 
-        self.record(EditKind::Structural, self.caret, false);
         self.package.add_part(&name, content_type, bytes.to_vec());
 
         let mut relationships = self
@@ -2450,22 +2477,7 @@ impl Document {
         let target = name.strip_prefix("word/").unwrap_or(&name).to_owned();
         let id = relationships.add(IMAGE_RELATIONSHIP, &target, TargetMode::Internal).id.clone();
         self.package.set_relationships(&relationships)?;
-
-        let prefix = self.prefix();
-        let drawing = edit::drawing_element(&id, width_emu, height_emu, prefix.as_deref());
-        let inserted = position::insert_element_at(
-            &mut self.tree.root,
-            self.caret,
-            drawing,
-            prefix.as_deref(),
-        );
-
-        if inserted {
-            self.caret = TextPosition::new(self.caret.paragraph, self.caret.offset + 1);
-            self.anchor = None;
-            self.modified = true;
-        }
-        Ok(inserted)
+        Ok(id)
     }
 
     /// Puts a chart part into the package, with the content type it needs.

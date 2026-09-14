@@ -3841,8 +3841,41 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   ribbon box, a search box or a dialog's field rather than only its
   result; the input method's own composition font; the Linux side,
   which is **H6**'s.
-- [ ] **H2. The clipboard formats Word uses.** `CF_HTML`, RTF, and images, so
+- [x] **H2. The clipboard formats Word uses.** `CF_HTML`, RTF, and images, so
   that copying between this and Word keeps the formatting.
+  *Done:* a copy or a cut puts everything on the clipboard at once, each
+  under its own format: the words as Unicode text; the same as Rich Text
+  under "Rich Text Format" and as HTML under "HTML Format" — the page
+  from the HTML writer with its pictures inline as data addresses, framed
+  by the header of byte offsets the format asks for, the fragment marked
+  inside the body; and a picture copied on its own as a PNG under "PNG"
+  and as a device-independent bitmap under `CF_DIB` too, which is how it
+  lands in a program that only takes pictures. The copied paragraphs are
+  made a document of their own first, with the pictures they refer to
+  brought along, so that the writers of the other formats can write them.
+  A paste takes the richest thing it finds: what this program copied, when
+  the clipboard still holds it; else Rich Text, which is what Word puts
+  there and what says most; else HTML — read whole, from where its header
+  says the page begins, so that the styles in its head reach the fragment,
+  with an offset believed only where a tag really begins; else a PNG or a
+  bitmap, given back the file header a `.bmp` starts with, as a picture at
+  its own size and no wider than the text; else the words. Pictures in
+  what another program put there are taken into this package before the
+  paragraphs are pasted, through `Document::adopt_picture`, split out of
+  `insert_picture` for the purpose, so the four paste options work on
+  them as on anything else. Held to Word's own clipboard HTML — its
+  namespaces, unquoted attributes, classes and empty `o:p` — and to Rich
+  Text, HTML with a picture, and a bare bitmap, each pasted back with its
+  formatting; and the copy checked in every format it goes out in. The
+  build image has no clipboard, so the reading and writing are tested
+  through the contents rather than the system.
+  *Not done, and named here:* Word's own native format (the package it
+  puts on the clipboard beside the others), which this program neither
+  writes nor reads; tables pasted from Rich Text or HTML come as their
+  paragraphs, since pasting keeps only paragraphs (**D**-stage work on
+  pasting tables); a picture's alpha in the bitmap it goes out as is
+  written but not every program reads it; the Linux clipboard, which is
+  **H6**'s.
 - [ ] **H3. Drag and drop.** Between programs as well as within the document,
   and dropping a file onto the window.
 - [ ] **H4. Accessibility.** UI Automation on Windows, AT-SPI on Linux: a screen

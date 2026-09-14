@@ -67,8 +67,7 @@ pub fn open(bytes: &[u8]) -> Result<Document, Error> {
     let mut document =
         Document::create(&reading.body).map_err(|error| Error::Document(error.to_string()))?;
     let mut pictures = reading.pictures;
-    pictures
-        .sort_by(|one, other| (other.paragraph, other.offset).cmp(&(one.paragraph, one.offset)));
+    pictures.sort_by_key(|one| std::cmp::Reverse((one.paragraph, one.offset)));
     let mut links = reading.links;
     for picture in pictures {
         let start = TextPosition::new(picture.paragraph, picture.offset);

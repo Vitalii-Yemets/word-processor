@@ -10,6 +10,7 @@ mod borderpainter;
 mod boxes;
 mod chart;
 mod citations;
+mod clipboardformats;
 mod commands;
 mod composing;
 mod context;
@@ -1273,11 +1274,15 @@ impl Editor {
             return self.report("Nothing is selected");
         }
         let characters = text.chars().count();
-        let note = if wp_shell::clipboard::set_text(&text) {
-            // The formatted content is kept here as well as the words on the
-            // system clipboard, so a paste back into this program can put it
-            // down the way it was. See [`wp_docx::clipboard`].
-            self.clipboard = Some((text, self.document.copy_selection()));
+        // The words go on the system clipboard with the same as HTML and Rich
+        // Text beside them, which is how the formatting reaches another
+        // program; and the formatted content is kept here as well, so a paste
+        // back into this program can put it down exactly the way it was. See
+        // [`wp_docx::clipboard`] and [`super::clipboardformats`].
+        let blocks = self.document.copy_selection();
+        let contents = self.clipboard_contents_of_selection(&text, &blocks);
+        let note = if wp_shell::clipboard::set_contents(&contents) {
+            self.clipboard = Some((text, blocks));
             format!("Copied {characters} characters")
         } else {
             String::from("The clipboard is busy; nothing was copied")
@@ -1290,13 +1295,15 @@ impl Editor {
         if text.is_empty() {
             return self.report("Nothing is selected");
         }
+        let blocks = self.document.copy_selection();
+        let contents = self.clipboard_contents_of_selection(&text, &blocks);
         // Nothing is removed unless the clipboard really took it, because text
         // that is cut and then not on the clipboard is text a person has lost.
-        if !wp_shell::clipboard::set_text(&text) {
+        if !wp_shell::clipboard::set_contents(&contents) {
             return self.report("The clipboard is busy; nothing was cut");
         }
         let characters = text.chars().count();
-        self.clipboard = Some((text, self.document.copy_selection()));
+        self.clipboard = Some((text, blocks));
         let changed = self.document.delete_selection();
         self.edited(changed, &format!("Cut {characters} characters"))
     }

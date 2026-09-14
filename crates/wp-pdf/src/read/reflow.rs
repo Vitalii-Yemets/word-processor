@@ -898,9 +898,7 @@ fn flush(pending: &mut Vec<(Item, Bounds)>, out: &mut Vec<(Item, (f64, f64))>, w
             let (right, members) = columns.remove(index + 1);
             columns[index].0 = columns[index].0.max(right);
             columns[index].1.extend(members);
-            if index > 0 {
-                index -= 1;
-            }
+            index = index.saturating_sub(1);
         } else {
             index += 1;
         }

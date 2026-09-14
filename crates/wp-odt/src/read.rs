@@ -601,7 +601,7 @@ impl Reader<'_> {
         let mut text = String::new();
         let mut offset = 0usize;
         let mut chars = resolved.text.clone();
-        self.inline(element, &mut runs, &mut text, &mut offset, &mut chars, &resolved.text, None);
+        self.inline(element, &mut runs, &mut text, &mut offset, &mut chars, &resolved.text);
         flush(&mut runs, &mut text, &chars);
         self.paragraphs_done += 1;
         Paragraph { properties, runs }
@@ -618,7 +618,6 @@ impl Reader<'_> {
         offset: &mut usize,
         chars: &mut RunProperties,
         base: &RunProperties,
-        link: Option<&str>,
     ) {
         for node in &element.children {
             match node {
@@ -647,7 +646,7 @@ impl Reader<'_> {
                             }
                             let held = chars.clone();
                             *chars = inner;
-                            self.inline(child, runs, text, offset, chars, base, link);
+                            self.inline(child, runs, text, offset, chars, base);
                             flush(runs, text, chars);
                             *chars = held;
                         }
@@ -655,7 +654,7 @@ impl Reader<'_> {
                             let address =
                                 child.attribute(Some(XLINK), "href").unwrap_or("").to_owned();
                             let start = *offset;
-                            self.inline(child, runs, text, offset, chars, base, Some(&address));
+                            self.inline(child, runs, text, offset, chars, base);
                             if !address.is_empty() && *offset > start {
                                 self.links.push(LinkFound {
                                     paragraph: paragraph_index,
@@ -719,7 +718,7 @@ impl Reader<'_> {
                         | (Some(TEXT), "bookmark-start")
                         | (Some(TEXT), "bookmark-end")
                         | (Some(TEXT), "soft-page-break") => {}
-                        _ => self.inline(child, runs, text, offset, chars, base, link),
+                        _ => self.inline(child, runs, text, offset, chars, base),
                     }
                 }
                 _ => {}

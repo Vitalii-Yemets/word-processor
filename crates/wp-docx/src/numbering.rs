@@ -663,6 +663,66 @@ fn valued(prefix: Option<&str>, local: &str, value: &str) -> Element {
     element.set_namespaced_attribute(&named(prefix, "val"), W, value);
     element
 }
+
+impl Document {
+    /// A numbered list whose count begins at a number other than one, as a
+    /// list of its own.
+    ///
+    /// # Why it is a new list rather than a setting on the paragraph
+    ///
+    /// Because that is how the format counts. A paragraph names a list and a
+    /// level; the list says where the count begins; and the only way to begin
+    /// at seven is a list that says so — the same shape as the numbered list,
+    /// with one level's start overridden. Word writes exactly this when a
+    /// person types "7." and a space.
+    ///
+    /// Reuses a list already begun at that number where there is one, for the
+    /// reason `list_shaped` gives: two lists that look the same are two
+    /// counters.
+    pub fn numbered_list_starting_at(&mut self, start: i32) -> Option<i32> {
+        let mut tree = self.numbering_tree()?;
+        let prefix = numbering_prefix(&tree.root);
+
+        // The definition the ordinary numbered list is drawn from.
+        let abstract_id = tree
+            .root
+            .children_named(Some(W), "num")
+            .find(|entry| numeric_attribute(entry, "numId") == Some(crate::NUMBERED_LIST))
+            .and_then(|entry| entry.child(Some(W), "abstractNumId"))
+            .and_then(value)
+            .and_then(|text| text.parse::<i32>().ok())?;
+
+        let already = tree.root.children_named(Some(W), "num").find_map(|entry| {
+            let id = numeric_attribute(entry, "numId")?;
+            let target = entry
+                .child(Some(W), "abstractNumId")
+                .and_then(value)
+                .and_then(|text| text.parse::<i32>().ok())?;
+            let begins = entry
+                .children_named(Some(W), "lvlOverride")
+                .find(|found| numeric_attribute(found, "ilvl") == Some(0))?
+                .child(Some(W), "startOverride")
+                .and_then(value)
+                .and_then(|text| text.parse::<i32>().ok())?;
+            (target == abstract_id && begins == start).then_some(id)
+        });
+        if let Some(id) = already {
+            return Some(id);
+        }
+
+        let num_id = spare_id(&tree.root, "num", "numId");
+        let mut entry = list_definition(num_id, abstract_id, prefix.as_deref());
+        let mut level = Element::new(&named(prefix.as_deref(), "lvlOverride"), Some(W));
+        level.set_namespaced_attribute(&named(prefix.as_deref(), "ilvl"), W, "0");
+        level.push_element(valued(prefix.as_deref(), "startOverride", &start.to_string()));
+        entry.push_element(level);
+        tree.root.push_element(entry);
+
+        self.save_numbering_tree(&tree);
+        Some(num_id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -872,64 +932,5 @@ mod tests {
         let level = numbering.level(1, 0).expect("the level is defined");
         assert_eq!(level.indent_start, Some(720));
         assert_eq!(level.indent_hanging, Some(360));
-    }
-}
-
-impl Document {
-    /// A numbered list whose count begins at a number other than one, as a
-    /// list of its own.
-    ///
-    /// # Why it is a new list rather than a setting on the paragraph
-    ///
-    /// Because that is how the format counts. A paragraph names a list and a
-    /// level; the list says where the count begins; and the only way to begin
-    /// at seven is a list that says so — the same shape as the numbered list,
-    /// with one level's start overridden. Word writes exactly this when a
-    /// person types "7." and a space.
-    ///
-    /// Reuses a list already begun at that number where there is one, for the
-    /// reason `list_shaped` gives: two lists that look the same are two
-    /// counters.
-    pub fn numbered_list_starting_at(&mut self, start: i32) -> Option<i32> {
-        let mut tree = self.numbering_tree()?;
-        let prefix = numbering_prefix(&tree.root);
-
-        // The definition the ordinary numbered list is drawn from.
-        let abstract_id = tree
-            .root
-            .children_named(Some(W), "num")
-            .find(|entry| numeric_attribute(entry, "numId") == Some(crate::NUMBERED_LIST))
-            .and_then(|entry| entry.child(Some(W), "abstractNumId"))
-            .and_then(value)
-            .and_then(|text| text.parse::<i32>().ok())?;
-
-        let already = tree.root.children_named(Some(W), "num").find_map(|entry| {
-            let id = numeric_attribute(entry, "numId")?;
-            let target = entry
-                .child(Some(W), "abstractNumId")
-                .and_then(value)
-                .and_then(|text| text.parse::<i32>().ok())?;
-            let begins = entry
-                .children_named(Some(W), "lvlOverride")
-                .find(|found| numeric_attribute(found, "ilvl") == Some(0))?
-                .child(Some(W), "startOverride")
-                .and_then(value)
-                .and_then(|text| text.parse::<i32>().ok())?;
-            (target == abstract_id && begins == start).then_some(id)
-        });
-        if let Some(id) = already {
-            return Some(id);
-        }
-
-        let num_id = spare_id(&tree.root, "num", "numId");
-        let mut entry = list_definition(num_id, abstract_id, prefix.as_deref());
-        let mut level = Element::new(&named(prefix.as_deref(), "lvlOverride"), Some(W));
-        level.set_namespaced_attribute(&named(prefix.as_deref(), "ilvl"), W, "0");
-        level.push_element(valued(prefix.as_deref(), "startOverride", &start.to_string()));
-        entry.push_element(level);
-        tree.root.push_element(entry);
-
-        self.save_numbering_tree(&tree);
-        Some(num_id)
     }
 }

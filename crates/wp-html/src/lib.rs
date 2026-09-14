@@ -162,8 +162,7 @@ fn assemble(reading: Reading, fetch: impl Fn(&str) -> Option<Vec<u8>>) -> Result
     // The pictures, last first, so that putting one in does not move the
     // marks of the ones after it in the same paragraph.
     let mut pictures = reading.pictures;
-    pictures
-        .sort_by(|one, other| (other.paragraph, other.offset).cmp(&(one.paragraph, one.offset)));
+    pictures.sort_by_key(|one| std::cmp::Reverse((one.paragraph, one.offset)));
     let mut links = reading.links;
     for picture in pictures {
         let start = TextPosition::new(picture.paragraph, picture.offset);

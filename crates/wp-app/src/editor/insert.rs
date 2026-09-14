@@ -265,7 +265,7 @@ impl Editor {
             // the same reason again.
             "translate" => {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::Review;
-                let (width, height) = (self.view_width as usize, self.view_height as usize);
+                let (width, height) = (self.view_width, self.view_height);
                 self.draw(width, height);
                 let text = self.document.paragraph_text(3).unwrap_or_default();
                 let at = text.find("text").unwrap_or(0);

@@ -901,11 +901,7 @@ impl Reader {
                     }
                 }
             }
-            Destination::Picture => {
-                if parent != Destination::Picture {
-                    self.finish_picture();
-                }
-            }
+            Destination::Picture if parent != Destination::Picture => self.finish_picture(),
             _ => {}
         }
         self.stack.pop();

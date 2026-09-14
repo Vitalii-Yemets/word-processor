@@ -249,6 +249,8 @@ const LEFT_BUTTON_HELD: usize = 0x0001;
 
 /// Clipboard format for UTF-16 text, which is the one every program speaks.
 const CLIPBOARD_UNICODE_TEXT: u32 = 13;
+/// A bitmap: its information header and pixels, as `CF_DIB`.
+const CLIPBOARD_DIB: u32 = 8;
 /// Clipboard memory has to be movable, because the system takes ownership.
 const MEMORY_MOVEABLE: u32 = 0x0002;
 
@@ -441,6 +443,7 @@ extern "system" {
     fn GetClipboardData(format: u32) -> Handle;
     fn IsClipboardFormatAvailable(format: u32) -> i32;
     fn SetWindowTextW(window: Handle, title: *const u16) -> i32;
+    fn RegisterClipboardFormatW(name: *const u16) -> u32;
     fn MessageBoxW(owner: Handle, text: *const u16, caption: *const u16, style: u32) -> i32;
 }
 
@@ -2117,6 +2120,127 @@ pub(crate) fn clipboard_set_text(text: &str) -> bool {
         CloseClipboard();
         true
     }
+}
+
+/// Puts several formats on the clipboard at once: the text, and the HTML,
+/// Rich Text and picture beside it, each under its own format so that
+/// whatever pastes takes the one it knows.
+pub(crate) fn clipboard_set_contents(contents: &crate::clipboard::Contents) -> bool {
+    // Each format's bytes, with the format it goes under.
+    let mut items: Vec<(u32, Vec<u8>)> = Vec::new();
+    if let Some(text) = &contents.text {
+        let encoded = wide(text);
+        let mut bytes = Vec::with_capacity(encoded.len() * 2);
+        for unit in encoded {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        items.push((CLIPBOARD_UNICODE_TEXT, bytes));
+    }
+    // The registered formats, by the names every program registers.
+    for (name, bytes) in [
+        ("HTML Format", &contents.html),
+        ("Rich Text Format", &contents.rtf),
+        ("PNG", &contents.png),
+    ] {
+        if let Some(bytes) = bytes {
+            // SAFETY: the name outlives the call.
+            let format = unsafe { RegisterClipboardFormatW(wide(name).as_ptr()) };
+            if format != 0 {
+                let mut bytes = bytes.clone();
+                // Text formats end with a nought, which Word looks for.
+                if name != "PNG" {
+                    bytes.push(0);
+                }
+                items.push((format, bytes));
+            }
+        }
+    }
+    if let Some(dib) = &contents.dib {
+        items.push((CLIPBOARD_DIB, dib.clone()));
+    }
+    if items.is_empty() {
+        return false;
+    }
+
+    // SAFETY: each handle comes from GlobalAlloc and is written through a
+    // pointer from GlobalLock, within the size asked for. Once
+    // SetClipboardData takes a handle the system owns it; a handle it did
+    // not take is freed here.
+    unsafe {
+        if OpenClipboard(core::ptr::null_mut()) == 0 {
+            return false;
+        }
+        EmptyClipboard();
+        let mut any = false;
+        for (format, bytes) in items {
+            let memory = GlobalAlloc(MEMORY_MOVEABLE, bytes.len().max(1));
+            if memory.is_null() {
+                continue;
+            }
+            let destination = GlobalLock(memory).cast::<u8>();
+            if destination.is_null() {
+                GlobalFree(memory);
+                continue;
+            }
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), destination, bytes.len());
+            GlobalUnlock(memory);
+            if SetClipboardData(format, memory).is_null() {
+                GlobalFree(memory);
+            } else {
+                any = true;
+            }
+        }
+        CloseClipboard();
+        any
+    }
+}
+
+/// Reads every format this program takes off the clipboard.
+pub(crate) fn clipboard_contents() -> crate::clipboard::Contents {
+    let mut contents = crate::clipboard::Contents {
+        text: clipboard_text(),
+        ..crate::clipboard::Contents::default()
+    };
+    // SAFETY: the names outlive the calls; the handles belong to the
+    // clipboard and are only read, within the size the system reports.
+    unsafe {
+        let html = RegisterClipboardFormatW(wide("HTML Format").as_ptr());
+        let rtf = RegisterClipboardFormatW(wide("Rich Text Format").as_ptr());
+        let png = RegisterClipboardFormatW(wide("PNG").as_ptr());
+        if OpenClipboard(core::ptr::null_mut()) == 0 {
+            return contents;
+        }
+        let read = |format: u32| -> Option<Vec<u8>> {
+            if format == 0 || IsClipboardFormatAvailable(format) == 0 {
+                return None;
+            }
+            let memory = GetClipboardData(format);
+            if memory.is_null() {
+                return None;
+            }
+            let source = GlobalLock(memory).cast::<u8>();
+            if source.is_null() {
+                return None;
+            }
+            let size = GlobalSize(memory);
+            let bytes = core::slice::from_raw_parts(source, size).to_vec();
+            GlobalUnlock(memory);
+            Some(bytes)
+        };
+        // The text formats end at their nought.
+        let text_bytes = |bytes: Vec<u8>| {
+            let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+            let mut bytes = bytes;
+            bytes.truncate(end);
+            bytes
+        };
+        contents.html = read(html).map(text_bytes);
+        contents.rtf = read(rtf).map(text_bytes);
+        contents.png = read(png);
+        contents.dib = read(CLIPBOARD_DIB);
+        CloseClipboard();
+    }
+    contents
 }
 
 /// Reads UTF-16 text from the clipboard.

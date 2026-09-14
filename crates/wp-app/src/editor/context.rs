@@ -274,6 +274,6 @@ impl Editor {
     /// Whether there is anything to paste.
     #[must_use]
     fn can_paste(&self) -> bool {
-        self.clipboard.is_some() || wp_shell::clipboard::text().is_some_and(|text| !text.is_empty())
+        self.clipboard.is_some() || !wp_shell::clipboard::contents().is_empty()
     }
 }

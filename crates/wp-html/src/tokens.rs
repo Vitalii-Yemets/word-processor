@@ -236,7 +236,7 @@ fn entity(name: &str) -> Option<char> {
         let value = match value {
             0x80..=0x9F => {
                 let (byte, _) = ((value as u8), ());
-                return Some(wp_text::Encoding::CodePage(1252).decode(&[byte]).chars().next()?);
+                return wp_text::Encoding::CodePage(1252).decode(&[byte]).chars().next();
             }
             other => other,
         };

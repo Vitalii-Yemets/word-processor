@@ -177,7 +177,7 @@ pub fn encode_quoted_printable(bytes: &[u8]) -> String {
             continue;
         }
         let at_line_end = matches!(bytes.get(index + 1), Some(b'\n') | None);
-        let plain = (byte >= 33 && byte <= 126 && byte != b'=') || (byte == b' ' && !at_line_end);
+        let plain = ((33..=126).contains(&byte) && byte != b'=') || (byte == b' ' && !at_line_end);
         let piece = if plain { (byte as char).to_string() } else { format!("={byte:02X}") };
         if line + piece.len() > 75 {
             out.push_str("=\r\n");

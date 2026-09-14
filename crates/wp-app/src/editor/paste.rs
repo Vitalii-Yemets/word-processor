@@ -124,23 +124,18 @@ impl Editor {
 
     /// Pastes a chosen way.
     pub(super) fn paste_as(&mut self, how: PasteAs) -> Response {
-        let Some(text) = wp_shell::clipboard::text() else {
-            return self.report("The clipboard holds no text");
-        };
-        let blocks = self.formatted_clipboard();
+        let (text, blocks) = self.take_clipboard();
+        if text.is_empty() && blocks.is_empty() {
+            return self.report("The clipboard holds nothing this program can paste");
+        }
         self.put_down(&text, &blocks, how)
     }
 
-    /// What was copied here, if the clipboard still holds it.
-    ///
-    /// Anything else on the clipboard means another program has copied since,
-    /// and what that program put there is what the person last asked for.
-    fn formatted_clipboard(&self) -> Vec<Block> {
-        let Some(text) = wp_shell::clipboard::text() else { return Vec::new() };
-        match &self.clipboard {
-            Some((copied, blocks)) if *copied == text => blocks.clone(),
-            _ => Vec::new(),
-        }
+    /// What the clipboard holds as paragraphs: what was copied here, if the
+    /// clipboard still holds it, or what another program put there as Rich
+    /// Text, HTML or a picture. Empty when it holds words alone.
+    fn formatted_clipboard(&mut self) -> Vec<Block> {
+        self.take_clipboard().1
     }
 
     /// Whether a space is needed in front of what is being pasted, and behind
@@ -280,7 +275,15 @@ impl Editor {
     /// what the right-click menu needs to know to decide whether to offer the
     /// four at all.
     pub(super) fn clipboard_has_formatting(&self) -> bool {
-        !self.formatted_clipboard().is_empty()
+        let contents = wp_shell::clipboard::contents();
+        let own = match (&self.clipboard, &contents.text) {
+            (Some((copied, blocks)), Some(text)) => copied == text && !blocks.is_empty(),
+            _ => false,
+        };
+        own || contents.rtf.is_some()
+            || contents.html.is_some()
+            || contents.png.is_some()
+            || contents.dib.is_some()
     }
 
     /// Opens the little menu of the four.

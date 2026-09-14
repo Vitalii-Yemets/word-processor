@@ -816,9 +816,68 @@ pub mod printing {
 ///
 /// Cut, copy and paste are how text moves between this program and every other
 /// one, so the clipboard belongs in the shell alongside the window: it is the
-/// other half of talking to the desktop. Only plain text is carried for now,
-/// which is the format every application understands.
+/// other half of talking to the desktop. What is carried is what Word carries:
+/// the words as plain text, which every program understands; the same as HTML
+/// and as Rich Text, which are how formatting crosses between programs; and a
+/// picture as PNG and as a device-independent bitmap, which is how a picture
+/// crosses. Each is put on the clipboard under its own format, and a program
+/// pasting takes the richest one it knows.
 pub mod clipboard {
+    /// Everything on the clipboard at once, each in its own format. What is
+    /// not there is `None`.
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    pub struct Contents {
+        pub text: Option<String>,
+        /// The "HTML Format" clipboard format, header and all.
+        pub html: Option<Vec<u8>>,
+        /// The "Rich Text Format" clipboard format.
+        pub rtf: Option<Vec<u8>>,
+        /// The "PNG" clipboard format: a PNG file.
+        pub png: Option<Vec<u8>>,
+        /// `CF_DIB`: a bitmap's information header and pixels, without the
+        /// file header a `.bmp` file starts with.
+        pub dib: Option<Vec<u8>>,
+    }
+
+    impl Contents {
+        /// Whether there is anything at all.
+        #[must_use]
+        pub fn is_empty(&self) -> bool {
+            self.text.as_deref().is_none_or(str::is_empty)
+                && self.html.is_none()
+                && self.rtf.is_none()
+                && self.png.is_none()
+                && self.dib.is_none()
+        }
+    }
+
+    /// Puts everything given on the clipboard at once, replacing what was
+    /// there. Returns whether the system accepted it.
+    pub fn set_contents(contents: &Contents) -> bool {
+        #[cfg(windows)]
+        {
+            crate::windows::clipboard_set_contents(contents)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = contents;
+            false
+        }
+    }
+
+    /// Reads everything on the clipboard that this program can take.
+    #[must_use]
+    pub fn contents() -> Contents {
+        #[cfg(windows)]
+        {
+            crate::windows::clipboard_contents()
+        }
+        #[cfg(not(windows))]
+        {
+            Contents::default()
+        }
+    }
+
     /// Puts text on the clipboard, replacing what was there.
     ///
     /// Returns whether the system accepted it. Failure is normal rather than

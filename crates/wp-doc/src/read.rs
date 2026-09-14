@@ -1177,7 +1177,7 @@ fn apply_paragraph(properties: &mut ParagraphProperties, sprms: &[Sprm<'_>]) {
                 properties.alignment = Some(match sprm.byte() {
                     1 => Alignment::Center,
                     2 => Alignment::End,
-                    3 | 4 | 5 => Alignment::Both,
+                    3..=5 => Alignment::Both,
                     _ => Alignment::Start,
                 });
             }

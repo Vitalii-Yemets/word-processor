@@ -411,8 +411,7 @@ impl Reader {
         declarations: &[(String, String)],
     ) {
         self.end_paragraph();
-        let mut properties = ParagraphProperties::default();
-        properties.style = match name {
+        let style = match name {
             "h1" => Some("Heading1".to_owned()),
             "h2" => Some("Heading2".to_owned()),
             "h3" => Some("Heading3".to_owned()),
@@ -421,6 +420,7 @@ impl Reader {
             "h6" => Some("Heading6".to_owned()),
             _ => None,
         };
+        let mut properties = ParagraphProperties { style, ..ParagraphProperties::default() };
         if classes.iter().any(|class| class == "MsoTitle") {
             properties.style = Some("Title".to_owned());
         }
@@ -766,11 +766,7 @@ fn apply_character_declarations(chars: &mut RunProperties, declarations: &[(Stri
             }
             "text-transform" => chars.caps = Some(value == "uppercase"),
             "font-variant" => chars.small_caps = Some(value == "small-caps"),
-            "display" => {
-                if value == "none" {
-                    chars.hidden = Some(true);
-                }
-            }
+            "display" if value == "none" => chars.hidden = Some(true),
             _ => {}
         }
     }
