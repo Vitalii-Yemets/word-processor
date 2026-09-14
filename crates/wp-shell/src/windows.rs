@@ -251,9 +251,12 @@ const PATH_BUFFER: usize = 32768;
 const MB_YES_NO_CANCEL: u32 = 0x0000_0003;
 const MB_YES_NO: u32 = 0x0000_0004;
 const MB_OK: u32 = 0x0000_0000;
+const MB_OK_CANCEL: u32 = 0x0000_0001;
+const MB_ICON_INFORMATION: u32 = 0x0000_0040;
 const MB_ICON_WARNING: u32 = 0x0000_0030;
 const MB_ICON_ERROR: u32 = 0x0000_0010;
 const ID_CANCEL: i32 = 2;
+const ID_OK: i32 = 1;
 const ID_YES: i32 = 6;
 const ID_NO: i32 = 7;
 
@@ -1415,6 +1418,23 @@ pub(crate) fn ask_yes_no(question: &str) -> bool {
         MessageBoxW(owner_window(), text.as_ptr(), caption.as_ptr(), MB_YES_NO | MB_ICON_WARNING)
     };
     answer == ID_YES
+}
+
+/// Tells the user something and asks whether to go on. Anything but OK is
+/// cancel.
+pub(crate) fn ask_ok_cancel(message: &str) -> bool {
+    let text = wide(message);
+    let caption = wide("Word Processor");
+    // SAFETY: both strings outlive the call, which copies what it needs.
+    let answer = unsafe {
+        MessageBoxW(
+            owner_window(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            MB_OK_CANCEL | MB_ICON_INFORMATION,
+        )
+    };
+    answer == ID_OK
 }
 
 /// The code pages this machine writes text by: the Windows one and the DOS

@@ -3740,7 +3740,63 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   cell borders and shading; nested tables; character styles by name (they
   are read into the run and written as automatic styles); bookmarks;
   tables of contents; the settings part.
-- [ ] **G7. PDF import.** Word does it; it is text extraction and reflow.
+- [x] **G7. PDF import.** Word does it; it is text extraction and reflow.
+  *Done:* `wp-pdf` reads as well as writes. The file: objects by the
+  cross-reference — the table, the stream with its predictor, the object
+  streams, the chain of earlier ones — and, when that cannot be trusted,
+  by reading the whole file for everything that looks like an object,
+  which is how every reader repairs one; every kind of object, streams
+  with their lengths taken or found; the filters — deflate, LZW, the two
+  ASCII armourings, run lengths, the PNG and TIFF predictors. The fonts:
+  simple ones through the standard, Windows and Macintosh encodings, the
+  Symbol font's own, the dingbats, and the font's differences by glyph
+  name; composite ones through their CMaps, embedded or identity, by
+  codespace; ToUnicode tables, or the embedded program's own character
+  map turned round when there is none; widths from the file, the
+  standard fonts' known ones, or the program; what the name and the
+  descriptor say — family, bold, italic — with the free fonts cut to
+  Word's fonts' measurements given Word's names. The page: the content
+  stream run for where every glyph lands and how big, through the
+  graphics stack, forms, and the page's own turn; the fill colour; the
+  rectangles filled and stroked; pictures placed — JPEG as itself, the
+  rest, grey, RGB, CMYK or a palette with a soft mask, as PNG. The
+  reflow: glyphs into lines by baseline, with the spaces the gaps mean;
+  lines cut into columns and read column by column between the items
+  that span the page; lines into paragraphs by the pitch, the short last
+  line, the indent, the bullet or number, the change of size; a
+  paragraph's alignment from its margins — centred on the page's centre
+  line too, since the column's edge is only the longest line — its
+  indents, its space after, justification from the stretched spaces;
+  bullets and numbers as list items at the levels their columns rank;
+  headings by size and weight, ranked; a word broken at a hyphen joined;
+  a paragraph cut by a page end joined; rules under and through words as
+  underline and strike-through; smaller glyphs above and below the line
+  as superscript and subscript; a slant in the text matrix as italic;
+  crossing rules as a table, its lines cut at the column edges into the
+  cells, spans where a border is missing, the borders kept; a picture
+  beside text as a character of its line, the others as paragraphs of
+  their own; links from the annotations; the page from its box and the
+  margins from where the text lies; the title from the information
+  dictionary. Encrypted files are refused by name.
+  Held to LibreOffice: it prints a page of everything to PDF and the
+  reader gets back the paragraphs, the heading, every formatting, the
+  justified indented paragraph, the lists, the table, the picture in its
+  line, the link and the Unicode text; and a PDF this program wrote
+  comes back with its heading, bold, bullet and centring — the writer
+  now naming a font's style and weight so that a reader has them. The
+  Open dialog offers PDF Files; opening one shows Word's notice and
+  converts; the document keeps the file's name, and Save goes to Save As
+  beside it as a Word document, the PDF untouched; the command line and
+  `wp text`, `render` and `pdf` read it.
+  *Not done, and named here:* encrypted files (RC4 and AES with the empty
+  password); JPEG 2000, fax and JBIG2 pictures, and inline pictures;
+  the predefined CJK CMaps; Type 3 glyph procedures; headers, footers
+  and page numbers told from repeated lines; footnotes; tables drawn
+  with horizontal rules only, or with none; text drawn rotated; the
+  reading order of pages with more than two columns of unequal height;
+  the "Don't show this message again" box on the notice; and the
+  italic the layout cannot draw without an italic face, which is the
+  layout's.
 - [ ] **G8. Writing the binary `.doc`.** Word 97-2003 Document in Save As:
   the compound file written — header, FAT, directory, mini stream — and a
   document in it with one piece of text, its formatting pages and bin

@@ -37,6 +37,7 @@ pub const DOCUMENT_FILTERS: &[wp_shell::dialog::FileFilter] = &[
     },
     wp_shell::dialog::FileFilter { label: "Text Files (*.txt)", pattern: "*.txt" },
     wp_shell::dialog::FileFilter { label: "OpenDocument Text (*.odt)", pattern: "*.odt" },
+    wp_shell::dialog::FileFilter { label: "PDF Files (*.pdf)", pattern: "*.pdf" },
     wp_shell::dialog::FileFilter { label: "All files (*.*)", pattern: "*.*" },
 ];
 
@@ -96,6 +97,18 @@ pub fn is_odt_path(path: &Path) -> bool {
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("odt"))
 }
+
+/// Whether a path names a PDF, which is converted into a document when it
+/// is opened and never written back.
+#[must_use]
+pub fn is_pdf_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+}
+
+/// What Word says before it converts a PDF, and asks whether to go on.
+pub const PDF_CONVERSION_NOTICE: &str = "Word will now convert your PDF to an editable Word document. This may take a while. The resulting Word document will be optimized to allow you to edit the text, so it might not look exactly like the original PDF, especially if the original file contained lots of graphics.";
 
 /// Whether a path names a web page, a single-file one or not.
 #[must_use]
@@ -313,13 +326,20 @@ impl Editor {
     /// nowhere.
     pub(super) fn save_now(&mut self) -> bool {
         match self.file.clone() {
+            // A PDF is not written back: the document made from it is saved
+            // as a Word document, and Save asks where.
+            Some(path) if is_pdf_path(&path) => self.save_as_now(),
             Some(path) => self.write_document(&path),
             None => self.save_as_now(),
         }
     }
 
     pub(super) fn save_as_now(&mut self) -> bool {
-        let suggested = self.file.clone().unwrap_or_else(|| PathBuf::from(self.untitled_name()));
+        let suggested = match self.file.clone() {
+            Some(path) if is_pdf_path(&path) => path.with_extension("docx"),
+            Some(path) => path,
+            None => PathBuf::from(self.untitled_name()),
+        };
         self.save_into(&suggested)
     }
 
@@ -466,6 +486,10 @@ impl Editor {
                 }
             };
         }
+        if is_pdf_path(&path) && !wp_shell::dialog::ask_ok_cancel(PDF_CONVERSION_NOTICE) {
+            self.status = String::from("Not opened");
+            return Response::Redraw;
+        }
         let rich = is_rtf_path(&path);
         let web = web_kind(&path);
         let opened = std::fs::read(&path)
@@ -477,6 +501,10 @@ impl Editor {
                 }
                 if is_odt_path(&path) {
                     return wp_odt::open(&bytes)
+                        .map_err(|error| format!("Cannot open {}: {error}", path.display()));
+                }
+                if is_pdf_path(&path) {
+                    return wp_pdf::open(&bytes)
                         .map_err(|error| format!("Cannot open {}: {error}", path.display()));
                 }
                 match (rich, web) {
@@ -737,6 +765,36 @@ mod tests {
         assert_eq!(editor.document_name(), "letter.odt");
         editor.document.set_caret(wp_docx::TextPosition::new(0, 1));
         assert!(editor.document.character_format_here().bold, "the bold was lost");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_pdf_is_converted_into_a_document_and_saved_as_a_word_document() {
+        let folder = folder("pdf");
+        let path = folder.join("letter.pdf");
+        let mut editor = editor("Dear reader");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, 4));
+        editor.document.apply_run_formatting(&wp_docx::model::RunProperties {
+            bold: Some(true),
+            ..Default::default()
+        });
+        let pages = editor.layout_for_print(wp_layout::Device::paper());
+        std::fs::write(&path, wp_pdf::write(&pages, editor.library, "letter")).unwrap();
+
+        let mut editor = self::editor("");
+        editor.open_path(&path);
+        assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
+        assert_eq!(editor.document_name(), "letter.pdf");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 1));
+        assert!(editor.document.character_format_here().bold, "the bold was lost");
+        // Saving goes to Save As, as a Word document beside the PDF.
+        assert!(editor.file.as_deref().is_some_and(is_pdf_path));
+        let suggested = editor.file.clone().map(|path| path.with_extension("docx")).unwrap();
+        assert!(editor.write_document(&suggested));
+        assert_eq!(editor.document_name(), "letter.docx");
+        assert!(Document::open(&std::fs::read(&suggested).unwrap()).is_ok());
+        assert!(wp_pdf::looks_like_pdf(&std::fs::read(&path).unwrap()), "the PDF was written over");
         let _ = std::fs::remove_dir_all(folder);
     }
 

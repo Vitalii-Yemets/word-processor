@@ -353,10 +353,7 @@ impl Encoding {
             '\u{00D7}' => 'x',
             '\u{00F7}' => '/',
             '\u{20AC}' => 'E',
-            other => match strip_accent(other) {
-                Some(plain) => plain,
-                None => return None,
-            },
+            other => strip_accent(other)?,
         };
         Some(stand_in as u8)
     }

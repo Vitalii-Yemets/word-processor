@@ -153,6 +153,7 @@ dependencies = [
  "wp-image",
  "wp-layout",
  "wp-raster",
+ "wp-text",
 ]
 
 [[package]]

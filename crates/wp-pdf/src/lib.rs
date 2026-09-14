@@ -1,4 +1,8 @@
-//! Writing a laid-out document out as a PDF.
+//! Writing a laid-out document out as a PDF, and reading one back in.
+//!
+//! Reading is the reverse and harder: a PDF says where every glyph goes
+//! and nothing of why, so [`open`] works the paragraphs back out — see
+//! the `read` module for how.
 //!
 //! # What a PDF is, for this purpose
 //!
@@ -40,8 +44,11 @@
 #![forbid(unsafe_code)]
 
 mod content;
+mod read;
 mod subset;
 mod writer;
+
+pub use read::{looks_like_pdf, open, Error as ReadError};
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -213,20 +220,36 @@ impl Fonts {
             // cut down; they are made from the face rather than at random so
             // that writing the same document twice gives the same file.
             let family = font.family_name().unwrap_or_else(|| "Font".to_owned());
-            let plain: String =
+            let mut plain: String =
                 family.chars().filter(|character| character.is_ascii_alphanumeric()).collect();
+            // The style goes on the name the PostScript way, `-BoldItalic`,
+            // which is how a reader that only has the name tells a bold
+            // font from its regular one.
+            let style = match (font.is_bold(), font.is_italic()) {
+                (true, true) => "-BoldItalic",
+                (true, false) => "-Bold",
+                (false, true) => "-Italic",
+                (false, false) => "",
+            };
+            plain.push_str(style);
             let tag = subset_tag(*face, &plain);
             let bounds = font_bounds(&font, scale);
 
             let descriptor = writer.add(&format!(
                 "<< /Type /FontDescriptor /FontName /{tag}+{plain} /Flags {flags} \
                  /FontBBox [{bounds}] /ItalicAngle {angle} /Ascent {ascent} /Descent {descent} \
-                 /CapHeight {cap} /StemV 80 /{key} {file} >>",
+                 /CapHeight {cap} /StemV {stem} /FontWeight {weight} /{key} {file} >>",
                 // Which key the font goes under says what kind it is, and a
                 // reader believes the key rather than looking.
                 key = if whole { "FontFile3" } else { "FontFile2" },
-                flags = if font.is_italic() { 68 } else { 4 },
+                // Symbolic (4), italic (64) and, for a bold face, the force-bold
+                // bit (1 << 18): what the flags can say of the style.
+                flags = 4
+                    | if font.is_italic() { 64 } else { 0 }
+                    | if font.is_bold() { 1 << 18 } else { 0 },
                 angle = if font.is_italic() { -12 } else { 0 },
+                stem = if font.is_bold() { 140 } else { 80 },
+                weight = font.weight().clamp(100, 900),
                 ascent = (f32::from(metrics.ascender) * scale).round() as i32,
                 descent = (f32::from(metrics.descender) * scale).round() as i32,
                 cap = (f32::from(metrics.ascender) * scale * 0.7).round() as i32,

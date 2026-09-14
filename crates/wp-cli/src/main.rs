@@ -158,8 +158,9 @@ fn write(path: &str, bytes: &[u8]) -> Result<(), String> {
 
 fn open(path: &str) -> Result<Document, String> {
     let bytes = read(path)?;
-    // A Rich Text file, a web page, an old Word document and an OpenDocument
-    // package are read as what they are; everything else is a Word package.
+    // A Rich Text file, a web page, an old Word document, an OpenDocument
+    // package and a PDF are read as what they are; everything else is a
+    // Word package.
     let extension = Path::new(path)
         .extension()
         .and_then(|extension| extension.to_str())
@@ -171,6 +172,9 @@ fn open(path: &str) -> Result<Document, String> {
         }
         "odt" => {
             return wp_odt::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))
+        }
+        "pdf" => {
+            return wp_pdf::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))
         }
         "rtf" => wp_rtf::open(&bytes),
         "htm" | "html" => wp_html::open_html(&bytes, Some(Path::new(path))),

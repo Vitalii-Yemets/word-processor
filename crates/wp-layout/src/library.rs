@@ -249,7 +249,14 @@ impl FontLibrary {
         {
             return Some(index);
         }
-        // The right family in the wrong weight still looks like the document.
+        // The right family in the right weight but the wrong slant still
+        // looks like the document; the wrong weight is the last resort,
+        // since bold where italic was asked for is a different word.
+        if let Some(index) =
+            self.faces.iter().position(|face| matches_family(face) && face.bold == bold)
+        {
+            return Some(index);
+        }
         if let Some(index) = self.faces.iter().position(matches_family) {
             return Some(index);
         }
@@ -276,6 +283,13 @@ impl FontLibrary {
             if let Some(index) = self.faces.iter().position(|face| {
                 normalize(&face.family) == *wanted && face.bold == bold && face.italic == italic
             }) {
+                return Some(index);
+            }
+            if let Some(index) = self
+                .faces
+                .iter()
+                .position(|face| normalize(&face.family) == *wanted && face.bold == bold)
+            {
                 return Some(index);
             }
             if let Some(index) =

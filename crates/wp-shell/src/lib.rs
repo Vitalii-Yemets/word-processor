@@ -512,6 +512,20 @@ pub mod dialog {
         }
     }
 
+    /// Tells the user something and asks whether to go on: OK, or cancel.
+    #[must_use]
+    pub fn ask_ok_cancel(message: &str) -> bool {
+        #[cfg(windows)]
+        {
+            crate::windows::ask_ok_cancel(message)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = message;
+            true
+        }
+    }
+
     /// Tells the user something went wrong.
     pub fn show_error(message: &str) {
         #[cfg(windows)]
