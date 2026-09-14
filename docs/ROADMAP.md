@@ -3702,6 +3702,8 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   pictures (the shape tables); bookmarks; fields other than links, read as
   their result; revision marks; the properties streams; the Word 95 and
   earlier layouts, whose block has no piece table; and encrypted files.
+- [ ] **G6. ODT.** Read and write, which is what an open format is for.
+- [ ] **G7. PDF import.** Word does it; it is text extraction and reflow.
 - [ ] **G8. Writing the binary `.doc`.** Word 97-2003 Document in Save As:
   the compound file written — header, FAT, directory, mini stream — and a
   document in it with one piece of text, its formatting pages and bin
@@ -3710,8 +3712,6 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   page. Reading it back is not the test; Word opening it is, and until
   something that is not this program can be made to open one here,
   LibreOffice reading it is what stands in.
-- [ ] **G6. ODT.** Read and write, which is what an open format is for.
-- [ ] **G7. PDF import.** Word does it; it is text extraction and reflow.
 
 ## H — The system around the window
 
