@@ -53,6 +53,9 @@ impl App for Editor {
         if self.over_paste_badge(x, y) {
             return Cursor::Hand;
         }
+        if self.over_correction_badge(x, y) {
+            return Cursor::Hand;
+        }
 
         // The File tab covers everything under the caption bar, so what is
         // under the pointer there is a line of it or nothing — never the
@@ -625,6 +628,9 @@ impl Editor {
             return self.open_paste_menu();
         }
         self.forget_paste();
+        if self.over_correction_badge(x, y) {
+            return self.open_correction_options();
+        }
 
         // The title bar: the window's own buttons and the quick access ones.
         if (y as f32) < chrome::TITLE_HEIGHT {
@@ -1156,6 +1162,15 @@ impl Editor {
         if self.over_paste_badge(x, y) {
             return Response::Ignored;
         }
+        // And so does the box under a word AutoCorrect changed, which appears
+        // when the pointer rests on the word.
+        if self.follow_correction_badge(x, y) {
+            self.needs_redraw = true;
+            return Response::Redraw;
+        }
+        if self.over_correction_badge(x, y) {
+            return Response::Ignored;
+        }
 
         // Over the File tab, only the File tab lights up.
         if self.in_backstage() {
@@ -1255,6 +1270,7 @@ impl Editor {
             // The paste options are not on the ribbon: they hang under the
             // little button at the end of the paste, which knows where it is.
             Choice::PasteOption => return self.open_paste_menu(),
+            Choice::AutoCorrectOption => return self.open_correction_options(),
             // The gallery of table styles hangs under its own button, which
             // knows where it is.
             Choice::TableStyle => return self.open_table_styles(),
@@ -1396,6 +1412,7 @@ impl Editor {
             | Choice::Break
             | Choice::Watermark
             | Choice::PasteOption
+            | Choice::AutoCorrectOption
             | Choice::TableStyle
             | Choice::BulletLibrary
             | Choice::NumberLibrary
@@ -1509,6 +1526,7 @@ impl Editor {
             | Choice::DocumentSpacing
             | Choice::AlignmentTab => self.choose_from_menu(choice, index),
             Choice::PasteOption => self.choose_paste_option(index),
+            Choice::AutoCorrectOption => self.choose_correction_option(index),
             Choice::TableStyle => self.choose_table_style(index),
             Choice::Cover => self.choose_cover_page(index),
             Choice::Authority => self.choose_authorities(index),
@@ -1866,6 +1884,11 @@ impl Editor {
             // Shift+Enter ends the line without ending the paragraph.
             Key::Enter if extend => self.press_line_break(),
             Key::Enter => {
+                // Three hyphens on a line of their own become a line under the
+                // paragraph above, and Enter has done its work.
+                if self.correct_paragraph_end() {
+                    return self.edited(true, "");
+                }
                 let changed = self.document.press_enter();
                 self.edited(changed, "")
             }
@@ -1937,6 +1960,10 @@ impl Editor {
                 // anything else Escape closes.
                 if self.offering_paste_options() {
                     self.forget_paste();
+                    return Response::Redraw;
+                }
+                if self.offering_correction_options() {
+                    self.forget_correction();
                     return Response::Redraw;
                 }
                 if self.document.selection().is_some() {

@@ -247,6 +247,20 @@ impl Editor {
                 self.relayout();
                 self.open_paste_menu();
             }
+            // A word corrected as it was typed, with the little box under it
+            // open, for the same reason.
+            "corrected" => {
+                let end = self.document.paragraph_text(3).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(3, end));
+                for character in " teh cat".chars() {
+                    self.type_character(character);
+                }
+                if let Some(made) = &mut self.corrected {
+                    made.shown = true;
+                }
+                self.relayout();
+                self.open_correction_options();
+            }
             "table" => {
                 self.document.insert_table(3, 3);
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;

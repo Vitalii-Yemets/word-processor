@@ -139,6 +139,20 @@ pub struct AutoCorrect {
     pub dashes: bool,
     /// A line begun with `- ` or `1. ` becomes a list.
     pub automatic_lists: bool,
+    /// `*bold*` and `_italic_` become bold and italic, and lose their marks.
+    pub bold_italic: bool,
+    /// An address typed in — `www.example.com`, `https://…` — becomes a link.
+    pub hyperlinks: bool,
+    /// Three hyphens on a line of their own become a line under the paragraph
+    /// above.
+    pub border_lines: bool,
+
+    // --- The Exceptions dialog ------------------------------------------
+    /// A word a person undoes the capitalising of straight after goes on the
+    /// First Letter list, so it is not capitalised after again.
+    pub add_first_letter_exceptions: bool,
+    /// And the same for a word whose two capitals were undone.
+    pub add_initial_caps_exceptions: bool,
 }
 
 impl Default for AutoCorrect {
@@ -161,6 +175,73 @@ impl Default for AutoCorrect {
             fractions: true,
             dashes: true,
             automatic_lists: true,
+            bold_italic: true,
+            hyperlinks: true,
+            border_lines: true,
+            add_first_letter_exceptions: true,
+            add_initial_caps_exceptions: true,
+        }
+    }
+}
+
+/// Which rule made a correction, which is what the little box under it names
+/// and what "stop correcting this" has to know to stop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// An entry of the replacement list.
+    Replacement,
+    DayName,
+    TwoInitials,
+    CapsLock,
+    SentenceCase,
+    Ordinal,
+    Fraction,
+    Dash,
+    /// A line begun with a marker made into a list.
+    List,
+    /// `*bold*` or `_italic_` given the formatting and losing the marks.
+    Emphasis,
+    /// An address made into a link.
+    Hyperlink,
+    /// Three hyphens on a line of their own made into a border.
+    BorderLine,
+}
+
+impl Kind {
+    /// What the box under the correction offers to undo, in Word's words.
+    #[must_use]
+    pub fn undo_label(self) -> &'static str {
+        match self {
+            Self::Replacement | Self::Ordinal | Self::Fraction | Self::Dash => {
+                "Undo Automatic Corrections"
+            }
+            Self::DayName | Self::TwoInitials | Self::CapsLock | Self::SentenceCase => {
+                "Undo Automatic Capitalization"
+            }
+            Self::List => "Undo Automatic Numbering",
+            Self::Emphasis => "Undo Automatic Formatting",
+            Self::Hyperlink => "Undo Hyperlink",
+            Self::BorderLine => "Undo Border Line",
+        }
+    }
+
+    /// What the box offers to stop doing, in Word's words, given the word
+    /// that was corrected.
+    #[must_use]
+    pub fn stop_label(self, word: &str) -> String {
+        match self {
+            Self::Replacement => format!("Stop Automatically Correcting \u{201C}{word}\u{201D}"),
+            Self::DayName => "Stop Capitalizing Names of Days".to_owned(),
+            Self::TwoInitials => format!("Stop Correcting \u{201C}{word}\u{201D}"),
+            Self::CapsLock => "Stop Correcting Accidental Use of Caps Lock".to_owned(),
+            Self::SentenceCase => "Stop Auto-capitalizing First Letter of Sentences".to_owned(),
+            Self::Ordinal => "Stop Superscripting Ordinals".to_owned(),
+            Self::Fraction => "Stop Replacing Fractions".to_owned(),
+            Self::Dash => "Stop Replacing Hyphens with Dashes".to_owned(),
+            Self::List => "Stop Automatically Creating Lists".to_owned(),
+            Self::Emphasis => "Stop Automatically Formatting Bold and Italic".to_owned(),
+            Self::Hyperlink => "Stop Automatically Creating Hyperlinks".to_owned(),
+            Self::BorderLine => "Stop Automatically Creating Border Lines".to_owned(),
         }
     }
 }
@@ -172,6 +253,8 @@ pub struct Correction {
     pub taking: usize,
     /// What to put in their place.
     pub putting: String,
+    /// Which rule asked for it.
+    pub kind: Kind,
 }
 
 impl AutoCorrect {
@@ -195,6 +278,7 @@ impl AutoCorrect {
                 return Some(Correction {
                     taking: word.chars().count(),
                     putting: matched_case(word, with),
+                    kind: Kind::Replacement,
                 });
             }
         }
@@ -202,7 +286,11 @@ impl AutoCorrect {
         if self.day_names && DAYS.contains(&word.to_lowercase().as_str()) {
             let capitalised = capitalise(word);
             if capitalised != word {
-                return Some(Correction { taking: word.chars().count(), putting: capitalised });
+                return Some(Correction {
+                    taking: word.chars().count(),
+                    putting: capitalised,
+                    kind: Kind::DayName,
+                });
             }
         }
 
@@ -221,7 +309,11 @@ impl AutoCorrect {
                 fixed.extend(letters[0].to_uppercase());
                 fixed.extend(letters[1].to_lowercase());
                 fixed.extend(letters[2..].iter());
-                return Some(Correction { taking: letters.len(), putting: fixed });
+                return Some(Correction {
+                    taking: letters.len(),
+                    putting: fixed,
+                    kind: Kind::TwoInitials,
+                });
             }
         }
 
@@ -235,19 +327,28 @@ impl AutoCorrect {
                 return Some(Correction {
                     taking: letters.len(),
                     putting: capitalise(&word.to_lowercase()),
+                    kind: Kind::CapsLock,
                 });
             }
         }
 
         if self.sentence_case {
             if let Some(fixed) = sentence_capital(before, word, &self.first_letter) {
-                return Some(Correction { taking: word.chars().count(), putting: fixed });
+                return Some(Correction {
+                    taking: word.chars().count(),
+                    putting: fixed,
+                    kind: Kind::SentenceCase,
+                });
             }
         }
 
         if self.ordinals {
             if let Some(putting) = ordinal(word) {
-                return Some(Correction { taking: word.chars().count(), putting });
+                return Some(Correction {
+                    taking: word.chars().count(),
+                    putting,
+                    kind: Kind::Ordinal,
+                });
             }
         }
 
@@ -256,6 +357,7 @@ impl AutoCorrect {
                 return Some(Correction {
                     taking: word.chars().count(),
                     putting: mark.to_string(),
+                    kind: Kind::Fraction,
                 });
             }
         }
@@ -302,7 +404,174 @@ impl AutoCorrect {
             return None;
         }
         letters.next().filter(|letter| !letter.is_whitespace())?;
-        Some(Correction { taking: 1, putting: "\u{2013}".to_owned() })
+        Some(Correction { taking: 1, putting: "\u{2013}".to_owned(), kind: Kind::Dash })
+    }
+}
+
+/// `*bold*` or `_italic_` typed and finished: where the marks are, and which
+/// formatting they asked for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Emphasis {
+    /// Byte offsets of the opening and closing marks within `before`.
+    pub open: usize,
+    pub close: usize,
+    pub bold: bool,
+}
+
+impl AutoCorrect {
+    /// Whether the word just finished closed a `*bold*` or an `_italic_`.
+    ///
+    /// The closing mark is the last character of `before`, and the opening one
+    /// is the nearest earlier one that begins a word — so that a lone asterisk
+    /// in the middle of a sentence three lines back does not turn everything
+    /// since into bold. Word's rule, and Word's limits: no spaces at the
+    /// inside of either mark, and something between them.
+    #[must_use]
+    pub fn emphasis(&self, before: &str) -> Option<Emphasis> {
+        if !self.bold_italic {
+            return None;
+        }
+        let closing = before.chars().last()?;
+        let bold = match closing {
+            '*' => true,
+            '_' => false,
+            _ => return None,
+        };
+        let close = before.len() - closing.len_utf8();
+        // The character before the closing mark is part of the word: "a *" is
+        // not the end of anything.
+        let inner_end = before[..close].chars().last()?;
+        if inner_end.is_whitespace() || inner_end == closing {
+            return None;
+        }
+
+        // The opening mark: the same character at the start of a word, with
+        // no other of the same kind in between.
+        let open = before[..close].rfind(closing)?;
+        let begins_a_word = open == 0
+            || before[..open].chars().last().is_some_and(|c| c.is_whitespace() || c == '(');
+        if !begins_a_word {
+            return None;
+        }
+        let inner_start = before[open + closing.len_utf8()..close].chars().next()?;
+        if inner_start.is_whitespace() {
+            return None;
+        }
+        Some(Emphasis { open, close, bold })
+    }
+
+    /// Whether a word just finished is an address the reader would expect to
+    /// be a link: something with a scheme in front, or a `www.` in front, or
+    /// an address at somebody.
+    #[must_use]
+    pub fn is_address(&self, word: &str) -> bool {
+        if !self.hyperlinks || word.len() < 4 {
+            return false;
+        }
+        let lower = word.to_ascii_lowercase();
+        let schemed = ["http://", "https://", "ftp://", "mailto:", "file://"]
+            .iter()
+            .any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len());
+        let bare = lower.starts_with("www.") && lower[4..].contains('.');
+        let mail = lower.split_once('@').is_some_and(|(name, host)| {
+            !name.is_empty() && host.contains('.') && !host.ends_with('.') && !host.contains('@')
+        });
+        schemed || bare || mail
+    }
+
+    /// The line a paragraph of three or more of one character becomes when
+    /// it is ended: Word's six, as the style name the format uses and the
+    /// width in eighths of a point.
+    ///
+    /// Hyphens make a plain line, underscores a heavier one, equals signs a
+    /// double one, asterisks a dotted one, tildes a wavy one and pound signs a
+    /// triple one with a thick centre — which is the list Word's help gives.
+    #[must_use]
+    pub fn border_line(&self, paragraph: &str) -> Option<(&'static str, u32)> {
+        if !self.border_lines {
+            return None;
+        }
+        let line = paragraph.trim();
+        let mut characters = line.chars();
+        let first = characters.next()?;
+        if line.chars().count() < 3 || !characters.all(|c| c == first) {
+            return None;
+        }
+        Some(match first {
+            '-' => ("single", 6),
+            '_' => ("single", 12),
+            '=' => ("double", 6),
+            '*' => ("dotted", 6),
+            '~' => ("wave", 6),
+            '#' => ("thinThickThinSmallGap", 24),
+            _ => return None,
+        })
+    }
+
+    /// Stops the rule that made a correction, which is what the box under
+    /// the correction offers.
+    ///
+    /// For a replacement that means taking the pair off the list; for two
+    /// initial capitals it means putting the word on the exceptions list,
+    /// because the rule is right for every other word; for the rest it means
+    /// the switch.
+    pub fn stop(&mut self, kind: Kind, original: &str) {
+        match kind {
+            Kind::Replacement => {
+                self.replacements.remove(&original.to_lowercase());
+            }
+            Kind::TwoInitials => {
+                self.initial_caps.insert(original.to_owned());
+            }
+            Kind::DayName => self.day_names = false,
+            Kind::CapsLock => self.caps_lock = false,
+            Kind::SentenceCase => self.sentence_case = false,
+            Kind::Ordinal => self.ordinals = false,
+            Kind::Fraction => self.fractions = false,
+            Kind::Dash => self.dashes = false,
+            Kind::List => self.automatic_lists = false,
+            Kind::Emphasis => self.bold_italic = false,
+            Kind::Hyperlink => self.hyperlinks = false,
+            Kind::BorderLine => self.border_lines = false,
+        }
+    }
+
+    /// Learns from a correction being undone.
+    ///
+    /// Word's "Automatically add words to list": a capital undone after an
+    /// abbreviation puts the abbreviation on the First Letter list, and two
+    /// initial capitals undone put the word on the INitial CAps list — so that
+    /// a person who undoes it once is not asked to undo it every time. `ahead`
+    /// is what came before the word. Returns whether anything was learnt.
+    pub fn learn_from_undo(&mut self, kind: Kind, original: &str, ahead: &str) -> bool {
+        match kind {
+            Kind::SentenceCase if self.add_first_letter_exceptions => {
+                // Only after an abbreviation: the first word of a paragraph
+                // undone teaches nothing about any word.
+                let abbreviation = last_word(ahead.trim_end());
+                if abbreviation.len() > 1 && abbreviation.ends_with('.') {
+                    self.first_letter.insert(abbreviation.to_lowercase())
+                } else {
+                    false
+                }
+            }
+            Kind::TwoInitials if self.add_initial_caps_exceptions => {
+                self.initial_caps.insert(original.to_owned())
+            }
+            _ => false,
+        }
+    }
+
+    /// Where a numbered list typed by hand begins: "1." makes one, and so does
+    /// "7." — at seven, which is what a person who typed seven meant.
+    #[must_use]
+    pub fn list_start(&self, marker: &str) -> Option<i32> {
+        if !self.automatic_lists {
+            return None;
+        }
+        let number = marker.strip_suffix('.').or_else(|| marker.strip_suffix(')'))?;
+        let start: i32 = number.parse().ok()?;
+        (start >= 1 && number.len() <= 3).then_some(start)
     }
 }
 
@@ -563,5 +832,104 @@ mod tests {
         assert_eq!(off.on_word("1/2"), None);
         assert_eq!(off.on_character("", '"'), None);
         assert_eq!(off.dash_before("one -"), None);
+    }
+
+    #[test]
+    fn a_line_of_one_character_becomes_a_line_under_the_paragraph_above() {
+        let rules = AutoCorrect::default();
+        assert_eq!(rules.border_line("---"), Some(("single", 6)));
+        assert_eq!(rules.border_line("-----"), Some(("single", 6)));
+        assert_eq!(rules.border_line("___"), Some(("single", 12)));
+        assert_eq!(rules.border_line("==="), Some(("double", 6)));
+        assert_eq!(rules.border_line("***"), Some(("dotted", 6)));
+        assert_eq!(rules.border_line("~~~"), Some(("wave", 6)));
+        assert_eq!(rules.border_line("###"), Some(("thinThickThinSmallGap", 24)));
+        assert_eq!(rules.border_line("--"), None, "two is a dash, not a line");
+        assert_eq!(rules.border_line("-=-"), None);
+        assert_eq!(rules.border_line("--- and"), None);
+        let off = AutoCorrect { border_lines: false, ..AutoCorrect::default() };
+        assert_eq!(off.border_line("---"), None);
+    }
+
+    #[test]
+    fn stars_round_a_word_mean_bold_and_underscores_mean_italic() {
+        let rules = AutoCorrect::default();
+        assert_eq!(rules.emphasis("*bold*"), Some(Emphasis { open: 0, close: 5, bold: true }));
+        assert_eq!(
+            rules.emphasis("very _italic words_"),
+            Some(Emphasis { open: 5, close: 18, bold: false })
+        );
+        assert_eq!(rules.emphasis("a * b*"), None, "a space inside the opening mark");
+        assert_eq!(rules.emphasis("2*3*"), None, "the opening mark is inside a word");
+        assert_eq!(rules.emphasis("**"), None, "nothing between the marks");
+        assert_eq!(rules.emphasis("bold"), None);
+        let off = AutoCorrect { bold_italic: false, ..AutoCorrect::default() };
+        assert_eq!(off.emphasis("*bold*"), None);
+    }
+
+    #[test]
+    fn an_address_is_known_by_its_shape() {
+        let rules = AutoCorrect::default();
+        assert!(rules.is_address("https://example.com/page"));
+        assert!(rules.is_address("www.example.com"));
+        assert!(rules.is_address("someone@example.com"));
+        assert!(rules.is_address("mailto:someone@example.com"));
+        assert!(!rules.is_address("example.com"), "a bare name is a name");
+        assert!(!rules.is_address("www"));
+        assert!(!rules.is_address("@example.com"));
+        assert!(!rules.is_address("someone@example"));
+        let off = AutoCorrect { hyperlinks: false, ..AutoCorrect::default() };
+        assert!(!off.is_address("https://example.com"));
+    }
+
+    #[test]
+    fn a_list_typed_by_hand_begins_where_the_typing_did() {
+        let rules = AutoCorrect::default();
+        assert_eq!(rules.list_start("1."), Some(1));
+        assert_eq!(rules.list_start("7."), Some(7));
+        assert_eq!(rules.list_start("12)"), Some(12));
+        assert_eq!(rules.list_start("0."), None);
+        assert_eq!(rules.list_start("2024."), None, "a year is not a list");
+        assert_eq!(rules.list_start("a."), None);
+    }
+
+    #[test]
+    fn stopping_a_correction_stops_the_rule_that_made_it() {
+        let mut rules = AutoCorrect::default();
+        // After a word, so that the first word of a sentence does not get its
+        // capital and muddy what is being asked.
+        assert!(rules.on_word("a teh").is_some());
+        rules.stop(Kind::Replacement, "teh");
+        assert_eq!(rules.on_word("a teh"), None, "the pair is still on the list");
+        assert!(rules.on_word("a adn").is_some(), "the other pairs went with it");
+
+        rules.stop(Kind::TwoInitials, "TWo");
+        assert_eq!(rules.on_word("a TWo"), None);
+        assert!(rules.on_word("a THree").is_some(), "the rule itself was switched off");
+
+        rules.stop(Kind::SentenceCase, "hello");
+        assert!(!rules.sentence_case);
+        rules.stop(Kind::List, "1.");
+        assert!(!rules.automatic_lists);
+        rules.stop(Kind::BorderLine, "---");
+        assert!(!rules.border_lines);
+    }
+
+    #[test]
+    fn an_undone_capital_after_an_abbreviation_teaches_the_abbreviation() {
+        let mut rules = AutoCorrect::default();
+        assert!(rules.on_word("Sent Wed. hello").is_some(), "Wed. is not on the list yet");
+        assert!(rules.learn_from_undo(Kind::SentenceCase, "hello", "Sent Wed. "));
+        assert!(rules.first_letter.contains("wed."));
+        assert_eq!(rules.on_word("Sent Wed. hello"), None, "the list was not consulted");
+
+        // The first word of a paragraph teaches nothing.
+        assert!(!rules.learn_from_undo(Kind::SentenceCase, "hello", ""));
+        // And nothing is learnt when the list does not add to itself.
+        rules.add_initial_caps_exceptions = false;
+        assert!(!rules.learn_from_undo(Kind::TwoInitials, "QUeue", ""));
+        rules.add_initial_caps_exceptions = true;
+        assert!(rules.learn_from_undo(Kind::TwoInitials, "QUeue", ""));
+        assert_eq!(rules.on_word("a QUeue"), None);
     }
 }

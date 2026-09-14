@@ -884,6 +884,7 @@ impl Editor {
         // The little button at the end of a paste floats over the page, and
         // under whatever it drops open.
         self.draw_paste_badge();
+        self.draw_correction_badge();
 
         // The letters over the ribbon, while Alt has put them there.
         self.draw_key_tips();

@@ -1139,6 +1139,7 @@ impl Ribbon {
                     | Choice::Break
                     | Choice::Watermark
                     | Choice::PasteOption
+                    | Choice::AutoCorrectOption
                     | Choice::TableStyle
                     | Choice::AlignmentTab
                     | Choice::TablePart

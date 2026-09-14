@@ -57,21 +57,36 @@ const CURLY_QUOTES: usize = 14;
 const ORDINALS: usize = 15;
 const FRACTIONS: usize = 16;
 const DASHES: usize = 17;
-const APPLY_AS_YOU_TYPE: usize = 18;
-const AUTOMATIC_LISTS: usize = 19;
+const BOLD_ITALIC: usize = 18;
+const HYPERLINKS: usize = 19;
+const APPLY_AS_YOU_TYPE: usize = 20;
+const AUTOMATIC_LISTS: usize = 21;
+const BORDER_LINES: usize = 22;
 
 // The Exceptions dialog: two tabs, each a box and a list.
 const TAB_FIRST_LETTER: usize = 0;
 const FIRST_WORD: usize = 1;
 const FIRST_LIST: usize = 2;
-const TAB_INITIAL_CAPS: usize = 3;
-const CAPS_WORD: usize = 4;
-const CAPS_LIST: usize = 5;
+const FIRST_AUTO: usize = 3;
+const TAB_INITIAL_CAPS: usize = 4;
+const CAPS_WORD: usize = 5;
+const CAPS_LIST: usize = 6;
+const CAPS_AUTO: usize = 7;
 
 /// Word's buttons past OK and Cancel.
 pub(super) const ADD: &str = "Add";
 pub(super) const DELETE: &str = "Delete";
 pub(super) const EXCEPTIONS: &str = "Exceptions...";
+
+/// What the Exceptions dialog found when it opened, so that its Cancel can
+/// put it back.
+#[derive(Clone, Debug)]
+pub(crate) struct Stashed {
+    pub first_letter: BTreeSet<String>,
+    pub initial_caps: BTreeSet<String>,
+    pub add_first: bool,
+    pub add_caps: bool,
+}
 
 impl Editor {
     /// Opens the dialog, taking a working copy of the corrections to edit.
@@ -134,8 +149,11 @@ impl Editor {
             check("Ordinals (1st) with superscript", rules.ordinals),
             check("Fractions (1/2) with fraction character", rules.fractions),
             check("Hyphens (--) with dash (\u{2014})", rules.dashes),
+            check("*Bold* and _italic_ with real formatting", rules.bold_italic),
+            check("Internet and network paths with hyperlinks", rules.hyperlinks),
             Field::Group("Apply as you type".to_owned()),
             check("Automatic bulleted and numbered lists", rules.automatic_lists),
+            check("Border lines", rules.border_lines),
         ];
 
         crate::chrome::dialog::check_rows(
@@ -160,8 +178,11 @@ impl Editor {
                 (ORDINALS, "a tick box"),
                 (FRACTIONS, "a tick box"),
                 (DASHES, "a tick box"),
+                (BOLD_ITALIC, "a tick box"),
+                (HYPERLINKS, "a tick box"),
                 (APPLY_AS_YOU_TYPE, "a group"),
                 (AUTOMATIC_LISTS, "a tick box"),
+                (BORDER_LINES, "a tick box"),
             ],
         );
 
@@ -204,6 +225,15 @@ impl Editor {
         rules.fractions = dialog.ticked(FRACTIONS);
         rules.dashes = dialog.ticked(DASHES);
         rules.automatic_lists = dialog.ticked(AUTOMATIC_LISTS);
+        rules.bold_italic = dialog.ticked(BOLD_ITALIC);
+        rules.hyperlinks = dialog.ticked(HYPERLINKS);
+        rules.border_lines = dialog.ticked(BORDER_LINES);
+    }
+
+    /// The two tick boxes of the Exceptions dialog, onto the working copy.
+    fn read_exceptions_dialog(&mut self, dialog: &Dialog) {
+        self.editing_rules.add_first_letter_exceptions = dialog.ticked(FIRST_AUTO);
+        self.editing_rules.add_initial_caps_exceptions = dialog.ticked(CAPS_AUTO);
     }
 
     /// Add, Delete and Exceptions: none of them answers the dialog.
@@ -238,10 +268,12 @@ impl Editor {
                 // put them back. Add and Delete on that dialog change the
                 // working copy as they go, which is what lets it be built
                 // again after each of them.
-                self.exceptions_stash = Some((
-                    self.editing_rules.first_letter.clone(),
-                    self.editing_rules.initial_caps.clone(),
-                ));
+                self.exceptions_stash = Some(Stashed {
+                    first_letter: self.editing_rules.first_letter.clone(),
+                    initial_caps: self.editing_rules.initial_caps.clone(),
+                    add_first: self.editing_rules.add_first_letter_exceptions,
+                    add_caps: self.editing_rules.add_initial_caps_exceptions,
+                });
                 let dialog = self.exceptions_dialog(0, 0);
                 return self.ask(Asking::Exceptions, dialog);
             }
@@ -296,9 +328,17 @@ impl Editor {
             Field::Tab("First Letter".to_owned()),
             Field::Text { label: "Don't capitalize after".to_owned(), value: String::new() },
             list(&rules.first_letter, first),
+            Field::Check {
+                label: "Automatically add words to list".to_owned(),
+                on: rules.add_first_letter_exceptions,
+            },
             Field::Tab("INitial CAps".to_owned()),
             Field::Text { label: "Don't correct".to_owned(), value: String::new() },
             list(&rules.initial_caps, caps),
+            Field::Check {
+                label: "Automatically add words to list".to_owned(),
+                on: rules.add_initial_caps_exceptions,
+            },
         ];
 
         crate::chrome::dialog::check_rows(
@@ -308,9 +348,11 @@ impl Editor {
                 (TAB_FIRST_LETTER, "a tab"),
                 (FIRST_WORD, "a box"),
                 (FIRST_LIST, "a list of pairs"),
+                (FIRST_AUTO, "a tick box"),
                 (TAB_INITIAL_CAPS, "a tab"),
                 (CAPS_WORD, "a box"),
                 (CAPS_LIST, "a list of pairs"),
+                (CAPS_AUTO, "a tick box"),
             ],
         );
 
@@ -334,6 +376,7 @@ impl Editor {
     pub(super) fn exceptions_dialog_button(&mut self, button: &str) -> Response {
         let Some(dialog) = self.dialog.clone() else { return Response::Ignored };
         let on_first = dialog.showing_tab() == 0;
+        self.read_exceptions_dialog(&dialog);
         let (box_row, list_row) =
             if on_first { (FIRST_WORD, FIRST_LIST) } else { (CAPS_WORD, CAPS_LIST) };
 
@@ -387,10 +430,17 @@ impl Editor {
     /// pressed, so OK has nothing left to do and Cancel has everything: it puts
     /// back what was there when the dialog opened.
     pub(super) fn close_exceptions(&mut self, keeping: bool) -> Response {
-        if let Some((first, caps)) = self.exceptions_stash.take() {
+        if keeping {
+            if let Some(dialog) = self.dialog.clone() {
+                self.read_exceptions_dialog(&dialog);
+            }
+        }
+        if let Some(stashed) = self.exceptions_stash.take() {
             if !keeping {
-                self.editing_rules.first_letter = first;
-                self.editing_rules.initial_caps = caps;
+                self.editing_rules.first_letter = stashed.first_letter;
+                self.editing_rules.initial_caps = stashed.initial_caps;
+                self.editing_rules.add_first_letter_exceptions = stashed.add_first;
+                self.editing_rules.add_initial_caps_exceptions = stashed.add_caps;
             }
         }
 

@@ -213,10 +213,11 @@ pub enum Icon {
     AlignBottomLeft = 195,
     AlignBottomCenter = 196,
     AlignBottomRight = 197,
+    Lightning = 198,
 }
 
 /// How many there are, so the drawings can be kept in a flat array.
-pub const COUNT: usize = 198;
+pub const COUNT: usize = 199;
 
 /// Every icon, in the order the catalogue declares them.
 ///
@@ -421,6 +422,7 @@ pub static ALL: [Icon; COUNT] = [
     Icon::AlignBottomLeft,
     Icon::AlignBottomCenter,
     Icon::AlignBottomRight,
+    Icon::Lightning,
 ];
 
 impl Icon {
@@ -1854,6 +1856,13 @@ impl Icon {
                     include_str!("../../assets/icons/ic_fluent_align_bottom_right_24_regular.svg")
                 } else {
                     include_str!("../../assets/icons/ic_fluent_align_bottom_right_20_regular.svg")
+                }
+            }
+            Self::Lightning => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_flash_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_flash_20_regular.svg")
                 }
             }
         }

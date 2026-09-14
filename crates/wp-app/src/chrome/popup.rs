@@ -30,6 +30,9 @@ pub enum Choice {
     Watermark,
     /// The ways the thing just pasted could have been pasted instead.
     PasteOption,
+    /// What the box under a word AutoCorrect changed offers: the word back,
+    /// the rule stopped, the dialog.
+    AutoCorrectOption,
     /// The words that mean what a word means, by meaning.
     Synonym,
 

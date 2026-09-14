@@ -379,8 +379,7 @@ pub struct Editor {
     pub(super) editing_rules: crate::autocorrect::AutoCorrect,
     /// What the two exception lists held when the Exceptions dialog opened, so
     /// that its Cancel can put them back.
-    pub(super) exceptions_stash:
-        Option<(std::collections::BTreeSet<String>, std::collections::BTreeSet<String>)>,
+    pub(super) exceptions_stash: Option<autocorrectdialog::Stashed>,
     /// The measurement box on the ribbon that has the keyboard, and whether
     /// what is in it is still the value it opened with. See [`boxes`].
     ribbon_box: Option<(crate::chrome::Command, bool)>,
@@ -389,6 +388,9 @@ pub struct Editor {
     /// What the last paste put down, while the little button that offers the
     /// other ways of pasting it is still showing. See [`paste`].
     pasted: Option<paste::Pasted>,
+    /// The last thing AutoCorrect did, while the little box under it can
+    /// still offer it back.
+    corrected: Option<correcting::Made>,
     /// The File tab, while it is what the window is showing.
     ///
     /// Word's File tab is not a ribbon page: it is a window of its own about
@@ -635,6 +637,7 @@ impl Editor {
             ribbon_box: None,
             box_text: String::new(),
             pasted: None,
+            corrected: None,
             backstage: None,
             print_pane: None,
             print_preview: Vec::new(),
@@ -1219,7 +1222,12 @@ impl Editor {
     }
 
     fn undo(&mut self) -> Response {
+        // Undoing a correction straight away is what teaches the exceptions.
+        let taking_back_correction = self.undo_takes_back_correction();
         let changed = self.document.undo();
+        if changed && taking_back_correction {
+            self.correction_undone();
+        }
         self.edited(changed, "Undone");
         self.needs_redraw = true;
         Response::Redraw

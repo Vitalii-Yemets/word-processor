@@ -275,6 +275,10 @@ pub struct Document {
     cell_block: Option<(cells::CellRange, Option<TextPosition>, TextPosition)>,
     gesture_depth: usize,
     gesture_noted: bool,
+    /// Where the caret was when the gesture began, which is where undoing the
+    /// gesture puts it back: a gesture moves the caret about to do its work,
+    /// and the person was not where it went.
+    gesture_caret: TextPosition,
 }
 
 impl Document {
@@ -313,6 +317,7 @@ impl Document {
             reviser: revisions::Reviser::default(),
             gesture_depth: 0,
             gesture_noted: false,
+            gesture_caret: TextPosition::new(0, 0),
         };
         document.tracking = document.read_tracking_setting();
         Ok(document)
@@ -372,6 +377,7 @@ impl Document {
             reviser: revisions::Reviser::default(),
             gesture_depth: 0,
             gesture_noted: false,
+            gesture_caret: TextPosition::new(0, 0),
         })
     }
 
@@ -539,15 +545,10 @@ impl Document {
             .then(|| self.kept_paragraph(ends_at.paragraph))
             .flatten()
             .unwrap_or_else(|| history::Kept::Whole(self.tree.clone()));
-        self.history.record(
-            kept,
-            &self.main_part,
-            self.caret,
-            self.modified,
-            kind,
-            ends_at,
-            mergeable,
-        );
+        // Undoing a gesture puts the caret where it was before the gesture,
+        // not where the gesture had moved it to by its first change.
+        let caret = if in_gesture { self.gesture_caret } else { self.caret };
+        self.history.record(kept, &self.main_part, caret, self.modified, kind, ends_at, mergeable);
     }
 
     /// One paragraph exactly as it is, for a step that changes only that one.
@@ -604,6 +605,7 @@ impl Document {
     pub fn begin_gesture(&mut self) {
         if self.gesture_depth == 0 {
             self.gesture_noted = false;
+            self.gesture_caret = self.caret;
         }
         self.gesture_depth += 1;
     }

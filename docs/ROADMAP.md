@@ -1023,7 +1023,9 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   AutoCorrect tab, which needs the equation editor; its AutoFormat tab, which
   reformats a whole document at once; and its Actions tab, which offers to look
   a name up in an address book. Numbered lists begun by typing start at one,
-  because the numbering model has no other starting number yet.
+  because the numbering model has no other starting number yet. **F5** did the
+  two boxes, the lists that begin where the typing did, and the little box
+  under a correction; the three tabs are still named there.
 
 - [x] **C20. Customize Ribbon and the Quick Access Toolbar.** Two of the
   categories **C7** leaves out, and they are one job: both are a person saying
@@ -3382,9 +3384,52 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Not done:* a thesaurus for a language other than English on the build
   image, which is the same want as the dictionaries': the reading is the same
   for every language, and the file is not.
-- [ ] **F5. AutoCorrect and AutoFormat as you type.** The replacement table,
+- [x] **F5. AutoCorrect and AutoFormat as you type.** The replacement table,
   the capitalisation rules, smart quotes, dashes, lists that start themselves,
   and the little box that lets a person undo one of them.
+  **C19** made the mechanism and most of the rules; this is the rest of what
+  Word does as you type, and the box.
+  *Done:* the little box — Word's AutoCorrect Options button. Every correction
+  is remembered as it is made (`correcting::Made`: where, what was typed, what
+  was put, which rule); rest the pointer on the word and a box with a lightning
+  bolt appears under it, drawn by the same `PasteBadge` as the paste button
+  with a different drawing on it. Its list is Word's three lines: "Change back
+  to “teh”" (or "Undo Automatic Capitalization", and so on by rule), "Stop
+  Automatically Correcting “teh”" (or the rule's own line), and "Control
+  AutoCorrect Options…". Change back is an undo while the correction is still
+  the last thing done, and is reversed by hand afterwards — three words later,
+  when Ctrl+Z would take the words first; Stop takes it back and turns the rule
+  off, takes the pair off the list, or puts the word on the INitial CAps list,
+  and writes the settings. The box forgets when the word is edited, when the
+  correction is undone, at Escape, and when the next correction is made.
+  Word's two "Automatically add words to list" boxes on the Exceptions tabs
+  are real now: a capital undone straight after an abbreviation puts the
+  abbreviation on the First Letter list, and two initial capitals undone put
+  the word on the INitial CAps list, by Ctrl+Z or by the box.
+  Numbered lists begun by typing start where the typing did: "7. " makes a
+  list that begins at seven, through a `w:num` with a `startOverride` on the
+  ordinary numbered list's definition (`numbered_list_starting_at`), reused
+  when one begins there already. `*bold*` and `_italic_` take their marks away
+  and put the formatting on. An address — a scheme, `www.`, or somebody at
+  somewhere — becomes a link to itself. Three or more of one character on a
+  line of their own, and Enter, become a line under the paragraph above: Word's
+  six (`---` single, `___` heavier, `===` double, `***` dotted, `~~~` wavy,
+  `###` triple with a thick centre); at the top of the document the line goes
+  under the paragraph itself and a new one is made below it. Each of the four
+  has its tick box on the AutoFormat As You Type tab and its switch in the
+  settings file, and each is one gesture, so one undo takes it back.
+  Undoing a gesture now puts the caret where it was before the gesture began
+  rather than where the gesture's first change had moved it, which is what a
+  correction taken back with Ctrl+Z needed: the caret after the space, not
+  before it.
+  `--picture … corrected` draws the box with its list open.
+  *Not done, and named here:* Word's tables from `+---+---+` and Enter;
+  its built-in heading styles from a line typed and entered twice, which
+  Word itself ships switched off; its Math AutoCorrect tab, which waits for
+  the equation editor; its AutoFormat tab, which reformats a whole document at
+  once; and its Actions tab. The box appears when the pointer rests on the
+  word; Word shows a thin blue bar first and the box when the pointer reaches
+  the bar, which is one hover more than this does.
 - [ ] **F6. Translation.** What Word's Translate does, in so far as it can be
   done without sending the document to somebody else's computer.
 

@@ -367,6 +367,13 @@ impl Settings {
         rules.fractions = on("fractions", rules.fractions);
         rules.dashes = on("dashes", rules.dashes);
         rules.automatic_lists = on("automatic-lists", rules.automatic_lists);
+        rules.bold_italic = on("bold-italic", rules.bold_italic);
+        rules.hyperlinks = on("hyperlinks", rules.hyperlinks);
+        rules.border_lines = on("border-lines", rules.border_lines);
+        rules.add_first_letter_exceptions =
+            on("add-first-exceptions", rules.add_first_letter_exceptions);
+        rules.add_initial_caps_exceptions =
+            on("add-caps-exceptions", rules.add_initial_caps_exceptions);
 
         if listed {
             rules.replacements = replacements.clone();
@@ -387,6 +394,11 @@ impl Settings {
             ("fractions", rules.fractions),
             ("dashes", rules.dashes),
             ("automatic-lists", rules.automatic_lists),
+            ("bold-italic", rules.bold_italic),
+            ("hyperlinks", rules.hyperlinks),
+            ("border-lines", rules.border_lines),
+            ("add-first-exceptions", rules.add_first_letter_exceptions),
+            ("add-caps-exceptions", rules.add_initial_caps_exceptions),
         ] {
             out.push_str(CORRECT_PREFIX);
             out.push_str(name);
