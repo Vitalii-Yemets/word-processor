@@ -50,6 +50,9 @@ pub struct Theme {
     pub selection: Color,
     pub caret: Color,
     pub marks: Color,
+    /// The line under a mistake of grammar: blue, as Word draws it, and not
+    /// the red of a spelling, so that a glance tells the two apart.
+    pub grammar: Color,
     /// The lines of a table when the document does not say what colour.
     pub table_line: Color,
 
@@ -118,6 +121,7 @@ impl Theme {
             selection: Color::rgb(0x2D, 0x4F, 0x7C),
             caret: Color::rgb(0xE6, 0xE6, 0xE6),
             marks: Color::rgb(0x6E, 0x8A, 0xC8),
+            grammar: Color::rgb(0x5A, 0x8C, 0xE8),
             table_line: Color::rgb(0x7A, 0x7A, 0x7A),
 
             title_bar: Color::rgb(0x1F, 0x1F, 0x1F),
@@ -162,6 +166,7 @@ impl Theme {
             selection: Color::rgb(0xB4, 0xD5, 0xFE),
             caret: Color::rgb(0x10, 0x50, 0xC0),
             marks: Color::rgb(0x30, 0x50, 0x9A),
+            grammar: Color::rgb(0x1E, 0x64, 0xC8),
             table_line: Color::rgb(0x40, 0x40, 0x40),
 
             title_bar: Color::rgb(0x1F, 0x3B, 0x63),

@@ -32,6 +32,16 @@ impl Editor {
         self.find_dictionaries();
         self.issues =
             self.document.proofing_issues_cached(&self.dictionaries, &mut self.proofing_cache);
+        // What the reader said to leave alone, taken out after the checking
+        // rather than before it, so that the cache holds the whole answer.
+        if !self.ignored_findings.is_empty() {
+            self.issues.retain(|issue| {
+                issue.kind.is_spelling()
+                    || !self
+                        .ignored_findings
+                        .contains(&(issue.kind.message().to_owned(), issue.text.clone()))
+            });
+        }
     }
 
     /// Shows or hides the underlining.
@@ -134,6 +144,7 @@ impl Editor {
         }
         self.pending_issue = None;
         match index - offered {
+            0 if !issue.kind.is_spelling() => self.ignore_finding(&issue),
             0 => {
                 self.document.clear_selection();
                 self.needs_redraw = true;
@@ -372,7 +383,9 @@ impl Editor {
         }
 
         for (x, y, width, spelling) in marks {
-            let colour = if spelling { self.theme.danger } else { self.theme.marks };
+            // Red for a spelling and blue for grammar, which is Word's pair and
+            // is how a glance tells which is which.
+            let colour = if spelling { self.theme.danger } else { self.theme.grammar };
             squiggle(&mut self.canvas, x, y, width, colour);
         }
     }
@@ -446,7 +459,21 @@ impl Editor {
     /// Leaves the word under the menu alone everywhere.
     pub(super) fn ignore_pending(&mut self) -> Response {
         let Some(issue) = self.pending_issue.take() else { return Response::Ignored };
-        self.ignore_everywhere(&issue.text)
+        if issue.kind.is_spelling() {
+            self.ignore_everywhere(&issue.text)
+        } else {
+            self.ignore_finding(&issue)
+        }
+    }
+
+    /// Leaves a mistake of grammar alone: the same words in the same place
+    /// are not marked again while the document is open.
+    pub(super) fn ignore_finding(&mut self, issue: &Issue) -> Response {
+        self.ignored_findings.insert((issue.kind.message().to_owned(), issue.text.clone()));
+        self.document.clear_selection();
+        self.recheck_proofing();
+        self.needs_redraw = true;
+        self.report("Left as it is")
     }
 
     /// Adds the word under the menu to the dictionary.

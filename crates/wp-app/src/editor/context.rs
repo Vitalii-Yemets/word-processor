@@ -89,7 +89,11 @@ impl Editor {
         // which word it is for.
         if let Some(issue) = self.position_at(x, y).and_then(|at| self.issue_at(at)) {
             if self.show_proofing {
-                self.pending_spellings = self.spellings_for(&issue);
+                self.pending_spellings = if issue.kind.is_spelling() {
+                    self.spellings_for(&issue)
+                } else {
+                    issue.suggestion.iter().cloned().collect()
+                };
                 self.pending_issue = Some(issue);
             }
         }

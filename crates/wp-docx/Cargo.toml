@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 wp-dict = { path = "../wp-dict" }
+wp-grammar = { path = "../wp-grammar" }
 wp-opc = { path = "../wp-opc" }
 wp-normal = { path = "../wp-normal" }
 wp-segment = { path = "../wp-segment" }

@@ -49,6 +49,7 @@ name = "wp-docx"
 version = "0.0.1"
 dependencies = [
  "wp-dict",
+ "wp-grammar",
  "wp-image",
  "wp-normal",
  "wp-opc",
@@ -59,6 +60,10 @@ dependencies = [
 
 [[package]]
 name = "wp-font"
+version = "0.0.1"
+
+[[package]]
+name = "wp-grammar"
 version = "0.0.1"
 
 [[package]]

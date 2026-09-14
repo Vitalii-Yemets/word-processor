@@ -294,6 +294,9 @@ pub struct Editor {
     /// What the checker found in each paragraph last time, so a keystroke
     /// checks one paragraph and not the document.
     proofing_cache: wp_docx::proofing::ProofingCache,
+    /// The mistakes of grammar the reader said to leave alone, by what they
+    /// were called and what they said, for as long as the document is open.
+    ignored_findings: std::collections::HashSet<(String, String)>,
     /// The mistake a correction is being chosen for.
     pending_issue: Option<wp_docx::proofing::Issue>,
     /// The people a mail merge is for, read from the file beside the letter.
@@ -589,6 +592,7 @@ impl Editor {
             custom_words: Vec::new(),
             pending_spellings: Vec::new(),
             proofing_cache: wp_docx::proofing::ProofingCache::default(),
+            ignored_findings: std::collections::HashSet::new(),
             pending_issue: None,
             recipients: wp_docx::merge::Recipients::default(),
             recipient_file: None,

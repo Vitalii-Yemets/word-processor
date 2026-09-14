@@ -3303,8 +3303,56 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   word is. These are in the order the slips happen, which is right far more
   often than not and wrong where a rare word is one slip nearer than a common
   one.
-- [ ] **F3. Grammar.** A rule engine and the rules for at least one language,
+- [x] **F3. Grammar.** A rule engine and the rules for at least one language,
   with the wavy line of its own colour and the explanation Word gives.
+  *Done when:* "I could of gone" is underlined in blue, and a right-click says
+  "Verb form" and offers "could have".
+  A spelling checker sees nothing wrong with "could of": every word of it is
+  spelled correctly. A reader sees it at once. The mistakes of this kind are
+  the ones that survive a spelling check, and a document full of them is what
+  a spelling check on its own produces.
+  `crates/wp-grammar` is a rule engine and the rules for English. A rule is a
+  pattern over words — a literal word, a choice of words, any word, a word
+  beginning with a vowel sound — matched against a run of words with nothing
+  but spaces between them, because punctuation ends the run: "I don't. No." is
+  not a double negative. Each rule carries the name Word gives the mistake,
+  which is the explanation shown, and a replacement where there is one right
+  answer, written as a template over the words matched so that "He don't"
+  becomes "He doesn't" and not "he doesn't".
+  The rules: the article before a vowel sound, with the sounds that spelling
+  hides — an hour, a university, a European, a one-off, an FBI agent, an 8;
+  "could of" and its kin; the pronouns and the verbs that go with them, where
+  the pronoun settles it; the double negative, pointed out and not rewritten,
+  because which half to keep is the writer's to say; the words people confuse
+  — "their is", "better then", "your welcome", "alot", "irregardless"; and the
+  small "i". Every one of them is a mistake in the register a document is
+  written in, and none of them needs a parser to find.
+  They are applied where the text says it is English or says nothing, and not
+  where it says otherwise or asks not to be checked: the same `w:noProof` the
+  spelling honours. The document's `w:hideGrammaticalErrors` hides them and
+  leaves the spelling marks, as Word does.
+  The line is blue — its own colour in the theme, not the colour of the
+  formatting marks — and red stays for spelling, so a glance says which is
+  which. The right-click names the mistake, offers the one right answer where
+  there is one, and offers to leave it be, which lasts while the document is
+  open. The Spelling button walks these along with the rest.
+  *Not done:* the grammar of the sentence. Whether a verb agrees with its
+  subject when the subject is a noun rather than a pronoun needs to know which
+  word is the subject, and that needs a parser and a part of speech for every
+  word — a different order of thing, and one Word's own gets wrong often enough
+  that half the people who write for a living turn it off. What is here is what
+  a handful of words side by side can settle.
+  *Not done:* the rules for any language but English. The engine is the same
+  for every language; the rules are not, and each language's are a list of
+  their own to be written by somebody who writes it. Named as **F8**.
+  *Not done:* Word's style checks — passive voice, wordiness, clichés — which
+  are advice rather than mistakes and are drawn in a third colour.
+- [ ] **F8. Grammar rules for other languages.** The engine in `wp-grammar`
+  takes a pattern over words and says what it found; only English has a list.
+  Each further language is a list of its own — the mistakes that show in a few
+  words side by side, in that language, with what Word calls each — and a
+  reader of the language to say which are mistakes. Russian, German and French
+  first, being the languages this program's dictionaries already know.
 - [ ] **F4. Thesaurus.**
 - [ ] **F5. AutoCorrect and AutoFormat as you type.** The replacement table,
   the capitalisation rules, smart quotes, dashes, lists that start themselves,

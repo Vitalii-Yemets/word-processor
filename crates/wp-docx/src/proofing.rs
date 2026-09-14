@@ -17,11 +17,15 @@
 //! none — rather than guessed at, which would underline correct words and teach
 //! people to ignore the underlining.
 //!
-//! # What is deliberately not checked
+//! # What grammar means here
 //!
-//! Grammar. "Which of these two verbs agrees with that noun" is a different
-//! kind of question and needs the grammar of the language, not its words.
-//! Saying so is better than a check that fires on half of what it should.
+//! The mistakes that show in a handful of words side by side — "could of",
+//! "a apple", "he don't", a double negative — found by rules over the words,
+//! which is what [`wp_grammar`] holds. Not the grammar of the sentence: "which
+//! of these two verbs agrees with that noun" needs a parser of the language
+//! and a part of speech for every word, and is wrong often enough even then
+//! that a check which fires on half of what it should is worse than one that
+//! says what it cannot do.
 
 use std::collections::{HashMap, HashSet};
 
@@ -40,6 +44,9 @@ pub enum Kind {
     DoubleSpace,
     /// A word the dictionary does not have.
     UnknownWord,
+    /// A mistake the grammar rules found, named as Word names it: "Article
+    /// use", "Verb form", "Double negation".
+    Grammar(&'static str),
 }
 
 impl Kind {
@@ -61,6 +68,7 @@ impl Kind {
             Self::SpaceBeforePunctuation => "Space before punctuation",
             Self::DoubleSpace => "More than one space",
             Self::UnknownWord => "Not in the dictionary",
+            Self::Grammar(category) => category,
         }
     }
 }
@@ -510,6 +518,32 @@ pub fn check_paragraph(
                 });
             }
         }
+    }
+
+    // The grammar rules, which are for English: applied where the text says it
+    // is English or says nothing, and left alone where it says otherwise or
+    // asks not to be checked.
+    for finding in wp_grammar::check(text) {
+        let stretch = stretches
+            .iter()
+            .find(|stretch| finding.start >= stretch.start && finding.start < stretch.end);
+        if stretch.is_some_and(|stretch| stretch.no_proof) {
+            continue;
+        }
+        let english = stretch
+            .and_then(|stretch| stretch.language.as_deref())
+            .is_none_or(|tag| tag.len() < 2 || tag[..2].eq_ignore_ascii_case("en"));
+        if !english {
+            continue;
+        }
+        out.push(Issue {
+            paragraph,
+            start: finding.start,
+            end: finding.end,
+            kind: Kind::Grammar(finding.category),
+            text: text[finding.start..finding.end].to_owned(),
+            suggestion: finding.replacement,
+        });
     }
 
     // And the spelling, when there is a dictionary to check it against — the
@@ -1006,5 +1040,89 @@ mod remembering {
         assert_eq!(cache.held.len(), 3);
         let _ = document(&["one"]).proofing_issues_cached(&dictionaries, &mut cache);
         assert_eq!(cache.held.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod grammar {
+    use super::{Dictionaries, Dictionary, Kind};
+    use crate::model::{Block, Body, Paragraph, Run};
+    use crate::Document;
+
+    fn made_of(runs: &[(&str, Option<&str>)]) -> Document {
+        let mut body = Body::default();
+        let runs: Vec<Run> = runs
+            .iter()
+            .map(|(text, language)| match language {
+                Some(tag) => Run::text(text).in_language(tag),
+                None => Run::text(text),
+            })
+            .collect();
+        body.blocks.push(Block::Paragraph(Paragraph::from_runs(runs)));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        Document::open(&bytes).expect("reopening")
+    }
+
+    fn grammar(document: &Document) -> Vec<(String, &'static str, Option<String>)> {
+        document
+            .proofing_issues(&Dictionaries::default())
+            .into_iter()
+            .filter_map(|issue| match issue.kind {
+                Kind::Grammar(category) => Some((issue.text, category, issue.suggestion)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_mistake_every_word_of_which_is_spelled_right_is_found() {
+        // Which is the whole point: a spelling checker sees nothing wrong with
+        // "could of", and a reader sees it at once.
+        let document = made_of(&[("I could of gone to a university.", Some("en-US"))]);
+        assert_eq!(
+            grammar(&document),
+            vec![("could of".to_owned(), "Verb form", Some("could have".to_owned()))]
+        );
+    }
+
+    #[test]
+    fn the_rules_are_for_english_and_leave_other_languages_alone() {
+        let french = made_of(&[("Je could of gone.", Some("fr-FR"))]);
+        assert_eq!(grammar(&french), vec![]);
+        // Text that names no language is taken to be the default, which is
+        // English.
+        let unmarked = made_of(&[("I could of gone.", None)]);
+        assert_eq!(grammar(&unmarked).len(), 1);
+    }
+
+    #[test]
+    fn a_run_asked_to_be_left_alone_is_left_alone() {
+        let mut document = made_of(&[("I could of gone.", Some("en-US"))]);
+        document.select_all();
+        assert!(document.set_no_proof(true));
+        assert_eq!(grammar(&document), vec![]);
+    }
+
+    #[test]
+    fn the_document_may_hide_the_grammar_marks_and_keep_the_spelling_ones() {
+        let mut document = made_of(&[("I could of gone hme.", Some("en-US"))]);
+        let mut dictionaries = Dictionaries::default();
+        dictionaries.insert("en-US", Dictionary::parse("i\ncould\nof\ngone\nhome\n"));
+
+        let before = document.proofing_issues(&dictionaries);
+        assert!(before.iter().any(|issue| matches!(issue.kind, Kind::Grammar(_))));
+        assert!(before.iter().any(|issue| issue.kind == Kind::UnknownWord));
+
+        assert!(document.set_setting_flag("hideGrammaticalErrors", true));
+        let after = document.proofing_issues(&dictionaries);
+        assert!(!after.iter().any(|issue| matches!(issue.kind, Kind::Grammar(_))));
+        assert!(after.iter().any(|issue| issue.kind == Kind::UnknownWord));
+    }
+
+    #[test]
+    fn a_grammar_mistake_is_not_a_spelling_one() {
+        // Drawn in the other colour, and offered no dictionary to be added to.
+        assert!(!Kind::Grammar("Article use").is_spelling());
+        assert_eq!(Kind::Grammar("Article use").message(), "Article use");
     }
 }

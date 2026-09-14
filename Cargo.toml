@@ -11,6 +11,7 @@ members = [
     "crates/wp-dict",
     "crates/wp-docx",
     "crates/wp-font",
+    "crates/wp-grammar",
     "crates/wp-image",
     "crates/wp-shape",
     "crates/wp-svg",
