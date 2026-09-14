@@ -188,7 +188,7 @@ impl Editor {
 
     /// The same, from contents already read — which is how a test hands
     /// the clipboard in, since the build image has no clipboard.
-    fn take_contents(&mut self, contents: Contents) -> (String, Vec<Block>) {
+    pub(super) fn take_contents(&mut self, contents: Contents) -> (String, Vec<Block>) {
         let text = contents.text.clone().unwrap_or_default();
         if let Some((copied, blocks)) = &self.clipboard {
             if !text.is_empty() && *copied == text {

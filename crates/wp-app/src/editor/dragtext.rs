@@ -47,6 +47,20 @@ pub(super) struct TextDrag {
     pub(super) onto: Option<TextPosition>,
 }
 
+impl TextDrag {
+    /// The stretch the text was taken from.
+    #[must_use]
+    pub(super) fn from(&self) -> (TextPosition, TextPosition) {
+        self.from
+    }
+
+    /// What is being carried.
+    #[must_use]
+    pub(super) fn blocks(&self) -> &[Block] {
+        &self.blocks
+    }
+}
+
 impl Editor {
     /// Whether a press should wait to see if it becomes a drag.
     ///

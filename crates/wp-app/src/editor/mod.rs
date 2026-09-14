@@ -20,6 +20,7 @@ mod dialogs;
 mod dispatch;
 mod dragtext;
 mod draw;
+mod dropping;
 mod effects;
 mod equation;
 mod events;
@@ -228,6 +229,9 @@ pub struct Editor {
     /// turned into a drag. See [`dragtext`].
     pending_text_drag: Option<(i32, i32)>,
     text_drag: Option<dragtext::TextDrag>,
+    /// Where something another program is dragging over the page would
+    /// land, while it is over the page.
+    foreign_drop: Option<TextPosition>,
     /// When and where the last double click was, so a third click can be told
     /// from a first. See [`selecting`].
     last_double_click: Option<(std::time::Instant, i32, i32)>,
@@ -585,6 +589,7 @@ impl Editor {
             dimmed: Vec::new(),
             pending_text_drag: None,
             text_drag: None,
+            foreign_drop: None,
             last_double_click: None,
             drag_by: selecting::Granularity::default(),
             clipboard: None,

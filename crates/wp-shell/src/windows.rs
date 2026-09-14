@@ -18,7 +18,7 @@ use crate::{App, CompositionAttribute, Error, Event, Key, Modifiers, Response, W
 
 // --- Types the API uses -----------------------------------------------------
 
-type Handle = *mut c_void;
+pub(crate) type Handle = *mut c_void;
 type WordParam = usize;
 type LongParam = isize;
 type Result_ = isize;
@@ -43,9 +43,9 @@ struct WindowClass {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct Point {
-    x: i32,
-    y: i32,
+pub(crate) struct Point {
+    pub(crate) x: i32,
+    pub(crate) y: i32,
 }
 
 #[repr(C)]
@@ -252,7 +252,7 @@ const CLIPBOARD_UNICODE_TEXT: u32 = 13;
 /// A bitmap: its information header and pixels, as `CF_DIB`.
 const CLIPBOARD_DIB: u32 = 8;
 /// Clipboard memory has to be movable, because the system takes ownership.
-const MEMORY_MOVEABLE: u32 = 0x0002;
+pub(crate) const MEMORY_MOVEABLE: u32 = 0x0002;
 
 // Flags for the open and save dialogs.
 const OFN_OVERWRITE_PROMPT: u32 = 0x0000_0002;
@@ -430,7 +430,7 @@ extern "system" {
     /// not say unless it is asked.
     fn TrackMouseEvent(track: *mut TrackMouse) -> i32;
     fn SystemParametersInfoW(action: u32, param: u32, data: *mut c_void, update: u32) -> i32;
-    fn ScreenToClient(window: Handle, point: *mut Point) -> i32;
+    pub(crate) fn ScreenToClient(window: Handle, point: *mut Point) -> i32;
     fn ClientToScreen(window: Handle, point: *mut Point) -> i32;
     /// Routes mouse messages to this window even when the pointer leaves it,
     /// which is what lets a selection keep growing during a drag.
@@ -443,7 +443,7 @@ extern "system" {
     fn GetClipboardData(format: u32) -> Handle;
     fn IsClipboardFormatAvailable(format: u32) -> i32;
     fn SetWindowTextW(window: Handle, title: *const u16) -> i32;
-    fn RegisterClipboardFormatW(name: *const u16) -> u32;
+    pub(crate) fn RegisterClipboardFormatW(name: *const u16) -> u32;
     fn MessageBoxW(owner: Handle, text: *const u16, caption: *const u16, style: u32) -> i32;
 }
 
@@ -567,11 +567,11 @@ extern "system" {
     fn GetACP() -> u32;
     fn GetOEMCP() -> u32;
     fn GetLastError() -> u32;
-    fn GlobalAlloc(flags: u32, bytes: usize) -> Handle;
-    fn GlobalFree(memory: Handle) -> Handle;
-    fn GlobalLock(memory: Handle) -> *mut c_void;
-    fn GlobalUnlock(memory: Handle) -> i32;
-    fn GlobalSize(memory: Handle) -> usize;
+    pub(crate) fn GlobalAlloc(flags: u32, bytes: usize) -> Handle;
+    pub(crate) fn GlobalFree(memory: Handle) -> Handle;
+    pub(crate) fn GlobalLock(memory: Handle) -> *mut c_void;
+    pub(crate) fn GlobalUnlock(memory: Handle) -> i32;
+    pub(crate) fn GlobalSize(memory: Handle) -> usize;
 }
 
 // --- The application, reachable from the window procedure -------------------
@@ -694,7 +694,7 @@ pub(crate) fn window_count() -> usize {
 }
 
 /// Encodes a string the way the wide-character API expects, with a terminator.
-fn wide(text: &str) -> Vec<u16> {
+pub(crate) fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(core::iter::once(0)).collect()
 }
 
@@ -781,6 +781,8 @@ unsafe fn create_window(title: &str, width: u32, height: u32) -> Result<Handle, 
     // The heartbeat the caret blinks on and the tips are timed by.
     SetTimer(window, TICK_TIMER, TICK_MILLIS, core::ptr::null());
     UpdateWindow(window);
+    // Text, pictures and files dragged from other programs land here.
+    crate::dragdrop::register_window(window);
     Ok(window)
 }
 
@@ -938,7 +940,7 @@ fn owner_window() -> Handle {
 }
 
 /// Hands an event to the application and acts on what it asks for.
-fn deliver(window: Handle, event: Event) -> Result_ {
+pub(crate) fn deliver(window: Handle, event: Event) -> Result_ {
     // Which of the program's windows this is, so the application can put that
     // window's view back before it answers.
     point_at(window);
@@ -1239,6 +1241,7 @@ unsafe extern "system" fn window_procedure(
         }
         MESSAGE_DESTROY => {
             KillTimer(window, TICK_TIMER);
+            crate::dragdrop::unregister_window(window);
             // One window closing is one view closing. The program ends when the
             // last of them goes, not the first.
             WINDOWS.with(|slot| slot.borrow_mut().retain(|found| *found != window));

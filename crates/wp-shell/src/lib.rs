@@ -21,6 +21,8 @@
 use wp_raster::Canvas;
 
 #[cfg(windows)]
+mod dragdrop;
+#[cfg(windows)]
 mod windows;
 
 /// A key the application reacts to.
@@ -106,6 +108,30 @@ pub enum Event {
     Commit(String),
     /// The composition ended, with whatever was still uncommitted dropped.
     ComposeEnd,
+    /// Files from the desktop were dropped on the window, at a point in the
+    /// drawing area.
+    FilesDropped {
+        paths: Vec<std::path::PathBuf>,
+        x: i32,
+        y: i32,
+    },
+    /// Something another program is dragging is over the window, at a
+    /// point in the drawing area: where it would land if let go.
+    DataDragOver {
+        x: i32,
+        y: i32,
+    },
+    /// What was being dragged over the window has left it.
+    DataDragLeft,
+    /// Another program's drag was let go on the window: what it carried, in
+    /// every format this program takes, where, and whether Control was held
+    /// to ask for a copy rather than a move.
+    DataDropped {
+        contents: clipboard::Contents,
+        x: i32,
+        y: i32,
+        copying: bool,
+    },
     /// A mouse button went down at a point in the drawing area.
     MouseDown {
         x: i32,
@@ -174,6 +200,37 @@ pub enum CompositionAttribute {
     Converted,
     Target,
     Error,
+}
+
+/// How a drag this program gave ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DragEffect {
+    /// Nowhere, or nowhere that took it.
+    None,
+    /// Another program took a copy: the original stays.
+    Copy,
+    /// Another program took it as a move: the original is to come out.
+    Move,
+    /// It landed back in this window, at a point in the drawing area, as a
+    /// copy or a move — which the program is told after the fact, since it
+    /// was busy giving the drag while the drop happened.
+    DroppedOnSelf { x: i32, y: i32, copying: bool },
+}
+
+/// Gives the contents to the desktop as a drag, and waits until the drag
+/// ends — with a drop somewhere, or with nothing. What the other program
+/// did with it is the answer.
+#[must_use]
+pub fn start_drag(contents: &clipboard::Contents) -> DragEffect {
+    #[cfg(windows)]
+    {
+        dragdrop::start_drag(contents)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = contents;
+        DragEffect::None
+    }
 }
 
 /// What the shell should do after an event.

@@ -789,7 +789,7 @@ impl Editor {
     /// carried, and moving it would give up the selection before the person
     /// has decided anything.
     pub(super) fn draw_drop_mark(&mut self) {
-        let Some(onto) = self.text_drop_target() else { return };
+        let Some(onto) = self.drop_target() else { return };
         let Some((x, y, width, height)) = self.caret_rect_at(onto) else { return };
         if y < self.content_top() || y + height > self.content_bottom() {
             return;

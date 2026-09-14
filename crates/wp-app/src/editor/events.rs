@@ -239,6 +239,11 @@ impl App for Editor {
                     return response;
                 }
                 Event::Compose { .. } | Event::ComposeEnd => return Response::Ignored,
+                // A modal dialog takes no drops either.
+                Event::FilesDropped { .. }
+                | Event::DataDragOver { .. }
+                | Event::DataDragLeft
+                | Event::DataDropped { .. } => return Response::Ignored,
                 // Swallowed rather than passed through: the window behind a
                 // modal dialog does not answer these.
                 Event::Scroll { .. }
@@ -501,6 +506,13 @@ impl App for Editor {
                 self.commit_composition(text)
             }
             Event::ComposeEnd => self.end_composition(),
+
+            // What the desktop drags in: files, or another program's text.
+            // See [`super::dropping`].
+            Event::FilesDropped { paths, x, y } => self.drop_files(paths, x, y),
+            Event::DataDragOver { x, y } => self.foreign_drag_over(x, y),
+            Event::DataDragLeft => self.foreign_drag_left(),
+            Event::DataDropped { contents, x, y, .. } => self.drop_data(contents, x, y),
 
             // Nothing in the window is under the pointer any more, so nothing
             // in it should look as though it is.
@@ -1108,6 +1120,11 @@ impl Editor {
         if self.pending_text_drag.is_some() || self.dragging_text() {
             if !held {
                 return self.drop_text(x, y, modifiers.control);
+            }
+            // Carried out of the window, the text goes to the desktop as a
+            // drag for whatever program takes it. See [`super::dropping`].
+            if self.dragging_text() && self.is_outside_window(x, y) {
+                return self.drag_text_out();
             }
             return self.drag_text(x, y);
         }

@@ -3876,8 +3876,38 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   pasting tables); a picture's alpha in the bitmap it goes out as is
   written but not every program reads it; the Linux clipboard, which is
   **H6**'s.
-- [ ] **H3. Drag and drop.** Between programs as well as within the document,
+- [x] **H3. Drag and drop.** Between programs as well as within the document,
   and dropping a file onto the window.
+  *Done:* the window is an OLE drop target, and gives OLE drags, with the
+  three COM objects that takes — the drop target, the data object with
+  its list of formats, and the drop source — written out against the
+  documented tables, since no binding library is used. Dropped on the
+  window: files from the desktop, of which a picture goes into the page
+  where it landed, at its own size and no wider than the text, and a
+  document — Word's kinds, the old binary one, Rich Text, OpenDocument, a
+  web page, a text file, a PDF — opens, after the question about unsaved
+  changes; and text another program is dragging, taken in the richest
+  format it carries — Rich Text, HTML, a picture, the words — and pasted
+  where it lands, with the paste options that follow a paste. While it is
+  over the page the mark that shows where it would land follows the
+  pointer, as for a drag inside the window; Control asks for a copy rather
+  than a move, and the effect offered back to the source says which.
+  Dragged out: text taken hold of in the selection and carried past the
+  window's edge goes to the desktop as a drag, in every format a copy
+  goes out in; a program that takes it as a move has the original come
+  out, a copy leaves it, and a drag let go nowhere leaves it too. A drag
+  that comes back into its own window lands the way a drag inside the
+  window does — told afterwards, since the window is busy giving the drag
+  while the drop happens. A modal dialog takes no drops. Tested through
+  the events, since the build image has no desktop: text dragged in is
+  pasted where it lands and the mark comes and goes; a picture dropped
+  goes into the page; a document dropped opens.
+  *Not done, and named here:* the mark following the pointer while this
+  window's own drag is back over it (the window is busy giving the drag);
+  a drag out of a file — the selection as a file the desktop could drop
+  in a folder; dropping a document into the text as an object, which is
+  what Word's Insert ▸ Object does; more than one document dropped at
+  once, of which the first opens; the Linux side, which is **H6**'s.
 - [ ] **H4. Accessibility.** UI Automation on Windows, AT-SPI on Linux: a screen
   reader has to be able to read the document and drive the ribbon.
 - [ ] **H5. High DPI and several monitors.** Per-monitor scaling, and the window

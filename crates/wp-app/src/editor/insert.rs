@@ -47,8 +47,14 @@ impl Editor {
         let Some(path) = wp_shell::dialog::open_file("Insert Picture", PICTURE_FILTERS) else {
             return Response::Ignored;
         };
+        self.insert_picture_file(&path)
+    }
 
-        let bytes = match std::fs::read(&path) {
+    /// Puts the picture in a file where the caret is: what Insert Picture
+    /// does once the file is chosen, and what a picture dropped on the page
+    /// does.
+    pub(super) fn insert_picture_file(&mut self, path: &std::path::Path) -> Response {
+        let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(error) => {
                 wp_shell::dialog::show_error(&format!("Cannot read {}: {error}", path.display()));
