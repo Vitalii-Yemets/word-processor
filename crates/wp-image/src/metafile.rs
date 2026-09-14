@@ -304,6 +304,13 @@ impl State {
                                 Point::new(point.x, point.y),
                             );
                         }
+                        wp_font::PathCommand::CubicTo(first, second, point) => {
+                            path.cubic_to(
+                                Point::new(first.x, first.y),
+                                Point::new(second.x, second.y),
+                                Point::new(point.x, point.y),
+                            );
+                        }
                         wp_font::PathCommand::Close => {
                             path.close();
                         }

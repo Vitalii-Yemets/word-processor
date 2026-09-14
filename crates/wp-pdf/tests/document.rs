@@ -228,3 +228,44 @@ fn what_the_document_does_not_use_is_left_out_of_the_font() {
     assert!(font.glyph_count() > 100, "a text font has hundreds of glyphs");
     assert!(drawable < 10, "{drawable} glyphs are still being carried for one letter");
 }
+
+/// The same document set in a font of the other kind.
+fn laid_out_in(family: &str, line: &str) -> Vec<Page> {
+    let mut body = Body::default();
+    let mut run = wp_docx::model::Run::text(line);
+    run.properties.font = Some(family.to_owned());
+    body.blocks.push(Block::Paragraph(Paragraph::from_runs(vec![run])));
+
+    let bytes = Document::create(&body).expect("a document").save().expect("saving");
+    let document = Document::open(&bytes).expect("reopening");
+    let mut engine = LayoutEngine::for_device(library(), Device::paper());
+    engine.layout_document(&document)
+}
+
+#[test]
+fn a_postscript_font_goes_into_the_file_as_the_kind_it_is() {
+    // A PDF reader is told what kind of font it is being handed, and believes
+    // what it is told: a PostScript font under the key for a TrueType one is a
+    // page that draws nothing.
+    let pdf = wp_pdf::write(&laid_out_in("Nimbus Roman", "Hamburgefonstiv"), library(), "Nimbus");
+    let text = String::from_utf8_lossy(&pdf).into_owned();
+
+    assert!(text.contains("/FontFile3"), "the font went in under the wrong key");
+    assert!(text.contains("/Subtype /OpenType"), "the stream does not say what it holds");
+    assert!(text.contains("/CIDFontType0"), "the descendant font is the wrong kind");
+    assert!(!text.contains("/FontFile2"), "there is no font of the other kind in this document");
+
+    // And the font itself is really in there, whole and readable.
+    let embedded = streams(&pdf).into_iter().max_by_key(Vec::len).expect("a font");
+    let font = wp_font::Font::parse(&embedded).expect("the embedded font parses");
+    assert!(font.has_postscript_outlines());
+    assert!(font.outline(font.glyph_for('H').unwrap()).unwrap().is_some());
+}
+
+#[test]
+fn the_text_of_a_postscript_font_can_still_be_read_back() {
+    // The point of embedding the font at all: what is on the page can be
+    // copied out of it as the words that were typed.
+    let pdf = wp_pdf::write(&laid_out_in("Nimbus Sans", "Hamburgefonstiv"), library(), "Nimbus");
+    assert_eq!(text_of(&pdf).trim(), "Hamburgefonstiv");
+}

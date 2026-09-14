@@ -37,6 +37,11 @@ pub enum PathCommand {
     LineTo(Point),
     /// A quadratic curve: a control point, then the point it ends at.
     QuadTo(Point, Point),
+    /// A cubic curve: two control points, then the point it ends at. Nothing
+    /// in `glyf` draws one — this is what a PostScript outline is made of, and
+    /// both kinds of outline come out of this crate as the same commands so
+    /// that nothing downstream has to know which kind of font it was given.
+    CubicTo(Point, Point, Point),
     /// Closes the current contour back to where it started.
     Close,
 }
@@ -302,6 +307,9 @@ fn read_composite(
                     PathCommand::LineTo(point) => PathCommand::LineTo(transform(point)),
                     PathCommand::QuadTo(control, point) => {
                         PathCommand::QuadTo(transform(control), transform(point))
+                    }
+                    PathCommand::CubicTo(first, second, point) => {
+                        PathCommand::CubicTo(transform(first), transform(second), transform(point))
                     }
                     PathCommand::Close => PathCommand::Close,
                 });

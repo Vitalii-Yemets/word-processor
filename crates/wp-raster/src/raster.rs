@@ -262,6 +262,10 @@ pub struct Rasterizer {
 /// from a font file, and a malformed one can ask for a great many.
 const MAX_CURVE_STEPS: usize = 128;
 
+/// How far a flattened curve may stray from the curve itself, in pixels. A
+/// tenth is below what anybody can see and above what costs anything.
+const FLATNESS: f32 = 0.1;
+
 impl Rasterizer {
     #[must_use]
     pub fn new(width: usize, height: usize) -> Self {
@@ -403,16 +407,28 @@ impl Rasterizer {
     }
 
     fn add_cubic(&mut self, from: Point, first: Point, second: Point, to: Point) {
-        let deviation_x = (from.x - 3.0 * first.x + 3.0 * second.x - to.x).abs();
-        let deviation_y = (from.y - 3.0 * first.y + 3.0 * second.y - to.y).abs();
-        let deviation = deviation_x * deviation_x + deviation_y * deviation_y;
+        // How far a cubic strays from the straight line between its ends is
+        // bounded by three quarters of the larger of its two second
+        // differences, and breaking it into n pieces divides that by n
+        // squared. That is what decides how many pieces it takes.
+        //
+        // This matters more than it sounds. A quadratic curve covers a short
+        // piece of a letter and there are many of them; one cubic covers a
+        // quarter of an O. A count that is generous for the first is what
+        // makes the second come out as a polygon.
+        let first_x = from.x - 2.0 * first.x + second.x;
+        let first_y = from.y - 2.0 * first.y + second.y;
+        let second_x = first.x - 2.0 * second.x + to.x;
+        let second_y = first.y - 2.0 * second.y + to.y;
+        let deviation =
+            (first_x * first_x + first_y * first_y).max(second_x * second_x + second_y * second_y);
 
-        if deviation < 0.1 {
+        if deviation < 0.01 {
             self.add_line(from, to);
             return;
         }
 
-        let steps = (1.0 + (3.0 * deviation).sqrt().sqrt()) as usize;
+        let steps = (0.75 * deviation.sqrt() / FLATNESS).sqrt().ceil() as usize;
         let steps = steps.clamp(1, MAX_CURVE_STEPS);
 
         let mut previous = from;

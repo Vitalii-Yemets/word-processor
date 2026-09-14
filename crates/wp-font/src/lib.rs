@@ -10,12 +10,13 @@
 //!
 //! # Scope
 //!
-//! Glyph outlines are read from the `glyf` table, which is what Arial, Times New
-//! Roman, Calibri, Cambria, Segoe UI and the rest of the fonts a Windows machine
-//! ships with all use. Fonts with PostScript outlines in a `CFF` table are
-//! recognized, and their metrics and character mapping are readable, but asking
-//! for an outline reports [`Error::UnsupportedOutlineFormat`] rather than
-//! guessing. Falling back to another font is then the caller's decision.
+//! Glyph outlines are read from both tables a font may keep them in: `glyf`,
+//! which is what Arial, Times New Roman, Calibri, Cambria, Segoe UI and the
+//! rest of the fonts a Windows machine ships with all use, and `CFF`, which is
+//! what every font Adobe made uses, and most fonts a designer buys, and every
+//! `.otf` file whose signature reads `OTTO`. Either comes back as the same
+//! drawing commands, so nothing downstream has to know which kind of font it
+//! was handed.
 //!
 //! # Safety of input
 //!
@@ -25,6 +26,7 @@
 
 #![forbid(unsafe_code)]
 
+mod cff;
 mod cmap;
 mod glyf;
 mod name;
@@ -196,6 +198,9 @@ pub struct Font<'a> {
     hmtx: Option<TableRange>,
     loca: Option<TableRange>,
     glyf: Option<TableRange>,
+    /// PostScript outlines, and whether they are the newer version of the
+    /// table. A font has one kind of outline or the other, never both.
+    cff: Option<(TableRange, bool)>,
     kern: Option<TableRange>,
     /// Glyph substitution and positioning, which shaping needs.
     gsub: Option<TableRange>,
@@ -204,7 +209,6 @@ pub struct Font<'a> {
     name: Option<TableRange>,
     os2: Option<TableRange>,
     character_map: CharacterMap,
-    has_postscript_outlines: bool,
 }
 
 /// Signature of a TrueType collection, which packs several fonts into one file.
@@ -251,12 +255,15 @@ impl<'a> Font<'a> {
         let version = reader.tag()?;
 
         // 0x00010000 is TrueType, "true" is the old Apple form, "OTTO" means the
-        // outlines are PostScript rather than quadratic.
-        let has_postscript_outlines = match version {
-            [0x00, 0x01, 0x00, 0x00] | [b't', b'r', b'u', b'e'] => false,
-            [b'O', b'T', b'T', b'O'] => true,
-            _ => return Err(Error::NotAFont),
-        };
+        // outlines are PostScript rather than quadratic. Which kind they are is
+        // read off the tables rather than off this, because that is what says
+        // where they are.
+        if !matches!(
+            version,
+            [0x00, 0x01, 0x00, 0x00] | [b't', b'r', b'u', b'e'] | [b'O', b'T', b'T', b'O']
+        ) {
+            return Err(Error::NotAFont);
+        }
 
         let table_count = reader.u16()?;
         reader.skip(6)?; // searchRange, entrySelector, rangeShift
@@ -267,6 +274,7 @@ impl<'a> Font<'a> {
         let mut hmtx = None;
         let mut loca = None;
         let mut glyf = None;
+        let mut cff = None;
         let mut cmap = None;
         let mut kern = None;
         let mut gsub = None;
@@ -295,6 +303,7 @@ impl<'a> Font<'a> {
                 b"hmtx" => hmtx = Some(range),
                 b"loca" => loca = Some(range),
                 b"glyf" => glyf = Some(range),
+                b"CFF " | b"CFF2" => cff = Some((range, tag == *b"CFF2")),
                 b"cmap" => cmap = Some(range),
                 b"kern" => kern = Some(range),
                 b"GSUB" => gsub = Some(range),
@@ -346,6 +355,7 @@ impl<'a> Font<'a> {
             hmtx,
             loca,
             glyf,
+            cff,
             kern,
             gsub,
             gpos,
@@ -353,7 +363,6 @@ impl<'a> Font<'a> {
             name,
             os2,
             character_map,
-            has_postscript_outlines,
         })
     }
 
@@ -415,9 +424,20 @@ impl<'a> Font<'a> {
 
     /// The outline of a glyph, in font units.
     ///
+    /// The same commands whichever kind of outline the font keeps: a caller
+    /// that draws them does not have to know, and a font of either kind draws.
+    ///
     /// Returns `Ok(None)` for a glyph with no outline, such as a space.
     pub fn outline(&self, glyph: GlyphId) -> Result<Option<Outline>, Error> {
-        if self.has_postscript_outlines || self.glyf.is_none() || self.loca.is_none() {
+        if let Some((range, second)) = self.cff {
+            let data = self
+                .data
+                .get(range.offset..range.offset + range.length)
+                .ok_or(Error::OutOfBounds)?;
+            let table = if second { cff::Cff::parse2(data)? } else { cff::Cff::parse(data)? };
+            return table.outline(glyph);
+        }
+        if self.glyf.is_none() || self.loca.is_none() {
             return Err(Error::UnsupportedOutlineFormat);
         }
         glyf::outline(self, glyph)
@@ -602,7 +622,15 @@ impl<'a> Font<'a> {
     /// Whether outlines can be read from this font.
     #[must_use]
     pub fn has_outlines(&self) -> bool {
-        !self.has_postscript_outlines && self.glyf.is_some() && self.loca.is_some()
+        self.cff.is_some() || (self.glyf.is_some() && self.loca.is_some())
+    }
+
+    /// Whether the outlines are PostScript ones, which matters to a program
+    /// that has to hand the font on rather than draw with it: a PDF says which
+    /// kind it is being given, and says it in a different key for each.
+    #[must_use]
+    pub fn has_postscript_outlines(&self) -> bool {
+        self.cff.is_some()
     }
 
     // --- Used by the outline reader ---------------------------------------

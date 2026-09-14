@@ -179,13 +179,34 @@ impl Fonts {
             let Some(name) = self.names.get(face) else { continue };
             let Some(entry) = library.face(*face) else { continue };
             let Some(font) = entry.font() else { continue };
-            let Some(subset) = subset::build(&font, glyphs) else { continue };
+
+            // A font whose outlines are PostScript ones cannot be cut down
+            // here — its glyphs are programs in a table of their own, and
+            // taking some of them out means rewriting the subroutines they
+            // share. It goes in whole instead, which is larger and right; a
+            // reader that gets half a CFF draws nothing.
+            let whole = font.has_postscript_outlines();
+            let embedded = if whole {
+                let Some(file) = entry.file() else { continue };
+                file.to_vec()
+            } else {
+                let Some(subset) = subset::build(&font, glyphs) else { continue };
+                subset
+            };
 
             let units = f32::from(font.units_per_em().max(1));
             let scale = 1000.0 / units;
             let metrics = font.vertical_metrics();
 
-            let file = writer.add_stream(&format!("/Length1 {}", subset.len()), &subset);
+            // A font stream says what it holds. The older kind says it by its
+            // length; the newer one says it by name, and a reader that is not
+            // told treats an OpenType file as bare PostScript and fails.
+            let stream = if whole {
+                "/Subtype /OpenType".to_owned()
+            } else {
+                format!("/Length1 {}", embedded.len())
+            };
+            let file = writer.add_stream(&stream, &embedded);
 
             // A name a reader shows in its list of fonts. The six letters in
             // front of it are what the format asks for to say the font has been
@@ -200,7 +221,10 @@ impl Fonts {
             let descriptor = writer.add(&format!(
                 "<< /Type /FontDescriptor /FontName /{tag}+{plain} /Flags {flags} \
                  /FontBBox [{bounds}] /ItalicAngle {angle} /Ascent {ascent} /Descent {descent} \
-                 /CapHeight {cap} /StemV 80 /FontFile2 {file} >>",
+                 /CapHeight {cap} /StemV 80 /{key} {file} >>",
+                // Which key the font goes under says what kind it is, and a
+                // reader believes the key rather than looking.
+                key = if whole { "FontFile3" } else { "FontFile2" },
                 flags = if font.is_italic() { 68 } else { 4 },
                 angle = if font.is_italic() { -12 } else { 0 },
                 ascent = (f32::from(metrics.ascender) * scale).round() as i32,
@@ -211,9 +235,15 @@ impl Fonts {
 
             let widths = self.widths(&font, glyphs, scale);
             let descendant = writer.add(&format!(
-                "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{tag}+{plain} \
+                "<< /Type /Font /Subtype /{kind} /BaseFont /{tag}+{plain} \
                  /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> \
-                 /FontDescriptor {descriptor} /CIDToGIDMap /Identity /DW 1000 /W [{widths}] >>",
+                 /FontDescriptor {descriptor} {mapping}/DW 1000 /W [{widths}] >>",
+                // Two kinds of outline are two kinds of descendant font, and
+                // only the one built on a glyph table carries a map from the
+                // number in the text to the glyph: in the other they are the
+                // same number already.
+                kind = if whole { "CIDFontType0" } else { "CIDFontType2" },
+                mapping = if whole { "" } else { "/CIDToGIDMap /Identity " },
                 descriptor = descriptor.reference(),
             ));
 

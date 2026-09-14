@@ -107,6 +107,9 @@ fn reads_a_glyph_outline() {
         let points = match command {
             PathCommand::MoveTo(point) | PathCommand::LineTo(point) => vec![*point],
             PathCommand::QuadTo(control, point) => vec![*control, *point],
+            // Never in this font, which keeps quadratic outlines; the other
+            // kind has a test of its own.
+            PathCommand::CubicTo(first, second, point) => vec![*first, *second, *point],
             PathCommand::Close => vec![],
         };
         for point in points {

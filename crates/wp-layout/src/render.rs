@@ -313,6 +313,13 @@ impl<'a> Renderer<'a> {
                 PathCommand::QuadTo(control, point) => {
                     path.quad_to(Point::new(control.x, control.y), Point::new(point.x, point.y));
                 }
+                PathCommand::CubicTo(first, second, point) => {
+                    path.cubic_to(
+                        Point::new(first.x, first.y),
+                        Point::new(second.x, second.y),
+                        Point::new(point.x, point.y),
+                    );
+                }
                 PathCommand::Close => {
                     path.close();
                 }

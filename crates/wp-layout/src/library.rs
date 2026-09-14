@@ -74,6 +74,16 @@ impl Face {
         self.coverage.get()
     }
 
+    /// The file this face was read from, whole.
+    ///
+    /// For a program that has to hand the font on rather than draw with it: a
+    /// PDF embeds the font itself, and a kind of font it cannot cut down it
+    /// embeds entire.
+    #[must_use]
+    pub fn file(&self) -> Option<&[u8]> {
+        self.bytes().map(Vec::as_slice)
+    }
+
     /// The file contents, read if they are not already in memory.
     fn bytes(&self) -> Option<&Vec<u8>> {
         if self.data.get().is_none() {
@@ -354,8 +364,12 @@ fn describe_faces(path: &Path) -> Vec<Description> {
             tables.iter().find(|(tag, _)| tag == wanted).map(|(_, range)| *range)
         };
 
-        // A face whose outlines cannot be read is no use for drawing.
-        if find(b"glyf").is_none() || find(b"loca").is_none() {
+        // A face whose outlines cannot be read is no use for drawing. There are
+        // two tables they may be in — quadratic curves in `glyf`, PostScript
+        // ones in `CFF` — and a font has one or the other.
+        let quadratic = find(b"glyf").is_some() && find(b"loca").is_some();
+        let postscript = find(b"CFF ").is_some() || find(b"CFF2").is_some();
+        if !quadratic && !postscript {
             continue;
         }
 

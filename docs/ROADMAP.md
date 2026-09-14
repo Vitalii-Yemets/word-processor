@@ -110,8 +110,11 @@ No font files are shipped. Typefaces are data with their own licences, and the
 ones Word uses belong to Microsoft; the editor reads whatever is installed on
 the system, which is what Word does too.
 
-*Not done:* CFF and CFF2 outlines (PostScript-flavoured fonts), variable fonts,
-colour and bitmap glyph tables — items **E8** to **E10**.
+Outlines are read from both tables a font may keep them in: `glyf` and `CFF`,
+the quadratic kind and the PostScript one.
+
+*Not done:* variable fonts and colour and bitmap glyph tables — items **E9** and
+**E10** — and cutting a PostScript font down for a PDF, which is **E17**.
 
 ## Stage 4 — Text engine — the part every document needs ✅
 
@@ -131,7 +134,7 @@ The tables all four of those search are generated from the character database by
 `tools/generate-unicode-tables.sh` and committed, so they cover every character
 and the program still builds from its own source alone.
 
-The rest of the text engine is items **E1** to **E16**.
+The rest of the text engine is items **E1** to **E17**.
 
 ## Stage 5 — Layout and rendering — what the program draws today ✅
 
@@ -2993,8 +2996,73 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Korean jamo are letters, so a syllable spelled out in them is never broken
   anywhere. The item is the standard's own class set and its pair table, and
   the rules written against them rather than against a fold.
-- [ ] **E8. CFF and CFF2 outlines.** PostScript-flavoured fonts, which a good
+- [x] **E8. CFF and CFF2 outlines.** PostScript-flavoured fonts, which a good
   many documents ask for.
+  *Done when:* a document set in an `.otf` file is drawn, and written to a PDF
+  that draws it too.
+  There are two places a font may keep its outlines and this program read one
+  of them. `glyf` holds quadratic curves over a grid of points, which is what
+  every font a Windows machine ships with uses. `CFF` holds cubic curves as a
+  program per glyph in a little stack language, which is what every font Adobe
+  ever made uses, and most of the fonts a designer buys, and every `.otf` file
+  whose signature reads `OTTO`. Asked for one of those, the reader answered
+  that it could not.
+  It reads them now. `crates/wp-font/src/cff.rs`: the INDEX and DICT structures
+  the table is built from, the private dictionaries a glyph's subroutines live
+  in, both kinds of glyph lookup — plain, and CID-keyed where the glyph itself
+  says which dictionary it belongs to — and the charstring interpreter. That
+  last is the work: the operators are all relative, several take any number of
+  arguments and alternate between horizontal and vertical as they go, the width
+  of the glyph may be hidden in front of the first operator's arguments so that
+  the operator has to count what it was given, and a charstring may call
+  subroutines numbered from the middle of their list outwards. The five
+  spellings of a curve are here, the four flex operators, and `seac` — the old
+  way of writing an accented letter, which names a letter and an accent rather
+  than drawing either, and without which half the alphabet of half of Europe
+  draws nothing.
+  `CFF2` is the same language with the header and dictionaries rearranged. It
+  is read at its default instance: `blend` keeps the values and drops the
+  deltas, which is what the font says before any axis is moved. How many deltas
+  there are is not something the operator says, so the store of variations is
+  read far enough to count them — a reader that guesses unwinds the stack
+  wrongly and draws rubbish rather than nothing.
+  Three things had to change around it. An outline command can now be a cubic
+  curve, and everything that draws one — the page, a metafile's text — handles
+  it. The font catalogue looked for `glyf` to decide whether a face was usable,
+  so not one of the thirty-five PostScript fonts in the build image was in the
+  list at all. And the rasterizer measured how far a cubic strays from a
+  straight line by its third difference, which is not what says so: a quarter
+  of an O came out as five straight lines. It is measured properly now, against
+  a stated tolerance of a tenth of a pixel. That was wrong for every cubic in
+  every drawing as well, and had gone unnoticed because a drawing's curves are
+  short and a letter's are not.
+  A PDF gets the font whole. It cannot be cut down the way the other kind is —
+  a glyph is a program sharing subroutines with the others, and taking some out
+  means rewriting them — so it goes in entire, under the key that says what it
+  is: `FontFile3` with `/Subtype /OpenType`, in a `CIDFontType0` descendant
+  with no glyph map, because there the number in the text is the glyph already.
+  A reader told the wrong kind draws a blank page.
+  The URW set — the thirty-five fonts every PostScript printer has — went into
+  the build image, because a reader of this kind cannot be believed without a
+  real font somebody else produced: subroutines calling subroutines, flex, a
+  width where the reader did not expect one. Every glyph of Nimbus Roman is
+  drawn in a test, and a hand-built `CFF2` table with a `blend` in it covers
+  what no font on the image has.
+  *Not done:* cutting a PostScript font down for a PDF, which is **E17**. A
+  document in one carries the whole typeface rather than the dozen glyphs it
+  uses.
+  *Not done:* moving an axis of a variable font, which is **E9**. `CFF2` is
+  read at the instance the designer drew.
+  *Not done:* hinting. The stem hints are counted, because the mask that
+  follows them cannot be skipped without the count, and then thrown away — this
+  program does not hint either kind of outline.
+- [ ] **E17. Cutting down a PostScript font.** A PDF carries the fonts it
+  needs, and the TrueType ones are cut down to the glyphs the document uses; a
+  PostScript one goes in whole, which is a megabyte where twenty kilobytes
+  would do. Cutting one means rebuilding the `CFF` table: keeping the
+  charstrings that are wanted, following the subroutines they call, renumbering
+  what is left against the bias, and writing the INDEXes and dictionaries back
+  out. The glyph numbering must not move, because the page refers to it.
 - [ ] **E9. Variable fonts.** The axes, the named instances, and the deltas.
 - [ ] **E10. Colour and bitmap glyphs.** Emoji, in colour, as Word draws them.
 
