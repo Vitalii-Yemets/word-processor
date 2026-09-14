@@ -38,6 +38,13 @@ FROM rust:1.98.0-bookworm
 # a word is in another language: a dictzip that cannot be read without reading
 # a real one. None is shipped with the product; the program reads whatever the
 # machine has.
+#
+# LibreOffice, without its windows, is here to write the files the readers of
+# the older formats are tested against: a binary .doc from an implementation
+# that is not this one is the only kind worth reading, because a file written
+# by the reader's own author proves the author's understanding and nothing
+# else. It is a test tool like zip and unzip, and nothing of it reaches the
+# product.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         mingw-w64 \
         file \
@@ -55,6 +62,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         hunspell-de-de \
         mythes-en-us \
         dict-freedict-eng-deu \
+        libreoffice-writer-nogui \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add x86_64-pc-windows-gnu \

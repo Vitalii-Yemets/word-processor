@@ -22,7 +22,7 @@ mod effects;
 mod equation;
 mod events;
 pub(crate) mod files;
-pub use files::{is_rtf_path, is_template_path, is_web_path};
+pub use files::{is_doc_path, is_rtf_path, is_template_path, is_web_path};
 mod textfiles;
 pub use textfiles::is_text_path;
 mod fontdialog;

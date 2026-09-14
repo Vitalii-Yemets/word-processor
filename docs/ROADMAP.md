@@ -3656,9 +3656,60 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   past; nested tables, which fold into the cell they are in; cell merging,
   borders and shading; character and table styles; `@font-face`;
   right-to-left text; and the clipboard's `CF_HTML`, which is **H2**.
-- [ ] **G5. The binary `.doc`.** [MS-DOC] over [MS-CFB]: the compound file, the
+- [x] **G5. The binary `.doc`.** [MS-DOC] over [MS-CFB]: the compound file, the
   piece table, the formatting sprms. A project in itself, and the reason a
   twenty-year-old document can still be opened.
+  *Done:* `wp-doc`, a crate of its own, reading. The compound file: the
+  header, the DIFAT and the FAT, the directory, the mini FAT and the mini
+  stream, and a stream's bytes by following its chain. The File Information
+  Block: the version, the flags (encrypted, which table stream, complex),
+  the lengths of the main text and what follows it, and the offset pairs by
+  index, however many the version wrote. The sprms: a code that says what
+  it is about and how long its operand is, so that the ones this reader
+  does not know are stepped over, the table definition's two-byte length
+  among them. The reading: the text through the piece table, one byte a
+  character in the old code page with the places the format keeps for
+  itself, or two; paragraphs cut at their marks and each looked up by the
+  file position of its mark through the bin table and the formatting page
+  (the two ways a page writes a length); runs cut where the character pages
+  cut them; the stylesheet with each style's base, paragraph and character
+  sprms, resolved base first and laid under the paragraph's own, and Word's
+  names mapped to the heading and title styles; the font table by index;
+  the list table and its overrides, with the levels that follow the table
+  outside its stated length, telling bullets from numbers; tables from the
+  in-table and row-end marks with the widths the row's definition gives;
+  fields, HYPERLINK ones becoming links; pictures from the data stream —
+  the header that says how big they are drawn, then the drawing container
+  with the picture record inline or named in the drawing store: PNG, JPEG,
+  TIFF, a DIB given back its fourteen bytes to be a bitmap, EMF and WMF
+  inflated from the deflate they are squeezed with; the first section's
+  page size and margins. Alignment, indents, spacing, line spacing, keep
+  and page-break flags, outline level, list and level; bold, italic, the
+  underlines, strikes, caps, hidden, size, font, colour by index and by
+  value, highlight and character shading, super- and subscript and raised
+  text, language. Encrypted files are refused by name.
+  Held to files written by somebody else: LibreOffice, without its windows,
+  joins the build image as a test tool, writing a page of everything a
+  document holds to Word 97 and a document of this program's own through
+  the same door; both read back with their text, styles, formatting, lists,
+  table, picture, link and page. The Open dialog offers Word 97-2003
+  Documents; a `.doc` opens in Compatibility Mode and the caption says so;
+  the command line and `wp text`, `render` and `pdf` read it.
+  *Not done, and named here:* writing, which is **G8**; headers and
+  footers, footnotes, endnotes and comments, whose text follows the main
+  text and whose tables the block names; sections past the first; nested
+  tables, cell merging, borders and shading; drawings that are not
+  pictures (the shape tables); bookmarks; fields other than links, read as
+  their result; revision marks; the properties streams; the Word 95 and
+  earlier layouts, whose block has no piece table; and encrypted files.
+- [ ] **G8. Writing the binary `.doc`.** Word 97-2003 Document in Save As:
+  the compound file written — header, FAT, directory, mini stream — and a
+  document in it with one piece of text, its formatting pages and bin
+  tables, a stylesheet of the styles used, the font table, the two lists,
+  tables, pictures in the data stream, links as fields, and the section's
+  page. Reading it back is not the test; Word opening it is, and until
+  something that is not this program can be made to open one here,
+  LibreOffice reading it is what stands in.
 - [ ] **G6. ODT.** Read and write, which is what an open format is for.
 - [ ] **G7. PDF import.** Word does it; it is text extraction and reflow.
 

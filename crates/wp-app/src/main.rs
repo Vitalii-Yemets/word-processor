@@ -143,6 +143,10 @@ fn start(path: Option<&str>) -> Result<(), String> {
                 let document = Document::create(&wp_docx::model::Body::default())
                     .map_err(|error| format!("cannot make a document: {error}"))?;
                 (document, None, file_name(path))
+            } else if editor::is_doc_path(Path::new(path)) {
+                let document =
+                    wp_doc::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))?;
+                (document, Some(PathBuf::from(path)), file_name(path))
             } else if editor::is_rtf_path(Path::new(path)) {
                 let document =
                     wp_rtf::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))?;

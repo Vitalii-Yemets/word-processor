@@ -9,6 +9,7 @@ members = [
     "crates/wp-cli",
     "crates/wp-deflate",
     "crates/wp-dict",
+    "crates/wp-doc",
     "crates/wp-docx",
     "crates/wp-font",
     "crates/wp-grammar",

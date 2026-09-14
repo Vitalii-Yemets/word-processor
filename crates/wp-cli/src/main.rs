@@ -166,6 +166,9 @@ fn open(path: &str) -> Result<Document, String> {
         .map(str::to_ascii_lowercase)
         .unwrap_or_default();
     let opened = match extension.as_str() {
+        "doc" => {
+            return wp_doc::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))
+        }
         "rtf" => wp_rtf::open(&bytes),
         "htm" | "html" => wp_html::open_html(&bytes, Some(Path::new(path))),
         "mht" | "mhtml" => wp_html::open_mht(&bytes),

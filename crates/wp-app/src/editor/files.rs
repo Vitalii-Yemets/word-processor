@@ -29,6 +29,7 @@ pub const DOCUMENT_FILTERS: &[wp_shell::dialog::FileFilter] = &[
         label: "Word Macro-Enabled Template (*.dotm)",
         pattern: "*.dotm",
     },
+    wp_shell::dialog::FileFilter { label: "Word 97-2003 Documents (*.doc)", pattern: "*.doc" },
     wp_shell::dialog::FileFilter { label: "Rich Text Format (*.rtf)", pattern: "*.rtf" },
     wp_shell::dialog::FileFilter {
         label: "Web Pages (*.htm;*.html;*.mht;*.mhtml)",
@@ -74,6 +75,15 @@ pub fn is_rtf_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("rtf"))
+}
+
+/// Whether a path names a Word 97-2003 document, which is read as one and
+/// opens in Compatibility Mode.
+#[must_use]
+pub fn is_doc_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("doc"))
 }
 
 /// Whether a path names a web page, a single-file one or not.
@@ -125,7 +135,8 @@ impl Editor {
     pub(super) fn update_title(&mut self) {
         // A Rich Text file is in Compatibility Mode, and Word's caption says
         // so: what it holds is what the older format can hold.
-        let compatibility = self.file.as_deref().is_some_and(is_rtf_path);
+        let compatibility =
+            self.file.as_deref().is_some_and(|path| is_rtf_path(path) || is_doc_path(path));
         let wanted = format!(
             "{}{}{} — Word Processor",
             if self.document.is_modified() { "*" } else { "" },
@@ -424,6 +435,10 @@ impl Editor {
         let opened = std::fs::read(&path)
             .map_err(|error| format!("Cannot read {}: {error}", path.display()))
             .and_then(|bytes| {
+                if is_doc_path(&path) {
+                    return wp_doc::open(&bytes)
+                        .map_err(|error| format!("Cannot open {}: {error}", path.display()));
+                }
                 match (rich, web) {
                     (true, _) => wp_rtf::open(&bytes),
                     (_, Some(WebKind::Page)) => wp_html::open_html(&bytes, Some(&path)),

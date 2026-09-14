@@ -11,6 +11,7 @@ name = "wp"
 path = "src/main.rs"
 
 [dependencies]
+wp-doc = { path = "../wp-doc" }
 wp-html = { path = "../wp-html" }
 wp-rtf = { path = "../wp-rtf" }
 wp-docx = { path = "../wp-docx" }
