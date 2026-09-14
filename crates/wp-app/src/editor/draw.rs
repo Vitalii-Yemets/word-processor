@@ -411,6 +411,8 @@ impl Editor {
         // The wavy lines go over the text: they are about the words, and a word
         // drawn over its own mark would hide it.
         self.draw_proofing_marks();
+        // The lines under text an input method is still composing, likewise.
+        self.draw_composition_marks();
 
         // Over the page and under the chrome: the handles belong to the drawing
         // on the page, but nothing on the page may be drawn over them.
@@ -730,6 +732,9 @@ impl Editor {
         // short wide one would leave a smear.
         let (x, y) = (x as i32, y as i32);
         let (width, height) = (caret_width.ceil().max(1.0) as i32, caret_height.ceil() as i32);
+        // The input method's candidate list opens beside the caret, so it is
+        // told where the caret is each time the caret is drawn.
+        wp_shell::place_composition(x, y, height);
         let under = self.canvas.copy_rect(x, y, width, height);
         if self.caret_on {
             self.canvas.fill_rect(x, y, width, height, self.theme.caret);

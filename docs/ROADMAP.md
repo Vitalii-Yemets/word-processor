@@ -3808,9 +3808,39 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
 ## H — The system around the window
 
-- [ ] **H1. IME.** Without it Chinese, Japanese and Korean cannot be typed at
+- [x] **H1. IME.** Without it Chinese, Japanese and Korean cannot be typed at
   all: the composition window, the candidate list, and the text that is not yet
   committed shown in the document.
+  *Done:* the shell takes the input method's messages — the composition
+  starting, changing and ending, and the context being set with the
+  input method's own composition window switched off, since the
+  composition is shown in the document — and hands them on as events:
+  the text composed so far with the caret's place in it and how each
+  character stands (still being typed, converted, the clause being
+  chosen, wrong), the text committed, and the end. The editor shows the
+  composition where the text will go, in place of the selection, taking
+  the formatting typing would take, with the caret where the input
+  method puts it; every change replaces the last; a commit puts the text
+  in as typed — one character at a time for a macro being recorded —
+  and an end without a commit takes the composition out; the whole of
+  it is one undo step. Under the composition: a dotted line under what
+  is still being typed, a thin one under what is converted, a thick one
+  under the clause whose conversion is being chosen, a red one under
+  what could not be converted — Word's marks. The caret's place goes to
+  the input method every time the caret is drawn, and the request for
+  where a character is on screen is answered, so the candidate list
+  opens beside the caret and keeps off the line. A box on the ribbon, a
+  pane's search box and a dialog's field take what is committed, a
+  character at a time. Along the way: a character past the basic plane
+  — an emoji from the emoji panel — arrives as two halves and is put
+  together, where before it was dropped. The composition cannot be seen
+  from the build image, which has no input method: the state is tested
+  through the events, and the marks are drawn in a picture.
+  *Not done, and named here:* reconversion (the input method asking for
+  committed text back to convert again); the composition shown inside a
+  ribbon box, a search box or a dialog's field rather than only its
+  result; the input method's own composition font; the Linux side,
+  which is **H6**'s.
 - [ ] **H2. The clipboard formats Word uses.** `CF_HTML`, RTF, and images, so
   that copying between this and Word keeps the formatting.
 - [ ] **H3. Drag and drop.** Between programs as well as within the document,

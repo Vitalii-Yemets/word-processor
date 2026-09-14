@@ -11,6 +11,7 @@ mod boxes;
 mod chart;
 mod citations;
 mod commands;
+mod composing;
 mod context;
 mod correcting;
 mod diagram;
@@ -282,6 +283,8 @@ pub struct Editor {
     accessibility: Vec<wp_docx::accessibility::Finding>,
     /// Whether merge fields are shaded so they can be told from ordinary text.
     highlight_fields: bool,
+    /// What an input method is composing, while it is.
+    composition: Option<composing::Composition>,
     /// Whether the writing is being checked, and what was found.
     show_proofing: bool,
     issues: Vec<wp_docx::proofing::Issue>,
@@ -613,6 +616,7 @@ impl Editor {
             tab_kind: wp_docx::model::TabAlignment::Start,
             accessibility: Vec::new(),
             highlight_fields: false,
+            composition: None,
             show_proofing: true,
             issues: Vec::new(),
             dictionaries: wp_docx::proofing::Dictionaries::default(),

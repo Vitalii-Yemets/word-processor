@@ -229,6 +229,16 @@ impl App for Editor {
                     return self.dialog_key(key, modifiers.shift, modifiers.control)
                 }
                 Event::Char(character) => return self.dialog_character(character),
+                // A dialog's box takes composed text as it is committed; the
+                // composition itself is not shown in it.
+                Event::Commit(text) => {
+                    let mut response = Response::Ignored;
+                    for character in text.chars() {
+                        response = self.dialog_character(character);
+                    }
+                    return response;
+                }
+                Event::Compose { .. } | Event::ComposeEnd => return Response::Ignored,
                 // Swallowed rather than passed through: the window behind a
                 // modal dialog does not answer these.
                 Event::Scroll { .. }
@@ -450,6 +460,11 @@ impl App for Editor {
                 if self.is_locked() {
                     return self.refuse_locked();
                 }
+                // A character typed past a composition the input method did
+                // not close ends it: what was not committed was not wanted.
+                if self.is_composing() {
+                    self.end_composition();
+                }
                 // Typing is somebody saying they were not after the bar — nor
                 // after the other ways of pasting what was just pasted, nor
                 // after the drawing that was chosen: the letter goes in the
@@ -459,6 +474,33 @@ impl App for Editor {
                 self.drop_chosen_drawing();
                 self.type_character(character)
             }
+
+            // An input method's composition goes into the document; a box on
+            // the ribbon or in a pane takes only what is committed, a
+            // character at a time, the way it takes typing.
+            Event::Compose { text, caret, attributes } => {
+                if self.typing_in_box()
+                    || self.find_has_keyboard()
+                    || (self.show_navigation && self.navigation.searching)
+                {
+                    return Response::Ignored;
+                }
+                self.compose(text, caret, attributes)
+            }
+            Event::Commit(text) => {
+                if self.typing_in_box()
+                    || self.find_has_keyboard()
+                    || (self.show_navigation && self.navigation.searching)
+                {
+                    let mut response = Response::Ignored;
+                    for character in text.chars() {
+                        response = self.handle(Event::Char(character));
+                    }
+                    return response;
+                }
+                self.commit_composition(text)
+            }
+            Event::ComposeEnd => self.end_composition(),
 
             // Nothing in the window is under the pointer any more, so nothing
             // in it should look as though it is.

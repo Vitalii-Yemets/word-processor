@@ -71,7 +71,7 @@ pub struct Modifiers {
 }
 
 /// Something that happened to the window.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// The drawing area changed size, in pixels.
     Resized {
@@ -91,6 +91,21 @@ pub enum Event {
     },
     /// A character was typed, after the operating system composed it.
     Char(char),
+    /// Text is being composed by an input method — Chinese, Japanese,
+    /// Korean — and is not yet in the document: what has been composed so
+    /// far, where the caret is in it (in characters), and how each
+    /// character stands. Sent again at every change; empty when the
+    /// composition is cleared.
+    Compose {
+        text: String,
+        caret: usize,
+        attributes: Vec<CompositionAttribute>,
+    },
+    /// The input method finished a piece of text: it goes into the
+    /// document as if typed, and whatever was being composed is over.
+    Commit(String),
+    /// The composition ended, with whatever was still uncommitted dropped.
+    ComposeEnd,
     /// A mouse button went down at a point in the drawing area.
     MouseDown {
         x: i32,
@@ -148,6 +163,17 @@ pub enum Event {
     Tick,
     /// The window is closing.
     Closing,
+}
+
+/// How a character of a composition stands, which is how it is shown:
+/// still being typed, converted by the input method, the clause the
+/// person is choosing a conversion for, or wrong.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompositionAttribute {
+    Input,
+    Converted,
+    Target,
+    Error,
 }
 
 /// What the shell should do after an event.
@@ -407,6 +433,20 @@ pub fn system_code_pages() -> (u32, u32) {
     #[cfg(not(windows))]
     {
         (1252, 437)
+    }
+}
+
+/// Tells the input method where the caret is, in pixels of the drawing
+/// area: its candidate list opens beside it, and its own windows keep off
+/// the text being composed. Called whenever the caret is drawn.
+pub fn place_composition(x: i32, y: i32, height: i32) {
+    #[cfg(windows)]
+    {
+        windows::place_composition(x, y, height);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (x, y, height);
     }
 }
 

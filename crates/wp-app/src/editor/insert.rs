@@ -272,6 +272,26 @@ impl Editor {
                 self.document.set_caret(wp_docx::TextPosition::new(3, at + 1));
                 self.translate_selection();
             }
+            // Japanese being composed by an input method: the sounds typed so
+            // far under a dotted line, the clause the person is choosing a
+            // conversion for under a thick one, the rest converted under a
+            // thin one, and the caret inside it.
+            "ime" => {
+                let end = self.document.paragraph_text(3).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(3, end));
+                self.type_character(' ');
+                self.compose(String::new(), 0, Vec::new());
+                let attributes = [
+                    wp_shell::CompositionAttribute::Converted,
+                    wp_shell::CompositionAttribute::Converted,
+                    wp_shell::CompositionAttribute::Target,
+                    wp_shell::CompositionAttribute::Target,
+                    wp_shell::CompositionAttribute::Input,
+                    wp_shell::CompositionAttribute::Input,
+                    wp_shell::CompositionAttribute::Input,
+                ];
+                self.compose("日本語をにゅう".to_owned(), 7, attributes.to_vec());
+            }
             // The File Conversion dialog over a text file whose bytes do not
             // say what they are, and the one for saving as text.
             "textopen" => {

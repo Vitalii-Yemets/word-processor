@@ -14,7 +14,7 @@
 use std::cell::RefCell;
 use std::ffi::c_void;
 
-use crate::{App, Error, Event, Key, Modifiers, Response, WindowOptions};
+use crate::{App, CompositionAttribute, Error, Event, Key, Modifiers, Response, WindowOptions};
 
 // --- Types the API uses -----------------------------------------------------
 
@@ -201,6 +201,25 @@ const MESSAGE_TIMER: u32 = 0x0113;
 const MESSAGE_SYSTEM_KEY_DOWN: u32 = 0x0104;
 const MESSAGE_SYSTEM_KEY_UP: u32 = 0x0105;
 const MESSAGE_SYSTEM_CHAR: u32 = 0x0106;
+// The input method: a composition starting, changing and ending, the
+// context being set, and the requests it makes of the window.
+const MESSAGE_IME_START_COMPOSITION: u32 = 0x010D;
+const MESSAGE_IME_END_COMPOSITION: u32 = 0x010E;
+const MESSAGE_IME_COMPOSITION: u32 = 0x010F;
+const MESSAGE_IME_SET_CONTEXT: u32 = 0x0281;
+const MESSAGE_IME_REQUEST: u32 = 0x0288;
+/// The composition string, its cursor, its attributes, and the result.
+const GCS_COMPSTR: isize = 0x0008;
+const GCS_COMPATTR: isize = 0x0010;
+const GCS_CURSORPOS: isize = 0x0080;
+const GCS_RESULTSTR: isize = 0x0800;
+/// The bit of the set-context message that would have the input method
+/// draw the composition in a window of its own.
+const ISC_SHOW_UI_COMPOSITION_WINDOW: isize = -0x8000_0000;
+/// The request for where a character of the composition is on screen.
+const IMR_QUERY_CHAR_POSITION: usize = 0x0006;
+const CFS_POINT: u32 = 0x0002;
+const CFS_EXCLUDE: u32 = 0x0080;
 
 /// The one timer the window keeps, and how often it goes off.
 ///
@@ -410,6 +429,7 @@ extern "system" {
     fn TrackMouseEvent(track: *mut TrackMouse) -> i32;
     fn SystemParametersInfoW(action: u32, param: u32, data: *mut c_void, update: u32) -> i32;
     fn ScreenToClient(window: Handle, point: *mut Point) -> i32;
+    fn ClientToScreen(window: Handle, point: *mut Point) -> i32;
     /// Routes mouse messages to this window even when the pointer leaves it,
     /// which is what lets a selection keep growing during a drag.
     fn SetCapture(window: Handle) -> Handle;
@@ -422,6 +442,47 @@ extern "system" {
     fn IsClipboardFormatAvailable(format: u32) -> i32;
     fn SetWindowTextW(window: Handle, title: *const u16) -> i32;
     fn MessageBoxW(owner: Handle, text: *const u16, caption: *const u16, style: u32) -> i32;
+}
+
+/// Where the input method puts its composition window, and where a
+/// candidate list keeps away from.
+#[repr(C)]
+struct CompositionForm {
+    style: u32,
+    current: Point,
+    area: Rect,
+}
+
+#[repr(C)]
+struct CandidateForm {
+    index: u32,
+    style: u32,
+    current: Point,
+    area: Rect,
+}
+
+/// The answer to a request for where a character is.
+#[repr(C)]
+struct CharacterPosition {
+    size: u32,
+    character: u32,
+    point: Point,
+    line_height: u32,
+    document: Rect,
+}
+
+#[link(name = "imm32")]
+extern "system" {
+    fn ImmGetContext(window: Handle) -> Handle;
+    fn ImmReleaseContext(window: Handle, context: Handle) -> i32;
+    fn ImmGetCompositionStringW(
+        context: Handle,
+        index: u32,
+        buffer: *mut c_void,
+        length: u32,
+    ) -> i32;
+    fn ImmSetCompositionWindow(context: Handle, form: *const CompositionForm) -> i32;
+    fn ImmSetCandidateWindow(context: Handle, form: *const CandidateForm) -> i32;
 }
 
 #[link(name = "comdlg32")]
@@ -530,6 +591,14 @@ thread_local! {
     /// The window the last event came from, so a dialog is owned by the window
     /// the person is looking at rather than always by the first one.
     static WINDOW: std::cell::Cell<Handle> = const { std::cell::Cell::new(core::ptr::null_mut()) };
+
+    /// Where the caret is, for the input method: x, y and height in pixels of
+    /// the drawing area.
+    static CARET: std::cell::Cell<(i32, i32, i32)> = const { std::cell::Cell::new((0, 0, 16)) };
+
+    /// The first half of a character that takes two UTF-16 units — an emoji
+    /// from the emoji panel — waiting for its second half.
+    static HIGH_SURROGATE: std::cell::Cell<Option<u16>> = const { std::cell::Cell::new(None) };
 
     /// What the window was asked to do with itself, waiting to be done.
     ///
@@ -789,6 +858,77 @@ pub(crate) fn arrange_windows() -> usize {
         windows.len()
     }
 }
+/// Tells the input method where the caret is: its composition window, if it
+/// insists on one, goes there, and its candidate list keeps clear of the
+/// line the caret is on.
+pub(crate) fn place_composition(x: i32, y: i32, height: i32) {
+    CARET.with(|slot| slot.set((x, y, height)));
+    let window = owner_window();
+    if window.is_null() {
+        return;
+    }
+    // SAFETY: the window is one this thread made; the forms outlive the
+    // calls, which copy what they need.
+    unsafe {
+        let context = ImmGetContext(window);
+        if context.is_null() {
+            return;
+        }
+        let composition =
+            CompositionForm { style: CFS_POINT, current: Point { x, y }, area: Rect::default() };
+        ImmSetCompositionWindow(context, &composition);
+        let candidate = CandidateForm {
+            index: 0,
+            style: CFS_EXCLUDE,
+            current: Point { x, y: y + height },
+            area: Rect { left: x, top: y, right: x + 1, bottom: y + height },
+        };
+        ImmSetCandidateWindow(context, &candidate);
+        ImmReleaseContext(window, context);
+    }
+}
+
+/// One of the composition's strings, as text.
+unsafe fn composition_string(context: Handle, which: isize) -> String {
+    let bytes = ImmGetCompositionStringW(context, which as u32, core::ptr::null_mut(), 0);
+    if bytes <= 0 {
+        return String::new();
+    }
+    let mut units = vec![0u16; (bytes as usize).div_ceil(2)];
+    let got =
+        ImmGetCompositionStringW(context, which as u32, units.as_mut_ptr().cast(), bytes as u32);
+    units.truncate((got.max(0) as usize) / 2);
+    String::from_utf16_lossy(&units)
+}
+
+/// How each character of the composition stands, one attribute per
+/// character of the text — the input method gives one per UTF-16 unit.
+unsafe fn composition_attributes(
+    context: Handle,
+    units: &[u16],
+    which: isize,
+) -> Vec<CompositionAttribute> {
+    let bytes = ImmGetCompositionStringW(context, which as u32, core::ptr::null_mut(), 0);
+    let mut raw = vec![0u8; bytes.max(0) as usize];
+    if bytes > 0 {
+        ImmGetCompositionStringW(context, which as u32, raw.as_mut_ptr().cast(), bytes as u32);
+    }
+    let mut attributes = Vec::with_capacity(units.len());
+    let mut index = 0;
+    while index < units.len() {
+        let attribute = match raw.get(index).copied().unwrap_or(0) {
+            1 | 3 => CompositionAttribute::Target,
+            2 => CompositionAttribute::Converted,
+            4 => CompositionAttribute::Error,
+            _ => CompositionAttribute::Input,
+        };
+        attributes.push(attribute);
+        // A pair of units is one character.
+        index += if (0xD800..=0xDBFF).contains(&units[index]) { 2 } else { 1 };
+    }
+    attributes
+}
+
 /// The window this thread owns, for a dialog to be modal to.
 fn owner_window() -> Handle {
     WINDOW.with(std::cell::Cell::get)
@@ -956,11 +1096,90 @@ unsafe extern "system" fn window_procedure(
             }
             0
         }
-        MESSAGE_CHAR => match char::from_u32(word as u32) {
-            // Control characters arrive here too; they are not text.
-            Some(character) if !character.is_control() => deliver(window, Event::Char(character)),
-            _ => 0,
-        },
+        MESSAGE_CHAR => {
+            // A character past the basic plane comes as two messages, one
+            // half each; the first is kept until the second arrives.
+            let unit = word as u16;
+            let code = match (HIGH_SURROGATE.with(std::cell::Cell::take), unit) {
+                (Some(high), 0xDC00..=0xDFFF) => {
+                    0x1_0000 + ((u32::from(high) - 0xD800) << 10) + (u32::from(unit) - 0xDC00)
+                }
+                (_, 0xD800..=0xDBFF) => {
+                    HIGH_SURROGATE.with(|slot| slot.set(Some(unit)));
+                    return 0;
+                }
+                _ => u32::from(unit),
+            };
+            match char::from_u32(code) {
+                // Control characters arrive here too; they are not text.
+                Some(character) if !character.is_control() => {
+                    deliver(window, Event::Char(character))
+                }
+                _ => 0,
+            }
+        }
+        // The composition is drawn in the document, so the input method is
+        // told not to draw it in a window of its own.
+        MESSAGE_IME_SET_CONTEXT => {
+            DefWindowProcW(window, message, word, long & !ISC_SHOW_UI_COMPOSITION_WINDOW)
+        }
+        MESSAGE_IME_START_COMPOSITION => deliver(
+            window,
+            Event::Compose { text: String::new(), caret: 0, attributes: Vec::new() },
+        ),
+        MESSAGE_IME_COMPOSITION => {
+            let context = ImmGetContext(window);
+            if context.is_null() {
+                return DefWindowProcW(window, message, word, long);
+            }
+            if long & GCS_RESULTSTR != 0 {
+                let result = composition_string(context, GCS_RESULTSTR);
+                if !result.is_empty() {
+                    deliver(window, Event::Commit(result));
+                }
+            }
+            if long & GCS_COMPSTR != 0 || long == 0 {
+                let text = composition_string(context, GCS_COMPSTR);
+                let units: Vec<u16> = text.encode_utf16().collect();
+                let cursor = ImmGetCompositionStringW(
+                    context,
+                    GCS_CURSORPOS as u32,
+                    core::ptr::null_mut(),
+                    0,
+                )
+                .max(0) as usize;
+                let attributes = composition_attributes(context, &units, GCS_COMPATTR);
+                let caret = char::decode_utf16(units.iter().copied().take(cursor)).count();
+                deliver(window, Event::Compose { text, caret, attributes });
+            }
+            ImmReleaseContext(window, context);
+            0
+        }
+        MESSAGE_IME_END_COMPOSITION => deliver(window, Event::ComposeEnd),
+        MESSAGE_IME_REQUEST if word == IMR_QUERY_CHAR_POSITION => {
+            // Where the character being composed is on screen: the caret,
+            // since the composition is drawn at the caret.
+            let position = long as *mut CharacterPosition;
+            if position.is_null() {
+                return 0;
+            }
+            let (x, y, height) = CARET.with(std::cell::Cell::get);
+            let mut point = Point { x, y };
+            ClientToScreen(window, &mut point);
+            let mut area = Rect::default();
+            GetClientRect(window, &mut area);
+            let mut corner = Point { x: area.left, y: area.top };
+            ClientToScreen(window, &mut corner);
+            (*position).point = point;
+            (*position).line_height = height.max(1) as u32;
+            (*position).document = Rect {
+                left: corner.x,
+                top: corner.y,
+                right: corner.x + area.right - area.left,
+                bottom: corner.y + area.bottom - area.top,
+            };
+            1
+        }
         MESSAGE_LEFT_BUTTON_DOWN => {
             let (x, y) = mouse_point(long);
             // Capturing the mouse keeps the messages coming even when the
