@@ -8,6 +8,7 @@ version = "0.0.1"
 dependencies = [
  "wp-dict",
  "wp-docx",
+ "wp-html",
  "wp-image",
  "wp-layout",
  "wp-pdf",
@@ -32,6 +33,7 @@ name = "wp-cli"
 version = "0.0.1"
 dependencies = [
  "wp-docx",
+ "wp-html",
  "wp-layout",
  "wp-opc",
  "wp-pdf",
@@ -71,6 +73,15 @@ version = "0.0.1"
 [[package]]
 name = "wp-grammar"
 version = "0.0.1"
+
+[[package]]
+name = "wp-html"
+version = "0.0.1"
+dependencies = [
+ "wp-docx",
+ "wp-image",
+ "wp-text",
+]
 
 [[package]]
 name = "wp-image"

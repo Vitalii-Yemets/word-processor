@@ -137,6 +137,12 @@ fn start(path: Option<&str>) -> Result<(), String> {
                 let document = Document::create(&wp_docx::model::Body::default())
                     .map_err(|error| format!("cannot make a document: {error}"))?;
                 (document, None, file_name(path))
+            } else if editor::is_web_path(Path::new(path)) {
+                // A page has no package to open: it is read once the window
+                // is up, the way the Open command reads it.
+                let document = Document::create(&wp_docx::model::Body::default())
+                    .map_err(|error| format!("cannot make a document: {error}"))?;
+                (document, None, file_name(path))
             } else if editor::is_rtf_path(Path::new(path)) {
                 let document =
                     wp_rtf::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))?;
@@ -161,7 +167,9 @@ fn start(path: Option<&str>) -> Result<(), String> {
     };
 
     let mut editor = Editor::opened(library, document, file);
-    if let Some(path) = path.filter(|path| editor::is_text_path(Path::new(path))) {
+    if let Some(path) = path.filter(|path| {
+        editor::is_text_path(Path::new(path)) || editor::is_web_path(Path::new(path))
+    }) {
         editor.open_path(Path::new(path));
     }
     // The window comes up the way it was left rather than the way it starts.

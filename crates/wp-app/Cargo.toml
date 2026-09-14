@@ -20,6 +20,7 @@ wp-raster = { path = "../wp-raster" }
 wp-image = { path = "../wp-image" }
 wp-svg = { path = "../wp-svg" }
 wp-shell = { path = "../wp-shell" }
+wp-html = { path = "../wp-html" }
 wp-rtf = { path = "../wp-rtf" }
 wp-text = { path = "../wp-text" }
 

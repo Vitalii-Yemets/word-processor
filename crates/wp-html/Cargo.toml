@@ -1,0 +1,17 @@
+[package]
+name = "wp-html"
+description = "Web pages: reading the HTML Word and everything else writes, MHT with it, and writing both back"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Workspace-internal only. The document model to read into and write from,
+# the code pages a page may be in, and the picture formats a picture can be in.
+wp-docx = { path = "../wp-docx" }
+wp-image = { path = "../wp-image" }
+wp-text = { path = "../wp-text" }
+
+[lints]
+workspace = true

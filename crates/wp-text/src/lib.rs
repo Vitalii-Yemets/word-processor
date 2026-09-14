@@ -108,6 +108,53 @@ impl Encoding {
         }
     }
 
+    /// The encoding a name from a file names: `windows-1251`, `utf-8`,
+    /// `iso-8859-2`, `koi8-r`, `cp866`, as HTML and mail write them, in any
+    /// case and with or without the hyphens.
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        let name: String =
+            name.trim().to_ascii_lowercase().chars().filter(|c| *c != '_' && *c != '-').collect();
+        match name.as_str() {
+            "utf8" => Some(Self::Utf8),
+            "utf16" | "utf16le" | "unicode" => Some(Self::Utf16Le),
+            "utf16be" => Some(Self::Utf16Be),
+            "usascii" | "ascii" => Some(Self::Ascii),
+            "koi8r" => Some(Self::CodePage(20866)),
+            "koi8u" => Some(Self::CodePage(21866)),
+            "latin1" | "l1" => Some(Self::CodePage(28591)),
+            "latin2" | "l2" => Some(Self::CodePage(28592)),
+            "latin9" => Some(Self::CodePage(28605)),
+            other => {
+                let iso = other.strip_prefix("iso8859");
+                let digits = iso
+                    .or_else(|| other.strip_prefix("windows"))
+                    .or_else(|| other.strip_prefix("cp"))
+                    .or_else(|| other.strip_prefix("ibm"))
+                    .unwrap_or(other);
+                let number: u32 = digits.parse().ok()?;
+                let number = if iso.is_some() { 28590 + number } else { number };
+                Self::code_page(number)
+            }
+        }
+    }
+
+    /// The name a file is given for it, as HTML and mail write them.
+    #[must_use]
+    pub fn label(self) -> String {
+        match self {
+            Self::Utf8 => "utf-8".to_owned(),
+            Self::Utf16Le => "utf-16".to_owned(),
+            Self::Utf16Be => "utf-16be".to_owned(),
+            Self::Ascii => "us-ascii".to_owned(),
+            Self::CodePage(20866) => "koi8-r".to_owned(),
+            Self::CodePage(21866) => "koi8-u".to_owned(),
+            Self::CodePage(number @ 28591..=28605) => format!("iso-8859-{}", number - 28590),
+            Self::CodePage(number @ 1250..=1258) => format!("windows-{number}"),
+            Self::CodePage(number) => format!("cp{number}"),
+        }
+    }
+
     /// The number Windows knows it by.
     #[must_use]
     pub fn number(self) -> u32 {
@@ -613,6 +660,21 @@ mod tests {
         assert_eq!(lines(""), vec![""], "an empty file is one empty paragraph");
         assert_eq!(join(&["a".to_owned(), "b".to_owned()], LineEnding::CrLf), "a\r\nb\r\n");
         assert_eq!(join(&["a".to_owned()], LineEnding::Lf), "a\n");
+    }
+
+    #[test]
+    fn a_name_from_a_file_names_its_encoding() {
+        assert_eq!(Encoding::named("UTF-8"), Some(Encoding::Utf8));
+        assert_eq!(Encoding::named("windows-1251"), Some(Encoding::CodePage(1251)));
+        assert_eq!(Encoding::named("Windows-1252"), Some(Encoding::CodePage(1252)));
+        assert_eq!(Encoding::named("cp866"), Some(Encoding::CodePage(866)));
+        assert_eq!(Encoding::named("ISO-8859-2"), Some(Encoding::CodePage(28592)));
+        assert_eq!(Encoding::named("koi8-r"), Some(Encoding::CodePage(20866)));
+        assert_eq!(Encoding::named("latin1"), Some(Encoding::CodePage(28591)));
+        assert_eq!(Encoding::named("shift_jis"), None);
+        for encoding in Encoding::all() {
+            assert_eq!(Encoding::named(&encoding.label()), Some(encoding), "{encoding:?}");
+        }
     }
 
     #[test]

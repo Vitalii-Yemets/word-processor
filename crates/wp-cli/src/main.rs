@@ -158,15 +158,20 @@ fn write(path: &str, bytes: &[u8]) -> Result<(), String> {
 
 fn open(path: &str) -> Result<Document, String> {
     let bytes = read(path)?;
-    // A Rich Text file is read as one; everything else is a package.
-    let rich = Path::new(path)
+    // A Rich Text file and a web page are read as what they are; everything
+    // else is a package.
+    let extension = Path::new(path)
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("rtf"));
-    if rich {
-        return wp_rtf::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"));
-    }
-    Document::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    let opened = match extension.as_str() {
+        "rtf" => wp_rtf::open(&bytes),
+        "htm" | "html" => wp_html::open_html(&bytes, Some(Path::new(path))),
+        "mht" | "mhtml" => wp_html::open_mht(&bytes),
+        _ => Document::open(&bytes),
+    };
+    opened.map_err(|error| format!("cannot open {path}: {error}"))
 }
 
 // --- Commands ---------------------------------------------------------------

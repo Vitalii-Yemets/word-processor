@@ -30,6 +30,10 @@ pub const DOCUMENT_FILTERS: &[wp_shell::dialog::FileFilter] = &[
         pattern: "*.dotm",
     },
     wp_shell::dialog::FileFilter { label: "Rich Text Format (*.rtf)", pattern: "*.rtf" },
+    wp_shell::dialog::FileFilter {
+        label: "Web Pages (*.htm;*.html;*.mht;*.mhtml)",
+        pattern: "*.htm;*.html;*.mht;*.mhtml",
+    },
     wp_shell::dialog::FileFilter { label: "Text Files (*.txt)", pattern: "*.txt" },
     wp_shell::dialog::FileFilter { label: "All files (*.*)", pattern: "*.*" },
 ];
@@ -50,6 +54,11 @@ pub const SAVE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
     },
     wp_shell::dialog::FileFilter { label: "Rich Text Format (*.rtf)", pattern: "*.rtf" },
     wp_shell::dialog::FileFilter { label: "Plain Text (*.txt)", pattern: "*.txt" },
+    wp_shell::dialog::FileFilter { label: "Web Page (*.htm;*.html)", pattern: "*.htm;*.html" },
+    wp_shell::dialog::FileFilter {
+        label: "Single File Web Page (*.mht;*.mhtml)",
+        pattern: "*.mht;*.mhtml",
+    },
 ];
 
 /// The kind a path's extension asks for, if it asks for one of the four.
@@ -65,6 +74,29 @@ pub fn is_rtf_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("rtf"))
+}
+
+/// Whether a path names a web page, a single-file one or not.
+#[must_use]
+pub fn is_web_path(path: &Path) -> bool {
+    web_kind(path).is_some()
+}
+
+/// Which kind of web page a path names: a page beside its pictures, or one
+/// file holding both.
+fn web_kind(path: &Path) -> Option<WebKind> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    match extension.as_str() {
+        "htm" | "html" => Some(WebKind::Page),
+        "mht" | "mhtml" => Some(WebKind::SingleFile),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WebKind {
+    Page,
+    SingleFile,
 }
 
 /// Whether a path names a template, which is opened by making a document
@@ -119,6 +151,47 @@ impl Editor {
         if super::textfiles::is_text_path(path) {
             self.begin_text_save(path);
             return false;
+        }
+        // A web page is written as one — the pictures in a folder beside it
+        // named after it, which is Word's Web Page — or as one file holding
+        // both, which is Word's Single File Web Page.
+        if let Some(kind) = web_kind(path) {
+            let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("page.htm");
+            let title = self.document.properties().title;
+            let title = (!title.is_empty()).then_some(title.as_str());
+            let written = match kind {
+                WebKind::SingleFile => {
+                    std::fs::write(path, wp_html::write_mht(&self.document, name, title))
+                }
+                WebKind::Page => {
+                    let page = wp_html::write(&self.document, name, title);
+                    let folder = path.parent().map(Path::to_path_buf).unwrap_or_default();
+                    let mut written = std::fs::write(path, page.html.as_bytes());
+                    for picture in &page.pictures {
+                        if written.is_err() {
+                            break;
+                        }
+                        let target = folder.join(&picture.name);
+                        if let Some(parent) = target.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        written = std::fs::write(target, &picture.bytes);
+                    }
+                    written
+                }
+            };
+            if let Err(error) = written {
+                let message = format!("Cannot write {}: {error}", path.display());
+                wp_shell::dialog::show_error(&message);
+                self.status = message;
+                return false;
+            }
+            let _ = self.document.mark_saved();
+            self.file = Some(path.to_path_buf());
+            self.status = format!("Saved {} as a web page", path.display());
+            self.update_title();
+            self.remember_recent(path);
+            return true;
         }
         // A Rich Text file is written as one: what the model holds, as RTF,
         // and nothing of the package.
@@ -347,11 +420,17 @@ impl Editor {
             };
         }
         let rich = is_rtf_path(&path);
+        let web = web_kind(&path);
         let opened = std::fs::read(&path)
             .map_err(|error| format!("Cannot read {}: {error}", path.display()))
             .and_then(|bytes| {
-                if rich { wp_rtf::open(&bytes) } else { Document::open(&bytes) }
-                    .map_err(|error| format!("Cannot open {}: {error}", path.display()))
+                match (rich, web) {
+                    (true, _) => wp_rtf::open(&bytes),
+                    (_, Some(WebKind::Page)) => wp_html::open_html(&bytes, Some(&path)),
+                    (_, Some(WebKind::SingleFile)) => wp_html::open_mht(&bytes),
+                    _ => Document::open(&bytes),
+                }
+                .map_err(|error| format!("Cannot open {}: {error}", path.display()))
             });
 
         match opened {
@@ -574,6 +653,44 @@ mod tests {
         assert_eq!(editor.document_name(), "letter.rtf");
         editor.document.set_caret(wp_docx::TextPosition::new(0, 1));
         assert!(editor.document.character_format_here().bold, "the bold was lost");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_web_page_is_saved_with_its_pictures_beside_it_and_opened_again() {
+        let folder = folder("web");
+        let path = folder.join("letter.htm");
+        let mut editor = editor("Dear reader");
+        let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\nIDATx\x9cc\0\x01\0\0\x05\0\x01\r\n\x2d\xb4\0\0\0\0IEND\xaeB`\x82";
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 4));
+        let _ = editor.document.insert_picture(png, "png", 96 * 9525, 96 * 9525);
+        assert!(editor.write_document(&path));
+        assert!(
+            folder.join("letter_files").join("image001.png").exists(),
+            "the picture was not put beside the page"
+        );
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("letter_files/image001.png"), "{written}");
+
+        let has_picture = |editor: &Editor| {
+            editor.document.body().paragraphs().iter().any(|paragraph| {
+                paragraph.runs.iter().any(|run| {
+                    run.content.iter().any(|c| matches!(c, wp_docx::model::RunContent::Picture(_)))
+                })
+            })
+        };
+        let mut editor = self::editor("");
+        editor.open_path(&path);
+        assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
+        assert!(has_picture(&editor), "the picture did not come back from beside the page");
+        assert_eq!(editor.document_name(), "letter.htm");
+
+        let single = folder.join("letter.mht");
+        assert!(editor.write_document(&single));
+        let mut editor = self::editor("");
+        editor.open_path(&single);
+        assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
+        assert!(has_picture(&editor), "the picture did not come back from inside the file");
         let _ = std::fs::remove_dir_all(folder);
     }
 

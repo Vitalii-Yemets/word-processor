@@ -12,6 +12,7 @@ members = [
     "crates/wp-docx",
     "crates/wp-font",
     "crates/wp-grammar",
+    "crates/wp-html",
     "crates/wp-image",
     "crates/wp-rtf",
     "crates/wp-shape",

@@ -3600,8 +3600,62 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   revision marks, right-to-left text, character and table styles, and the
   clipboard as RTF, which is **H2**'s question. Each is one more destination
   or one more control word in the same reader.
-- [ ] **G4. HTML and MHT.** Read and write, including the mess Word itself
+- [x] **G4. HTML and MHT.** Read and write, including the mess Word itself
   writes.
+  A page from Word is a head of a hundred lines of `<style>`, a body where
+  every paragraph is `<p class=MsoNormal style='…'>` and every run a
+  `<span style='…'>`, list items carrying `mso-list:l0 level1 lfo1` with
+  their bullet inside `<![if !supportLists]>`, pictures as VML in a
+  conditional comment with an `<img>` after for everyone else, and `<o:p>`
+  round everything. The formatting is in three places at once — the class
+  rule, the style attribute, the tag — and reading the page means folding
+  the three in that order.
+  *Done:* `wp-html`, a crate of its own. A tokenizer of HTML as it is
+  written: tags with attributes quoted either way or not at all, comments
+  and Word's conditional comments, `<style>` and `<script>` whose insides
+  are not tags, the downlevel-revealed `<![if …]>` that Word hides list
+  bullets in, and entities by number and by name (the Latin ones by their
+  letter and accent). As much CSS as a document needs: rules for tags and
+  classes from the `<style>` blocks, `style` attributes, Word's `@list`
+  rules for which lists are bulleted, lengths in every unit, colours by
+  name, hex and `rgb()`, and font families with their quotes off. A reader
+  that is a stack of open elements, each carrying the character formatting
+  in force inside it, and a paragraph being built: block tags begin
+  paragraphs (headings to the heading styles, `MsoTitle` to Title), `<b>`,
+  `<i>`, `<u>`, `<s>`, `<sup>`, `<sub>`, `<font>` and the CSS for weight,
+  style, decoration, size, family, colour, background as Word's sixteen
+  highlights, vertical-align, text-transform, font-variant and
+  `display:none`; alignment, margins, text-indent, line-height as Word
+  writes it, page breaks; `<ul>`, `<ol>` and `mso-list` to the two lists;
+  tables from `<table>`, `<tr>`, `<td>` with widths; `<img>` with its size;
+  `<a href>` as links; `<br>` as line and page breaks; whitespace folded as
+  a browser folds it, kept in `<pre>`. The page's bytes are read in the
+  charset its `<meta>` names, or the one they betray, through `wp-text`.
+  `open_html` makes a document, fetching pictures from beside the page or
+  from `data:` URIs; `open_mht` reads the single-file kind — MIME cut into
+  its parts, quoted-printable and base64 decoded, pictures found by their
+  `Content-Location` — with base64 and quoted-printable written from
+  nothing. The writer goes the other way as Word's Web Page: a head with
+  the style block naming the styles, paragraphs with their class and
+  formatting, runs as spans (the style attribute in single quotes, as Word
+  writes it, so a font name's double ones survive), lists as `<ul>` and
+  `<ol>`, tables with widths, links, and pictures in a folder named after
+  the page — `letter_files` for `letter.htm` — or as the parts of one file
+  for the Single File Web Page. What is written is read back. The Open
+  dialog offers web pages; Save As offers Web Page and Single File Web
+  Page; the command line and `wp text`, `render` and `pdf` read both. A
+  page cut down from what Word 15 writes reads to its text with its
+  heading style, its bold run, its bulleted and numbered lists, its table,
+  its picture and its link.
+  *Not done, and named here:* Word's "Web Page, Filtered", which is this
+  page with the `mso-` properties left out — the page written here is
+  already nearly that, and the distinction is a tick box away; Web Layout
+  view, which shows a page as a browser would rather than on paper;
+  headers and footers, footnotes, comments, text boxes and shapes (VML),
+  which a page from Word carries in conditional comments this reader walks
+  past; nested tables, which fold into the cell they are in; cell merging,
+  borders and shading; character and table styles; `@font-face`;
+  right-to-left text; and the clipboard's `CF_HTML`, which is **H2**.
 - [ ] **G5. The binary `.doc`.** [MS-DOC] over [MS-CFB]: the compound file, the
   piece table, the formatting sprms. A project in itself, and the reason a
   twenty-year-old document can still be opened.
