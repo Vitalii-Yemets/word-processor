@@ -81,7 +81,7 @@ impl Turned {
 }
 
 /// A rectangular buffer of pixels, stored as red, green, blue, alpha.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Canvas {
     width: usize,
     height: usize,
@@ -89,13 +89,59 @@ pub struct Canvas {
     /// Where drawing is allowed, if it has been narrowed. Nothing means the
     /// whole canvas.
     clip: Option<Clip>,
+    /// How many of the canvas's pixels one of the caller's is. See
+    /// [`Canvas::set_scale`].
+    scale: f32,
 }
 
 impl Canvas {
     /// A fully transparent canvas.
     #[must_use]
     pub fn new(width: usize, height: usize) -> Self {
-        Self { width, height, pixels: vec![0; width * height * 4], clip: None }
+        Self { width, height, pixels: vec![0; width * height * 4], clip: None, scale: 1.0 }
+    }
+
+    /// Draws everything from here on scaled up by a factor.
+    ///
+    /// # Why the canvas scales rather than the caller
+    ///
+    /// A screen at two hundred dots to the inch shows a window twice as many
+    /// pixels across as the same window at a hundred, and everything drawn
+    /// on it — the ribbon, the page, the text — has to be twice as big in
+    /// pixels to be the same size to the eye. The program that draws the
+    /// window works in the pixels of an ordinary screen, as every measurement
+    /// in it does; the canvas turns those into the screen's own. Shapes and
+    /// letters are paths, so they come out sharp at any factor; pictures are
+    /// resampled; a pixel becomes a block. Coordinates given to the canvas
+    /// are the caller's, and the ones it reports back are too.
+    pub fn set_scale(&mut self, scale: f32) {
+        self.scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    }
+
+    /// The factor drawing is scaled by. See [`Canvas::set_scale`].
+    #[must_use]
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    /// A coordinate of the caller's, in the canvas's own pixels.
+    fn device(&self, value: i32) -> i32 {
+        if self.scale == 1.0 {
+            value
+        } else {
+            (value as f32 * self.scale).round() as i32
+        }
+    }
+
+    /// A span of the caller's, in the canvas's own pixels: its start and its
+    /// length, worked out from both edges so that neighbours still meet.
+    fn device_span(&self, start: i32, length: i32) -> (i32, i32) {
+        if self.scale == 1.0 {
+            return (start, length);
+        }
+        let from = self.device(start);
+        let to = self.device(start.saturating_add(length));
+        (from, to - from)
     }
 
     /// A canvas filled with one colour, which is how a page starts.
@@ -106,13 +152,37 @@ impl Canvas {
         canvas
     }
 
+    /// How wide the canvas is in the caller's pixels: its own width over
+    /// the scale. What everything drawn on it is laid out against.
     #[must_use]
     pub fn width(&self) -> usize {
+        if self.scale == 1.0 {
+            self.width
+        } else {
+            (self.width as f32 / self.scale).round() as usize
+        }
+    }
+
+    /// How tall, in the caller's pixels.
+    #[must_use]
+    pub fn height(&self) -> usize {
+        if self.scale == 1.0 {
+            self.height
+        } else {
+            (self.height as f32 / self.scale).round() as usize
+        }
+    }
+
+    /// How many pixels the canvas really has across: what [`Canvas::pixels`]
+    /// is laid out as.
+    #[must_use]
+    pub fn pixel_width(&self) -> usize {
         self.width
     }
 
+    /// How many pixels the canvas really has down.
     #[must_use]
-    pub fn height(&self) -> usize {
+    pub fn pixel_height(&self) -> usize {
         self.height
     }
 
@@ -130,6 +200,8 @@ impl Canvas {
     /// spilling into the other.
     pub fn set_clip(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<Clip> {
         let previous = self.clip;
+        let (x, width) = self.device_span(x, width);
+        let (y, height) = self.device_span(y, height);
         let wanted = Clip {
             left: x.max(0) as usize,
             top: y.max(0) as usize,
@@ -175,6 +247,7 @@ impl Canvas {
     /// The colour at a pixel, or transparent outside the canvas.
     #[must_use]
     pub fn pixel(&self, x: usize, y: usize) -> Color {
+        let (x, y) = (self.device(x as i32) as usize, self.device(y as i32) as usize);
         if x >= self.width || y >= self.height {
             return Color::TRANSPARENT;
         }
@@ -185,8 +258,26 @@ impl Canvas {
     /// Draws one pixel over what is already there.
     ///
     /// `coverage` scales the colour's own alpha, which is how anti-aliased edges
-    /// blend rather than replace.
+    /// blend rather than replace. One of the caller's pixels, which on a
+    /// scaled canvas is a block of its own.
     pub fn blend(&mut self, x: usize, y: usize, color: Color, coverage: u8) {
+        if self.scale == 1.0 {
+            self.blend_device(x, y, color, coverage);
+            return;
+        }
+        let (left, width) = self.device_span(x as i32, 1);
+        let (top, height) = self.device_span(y as i32, 1);
+        for row in top..top + height.max(1) {
+            for column in left..left + width.max(1) {
+                if row >= 0 && column >= 0 {
+                    self.blend_device(column as usize, row as usize, color, coverage);
+                }
+            }
+        }
+    }
+
+    /// Draws one of the canvas's own pixels over what is already there.
+    fn blend_device(&mut self, x: usize, y: usize, color: Color, coverage: u8) {
         if x >= self.width || y >= self.height || coverage == 0 || color.alpha == 0 {
             return;
         }
@@ -219,6 +310,8 @@ impl Canvas {
 
     /// Fills an axis-aligned rectangle, clipped to the canvas.
     pub fn fill_rect(&mut self, x: i32, y: i32, width: i32, height: i32, color: Color) {
+        let (x, width) = self.device_span(x, width);
+        let (y, height) = self.device_span(y, height);
         let left = x.max(0) as usize;
         let top = y.max(0) as usize;
         let right = (x + width).clamp(0, self.width as i32) as usize;
@@ -226,7 +319,7 @@ impl Canvas {
 
         for row in top..bottom {
             for column in left..right {
-                self.blend(column, row, color, 255);
+                self.blend_device(column, row, color, 255);
             }
         }
     }
@@ -234,17 +327,43 @@ impl Canvas {
     /// Draws a coverage mask in one colour, with its top-left corner at
     /// `(x, y)`.
     pub fn draw_mask(&mut self, mask: &Mask, x: i32, y: i32, color: Color) {
-        for row in 0..mask.height() {
-            let target_y = y + row as i32;
-            if target_y < 0 || target_y >= self.height as i32 {
-                continue;
-            }
-            for column in 0..mask.width() {
-                let target_x = x + column as i32;
-                if target_x < 0 || target_x >= self.width as i32 {
+        if self.scale == 1.0 {
+            for row in 0..mask.height() {
+                let target_y = y + row as i32;
+                if target_y < 0 || target_y >= self.height as i32 {
                     continue;
                 }
-                self.blend(target_x as usize, target_y as usize, color, mask.at(column, row));
+                for column in 0..mask.width() {
+                    let target_x = x + column as i32;
+                    if target_x < 0 || target_x >= self.width as i32 {
+                        continue;
+                    }
+                    self.blend_device(
+                        target_x as usize,
+                        target_y as usize,
+                        color,
+                        mask.at(column, row),
+                    );
+                }
+            }
+            return;
+        }
+        // Scaled: every pixel of the canvas inside the mask's place asks the
+        // mask which of its own it stands for.
+        let (left, width) = self.device_span(x, mask.width() as i32);
+        let (top, height) = self.device_span(y, mask.height() as i32);
+        for row in top.max(0)..(top + height).min(self.height as i32) {
+            let source_row =
+                (((row - top) as f32 / self.scale) as usize).min(mask.height().saturating_sub(1));
+            for column in left.max(0)..(left + width).min(self.width as i32) {
+                let source_column = (((column - left) as f32 / self.scale) as usize)
+                    .min(mask.width().saturating_sub(1));
+                self.blend_device(
+                    column as usize,
+                    row as usize,
+                    color,
+                    mask.at(source_column, source_row),
+                );
             }
         }
     }
@@ -280,6 +399,13 @@ impl Canvas {
         rule: crate::raster::Rule,
         colour: impl Fn(usize, usize) -> Color,
     ) {
+        let scaled;
+        let path = if self.scale == 1.0 {
+            path
+        } else {
+            scaled = path.transformed(&crate::path::Transform::scale(self.scale, self.scale));
+            &scaled
+        };
         let Some((min_x, min_y, max_x, max_y)) = bounds_of(path) else {
             return;
         };
@@ -314,7 +440,12 @@ impl Canvas {
                     continue;
                 }
                 let (x, y) = (x as usize, y as usize);
-                self.blend(x, y, colour(x, y), mask.at(column, row));
+                let shade = if self.scale == 1.0 {
+                    colour(x, y)
+                } else {
+                    colour((x as f32 / self.scale) as usize, (y as f32 / self.scale) as usize)
+                };
+                self.blend_device(x, y, shade, mask.at(column, row));
             }
         }
     }
@@ -329,6 +460,8 @@ impl Canvas {
     #[must_use]
     pub fn copy_rect(&self, x: i32, y: i32, width: i32, height: i32) -> Vec<u8> {
         let mut out = Vec::new();
+        let (x, width) = self.device_span(x, width);
+        let (y, height) = self.device_span(y, height);
         let (left, top, right, bottom) = self.clamped(x, y, width, height);
         for row in top..bottom {
             let start = (row * self.width + left) * 4;
@@ -344,6 +477,8 @@ impl Canvas {
     /// The rectangle must be the one they were taken from; anything else is
     /// ignored rather than drawn askew.
     pub fn paste_rect(&mut self, x: i32, y: i32, width: i32, height: i32, pixels: &[u8]) {
+        let (x, width) = self.device_span(x, width);
+        let (y, height) = self.device_span(y, height);
         let (left, top, right, bottom) = self.clamped(x, y, width, height);
         let row_bytes = (right - left) * 4;
         if row_bytes == 0 || pixels.len() != row_bytes * (bottom - top) {
@@ -366,8 +501,10 @@ impl Canvas {
         (left, top, right.max(left), bottom.max(top))
     }
 
-    /// Draws another canvas on top of this one.
+    /// Draws another canvas on top of this one, pixel for pixel, at a place
+    /// of the caller's.
     pub fn draw_canvas(&mut self, other: &Canvas, x: i32, y: i32) {
+        let (x, y) = (self.device(x), self.device(y));
         for row in 0..other.height {
             for column in 0..other.width {
                 let source = other.pixel(column, row);
@@ -379,7 +516,7 @@ impl Canvas {
                 if target_x < 0 || target_y < 0 {
                     continue;
                 }
-                self.blend(target_x as usize, target_y as usize, source, 255);
+                self.blend_device(target_x as usize, target_y as usize, source, 255);
             }
         }
     }
@@ -415,6 +552,9 @@ impl Canvas {
             self.draw_pixels(pixels, source_width, source_height, x, y, width, height);
             return;
         }
+        let (x, width) = self.device_span(x, width as i32);
+        let (y, height) = self.device_span(y, height as i32);
+        let (width, height) = (width.max(0) as usize, height.max(0) as usize);
         if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
             return;
         }
@@ -488,7 +628,7 @@ impl Canvas {
                     blue: (totals[2] / counted) as u8,
                     alpha,
                 };
-                self.blend(target_x, target_y, color, alpha);
+                self.blend_device(target_x, target_y, color, alpha);
             }
         }
     }
@@ -515,6 +655,9 @@ impl Canvas {
         width: usize,
         height: usize,
     ) {
+        let (x, width) = self.device_span(x, width as i32);
+        let (y, height) = self.device_span(y, height as i32);
+        let (width, height) = (width.max(0) as usize, height.max(0) as usize);
         if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
             return;
         }
@@ -564,7 +707,7 @@ impl Canvas {
                     blue: (totals[2] / counted) as u8,
                     alpha,
                 };
-                self.blend(target_x as usize, target_y as usize, color, alpha);
+                self.blend_device(target_x as usize, target_y as usize, color, alpha);
             }
         }
     }
@@ -870,5 +1013,64 @@ mod tests {
     fn bgra_order_is_swapped_for_windows() {
         let canvas = Canvas::filled(1, 1, Color::rgb(1, 2, 3));
         assert_eq!(canvas.to_bgra(), vec![3, 2, 1, 255]);
+    }
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use super::*;
+
+    fn raw(canvas: &Canvas, x: usize, y: usize) -> u8 {
+        canvas.pixels[(y * canvas.width + x) * 4 + 3]
+    }
+
+    #[test]
+    fn a_scaled_canvas_draws_the_callers_pixels_as_blocks() {
+        let mut canvas = Canvas::new(8, 8);
+        canvas.set_scale(2.0);
+        canvas.fill_rect(1, 1, 2, 1, Color::BLACK);
+        // The caller's rectangle from 1 to 3 across and 1 to 2 down is the
+        // canvas's from 2 to 6 across and 2 to 4 down.
+        assert_eq!(canvas.pixel(1, 1), Color::BLACK, "the caller's own pixel reads back");
+        assert_eq!(raw(&canvas, 2, 2), 255);
+        assert_eq!(raw(&canvas, 5, 3), 255);
+        assert_eq!(raw(&canvas, 1, 2), 0);
+        assert_eq!(raw(&canvas, 6, 2), 0);
+        assert_eq!(raw(&canvas, 2, 4), 0);
+        // A blended pixel is a block too.
+        canvas.blend(0, 0, Color::BLACK, 255);
+        assert_eq!(raw(&canvas, 0, 0), 255);
+        assert_eq!(raw(&canvas, 1, 1), 255);
+        assert_eq!(raw(&canvas, 2, 0), 0);
+    }
+
+    #[test]
+    fn a_path_on_a_scaled_canvas_is_scaled_before_it_is_rasterized() {
+        let mut canvas = Canvas::new(8, 8);
+        canvas.set_scale(2.0);
+        let mut path = Path::new();
+        path.move_to(Point { x: 1.0, y: 1.0 });
+        path.line_to(Point { x: 3.0, y: 1.0 });
+        path.line_to(Point { x: 3.0, y: 3.0 });
+        path.line_to(Point { x: 1.0, y: 3.0 });
+        path.close();
+        canvas.fill_path(&path, Color::BLACK);
+        assert_eq!(raw(&canvas, 2, 2), 255);
+        assert_eq!(raw(&canvas, 5, 5), 255);
+        assert_eq!(raw(&canvas, 6, 6), 0);
+        assert_eq!(raw(&canvas, 1, 1), 0);
+    }
+
+    #[test]
+    fn what_is_copied_out_of_a_scaled_canvas_goes_back_where_it_was() {
+        let mut canvas = Canvas::new(8, 8);
+        canvas.set_scale(2.0);
+        canvas.fill_rect(0, 0, 4, 4, Color::WHITE);
+        let under = canvas.copy_rect(1, 1, 1, 1);
+        assert_eq!(under.len(), 2 * 2 * 4);
+        canvas.fill_rect(1, 1, 1, 1, Color::BLACK);
+        assert_eq!(canvas.pixel(1, 1), Color::BLACK);
+        canvas.paste_rect(1, 1, 1, 1, &under);
+        assert_eq!(canvas.pixel(1, 1), Color::WHITE);
     }
 }

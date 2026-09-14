@@ -51,6 +51,8 @@ pub(super) struct WindowState {
     outline_depth: u8,
     show_rulers: bool,
     show_navigation: bool,
+    /// The density of the screen the window is on, as a scale.
+    scale: f32,
     /// Whether the document changed while another window was being answered,
     /// so this one's pages have to be worked out again before it is drawn.
     stale: bool,
@@ -85,6 +87,7 @@ impl Editor {
             outline_depth: self.outline_depth,
             show_rulers: self.show_rulers,
             show_navigation: self.show_navigation,
+            scale: self.scale,
             stale: false,
         };
         while self.window_states.len() <= self.active_window {
@@ -120,6 +123,7 @@ impl Editor {
         self.outline_depth = stored.outline_depth;
         self.show_rulers = stored.show_rulers;
         self.show_navigation = stored.show_navigation;
+        self.scale = stored.scale;
         self.needs_redraw = true;
 
         // The document may have been changed from the other window while this

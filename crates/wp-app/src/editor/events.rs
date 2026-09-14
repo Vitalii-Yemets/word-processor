@@ -257,6 +257,18 @@ impl App for Editor {
         }
 
         match event {
+            // The window came up on, or moved to, a screen of another density:
+            // the same window, drawn again with everything that many times
+            // bigger in the screen's pixels.
+            Event::ScaleChanged { scale } => {
+                if (scale - self.scale).abs() > f32::EPSILON {
+                    self.scale = scale;
+                    self.canvas = Canvas::new(1, 1);
+                    self.under_caret = None;
+                    self.needs_redraw = true;
+                }
+                Response::Redraw
+            }
             Event::Resized { width, height } => {
                 self.view_width = width as usize;
                 self.view_height = height as usize;

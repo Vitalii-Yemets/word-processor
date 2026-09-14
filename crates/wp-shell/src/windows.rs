@@ -203,6 +203,13 @@ const MESSAGE_SYSTEM_KEY_UP: u32 = 0x0105;
 const MESSAGE_SYSTEM_CHAR: u32 = 0x0106;
 /// The system, or a screen reader through it, asking what the window is.
 const MESSAGE_GET_OBJECT: u32 = 0x003D;
+/// The window moved to a screen of another density, or the density changed.
+const MESSAGE_DPI_CHANGED: u32 = 0x02E0;
+/// The density of an ordinary screen, which every measurement here is in.
+const ORDINARY_DPI: f32 = 96.0;
+/// What the system is asked to be: aware of each screen's density, and of
+/// changes to it, with the frame drawn to match.
+const DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: isize = -4;
 // The input method: a composition starting, changing and ending, the
 // context being set, and the requests it makes of the window.
 const MESSAGE_IME_START_COMPOSITION: u32 = 0x010D;
@@ -422,6 +429,7 @@ extern "system" {
     fn GetKeyState(key: i32) -> i16;
     fn GetWindowLongW(window: Handle, index: i32) -> i32;
     fn GetSystemMetrics(index: i32) -> i32;
+    fn SetProcessDPIAware() -> i32;
     fn GetDoubleClickTime() -> u32;
     /// How long the caret rests on each side of a blink, in milliseconds.
     fn GetCaretBlinkTime() -> u32;
@@ -566,6 +574,7 @@ extern "system" {
 #[link(name = "kernel32")]
 extern "system" {
     fn GetModuleHandleW(name: *const u16) -> Handle;
+    fn GetProcAddress(module: Handle, name: *const u8) -> *const c_void;
     fn GetACP() -> u32;
     fn GetOEMCP() -> u32;
     fn GetLastError() -> u32;
@@ -596,6 +605,10 @@ thread_local! {
     /// The window the last event came from, so a dialog is owned by the window
     /// the person is looking at rather than always by the first one.
     static WINDOW: std::cell::Cell<Handle> = const { std::cell::Cell::new(core::ptr::null_mut()) };
+
+    /// How many of each window's pixels one of the application's is: the
+    /// screen's density over an ordinary screen's. See [`scale_of`].
+    static SCALES: RefCell<std::collections::HashMap<usize, f32>> = RefCell::new(std::collections::HashMap::new());
 
     /// Where the caret is, for the input method: x, y and height in pixels of
     /// the drawing area.
@@ -742,11 +755,14 @@ unsafe fn register_class() -> Result<Handle, Error> {
     Ok(instance)
 }
 
-/// Opens one window and remembers it.
+/// Opens one window and remembers it. The size asked for is in the
+/// application's pixels; the window is made as many of its screen's as
+/// that comes to.
 unsafe fn create_window(title: &str, width: u32, height: u32) -> Result<Handle, Error> {
     let instance = register_class()?;
     let class_name = wide("WordProcessorWindow");
     let title = wide(title);
+    let system_scale = system_dpi() / ORDINARY_DPI;
 
     let window = CreateWindowExW(
         0,
@@ -755,8 +771,8 @@ unsafe fn create_window(title: &str, width: u32, height: u32) -> Result<Handle, 
         STYLE_OVERLAPPED_WINDOW,
         USE_DEFAULT_POSITION,
         USE_DEFAULT_POSITION,
-        width as i32,
-        height as i32,
+        (width as f32 * system_scale).round() as i32,
+        (height as f32 * system_scale).round() as i32,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         instance,
@@ -772,6 +788,10 @@ unsafe fn create_window(title: &str, width: u32, height: u32) -> Result<Handle, 
 
     WINDOWS.with(|slot| slot.borrow_mut().push(window));
     WINDOW.with(|slot| slot.set(window));
+    // The screen the window came up on decides how big everything is drawn.
+    let scale = window_dpi(window) / ORDINARY_DPI;
+    SCALES.with(|scales| scales.borrow_mut().insert(window as usize, scale));
+    deliver(window, Event::ScaleChanged { scale });
 
     // Ask for the frame to be worked out again now that the window can
     // answer `WM_NCCALCSIZE` for itself. Without this the frame decided
@@ -798,6 +818,11 @@ pub(crate) fn open_window(title: &str) -> bool {
 /// Opens the window and runs the event loop.
 pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error> {
     APPLICATION.with(|slot| *slot.borrow_mut() = Some(app));
+    // SAFETY: called once, before any window, which is when the system
+    // allows it.
+    unsafe {
+        declare_dpi_awareness();
+    }
 
     // SAFETY: every pointer passed below either points at a local that outlives
     // the call, or is null where the API documents null as meaningful.
@@ -869,11 +894,13 @@ pub(crate) fn arrange_windows() -> usize {
 /// insists on one, goes there, and its candidate list keeps clear of the
 /// line the caret is on.
 pub(crate) fn place_composition(x: i32, y: i32, height: i32) {
-    CARET.with(|slot| slot.set((x, y, height)));
     let window = owner_window();
     if window.is_null() {
         return;
     }
+    let (x, y) = to_device(window, (x, y));
+    let height = (height as f32 * scale_of(window)).round() as i32;
+    CARET.with(|slot| slot.set((x, y, height)));
     // SAFETY: the window is one this thread made; the forms outlive the
     // calls, which copy what they need.
     unsafe {
@@ -1007,8 +1034,9 @@ unsafe extern "system" fn window_procedure(
             // screen by the width of the frame; without pulling the client area
             // back in by that much, the top of the ribbon would be off-screen.
             if GetWindowLongW(window, -16) as u32 & WINDOW_MAXIMIZED != 0 {
-                let frame_x = GetSystemMetrics(32) + GetSystemMetrics(92);
-                let frame_y = GetSystemMetrics(33) + GetSystemMetrics(92);
+                let dpi = window_dpi(window) as u32;
+                let frame_x = metric_for_dpi(32, dpi) + metric_for_dpi(92, dpi);
+                let frame_y = metric_for_dpi(33, dpi) + metric_for_dpi(92, dpi);
                 let area = long as *mut Rect;
                 (*area).left += frame_x;
                 (*area).right -= frame_x;
@@ -1051,7 +1079,32 @@ unsafe extern "system" fn window_procedure(
             if word == SIZE_MINIMISED || width == 0 || height == 0 {
                 return 0;
             }
+            let scale = scale_of(window);
+            let width = (width as f32 / scale).round().max(1.0) as u32;
+            let height = (height as f32 / scale).round().max(1.0) as u32;
             deliver(window, Event::Resized { width, height })
+        }
+        // Moved to a screen of another density: the system says how big the
+        // window should now be, and everything in it is drawn again at the
+        // new scale.
+        MESSAGE_DPI_CHANGED => {
+            let dpi = (word & 0xFFFF) as f32;
+            let scale = if dpi > 0.0 { dpi / ORDINARY_DPI } else { 1.0 };
+            SCALES.with(|scales| scales.borrow_mut().insert(window as usize, scale));
+            let suggested = long as *const Rect;
+            if !suggested.is_null() {
+                let area = *suggested;
+                SetWindowPos(
+                    window,
+                    core::ptr::null_mut(),
+                    area.left,
+                    area.top,
+                    area.right - area.left,
+                    area.bottom - area.top,
+                    MOVE_AND_SIZE,
+                );
+            }
+            deliver(window, Event::ScaleChanged { scale })
         }
         MESSAGE_MOUSE_WHEEL => {
             // The delta arrives in the high half of the word parameter, as a
@@ -1188,7 +1241,7 @@ unsafe extern "system" fn window_procedure(
             1
         }
         MESSAGE_LEFT_BUTTON_DOWN => {
-            let (x, y) = mouse_point(long);
+            let (x, y) = mouse_point(window, long);
             // Capturing the mouse keeps the messages coming even when the
             // pointer is dragged outside the window, so a selection that runs
             // off the edge does not stop growing there.
@@ -1196,7 +1249,7 @@ unsafe extern "system" fn window_procedure(
             deliver(window, Event::MouseDown { x, y, modifiers: modifiers() })
         }
         MESSAGE_MOUSE_MOVE => {
-            let (x, y) = mouse_point(long);
+            let (x, y) = mouse_point(window, long);
             track_pointer_leaving(window);
             deliver(
                 window,
@@ -1210,11 +1263,11 @@ unsafe extern "system" fn window_procedure(
         }
         MESSAGE_MOUSE_LEAVE => deliver(window, Event::PointerLeft),
         MESSAGE_MIDDLE_BUTTON_DOWN => {
-            let (x, y) = mouse_point(long);
+            let (x, y) = mouse_point(window, long);
             deliver(window, Event::MiddleClick { x, y })
         }
         MESSAGE_LEFT_BUTTON_DOUBLE_CLICK => {
-            let (x, y) = mouse_point(long);
+            let (x, y) = mouse_point(window, long);
             deliver(window, Event::DoubleClick { x, y })
         }
         // The right button opens the menu on the way up, which is where
@@ -1222,11 +1275,11 @@ unsafe extern "system" fn window_procedure(
         // and thinking better of it should open nothing.
         MESSAGE_RIGHT_BUTTON_DOWN => 0,
         MESSAGE_RIGHT_BUTTON_UP => {
-            let (x, y) = mouse_point(long);
+            let (x, y) = mouse_point(window, long);
             deliver(window, Event::RightClick { x, y, modifiers: modifiers() })
         }
         MESSAGE_LEFT_BUTTON_UP => {
-            let (x, y) = mouse_point(long);
+            let (x, y) = mouse_point(window, long);
             ReleaseCapture();
             deliver(window, Event::MouseUp { x, y })
         }
@@ -1249,6 +1302,7 @@ unsafe extern "system" fn window_procedure(
             KillTimer(window, TICK_TIMER);
             crate::dragdrop::unregister_window(window);
             crate::uia::forget_window(window);
+            SCALES.with(|scales| scales.borrow_mut().remove(&(window as usize)));
             // One window closing is one view closing. The program ends when the
             // last of them goes, not the first.
             WINDOWS.with(|slot| slot.borrow_mut().retain(|found| *found != window));
@@ -1360,7 +1414,8 @@ unsafe fn hit_test(window: Handle, long: LongParam) -> Result_ {
 
     // The application says which part of what it drew is the caption — the
     // empty stretch of the title bar, and not the buttons on it.
-    let draggable = with_application(|app| app.is_caption(point.x, point.y)).unwrap_or(false);
+    let (x, y) = to_logical(window, (point.x, point.y));
+    let draggable = with_application(|app| app.is_caption(x, y)).unwrap_or(false);
 
     if draggable {
         HIT_CAPTION
@@ -1449,10 +1504,99 @@ pub(crate) fn is_maximised() -> bool {
 /// Both halves are signed: a captured drag reports positions outside the window,
 /// and reading them as unsigned turns a pointer just off the left edge into one
 /// tens of thousands of pixels to the right.
-fn mouse_point(long: LongParam) -> (i32, i32) {
+fn mouse_point(window: Handle, long: LongParam) -> (i32, i32) {
     let x = (long & 0xFFFF) as u16 as i16;
     let y = ((long >> 16) & 0xFFFF) as u16 as i16;
-    (i32::from(x), i32::from(y))
+    to_logical(window, (i32::from(x), i32::from(y)))
+}
+
+/// A point in the window's pixels as one in the application's.
+pub(crate) fn to_logical(window: Handle, (x, y): (i32, i32)) -> (i32, i32) {
+    let scale = scale_of(window);
+    if scale == 1.0 {
+        (x, y)
+    } else {
+        ((x as f32 / scale).round() as i32, (y as f32 / scale).round() as i32)
+    }
+}
+
+/// A point in the application's pixels as one in the window's.
+pub(crate) fn to_device(window: Handle, (x, y): (i32, i32)) -> (i32, i32) {
+    let scale = scale_of(window);
+    if scale == 1.0 {
+        (x, y)
+    } else {
+        ((x as f32 * scale).round() as i32, (y as f32 * scale).round() as i32)
+    }
+}
+
+/// How many of a window's pixels one of the application's is.
+pub(crate) fn scale_of(window: Handle) -> f32 {
+    SCALES.with(|scales| scales.borrow().get(&(window as usize)).copied().unwrap_or(1.0))
+}
+
+/// A function of user32 that only newer versions of Windows have, found by
+/// name so that the program still starts on the older ones.
+unsafe fn user32_function(name: &[u8]) -> *const c_void {
+    let module = GetModuleHandleW(wide("user32.dll").as_ptr());
+    if module.is_null() {
+        return core::ptr::null();
+    }
+    GetProcAddress(module, name.as_ptr())
+}
+
+/// Tells the system this program draws for each screen's density itself,
+/// so that it is not stretched like a picture on a dense screen. The newer
+/// way where there is one, the older where there is not.
+unsafe fn declare_dpi_awareness() {
+    let newer = user32_function(b"SetProcessDpiAwarenessContext ");
+    if !newer.is_null() {
+        let set: unsafe extern "system" fn(isize) -> i32 = core::mem::transmute(newer);
+        if set(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) != 0 {
+            return;
+        }
+    }
+    SetProcessDPIAware();
+}
+
+/// The density of the screen a window is on, in dots to the inch.
+unsafe fn window_dpi(window: Handle) -> f32 {
+    let function = user32_function(b"GetDpiForWindow ");
+    if function.is_null() {
+        return system_dpi();
+    }
+    let get: unsafe extern "system" fn(Handle) -> u32 = core::mem::transmute(function);
+    let dpi = get(window);
+    if dpi == 0 {
+        ORDINARY_DPI
+    } else {
+        dpi as f32
+    }
+}
+
+/// The density of the main screen.
+unsafe fn system_dpi() -> f32 {
+    let function = user32_function(b"GetDpiForSystem ");
+    if function.is_null() {
+        return ORDINARY_DPI;
+    }
+    let get: unsafe extern "system" fn() -> u32 = core::mem::transmute(function);
+    let dpi = get();
+    if dpi == 0 {
+        ORDINARY_DPI
+    } else {
+        dpi as f32
+    }
+}
+
+/// A system metric at a given density, where the system can say.
+unsafe fn metric_for_dpi(index: i32, dpi: u32) -> i32 {
+    let function = user32_function(b"GetSystemMetricsForDpi ");
+    if function.is_null() {
+        return GetSystemMetrics(index);
+    }
+    let get: unsafe extern "system" fn(i32, u32) -> i32 = core::mem::transmute(function);
+    get(index, dpi)
 }
 
 /// Which modifier keys are held down right now.
@@ -2346,7 +2490,8 @@ fn set_cursor_for_pointer(window: Handle) -> bool {
         return false;
     }
 
-    let wanted = with_application(|app| app.cursor(point.x, point.y));
+    let (x, y) = to_logical(window, (point.x, point.y));
+    let wanted = with_application(|app| app.cursor(x, y));
     let Some(wanted) = wanted else { return false };
 
     let name = match wanted {

@@ -361,7 +361,11 @@ pub fn decode_with(data: &[u8], faces: &dyn Faces) -> Result<Image, Error> {
     }
 
     let canvas = state.canvas;
-    Ok(Image { width: canvas.width(), height: canvas.height(), pixels: canvas.pixels().to_vec() })
+    Ok(Image {
+        width: canvas.pixel_width(),
+        height: canvas.pixel_height(),
+        pixels: canvas.pixels().to_vec(),
+    })
 }
 
 /// The rectangle a record states, where it lands on the canvas.

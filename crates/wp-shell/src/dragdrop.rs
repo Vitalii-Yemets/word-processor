@@ -345,7 +345,7 @@ fn effect_for(keys: u32, allowed: u32, takes: bool) -> u32 {
 unsafe fn client_point(window: Handle, point: Pointl) -> (i32, i32) {
     let mut point = Point { x: point.x, y: point.y };
     ScreenToClient(window, &mut point);
-    (point.x, point.y)
+    crate::windows::to_logical(window, (point.x, point.y))
 }
 
 unsafe extern "system" fn target_drag_enter(

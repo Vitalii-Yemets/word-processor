@@ -3946,8 +3946,48 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   ribbon's boxes as edit controls; the rulers and the scroll bar; and
   announcing anything but the selection and a press — a dialog opening,
   a status message.
-- [ ] **H5. High DPI and several monitors.** Per-monitor scaling, and the window
+- [x] **H5. High DPI and several monitors.** Per-monitor scaling, and the window
   moving between monitors of different scales without redrawing wrongly.
+  *Done:* the program declares itself aware of each screen's density —
+  the per-monitor way with the frame drawn to match where Windows has it,
+  the older way where it does not, each found by name so that the program
+  still starts on the versions without them — and so is never stretched
+  like a picture. Each window keeps the scale of the screen it is on:
+  found when it comes up, from the screen the system put it on, and again
+  when the system says the window moved to a screen of another density or
+  the density changed, at which the window takes the size the system
+  suggests and is drawn again. Everything the program draws is in the
+  pixels of an ordinary screen, as every measurement in it has always
+  been; the canvas scales them. That is the whole of the change above the
+  shell: `Canvas::set_scale`, under which a rectangle is that many times
+  bigger, a path — every letter, every icon — is scaled before it is
+  rasterized and so comes out sharp, a picture is resampled to its bigger
+  place, a mask and a pixel become blocks, a copy out and back covers the
+  block, the clip scales, a shade is asked in the caller's coordinates,
+  and the canvas reports the caller's size while its pixels are the
+  screen's. Every coordinate the shell gives — the pointer, the size, a
+  drop, a screen reader's point — is in the program's pixels, and every
+  one it takes — the caret for the input method, a control's rectangle
+  for the screen reader — is turned into the screen's. The frame of a
+  maximised window is measured at the window's own density. A window
+  opened by the program is asked for in its pixels and made in the
+  screen's. Held to: a canvas at twice the scale draws the caller's
+  rectangle, pixel and path as blocks and shapes of twice the size and
+  gives back what was copied; the editor on a screen of twice the density
+  draws the same window into twice the pixels, with the view the same size
+  in its own, a point reading back the same through the scale, the ribbon
+  found under the pointer where it was, and the controls described to a
+  screen reader in the program's pixels; and a picture of the window at
+  twice the density, `--picture … hidpi`, looked at.
+  *Not done, and named here:* a screen reader's rectangles and a control's
+  place while the window is being dragged between screens of different
+  densities — they are right after the move, not during; the second view
+  of a document on a screen of another density keeps its own scale but
+  shares the document's layout, which is fine since the layout is in the
+  program's pixels; the page rendered for printing is untouched, as it
+  should be; a picture pasted or dropped is sized at ninety-six dots to
+  the inch whatever the screen, which is what Word does; and the Linux
+  side, which is **H6**'s.
 - [ ] **H6. The Linux shell.** X11 and Wayland: window, input, clipboard,
   presentation. The rest of the program is already portable.
 - [ ] **H7. Files the way an operating system means them.** Recent documents,

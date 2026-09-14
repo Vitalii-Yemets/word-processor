@@ -811,10 +811,14 @@ impl Editor {
         // the earliest the desktop can be told anything about it.
         self.tell_desktop_the_theme();
 
-        if self.canvas.width() != width || self.canvas.height() != height {
+        // The window's own pixels, of which this program's are a scale: the
+        // canvas is as big as the window and draws everything that much
+        // bigger, and the view is measured in this program's own.
+        if self.canvas.pixel_width() != width || self.canvas.pixel_height() != height {
             self.canvas = Canvas::new(width, height);
-            self.view_width = width;
-            self.view_height = height;
+            self.canvas.set_scale(self.scale);
+            self.view_width = (width as f32 / self.scale).round().max(1.0) as usize;
+            self.view_height = (height as f32 / self.scale).round().max(1.0) as usize;
             self.needs_redraw = true;
             self.under_caret = None;
         }
@@ -976,5 +980,56 @@ impl Editor {
             self.canvas.fill_rect(left as i32, y as i32, width as i32, 1, colour);
             y += step;
         }
+    }
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Cursor, Event};
+
+    use super::super::Editor;
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    fn editor() -> Editor {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Hello")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        Editor::new(library(), document, None)
+    }
+
+    /// On a dense screen the window has twice the pixels, the view is the
+    /// same size in the program's own, and what is at a point is what is
+    /// at twice that point on the screen.
+    #[test]
+    fn a_denser_screen_draws_the_same_window_in_more_pixels() {
+        let mut plain = editor();
+        plain.handle(Event::Resized { width: 1400, height: 900 });
+        plain.draw(1400, 900);
+        let plain_pixel = plain.canvas().pixel(700, 60);
+
+        let mut dense = editor();
+        dense.handle(Event::ScaleChanged { scale: 2.0 });
+        dense.handle(Event::Resized { width: 1400, height: 900 });
+        let canvas = dense.draw(2800, 1800);
+        assert_eq!((canvas.pixel_width(), canvas.pixel_height()), (2800, 1800));
+        assert_eq!((canvas.width(), canvas.height()), (1400, 900));
+        assert_eq!((dense.view_width, dense.view_height), (1400, 900));
+        // The ribbon's own colour at a point, and the same point in the
+        // program's pixels reads back the same through the scale.
+        assert_eq!(dense.canvas().pixel(700, 60), plain_pixel);
+        // Pressing where the Home tab is, in the program's pixels, still
+        // finds it.
+        let over_tab = dense.cursor(80, 48);
+        assert_eq!(over_tab, Cursor::Hand);
+        let elements = dense.accessible_elements();
+        let home = elements.iter().find(|e| e.name == "Home").expect("the Home tab");
+        assert!(home.rect.0 < 200, "the tab is placed in the program's pixels, not the screen's");
     }
 }

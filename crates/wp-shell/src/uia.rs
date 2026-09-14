@@ -281,13 +281,15 @@ fn element(id: u64) -> Option<Element> {
 
 /// A client rectangle as a screen one, in the automation's doubles.
 unsafe fn screen_rect(window: Handle, rect: (i32, i32, i32, i32)) -> UiaRect {
-    let mut corner = Point { x: rect.0, y: rect.1 };
+    let scale = crate::windows::scale_of(window);
+    let (x, y) = crate::windows::to_device(window, (rect.0, rect.1));
+    let mut corner = Point { x, y };
     ClientToScreen(window, &mut corner);
     UiaRect {
         left: f64::from(corner.x),
         top: f64::from(corner.y),
-        width: f64::from(rect.2),
-        height: f64::from(rect.3),
+        width: f64::from(rect.2) * f64::from(scale),
+        height: f64::from(rect.3) * f64::from(scale),
     }
 }
 
@@ -541,9 +543,10 @@ unsafe extern "system" fn root_element_provider_from_point(
     *out = core::ptr::null_mut();
     let mut point = Point { x: x as i32, y: y as i32 };
     ScreenToClient((*this).window, &mut point);
+    let (px, py) = crate::windows::to_logical((*this).window, (point.x, point.y));
     let hit = elements().into_iter().find(|element| {
         let (left, top, width, height) = element.rect;
-        point.x >= left && point.x < left + width && point.y >= top && point.y < top + height
+        px >= left && px < left + width && py >= top && py < top + height
     });
     if let Some(hit) = hit {
         *out = Item::new((*this).window, hit.id).cast();

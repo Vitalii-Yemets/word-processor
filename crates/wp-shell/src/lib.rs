@@ -79,10 +79,19 @@ pub struct Modifiers {
 /// Something that happened to the window.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
-    /// The drawing area changed size, in pixels.
+    /// The drawing area changed size, in the application's pixels.
     Resized {
         width: u32,
         height: u32,
+    },
+    /// How many of the screen's pixels one of the application's is, now:
+    /// the window came up on, or moved to, a screen of a given density.
+    /// Everything the application draws is scaled by it — see
+    /// [`wp_raster::Canvas::set_scale`] — and every coordinate it is given
+    /// or gives is in its own pixels. Sent before the first size, and
+    /// again whenever the density changes.
+    ScaleChanged {
+        scale: f32,
     },
     /// The wheel turned. Positive scrolls towards the start of the document.
     Scroll {

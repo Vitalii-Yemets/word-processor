@@ -599,8 +599,8 @@ fn render(input: &str, prefix: &str, dpi: &str) -> Result<(), String> {
         write(&path, &image)?;
         outln!(
             "  {path}  {}x{} pixels, {} glyphs, {} bytes",
-            canvas.width(),
-            canvas.height(),
+            canvas.pixel_width(),
+            canvas.pixel_height(),
             page.glyphs.len(),
             image.len()
         );

@@ -24,8 +24,8 @@ const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
 /// Encodes a canvas as a PNG image.
 #[must_use]
 pub fn encode(canvas: &Canvas) -> Vec<u8> {
-    let width = canvas.width() as u32;
-    let height = canvas.height() as u32;
+    let width = canvas.pixel_width() as u32;
+    let height = canvas.pixel_height() as u32;
 
     let mut out = Vec::with_capacity(canvas.pixels().len() / 2 + 1024);
     out.extend_from_slice(&SIGNATURE);
@@ -51,8 +51,8 @@ pub fn encode(canvas: &Canvas) -> Vec<u8> {
 /// usually identical to the one before it, and the difference is then a run of
 /// zeros that compresses to almost nothing.
 fn filtered_rows(canvas: &Canvas) -> Vec<u8> {
-    let width = canvas.width();
-    let height = canvas.height();
+    let width = canvas.pixel_width();
+    let height = canvas.pixel_height();
     let row_bytes = width * 4;
 
     let mut out = Vec::with_capacity(height * (row_bytes + 1));
@@ -134,9 +134,9 @@ mod tests {
         let raw = wp_deflate::inflate_zlib(compressed, 1 << 20).unwrap();
 
         // Undo the per-row filtering to get the pixels back.
-        let row_bytes = canvas.width() * 4;
-        let mut pixels = vec![0u8; canvas.height() * row_bytes];
-        for row in 0..canvas.height() {
+        let row_bytes = canvas.pixel_width() * 4;
+        let mut pixels = vec![0u8; canvas.pixel_height() * row_bytes];
+        for row in 0..canvas.pixel_height() {
             let source = row * (row_bytes + 1);
             let filter = raw[source];
             for index in 0..row_bytes {

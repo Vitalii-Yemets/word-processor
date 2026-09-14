@@ -236,6 +236,11 @@ pub struct Editor {
     /// The selection as a screen reader was last told of it, so that it is
     /// told again only when the selection moves.
     reader_selection: Option<(TextPosition, Option<(TextPosition, TextPosition)>)>,
+    /// How many of the window's pixels one of this program's is: the
+    /// screen's density over an ordinary screen's. Everything here is
+    /// measured in this program's pixels; the canvas scales them. See
+    /// [`wp_shell::Event::ScaleChanged`].
+    scale: f32,
     /// When and where the last double click was, so a third click can be told
     /// from a first. See [`selecting`].
     last_double_click: Option<(std::time::Instant, i32, i32)>,
@@ -595,6 +600,7 @@ impl Editor {
             text_drag: None,
             foreign_drop: None,
             reader_selection: None,
+            scale: 1.0,
             last_double_click: None,
             drag_by: selecting::Granularity::default(),
             clipboard: None,

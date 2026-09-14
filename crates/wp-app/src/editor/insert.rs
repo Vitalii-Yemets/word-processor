@@ -278,6 +278,11 @@ impl Editor {
                 self.document.set_caret(wp_docx::TextPosition::new(3, at + 1));
                 self.translate_selection();
             }
+            // The window on a screen of twice the density: everything twice
+            // as many pixels across, sharp, and the same size to the eye.
+            "hidpi" => {
+                self.handle(wp_shell::Event::ScaleChanged { scale: 2.0 });
+            }
             // Japanese being composed by an input method: the sounds typed so
             // far under a dotted line, the clause the person is choosing a
             // conversion for under a thick one, the rest converted under a
