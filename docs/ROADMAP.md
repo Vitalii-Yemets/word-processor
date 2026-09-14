@@ -3513,8 +3513,45 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   blocks, which are **J6**, and macros running, which is **J7**. The shell
   association that makes double-clicking a `.dotx` say New is the
   installer's to write, and there is no installer yet.
-- [ ] **G2. Plain text**, with encoding detection and the dialog Word shows when
+- [x] **G2. Plain text**, with encoding detection and the dialog Word shows when
   it is not sure.
+  A `.txt` is bytes with no note of what they mean, and before Unicode every
+  language had its own table of the bytes past ASCII. Word guesses where it
+  can be sure and asks where it cannot, with a preview under each choice.
+  *Done:* `wp-text`, a crate of its own: the single-byte code pages Word
+  lists — the nine Windows ones, six ISO ones, KOI8-R and -U, and five DOS
+  ones — as tables generated from Unicode's mapping files by
+  `tools/generate-codepages.sh` (Python carries them; nothing is typed by
+  hand, because a table typed by hand turns one letter into another
+  somewhere and nobody notices), and UTF-8 and UTF-16 both ways round.
+  Decoding never fails; encoding counts what the page cannot hold, and with
+  substitution allowed stands the nearest plain character in — a straight
+  quote for a curly one, a hyphen for a dash, e for é. Vietnamese, which
+  keeps its tone marks as bytes of their own after the vowel, is written by
+  taking the letter apart and putting it back together as far as the page
+  has letters for, and read by putting it together again. `detect` is sure
+  of a mark, of UTF-16 by the zeros between its letters, of ASCII, and of
+  UTF-8 by sequences no other encoding makes by accident; anything else is
+  a guess it says is a guess. Lines end however the file ended them.
+  Opening a `.txt` — from the Open dialog, the Open page, or the command
+  line — reads it as paragraphs in the Normal style, at once where the
+  bytes say what they are, and through the File Conversion dialog where
+  they do not: "Select the encoding that makes your document readable",
+  the list with Windows (Default) and MS-DOS first — the machine's own two,
+  asked of the system — and a preview that changes with the choice. Saving
+  as text shows the dialog the other way round, every time, as Word does:
+  the warning that formatting is lost, the encoding (the one the file was
+  read from, first), Insert line breaks (where the page wrapped them, from
+  the layout), End lines with CR/LF, CR or LF, Allow character
+  substitution, a preview, and how many characters cannot be written. The
+  dialog gained a field for lines of text to look at. `--picture … textopen`
+  and `textsave` draw the two.
+  *Not done, and named here:* the East Asian encodings — Shift-JIS, GBK,
+  Big5, EUC-KR — which are tables of thousands and a stage of their own if
+  wanted; Word's "Confirm file format conversion on open", which asks even
+  when sure; Word's red marks on the characters the encoding cannot write,
+  which this counts instead; opening a file of any extension as text
+  (Word's "Recover Text from Any File"), where this goes by `.txt`.
 - [ ] **G3. RTF.** Read and write. It is the format everything else exports to.
 - [ ] **G4. HTML and MHT.** Read and write, including the mess Word itself
   writes.

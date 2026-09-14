@@ -98,6 +98,9 @@ const PAIR_ROW: f32 = 20.0;
 /// does not have to scroll to.
 pub const TREE_ROWS: usize = 12;
 
+/// How many lines a box of text shows.
+pub const LINES_SHOWN: usize = 8;
+
 /// How far one depth of a tree sets a row in from the one above it.
 const TREE_INDENT: f32 = 16.0;
 
@@ -194,6 +197,10 @@ pub enum Field {
     /// list with every row at the same depth and no tick boxes is the plain
     /// list beside it, which is the same thing with nothing turned on.
     Tree { label: String, rows: Vec<TreeRow>, current: usize, scroll: usize },
+    /// Some lines of text in a box, to be looked at and not changed: Word's
+    /// Preview on the File Conversion dialog, where a person sees which
+    /// encoding makes their text readable before choosing it.
+    Lines { label: String, lines: Vec<String> },
     /// A rectangle round everything that follows, with a caption on its top
     /// edge, until the next group or the next tab.
     ///
@@ -293,6 +300,7 @@ impl Field {
                 | Self::Shape(_)
                 | Self::Columns(_)
                 | Self::Group(_)
+                | Self::Lines { .. }
         )
     }
 
@@ -313,7 +321,7 @@ impl Field {
             // A grid's label stands above it rather than beside it, whatever
             // row it is on: sixteen cells across leave no room for a column.
             // So does a list of pairs, for the same reason.
-            Self::Grid { .. } | Self::Pairs { .. } | Self::Tree { .. } => None,
+            Self::Grid { .. } | Self::Pairs { .. } | Self::Tree { .. } | Self::Lines { .. } => None,
             Self::Said { label, .. }
             | Self::Text { label, .. }
             | Self::Number { label, .. }
@@ -345,6 +353,7 @@ impl Field {
             Self::Grid { .. } => "a grid",
             Self::Pairs { .. } => "a list of pairs",
             Self::Tree { .. } => "a list of rows",
+            Self::Lines { .. } => "some lines",
         }
     }
 
@@ -362,6 +371,7 @@ impl Field {
             Self::Grid { .. } => LABEL_HEIGHT + GRID_ROWS as f32 * GRID_CELL + PADDING,
             Self::Pairs { .. } => LABEL_HEIGHT + PAIR_ROWS as f32 * PAIR_ROW + PADDING,
             Self::Tree { .. } => LABEL_HEIGHT + TREE_ROWS as f32 * PAIR_ROW + PADDING,
+            Self::Lines { .. } => LABEL_HEIGHT + LINES_SHOWN as f32 * PAIR_ROW + PADDING,
             _ => ROW + 4.0,
         }
     }
@@ -1836,6 +1846,41 @@ impl Dialog {
                     );
                 }
                 self.placed.push((Hit::Field(index), label_x, list_top, room, list_height));
+            }
+
+            Field::Lines { label, lines } => {
+                let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+
+                let room = box_x + box_width - label_x;
+                let list_top = box_y + LABEL_HEIGHT;
+                let list_height = LINES_SHOWN as f32 * PAIR_ROW;
+                canvas.fill_rect(
+                    label_x as i32,
+                    list_top as i32,
+                    room as i32,
+                    list_height as i32,
+                    theme.field,
+                );
+                outline(canvas, label_x, list_top, room, list_height, theme.field_edge);
+                for (showing, text) in lines.iter().take(LINES_SHOWN).enumerate() {
+                    let row_y = list_top + PAIR_ROW * showing as f32;
+                    let line = engine.simple_line(
+                        text,
+                        label_x + 5.0,
+                        row_y + PAIR_ROW * 0.72,
+                        9.0,
+                        theme.text,
+                    );
+                    renderer.draw_within(
+                        canvas,
+                        &line,
+                        label_x + 5.0,
+                        row_y,
+                        room - 10.0,
+                        PAIR_ROW,
+                    );
+                }
             }
 
             Field::Pairs { label, second, rows, current, scroll } => {

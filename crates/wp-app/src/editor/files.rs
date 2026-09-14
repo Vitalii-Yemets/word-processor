@@ -29,6 +29,7 @@ pub const DOCUMENT_FILTERS: &[wp_shell::dialog::FileFilter] = &[
         label: "Word Macro-Enabled Template (*.dotm)",
         pattern: "*.dotm",
     },
+    wp_shell::dialog::FileFilter { label: "Text Files (*.txt)", pattern: "*.txt" },
     wp_shell::dialog::FileFilter { label: "All files (*.*)", pattern: "*.*" },
 ];
 
@@ -46,6 +47,7 @@ pub const SAVE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
         label: "Word Macro-Enabled Template (*.dotm)",
         pattern: "*.dotm",
     },
+    wp_shell::dialog::FileFilter { label: "Plain Text (*.txt)", pattern: "*.txt" },
 ];
 
 /// The kind a path's extension asks for, if it asks for one of the four.
@@ -97,6 +99,12 @@ impl Editor {
     /// macros is asked about first, in Word's words, when there are macros
     /// to lose.
     fn write_document(&mut self, path: &Path) -> bool {
+        // A text file is written through its own dialog, which asks how, and
+        // is not written until that is answered: see [`super::textfiles`].
+        if super::textfiles::is_text_path(path) {
+            self.begin_text_save(path);
+            return false;
+        }
         if let Some(kind) = kind_of_path(path) {
             if !kind.allows_macros() && self.document.has_macros() {
                 let question = format!(
@@ -209,6 +217,8 @@ impl Editor {
     pub(super) fn set_document(&mut self, document: Document, file: Option<PathBuf>) {
         self.document = document;
         self.file = file;
+        // Whatever was opened is not the text file the last one was.
+        self.text_encoding = None;
         self.scroll = 0.0;
         self.dragging = false;
         self.relayout();
@@ -288,8 +298,22 @@ impl Editor {
     /// Open, and the template is what was asked for.
     ///
     /// Whoever calls this has already asked about unsaved changes.
-    pub(super) fn open_path(&mut self, path: &Path) -> Response {
+    pub(crate) fn open_path(&mut self, path: &Path) -> Response {
         let path = path.to_path_buf();
+        // A text file is not a package: it is read as text, through the File
+        // Conversion dialog where its bytes do not say what they are.
+        if super::textfiles::is_text_path(&path) {
+            return match std::fs::read(&path) {
+                Ok(bytes) => self.open_text_path(&path, bytes),
+                Err(error) => {
+                    let message = format!("Cannot read {}: {error}", path.display());
+                    wp_shell::dialog::show_error(&message);
+                    self.status = message;
+                    self.needs_redraw = true;
+                    Response::Redraw
+                }
+            };
+        }
         let opened = std::fs::read(&path)
             .map_err(|error| format!("Cannot read {}: {error}", path.display()))
             .and_then(|bytes| {

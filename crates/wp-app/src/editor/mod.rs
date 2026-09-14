@@ -23,6 +23,8 @@ mod equation;
 mod events;
 pub(crate) mod files;
 pub use files::is_template_path;
+mod textfiles;
+pub use textfiles::is_text_path;
 mod fontdialog;
 mod formuladialog;
 mod furnitureedit;
@@ -399,6 +401,12 @@ pub struct Editor {
     /// The last thing AutoCorrect did, while the little box under it can
     /// still offer it back.
     corrected: Option<correcting::Made>,
+    /// The text file being opened or saved while its File Conversion dialog
+    /// is up. See [`textfiles`].
+    text_file: Option<textfiles::TextFile>,
+    /// The encoding the document was read from, or last written to, as a
+    /// text file — what its next save offers first.
+    text_encoding: Option<wp_text::Encoding>,
     /// The File tab, while it is what the window is showing.
     ///
     /// Word's File tab is not a ribbon page: it is a window of its own about
@@ -649,6 +657,8 @@ impl Editor {
             box_text: String::new(),
             pasted: None,
             corrected: None,
+            text_file: None,
+            text_encoding: None,
             backstage: None,
             print_pane: None,
             print_preview: Vec::new(),

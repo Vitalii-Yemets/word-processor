@@ -63,6 +63,10 @@ pub(super) enum Asking {
     AutoCorrect,
     /// Which language to translate into.
     Translator,
+    /// Which encoding a text file is in, when its bytes do not say.
+    TextOpen,
+    /// Which encoding to write a text file in, and how to end its lines.
+    TextSave,
     /// The words those corrections must leave alone, which is a dialog of its
     /// own behind the one above.
     Exceptions,
@@ -131,6 +135,11 @@ impl Editor {
         }
 
         if answer == Answer::Cancel {
+            match asking {
+                Some(Asking::TextOpen) => self.cancel_text_open(),
+                Some(Asking::TextSave) => self.cancel_text_save(),
+                _ => {}
+            }
             return Response::Redraw;
         }
         match asking {
@@ -155,6 +164,8 @@ impl Editor {
             Some(Asking::Options) => self.apply_options(&dialog),
             Some(Asking::AutoCorrect) => self.apply_autocorrect_dialog(&dialog),
             Some(Asking::Translator) => self.apply_translator_preferences(&dialog),
+            Some(Asking::TextOpen) => self.apply_text_open(&dialog),
+            Some(Asking::TextSave) => self.apply_text_save(&dialog),
             Some(Asking::PageBorders) => self.apply_page_borders(&dialog),
             // Word's Symbol dialog is answered by its Insert button rather
             // than by OK, so there is nothing left to do when it shuts.
@@ -297,6 +308,9 @@ impl Editor {
                     }
                     // The subset changing is the grid changing.
                     Some(Asking::Symbol) => self.symbol_dialog_changed(),
+                    // The encoding changing is the preview changing.
+                    Some(Asking::TextOpen) => self.text_open_dialog_changed(),
+                    Some(Asking::TextSave) => self.text_save_dialog_changed(),
                     // Its list of functions types into its formula rather than
                     // deciding anything of its own.
                     Some(Asking::Formula) => self.formula_dialog_changed(),

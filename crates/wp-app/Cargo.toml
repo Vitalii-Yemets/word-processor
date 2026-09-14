@@ -20,6 +20,7 @@ wp-raster = { path = "../wp-raster" }
 wp-image = { path = "../wp-image" }
 wp-svg = { path = "../wp-svg" }
 wp-shell = { path = "../wp-shell" }
+wp-text = { path = "../wp-text" }
 
 [lints]
 workspace = true

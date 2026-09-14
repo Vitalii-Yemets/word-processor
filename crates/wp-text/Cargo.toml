@@ -1,0 +1,15 @@
+[package]
+name = "wp-text"
+description = "Plain text files: the code pages, telling them apart, reading and writing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Workspace-internal only: Vietnamese writes a letter as a vowel and its
+# marks, and taking a letter apart is what wp-normal knows how to do.
+wp-normal = { path = "../wp-normal" }
+
+[lints]
+workspace = true

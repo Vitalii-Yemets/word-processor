@@ -497,6 +497,8 @@ extern "system" {
 #[link(name = "kernel32")]
 extern "system" {
     fn GetModuleHandleW(name: *const u16) -> Handle;
+    fn GetACP() -> u32;
+    fn GetOEMCP() -> u32;
     fn GetLastError() -> u32;
     fn GlobalAlloc(flags: u32, bytes: usize) -> Handle;
     fn GlobalFree(memory: Handle) -> Handle;
@@ -1413,6 +1415,14 @@ pub(crate) fn ask_yes_no(question: &str) -> bool {
         MessageBoxW(owner_window(), text.as_ptr(), caption.as_ptr(), MB_YES_NO | MB_ICON_WARNING)
     };
     answer == ID_YES
+}
+
+/// The code pages this machine writes text by: the Windows one and the DOS
+/// one, which are what "Windows (Default)" and "MS-DOS" mean in Word's File
+/// Conversion dialog.
+pub(crate) fn system_code_pages() -> (u32, u32) {
+    // SAFETY: both calls take nothing and return a number.
+    unsafe { (GetACP(), GetOEMCP()) }
 }
 
 /// Shows a message the user has to acknowledge.

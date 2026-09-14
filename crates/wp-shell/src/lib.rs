@@ -394,6 +394,22 @@ pub fn is_supported() -> bool {
     cfg!(windows)
 }
 
+/// The code pages this machine writes plain text by: the Windows one and the
+/// DOS one, by number. What Word's File Conversion dialog means by "Windows
+/// (Default)" and "MS-DOS". Off Windows they are the Western European ones,
+/// which is what a machine that does not say is taken to be.
+#[must_use]
+pub fn system_code_pages() -> (u32, u32) {
+    #[cfg(windows)]
+    {
+        crate::windows::system_code_pages()
+    }
+    #[cfg(not(windows))]
+    {
+        (1252, 437)
+    }
+}
+
 /// Changes the title in the window's caption bar.
 ///
 /// Called when the document being edited changes, so the caption says which

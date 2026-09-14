@@ -15,6 +15,7 @@ dependencies = [
  "wp-segment",
  "wp-shell",
  "wp-svg",
+ "wp-text",
 ]
 
 [[package]]
@@ -148,6 +149,13 @@ version = "0.0.1"
 dependencies = [
  "wp-raster",
  "wp-xml",
+]
+
+[[package]]
+name = "wp-text"
+version = "0.0.1"
+dependencies = [
+ "wp-normal",
 ]
 
 [[package]]

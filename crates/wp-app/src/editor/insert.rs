@@ -272,6 +272,20 @@ impl Editor {
                 self.document.set_caret(wp_docx::TextPosition::new(3, at + 1));
                 self.translate_selection();
             }
+            // The File Conversion dialog over a text file whose bytes do not
+            // say what they are, and the one for saving as text.
+            "textopen" => {
+                let (bytes, _) = wp_text::Encoding::CodePage(1251).encode(
+                    "Привет, мир!
+Это текстовый файл в кодировке Windows-1251.
+",
+                    false,
+                );
+                self.open_text_path(std::path::Path::new("letter.txt"), bytes);
+            }
+            "textsave" => {
+                self.begin_text_save(std::path::Path::new("letter.txt"));
+            }
             "table" => {
                 self.document.insert_table(3, 3);
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;

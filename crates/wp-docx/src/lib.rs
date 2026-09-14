@@ -437,6 +437,20 @@ impl Document {
         self.body().plain_text()
     }
 
+    /// A document made of lines of plain text, one paragraph each, which is
+    /// what opening a text file gives: Word's Normal style and nothing
+    /// else, because a text file says nothing else.
+    pub fn from_text(lines: &[String]) -> Result<Self, Error> {
+        let mut body = Body::default();
+        for line in lines {
+            body.blocks.push(Block::Paragraph(Paragraph::text(line)));
+        }
+        if body.blocks.is_empty() {
+            body.blocks.push(Block::Paragraph(Paragraph::default()));
+        }
+        Self::create(&body)
+    }
+
     /// The document's list definitions.
     #[must_use]
     pub fn numbering(&self) -> &Numbering {

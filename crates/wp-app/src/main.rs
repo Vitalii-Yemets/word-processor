@@ -131,7 +131,13 @@ fn start(path: Option<&str>) -> Result<(), String> {
             // A template given to the program is a document to make from it,
             // which is what Word does with one double-clicked: the template
             // stays as it was, and the new document is untitled.
-            if editor::is_template_path(Path::new(path)) {
+            if editor::is_text_path(Path::new(path)) {
+                // A text file has no package to open: it is read once the
+                // window is up, through the same dialog the Open command uses.
+                let document = Document::create(&wp_docx::model::Body::default())
+                    .map_err(|error| format!("cannot make a document: {error}"))?;
+                (document, None, file_name(path))
+            } else if editor::is_template_path(Path::new(path)) {
                 let document = Document::from_template(&bytes, Some(path))
                     .map_err(|error| format!("cannot open {path}: {error}"))?;
                 (document, None, "Document".to_owned())
@@ -151,6 +157,9 @@ fn start(path: Option<&str>) -> Result<(), String> {
     };
 
     let mut editor = Editor::opened(library, document, file);
+    if let Some(path) = path.filter(|path| editor::is_text_path(Path::new(path))) {
+        editor.open_path(Path::new(path));
+    }
     // The window comes up the way it was left rather than the way it starts.
     editor.apply_settings(settings::Settings::load());
     let options =
