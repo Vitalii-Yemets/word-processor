@@ -16,6 +16,11 @@ use std::ffi::c_void;
 
 use crate::{App, CompositionAttribute, Error, Event, Key, Modifiers, Response, WindowOptions};
 
+// The parts of this shell that live in their own files, offered under the
+// names the Linux shell offers them by.
+pub(crate) use crate::dragdrop::start_drag;
+pub(crate) use crate::uia::selection_changed;
+
 // --- Types the API uses -----------------------------------------------------
 
 pub(crate) type Handle = *mut c_void;

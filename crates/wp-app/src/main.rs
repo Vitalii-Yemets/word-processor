@@ -21,6 +21,8 @@ mod editor;
 mod measure;
 mod sample;
 mod settings;
+#[cfg(all(test, target_os = "linux"))]
+mod xserver;
 
 use std::path::{Path, PathBuf};
 
@@ -119,7 +121,7 @@ fn font_library() -> Result<&'static FontLibrary, String> {
 fn start(path: Option<&str>) -> Result<(), String> {
     if !wp_shell::is_supported() {
         return Err(
-            "this build has no window support; only Windows is implemented so far".to_owned()
+            "this build has no window support; Windows and Linux under X11 are the desktops it runs on".to_owned()
         );
     }
 

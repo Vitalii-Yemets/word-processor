@@ -3988,11 +3988,76 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   should be; a picture pasted or dropped is sized at ninety-six dots to
   the inch whatever the screen, which is what Word does; and the Linux
   side, which is **H6**'s.
-- [ ] **H6. The Linux shell.** X11 and Wayland: window, input, clipboard,
+- [x] **H6. The Linux shell.** X11 and Wayland: window, input, clipboard,
   presentation. The rest of the program is already portable.
+  *Done, for X11:* the shell speaks the X protocol itself, over the
+  server's socket, with no Xlib and no library of any kind — the
+  connection and its cookie, atoms, windows, properties, selections,
+  images, cursors, the keyboard map, the big-requests extension for a
+  whole window's pixels in one request — so the same rule that keeps the
+  Windows shell to the operating system's own ABI holds here. A window is
+  made without the frame the window manager would put on it, since the
+  program draws its own caption, and asks the window manager for what a
+  frame would do: moving and resizing by the caption and the edges
+  through `_NET_WM_MOVERESIZE`, minimising through `WM_CHANGE_STATE`,
+  maximising through `_NET_WM_STATE`, closing through
+  `WM_DELETE_WINDOW`, with the program's own close command going round
+  through the same message so that the editor is asked about unsaved
+  changes exactly as it is for the frame's button. Keys come as keysyms
+  read off the server's own map, with Shift, Caps Lock and AltGr applied
+  the way the server would, and as characters from the Latin-1, Latin-2,
+  Greek, Cyrillic, keypad and Unicode keysym ranges; Alt and Control
+  pressed alone are the menu and control keys; the wheel is buttons four
+  to seven; a double click is by the server's time and the pointer's
+  distance. The canvas is put on the window as the server's own pixel
+  format, in bands under the request limit where there is no big-requests
+  extension. The clipboard is the `CLIPBOARD` selection: text, HTML, RTF
+  and PNG offered under their own targets and taken from another program
+  under the same, with `TARGETS` answered. The screen and any window are
+  photographed with `GetImage`; the windows for Word's Screenshot button
+  come from the window manager's stacking list, or from the server's own
+  tree where there is no window manager. The screen's density comes from
+  `Xft.dpi` in the root window's resources. The desktop's own dialogs —
+  open, save, save changes?, a question, an error — are shown through
+  `zenity` or `kdialog`, whichever the desktop has, with the safe answer
+  where it has neither. The image
+  for tests carries Xvfb, an X server that draws into a file, and against
+  it: a window opens at the size asked, paints, is read back off the
+  server's own frame buffer — the shell's paint, not its own memory — and
+  through the shell's screenshot, which agree; the window list names it;
+  text put on the clipboard comes back through the selection; a program
+  that refuses to close on the first request stays up until it agrees;
+  and the whole editor — ribbon, rulers, page, fonts — comes up on it,
+  is photographed, and closes from its frame's request. Both pictures
+  looked at.
+  *Not done, and named here:* Wayland, which is **H8**; the X input
+  method (XIM), so Chinese, Japanese and Korean cannot yet be composed on
+  Linux — typed characters arrive, compositions do not; drag and drop
+  between programs (XDND) — the events exist, nothing on Linux raises
+  them; AT-SPI for a screen reader; a selection handed over in pieces
+  (`INCR`), which is a clipboard content over the server's request limit
+  — it is declined rather than taken; printing, which is **A5**'s;
+  `xdg-open` for a link is used but not proven, there being no browser in
+  the image; and Xft.dpi is the whole of density on X11, since X11 has
+  nothing else to say — a screen with none set is an ordinary one.
 - [ ] **H7. Files the way an operating system means them.** Recent documents,
   file associations, the shell's open and save dialogs, autosave and recovery
   after a crash.
+- [ ] **H8. Wayland.** The Wayland shell alongside the X11 one, chosen at
+  start by `WAYLAND_DISPLAY`: the wire protocol over the compositor's
+  socket, `wl_registry`, `wl_compositor`, `wl_shm` with the buffer in a
+  file made by `memfd_create` and mapped by `mmap` — the two calls, with
+  `sendmsg` for passing the file descriptor, being the whole of what is
+  declared against the C library; `xdg_wm_base` and `xdg_toplevel` for
+  the window, with the program's own caption and `xdg_toplevel.move`
+  and `resize` for the frame's work, `set_minimized`, `set_maximized`
+  and `close`; `wl_seat` with `wl_keyboard` — the keymap it hands over
+  in the xkb format, read by this program — and `wl_pointer`;
+  `wl_data_device` for the clipboard and drag and drop; `wl_output` and
+  `wp_fractional_scale` for density; `zwp_text_input_v3` for an input
+  method. *Done when:* the editor comes up on a headless compositor in
+  the image, is photographed, takes typing and closes, as the X11 tests
+  do it.
 
 ## I — The language of the interface
 

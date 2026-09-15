@@ -45,6 +45,12 @@ FROM rust:1.98.0-bookworm
 # by the reader's own author proves the author's understanding and nothing
 # else. It is a test tool like zip and unzip, and nothing of it reaches the
 # product.
+#
+# Xvfb is an X server without a screen: it draws into a file. It is here so
+# that the Linux shell can be run against a real X server, and what it drew
+# read back off the server's own frame buffer, in a container that has no
+# display. A test tool too; the shell speaks the X protocol itself and links
+# to nothing.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         mingw-w64 \
         file \
@@ -63,6 +69,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         mythes-en-us \
         dict-freedict-eng-deu \
         libreoffice-writer-nogui \
+        xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add x86_64-pc-windows-gnu \

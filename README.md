@@ -43,8 +43,9 @@ These constraints are deliberate and shape every decision in the codebase.
 Rust standard library. Compression, ZIP, XML, the package layer and the document
 model are all implemented here, and so are the fonts, text shaping, layout,
 rasterization and the interface. The only external code the binary touches is
-the operating system's own ABI (Win32 on Windows, X11/Wayland on Linux), declared
-directly with `extern "system"` rather than through a binding crate.
+the operating system's own ABI: Win32 on Windows, declared directly with
+`extern "system"` rather than through a binding crate, and on Linux the X11
+wire protocol spoken over the server's socket, with no Xlib at all.
 
 **Windows first, Linux supported.** The core carries no operating-system
 dependency at all — it turns a document into a pixel buffer with nothing but

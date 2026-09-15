@@ -16,7 +16,7 @@
 //! No binding library is used. The declarations are written out here against
 //! the documented ABI, which is what keeps the project free of dependencies.
 
-#![cfg_attr(not(windows), allow(dead_code))]
+#![cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 
 use wp_raster::Canvas;
 
@@ -24,10 +24,20 @@ use wp_raster::Canvas;
 mod com;
 #[cfg(windows)]
 mod dragdrop;
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(windows)]
 mod uia;
 #[cfg(windows)]
 mod windows;
+
+/// The module that speaks to the desktop this build runs on. Each offers the
+/// same functions under the same names, so the rest of this file asks one
+/// place and does not care which.
+#[cfg(target_os = "linux")]
+use linux as platform;
+#[cfg(windows)]
+use windows as platform;
 
 /// A key the application reacts to.
 ///
@@ -218,9 +228,9 @@ pub enum CompositionAttribute {
 /// Tells the screen reader that the document's selection moved, so that it
 /// reads what the caret is on now. Called whenever the selection changes.
 pub fn selection_changed() {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        uia::selection_changed();
+        platform::selection_changed();
     }
 }
 
@@ -244,11 +254,11 @@ pub enum DragEffect {
 /// did with it is the answer.
 #[must_use]
 pub fn start_drag(contents: &clipboard::Contents) -> DragEffect {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        dragdrop::start_drag(contents)
+        platform::start_drag(contents)
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = contents;
         DragEffect::None
@@ -283,11 +293,11 @@ pub enum WindowCommand {
 
 /// Carries out a window command.
 pub fn window_command(command: WindowCommand) {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::window_command(command);
+        platform::window_command(command);
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = command;
     }
@@ -299,11 +309,11 @@ pub fn window_command(command: WindowCommand) {
 /// click is only a triple click if it lands inside the same span.
 #[must_use]
 pub fn double_click_millis() -> u32 {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::double_click_millis()
+        platform::double_click_millis()
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         500
     }
@@ -316,11 +326,11 @@ pub fn double_click_millis() -> u32 {
 /// chosen and a program has no business overriding.
 #[must_use]
 pub fn caret_blink_millis() -> Option<u32> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::caret_blink_millis()
+        platform::caret_blink_millis()
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Some(530)
     }
@@ -331,11 +341,11 @@ pub fn caret_blink_millis() -> Option<u32> {
 /// so one program can show a document in two windows at once — which is what
 /// Word's New Window does. Returns whether the window opened.
 pub fn open_window(title: &str) -> bool {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::open_window(title)
+        platform::open_window(title)
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = title;
         false
@@ -345,11 +355,11 @@ pub fn open_window(title: &str) -> bool {
 /// How many windows the program has open.
 #[must_use]
 pub fn window_count() -> usize {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::window_count()
+        platform::window_count()
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         0
     }
@@ -359,11 +369,11 @@ pub fn window_count() -> usize {
 ///
 /// Word's Arrange All. Returns how many were moved.
 pub fn arrange_windows() -> usize {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::arrange_windows()
+        platform::arrange_windows()
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         0
     }
@@ -371,11 +381,11 @@ pub fn arrange_windows() -> usize {
 /// Whether the window fills the screen, so its button can show which it is.
 #[must_use]
 pub fn is_maximised() -> bool {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::is_maximised()
+        platform::is_maximised()
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         false
     }
@@ -567,11 +577,11 @@ impl Default for WindowOptions {
 /// This does not return until the user closes the window, which is how every
 /// desktop application works: the operating system owns the loop.
 pub fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::run(options, app)
+        platform::run(options, app)
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (options, app);
         Err(Error::UnsupportedPlatform)
@@ -581,7 +591,7 @@ pub fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error> {
 /// Whether this build can open a window at all.
 #[must_use]
 pub fn is_supported() -> bool {
-    cfg!(windows)
+    cfg!(any(windows, target_os = "linux"))
 }
 
 /// The code pages this machine writes plain text by: the Windows one and the
@@ -590,11 +600,11 @@ pub fn is_supported() -> bool {
 /// which is what a machine that does not say is taken to be.
 #[must_use]
 pub fn system_code_pages() -> (u32, u32) {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        crate::windows::system_code_pages()
+        crate::platform::system_code_pages()
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         (1252, 437)
     }
@@ -604,11 +614,11 @@ pub fn system_code_pages() -> (u32, u32) {
 /// area: its candidate list opens beside it, and its own windows keep off
 /// the text being composed. Called whenever the caret is drawn.
 pub fn place_composition(x: i32, y: i32, height: i32) {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::place_composition(x, y, height);
+        platform::place_composition(x, y, height);
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (x, y, height);
     }
@@ -619,11 +629,11 @@ pub fn place_composition(x: i32, y: i32, height: i32) {
 /// Called when the document being edited changes, so the caption says which
 /// file is open — which is where a person looks to find out.
 pub fn set_title(title: &str) {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::set_window_title(title);
+        platform::set_window_title(title);
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = title;
     }
@@ -657,11 +667,11 @@ pub mod dialog {
     /// Asks for a file to open. `None` means the user cancelled.
     #[must_use]
     pub fn open_file(title: &str, filters: &[FileFilter]) -> Option<PathBuf> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::choose_file(title, filters, None, false)
+            crate::platform::choose_file(title, filters, None, false)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = (title, filters);
             None
@@ -675,11 +685,11 @@ pub mod dialog {
         filters: &[FileFilter],
         suggested: Option<&Path>,
     ) -> Option<PathBuf> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::choose_file(title, filters, suggested, true)
+            crate::platform::choose_file(title, filters, suggested, true)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = (title, filters, suggested);
             None
@@ -689,11 +699,11 @@ pub mod dialog {
     /// Asks whether to save changes before throwing them away.
     #[must_use]
     pub fn ask_to_save(name: &str) -> Answer {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::ask_to_save(name)
+            crate::platform::ask_to_save(name)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = name;
             // Without a way to ask, the safe answer is to do nothing rather
@@ -705,11 +715,11 @@ pub mod dialog {
     /// Asks a question with two answers: yes, or anything else.
     #[must_use]
     pub fn ask_yes_no(question: &str) -> bool {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::ask_yes_no(question)
+            crate::platform::ask_yes_no(question)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = question;
             false
@@ -719,11 +729,11 @@ pub mod dialog {
     /// Tells the user something and asks whether to go on: OK, or cancel.
     #[must_use]
     pub fn ask_ok_cancel(message: &str) -> bool {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::ask_ok_cancel(message)
+            crate::platform::ask_ok_cancel(message)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = message;
             true
@@ -732,11 +742,11 @@ pub mod dialog {
 
     /// Tells the user something went wrong.
     pub fn show_error(message: &str) {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::show_error(message);
+            crate::platform::show_error(message);
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             eprintln!("error: {message}");
         }
@@ -806,11 +816,11 @@ pub mod printing {
         /// The paper this printer is set up for.
         #[must_use]
         pub fn page(&self) -> PageSetup {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
-                crate::windows::printer_page(self.device_context)
+                crate::platform::printer_page(self.device_context)
             }
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "linux")))]
             {
                 PageSetup {
                     width: 1,
@@ -827,12 +837,12 @@ pub mod printing {
 
         /// Begins a job. Everything sent afterwards belongs to it.
         pub fn start(&mut self, name: &str) -> bool {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
-                self.started = crate::windows::start_document(self.device_context, name);
+                self.started = crate::platform::start_document(self.device_context, name);
                 self.started
             }
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "linux")))]
             {
                 let _ = name;
                 false
@@ -850,14 +860,14 @@ pub mod printing {
             height: usize,
             band: impl FnMut(usize, usize) -> Canvas,
         ) -> bool {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
                 let mut band = band;
-                crate::windows::print_page(self.device_context, width, height, |top, rows| {
+                crate::platform::print_page(self.device_context, width, height, |top, rows| {
                     band(top, rows).to_bgra()
                 })
             }
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "linux")))]
             {
                 let _ = (width, height, band);
                 false
@@ -879,11 +889,11 @@ pub mod printing {
                 return;
             }
             self.finished = true;
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
-                crate::windows::finish_document(self.device_context, keep && self.started);
+                crate::platform::finish_document(self.device_context, keep && self.started);
             }
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "linux")))]
             {
                 let _ = keep;
             }
@@ -903,11 +913,11 @@ pub mod printing {
     /// Empty where there are none, and on a system with no spooler at all.
     #[must_use]
     pub fn names() -> Vec<String> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::printer_names()
+            crate::platform::printer_names()
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             Vec::new()
         }
@@ -916,11 +926,11 @@ pub mod printing {
     /// The one a document goes to when nobody has said otherwise.
     #[must_use]
     pub fn default_name() -> Option<String> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::default_printer_name()
+            crate::platform::default_printer_name()
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             None
         }
@@ -932,11 +942,11 @@ pub mod printing {
     /// something that will not happen.
     #[must_use]
     pub fn prints_both_sides(name: &str) -> bool {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::supports_both_sides(name)
+            crate::platform::supports_both_sides(name)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = name;
             false
@@ -950,11 +960,11 @@ pub mod printing {
     /// short edge.
     #[must_use]
     pub fn open(name: &str, both_sides: Option<bool>) -> Option<Printer> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::open_printer_with(name, both_sides)
+            crate::platform::open_printer_with(name, both_sides)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = (name, both_sides);
             None
@@ -965,11 +975,11 @@ pub mod printing {
     /// the user cancelled.
     #[must_use]
     pub fn choose() -> Option<Printer> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::choose_printer()
+            crate::platform::choose_printer()
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             None
         }
@@ -1018,11 +1028,11 @@ pub mod clipboard {
     /// Puts everything given on the clipboard at once, replacing what was
     /// there. Returns whether the system accepted it.
     pub fn set_contents(contents: &Contents) -> bool {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::clipboard_set_contents(contents)
+            crate::platform::clipboard_set_contents(contents)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = contents;
             false
@@ -1032,11 +1042,11 @@ pub mod clipboard {
     /// Reads everything on the clipboard that this program can take.
     #[must_use]
     pub fn contents() -> Contents {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::clipboard_contents()
+            crate::platform::clipboard_contents()
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             Contents::default()
         }
@@ -1048,11 +1058,11 @@ pub mod clipboard {
     /// exceptional — another program can hold the clipboard open — so the
     /// caller is told and carries on.
     pub fn set_text(text: &str) -> bool {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::clipboard_set_text(text)
+            crate::platform::clipboard_set_text(text)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = text;
             false
@@ -1062,11 +1072,11 @@ pub mod clipboard {
     /// Reads text from the clipboard, if it holds any.
     #[must_use]
     pub fn text() -> Option<String> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::clipboard_text()
+            crate::platform::clipboard_text()
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             None
         }
@@ -1103,14 +1113,14 @@ pub mod screen {
     /// as "none are open" and needs no special case at the other end.
     #[must_use]
     pub fn windows() -> Vec<Window> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::screen_windows()
+            crate::platform::screen_windows()
                 .into_iter()
                 .map(|found| Window { title: found.title, handle: found.handle })
                 .collect()
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             Vec::new()
         }
@@ -1119,15 +1129,15 @@ pub mod screen {
     /// Photographs every monitor, side by side as the desktop arranges them.
     #[must_use]
     pub fn capture_screen() -> Option<Shot> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::capture_screen().map(|shot| Shot {
+            crate::platform::capture_screen().map(|shot| Shot {
                 width: shot.width,
                 height: shot.height,
                 pixels: shot.pixels,
             })
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             None
         }
@@ -1136,15 +1146,15 @@ pub mod screen {
     /// Photographs one window, whatever happens to be in front of it.
     #[must_use]
     pub fn capture_window(handle: usize) -> Option<Shot> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::capture_window(handle).map(|shot| Shot {
+            crate::platform::capture_window(handle).map(|shot| Shot {
                 width: shot.width,
                 height: shot.height,
                 pixels: shot.pixels,
             })
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = handle;
             None
@@ -1170,11 +1180,11 @@ pub mod desktop {
             return false;
         }
 
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::windows::open_in_shell(address)
+            crate::platform::open_in_shell(address)
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             std::process::Command::new("xdg-open")
                 .arg(address)
@@ -1235,11 +1245,11 @@ pub mod desktop {
 /// is why a dark window can end up with a pale border — and only when it is not
 /// maximised, because a maximised window has no border.
 pub fn set_frame_appearance(dark: bool, border: (u8, u8, u8), caption: (u8, u8, u8)) {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
-        windows::set_frame_appearance(dark, border, caption);
+        platform::set_frame_appearance(dark, border, caption);
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (dark, border, caption);
     }
