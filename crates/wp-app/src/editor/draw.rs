@@ -448,7 +448,10 @@ impl Editor {
         // the sheet in front of the reader, and on page three that is page
         // three.
         let index = self.visible_page();
-        let (page_left, page_origin_y) = self.page_origin(index);
+        // The rulers are furniture: they are drawn turned about with
+        // everything else, so they are given the page where it was laid
+        // out rather than where it ended up on the screen.
+        let (page_left, page_origin_y) = self.page_origin_as_laid_out(index);
         let page_width = self.pages.get(index).map_or(0.0, |page| page.width);
         let page_height = self.pages.get(index).map_or(0.0, |page| page.height);
 
@@ -834,6 +837,23 @@ impl Editor {
             self.under_caret = None;
         }
 
+        // Everything the window is made of is drawn turned about where the
+        // interface is read right to left. What is on the page is not: an
+        // English document does not read backwards in an Arabic window. The
+        // furniture is told as well as the canvas, because a button drawn on
+        // one side has to be found again on that side — and this is said
+        // before anything is drawn or asked about, including the blink
+        // below, which draws nothing else.
+        let about = self.mirrored().then_some(self.view_width as f32);
+        if self.canvas.mirror() != about {
+            // The language has been changed to one read the other way, so
+            // everything is in the wrong place until it is drawn again.
+            self.needs_redraw = true;
+            self.under_caret = None;
+        }
+        self.canvas.set_mirror(about);
+        crate::chrome::mirror::set(about);
+
         // A blink and nothing else: put back what the caret was drawn over and
         // draw it again, rather than drawing the window.
         if !self.needs_redraw && self.caret_only {
@@ -870,7 +890,9 @@ impl Editor {
         }
 
         // The document behind whatever is being edited in front of it.
+        let held = self.canvas.suspend_mirror();
         self.draw_dimmed_document();
+        self.canvas.set_mirror(held);
 
         // The pane being edited is drawn inside its own band, so that with the
         // window split it cannot draw over the other one.
@@ -881,12 +903,16 @@ impl Editor {
             self.view_width as i32,
             (bottom - top).max(0.0) as i32,
         );
+        let held = self.canvas.suspend_mirror();
         self.draw_pages();
         self.draw_caret();
+        self.canvas.set_mirror(held);
         self.canvas.restore_clip(previous_clip);
 
         // And then the other view of the same document, if there is one.
+        let held = self.canvas.suspend_mirror();
         self.draw_other_pane();
+        self.canvas.set_mirror(held);
 
         // The furniture goes last, so a page scrolled under it is covered
         // rather than showing through.

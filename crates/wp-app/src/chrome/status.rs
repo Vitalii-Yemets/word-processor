@@ -139,6 +139,7 @@ impl SliderRect {
     /// The zoom a point along the slider stands for.
     #[must_use]
     pub fn zoom_at(&self, x: i32) -> f32 {
+        let x = super::mirror::flip(x);
         let along = ((x as f32 - self.left) / self.width).clamp(0.0, 1.0);
         // Geometric rather than linear: the useful zooms cluster near a hundred
         // per cent, and a linear slider spends half its length above two.
@@ -156,6 +157,7 @@ impl SliderRect {
 
     #[must_use]
     pub fn covers(&self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let (x, y) = (x as f32, y as f32);
         x >= self.left - 6.0
             && x <= self.left + self.width + 6.0

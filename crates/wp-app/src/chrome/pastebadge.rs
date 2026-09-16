@@ -83,6 +83,7 @@ impl PasteBadge {
     /// Whether a point is on it.
     #[must_use]
     pub fn covers(&self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let (x, y) = (x as f32, y as f32);
         x >= self.left && x < self.left + self.width() && y >= self.top && y < self.top + HEIGHT
     }

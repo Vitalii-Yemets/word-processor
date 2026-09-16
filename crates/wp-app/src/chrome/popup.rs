@@ -349,6 +349,7 @@ impl Popup {
     /// Whether a point is inside the list at all.
     #[must_use]
     pub fn covers(&self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let (x, y) = (x as f32, y as f32);
         x >= self.left
             && x < self.left + self.width
@@ -362,6 +363,7 @@ impl Popup {
     /// height once a menu has lines between its groups.
     #[must_use]
     pub fn hit(&self, x: i32, y: i32) -> Option<usize> {
+        let x = super::mirror::flip(x);
         if !self.covers(x, y) {
             return None;
         }
@@ -380,6 +382,7 @@ impl Popup {
 
     /// Lights up whatever the pointer is over. Returns whether that changed.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let found = self.hit(x, y);
         let changed = found != self.hovered;
         self.hovered = found;

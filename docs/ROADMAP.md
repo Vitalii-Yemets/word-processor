@@ -4227,8 +4227,55 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   **I3**, and a window that reverses for Arabic and Hebrew is **I2**.
   German is the one language that comes with the program; the folder is
   how another arrives.
-- [ ] **I2. A mirrored interface.** For Arabic and Hebrew the whole window
+- [x] **I2. A mirrored interface.** For Arabic and Hebrew the whole window
   reverses: the ribbon, the panes, the scrollbar, the dialogs.
+  *Done:* a catalogue says which way its language reads — `direction = rtl`
+  at the top of the file, because that is a fact about the language and
+  not about the person — and a window in such a language is drawn the
+  other way round: the tabs from the right, the groups of the ribbon from
+  the right and their buttons within them, the navigation pane on the
+  right and the styles pane on the left, the scroll bar on the left, the
+  rulers counting the other way, the strip along the bottom reversed, the
+  dialogs with their labels on the right and their buttons on the left,
+  and every menu dropped from the side it belongs to.
+  **How.** The canvas turns what it is given, about the window's own
+  width: what was at `x` is drawn at `width - x - its own width`. So none
+  of the several hundred places that draw a button had to learn which way
+  the window reads, and the one that forgot cannot be the one nobody
+  noticed. Where a thing goes is turned; what it is made of is not — a
+  picture on a button is the same picture, and a line of text moves as one
+  piece rather than having its letters reversed, which the renderer does
+  by moving the line's box and drawing the letters the way round they were
+  laid out. A shape given as a path is the exception and is reflected: an
+  arrow that points the way a person reads has to point the other way in a
+  window read the other way.
+  **What is not turned.** The page. An English document does not read
+  backwards in an Arabic window, so what is on the paper is drawn exactly
+  as it was laid out, at the place the turned window puts the paper. A
+  document that reads right to left is laid out that way by the text
+  engine itself, through `wp-bidi`: that is the document's own direction
+  and has nothing to do with the interface's.
+  **Being found again.** A button drawn on the right has to answer the
+  pointer on the right. The furniture asks one place which way the window
+  is — the same answer the canvas was given, set once where the window is
+  painted — and turns the point before looking for what is under it; the
+  page does not, because it was not turned.
+  Held to: the Bold button is found where it is drawn in both windows and
+  not where it used to be; the navigation pane answers on the left in one
+  and on the right in the other; a click on the page lands on the same
+  letter in both, and a press puts the caret where the pointer was. And
+  two pictures — the window and the Options dialog, in the mirrored
+  pseudo-language — looked at.
+  *Not done, and named here:* no Arabic or Hebrew catalogue comes with the
+  program, so the only language that turns the window is the mirrored
+  pseudo-language, which is what the tests and the pictures use; a real
+  one is a translation, which is the same work as **I1**'s German and not
+  a different mechanism. The scroll bar's arrows and the resize cursors
+  are turned with everything else because they are drawn as paths; the
+  icons are not, which is right for a picture of a clipboard and wrong for
+  the handful whose meaning is a direction — the indent buttons, the
+  bullet arrows — and those are drawn from the icon catalogue rather than
+  as paths, so they keep pointing the way they did. Word turns them.
 - [ ] **I3. The user's locale.** Dates, numbers, paper sizes and measurement
   units — inches or centimetres — as the system says.
 

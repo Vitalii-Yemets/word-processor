@@ -46,9 +46,10 @@ impl Editor {
         }
 
         self.status_menu_at = Some((x, y));
-        self.popup = Some(
-            Popup::new(Choice::StatusBar, items, None, x as f32, y as f32, WIDTH).with_rows(rows),
-        );
+        // In the furniture's own coordinates, which is where a menu lives.
+        let left = crate::chrome::mirror::flip(x) as f32;
+        self.popup =
+            Some(Popup::new(Choice::StatusBar, items, None, left, y as f32, WIDTH).with_rows(rows));
         self.needs_redraw = true;
         Response::Redraw
     }

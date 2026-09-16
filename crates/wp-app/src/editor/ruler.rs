@@ -64,6 +64,7 @@ impl Editor {
     /// Returns whether it took hold of anything, which is what tells the press
     /// handler to stop looking.
     pub(super) fn press_on_ruler(&mut self, x: i32, y: i32) -> bool {
+        let x = crate::chrome::mirror::flip(x);
         if !self.show_rulers {
             return false;
         }
@@ -106,6 +107,7 @@ impl Editor {
 
     /// Carries on a drag that is already under way.
     pub(super) fn drag_ruler(&mut self, x: i32, y: i32, modifiers: Modifiers) -> Response {
+        let x = crate::chrome::mirror::flip(x);
         let Some(grab) = self.ruler_drag else { return Response::Ignored };
         // Alt drags freely; without it the marker lands on a tick.
         let snap = !modifiers.alt;

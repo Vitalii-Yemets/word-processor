@@ -92,13 +92,23 @@ pub struct Canvas {
     /// How many of the canvas's pixels one of the caller's is. See
     /// [`Canvas::set_scale`].
     scale: f32,
+    /// The width to turn drawing about, where the window reads right to
+    /// left. See [`Canvas::set_mirror`].
+    mirror: Option<f32>,
 }
 
 impl Canvas {
     /// A fully transparent canvas.
     #[must_use]
     pub fn new(width: usize, height: usize) -> Self {
-        Self { width, height, pixels: vec![0; width * height * 4], clip: None, scale: 1.0 }
+        Self {
+            width,
+            height,
+            pixels: vec![0; width * height * 4],
+            clip: None,
+            scale: 1.0,
+            mirror: None,
+        }
     }
 
     /// Draws everything from here on scaled up by a factor.
@@ -122,6 +132,58 @@ impl Canvas {
     #[must_use]
     pub fn scale(&self) -> f32 {
         self.scale
+    }
+
+    /// Draws everything from here on turned about, for a window read right
+    /// to left.
+    ///
+    /// # Why the canvas turns it and not the caller
+    ///
+    /// Because every one of the hundreds of places that draw something
+    /// would otherwise have to work out where it goes in a mirrored
+    /// window, and the one that forgot would be the one nobody noticed.
+    /// Here there is a single rule — what was at `x` is now at
+    /// `width - x - its own width` — and it is applied to everything the
+    /// canvas draws.
+    ///
+    /// # What is turned and what is not
+    ///
+    /// Where a thing goes is turned; what it is made of is not. A button
+    /// that was on the left is on the right, and the picture on it is the
+    /// same picture — turning that would be turning a photograph over.
+    /// The exception is a shape given as a path: an arrow that points the
+    /// way a person reads has to point the other way in a window read the
+    /// other way, so a path is reflected rather than moved. Text is left
+    /// to [`Canvas::suspend_mirror`], which is how a line of it is moved
+    /// as one piece instead of letter by letter.
+    ///
+    /// `None` puts it back the way every other window is.
+    pub fn set_mirror(&mut self, width: Option<f32>) {
+        self.mirror = width.filter(|width| width.is_finite() && *width > 0.0);
+    }
+
+    /// The width drawing is turned about, if it is.
+    #[must_use]
+    pub fn mirror(&self) -> Option<f32> {
+        self.mirror
+    }
+
+    /// Stops turning for as long as the answer is held, and gives back
+    /// what to put back afterwards.
+    ///
+    /// For something that has to be drawn the way round it was made — a
+    /// line of text, the contents of a page — at a place that has been
+    /// worked out already.
+    pub fn suspend_mirror(&mut self) -> Option<f32> {
+        self.mirror.take()
+    }
+
+    /// Where a span of the caller's begins once the window is turned.
+    fn across(&self, x: i32, width: i32) -> i32 {
+        match self.mirror {
+            Some(about) => (about.round() as i32) - x - width,
+            None => x,
+        }
     }
 
     /// A coordinate of the caller's, in the canvas's own pixels.
@@ -200,7 +262,7 @@ impl Canvas {
     /// spilling into the other.
     pub fn set_clip(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<Clip> {
         let previous = self.clip;
-        let (x, width) = self.device_span(x, width);
+        let (x, width) = self.device_span(self.across(x, width), width);
         let (y, height) = self.device_span(y, height);
         let wanted = Clip {
             left: x.max(0) as usize,
@@ -247,7 +309,8 @@ impl Canvas {
     /// The colour at a pixel, or transparent outside the canvas.
     #[must_use]
     pub fn pixel(&self, x: usize, y: usize) -> Color {
-        let (x, y) = (self.device(x as i32) as usize, self.device(y as i32) as usize);
+        let x = self.across(x as i32, 1);
+        let (x, y) = (self.device(x) as usize, self.device(y as i32) as usize);
         if x >= self.width || y >= self.height {
             return Color::TRANSPARENT;
         }
@@ -261,11 +324,11 @@ impl Canvas {
     /// blend rather than replace. One of the caller's pixels, which on a
     /// scaled canvas is a block of its own.
     pub fn blend(&mut self, x: usize, y: usize, color: Color, coverage: u8) {
-        if self.scale == 1.0 {
+        if self.scale == 1.0 && self.mirror.is_none() {
             self.blend_device(x, y, color, coverage);
             return;
         }
-        let (left, width) = self.device_span(x as i32, 1);
+        let (left, width) = self.device_span(self.across(x as i32, 1), 1);
         let (top, height) = self.device_span(y as i32, 1);
         for row in top..top + height.max(1) {
             for column in left..left + width.max(1) {
@@ -310,7 +373,7 @@ impl Canvas {
 
     /// Fills an axis-aligned rectangle, clipped to the canvas.
     pub fn fill_rect(&mut self, x: i32, y: i32, width: i32, height: i32, color: Color) {
-        let (x, width) = self.device_span(x, width);
+        let (x, width) = self.device_span(self.across(x, width), width);
         let (y, height) = self.device_span(y, height);
         let left = x.max(0) as usize;
         let top = y.max(0) as usize;
@@ -327,6 +390,7 @@ impl Canvas {
     /// Draws a coverage mask in one colour, with its top-left corner at
     /// `(x, y)`.
     pub fn draw_mask(&mut self, mask: &Mask, x: i32, y: i32, color: Color) {
+        let x = self.across(x, mask.width() as i32);
         if self.scale == 1.0 {
             for row in 0..mask.height() {
                 let target_y = y + row as i32;
@@ -399,7 +463,24 @@ impl Canvas {
         rule: crate::raster::Rule,
         colour: impl Fn(usize, usize) -> Color,
     ) {
+        let turned;
         let scaled;
+        let path = match self.mirror {
+            // Reflected about the window's middle, in the caller's own
+            // coordinates, before anything else is done to it.
+            Some(about) => {
+                turned = path.transformed(&crate::path::Transform {
+                    a: -1.0,
+                    b: 0.0,
+                    c: 0.0,
+                    d: 1.0,
+                    e: about,
+                    f: 0.0,
+                });
+                &turned
+            }
+            None => path,
+        };
         let path = if self.scale == 1.0 {
             path
         } else {
@@ -460,7 +541,7 @@ impl Canvas {
     #[must_use]
     pub fn copy_rect(&self, x: i32, y: i32, width: i32, height: i32) -> Vec<u8> {
         let mut out = Vec::new();
-        let (x, width) = self.device_span(x, width);
+        let (x, width) = self.device_span(self.across(x, width), width);
         let (y, height) = self.device_span(y, height);
         let (left, top, right, bottom) = self.clamped(x, y, width, height);
         for row in top..bottom {
@@ -477,7 +558,7 @@ impl Canvas {
     /// The rectangle must be the one they were taken from; anything else is
     /// ignored rather than drawn askew.
     pub fn paste_rect(&mut self, x: i32, y: i32, width: i32, height: i32, pixels: &[u8]) {
-        let (x, width) = self.device_span(x, width);
+        let (x, width) = self.device_span(self.across(x, width), width);
         let (y, height) = self.device_span(y, height);
         let (left, top, right, bottom) = self.clamped(x, y, width, height);
         let row_bytes = (right - left) * 4;
@@ -504,6 +585,7 @@ impl Canvas {
     /// Draws another canvas on top of this one, pixel for pixel, at a place
     /// of the caller's.
     pub fn draw_canvas(&mut self, other: &Canvas, x: i32, y: i32) {
+        let x = self.across(x, other.width as i32);
         let (x, y) = (self.device(x), self.device(y));
         for row in 0..other.height {
             for column in 0..other.width {
@@ -552,7 +634,7 @@ impl Canvas {
             self.draw_pixels(pixels, source_width, source_height, x, y, width, height);
             return;
         }
-        let (x, width) = self.device_span(x, width as i32);
+        let (x, width) = self.device_span(self.across(x, width as i32), width as i32);
         let (y, height) = self.device_span(y, height as i32);
         let (width, height) = (width.max(0) as usize, height.max(0) as usize);
         if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
@@ -655,7 +737,7 @@ impl Canvas {
         width: usize,
         height: usize,
     ) {
-        let (x, width) = self.device_span(x, width as i32);
+        let (x, width) = self.device_span(self.across(x, width as i32), width as i32);
         let (y, height) = self.device_span(y, height as i32);
         let (width, height) = (width.max(0) as usize, height.max(0) as usize);
         if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
@@ -725,7 +807,7 @@ impl Canvas {
 }
 
 /// The bounding box of a path, if it has any points.
-fn bounds_of(path: &Path) -> Option<(f32, f32, f32, f32)> {
+pub fn bounds_of(path: &Path) -> Option<(f32, f32, f32, f32)> {
     let mut min_x = f32::INFINITY;
     let mut min_y = f32::INFINITY;
     let mut max_x = f32::NEG_INFINITY;

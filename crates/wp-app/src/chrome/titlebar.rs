@@ -70,6 +70,7 @@ impl TitleBar {
     /// start dragging the window across the desk.
     #[must_use]
     pub fn is_caption(&self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         if (y as f32) >= HEIGHT {
             return false;
         }
@@ -79,6 +80,7 @@ impl TitleBar {
     /// The quick access command at a point, if there is one.
     #[must_use]
     pub fn quick_at(&self, x: i32, y: i32) -> Option<Command> {
+        let x = super::mirror::flip(x);
         if (y as f32) >= HEIGHT {
             return None;
         }
@@ -91,6 +93,7 @@ impl TitleBar {
     /// The window button at a point, if there is one.
     #[must_use]
     pub fn window_button_at(&self, x: i32, y: i32) -> Option<WindowButton> {
+        let x = super::mirror::flip(x);
         if (y as f32) >= HEIGHT {
             return None;
         }
@@ -102,6 +105,7 @@ impl TitleBar {
 
     /// Lights up whatever the pointer is over. Returns whether that changed.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let window = self.window_button_at(x, y);
         let quick = self.quick_at(x, y);
         let changed = window != self.hovered_window || quick != self.hovered_quick;

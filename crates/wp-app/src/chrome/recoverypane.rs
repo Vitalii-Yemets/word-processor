@@ -77,6 +77,7 @@ impl RecoveryPane {
     /// What is under a point, if anything.
     #[must_use]
     pub fn hit(&self, x: i32, y: i32) -> Option<Hit> {
+        let x = super::mirror::flip(x);
         let (x, y) = (x as f32, y as f32);
         self.placed
             .iter()
@@ -88,6 +89,7 @@ impl RecoveryPane {
 
     /// Follows the pointer. Whether the window has to be drawn again.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let over = self.hit(x, y);
         if over == self.hovered {
             return false;

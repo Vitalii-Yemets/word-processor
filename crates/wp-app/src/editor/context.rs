@@ -106,10 +106,11 @@ impl Editor {
         let items = entries.iter().map(|entry| entry.label.clone()).collect();
         let rows = entries.iter().map(|entry| Row::new(entry.kind, entry.icon)).collect();
         self.group_commands = entries.iter().map(|entry| entry.command).collect();
-        // Under the pointer, which is where a context menu goes.
-        self.popup = Some(
-            Popup::new(Choice::Context, items, None, x as f32, y as f32, WIDTH).with_rows(rows),
-        );
+        // Under the pointer, which is where a context menu goes — and in
+        // the furniture's own coordinates, which is where menus live.
+        let left = crate::chrome::mirror::flip(x) as f32;
+        self.popup =
+            Some(Popup::new(Choice::Context, items, None, left, y as f32, WIDTH).with_rows(rows));
         self.needs_redraw = true;
         Response::Redraw
     }

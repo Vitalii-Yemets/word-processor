@@ -122,6 +122,7 @@ impl Editor {
 
     /// Whether a point is inside the pane at all.
     pub(super) fn over_styles_pane(&self, x: i32) -> bool {
+        let x = crate::chrome::mirror::flip(x);
         self.show_styles && (x as f32) >= self.styles_pane_left()
     }
 

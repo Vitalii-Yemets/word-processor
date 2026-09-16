@@ -156,6 +156,7 @@ impl Navigation {
 
     /// Drags the right edge to a new place. Returns whether anything moved.
     pub fn resize_to(&mut self, x: i32) -> bool {
+        let x = super::mirror::flip(x);
         let wanted = (x as f32).clamp(MIN_WIDTH, MAX_WIDTH);
         let changed = (wanted - self.width).abs() >= 1.0;
         self.width = wanted;
@@ -165,6 +166,7 @@ impl Navigation {
     /// Whether a point is on the handle down the pane's right edge.
     #[must_use]
     pub fn on_splitter(&self, x: i32, y: i32, top: f32, bottom: f32) -> bool {
+        let x = super::mirror::flip(x);
         (y as f32) >= top && (y as f32) < bottom && (x as f32 - self.width).abs() <= SPLITTER_GRAB
     }
 
@@ -180,6 +182,7 @@ impl Navigation {
     /// What a point in the pane stands for, if anything.
     #[must_use]
     pub fn hit(&self, x: i32, y: i32, top: f32, bottom: f32) -> Option<Hit> {
+        let x = super::mirror::flip(x);
         let (x, y) = (x as f32, y as f32);
         if x >= self.width || y < top || y >= bottom {
             return None;
@@ -212,6 +215,7 @@ impl Navigation {
 
     /// Lights up whatever the pointer is over. Returns whether that changed.
     pub fn hover(&mut self, x: i32, y: i32, top: f32, bottom: f32) -> bool {
+        let x = super::mirror::flip(x);
         let found = self.hit(x, y, top, bottom);
         let row = match found {
             Some(Hit::Row(index)) => Some(index),

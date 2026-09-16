@@ -397,6 +397,7 @@ impl Ribbon {
     /// The tab at a point in the tab strip, if there is one.
     #[must_use]
     pub fn tab_at(&self, x: i32, y: i32) -> Option<Tab> {
+        let x = super::mirror::flip(x);
         let y = y as f32 - self.top;
         if !(0.0..TAB_HEIGHT).contains(&y) {
             return None;
@@ -410,6 +411,7 @@ impl Ribbon {
     /// Whether a point is on the "Tell me what you want to do" box.
     #[must_use]
     pub fn search_at(&self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let Some((left, top, width)) = self.search else { return false };
         (x as f32) >= left
             && (x as f32) < left + width
@@ -420,6 +422,7 @@ impl Ribbon {
     /// The command at a point in the ribbon, if there is one.
     #[must_use]
     pub fn command_at(&self, x: i32, y: i32) -> Option<Command> {
+        let x = super::mirror::flip(x);
         let (x, y) = (x as f32, y as f32);
         self.placed
             .iter()
@@ -439,6 +442,7 @@ impl Ribbon {
     /// between them is.
     #[must_use]
     pub fn press_at(&self, x: i32, y: i32) -> Option<Press> {
+        let x = super::mirror::flip(x);
         let command = self.command_at(x, y)?;
 
         // A measurement is a label and a box, and only the box answers: its

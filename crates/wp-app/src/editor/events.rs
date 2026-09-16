@@ -118,7 +118,7 @@ impl App for Editor {
             if self.resizing_pane || self.navigation.on_splitter(x, y, top, bottom) {
                 return Cursor::ResizeHorizontal;
             }
-            if fx < self.navigation.width() {
+            if crate::chrome::mirror::flip_f(fx) < self.navigation.width() {
                 return match self.navigation.hit(x, y, top, bottom) {
                     Some(crate::chrome::navigation::Hit::SearchBox) => Cursor::Text,
                     Some(_) => Cursor::Hand,
@@ -322,7 +322,7 @@ impl App for Editor {
                     };
                 }
                 // And over the recovery pane, its list of recovered files.
-                if self.pointer_x < self.pane_width() {
+                if crate::chrome::mirror::flip_f(self.pointer_x) < self.pane_width() {
                     if let Some(pane) = &mut self.recovery {
                         return if pane.scroll_by(-lines.round() as i32 * 3) {
                             self.needs_redraw = true;
@@ -334,7 +334,7 @@ impl App for Editor {
                 }
                 if self.show_navigation
                     && !self.recovering()
-                    && self.pointer_x < self.navigation.width()
+                    && crate::chrome::mirror::flip_f(self.pointer_x) < self.navigation.width()
                 {
                     let total = self.headings().len();
                     return if self.navigation.scroll_by(-lines.round() as i32 * 3, total) {
@@ -807,7 +807,9 @@ impl Editor {
             return self.styles_pane_press(x, y);
         }
 
-        if self.recovering() && (x as f32) < self.pane_width() && (y as f32) > self.ribbon_bottom()
+        if self.recovering()
+            && crate::chrome::mirror::flip_f(x as f32) < self.pane_width()
+            && (y as f32) > self.ribbon_bottom()
         {
             return self.pressed_in_recovery(x, y);
         }
@@ -822,7 +824,7 @@ impl Editor {
                 self.resizing_pane = true;
                 return Response::Ignored;
             }
-            if (x as f32) < self.navigation.width() {
+            if crate::chrome::mirror::flip_f(x as f32) < self.navigation.width() {
                 return self.pressed_in_pane(x, y, ribbon_bottom, content_bottom);
             }
         }
@@ -1345,7 +1347,9 @@ impl Editor {
             let content_bottom = self.window_bottom();
             if let Some(pane) = &mut self.recovery {
                 changed |= pane.hover(x, y);
-            } else if self.show_navigation && (x as f32) < self.navigation.width() {
+            } else if self.show_navigation
+                && crate::chrome::mirror::flip_f(x as f32) < self.navigation.width()
+            {
                 changed |= self.navigation.hover(x, y, ribbon_bottom, content_bottom);
             }
 

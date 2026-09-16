@@ -21,6 +21,7 @@ mod icon_catalogue;
 pub mod icons;
 pub mod keytips;
 pub mod minibar;
+pub mod mirror;
 pub mod navigation;
 pub mod palette;
 pub mod pastebadge;

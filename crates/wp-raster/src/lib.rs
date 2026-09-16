@@ -23,7 +23,7 @@ mod path;
 mod png;
 mod raster;
 
-pub use canvas::{Canvas, Color, Turned};
+pub use canvas::{bounds_of, Canvas, Color, Turned};
 pub use path::{Command, Path, Point, Transform};
 pub use png::encode as encode_png;
 pub use raster::{Mask, Rasterizer, Rule};

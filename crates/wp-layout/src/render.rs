@@ -150,6 +150,18 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn draw_onto(&mut self, canvas: &mut Canvas, page: &Page, offset_x: f32, offset_y: f32) {
+        // A window read right to left moves what is drawn; it does not turn
+        // it inside out. So a page — which here is as much a line of a
+        // label as a page of a document — is moved across as one piece,
+        // and everything in it is drawn the way round it was laid out.
+        if let Some(about) = canvas.mirror() {
+            let Some((from, to)) = page.horizontal_extent() else { return };
+            let moved = about - (from + offset_x) - (to + offset_x);
+            let held = canvas.suspend_mirror();
+            self.draw_onto(canvas, page, offset_x + moved, offset_y);
+            canvas.set_mirror(held);
+            return;
+        }
         // Decorations go first so that a glyph sitting on an underline is drawn
         // over it rather than under it.
         // The drawings that go under the text: pictures and shapes in one

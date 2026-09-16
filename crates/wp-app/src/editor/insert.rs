@@ -323,6 +323,12 @@ impl Editor {
                 crate::messages::set_language(crate::messages::PSEUDO);
                 self.relayout();
             }
+            // And the same window read right to left, which is what an
+            // Arabic or a Hebrew interface is.
+            "mirrored" => {
+                crate::messages::set_language(crate::messages::PSEUDO_MIRRORED);
+                self.relayout();
+            }
             // The Document Recovery pane, as the first start after a crash
             // shows it: the copies a run that did not end left behind, with
             // one of them open.

@@ -948,6 +948,7 @@ impl Dialog {
 
     /// A press somewhere in the window.
     pub fn press(&mut self, x: i32, y: i32) -> Reaction {
+        let x = super::mirror::flip(x);
         // A list dropped open takes the press, wherever it lands.
         if let Some(index) = self.open_list {
             let chosen = self.list_row_at(index, x, y);
@@ -1022,6 +1023,7 @@ impl Dialog {
 
     /// Follows the pointer. True when something has to be drawn again.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let over = self.at(x, y);
         let changed = over != self.hovered;
         self.hovered = over;

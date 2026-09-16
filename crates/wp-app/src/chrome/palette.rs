@@ -132,6 +132,7 @@ impl Palette {
 
     #[must_use]
     pub fn covers(&self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let (x, y) = (x as f32, y as f32);
         x >= self.left
             && x < self.left + Self::width()
@@ -142,6 +143,7 @@ impl Palette {
     /// Which swatch a point is on, if any.
     #[must_use]
     pub fn hit(&self, x: i32, y: i32) -> Option<usize> {
+        let x = super::mirror::flip(x);
         let inside_x = x as f32 - self.left - PADDING;
         let inside_y = y as f32 - self.top - PADDING;
         if inside_x < 0.0 || inside_y < 0.0 {
@@ -155,6 +157,7 @@ impl Palette {
 
     /// Lights up whatever the pointer is over. Returns whether that changed.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let found = self.hit(x, y);
         let changed = found != self.hovered;
         self.hovered = found;

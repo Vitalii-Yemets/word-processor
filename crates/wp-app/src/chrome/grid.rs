@@ -54,6 +54,7 @@ impl TableGrid {
     /// Whether a point is inside the whole panel, grid and caption alike.
     #[must_use]
     pub fn covers(&self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let (x, y) = (x as f32, y as f32);
         x >= self.left
             && x < self.left + Self::width()
@@ -64,6 +65,7 @@ impl TableGrid {
     /// How many rows and columns the point under the pointer stands for.
     #[must_use]
     pub fn hit(&self, x: i32, y: i32) -> Option<(usize, usize)> {
+        let x = super::mirror::flip(x);
         let inside_x = x as f32 - self.left - PADDING;
         let inside_y = y as f32 - self.top - PADDING - CAPTION;
         if inside_x < 0.0 || inside_y < 0.0 {
@@ -77,6 +79,7 @@ impl TableGrid {
     /// Lights up as much of the grid as the pointer has reached. Returns
     /// whether that changed anything.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let found = self.hit(x, y);
         // Sweeping off the grid leaves the last size lit rather than going
         // blank, because a pointer that strays a pixel should not undo a

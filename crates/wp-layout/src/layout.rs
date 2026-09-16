@@ -842,6 +842,44 @@ pub struct Page {
     pub turned: Vec<(core::ops::Range<usize>, Turn)>,
 }
 
+impl Page {
+    /// How far the drawn contents reach across, from the leftmost edge to
+    /// the rightmost: the glyphs, the lines under them, the pictures and
+    /// the shapes.
+    ///
+    /// Nothing for a page with nothing on it. Used where a page has to be
+    /// moved as one piece — a line of text in a window read right to left
+    /// moves; it does not have its letters reversed.
+    #[must_use]
+    pub fn horizontal_extent(&self) -> Option<(f32, f32)> {
+        let mut extent: Option<(f32, f32)> = None;
+        let mut widen = |from: f32, to: f32| {
+            extent = Some(match extent {
+                Some((left, right)) => (left.min(from), right.max(to)),
+                None => (from, to),
+            });
+        };
+        for glyph in &self.glyphs {
+            widen(glyph.x, glyph.x + glyph.advance);
+        }
+        for decoration in &self.decorations {
+            widen(decoration.x, decoration.x + decoration.width);
+        }
+        for image in &self.images {
+            widen(image.x, image.x + image.width);
+        }
+        for shape in &self.shapes {
+            widen(shape.x, shape.x + shape.width);
+        }
+        for path in &self.paths {
+            if let Some((left, _, right, _)) = wp_raster::bounds_of(&path.path) {
+                widen(left, right);
+            }
+        }
+        extent
+    }
+}
+
 /// One drawing on a page, whatever kind it is.
 ///
 /// The two kinds are kept in lists of their own because almost everything that

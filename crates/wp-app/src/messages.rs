@@ -53,12 +53,21 @@ const BUILT_IN: &[(&str, &str, &str)] = &[("de", "Deutsch", include_str!("../mes
 /// accented letters, for finding messages that never reach this module.
 pub const PSEUDO: &str = "qps";
 
+/// The same, in a window that reads right to left: the words are the
+/// pseudo-language's, and everything the window is made of is turned about.
+/// It is how a mirrored interface is looked at without a translation into
+/// Arabic or Hebrew to look at it with. Windows has the same pair, and for
+/// the same reason.
+pub const PSEUDO_MIRRORED: &str = "qpsm";
+
 /// What English is called where a language is named by a code.
 pub const ENGLISH: &str = "en";
 
 /// The state: which language, and what has been looked up in it so far.
 struct State {
     language: String,
+    /// Whether the window is read right to left.
+    mirrored: bool,
     catalogue: BTreeMap<String, String>,
     /// Messages already translated and leaked, by their English text.
     known: BTreeMap<&'static str, &'static str>,
@@ -69,6 +78,7 @@ fn state() -> &'static Mutex<State> {
     STATE.get_or_init(|| {
         Mutex::new(State {
             language: ENGLISH.to_owned(),
+            mirrored: false,
             catalogue: BTreeMap::new(),
             known: BTreeMap::new(),
         })
@@ -88,7 +98,7 @@ pub fn t(message: &'static str) -> &'static str {
     if let Some(known) = state.known.get(message) {
         return known;
     }
-    let translated = if state.language == PSEUDO {
+    let translated = if state.language == PSEUDO || state.language == PSEUDO_MIRRORED {
         pseudo(message)
     } else {
         match state.catalogue.get(message) {
@@ -117,7 +127,7 @@ pub fn translated(message: &str) -> String {
     if state.language == ENGLISH {
         return message.to_owned();
     }
-    if state.language == PSEUDO {
+    if state.language == PSEUDO || state.language == PSEUDO_MIRRORED {
         return pseudo(message);
     }
     match state.catalogue.get(message) {
@@ -152,11 +162,35 @@ pub fn set_language(code: &str) {
     }
     state.language = code.to_owned();
     state.known.clear();
-    state.catalogue = if code == ENGLISH || code == PSEUDO {
+    state.catalogue = if code == ENGLISH || code == PSEUDO || code == PSEUDO_MIRRORED {
         BTreeMap::new()
     } else {
         read_catalogue(code).unwrap_or_default()
     };
+    state.mirrored = code == PSEUDO_MIRRORED || reads_right_to_left(code);
+}
+
+/// Whether the interface is read right to left, and so drawn the other way
+/// round: the ribbon from the right, the panes on the right, the scroll bar
+/// on the left.
+///
+/// A catalogue says so of itself, with `direction = rtl` at the top —
+/// because it is a fact about the language and not about the person, and a
+/// person who chooses Arabic has already said everything there is to say
+/// about which way their interface reads.
+#[must_use]
+pub fn is_mirrored() -> bool {
+    state().lock().is_ok_and(|state| state.mirrored)
+}
+
+/// Whether a catalogue says its language is read right to left.
+fn reads_right_to_left(code: &str) -> bool {
+    let text = catalogue_text(code);
+    text.is_some_and(|text| {
+        text.lines()
+            .find_map(|line| line.strip_prefix("direction ="))
+            .is_some_and(|direction| direction.trim() == "rtl")
+    })
 }
 
 /// Which language the interface is being read in.
@@ -196,6 +230,7 @@ pub fn languages() -> Vec<(String, String)> {
         }
     }
     out.push((PSEUDO.to_owned(), "Pseudo (for finding untranslated text)".to_owned()));
+    out.push((PSEUDO_MIRRORED.to_owned(), "Pseudo, right to left".to_owned()));
     out
 }
 
@@ -205,15 +240,20 @@ pub fn folder() -> Option<std::path::PathBuf> {
     Some(crate::settings::Settings::path()?.parent()?.join("messages"))
 }
 
-/// The catalogue for a language: the person's own if they have written one,
-/// else the one that came with the program.
-fn read_catalogue(code: &str) -> Option<BTreeMap<String, String>> {
+/// The catalogue for a language as its text: the person's own if they have
+/// written one, else the one that came with the program.
+fn catalogue_text(code: &str) -> Option<String> {
     if let Some(folder) = folder() {
         if let Ok(text) = std::fs::read_to_string(folder.join(format!("{code}.txt"))) {
-            return Some(parse(&text));
+            return Some(text);
         }
     }
-    BUILT_IN.iter().find(|(known, _, _)| *known == code).map(|(_, _, text)| parse(text))
+    BUILT_IN.iter().find(|(known, _, _)| *known == code).map(|(_, _, text)| (*text).to_owned())
+}
+
+/// The catalogue for a language, read.
+fn read_catalogue(code: &str) -> Option<BTreeMap<String, String>> {
+    catalogue_text(code).map(|text| parse(&text))
 }
 
 /// A catalogue file: what the language is called, and the messages.
@@ -315,6 +355,13 @@ fn unescape(text: &str) -> String {
 /// `{0}` has to stay `{0}` or nothing will be filled in.
 #[must_use]
 pub fn pseudo(message: &str) -> String {
+    // A message that has been through here already is left as it is: some
+    // of what the window shows was put together out of messages, and
+    // marking it twice would say the marking was wrong rather than the
+    // message.
+    if message.starts_with('[') && message.ends_with(']') {
+        return message.to_owned();
+    }
     let mut out = String::with_capacity(message.len() + 2);
     out.push('[');
     let mut inside_placeholder = false;
@@ -434,13 +481,35 @@ mod tests {
     }
 
     #[test]
+    fn a_language_read_right_to_left_says_so_and_a_window_in_it_is_turned() {
+        in_language(ENGLISH, || assert!(!is_mirrored(), "English is read the other way"));
+        in_language(PSEUDO, || assert!(!is_mirrored(), "and so is the pseudo-language"));
+        in_language(PSEUDO_MIRRORED, || {
+            assert!(is_mirrored(), "the mirrored one is not");
+            assert_eq!(t("Bold"), "[Böld]", "and says the same words");
+        });
+        in_language("de", || assert!(!is_mirrored(), "German is read left to right"));
+    }
+
+    #[test]
+    fn a_catalogue_says_which_way_its_language_reads() {
+        let mut written = write("עברית", &[("Bold".to_owned(), "מודגש".to_owned())]);
+        written.insert_str(0, "direction = rtl\n");
+        assert!(
+            written.lines().any(|line| line.trim() == "direction = rtl"),
+            "which is a line at the top of the file, where a translator can see it"
+        );
+        assert_eq!(parse(&written).get("Bold").map(String::as_str), Some("מודגש"));
+    }
+
+    #[test]
     fn english_and_the_languages_that_come_with_the_program_are_offered() {
         let offered = languages();
         assert_eq!(offered.first().map(|(code, _)| code.as_str()), Some(ENGLISH));
         assert!(offered.iter().any(|(code, name)| code == "de" && name == "Deutsch"));
         assert!(
-            offered.last().map(|(code, _)| code.as_str()) == Some(PSEUDO),
-            "and the pseudo-language last, where it is out of the way"
+            offered.last().map(|(code, _)| code.as_str()) == Some(PSEUDO_MIRRORED),
+            "and the pseudo-languages last, where they are out of the way"
         );
     }
 }

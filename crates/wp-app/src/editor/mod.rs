@@ -779,6 +779,54 @@ impl Editor {
         editor
     }
 
+    /// What the tests of a mirrored window need to ask about: where the
+    /// page is drawn, what is under a point, and where the caret went.
+    ///
+    /// Kept behind `cfg(test)` rather than opened to the whole program:
+    /// these are the inside of the editor, and the only caller that has
+    /// any business with them is the one checking that what is drawn in a
+    /// turned window is found in the same place. See [`crate::mirrored`].
+    #[cfg(test)]
+    pub(crate) fn page_origin_for_test(&self, index: usize) -> (f32, f32) {
+        let (x, y) = self.page_origin(index);
+        (x, self.content_top() + y - self.scroll_down())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn position_for_test(&self, x: i32, y: i32) -> Option<TextPosition> {
+        self.position_at(x, y)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn caret_for_test(&self) -> TextPosition {
+        self.caret()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pane_width_for_test(&self) -> f32 {
+        self.pane_width()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn show_navigation_for_test(&mut self, showing: bool) {
+        self.show_navigation = showing;
+        self.needs_redraw = true;
+        self.relayout();
+    }
+
+    /// Whether a point of the window is over the pane, as the pane itself
+    /// answers it.
+    #[cfg(test)]
+    pub(crate) fn over_pane_for_test(&self, x: i32) -> bool {
+        crate::chrome::mirror::flip_f(x as f32) < self.pane_width()
+    }
+
+    /// The ribbon, for a test that asks where a button was drawn.
+    #[cfg(test)]
+    pub(crate) fn ribbon_for_test(&self) -> &Ribbon {
+        &self.ribbon
+    }
+
     /// Where the caret is. The document owns it, so undo can put it back.
     fn caret(&self) -> TextPosition {
         self.document.caret()
@@ -869,7 +917,32 @@ impl Editor {
     /// Except sideways, where the scroll has already been taken off the across
     /// axis: there is nothing left for the caller to subtract, which is what
     /// [`Editor::scroll_down`] says.
+    /// Whether the window is drawn the other way round, because the
+    /// interface is read right to left. See [`crate::messages::is_mirrored`].
+    #[must_use]
+    pub(super) fn mirrored(&self) -> bool {
+        crate::messages::is_mirrored()
+    }
+
     fn page_origin(&self, index: usize) -> (f32, f32) {
+        let (x, y) = self.page_origin_as_laid_out(index);
+        // Where the page is drawn, which in a window read right to left is
+        // the other side of it. What is on the page is not turned; the page
+        // is moved.
+        match self.mirrored() {
+            true => (self.view_width as f32 - x - self.page_width_of(index), y),
+            false => (x, y),
+        }
+    }
+
+    /// How wide the page is, for moving it across.
+    fn page_width_of(&self, index: usize) -> f32 {
+        self.pages.get(index).map_or(0.0, |page| page.width)
+    }
+
+    /// Where the page is in the coordinates it was laid out in, which is
+    /// what the rulers above it are drawn from.
+    pub(super) fn page_origin_as_laid_out(&self, index: usize) -> (f32, f32) {
         let (trim_top, _) = self.page_trim();
 
         if self.is_side_to_side() {

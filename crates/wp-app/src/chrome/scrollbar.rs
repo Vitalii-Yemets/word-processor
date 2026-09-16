@@ -93,6 +93,7 @@ impl ScrollBar {
     /// What a point on the bar is.
     #[must_use]
     pub fn hit(&self, x: i32, y: i32) -> Option<Hit> {
+        let x = super::mirror::flip(x);
         if !self.covers(x, y) {
             return None;
         }
@@ -117,6 +118,7 @@ impl ScrollBar {
     /// Whether a point is on the bar at all.
     #[must_use]
     pub fn covers(&self, x: i32, y: i32) -> bool {
+        let x = super::mirror::flip(x);
         let (x, y) = (x as f32, y as f32);
         let (width, height) =
             if self.vertical { (THICKNESS, self.length) } else { (self.length, THICKNESS) };
@@ -129,6 +131,7 @@ impl ScrollBar {
     /// thumb does not jump under the pointer when the drag starts.
     #[must_use]
     pub fn position_at(&self, x: i32, y: i32, grab: f32) -> f32 {
+        let x = super::mirror::flip(x);
         let along = if self.vertical { y as f32 - self.top } else { x as f32 - self.left };
         let travel = (self.room() - self.thumb_length()).max(1.0);
         let share = ((along - grab - ARROW) / travel).clamp(0.0, 1.0);
@@ -138,6 +141,7 @@ impl ScrollBar {
     /// How far down the thumb a point is, for a drag to hold on to.
     #[must_use]
     pub fn grab_offset(&self, x: i32, y: i32) -> f32 {
+        let x = super::mirror::flip(x);
         let along = if self.vertical { y as f32 - self.top } else { x as f32 - self.left };
         (along - self.thumb_start()).clamp(0.0, self.thumb_length())
     }
