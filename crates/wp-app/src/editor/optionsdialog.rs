@@ -35,30 +35,46 @@ const DARK: usize = 2;
 const ROW_START: usize = 3;
 const ZOOM: usize = 4;
 const UNIT: usize = 5;
+const FILE_TYPES: usize = 6;
+const FILE_TYPES_SAID: usize = 7;
 
 // Display.
-const TAB_DISPLAY: usize = 6;
-const ALWAYS_SHOW: usize = 7;
-const MARKS: usize = 8;
-const GRIDLINES: usize = 9;
-const PAGE_DISPLAY: usize = 10;
-const RULERS: usize = 11;
-const NAVIGATION: usize = 12;
-const WHITE_SPACE: usize = 13;
+const TAB_DISPLAY: usize = 8;
+const ALWAYS_SHOW: usize = 9;
+const MARKS: usize = 10;
+const GRIDLINES: usize = 11;
+const PAGE_DISPLAY: usize = 12;
+const RULERS: usize = 13;
+const NAVIGATION: usize = 14;
+const WHITE_SPACE: usize = 15;
+
+// Save.
+const TAB_SAVE: usize = 16;
+const SAVING: usize = 17;
+const AUTOSAVE: usize = 18;
+const AUTOSAVE_MINUTES: usize = 19;
+const KEEP_AUTOSAVED: usize = 20;
+const RECOVERY_FOLDER: usize = 21;
 
 // Proofing.
-const TAB_PROOFING: usize = 14;
-const AUTOCORRECT: usize = 15;
-const AUTOCORRECT_SAID: usize = 16;
-const CORRECTING: usize = 17;
-const PROOFING: usize = 18;
-const HIDE_SPELLING: usize = 19;
+const TAB_PROOFING: usize = 22;
+const AUTOCORRECT: usize = 23;
+const AUTOCORRECT_SAID: usize = 24;
+const CORRECTING: usize = 25;
+const PROOFING: usize = 26;
+const HIDE_SPELLING: usize = 27;
 
 /// Which tab of the dialog Proofing is, so its button is drawn on that one.
-const TAB_PROOFING_PAGE: usize = 2;
+const TAB_PROOFING_PAGE: usize = 3;
+/// And which General is, for the button that registers the file types.
+const TAB_GENERAL_PAGE: usize = 0;
 
 /// Word's button for the dialog behind this one.
 pub(super) const AUTOCORRECT_OPTIONS: &str = "AutoCorrect Options...";
+
+/// The button that tells the desktop this program opens Word documents.
+/// Word's own wording for it.
+pub(super) const MAKE_DEFAULT: &str = "Make Default";
 
 impl Editor {
     /// Opens Word's Options.
@@ -68,6 +84,58 @@ impl Editor {
         self.editing_chrome = self.ribbon.custom.clone();
         let dialog = self.options_dialog();
         self.ask(Asking::Options, dialog)
+    }
+
+    /// What the General page says about which program opens documents.
+    ///
+    /// Three answers, and each is true of some machine: it already does, it
+    /// does not, or this build has no desktop to ask.
+    pub(super) fn default_program_line(&self) -> String {
+        let kinds = super::files::DESKTOP_KINDS;
+        let Some(word) = kinds.iter().find(|kind| kind.extension == ".docx") else {
+            return "This program can open Word documents.".to_owned();
+        };
+        if wp_shell::files::opens(word) {
+            "Word documents open in this program.".to_owned()
+        } else if wp_shell::files::defaults_are_chosen_by_hand() {
+            "Word documents do not open in this program. Make Default registers \
+             it and opens the system's own page for choosing."
+                .to_owned()
+        } else {
+            "Word documents do not open in this program.".to_owned()
+        }
+    }
+
+    /// Tells the desktop this program opens Word documents.
+    ///
+    /// On a desktop where a program may say it is the one to open a kind,
+    /// that is the end of it. On Windows the kinds are registered — which is
+    /// what puts the program in Open With and in Default Apps — and then the
+    /// page where the person chooses is opened, because the choice is kept
+    /// where a program cannot write it and pretending otherwise would be a
+    /// button that lies.
+    pub(super) fn make_default_program(&mut self) -> Response {
+        let kinds = super::files::DESKTOP_KINDS;
+        let registered = wp_shell::files::associate(kinds, "Word Processor");
+        let word = kinds.iter().find(|kind| kind.extension == ".docx");
+        let now_opens = word.is_some_and(wp_shell::files::opens);
+        self.status = if !registered {
+            "The file types could not be registered".to_owned()
+        } else if now_opens {
+            "Word documents now open in this program".to_owned()
+        } else if wp_shell::files::defaults_are_chosen_by_hand() {
+            wp_shell::files::choose_defaults();
+            "Registered. Choose this program in the page that opened".to_owned()
+        } else {
+            "The file types were registered".to_owned()
+        };
+        // The dialog is standing, and the line it shows is now out of date.
+        let line = self.default_program_line();
+        if let Some(dialog) = &mut self.dialog {
+            dialog.set_said(FILE_TYPES_SAID, &line);
+        }
+        self.needs_redraw = true;
+        Response::Redraw
     }
 
     /// The dialog itself, filled in from how the window is now.
@@ -90,6 +158,12 @@ impl Editor {
                 items: Unit::ALL.iter().map(|unit| unit.label().to_owned()).collect(),
                 current: Unit::ALL.iter().position(|unit| *unit == self.unit).unwrap_or(0),
             },
+            // Which program the desktop opens a document with. Word says the
+            // same thing in the same place, and for the same reason: a person
+            // who wants their documents to open here has nowhere else to say
+            // so.
+            Field::Group("File types".to_owned()),
+            Field::Said { label: self.default_program_line(), value: String::new() },
             // --- Display ---------------------------------------------------
             Field::Tab("Display".to_owned()),
             Field::Group("Always show these on screen".to_owned()),
@@ -99,6 +173,25 @@ impl Editor {
             check("Rulers", self.show_rulers),
             check("Navigation pane", self.show_navigation),
             check("White space between pages", !self.joined_pages),
+            // --- Save ------------------------------------------------------
+            Field::Tab("Save".to_owned()),
+            Field::Group("Save documents".to_owned()),
+            check("Save AutoRecover information", self.autosave),
+            Field::Number {
+                label: "every".to_owned(),
+                value: self.autosave_minutes.to_string(),
+                unit: "minutes",
+            },
+            check(
+                "Keep the last AutoRecovered version if I close without saving",
+                self.keep_autosaved,
+            ),
+            Field::Said {
+                label: "AutoRecover file location".to_owned(),
+                value: super::autorecover::folder()
+                    .map(|folder| folder.display().to_string())
+                    .unwrap_or_else(|| "nowhere this program can write".to_owned()),
+            },
             // --- Proofing --------------------------------------------------
             Field::Tab("Proofing".to_owned()),
             Field::Group("AutoCorrect options".to_owned()),
@@ -129,6 +222,8 @@ impl Editor {
             (ROW_START, "a row"),
             (ZOOM, "a number"),
             (UNIT, "a list"),
+            (FILE_TYPES, "a group"),
+            (FILE_TYPES_SAID, "a line"),
             (TAB_DISPLAY, "a tab"),
             (ALWAYS_SHOW, "a group"),
             (MARKS, "a tick box"),
@@ -137,6 +232,12 @@ impl Editor {
             (RULERS, "a tick box"),
             (NAVIGATION, "a tick box"),
             (WHITE_SPACE, "a tick box"),
+            (TAB_SAVE, "a tab"),
+            (SAVING, "a group"),
+            (AUTOSAVE, "a tick box"),
+            (AUTOSAVE_MINUTES, "a number"),
+            (KEEP_AUTOSAVED, "a tick box"),
+            (RECOVERY_FOLDER, "a line"),
             (TAB_PROOFING, "a tab"),
             (AUTOCORRECT, "a group"),
             (AUTOCORRECT_SAID, "a line"),
@@ -158,6 +259,7 @@ impl Editor {
             vec![
                 Button { label: "OK".to_owned(), answer: Answer::Accept, default: true },
                 named(AUTOCORRECT_OPTIONS),
+                named(MAKE_DEFAULT),
                 named(ribbondialog::ADD),
                 named(ribbondialog::REMOVE),
                 named(ribbondialog::MOVE_UP),
@@ -170,7 +272,8 @@ impl Editor {
         // and a dialog that changed size when a tab was pressed would jump
         // about under the pointer.
         .wide(760.0)
-        .button_on_tab(Answer::Named(AUTOCORRECT_OPTIONS), TAB_PROOFING_PAGE);
+        .button_on_tab(Answer::Named(AUTOCORRECT_OPTIONS), TAB_PROOFING_PAGE)
+        .button_on_tab(Answer::Named(MAKE_DEFAULT), TAB_GENERAL_PAGE);
         for label in [
             ribbondialog::ADD,
             ribbondialog::REMOVE,
@@ -203,6 +306,11 @@ impl Editor {
         // Word's wording is the white space; the editor keeps whether the
         // pages are joined, which is the other way round.
         self.joined_pages = !dialog.ticked(WHITE_SPACE);
+        self.autosave = dialog.ticked(AUTOSAVE);
+        if let Ok(minutes) = dialog.said(AUTOSAVE_MINUTES).trim().parse::<u32>() {
+            self.autosave_minutes = minutes.clamp(1, 120);
+        }
+        self.keep_autosaved = dialog.ticked(KEEP_AUTOSAVED);
         self.show_proofing = dialog.ticked(PROOFING);
         self.document.set_setting_flag("hideSpellingErrors", dialog.ticked(HIDE_SPELLING));
 
@@ -216,6 +324,9 @@ impl Editor {
         // Remembered as well as done: these follow the person from one document
         // to the next, which is the whole difference between a setting and a
         // command.
+        self.settings.autosave = Some(self.autosave);
+        self.settings.autosave_minutes = Some(self.autosave_minutes);
+        self.settings.keep_autosaved = Some(self.keep_autosaved);
         self.settings.dark = Some(dark);
         self.settings.rulers = Some(self.show_rulers);
         self.settings.navigation = Some(self.show_navigation);

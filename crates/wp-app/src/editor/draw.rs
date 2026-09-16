@@ -367,7 +367,18 @@ impl Editor {
             self.ribbon = ribbon;
         }
 
-        if self.show_navigation {
+        if let Some(mut pane) = self.recovery.take() {
+            let top = self.ribbon_bottom();
+            let bottom = self.window_bottom();
+            pane.draw(
+                &mut self.canvas,
+                &mut self.chrome_engine,
+                &mut self.renderer,
+                (top, bottom),
+                &theme,
+            );
+            self.recovery = Some(pane);
+        } else if self.show_navigation {
             let contents = self.pane_contents();
             let current = match self.navigation.section {
                 crate::chrome::navigation::Section::Headings => {

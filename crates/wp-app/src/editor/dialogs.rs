@@ -212,6 +212,13 @@ impl Editor {
             {
                 Some(self.customise_button(button))
             }
+            // The file types are registered with the desktop there and then,
+            // and the line above the button is rewritten to say what came of
+            // it — a button that reported nothing would leave the person
+            // pressing it twice.
+            (Some(Asking::Options), super::optionsdialog::MAKE_DEFAULT) => {
+                Some(self.make_default_program())
+            }
             // Word's Proofing page hands over to the AutoCorrect dialog. What
             // Options said is applied on the way, so that nothing typed into it
             // is lost by going to look at the corrections.

@@ -36,7 +36,7 @@ use super::Editor;
 ///
 /// Checked where the dialog is built, so a field put in above them fails loudly
 /// rather than quietly making every row here point at the wrong thing.
-pub(super) const FIRST: usize = 20;
+pub(super) const FIRST: usize = 28;
 
 // The Quick Access Toolbar tab.
 pub(super) const TAB_QUICK: usize = FIRST;
@@ -51,8 +51,8 @@ pub(super) const RIBBON_ALL: usize = FIRST + 6;
 pub(super) const RIBBON_TREE: usize = FIRST + 7;
 
 /// Which tab of Options each of them is.
-pub(super) const QUICK_PAGE: usize = 3;
-pub(super) const RIBBON_PAGE: usize = 4;
+pub(super) const QUICK_PAGE: usize = 4;
+pub(super) const RIBBON_PAGE: usize = 5;
 
 /// Word's buttons beside the two lists.
 pub(super) const ADD: &str = "Add";

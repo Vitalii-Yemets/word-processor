@@ -303,6 +303,32 @@ impl Editor {
                 ];
                 self.compose("日本語をにゅう".to_owned(), 7, attributes.to_vec());
             }
+            // The Document Recovery pane, as the first start after a crash
+            // shows it: the copies a run that did not end left behind, with
+            // one of them open.
+            "recovery" => {
+                let entries = vec![
+                    super::autorecover::Recovered {
+                        name: "Annual report.docx".to_owned(),
+                        original: Some(std::path::PathBuf::from(
+                            "/home/somebody/Annual report.docx",
+                        )),
+                        saved: "2026-09-16T09:41:00Z".to_owned(),
+                        copy: std::path::PathBuf::from("/tmp/recovery/1-1.docx"),
+                    },
+                    super::autorecover::Recovered {
+                        name: "Letter to the bank.docx".to_owned(),
+                        original: None,
+                        saved: "2026-09-16T09:12:00Z".to_owned(),
+                        copy: std::path::PathBuf::from("/tmp/recovery/1-2.docx"),
+                    },
+                ];
+                self.show_recovered(entries);
+                if let Some(pane) = &mut self.recovery {
+                    pane.opened = Some(0);
+                }
+                self.relayout();
+            }
             // The File Conversion dialog over a text file whose bytes do not
             // say what they are, and the one for saving as text.
             "textopen" => {
@@ -651,6 +677,14 @@ impl Editor {
             }
             "options" => {
                 self.open_options();
+            }
+            // The Save page of Options: how often a copy of the work is
+            // taken, and where it goes.
+            "savepage" => {
+                self.open_options();
+                if let Some(dialog) = &mut self.dialog {
+                    dialog.show_tab(2);
+                }
             }
             "quickaccess" | "customribbon" => {
                 // The two pages of Options that are two lists side by side,

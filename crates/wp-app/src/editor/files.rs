@@ -10,6 +10,89 @@ use wp_shell::Response;
 
 use super::Editor;
 
+/// The kinds this program tells the desktop it opens.
+///
+/// Word registers every kind it can read, which is what puts it in Open With
+/// for all of them, and asks to be the one that opens the documents among
+/// them. A plain text file and a web page are not documents in that sense:
+/// the machine already has a program for each, and taking those would be
+/// taking something nobody asked to give.
+pub const DESKTOP_KINDS: &[wp_shell::files::Kind] = &[
+    wp_shell::files::Kind {
+        extension: ".docx",
+        description: "Word Document",
+        media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        becomes_default: true,
+    },
+    wp_shell::files::Kind {
+        extension: ".docm",
+        description: "Word Macro-Enabled Document",
+        media_type: "application/vnd.ms-word.document.macroEnabled.12",
+        becomes_default: true,
+    },
+    wp_shell::files::Kind {
+        extension: ".dotx",
+        description: "Word Template",
+        media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+        becomes_default: true,
+    },
+    wp_shell::files::Kind {
+        extension: ".dotm",
+        description: "Word Macro-Enabled Template",
+        media_type: "application/vnd.ms-word.template.macroEnabled.12",
+        becomes_default: true,
+    },
+    wp_shell::files::Kind {
+        extension: ".doc",
+        description: "Word 97-2003 Document",
+        media_type: "application/msword",
+        becomes_default: true,
+    },
+    wp_shell::files::Kind {
+        extension: ".rtf",
+        description: "Rich Text Format",
+        media_type: "application/rtf",
+        becomes_default: true,
+    },
+    wp_shell::files::Kind {
+        extension: ".odt",
+        description: "OpenDocument Text",
+        media_type: "application/vnd.oasis.opendocument.text",
+        becomes_default: true,
+    },
+    wp_shell::files::Kind {
+        extension: ".txt",
+        description: "Text Document",
+        media_type: "text/plain",
+        becomes_default: false,
+    },
+    wp_shell::files::Kind {
+        extension: ".htm",
+        description: "Web Page",
+        media_type: "text/html",
+        becomes_default: false,
+    },
+    wp_shell::files::Kind {
+        extension: ".html",
+        description: "Web Page",
+        media_type: "text/html",
+        becomes_default: false,
+    },
+];
+
+/// What kind the desktop would call a file, by its name.
+///
+/// Empty for a name this program has nothing to say about, which the
+/// desktop's recent list takes as "some sort of file" rather than a lie.
+#[must_use]
+pub fn media_type_of(path: &Path) -> &'static str {
+    let extension = path
+        .extension()
+        .map(|extension| format!(".{}", extension.to_string_lossy().to_lowercase()))
+        .unwrap_or_default();
+    DESKTOP_KINDS.iter().find(|kind| kind.extension == extension).map_or("", |kind| kind.media_type)
+}
+
 /// What a document with no file of its own is called.
 pub const UNTITLED: &str = "Document";
 
@@ -180,7 +263,7 @@ impl Editor {
     /// saved as `.dotx` is a template from then on. A kind that cannot hold
     /// macros is asked about first, in Word's words, when there are macros
     /// to lose.
-    fn write_document(&mut self, path: &Path) -> bool {
+    pub(super) fn write_document(&mut self, path: &Path) -> bool {
         // A text file is written through its own dialog, which asks how, and
         // is not written until that is answered: see [`super::textfiles`].
         if super::textfiles::is_text_path(path) {
@@ -308,6 +391,7 @@ impl Editor {
         self.status = format!("Saved {}", path.display());
         self.update_title();
         self.remember_recent(path);
+        self.saved_to_disk();
         true
     }
 
@@ -320,10 +404,22 @@ impl Editor {
         if self.settings.remember(path) {
             self.settings.save();
         }
+        // And the desktop's own list, which is what the taskbar's jump list
+        // and a file manager's Recent place show. A document opened here and
+        // nowhere else is a document the rest of the machine has never heard
+        // of.
+        wp_shell::files::remember(path, media_type_of(path));
     }
 
     /// Saves where the document came from, asking where when it came from
     /// nowhere.
+    /// The copy is taken away when the work reaches the disk, and the clock
+    /// for the next one starts again from the save.
+    pub(super) fn saved_to_disk(&mut self) {
+        self.drop_recovery_copy();
+        self.autosaved = std::time::Instant::now();
+    }
+
     pub(super) fn save_now(&mut self) -> bool {
         match self.file.clone() {
             // A PDF is not written back: the document made from it is saved
@@ -380,9 +476,26 @@ impl Editor {
         }
         match wp_shell::dialog::ask_to_save(&self.document_name()) {
             wp_shell::dialog::Answer::Yes => self.save_now(),
-            wp_shell::dialog::Answer::No => true,
+            // Word's setting: work thrown away on purpose can still be got
+            // back, because "don't save" is answered by people in a hurry.
+            // The copy is left where the next start will find it.
+            wp_shell::dialog::Answer::No => {
+                if self.keep_autosaved {
+                    self.write_recovery_copy();
+                    self.recovery_written = false;
+                } else {
+                    self.drop_recovery_copy();
+                }
+                true
+            }
             wp_shell::dialog::Answer::Cancel => false,
         }
+    }
+
+    /// What the last window does on its way out: the copy goes, unless one
+    /// was deliberately left behind by an answer of "don't save".
+    pub(super) fn finish_autorecover(&mut self) {
+        self.drop_recovery_copy();
     }
 
     /// Replaces what is being edited, and starts afresh around it.
@@ -834,6 +947,40 @@ mod tests {
         assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
         assert!(has_picture(&editor), "the picture did not come back from inside the file");
         let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_document_saved_is_a_document_the_desktop_has_heard_of() {
+        // Where the desktop keeps its list is named by the environment, and
+        // the environment belongs to the whole program: one at a time.
+        static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _held = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let folder = folder("desktop-list");
+        let was = std::env::var("XDG_DATA_HOME").ok();
+        std::env::set_var("XDG_DATA_HOME", &folder);
+
+        let mut editor = editor("Something worth remembering");
+        let path = folder.join("Remembered.docx");
+        assert!(editor.write_document(&path), "the document is saved");
+
+        let list = std::fs::read_to_string(folder.join("recently-used.xbel"));
+        match was {
+            Some(value) => std::env::set_var("XDG_DATA_HOME", value),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+        let list = list.expect("the desktop's own list of documents opened lately");
+        assert!(list.contains("Remembered.docx"), "the document saved is on it: {list}");
+        assert!(
+            list.contains("wordprocessingml.document"),
+            "under the kind of document it is: {list}"
+        );
+        // And on the program's own list, which is the other half of the same
+        // moment.
+        assert_eq!(
+            editor.settings.recent.first().map(String::as_str),
+            Some(path.display().to_string().as_str())
+        );
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

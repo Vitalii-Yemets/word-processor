@@ -1236,6 +1236,117 @@ pub mod desktop {
     }
 }
 
+/// The files a desktop knows this program by.
+///
+/// Two things, and they are the same thing from two sides. The desktop keeps
+/// its own list of documents opened lately — the jump list on the Windows
+/// taskbar, the Recent place in a file manager — and a program that opens a
+/// document and does not tell it is a program whose documents are missing
+/// from everywhere but its own Open page. And the desktop decides which
+/// program opens a kind of file: until this one says which kinds it can open,
+/// double-clicking a `.docx` cannot reach it and it is not even on the list
+/// of programs to open one with.
+pub mod files {
+    use std::path::Path;
+
+    /// A kind of file this program opens, as the desktop names one.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct Kind {
+        /// The extension with its dot: `.docx`.
+        pub extension: &'static str,
+        /// What a person calls it: "Word Document". What Windows shows in
+        /// the file's column and in the Open With list.
+        pub description: &'static str,
+        /// The media type, which is how a Linux desktop names a kind, and
+        /// how a file manager's Recent list knows what it is looking at.
+        pub media_type: &'static str,
+        /// Whether this program asks to be the one that opens the kind, or
+        /// only one of the ones that can.
+        ///
+        /// A word processor that made itself the program for every web page
+        /// on the machine is a program nobody can browse with, and one that
+        /// took every plain text file from the text editor would be as
+        /// unwelcome. Those kinds are registered so that Open With offers
+        /// this program; the default is asked for only for documents.
+        pub becomes_default: bool,
+    }
+
+    /// Puts a document on the desktop's own list of documents opened lately.
+    ///
+    /// Called when one is opened and when one is saved — the same two moments
+    /// as the program's own list, because they are the two moments a person
+    /// would say they had used the file.
+    pub fn remember(path: &Path, media_type: &str) {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::remember_document(path, media_type);
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = (path, media_type);
+        }
+    }
+
+    /// Tells the desktop this program opens these kinds of file.
+    ///
+    /// Returns whether the desktop took it. What that leaves behind differs:
+    /// a Linux desktop lets a program say it is the one to open a kind, and
+    /// this makes it so; Windows lets a program say only that it *can*,
+    /// because which program opens a kind is the person's to choose and is
+    /// kept where a program cannot write it. So on Windows this registers the
+    /// kinds — which is what puts the program in Open With, in Default Apps
+    /// and in the list a `.docx` offers — and [`choose_defaults`] is how the
+    /// person is then taken to the page where they choose.
+    pub fn associate(kinds: &[Kind], program_name: &str) -> bool {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::associate_kinds(kinds, program_name)
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = (kinds, program_name);
+            false
+        }
+    }
+
+    /// Whether this program is the one the desktop opens that kind with.
+    #[must_use]
+    pub fn opens(kind: &Kind) -> bool {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::opens_kind(kind)
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = kind;
+            false
+        }
+    }
+
+    /// Whether the desktop needs the person to choose rather than taking a
+    /// program's word for it. True on Windows, false elsewhere.
+    #[must_use]
+    pub fn defaults_are_chosen_by_hand() -> bool {
+        cfg!(windows)
+    }
+
+    /// Opens the desktop's own page for choosing which program opens what.
+    ///
+    /// Returns whether the desktop opened it. This is where Windows sends a
+    /// program that has registered its kinds: the choice is made there, in
+    /// the page the person already knows, rather than taken from them here.
+    pub fn choose_defaults() -> bool {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::choose_default_programs()
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            false
+        }
+    }
+}
+
 /// Tells the desktop what the window looks like, so that the parts it draws
 /// itself match the parts this program draws.
 ///

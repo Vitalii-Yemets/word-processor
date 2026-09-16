@@ -15,6 +15,7 @@
 //! through the manager's own messages for it.
 
 mod dialogs;
+mod files;
 pub(crate) mod keys;
 pub(crate) mod x11;
 
@@ -1193,6 +1194,7 @@ pub(crate) fn open_in_shell(address: &str) -> bool {
 // --- Dialogs ----------------------------------------------------------------------
 
 pub(crate) use dialogs::{ask_ok_cancel, ask_to_save, ask_yes_no, choose_file, show_error};
+pub(crate) use files::{associate_kinds, choose_default_programs, opens_kind, remember_document};
 
 // --- Printing: named in the roadmap as A5 -----------------------------------------
 

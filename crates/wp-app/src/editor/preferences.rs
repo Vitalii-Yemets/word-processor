@@ -46,6 +46,15 @@ impl Editor {
         if let Some(white_space) = settings.white_space {
             self.joined_pages = !white_space;
         }
+        if let Some(on) = settings.autosave {
+            self.autosave = on;
+        }
+        if let Some(minutes) = settings.autosave_minutes {
+            self.autosave_minutes = minutes.clamp(1, 120);
+        }
+        if let Some(on) = settings.keep_autosaved {
+            self.keep_autosaved = on;
+        }
         if let Some(rules) = &settings.autocorrect {
             self.autocorrect = rules.clone();
         }

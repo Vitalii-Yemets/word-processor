@@ -497,9 +497,13 @@ impl Document {
         self.styles.resolve_run(paragraph.style(), &run.properties)
     }
 
-    /// The prefix this document uses for the WordprocessingML namespace.
-    /// Marks the tree as changed, so saving writes it out again.
-    pub(crate) fn mark_modified(&mut self) {
+    /// Says the document holds changes that are not on disk.
+    ///
+    /// Used inside for a tree that has been edited, and from outside for a
+    /// document that did not come off disk at all — one recovered from a
+    /// copy after a crash is exactly that, and a program that did not say
+    /// so would let the person close it without being asked.
+    pub fn mark_modified(&mut self) {
         self.modified = true;
     }
 

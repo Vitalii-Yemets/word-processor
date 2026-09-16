@@ -13,6 +13,7 @@
 
 use std::cell::RefCell;
 use std::ffi::c_void;
+use std::path::Path;
 
 use crate::{App, CompositionAttribute, Error, Event, Key, Modifiers, Response, WindowOptions};
 
@@ -2555,6 +2556,302 @@ pub(crate) fn open_in_shell(address: &str) -> bool {
         )
     };
     result as usize > SHELL_EXECUTE_FLOOR
+}
+
+// --- The files the desktop knows this program by ----------------------------
+
+#[link(name = "advapi32")]
+extern "system" {
+    fn RegCreateKeyExW(
+        key: Handle,
+        name: *const u16,
+        reserved: u32,
+        class: *const u16,
+        options: u32,
+        access: u32,
+        security: *const c_void,
+        result: *mut Handle,
+        disposition: *mut u32,
+    ) -> i32;
+    fn RegOpenKeyExW(
+        key: Handle,
+        name: *const u16,
+        options: u32,
+        access: u32,
+        result: *mut Handle,
+    ) -> i32;
+    fn RegSetValueExW(
+        key: Handle,
+        name: *const u16,
+        reserved: u32,
+        kind: u32,
+        data: *const u8,
+        length: u32,
+    ) -> i32;
+    fn RegQueryValueExW(
+        key: Handle,
+        name: *const u16,
+        reserved: *mut u32,
+        kind: *mut u32,
+        data: *mut u8,
+        length: *mut u32,
+    ) -> i32;
+    fn RegCloseKey(key: Handle) -> i32;
+}
+
+#[link(name = "shell32")]
+extern "system" {
+    fn SHAddToRecentDocs(flags: u32, path: *const c_void);
+    fn SHChangeNotify(event: i32, flags: u32, first: *const c_void, second: *const c_void);
+}
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetModuleFileNameW(module: Handle, name: *mut u16, length: u32) -> u32;
+}
+
+/// The two roots used here. `HKEY_CURRENT_USER` is where a program writes what
+/// it knows about itself; `HKEY_CLASSES_ROOT` is the merged view of what the
+/// person and the machine have between them decided, which is the only honest
+/// place to ask what actually opens a file.
+const HKEY_CLASSES_ROOT: Handle = 0x8000_0000 as Handle;
+const HKEY_CURRENT_USER: Handle = 0x8000_0001 as Handle;
+const KEY_READ: u32 = 0x0002_0019;
+const KEY_WRITE: u32 = 0x0002_0006;
+const REG_SZ: u32 = 1;
+const ERROR_SUCCESS: i32 = 0;
+/// `SHAddToRecentDocs` takes a wide path when told so.
+const SHARD_PATHW: u32 = 3;
+/// "The association between a file kind and a program has changed."
+const SHCNE_ASSOCCHANGED: i32 = 0x0800_0000;
+const SHCNF_IDLIST: u32 = 0;
+
+/// This program's own file, which every registration has to name.
+fn program_path() -> Option<String> {
+    let mut buffer = [0u16; 32768];
+    // SAFETY: a null module means this program, and the buffer is as long as
+    // the length passed with it.
+    let length = unsafe {
+        GetModuleFileNameW(core::ptr::null_mut(), buffer.as_mut_ptr(), buffer.len() as u32)
+    };
+    if length == 0 || length as usize >= buffer.len() {
+        return None;
+    }
+    Some(String::from_utf16_lossy(&buffer[..length as usize]))
+}
+
+/// Writes one string value under `HKEY_CURRENT_USER`, making the key.
+fn write_string(path: &str, value_name: Option<&str>, value: &str) -> bool {
+    let wide_path = wide(path);
+    let mut key: Handle = core::ptr::null_mut();
+    // SAFETY: a null-terminated name, and a handle written only on success,
+    // which is closed below on every path out.
+    let made = unsafe {
+        RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            wide_path.as_ptr(),
+            0,
+            core::ptr::null(),
+            0,
+            KEY_WRITE,
+            core::ptr::null(),
+            &mut key,
+            core::ptr::null_mut(),
+        )
+    };
+    if made != ERROR_SUCCESS {
+        return false;
+    }
+    let name = value_name.map(wide);
+    let data = wide(value);
+    // SAFETY: the data is the string's own bytes, its length counted in bytes
+    // including the terminator, which is what REG_SZ means.
+    let written = unsafe {
+        RegSetValueExW(
+            key,
+            name.as_ref().map_or(core::ptr::null(), |name| name.as_ptr()),
+            0,
+            REG_SZ,
+            data.as_ptr().cast::<u8>(),
+            (data.len() * 2) as u32,
+        )
+    };
+    // SAFETY: the handle came from the call above and is not used again.
+    unsafe { RegCloseKey(key) };
+    written == ERROR_SUCCESS
+}
+
+/// Reads one string value from the merged view of the classes.
+fn read_class_string(path: &str, value_name: Option<&str>) -> Option<String> {
+    let wide_path = wide(path);
+    let mut key: Handle = core::ptr::null_mut();
+    // SAFETY: as above; the handle is closed before returning.
+    let opened =
+        unsafe { RegOpenKeyExW(HKEY_CLASSES_ROOT, wide_path.as_ptr(), 0, KEY_READ, &mut key) };
+    if opened != ERROR_SUCCESS {
+        return None;
+    }
+    let name = value_name.map(wide);
+    let mut buffer = [0u16; 2048];
+    let mut length = (buffer.len() * 2) as u32;
+    // SAFETY: the buffer is as long as the length passed with it, and the call
+    // writes no more than that.
+    let read = unsafe {
+        RegQueryValueExW(
+            key,
+            name.as_ref().map_or(core::ptr::null(), |name| name.as_ptr()),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            buffer.as_mut_ptr().cast::<u8>(),
+            &mut length,
+        )
+    };
+    // SAFETY: the handle came from the call above and is not used again.
+    unsafe { RegCloseKey(key) };
+    if read != ERROR_SUCCESS {
+        return None;
+    }
+    let characters = (length as usize / 2).min(buffer.len());
+    let text = String::from_utf16_lossy(&buffer[..characters]);
+    Some(text.trim_end_matches('\0').to_owned())
+}
+
+/// The program identifier a kind is registered under: one per extension, so
+/// that each kind can have its own name and its own icon, as Word's do.
+fn program_id(extension: &str) -> String {
+    format!("WordProcessor{extension}")
+}
+
+pub(crate) fn remember_document(path: &Path, _media_type: &str) {
+    let wide_path = wide(&path.display().to_string());
+    // SAFETY: a null-terminated path, which is what SHARD_PATHW says the
+    // pointer is.
+    unsafe { SHAddToRecentDocs(SHARD_PATHW, wide_path.as_ptr().cast::<c_void>()) };
+}
+
+pub(crate) fn associate_kinds(kinds: &[crate::files::Kind], program_name: &str) -> bool {
+    let Some(program) = program_path() else { return false };
+    let command = format!("\"{program}\" \"%1\"");
+    let executable = Path::new(&program)
+        .file_name()
+        .map_or_else(|| program.clone(), |name| name.to_string_lossy().into_owned());
+    let mut all = true;
+
+    // The program itself, under the name Windows shows in Open With.
+    let application = format!(r"Software\Classes\Applications\{executable}");
+    all &= write_string(&application, Some("FriendlyAppName"), program_name);
+    all &= write_string(&format!(r"{application}\shell\open\command"), None, &command);
+
+    // What it is capable of, which is what the Default Apps page reads.
+    all &=
+        write_string(r"Software\WordProcessor\Capabilities", Some("ApplicationName"), program_name);
+    all &= write_string(
+        r"Software\WordProcessor\Capabilities",
+        Some("ApplicationDescription"),
+        "Writes and reads Word documents",
+    );
+    all &= write_string(
+        r"Software\RegisteredApplications",
+        Some("WordProcessor"),
+        r"Software\WordProcessor\Capabilities",
+    );
+
+    for kind in kinds {
+        let id = program_id(kind.extension);
+        let class = format!(r"Software\Classes\{id}");
+        all &= write_string(&class, None, kind.description);
+        all &= write_string(&format!(r"{class}\DefaultIcon"), None, &format!("{program},0"));
+        all &= write_string(&format!(r"{class}\shell\open\command"), None, &command);
+        // The kind itself lists the program as one that opens it. Not as the
+        // one that does: that is the person's choice, and Windows keeps it
+        // where a program cannot write it.
+        all &= write_string(
+            &format!(r"Software\Classes\{}\OpenWithProgids", kind.extension),
+            Some(&id),
+            "",
+        );
+        all &= write_string(&format!(r"{application}\SupportedTypes"), Some(kind.extension), "");
+        // The capabilities are what "set this program as the default" acts
+        // on, so the kinds it does not ask for are left out of them while
+        // still being registered above.
+        if kind.becomes_default {
+            all &= write_string(
+                r"Software\WordProcessor\Capabilities\FileAssociations",
+                Some(kind.extension),
+                &id,
+            );
+        }
+    }
+
+    // Tell the shell, or Explorer goes on showing the old icons and the old
+    // Open With list until it is restarted.
+    // SAFETY: the event takes no arguments in this form, which is what the two
+    // null pointers say.
+    unsafe {
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, core::ptr::null(), core::ptr::null());
+    }
+    all
+}
+
+pub(crate) fn opens_kind(kind: &crate::files::Kind) -> bool {
+    let Some(program) = program_path() else { return false };
+    // What the person chose, if they have chosen; otherwise what the merged
+    // view says the extension is.
+    let chosen = read_user_choice(kind.extension);
+    let id = match chosen {
+        Some(id) => id,
+        None => match read_class_string(kind.extension, None) {
+            Some(id) if !id.is_empty() => id,
+            _ => return false,
+        },
+    };
+    let Some(command) = read_class_string(&format!(r"{id}\shell\open\command"), None) else {
+        return false;
+    };
+    command.to_lowercase().contains(&program.to_lowercase())
+}
+
+/// Which program the person chose for an extension, where they have chosen.
+fn read_user_choice(extension: &str) -> Option<String> {
+    let path = format!(
+        r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\{extension}\UserChoice"
+    );
+    let wide_path = wide(&path);
+    let mut key: Handle = core::ptr::null_mut();
+    // SAFETY: as the other registry calls; the handle is closed below.
+    let opened =
+        unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, wide_path.as_ptr(), 0, KEY_READ, &mut key) };
+    if opened != ERROR_SUCCESS {
+        return None;
+    }
+    let name = wide("ProgId");
+    let mut buffer = [0u16; 512];
+    let mut length = (buffer.len() * 2) as u32;
+    // SAFETY: the buffer is as long as the length passed with it.
+    let read = unsafe {
+        RegQueryValueExW(
+            key,
+            name.as_ptr(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            buffer.as_mut_ptr().cast::<u8>(),
+            &mut length,
+        )
+    };
+    // SAFETY: the handle came from the call above and is not used again.
+    unsafe { RegCloseKey(key) };
+    if read != ERROR_SUCCESS {
+        return None;
+    }
+    let characters = (length as usize / 2).min(buffer.len());
+    Some(String::from_utf16_lossy(&buffer[..characters]).trim_end_matches('\0').to_owned())
+}
+
+pub(crate) fn choose_default_programs() -> bool {
+    // The Settings page on Windows 10 and 11; the old control panel where
+    // there is no Settings to open it.
+    open_in_shell("ms-settings:defaultapps")
+        || open_in_shell("control.exe /name Microsoft.DefaultPrograms")
 }
 
 #[link(name = "dwmapi")]

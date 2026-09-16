@@ -644,6 +644,18 @@ impl Dialog {
         }
     }
 
+    /// Changes a line the dialog is telling rather than asking.
+    ///
+    /// For a line that answers a button beside it: what the dialog says
+    /// about the world is out of date the moment the button has changed the
+    /// world, and a dialog that had to be shut and opened again to say so
+    /// would be a dialog nobody believed.
+    pub fn set_said(&mut self, index: usize, label: &str) {
+        if let Some(Field::Said { label: shown, .. }) = self.fields.get_mut(index) {
+            *shown = label.to_owned();
+        }
+    }
+
     /// Which tab is showing, counted from the first.
     #[must_use]
     pub fn showing_tab(&self) -> usize {

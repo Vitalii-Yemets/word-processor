@@ -4040,9 +4040,75 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   `xdg-open` for a link is used but not proven, there being no browser in
   the image; and Xft.dpi is the whole of density on X11, since X11 has
   nothing else to say — a screen with none set is an ordinary one.
-- [ ] **H7. Files the way an operating system means them.** Recent documents,
+- [x] **H7. Files the way an operating system means them.** Recent documents,
   file associations, the shell's open and save dialogs, autosave and recovery
   after a crash.
+  *Done:* four things, and they are what a document being a file rather
+  than a thing inside one program means.
+  **The desktop's own list of documents opened lately.** A document opened
+  or saved is put on it as well as on the program's own Open page — on
+  Windows through the shell's recent documents, which is the taskbar's jump
+  list and the Recent place in Explorer; on Linux by writing the bookmark
+  file the specification names, `recently-used.xbel`, with the document's
+  address, what kind of document it is and which program used it, newest
+  first, the same document moving up rather than appearing twice, and
+  every other program's bookmarks left as they were.
+  **Which program opens which kind of file.** The program registers every
+  kind it can read — the Word documents and templates, the older binary
+  document, Rich Text, OpenDocument, plain text, a web page — so that Open
+  With offers it for all of them, and asks to be the one that opens the
+  documents among them and not the plain text or the web page, which
+  already have programs and are not this one's to take. On Linux that is
+  the whole of it: a desktop entry in `applications` naming the media
+  types, and `mimeapps.list` saying which entry opens what, with the other
+  entries in it untouched. On Windows the kinds are registered under the
+  person's own classes — a program identifier apiece with its name, its
+  icon and its command, the extension's Open With list, the program's
+  supported types, and the capabilities the Default Apps page reads — and
+  then that page is opened, because which program opens a kind is the
+  person's choice and Windows keeps it where a program cannot write it.
+  Word's own General page says whether documents open here, and its Make
+  Default button does the above and then says what came of it.
+  **The system's open and save dialogs**, which were already this program's
+  only ones: `comdlg32` on Windows, the desktop's own dialog program on
+  Linux.
+  **A copy of the work that outlives the program.** Word's AutoRecover: a
+  copy is written every ten minutes — the setting is on the Save page of
+  Options, with how often, whether the last copy is kept when a document is
+  closed without saving, and where the copies go — into a folder of the
+  program's own, and only for a document with changes that are not on disk.
+  Saving takes the copy away, because the work is now where the person put
+  it, and so does closing properly, which is what makes a copy still lying
+  there on the next start mean a run that did not end. The next start finds
+  those and shows Word's Document Recovery pane, which takes the left of the
+  window: each copy by name, when it was taken, the one being looked at
+  marked, a cross that throws one away, and a Close that asks before it
+  throws away the rest. Opening one brings the work back under its own name,
+  pointing at the file it came from and holding changes that are not saved,
+  so Save puts it where it belongs and closing asks.
+  Held to: a copy is written for unsaved work and not for saved work; it is
+  found and opened again as another run's, with the text that was typed; a
+  save takes it away; the desktop's list gets a document that was saved,
+  with its kind, and does not list it twice; registering makes this program
+  the one that opens a document while leaving the plain text file with
+  whatever had it and another program's choices alone; and pictures of the
+  recovery pane and of the two Options pages, looked at.
+  *Not done, and named here:* the Windows half — the registry and the
+  shell's recent documents — is written against the documented calls and
+  compiles for Windows, but nothing in the build container is Windows, so
+  it has not been run; the Linux half is what the tests cover. Word's jump
+  list has tasks and a pinned list of its own, which needs the shell's
+  custom destination lists; this puts documents on the ordinary recent one.
+  The pane's rows open and throw away, where Word's row menu also offers
+  Save As and Show Repairs. Word can list the copies of never-saved
+  documents at any time, through Manage Document; here they are offered at
+  the next start and not after that. The time on a row is the clock's, in
+  UTC, until dates in the person's own zone and form arrive with **I3**. A
+  copy is always written as a Word document, so a text file recovered comes
+  back as one until it is saved again. There is no way to say "stop opening
+  documents with this program": registering can be undone from the
+  desktop's own page, and taking another program's kinds away from it in
+  its absence is not something this program should offer.
 - [ ] **H8. Wayland.** The Wayland shell alongside the X11 one, chosen at
   start by `WAYLAND_DISPLAY`: the wire protocol over the compositor's
   socket, `wl_registry`, `wl_compositor`, `wl_shm` with the buffer in a

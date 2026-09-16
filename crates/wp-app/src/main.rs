@@ -179,6 +179,9 @@ fn start(path: Option<&str>) -> Result<(), String> {
     };
 
     let mut editor = Editor::opened(library, document, file);
+    // Anything a run that did not end left behind, offered before the person
+    // has touched anything — which is the only moment at which it is news.
+    editor.show_recovered(editor::autorecover::found());
     if let Some(path) = path.filter(|path| {
         editor::is_text_path(Path::new(path))
             || editor::is_web_path(Path::new(path))

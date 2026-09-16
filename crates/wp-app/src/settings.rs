@@ -70,6 +70,14 @@ pub struct Settings {
     pub unit: Option<String>,
     /// Which language Translate translates into, as a two-letter code.
     pub translate_to: Option<String>,
+    /// Whether a copy of the work is written where a crash cannot take it.
+    /// See [`crate::editor::autorecover`].
+    pub autosave: Option<bool>,
+    /// How many minutes apart those copies are written.
+    pub autosave_minutes: Option<u32>,
+    /// Whether the last copy is kept when a document is closed without
+    /// saving, so that "Don't Save" can still be taken back.
+    pub keep_autosaved: Option<bool>,
     /// Which corrections are made as text is typed, and the replacements.
     ///
     /// Kept here because it is about the person and not about the document:
@@ -208,6 +216,9 @@ impl Settings {
                 "white-space" => settings.white_space = parse_flag(value),
                 "unit" => settings.unit = Some(value.to_owned()),
                 "translate-to" => settings.translate_to = Some(value.to_owned()),
+                "autosave" => settings.autosave = parse_flag(value),
+                "autosave-minutes" => settings.autosave_minutes = value.parse().ok(),
+                "keep-autosaved" => settings.keep_autosaved = parse_flag(value),
                 // Says that the replacements below are the whole list. It has
                 // to be said out loud, because a person who deletes the last
                 // replacement leaves a file with nothing to read, and nothing
@@ -315,6 +326,15 @@ impl Settings {
         }
         if let Some(to) = &self.translate_to {
             write("translate-to", to.clone());
+        }
+        if let Some(on) = self.autosave {
+            write("autosave", flag(on));
+        }
+        if let Some(minutes) = self.autosave_minutes {
+            write("autosave-minutes", minutes.to_string());
+        }
+        if let Some(on) = self.keep_autosaved {
+            write("keep-autosaved", flag(on));
         }
         if let Some(name) = &self.theme_colors {
             write("theme-colors", name.clone());
@@ -479,6 +499,9 @@ mod tests {
             white_space: Some(false),
             unit: Some("centimetres".to_owned()),
             translate_to: Some("de".to_owned()),
+            autosave: Some(false),
+            autosave_minutes: Some(5),
+            keep_autosaved: Some(false),
             autocorrect: Some(crate::autocorrect::AutoCorrect::default()),
             recent: vec![
                 "C:\\Documents\\Report, final.docx".to_owned(),

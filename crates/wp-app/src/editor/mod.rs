@@ -5,6 +5,7 @@ pub(crate) mod align;
 mod appearance;
 mod arrange;
 mod autocorrectdialog;
+pub(crate) mod autorecover;
 mod autoscroll;
 mod backstage;
 mod borderpainter;
@@ -26,6 +27,7 @@ mod effects;
 mod equation;
 mod events;
 pub(crate) mod files;
+mod recovery;
 pub use files::{
     is_doc_path, is_odt_path, is_pdf_path, is_rtf_path, is_template_path, is_web_path,
 };
@@ -555,6 +557,19 @@ pub struct Editor {
     slider: Option<status::SliderRect>,
     status_buttons: Vec<(Command, f32, f32)>,
     pub file: Option<PathBuf>,
+    /// Whether a copy of the work is written where a crash cannot take it,
+    /// how far apart those copies are, and whether the last one is kept when
+    /// a document is closed without saving. See [`autorecover`].
+    autosave: bool,
+    autosave_minutes: u32,
+    keep_autosaved: bool,
+    /// When the last copy was written.
+    autosaved: Instant,
+    /// What this run's copy is called, and whether there is one to take away.
+    recovery_name: String,
+    recovery_written: bool,
+    /// The Document Recovery pane, while there is anything to recover.
+    recovery: Option<crate::chrome::recoverypane::RecoveryPane>,
     /// What the strip along the bottom says about the last command.
     status: String,
     /// What the program remembers between one run and the next.
@@ -738,6 +753,13 @@ impl Editor {
             slider: None,
             status_buttons: Vec::new(),
             file,
+            autosave: true,
+            autosave_minutes: autorecover::DEFAULT_MINUTES,
+            keep_autosaved: true,
+            autosaved: Instant::now(),
+            recovery_name: Self::new_recovery_name(),
+            recovery_written: false,
+            recovery: None,
             status: String::new(),
             title: String::new(),
             needs_redraw: true,
@@ -1466,6 +1488,11 @@ impl Editor {
 
     /// How much room the navigation pane takes, which is none when it is shut.
     pub(super) fn pane_width(&self) -> f32 {
+        // The Document Recovery pane takes the left of the window while it is
+        // up, as Word's does: two panes side by side would leave no document.
+        if let Some(pane) = &self.recovery {
+            return pane.width();
+        }
         if self.show_navigation {
             self.navigation.width()
         } else {

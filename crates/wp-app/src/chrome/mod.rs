@@ -26,6 +26,7 @@ pub mod palette;
 pub mod pastebadge;
 pub mod popup;
 pub mod printpane;
+pub mod recoverypane;
 pub mod ribbon;
 pub mod rulers;
 pub mod scrollbar;

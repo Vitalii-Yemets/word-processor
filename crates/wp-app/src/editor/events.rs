@@ -321,7 +321,21 @@ impl App for Editor {
                         Response::Ignored
                     };
                 }
-                if self.show_navigation && self.pointer_x < self.navigation.width() {
+                // And over the recovery pane, its list of recovered files.
+                if self.pointer_x < self.pane_width() {
+                    if let Some(pane) = &mut self.recovery {
+                        return if pane.scroll_by(-lines.round() as i32 * 3) {
+                            self.needs_redraw = true;
+                            Response::Redraw
+                        } else {
+                            Response::Ignored
+                        };
+                    }
+                }
+                if self.show_navigation
+                    && !self.recovering()
+                    && self.pointer_x < self.navigation.width()
+                {
                     let total = self.headings().len();
                     return if self.navigation.scroll_by(-lines.round() as i32 * 3, total) {
                         self.needs_redraw = true;
@@ -565,6 +579,12 @@ impl App for Editor {
                 if self.is_last_window() && !self.may_discard() {
                     return Response::Refuse;
                 }
+                // A run that ends properly takes its copy with it, which is
+                // how the next start knows that a copy still lying there
+                // means a run that did not.
+                if self.is_last_window() {
+                    self.finish_autorecover();
+                }
                 Response::Ignored
             }
         }
@@ -787,7 +807,12 @@ impl Editor {
             return self.styles_pane_press(x, y);
         }
 
-        if self.show_navigation {
+        if self.recovering() && (x as f32) < self.pane_width() && (y as f32) > self.ribbon_bottom()
+        {
+            return self.pressed_in_recovery(x, y);
+        }
+
+        if self.show_navigation && !self.recovering() {
             let ribbon_bottom = self.ribbon_bottom();
             let content_bottom = self.window_bottom();
 
@@ -1094,6 +1119,11 @@ impl Editor {
     /// comparison and no drawing — which is what lets the window ask for a
     /// heartbeat at all.
     fn ticked(&mut self) -> Response {
+        // The copy that survives the program not closing. First, because a
+        // tick spent deciding whether a tip is due is a tick in which the
+        // work is still only in memory.
+        self.autorecover_tick();
+
         // The document creeping along under the pointer, while the middle
         // button has it doing that.
         if self.autoscrolling() && self.autoscroll_tick() == Response::Redraw {
@@ -1313,7 +1343,9 @@ impl Editor {
 
             let ribbon_bottom = self.ribbon_bottom();
             let content_bottom = self.window_bottom();
-            if self.show_navigation && (x as f32) < self.navigation.width() {
+            if let Some(pane) = &mut self.recovery {
+                changed |= pane.hover(x, y);
+            } else if self.show_navigation && (x as f32) < self.navigation.width() {
                 changed |= self.navigation.hover(x, y, ribbon_bottom, content_bottom);
             }
 
