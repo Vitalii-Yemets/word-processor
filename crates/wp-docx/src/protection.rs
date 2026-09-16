@@ -230,8 +230,33 @@ impl Password {
         })
     }
 
+    /// Takes a password off an element, both ways of writing one.
+    ///
+    /// Every attribute that described the old password goes, the ones naming
+    /// the provider that hashed it included: they describe something that is
+    /// no longer there.
+    fn unwrite(element: &mut Element) {
+        for local in [
+            "algorithmName",
+            "hashValue",
+            "saltValue",
+            "spinCount",
+            "cryptAlgorithmSid",
+            "hash",
+            "salt",
+            "cryptSpinCount",
+            "cryptProviderType",
+            "cryptProvider",
+            "cryptAlgorithmClass",
+            "cryptAlgorithmType",
+        ] {
+            element.remove_namespaced_attribute(read::W, local);
+        }
+    }
+
     /// Writes the ISO attributes onto an element.
     fn write(&self, element: &mut Element, prefix: Option<&str>) {
+        Self::unwrite(element);
         let name = |local: &str| edit::name_with(prefix, local);
         element.set_namespaced_attribute(&name("algorithmName"), read::W, &self.named);
         element.set_namespaced_attribute(
@@ -320,14 +345,49 @@ impl EditMode {
         &[Self::ReadOnly, Self::Comments, Self::TrackedChanges, Self::Forms];
 }
 
+/// What a formatting restriction forbids, as two answers.
+///
+/// Carried about rather than asked for twice: the ribbon needs it to know
+/// which buttons to grey out and the editor needs it to know which commands to
+/// refuse, and those must be the same answer or a button lies.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Limits {
+    /// Word's "Limit formatting to a selection of styles": no formatting
+    /// written directly on to text, and no style the document has locked.
+    pub formatting: bool,
+    /// Word's "Block Theme or Scheme switching".
+    pub theme: bool,
+}
+
+impl Limits {
+    /// Whether anything is forbidden at all.
+    #[must_use]
+    pub fn any(self) -> bool {
+        self.formatting || self.theme
+    }
+}
+
 /// Everything a protected document says about who may change it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Protection {
-    pub mode: EditMode,
+    /// What a reader may do, or `None` where the document restricts the
+    /// formatting and not the editing.
+    ///
+    /// Word's dialog has two halves and either may be used without the other:
+    /// a document may forbid every style but three and let anybody type
+    /// whatever they like in them.
+    pub mode: Option<EditMode>,
     /// Whether formatting is restricted as well as editing: Word's "Limit
     /// formatting to a selection of styles", which forbids direct formatting
-    /// and any style the document has marked locked.
+    /// and any style the document has marked locked. See [`crate::locking`].
     pub formatting: bool,
+    /// Whether the theme and the colour scheme are fixed too.
+    ///
+    /// Word's "Block Theme or Scheme switching", under the same heading. A
+    /// theme is formatting written once for the whole document, so a
+    /// restriction that forbade every direct change and left the theme free
+    /// would be a restriction anybody could walk round.
+    pub theme_locked: bool,
     pub password: Option<Password>,
 }
 
@@ -335,7 +395,29 @@ impl Protection {
     /// A restriction with no password, which anybody may lift.
     #[must_use]
     pub fn new(mode: EditMode) -> Self {
-        Self { mode, formatting: false, password: None }
+        Self { mode: Some(mode), ..Self::default() }
+    }
+
+    /// A restriction on the formatting alone, which is Word's other half and
+    /// leaves the words themselves open to anybody.
+    #[must_use]
+    pub fn on_formatting() -> Self {
+        Self { mode: None, formatting: true, ..Self::default() }
+    }
+
+    /// The same restriction with the formatting limited as well.
+    #[must_use]
+    pub fn limiting_formatting(mut self, theme_too: bool) -> Self {
+        self.formatting = true;
+        self.theme_locked = theme_too;
+        self
+    }
+
+    /// Whether it restricts anything at all. A restriction that forbids
+    /// nothing is not written: it would be a password on an open door.
+    #[must_use]
+    pub fn restricts_anything(&self) -> bool {
+        self.mode.is_some() || self.formatting
     }
 
     /// The same with a password behind it.
@@ -357,12 +439,21 @@ impl Protection {
 }
 
 impl Document {
+    /// What the document forbids being formatted with, as things stand.
+    #[must_use]
+    pub fn formatting_limits(&self) -> Limits {
+        self.protection_rules().map_or_else(Limits::default, |rules| Limits {
+            formatting: rules.formatting,
+            theme: rules.theme_locked,
+        })
+    }
+
     // --- Who may edit it ------------------------------------------------------
 
     /// What a reader is allowed to do, if the document says.
     #[must_use]
     pub fn protection(&self) -> Option<EditMode> {
-        self.protection_rules().map(|rules| rules.mode)
+        self.protection_rules().and_then(|rules| rules.mode)
     }
 
     /// The whole of it: the mode, whether formatting is restricted too, and
@@ -375,13 +466,16 @@ impl Document {
         if !read::attribute_is_on(element, "enforcement") {
             return None;
         }
-        Some(Protection {
-            mode: EditMode::from_word(
-                element.attribute(Some(read::W), "edit").unwrap_or_default(),
-            )?,
+        let rules = Protection {
+            mode: element.attribute(Some(read::W), "edit").and_then(EditMode::from_word),
             formatting: read::attribute_is_on(element, "formatting"),
+            theme_locked: read::attribute_is_on(element, "styleLockTheme"),
             password: Password::read(element),
-        })
+        };
+        // An enforced restriction that restricts nothing is not one. Word
+        // does not write such a thing; a document that carries one is saying
+        // nothing, and this says nothing back.
+        rules.restricts_anything().then_some(rules)
     }
 
     /// Restricts editing, or lifts the restriction.
@@ -394,21 +488,47 @@ impl Document {
             return false;
         }
         let Some(mut root) = self.settings_root() else { return false };
-        root.remove_children_named(Some(read::W), "documentProtection");
+        let Some(wanted) = wanted.filter(|rules| rules.restricts_anything()) else {
+            root.remove_children_named(Some(read::W), "documentProtection");
+            return self.save_settings_root(root) && {
+                self.mark_modified();
+                true
+            };
+        };
 
-        if let Some(wanted) = wanted {
-            let prefix = self.prefix();
-            let name = |local: &str| edit::name_with(prefix.as_deref(), local);
-            let mut element = Element::new(&name("documentProtection"), Some(read::W));
-            element.set_namespaced_attribute(&name("edit"), read::W, wanted.mode.word());
-            if wanted.formatting {
-                element.set_namespaced_attribute(&name("formatting"), read::W, "1");
-            }
-            element.set_namespaced_attribute(&name("enforcement"), read::W, "1");
-            if let Some(password) = &wanted.password {
-                password.write(&mut element, prefix.as_deref());
-            }
+        let prefix = self.prefix();
+        let name = |local: &str| edit::name_with(prefix.as_deref(), local);
+        // The element that is there is edited rather than replaced. A
+        // restriction Word wrote carries attributes this program does not
+        // model - which provider hashed the password, which class of
+        // algorithm - and a document must not lose what it came with.
+        if root.child(Some(read::W), "documentProtection").is_none() {
+            let element = Element::new(&name("documentProtection"), Some(read::W));
             edit::insert_ordered(&mut root, element, crate::settings::SETTINGS_ORDER);
+        }
+        let Some(element) =
+            root.child_elements_mut().find(|child| child.is(Some(read::W), "documentProtection"))
+        else {
+            return false;
+        };
+
+        match wanted.mode {
+            Some(mode) => element.set_namespaced_attribute(&name("edit"), read::W, mode.word()),
+            None => element.remove_namespaced_attribute(read::W, "edit"),
+        }
+        for (local, on) in
+            [("formatting", wanted.formatting), ("styleLockTheme", wanted.theme_locked)]
+        {
+            if on {
+                element.set_namespaced_attribute(&name(local), read::W, "1");
+            } else {
+                element.remove_namespaced_attribute(read::W, local);
+            }
+        }
+        element.set_namespaced_attribute(&name("enforcement"), read::W, "1");
+        match &wanted.password {
+            Some(password) => password.write(element, prefix.as_deref()),
+            None => Password::unwrite(element),
         }
 
         if !self.save_settings_root(root) {
@@ -416,7 +536,7 @@ impl Document {
         }
         // A document restricted to tracked changes has to be recording them,
         // or the restriction is a label on an empty box.
-        if matches!(wanted, Some(rules) if rules.mode == EditMode::TrackedChanges) {
+        if wanted.mode == Some(EditMode::TrackedChanges) {
             self.set_tracking_changes(true);
         }
         self.mark_modified();

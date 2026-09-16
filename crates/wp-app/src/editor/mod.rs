@@ -1487,6 +1487,12 @@ impl Editor {
     }
 
     pub(super) fn apply_style(&mut self, style: Option<&str>) -> Response {
+        // A style the document has locked is not in the gallery, but it is
+        // still reachable: by name from the Styles pane, by a shortcut, and
+        // by a document that was restricted while this one was open.
+        if style.is_some_and(|id| !self.document.style_is_available(id)) {
+            return self.report("This document limits formatting to a selection of styles");
+        }
         let changed = self.document.set_paragraph_style_here(style);
         self.edited(changed, style.unwrap_or("Normal"))
     }

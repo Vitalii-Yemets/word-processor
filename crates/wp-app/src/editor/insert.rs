@@ -142,6 +142,10 @@ impl Editor {
     /// Read out of the document rather than listed here, because a document
     /// brings its own styles and a gallery that offered a fixed seven would be
     /// wrong about every document but the ones this program made.
+    ///
+    /// A document that limits formatting to a selection of styles has the
+    /// rest left out. Word does the same, and the alternative is a gallery
+    /// where half the tiles do nothing when they are clicked.
     pub(super) fn style_gallery(&self) -> Vec<StyleSample> {
         let body_size = self.document.styles().resolve_run(None, &Default::default());
         let mut out = vec![StyleSample {
@@ -152,8 +156,12 @@ impl Editor {
             size: body_size.size_half_points as f32 / 2.0,
         }];
 
+        let limited = self.document.formatting_is_limited();
         for style in self.document.styles().all() {
             if style.kind != wp_docx::StyleKind::Paragraph || style.is_default {
+                continue;
+            }
+            if limited && style.locked {
                 continue;
             }
             let label = style.name.clone().unwrap_or_else(|| style.id.clone());
@@ -187,7 +195,7 @@ impl Editor {
 
 /// Makes a style name look the way Word shows it: "heading 1" becomes
 /// "Heading 1".
-fn title_case(name: &str) -> String {
+pub(super) fn title_case(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut starting = true;
     for character in name.chars() {
@@ -1963,6 +1971,51 @@ Katherine Johnson,Hampton,katherine@example.com
             }
             "restrict" => {
                 self.open_protection();
+            }
+            // The formatting half of the same dialog: the tick box, the
+            // styles it picks from, and the theme.
+            "limits" => {
+                self.open_protection();
+                if let Some(dialog) = self.dialog.as_mut() {
+                    if let Some(crate::chrome::dialog::Field::Check { on, .. }) =
+                        dialog.fields.get_mut(1)
+                    {
+                        *on = true;
+                    }
+                    if let Some(crate::chrome::dialog::Field::Tree { rows, .. }) =
+                        dialog.fields.get_mut(2)
+                    {
+                        for (at, row) in rows.iter_mut().enumerate() {
+                            row.tick = Some(at < 3);
+                        }
+                    }
+                }
+            }
+            // And what a document under it looks like: the gallery with the
+            // styles nobody allowed left out, and the refusal.
+            "limited" => {
+                self.open_protection();
+                if let Some(dialog) = self.dialog.as_mut() {
+                    if let Some(crate::chrome::dialog::Field::Check { on, .. }) =
+                        dialog.fields.get_mut(1)
+                    {
+                        *on = true;
+                    }
+                    if let Some(crate::chrome::dialog::Field::Check { on, .. }) =
+                        dialog.fields.get_mut(5)
+                    {
+                        *on = false;
+                    }
+                    if let Some(crate::chrome::dialog::Field::Tree { rows, .. }) =
+                        dialog.fields.get_mut(2)
+                    {
+                        for (at, row) in rows.iter_mut().enumerate() {
+                            row.tick = Some(at < 3);
+                        }
+                    }
+                }
+                self.finish_dialog(crate::chrome::dialog::Answer::Accept);
+                self.run(crate::chrome::Command::Format(wp_docx::CharacterFormat::Bold));
             }
             "restricted" => {
                 // The document already protected, so the strip along the

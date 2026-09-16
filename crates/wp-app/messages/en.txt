@@ -34,6 +34,7 @@
 = All styles
 = Allow character substitution
 = Allow only this kind of editing
+= Allow only this kind of editing in the document
 = Allow overlap
 = Allow row to break across pages
 = Already in this document
@@ -67,6 +68,7 @@
 = Blank Page
 = Blank document
 = Block Authors
+= Block Theme or Scheme switching
 = Bold
 = Bookmark
 = Bookmark name
@@ -111,6 +113,7 @@
 = Check
 = Check Box
 = Check for Errors
+= Checked styles are currently allowed
 = Choose commands from
 = Choose one to put it in, or to take it away.
 = Citation
@@ -223,6 +226,7 @@
 = Formatting Marks
 = Formatting exceptions
 = Formatting marks
+= Formatting restrictions
 = Formula
 = Fractions (1/2) with fraction character
 = General
@@ -281,6 +285,7 @@
 = Left:
 = Legacy
 = Legacy Tools
+= Limit formatting to a selection of styles
 = Line
 = Line Numbers
 = Line and Page Breaks

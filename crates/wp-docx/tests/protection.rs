@@ -114,7 +114,7 @@ fn a_password_survives_saving_and_is_the_only_thing_that_lifts_it() {
     assert!(document.set_protection(Some(&wanted)));
 
     let rules = round_trip(&document).protection_rules().expect("still protected");
-    assert_eq!(rules.mode, EditMode::Forms);
+    assert_eq!(rules.mode, Some(EditMode::Forms));
     assert!(rules.opens_with("Fenchurch St Paul"));
     assert!(!rules.opens_with("fenchurch st paul"));
     assert!(!rules.opens_with(""));
@@ -201,7 +201,7 @@ fn the_password_word_2007_wrote_is_read_and_checked() {
     // program made and not a shape of it.
     let document = word_2007_settings("Trumpington", b"sixteen bytes!!!", 50_000);
     let rules = document.protection_rules().expect("protected");
-    assert_eq!(rules.mode, EditMode::ReadOnly);
+    assert_eq!(rules.mode, Some(EditMode::ReadOnly));
     assert!(rules.opens_with("Trumpington"));
     assert!(!rules.opens_with("Trumpingtom"));
 }
@@ -214,7 +214,7 @@ fn a_hash_this_program_has_not_got_leaves_the_restriction_standing() {
  w:saltValue="c2l4dGVlbiBieXRlcyEhIQ==" w:spinCount="100000"/>"#,
     );
     let rules = document.protection_rules().expect("protected");
-    assert_eq!(rules.mode, EditMode::ReadOnly, "the restriction was lost with the hash");
+    assert_eq!(rules.mode, Some(EditMode::ReadOnly), "the restriction was lost with the hash");
 
     let password = rules.password.as_ref().expect("a password is there");
     assert!(!password.understood());
@@ -363,7 +363,7 @@ fn another_program_reads_the_restriction_and_keeps_it() {
 
     let reopened = Document::open(&theirs).expect("reopening what LibreOffice wrote");
     let rules = reopened.protection_rules().expect("LibreOffice dropped the restriction");
-    assert_eq!(rules.mode, EditMode::TrackedChanges);
+    assert_eq!(rules.mode, Some(EditMode::TrackedChanges));
 
     // The password came back the same, which it can only do if the
     // attributes were read as a password rather than copied as unknown

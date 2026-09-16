@@ -180,6 +180,18 @@ impl Element {
         self.attributes.retain(|attribute| attribute.name != name);
     }
 
+    /// Removes an attribute by namespace and local name.
+    ///
+    /// The counterpart of [`Self::attribute`], and needed for the same reason:
+    /// which prefix a document wrote an attribute with is the document's own
+    /// business, and an edit that went by the written name would miss one
+    /// written any other way.
+    pub fn remove_namespaced_attribute(&mut self, namespace: &str, local: &str) {
+        self.attributes.retain(|attribute| {
+            attribute.namespace.as_deref() != Some(namespace) || local_of(&attribute.name) != local
+        });
+    }
+
     /// Direct child elements.
     pub fn child_elements(&self) -> impl Iterator<Item = &Element> {
         self.children.iter().filter_map(Node::as_element)

@@ -35,6 +35,9 @@ language = Deutsch
 = A password that is lost cannot be recovered.
 > Ein verlorenes Kennwort kann nicht wiederhergestellt werden.
 
+= Allow only this kind of editing in the document
+> Nur diese Bearbeitungen im Dokument zulassen
+
 = An empty box takes the encryption off.
 > Ein leeres Feld hebt die Verschlüsselung auf.
 
@@ -188,6 +191,9 @@ language = Deutsch
 = Block Authors
 > Autoren blockieren
 
+= Block Theme or Scheme switching
+> Wechseln des Designs oder Schemas blockieren
+
 = Bold
 > Fett
 
@@ -307,6 +313,9 @@ language = Deutsch
 
 = Character code
 > Zeichencode
+
+= Checked styles are currently allowed
+> Aktivierte Formatvorlagen sind zurzeit zulässig
 
 = Choose one to put it in, or to take it away.
 > Wählen Sie einen aus, um ihn einzufügen oder zu entfernen.
@@ -656,6 +665,9 @@ language = Deutsch
 = Formatting marks
 > Formatierungszeichen
 
+= Formatting restrictions
+> Formatierungseinschränkungen
+
 = Formula
 > Formel
 
@@ -823,6 +835,9 @@ language = Deutsch
 
 = Left:
 > Links:
+
+= Limit formatting to a selection of styles
+> Formatierung auf eine Auswahl von Formatvorlagen einschränken
 
 = Line
 > Zeile

@@ -73,6 +73,7 @@ pub mod kinds;
 pub mod languages;
 pub mod lines;
 pub mod links;
+pub mod locking;
 pub mod math;
 pub mod merge;
 pub mod model;
@@ -2036,7 +2037,14 @@ impl Document {
     /// Sets the style of every paragraph the selection touches.
     ///
     /// `None` removes the style, leaving the paragraph on the document default.
+    ///
+    /// A style the document has locked is refused while the restriction
+    /// stands, the way a document restricted to tracked changes refuses to
+    /// stop recording them: see [`crate::locking`].
     pub fn set_paragraph_style_here(&mut self, style: Option<&str>) -> bool {
+        if !self.style_may_be_applied(style) {
+            return false;
+        }
         self.change_paragraphs(|paragraph, prefix| {
             format::set_paragraph_style(paragraph, style, prefix);
         })
@@ -2857,8 +2865,20 @@ impl Document {
         true
     }
 
+    /// Whether a style may be applied at all.
+    ///
+    /// Clearing the style - `None` - is putting the paragraph back on the
+    /// document's own default, which is a style nobody can lock and the only
+    /// way out of a locked one.
+    fn style_may_be_applied(&self, style: Option<&str>) -> bool {
+        style.is_none_or(|id| self.style_is_available(id))
+    }
+
     /// Sets the style of the paragraph at a given index, or clears it.
     pub fn set_paragraph_style(&mut self, index: usize, style: Option<&str>) -> bool {
+        if !self.style_may_be_applied(style) {
+            return false;
+        }
         let prefix = self.prefix();
         let Some(body) = read::find_body_mut(&mut self.tree.root) else {
             return false;

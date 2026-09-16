@@ -48,6 +48,7 @@ impl Editor {
             erasing: self.holding_table_pen(super::borderpainter::TablePen::Erase),
             show_comments: self.navigation.section == crate::chrome::navigation::Section::Comments,
             restricted: self.document.protection(),
+            limits: self.document.formatting_limits(),
             can_edit_here: !self.is_locked(),
             in_table: self.document.table_here().is_some(),
             table_look: self.document.table_look().unwrap_or_default(),

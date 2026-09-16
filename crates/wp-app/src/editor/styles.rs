@@ -41,6 +41,7 @@ impl Editor {
         let here = self.document.style_here();
         let used = self.document.styles_in_use();
         let is_used = |id: &str| used.iter().any(|found| found.eq_ignore_ascii_case(id));
+        let limited = self.document.formatting_is_limited();
 
         let body = styles.resolve_run(None, &Default::default());
         let mut out = vec![Entry {
@@ -62,6 +63,12 @@ impl Editor {
                 continue;
             }
             if self.styles_pane.showing == Showing::InUse && !is_used(&style.id) {
+                continue;
+            }
+            // The same rule as the gallery: a document that limits formatting
+            // to a selection of styles does not list the rest, because a row
+            // that refuses to be clicked is a row that should not be there.
+            if limited && style.locked {
                 continue;
             }
             let resolved = styles.resolve_run(Some(&style.id), &Default::default());

@@ -466,6 +466,74 @@ impl Command {
         matches!(self, Self::Cut | Self::Paste | Self::PasteTextOnly)
     }
 
+    /// Whether the command writes formatting straight on to the text.
+    ///
+    /// The Font group, the Paragraph group, and the two dialogs behind them:
+    /// everything that makes a word look different without a style saying so.
+    /// This is what "Limit formatting to a selection of styles" forbids, and
+    /// the list is written out rather than worked out because a button added
+    /// later must be thought about rather than let through.
+    #[must_use]
+    pub fn is_direct_formatting(self) -> bool {
+        matches!(
+            self,
+            // The Font group.
+            Self::Format(_)
+                | Self::GrowFont
+                | Self::ShrinkFont
+                | Self::ChangeCase
+                | Self::ClearFormatting
+                | Self::TextEffects
+                | Self::Subscript
+                | Self::Superscript
+                | Self::Highlight
+                | Self::TextColor
+                | Self::ChooseFont
+                | Self::ChooseSize
+                | Self::FontDialog
+                | Self::SetAsDefault
+                // The Paragraph group.
+                | Self::Align(_)
+                | Self::Bullets
+                | Self::Numbering
+                | Self::MultilevelList
+                | Self::IndentMore
+                | Self::IndentLess
+                | Self::LineSpacing
+                | Self::DocumentSpacing
+                | Self::Shading
+                | Self::Borders
+                | Self::ParagraphDialog
+                | Self::IndentLeftBox
+                | Self::IndentRightBox
+                | Self::SpaceBeforeBox
+                | Self::SpaceAfterBox
+                // Carrying formatting from one place to another is still
+                // writing it.
+                | Self::FormatPainter
+                // And the same formatting applied to a table.
+                | Self::TableStyles
+                | Self::TableBorders(_)
+                | Self::BorderStyles
+                | Self::BorderPainter
+                | Self::PageBorders
+        )
+    }
+
+    /// Whether the command changes the theme, which is formatting written
+    /// once for the whole document.
+    #[must_use]
+    pub fn is_theme_switching(self) -> bool {
+        matches!(self, Self::Themes | Self::ThemeColors | Self::ThemeFonts | Self::PageColor)
+    }
+
+    /// Whether a limit on the formatting lets this command run.
+    #[must_use]
+    pub fn is_allowed_by(self, limits: wp_docx::protection::Limits) -> bool {
+        !(limits.formatting && self.is_direct_formatting())
+            && !(limits.theme && self.is_theme_switching())
+    }
+
     /// Whether a restriction on the document lets this command run.
     ///
     /// `here` says whether the place the caret is in may be edited at all,
@@ -482,9 +550,15 @@ impl Command {
     pub fn is_allowed_under(
         self,
         restriction: Option<wp_docx::protection::EditMode>,
+        limits: wp_docx::protection::Limits,
         here: bool,
     ) -> bool {
         use wp_docx::protection::EditMode;
+        // The two halves of Word's dialog are independent: a document may
+        // limit its formatting and let anybody type, or the other way about.
+        if !self.is_allowed_by(limits) {
+            return false;
+        }
         let Some(mode) = restriction else { return true };
         if self.is_allowed_when_locked() {
             return true;
@@ -574,6 +648,8 @@ pub struct ToolbarState {
     pub show_comments: bool,
     /// What the document's restriction lets be pressed, if it has one.
     pub restricted: Option<wp_docx::protection::EditMode>,
+    /// And what it forbids the formatting to be changed with.
+    pub limits: wp_docx::protection::Limits,
     /// Whether the place the caret is in may be edited. Only a form
     /// protection makes that a question: everything else is the same answer
     /// everywhere in the document.
@@ -731,7 +807,7 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
 /// Whether a command can be used at all right now.
 #[must_use]
 pub fn is_enabled(command: Command, state: &ToolbarState) -> bool {
-    if !command.is_allowed_under(state.restricted, state.can_edit_here) {
+    if !command.is_allowed_under(state.restricted, state.limits, state.can_edit_here) {
         return false;
     }
     match command {

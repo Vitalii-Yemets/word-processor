@@ -4750,11 +4750,64 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   XML — Word's other Developer group — is not done and is not planned: it is
   a way of driving a document from a program, and this program is the one
   reading the document.
-- [ ] **J9. Limiting formatting to a selection of styles.** The top half of
+- [x] **J9. Limiting formatting to a selection of styles.** The top half of
   Word's Restrict Editing: `w:formatting` on the protection, the styles
   marked `w:locked` in `styles.xml`, the dialog that lists every style with
-  a tick box, and direct formatting refused while it stands. **J1** keeps
-  the flag through a round trip and enforces nothing.
+  a tick box, and direct formatting refused while it stands.
+  *Done:* the restriction, written and enforced. It is two parts of the
+  package and neither means anything alone — `w:formatting="1"` on
+  `w:documentProtection` is the switch, and `<w:locked/>` against a style in
+  `styles.xml` is what it acts on — which is why a document with locked
+  styles and nothing enforced behaves as though nothing were locked. That is
+  the format's rule and it is followed here. The hundreds of styles a
+  `styles.xml` mentions without defining are locked as a body with
+  `w:defLockedState`, or the restriction would be one anybody could walk
+  round by applying a style the document had not got round to defining.
+  The two halves of Word's dialog are independent, and this program had only
+  ever written the other one: a restriction now says what may be edited, or
+  what may be formatted, or both. A document may be one anybody may type in
+  and nobody may format.
+  While it stands: the Font group, the Paragraph group, the Format Painter,
+  their two dialogs, table styles and table borders are refused, and the
+  ribbon greys out exactly what would be refused, because it is the same
+  question asked twice. The second tick box fixes the theme as well, which is
+  formatting written once for the whole document. The style gallery and the
+  Styles pane drop what cannot be applied rather than offering tiles that do
+  nothing, and a locked style asked for by name is refused by `wp-docx`
+  itself. Clearing a style is always allowed: a paragraph styled before the
+  restriction went on must have a way out, or the restriction is a trap.
+  Along the way the restriction stopped being rewritten from nothing every
+  time it is set. The element in the settings is edited in place now, so
+  everything about it this program does not model — which provider hashed the
+  password, Word's Quick Style Set lock — survives being restricted again.
+  *Proven by:* fifteen tests over the document — the unticked styles locked
+  and the ticked ones not, a locked style refused and an allowed one applied,
+  clearing always allowed, a lock meaning nothing until something is
+  enforced, the marks left where they were when the restriction is lifted
+  (which is what makes putting it back a matter of one tick), a formatting
+  restriction standing with no editing restriction at all, both halves behind
+  one password, a restriction that restricts nothing not written, the
+  `w:locked` written where the schema says and not after the formatting, a
+  password taken off leaving no hash behind, and an attribute this program
+  does not model surviving. Twelve more over the program: the styles leaving
+  the gallery, the refusals and their two different reasons, the ribbon
+  greying out what the command refuses, typing still allowed under a
+  formatting restriction, a dialog that restricts nothing saying so, and
+  thirty ticks kept when a password is mistyped. The dialog photographed, and
+  a document under the restriction photographed beside it with its Font group
+  grey and its gallery cut to the three styles that were ticked.
+  *Not done, and named here:* **Word's "Allow AutoFormat to override
+  formatting restrictions"** — `w:autoFormatOverride` — is neither read nor
+  offered; this program's autocorrect does not apply formatting, so there is
+  nothing for it to override, and the day that changes the box will be
+  wanted. **"Block Quick Style Set switching"** — `w:styleLockQFSet` — is
+  kept through a round trip and not offered, because there are no Quick Style
+  Sets here to block; offering the box would be a control that does nothing.
+  The latent styles are locked together rather than listed one at a time:
+  Word's dialog lists all three hundred and something, and a list nobody can
+  read is not worth the scrolling. A locked style is left out of the gallery
+  rather than shown with a padlock, which is what Word does. And this is a
+  dialog where Word has a pane that stays open beside the document.
 - [ ] **J10. The passwords under Save As ▸ Tools ▸ General Options.**
   `w:writeProtection`: a document that asks to be opened read-only, and the
   password that lets it be opened for writing. A different question from

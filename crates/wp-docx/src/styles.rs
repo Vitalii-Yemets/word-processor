@@ -25,7 +25,9 @@ use crate::model::{
     ParagraphProperties, ResolvedParagraphProperties, ResolvedRunProperties, RunProperties,
     TableBorders, Underline,
 };
-use crate::read::{read_paragraph_properties, read_run_properties, read_table_borders, value, W};
+use crate::read::{
+    on_off, read_paragraph_properties, read_run_properties, read_table_borders, value, W,
+};
 use crate::theme::Theme;
 
 /// What a style can be applied to.
@@ -65,6 +67,14 @@ pub struct Style {
     pub next: Option<String>,
     /// Whether this is the default style for its kind.
     pub is_default: bool,
+    /// Whether the style may not be applied while formatting is restricted.
+    ///
+    /// Word's `w:locked`, which is how "Limit formatting to a selection of
+    /// styles" writes down which styles were not selected. It means nothing on
+    /// its own: a document with locked styles and no restriction behaves as
+    /// though nothing were locked, and that is the format's rule rather than a
+    /// choice made here. See [`crate::locking`].
+    pub locked: bool,
     pub paragraph: ParagraphProperties,
     pub run: RunProperties,
     /// The lines a table style draws. Empty for every other kind of style.
@@ -250,6 +260,7 @@ impl Styles {
                 is_default: definition
                     .attribute(Some(W), "default")
                     .is_some_and(|flag| !matches!(flag, "0" | "false")),
+                locked: definition.child(Some(W), "locked").is_some_and(on_off),
                 paragraph: definition
                     .child(Some(W), "pPr")
                     .map(read_paragraph_properties)
