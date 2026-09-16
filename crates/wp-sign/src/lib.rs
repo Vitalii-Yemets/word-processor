@@ -9,6 +9,9 @@
 //!
 //! # The two halves of it
 //!
+//! [`trust`] is the other question a signature raises, and the one that is
+//! not arithmetic: whether the certificate that made it is one to be trusted.
+//!
 //! [`c14n`] is the one way of writing a piece of XML so that it can be
 //! hashed at all, and [`package`] is the signature itself. The arithmetic
 //! is elsewhere: [`wp_rsa`] for the signing, [`wp_hash`] for the hashes,
@@ -16,5 +19,7 @@
 
 pub mod c14n;
 pub mod package;
+pub mod trust;
 
 pub use package::{is_signed, sign, signatures, unsign, Signature, Signer, Standing};
+pub use trust::{chain, Trust};

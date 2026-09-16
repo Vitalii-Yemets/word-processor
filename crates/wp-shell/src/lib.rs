@@ -20,6 +20,10 @@
 
 use wp_raster::Canvas;
 
+// The certificates the machine trusts, which both systems keep somewhere of
+// their own.
+pub mod certificates;
+
 #[cfg(windows)]
 mod com;
 #[cfg(windows)]

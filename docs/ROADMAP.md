@@ -5014,16 +5014,68 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   pane's buttons and are not here either. Naming somebody other than the
   person at the keyboard — Word's list of people to give a stretch to — needs
   somewhere to keep a list of people, which this program has not got.
-- [ ] **J12. Where a certificate comes from, and the rest of signing.** The
+- [x] **J12. Where a certificate comes from, and the rest of signing.** The
   half of **J3** that is not arithmetic. Reading the certificate store the
-  machine keeps — on Windows that is CryptoAPI, and on Linux there is no one
-  answer — so that a person can sign without naming a file, and so that a
-  signature can be said to be trusted rather than merely to be somebody's.
-  With it: signing from the ribbon rather than the command line, Word's
-  Signatures pane listing what a document carries, the digital half of the
-  Signature Line — double-clicking one to sign it — countersignatures, and
-  XAdES, which is the signature standard with a timestamp in it, so that a
-  signature outlives the certificate that made it.
+  machine keeps, so that a person can sign without naming a file, and so that
+  a signature can be said to be trusted rather than merely to be somebody's.
+  *Done:* the two lists a signature needs, and the answer they make possible.
+  **The roots the machine trusts** come from the machine, in
+  `wp-shell/src/certificates.rs`, because they are the machine's to decide: a
+  program carrying its own list of who may be trusted would be granting a
+  trust nobody asked it to grant. On Windows that is `CertOpenSystemStoreW`
+  on the ROOT store, through the same run-time loading the rest of that crate
+  uses. On Linux there is no one answer, so the list is a list: the bundles
+  and the directories every distribution puts them in, `SSL_CERT_FILE` and
+  `SSL_CERT_DIR` first, read out of PEM.
+  **The chain** is `wp-sign/src/trust.rs`. A certificate is a name and a key
+  until somebody vouches for it, and the chain is the following of that: each
+  certificate's issuer found by name — compared as the bytes it was written
+  in, because two names that print alike need not be alike — its signature
+  checked with the issuer's key, and the issuer required to say it may issue.
+  That last is the one that carries the weight: without it anybody with any
+  certificate could issue any other. A chain ends at a certificate the
+  machine trusts, and says so by name, so that a person can see whose word
+  they are taking.
+  **A signature carries its chain** now, both ways: every `X509Certificate`
+  in one is read, not only the first, and one this program writes carries
+  everything between the signer and a root — but not the roots themselves,
+  which the reader has already.
+  In the program: File ▸ Info ▸ Digital Signatures is a dialog rather than a
+  line in the strip along the bottom, because there is something to answer.
+  It says of each signature whose it is, whether it holds, and what this
+  machine makes of the certificate behind it — and it offers to sign, with a
+  certificate out of a folder beside the one templates live in. Signing saves
+  the document signed and reopens what was written, because a signature over
+  a document nobody has seen would be worth nothing.
+  *Proven by:* nine tests over the chain, against certificates OpenSSL made
+  and OpenSSL's own verdict on the same chain: a root, an authority under it
+  and a certificate under that trusted together; the same chain with the root
+  not trusted, and with its middle missing; a root trusted as itself; a
+  certificate issued by one that may not issue refused — and refused by
+  OpenSSL too, which is how this is known to be right and not merely strict;
+  a certificate with a byte changed breaking the chain; one outside its dates
+  refused; a ring of certificates not walked for ever; and what a certificate
+  says about itself read back. Four over the store: PEM taken apart, base 64
+  against the standard's own examples, the machine's own list read in the
+  build image, and nothing but certificates coming back. Six over the
+  program: a certificate and its key found whether they are written as DER or
+  as PEM, one with no key beside it not offered, a folder that is not there
+  being no certificates rather than a crash, the dialog's shape, and a
+  document signed here read back as holding and as issued by nobody this
+  machine has heard of — which is the honest answer for a certificate made on
+  the spot. The dialog photographed.
+  *Not done, and named here:* **signing with a key Windows holds.** Windows
+  keeps a person's certificates and their keys in a store of its own and
+  hands out signatures without ever handing out the key; this signs with a
+  key it can read, from a folder. That is **J24**, and it cannot be written
+  against a system this program is not built on. **Revocation** — whether a
+  certificate has been taken back since it was issued — means asking its
+  issuer over a network, and is not done and not implied: the program says
+  the chain reached a root and says nothing about what has happened since.
+  Name constraints, policies and the rest of RFC 5280's path rules are not
+  checked; the three that carry the weight are. Word's Signatures **pane**,
+  the digital half of the Signature Line, countersignatures and XAdES are
+  **J25**.
 - [ ] **J13. Everything else two documents can differ by.** **J4** compares
   the words. Word compares more: formatting, so that a paragraph nobody
   retyped but somebody re-styled is seen to have changed; moves, so that a
@@ -5096,6 +5148,24 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   I Can Edit beside them. **J11** shades every marked stretch in one colour
   and has none of the rest, there being no pane to hold a list and no list of
   people to give a stretch to.
+- [ ] **J24. Signing with a key the system holds.** Windows keeps a person's
+  certificates and their private keys in a store of its own, and signs
+  without ever handing the key to the program that asked:
+  `CryptAcquireCertificatePrivateKey` and `NCryptSignHash`. **J12** signs
+  with a key it can read, out of a folder, which is what can be done on both
+  systems at once; this is the other way, and it is the way a person who
+  already has a certificate on Windows would expect to sign. Done when the MY
+  store is listed beside the folder and a signature made through the system
+  checks out here and in Word. It needs a Windows machine to be written
+  against, which is why it is not **J12**.
+- [ ] **J25. The rest of what Word does with signatures.** Its Signatures
+  **pane**, which stands open beside the document listing what it carries and
+  what it wants — where **J12** has a dialog. The digital half of the
+  Signature Line: double-clicking one to sign it, and the signature knowing
+  which line it belongs to. **Countersignatures**, which is one signature
+  over another. And **XAdES**, the standard that puts a timestamp from
+  somebody else into a signature so that it outlives the certificate that
+  made it — which needs a timestamp authority, and therefore a network.
 
 ## K — Proving it against Word rather than against ourselves
 

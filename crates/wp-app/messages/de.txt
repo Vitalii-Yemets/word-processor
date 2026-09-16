@@ -26,6 +26,9 @@ language = Deutsch
 = 100%
 > 100 %
 
+= A certificate is a file; its key is the file beside it.
+> Ein Zertifikat ist eine Datei; sein Schlüssel ist die Datei daneben.
+
 = AaBbCcDdEe
 > AaBbCcDdEe
 
@@ -301,6 +304,9 @@ language = Deutsch
 
 = Building blocks
 > Bausteine
+
+= Certificate
+> Zertifikat
 
 = Change how the text is corrected as you type
 > Ändern, wie Text während der Eingabe korrigiert wird
@@ -640,6 +646,9 @@ language = Deutsch
 
 = First Letter
 > Erster Buchstabe
+
+= Folder
+> Ordner
 
 = Font
 > Schriftart
@@ -1211,6 +1220,9 @@ language = Deutsch
 = Protect
 > Schützen
 
+= Purpose
+> Zweck
+
 = Quick Access Toolbar
 > Symbolleiste für den Schnellzugriff
 
@@ -1424,8 +1436,17 @@ language = Deutsch
 = Side to Side
 > Nebeneinander
 
+= Sign this document
+> Dieses Dokument signieren
+
 = Signature Line
 > Signaturzeile
+
+= Signatures
+> Signaturen
+
+= Signed by {0}
+> Signiert von {0}
 
 = Single File Web Page (*.mht;*.mhtml)
 > Webseite in einer Datei (*.mht;*.mhtml)
@@ -1613,6 +1634,9 @@ language = Deutsch
 = Themes
 > Designs
 
+= This document is not signed.
+> Dieses Dokument ist nicht signiert.
+
 = This document is open read-only.
 > Dieses Dokument ist schreibgeschützt geöffnet.
 
@@ -1625,6 +1649,9 @@ language = Deutsch
 = Thesaurus
 > Thesaurus
 
+= This machine's list of trusted issuers could not be read
+> Die Liste der vertrauenswürdigen Aussteller dieses Computers konnte nicht gelesen werden
+
 = This program can open Word documents.
 > Dieses Programm kann Word-Dokumente öffnen.
 
@@ -1636,6 +1663,9 @@ language = Deutsch
 
 = Title
 > Titel
+
+= To sign, put a certificate and its key in this folder:
+> Zum Signieren ein Zertifikat und seinen Schlüssel in diesen Ordner legen:
 
 = Top
 > Oben

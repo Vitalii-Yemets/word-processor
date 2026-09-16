@@ -26,6 +26,11 @@ wp-html = { path = "../wp-html" }
 wp-odt = { path = "../wp-odt" }
 wp-rtf = { path = "../wp-rtf" }
 wp-text = { path = "../wp-text" }
+# Signing a document from the program, and saying what a signature on one is
+# worth: the certificate store is the shell's, the chain is wp-sign's.
+wp-asn1 = { path = "../wp-asn1" }
+wp-rsa = { path = "../wp-rsa" }
+wp-sign = { path = "../wp-sign" }
 
 [lints]
 workspace = true

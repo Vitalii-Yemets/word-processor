@@ -2042,6 +2042,11 @@ Katherine Johnson,Hampton,katherine@example.com
             "protectgroup" => {
                 self.ribbon.tab = crate::chrome::ribbon::Tab::Review;
             }
+            // Word's Signatures: what the document carries, and what it can
+            // be signed with.
+            "signatures" => {
+                self.open_signatures();
+            }
             "exception" => {
                 self.document.set_caret(wp_docx::TextPosition::new(4, 0));
                 let end = self.document.paragraph_text(4).unwrap_or_default().len();

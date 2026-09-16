@@ -10,6 +10,7 @@ mod autoscroll;
 mod backstage;
 mod borderpainter;
 mod boxes;
+mod certificates;
 mod chart;
 mod citations;
 mod clipboardformats;

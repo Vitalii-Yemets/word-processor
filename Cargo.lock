@@ -6,6 +6,7 @@ version = 3
 name = "wp-app"
 version = "0.0.1"
 dependencies = [
+ "wp-asn1",
  "wp-crypt",
  "wp-dict",
  "wp-doc",
@@ -17,9 +18,11 @@ dependencies = [
  "wp-opc",
  "wp-pdf",
  "wp-raster",
+ "wp-rsa",
  "wp-rtf",
  "wp-segment",
  "wp-shell",
+ "wp-sign",
  "wp-svg",
  "wp-text",
 ]

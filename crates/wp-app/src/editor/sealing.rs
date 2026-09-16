@@ -200,24 +200,14 @@ pub(super) fn signature_row(document: &Document) -> crate::chrome::backstage::Ro
 }
 
 impl Editor {
-    /// Says what each signature says, in the strip along the bottom.
+    /// Word's Signatures: what the document carries and what it can be
+    /// signed with.
     ///
-    /// Not a dialog, because there is nothing to answer: a signature is read
-    /// and shown, and this program cannot make one — there is no certificate
-    /// store behind it to pick from. The command line can, with a certificate
-    /// and a key given as files.
+    /// A dialog now rather than a line in the strip along the bottom, because
+    /// there is something to answer: the certificates a person has are a list
+    /// to pick from. See [`super::certificates`].
     pub(super) fn report_signatures(&mut self) -> Response {
-        let signatures = self.document.signatures();
-        let Some(first) = signatures.first() else {
-            return self.report("This document is not signed");
-        };
-        let note = format!(
-            "{} — {}, signed {}",
-            first.certificate.subject,
-            first.standing.label(),
-            first.signed_at
-        );
-        self.report(&note)
+        self.open_signatures()
     }
 }
 

@@ -105,6 +105,7 @@
 = Cell Size
 = Cell margins
 = Centimeters
+= Certificate
 = Change Password
 = Change how the text is corrected as you type
 = Changes
@@ -218,6 +219,7 @@
 = Finish & Merge
 = First Column
 = First Letter
+= Folder
 = Font
 = Fonts
 = Font…
@@ -408,6 +410,7 @@
 = Proofing
 = Properties
 = Protect
+= Purpose
 = Quick Access Toolbar
 = Quick Parts
 = Read Mode
@@ -479,7 +482,10 @@
 = Show measurements in
 = Show/Hide Formatting Marks
 = Side to Side
+= Sign this document
 = Signature Line
+= Signatures
+= Signed by {0}
 = Single File Web Page (*.mht;*.mhtml)
 = Size
 = Small caps
@@ -543,13 +549,16 @@
 = Themes
 = Thesaurus
 = This document also carries Visual Basic macros
+= This document is not signed.
 = This document is open read-only.
 = This document was opened read-only: save a copy
 = This document, before
+= This machine's list of trusted issuers could not be read
 = This program can open Word documents.
 = This stretch is locked
 = This stretch may only be edited by {0}
 = Title
+= To sign, put a certificate and its key in this folder:
 = Top
 = Total Row
 = Track Changes

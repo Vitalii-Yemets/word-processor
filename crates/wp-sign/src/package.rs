@@ -62,6 +62,13 @@ pub struct Signature {
     pub part: String,
     /// The certificate of whoever signed.
     pub certificate: wp_asn1::Certificate,
+    /// The rest of the certificates the signature carries, which is usually
+    /// the chain from the signer up towards a root.
+    ///
+    /// Kept because they are what [`crate::trust`] needs to follow that
+    /// chain: a signature whose middle certificate is only in the file would
+    /// otherwise reach nothing.
+    pub chain: Vec<wp_asn1::Certificate>,
     /// When they say they signed.
     pub signed_at: String,
     /// What they said about why.
@@ -121,6 +128,20 @@ pub fn signatures(package: &Package) -> Vec<Signature> {
     out
 }
 
+/// Every `X509Certificate` in a signature, in the order they are written.
+fn collect_certificates(element: &Element, out: &mut Vec<wp_asn1::Certificate>) {
+    for child in element.child_elements() {
+        if child.local_name() == "X509Certificate" {
+            let der = wp_text::base64::decode(child.text_content().trim().as_bytes());
+            if let Some(certificate) = wp_asn1::Certificate::read(&der) {
+                out.push(certificate);
+            }
+        } else {
+            collect_certificates(child, out);
+        }
+    }
+}
+
 /// The names of the parts holding signatures.
 fn signature_parts(package: &Package) -> Vec<String> {
     let Ok(relationships) = package.relationships(ORIGIN) else { return Vec::new() };
@@ -141,9 +162,13 @@ fn read(package: &Package, part: &str) -> Option<Signature> {
     let root = &tree.root;
 
     let signed_info = child(root, "SignedInfo")?;
-    let certificate = wp_asn1::Certificate::read(&wp_text::base64::decode(
-        find(root, "X509Certificate")?.text_content().trim().as_bytes(),
-    ))?;
+    // Every certificate the signature carries. The first is the signer's -
+    // which is where the format puts it - and the rest are the chain.
+    let mut carried = Vec::new();
+    collect_certificates(root, &mut carried);
+    let mut carried = carried.into_iter();
+    let certificate = carried.next()?;
+    let chain: Vec<wp_asn1::Certificate> = carried.collect();
     let signed_at = find(root, "Value").map(|value| value.text_content()).unwrap_or_default();
     let reason =
         find(root, "SignatureComments").map(|value| value.text_content()).unwrap_or_default();
@@ -158,7 +183,15 @@ fn read(package: &Package, part: &str) -> Option<Signature> {
     }
 
     let standing = check(package, root, signed_info, &certificate);
-    Some(Signature { part: part.to_owned(), certificate, signed_at, reason, parts, standing })
+    Some(Signature {
+        part: part.to_owned(),
+        certificate,
+        chain,
+        signed_at,
+        reason,
+        parts,
+        standing,
+    })
 }
 
 /// Does the arithmetic.
@@ -361,6 +394,13 @@ fn by_id<'a>(element: &'a Element, id: &str) -> Option<&'a Element> {
 pub struct Signer {
     /// Their certificate, as it was written.
     pub certificate: Vec<u8>,
+    /// The certificates between theirs and a root, if they have them.
+    ///
+    /// Written into the signature after their own, which is what lets
+    /// somebody else follow the chain: a reader has the signer's certificate
+    /// and the roots its machine trusts, and everything in between has to
+    /// come with the document.
+    pub chain: Vec<Vec<u8>>,
     pub key: PrivateKey,
     /// What they say about why, which Word shows.
     pub reason: String,
@@ -461,13 +501,20 @@ pub fn sign(package: &mut Package, signer: &Signer) -> Result<String, String> {
             r#"<Signature xmlns="{dsig}" Id="idPackageSignature">{signed_info}"#,
             r#"<SignatureValue>{value}</SignatureValue>"#,
             r#"<KeyInfo><X509Data><X509Certificate>{certificate}</X509Certificate>"#,
-            r#"</X509Data></KeyInfo>{package_object}{office_object}</Signature>"#,
+            r#"{chain}</X509Data></KeyInfo>{package_object}{office_object}</Signature>"#,
         ),
         dsig = DSIG,
         // Written without its own namespace, since the Signature carries it.
         signed_info = signed_info.replacen(&format!(r#" xmlns="{DSIG}""#), "", 1),
         value = wp_text::base64::encode(&value),
         certificate = wp_text::base64::encode(&signer.certificate),
+        chain = signer
+            .chain
+            .iter()
+            .map(|der| {
+                format!("<X509Certificate>{}</X509Certificate>", wp_text::base64::encode(der))
+            })
+            .collect::<String>(),
         package_object = package_object.replacen(&format!(r#" xmlns="{DSIG}""#), "", 1),
         office_object = office_object.replacen(&format!(r#" xmlns="{DSIG}""#), "", 1),
     );

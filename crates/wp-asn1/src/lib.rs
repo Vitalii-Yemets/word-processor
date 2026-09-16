@@ -23,12 +23,14 @@
 //! key. And enough of a key file to sign with: the modulus and the private
 //! exponent, out of either of the two shapes such a file comes in.
 //!
-//! What is **not** here is checking a certificate: whether it was issued by
-//! somebody who may issue, whether the chain reaches a root the machine
-//! trusts, whether it has been revoked. That is not reading — it is a
-//! question for the operating system's own store of who is trusted, and
-//! answering it here out of a list of our own would be inventing a trust
-//! nobody granted. See the roadmap.
+//! What is **not** here is deciding whether a certificate is to be trusted.
+//! This reads what one says — who it is about, who says so, between which
+//! dates, and the bytes that prove it — and [`wp_sign::trust`] puts those
+//! together into a chain. Where the roots of that chain come from is the
+//! machine's own affair, and is asked of the system: a list of trusted
+//! issuers written into this program would be a trust nobody granted.
+//! Revocation is not here either: asking whether a certificate has been
+//! taken back means asking somebody over a network.
 
 #![forbid(unsafe_code)]
 
@@ -142,6 +144,29 @@ pub struct Certificate {
     pub key: RsaPublicKey,
     /// The whole thing as it was written, which is what goes into a document.
     pub der: Vec<u8>,
+    /// The part of it the issuer signed, exactly as it was written.
+    ///
+    /// Kept as bytes rather than rebuilt from what was read: a signature is
+    /// over the bytes, and a program that re-encoded what it understood would
+    /// be checking a signature over something else.
+    pub signed_part: Vec<u8>,
+    /// The issuer's signature over that part.
+    pub signature: Vec<u8>,
+    /// Which hash the issuer signed with, by its object identifier.
+    pub signature_algorithm: String,
+    /// Whether the certificate says it may issue others: `basicConstraints`
+    /// with `cA` set. A certificate that does not say so cannot stand in the
+    /// middle of a chain, and a program that let one would let anybody with
+    /// any certificate issue any other.
+    pub authority: bool,
+    /// Who it is about and who says so, as the bytes they were written in.
+    ///
+    /// The printed forms are for a person to read; these are what one
+    /// certificate is matched to another by, because two names that print the
+    /// same may be written differently and the issuer's name in a child is
+    /// the subject's name in its parent byte for byte.
+    pub subject_der: Vec<u8>,
+    pub issuer_der: Vec<u8>,
 }
 
 impl Certificate {
@@ -166,6 +191,11 @@ impl Certificate {
         let subject = inside.get(versioned + 4)?;
         let key = inside.get(versioned + 5)?;
 
+        // The two after the signed part: what the issuer signed with, and the
+        // signature itself.
+        let algorithm = children(parts.get(1)?);
+        let signature = parts.get(2)?;
+
         Some(Self {
             subject: name(subject),
             issuer: name(issuer),
@@ -174,6 +204,12 @@ impl Certificate {
             serial: unsigned(serial).iter().map(|byte| format!("{byte:02x}")).collect(),
             key: public_key(key)?,
             der: der.to_vec(),
+            signed_part: tbs.whole.to_vec(),
+            signature: bits(signature).to_vec(),
+            signature_algorithm: algorithm.first().map(object_id).unwrap_or_default(),
+            authority: is_authority(&inside[versioned + 6..]),
+            subject_der: subject.whole.to_vec(),
+            issuer_der: issuer.whole.to_vec(),
         })
     }
 
@@ -185,6 +221,59 @@ impl Certificate {
     pub fn covers(&self, moment: &str) -> bool {
         moment >= self.not_before.as_str() && moment <= self.not_after.as_str()
     }
+}
+
+/// An object identifier written the way people write one: numbers with dots.
+///
+/// The first byte holds two numbers at once, which is the one oddity of the
+/// encoding: forty times the first plus the second. After that each number is
+/// seven bits at a time, most significant first, with the top bit set on
+/// every byte but the last.
+#[must_use]
+pub fn object_id(value: &Value<'_>) -> String {
+    if value.tag != OBJECT_ID || value.bytes.is_empty() {
+        return String::new();
+    }
+    let first = u32::from(value.bytes[0]);
+    let mut out = format!("{}.{}", first / 40, first % 40);
+    let mut number = 0u32;
+    for byte in &value.bytes[1..] {
+        number = (number << 7) | u32::from(byte & 0x7F);
+        if byte & 0x80 == 0 {
+            out.push('.');
+            out.push_str(&number.to_string());
+            number = 0;
+        }
+    }
+    out
+}
+
+/// `basicConstraints` with `cA` set, which is a certificate saying it may
+/// issue others.
+///
+/// The extensions are the last thing in the signed part, inside a tag of
+/// their own. Each is an identifier, an optional "you must understand this"
+/// flag, and the extension itself wrapped in an octet string.
+fn is_authority(rest: &[Value<'_>]) -> bool {
+    const BASIC_CONSTRAINTS: &str = "2.5.29.19";
+    const BOOLEAN: u8 = 0x01;
+
+    let Some(tagged) = rest.iter().find(|value| value.tag == 0xA3) else { return false };
+    let Some(list) = children(tagged).into_iter().next() else { return false };
+    for extension in children(&list) {
+        let parts = children(&extension);
+        let Some(identifier) = parts.first() else { continue };
+        if object_id(identifier) != BASIC_CONSTRAINTS {
+            continue;
+        }
+        let Some(wrapped) = parts.last() else { continue };
+        let Some((inside, _)) = read(wrapped.bytes) else { continue };
+        // An empty sequence is `cA` left out, which means false.
+        return children(&inside).first().is_some_and(|flag| {
+            flag.tag == BOOLEAN && flag.bytes.first().is_some_and(|on| *on != 0)
+        });
+    }
+    false
 }
 
 /// The public key out of a `SubjectPublicKeyInfo`.

@@ -33,6 +33,8 @@ const ORIENTATION: usize = 10;
 /// Which question is being asked, so the answer can be acted on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Asking {
+    /// What the document is signed with, and what to sign it with.
+    Signatures,
     /// Whether a document that asks to be opened read-only is to be, and the
     /// password that opens it for writing.
     OpenReadOnly,
@@ -185,6 +187,7 @@ impl Editor {
             Some(Asking::Sort) => self.apply_sort(&dialog),
             Some(Asking::Formula) => self.apply_formula(&dialog),
             Some(Asking::Protect) => self.apply_protection(&dialog),
+            Some(Asking::Signatures) => self.apply_signature(&dialog),
             Some(Asking::OpenReadOnly) => self.apply_open_read_only(&dialog),
             Some(Asking::ReadOnlySettings) => self.apply_read_only_settings(&dialog),
             Some(Asking::Unprotect) => self.apply_unprotection(&dialog),
