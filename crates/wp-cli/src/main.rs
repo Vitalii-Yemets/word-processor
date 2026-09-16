@@ -87,6 +87,11 @@ fn main() -> ExitCode {
         (Some("bench"), 1) => bench("100"),
         (Some("bench"), 2) => bench(&arguments[1]),
         (Some("fonts"), 1) => fonts(),
+        (Some("signatures"), 2) => signatures(&arguments[1]),
+        (Some("sign"), 5) => sign(&arguments[1], &arguments[2], &arguments[3], &arguments[4], ""),
+        (Some("sign"), 6) => {
+            sign(&arguments[1], &arguments[2], &arguments[3], &arguments[4], &arguments[5])
+        }
         _ => {
             print_usage();
             // Started with no arguments at all, most likely by double-clicking
@@ -128,6 +133,11 @@ Usage: wp <command>
   pdf <in.docx> <out.pdf>         write the pages out as a PDF
   bench [pages]                   time what a person waits for
   fonts                            list the fonts found on this machine
+
+  signatures <file.docx>           show the signatures and whether they hold
+  sign <in> <out> <cert.der> <key.der> [why]
+                                   sign the document with a certificate and
+                                   its key, both written as DER
 
 The editing commands report which parts of the package changed, so it is
 visible that everything else was carried through untouched.
@@ -822,4 +832,94 @@ fn table_row(cells: &[&str], header: bool) -> TableRow {
             })
             .collect(),
     )
+}
+
+/// What the signatures on a document say, and whether they hold.
+fn signatures(path: &str) -> Result<(), String> {
+    let document = open(path)?;
+    let signatures = document.signatures();
+    if signatures.is_empty() {
+        println!("{path} is not signed");
+        return Ok(());
+    }
+    for signature in signatures {
+        println!("{}", signature.part);
+        println!("  signed by   {}", signature.certificate.subject);
+        println!("  issued by   {}", signature.certificate.issuer);
+        println!(
+            "  good from   {} to {}",
+            signature.certificate.not_before, signature.certificate.not_after
+        );
+        println!("  signed at   {}", signature.signed_at);
+        if !signature.reason.is_empty() {
+            println!("  because     {}", signature.reason);
+        }
+        println!("  covers      {} parts", signature.parts.len());
+        println!("  standing    {}", signature.standing.label());
+    }
+    Ok(())
+}
+
+/// Signs a document with a certificate and its key.
+///
+/// Both are given as files because there is nowhere else to get them from:
+/// this program does not read the certificate store the operating system
+/// keeps, which is the next thing to write and is named in the roadmap.
+fn sign(path: &str, out: &str, certificate: &str, key: &str, why: &str) -> Result<(), String> {
+    let document = open(path)?;
+    let certificate = std::fs::read(certificate)
+        .map_err(|error| format!("cannot read {certificate}: {error}"))?;
+    let key_bytes = std::fs::read(key).map_err(|error| format!("cannot read {key}: {error}"))?;
+    let private = wp_asn1::private_key(&key_bytes)
+        .ok_or_else(|| format!("{key} is not a key this program reads"))?;
+
+    // Whoever it is, said plainly, so that signing does not quietly go
+    // through with a certificate the person did not mean.
+    if let Some(read) = wp_asn1::Certificate::read(&certificate) {
+        println!("signing as {}", read.subject);
+    } else {
+        return Err(String::from("that is not a certificate this program reads"));
+    }
+
+    let signer = wp_sign::Signer {
+        certificate,
+        key: wp_rsa::PrivateKey::new(&private.modulus, &private.exponent),
+        reason: why.to_owned(),
+        at: now(),
+    };
+    let bytes = document.save_signed(&signer).map_err(|error| error.to_string())?;
+    std::fs::write(out, bytes).map_err(|error| format!("cannot write {out}: {error}"))?;
+    println!("wrote {out}");
+    Ok(())
+}
+
+/// This moment, as a signature writes one.
+fn now() -> String {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or_default();
+    let (days, rest) = (seconds / 86_400, seconds % 86_400);
+    let (year, month, day) = civil_from_days(days as i64);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        rest / 3600,
+        rest % 3600 / 60,
+        rest % 60
+    )
+}
+
+/// The calendar arithmetic, which is the same everywhere and is written out
+/// rather than asked of a library this program does not have.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let of_era = shifted.rem_euclid(146_097);
+    let year_of_era = (of_era - of_era / 1460 + of_era / 36_524 - of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * of_year + 2) / 153;
+    let day = (of_year - (153 * month_prime + 2) / 5 + 1) as u32;
+    let month = if month_prime < 10 { month_prime + 3 } else { month_prime - 9 } as u32;
+    (if month <= 2 { year + 1 } else { year }, month, day)
 }

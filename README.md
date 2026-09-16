@@ -128,6 +128,9 @@ should: everything else must come out as it went in.
 | `wp-hash` | SHA-1, SHA-512 and HMAC, which the passwords and signatures need |
 | `wp-cipher` | AES, and the two ways of using it the Office formats ask for |
 | `wp-crypt` | The encryption Office puts round a package |
+| `wp-asn1` | DER, and the certificates and keys written in it |
+| `wp-rsa` | Numbers too big for a machine word, and the signatures made with them |
+| `wp-sign` | Canonical XML, and the signature a signed document carries |
 | `wp-docx` | The WordprocessingML document model and styles |
 | `wp-font` | TrueType and OpenType parsing: metrics, character mapping, outlines |
 | `wp-shape` | Turning characters into the glyphs that draw them: joining, ligatures |

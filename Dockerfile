@@ -52,6 +52,16 @@ FROM rust:1.98.0-bookworm
 # display. A test tool too; the shell speaks the X protocol itself and links
 # to nothing.
 #
+# OpenSSL and xmlsec are here for the signatures. A signature is arithmetic
+# that is either right or worthless, and a program that only ever checked its
+# own would go on passing with the padding written backwards: openssl makes a
+# key and a certificate, signs what this program must accept, and checks what
+# this program signs; xmlsec1 does the same for a whole XML signature, which
+# is the canonicalisation and the digests as well as the arithmetic, and
+# xmllint canonicalises on its own for the one step in between. All three are
+# test tools like zip and LibreOffice: nothing of them reaches the product,
+# which does every one of those things itself.
+#
 # Sway is a Wayland compositor that will run without a screen as well, and
 # grim and wtype are the two clients that photograph what it shows and type
 # into it. Together they are to the Wayland shell what Xvfb is to the X one:
@@ -80,6 +90,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         sway \
         grim \
         wtype \
+        openssl \
+        libxml2-utils \
+        xmlsec1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Sway will not run as root — it refuses to start where it cannot drop

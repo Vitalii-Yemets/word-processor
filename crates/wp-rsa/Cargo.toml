@@ -1,0 +1,17 @@
+[package]
+name = "wp-rsa"
+description = "Numbers too big for a machine word, and the signature scheme built on them"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-hash = { path = "../wp-hash" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# The tests read a certificate and a key that OpenSSL wrote.
+wp-asn1 = { path = "../wp-asn1" }

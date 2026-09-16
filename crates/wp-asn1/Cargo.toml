@@ -1,0 +1,13 @@
+[package]
+name = "wp-asn1"
+description = "DER, and the certificates and keys written in it"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Nothing. Reading a length and then that many bytes needs nothing.
+
+[lints]
+workspace = true

@@ -24,6 +24,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wp-asn1"
+version = "0.0.1"
+
+[[package]]
 name = "wp-bidi"
 version = "0.0.1"
 
@@ -39,6 +43,7 @@ version = "0.0.1"
 name = "wp-cli"
 version = "0.0.1"
 dependencies = [
+ "wp-asn1",
  "wp-doc",
  "wp-docx",
  "wp-html",
@@ -47,7 +52,9 @@ dependencies = [
  "wp-opc",
  "wp-pdf",
  "wp-raster",
+ "wp-rsa",
  "wp-rtf",
+ "wp-sign",
 ]
 
 [[package]]
@@ -95,6 +102,7 @@ dependencies = [
  "wp-normal",
  "wp-opc",
  "wp-segment",
+ "wp-sign",
  "wp-text",
  "wp-xml",
  "wp-zip",
@@ -192,6 +200,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wp-rsa"
+version = "0.0.1"
+dependencies = [
+ "wp-asn1",
+ "wp-hash",
+]
+
+[[package]]
 name = "wp-rtf"
 version = "0.0.1"
 dependencies = [
@@ -216,6 +232,18 @@ name = "wp-shell"
 version = "0.0.1"
 dependencies = [
  "wp-raster",
+]
+
+[[package]]
+name = "wp-sign"
+version = "0.0.1"
+dependencies = [
+ "wp-asn1",
+ "wp-hash",
+ "wp-opc",
+ "wp-rsa",
+ "wp-text",
+ "wp-xml",
 ]
 
 [[package]]

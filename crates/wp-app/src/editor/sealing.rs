@@ -176,6 +176,51 @@ impl Editor {
     }
 }
 
+/// What the Info page says about the signatures a document carries.
+///
+/// A line that is pressed to be told more, because that is what every other
+/// line on that page is. Word's own page says the same thing in the same
+/// place: a document with a signature on it says so before it says anything
+/// else about itself.
+pub(super) fn signature_row(document: &Document) -> crate::chrome::backstage::Row {
+    use crate::chrome::backstage::Row;
+    let signatures = document.signatures();
+    if signatures.is_empty() {
+        return Row::new("Digital Signatures", "This document is not signed");
+    }
+    let bad = signatures.iter().filter(|signature| !signature.standing.is_good()).count();
+    let note = if bad == 0 {
+        let names: Vec<&str> =
+            signatures.iter().map(|signature| signature.certificate.subject.as_str()).collect();
+        format!("Signed by {}", names.join(", "))
+    } else {
+        format!("{bad} of {} signatures do not hold", signatures.len())
+    };
+    Row::new("Digital Signatures", note)
+}
+
+impl Editor {
+    /// Says what each signature says, in the strip along the bottom.
+    ///
+    /// Not a dialog, because there is nothing to answer: a signature is read
+    /// and shown, and this program cannot make one — there is no certificate
+    /// store behind it to pick from. The command line can, with a certificate
+    /// and a key given as files.
+    pub(super) fn report_signatures(&mut self) -> Response {
+        let signatures = self.document.signatures();
+        let Some(first) = signatures.first() else {
+            return self.report("This document is not signed");
+        };
+        let note = format!(
+            "{} — {}, signed {}",
+            first.certificate.subject,
+            first.standing.label(),
+            first.signed_at
+        );
+        self.report(&note)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -20,6 +20,9 @@ wp-layout = { path = "../wp-layout" }
 wp-pdf = { path = "../wp-pdf" }
 wp-opc = { path = "../wp-opc" }
 wp-raster = { path = "../wp-raster" }
+wp-asn1 = { path = "../wp-asn1" }
+wp-rsa = { path = "../wp-rsa" }
+wp-sign = { path = "../wp-sign" }
 
 [lints]
 workspace = true

@@ -4451,7 +4451,68 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   not read and are named rather than attempted. Nothing here is constant-time
   against an attacker who can watch the cache; what is defended is a file
   against somebody who has it and not the password.
-- [ ] **J3. Digital signatures.**
+- [x] **J3. Digital signatures.** The signature a `.docx` carries: read,
+  checked, and written.
+  *Done:* what signing a document means, and all of the arithmetic under it.
+  A `.docx` is a zip, and a signature over it is not a signature over the
+  zip — the zip's own bytes change every time a program writes one. What is
+  signed is a list of every part with the hash of its bytes and the content
+  type it was written under, and the signature is over that list. Change a
+  part and its hash changes; take one away and the list names a part that is
+  gone; add one and it is not in the list. So a program can say not merely
+  that a document changed but **which part** of it did, which is what this
+  says.
+  Four crates, and each is arithmetic with a test to hold it to. **wp-rsa**
+  is numbers too big for a machine word — long multiplication, long division
+  and raising to a power modulo another number — and the signature scheme
+  built on them: PKCS#1 version one point five, which is what every signed
+  `.docx` uses. **wp-asn1** is DER, and the certificates and keys written in
+  it: enough of a certificate to say who signed and to get their key, and
+  enough of a key file to sign with. **wp-sign** is the two halves of an XML
+  signature: canonical XML, which is the one way of writing a piece of XML so
+  that it can be hashed at all, and the package signature itself. **wp-hash**
+  gained SHA-256, which is what a signature is made over now.
+  The relationship parts get the transform the format lays down, because they
+  have to: a `.rels` part holds identifiers a program is free to renumber and
+  an order that is nobody's business, so what is signed is what the
+  relationships *say* — the ones the signature names, each with a
+  `TargetMode` whether it had one or not, sorted by identifier — and not how
+  they were written down.
+  In the program: File ▸ Info says whether the document is signed and by
+  whom, and pressing the line says what the signature says and whether it
+  holds. Saving a document that has been edited takes its signatures off,
+  which is what Word does and the only honest thing to do: a signature says
+  the document is what it was, and after an edit that is not true. Signing
+  itself is on the command line — `wp sign <in> <out> <cert.der> <key.der>` —
+  because a certificate has to come from somewhere, and where it comes from
+  is **J12**.
+  *Proven by:* OpenSSL, xmllint and xmlsec1, which are now in the build image
+  and had no part in writing any of this. Every hash against OpenSSL at every
+  awkward length, the block boundary and the padding-needs-its-own-block case
+  included, and HMAC too. RSA both ways round: what this program signs,
+  OpenSSL accepts, and what OpenSSL signs, this program accepts, for SHA-1,
+  SHA-256 and SHA-512 — and both refuse a changed message, a changed
+  signature, the wrong hash and another key's signature. A certificate
+  OpenSSL wrote, read back as the name, the dates, the serial and the key
+  that were asked for. Canonical XML against xmllint on every shape that has
+  ever been got wrong, the namespace context of a piece cut out of a document
+  included. And the whole signature: **xmlsec1 accepts one this program
+  wrote, and refuses it once a byte of it is changed**. Then the document
+  itself, end to end on the command line: signed, read back as valid, a part
+  changed behind its back and the change named, and the signature gone after
+  an edit. The File page photographed and looked at.
+  *Not done, and named here:* **whether to trust the certificate**, which is
+  the question this does not answer. It says the signature is the signature
+  of the certificate in the file; it does not say the certificate was issued
+  by anybody, that its chain reaches a root the machine trusts, or that it
+  has not been revoked. That is a question for the operating system's own
+  store of who is trusted, and answering it out of a list of our own would be
+  inventing a trust nobody granted. **J12** is that, and the rest of what
+  comes with it: signing from the ribbon, the Signatures pane, the digital
+  half of the Signature Line, XAdES, and countersignatures. Also not here:
+  exclusive canonicalisation — nothing this reads or writes names it, and a
+  canonicalisation nothing exercises is one that is quietly wrong — and
+  signing with anything but RSA.
 - [ ] **J4. Compare and merge, finished.** Word's three-way merge and its
   compare view.
 - [ ] **J5. Mail merge, finished.** The data sources, the field mapping, the
@@ -4485,6 +4546,16 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   named people, written as `w:permStart` and `w:permEnd`. Both markers are
   already read and written for Block Authors; what is missing is letting
   them through a restriction, and the shading Word paints round them.
+- [ ] **J12. Where a certificate comes from, and the rest of signing.** The
+  half of **J3** that is not arithmetic. Reading the certificate store the
+  machine keeps — on Windows that is CryptoAPI, and on Linux there is no one
+  answer — so that a person can sign without naming a file, and so that a
+  signature can be said to be trusted rather than merely to be somebody's.
+  With it: signing from the ribbon rather than the command line, Word's
+  Signatures pane listing what a document carries, the digital half of the
+  Signature Line — double-clicking one to sign it — countersignatures, and
+  XAdES, which is the signature standard with a timestamp in it, so that a
+  signature outlives the certificate that made it.
 
 ## K — Proving it against Word rather than against ourselves
 

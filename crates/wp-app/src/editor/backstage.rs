@@ -106,8 +106,8 @@ impl Editor {
         ];
 
         // Above the properties, because Word puts Protect Document at the top
-        // of its Info page and because a document that is encrypted is the
-        // first thing a person wants to be told about it.
+        // of its Info page and because whether a document is encrypted or
+        // signed is the first thing a person wants to be told about it.
         let mut rows = vec![match self.document.password() {
             Some(_) => Row::new(
                 "Encrypt with Password",
@@ -117,6 +117,7 @@ impl Editor {
                 Row::new("Encrypt with Password", "Make the document unreadable without a password")
             }
         }];
+        rows.push(super::sealing::signature_row(&self.document));
 
         // The properties are lines to press, because in Word's Info they are
         // boxes to type in: the panel down the right of that page is the one
@@ -135,9 +136,9 @@ impl Editor {
             heading: name,
             facts,
             rows_heading: String::from("Properties"),
-            // The password is above the heading, because it is not one of
-            // the document's properties.
-            rows_heading_at: 1,
+            // The password and the signatures are above the heading, because
+            // neither is one of the document's properties.
+            rows_heading_at: 2,
             rows,
             ..Contents::default()
         }
@@ -377,8 +378,12 @@ impl Editor {
                 self.close_backstage();
                 // The first line is the password; the rest are the
                 // properties, in the order the page listed them.
-                match index.checked_sub(1) {
-                    None => self.open_encryption(),
+                // The first two lines are the password and the signatures;
+                // the rest are the properties, in the order the page listed
+                // them.
+                match index.checked_sub(2) {
+                    None if index == 0 => self.open_encryption(),
+                    None => self.report_signatures(),
                     Some(property) => self.choose_property(property),
                 }
             }
@@ -585,12 +590,13 @@ mod tests {
     fn info_offers_every_property_word_offers() {
         let editor = editor();
         let contents = editor.info_page();
-        // The password first, then every property, which is the order Word
-        // puts them in on that page.
-        assert_eq!(contents.rows.len(), Field::ALL.len() + 1);
+        // The password and the signatures first, then every property, which
+        // is the order Word puts them in on that page.
+        assert_eq!(contents.rows.len(), Field::ALL.len() + 2);
         assert_eq!(contents.rows[0].title, "Encrypt with Password");
-        assert_eq!(contents.rows[1].title, "Title");
-        assert_eq!(contents.rows_heading_at, 1, "the properties heading is under the password");
+        assert_eq!(contents.rows[1].title, "Digital Signatures");
+        assert_eq!(contents.rows[2].title, "Title");
+        assert_eq!(contents.rows_heading_at, 2, "the properties heading is under both");
     }
 
     #[test]
@@ -599,6 +605,12 @@ mod tests {
         assert!(editor.info_page().rows[0].note.contains("unreadable without"));
         editor.document.set_password(Some("Fenchurch"));
         assert!(editor.info_page().rows[0].note.contains("is encrypted"));
+    }
+
+    #[test]
+    fn the_signature_line_says_whether_there_are_any() {
+        let editor = editor();
+        assert!(editor.info_page().rows[1].note.contains("not signed"));
     }
 
     #[test]

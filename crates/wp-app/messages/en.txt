@@ -157,6 +157,7 @@
 = Dictionary
 = Different First Page
 = Different Odd & Even Pages
+= Digital Signatures
 = Display
 = Distance
 = Distance from text

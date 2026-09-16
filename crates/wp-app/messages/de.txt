@@ -449,6 +449,9 @@ language = Deutsch
 = Dictionaries on this machine
 > Wörterbücher auf diesem Rechner
 
+= Digital Signatures
+> Digitale Signaturen
+
 = Dictionary
 > Wörterbuch
 

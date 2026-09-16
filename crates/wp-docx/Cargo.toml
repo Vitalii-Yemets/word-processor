@@ -10,6 +10,7 @@ license.workspace = true
 wp-dict = { path = "../wp-dict" }
 wp-grammar = { path = "../wp-grammar" }
 wp-crypt = { path = "../wp-crypt" }
+wp-sign = { path = "../wp-sign" }
 wp-hash = { path = "../wp-hash" }
 wp-opc = { path = "../wp-opc" }
 wp-normal = { path = "../wp-normal" }

@@ -93,6 +93,7 @@ pub mod settings;
 pub mod shapeeffects;
 pub mod shapes;
 pub mod signature;
+pub mod signing;
 pub mod sorting;
 pub mod stationery;
 pub mod styles;
@@ -180,6 +181,8 @@ pub enum Error {
     /// A password was given and it is not the password, or the file is
     /// encrypted a way this program does not read.
     Unsealing(wp_crypt::Error),
+    /// A signature could not be put on.
+    Signing(String),
     /// A part is not valid XML.
     Xml { part: String, source: wp_xml::Error },
 }
@@ -190,6 +193,7 @@ impl core::fmt::Display for Error {
             Self::Package(error) => write!(f, "{error}"),
             Self::Sealed => write!(f, "the document is encrypted and needs its password"),
             Self::Unsealing(error) => write!(f, "{error}"),
+            Self::Signing(what) => write!(f, "cannot sign: {what}"),
             Self::Xml { part, source } => write!(f, "part {part:?} is not valid XML: {source}"),
         }
     }
@@ -2909,6 +2913,11 @@ impl Document {
 
         let mut package = self.package.clone();
         package.set_part(&self.main_part, xml.into_bytes());
+        // A signature says the document is what it was when it was signed,
+        // and after an edit that is not true. Word marks such a signature
+        // invalid and takes it off when the document is saved; leaving it
+        // there would leave a claim in the file that the file disproves.
+        wp_sign::unsign(&mut package);
         Ok(package.save()?)
     }
 }

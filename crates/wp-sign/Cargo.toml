@@ -1,0 +1,26 @@
+[package]
+name = "wp-sign"
+description = "The XML signature a signed .docx carries, read and written"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-asn1 = { path = "../wp-asn1" }
+wp-hash = { path = "../wp-hash" }
+wp-opc = { path = "../wp-opc" }
+wp-rsa = { path = "../wp-rsa" }
+wp-text = { path = "../wp-text" }
+wp-xml = { path = "../wp-xml" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# The tests hold the canonicalisation to xmllint and the whole signature to
+# xmlsec1, both of which are in the build image.
+wp-xml = { path = "../wp-xml" }
+wp-opc = { path = "../wp-opc" }
+wp-asn1 = { path = "../wp-asn1" }
+wp-rsa = { path = "../wp-rsa" }
