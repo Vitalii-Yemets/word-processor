@@ -214,10 +214,15 @@ pub enum Icon {
     AlignBottomCenter = 196,
     AlignBottomRight = 197,
     Lightning = 198,
+    /// An open padlock, for the stretch of a protected document everybody may
+    /// edit. Drawn here rather than taken from the icon set the rest come
+    /// from, which has no open lock in it: a closed one is Restrict Editing
+    /// and the two buttons stand next to each other.
+    Everyone = 199,
 }
 
 /// How many there are, so the drawings can be kept in a flat array.
-pub const COUNT: usize = 199;
+pub const COUNT: usize = 200;
 
 /// Every icon, in the order the catalogue declares them.
 ///
@@ -423,6 +428,7 @@ pub static ALL: [Icon; COUNT] = [
     Icon::AlignBottomCenter,
     Icon::AlignBottomRight,
     Icon::Lightning,
+    Icon::Everyone,
 ];
 
 impl Icon {
@@ -1234,6 +1240,13 @@ impl Icon {
                     include_str!("../../assets/icons/ic_fluent_mail_template_24_regular.svg")
                 } else {
                     include_str!("../../assets/icons/ic_fluent_mail_template_20_regular.svg")
+                }
+            }
+            Self::Everyone => {
+                if large {
+                    include_str!("../../assets/icons/lock_open_24.svg")
+                } else {
+                    include_str!("../../assets/icons/lock_open_20.svg")
                 }
             }
             Self::Recipients => {

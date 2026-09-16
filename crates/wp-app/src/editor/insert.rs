@@ -2036,6 +2036,24 @@ Katherine Johnson,Hampton,katherine@example.com
                 ));
                 self.asked_at_the_door(std::path::Path::new("Contract.docx"));
             }
+            // A restricted document with one stretch anybody may edit, which
+            // is the shading Word paints and the thing a person needs to see.
+            // The Protect group of the Review tab, where the exception is made.
+            "protectgroup" => {
+                self.ribbon.tab = crate::chrome::ribbon::Tab::Review;
+            }
+            "exception" => {
+                self.document.set_caret(wp_docx::TextPosition::new(4, 0));
+                let end = self.document.paragraph_text(4).unwrap_or_default().len();
+                self.document.extend_selection_to(wp_docx::TextPosition::new(4, end));
+                self.run(crate::chrome::Command::AllowEveryone);
+                self.document.set_protection(Some(&wp_docx::protection::Protection::new(
+                    wp_docx::protection::EditMode::ReadOnly,
+                )));
+                self.document.set_caret(wp_docx::TextPosition::new(0, 0));
+                self.run(crate::chrome::Command::Format(wp_docx::CharacterFormat::Bold));
+                self.relayout();
+            }
             "restricted" => {
                 // The document already protected, so the strip along the
                 // bottom and the refusal can be seen rather than described.

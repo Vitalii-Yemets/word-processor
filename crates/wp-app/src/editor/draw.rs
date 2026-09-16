@@ -421,6 +421,9 @@ impl Editor {
         // The shading behind the merge fields goes under everything: it is a
         // band on the page, not a mark on the text.
         self.draw_field_highlight();
+        // And the same for the stretches somebody may edit when the rest of
+        // the document is shut.
+        self.draw_marked_regions();
 
         // The wavy lines go over the text: they are about the words, and a word
         // drawn over its own mark would hide it.

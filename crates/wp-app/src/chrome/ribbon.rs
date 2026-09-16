@@ -1844,6 +1844,12 @@ static REVIEW_GROUPS: &[Group] = &[
         items: &[
             Item::Small(Command::BlockAuthors, Icon::BlockAuthors, "Block Authors"),
             Item::Break,
+            // Word's exception to a restriction, which lives in its Restrict
+            // Editing pane. This program restricts from a dialog, and a
+            // dialog cannot see what is selected behind it, so the exception
+            // is a button next to the restriction instead.
+            Item::Small(Command::AllowEveryone, Icon::Everyone, "Everyone May Edit"),
+            Item::Break,
             Item::Small(Command::RestrictEditing, Icon::RestrictEditing, "Restrict Editing"),
         ],
         launcher: None,

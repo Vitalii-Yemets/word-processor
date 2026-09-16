@@ -337,6 +337,7 @@ impl Editor {
             Command::OutlineView => self.open_outline(),
             Command::Screenshot => self.open_screenshot(),
             Command::BlockAuthors => self.toggle_block_authors(),
+            Command::AllowEveryone => self.toggle_everyone(),
             Command::Feedback => self.send_feedback(),
             Command::ShowTraining => self.show_training(),
             Command::WhatsNew => self.show_whats_new(),

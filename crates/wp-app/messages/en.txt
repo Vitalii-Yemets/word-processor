@@ -206,6 +206,7 @@
 = Envelopes
 = Equation
 = Eraser
+= Everyone May Edit
 = Exceptions...
 = Export
 = Feedback
@@ -546,6 +547,8 @@
 = This document was opened read-only: save a copy
 = This document, before
 = This program can open Word documents.
+= This stretch is locked
+= This stretch may only be edited by {0}
 = Title
 = Top
 = Total Row

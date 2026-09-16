@@ -91,6 +91,13 @@ pub struct Theme {
     /// The faint grid the View tab can put over the page.
     pub gridline: Color,
 
+    /// Behind a stretch of the document with its own rule about who may edit
+    /// it: Word shades an exception to a restriction, and a stretch blocked
+    /// for one author, so that a person can see where they may type before
+    /// they try. Translucent, because the words underneath have to stay
+    /// readable.
+    pub marked_region: Color,
+
     /// The rulers: the paper, its margins, and the marks on them.
     pub ruler_paper: Color,
     pub ruler_margin: Color,
@@ -147,6 +154,7 @@ impl Theme {
             field_edge: Color::rgb(0x4A, 0x4A, 0x4A),
 
             gridline: Color::rgb(0x45, 0x45, 0x45),
+            marked_region: Color::rgba(0xC8, 0xA0, 0x38, 0x4D),
             ruler_paper: Color::rgb(0x5E, 0x5E, 0x5E),
             ruler_margin: Color::rgb(0x38, 0x38, 0x38),
             ruler_tick: Color::rgb(0xA0, 0xA0, 0xA0),
@@ -192,6 +200,7 @@ impl Theme {
             field_edge: Color::rgb(0xB0, 0xB0, 0xB0),
 
             gridline: Color::rgb(0xDC, 0xDC, 0xDC),
+            marked_region: Color::rgba(0xFF, 0xD9, 0x66, 0x66),
             ruler_paper: Color::WHITE,
             ruler_margin: Color::rgb(0xC4, 0xC4, 0xC4),
             ruler_tick: Color::rgb(0x60, 0x60, 0x60),

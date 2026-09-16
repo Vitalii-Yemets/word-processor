@@ -4958,11 +4958,62 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   information bar across the top of a read-only document with an Edit Anyway
   button on it — the File page line does that job, and the bar itself is
   furniture this program has not got.
-- [ ] **J11. The exceptions a restriction carries.** Word's Restrict Editing
+- [x] **J11. The exceptions a restriction carries.** Word's Restrict Editing
   lets stretches of a protected document stay editable, by everybody or by
-  named people, written as `w:permStart` and `w:permEnd`. Both markers are
-  already read and written for Block Authors; what is missing is letting
-  them through a restriction, and the shading Word paints round them.
+  named people, written as `w:permStart` and `w:permEnd`.
+  *Done:* the markers were already read and written for Block Authors; what
+  this adds is the group they can name, the rule that lets them through a
+  restriction, and the shading that says where.
+  `w:edGrp` is the attribute Word writes for an exception — `everyone` — and
+  `w:ed` is the one it writes for a person. Both are read, and both are
+  written now: Everyone May Edit puts the pair of markers round the selection
+  naming everybody, and Block Authors puts them round naming whoever is at
+  the keyboard.
+  The rule turned out to be one rule read two ways, and that is what the code
+  says: **inside a pair of markers, only the people they name may edit;
+  outside them, whatever the document says.** In a document nobody has
+  restricted that makes the marked stretch a lock — everywhere else is open,
+  here is not. In a restricted one it makes it the way in. The program does
+  not have to know which sort of document it is looking at, which is worth
+  more than two rules that agree most of the time.
+  What restriction stands over the caret is now asked in one place, and it
+  answers three things in order: a document opened read-only (**J10**) holds
+  everywhere; then a marked stretch, which admits or refuses whatever else is
+  true; then the document's own restriction. The ribbon and the commands both
+  ask it, so a button that greys out and a button that refuses are the same
+  button, and a person standing in an exception sees the ribbon light up.
+  A group that is not `everyone` — `administrators`, `owners`, `editors` —
+  names people out of a directory that a program on one machine cannot
+  enumerate, so it admits nobody, and whoever is refused is told which group
+  was wanted rather than being told the document is protected.
+  And the shading. Word paints a marked stretch, and it is not decoration: a
+  restricted document with an exception in it looks exactly like one without,
+  and a person would have to try typing in every paragraph to find where they
+  are allowed. There is a new colour in both themes for it, translucent so
+  that the words underneath stay readable.
+  *Proven by:* twelve tests over the document — a stretch for everybody
+  written and read back with `w:edGrp="everyone"` as Word writes it, one for
+  a person admitting that person and no other, a group nobody can check
+  admitting nobody and saying which group it was, the stretch a position
+  falls in found at both its ends and not outside them, an exception standing
+  beside the restriction it is an exception to, two stretches with different
+  rules told apart, one running across a paragraph break, and nothing
+  selected marking nothing. Nine over the program: typing arriving inside an
+  exception and refused outside it in the same read-only document, a
+  selection that runs off the end of one refused, somebody else's stretch
+  shut with no restriction at all and saying whose it is, a person's own
+  stretch still theirs, the button taking an exception off again, and the two
+  ways a stretch can already be spoken for. The shading photographed on a
+  restricted document, and the Protect group of the Review tab beside it.
+  *Not done, and named here:* **Word's brackets.** It draws `[` and `]` at the
+  ends of a marked stretch as well as shading it, and the shading here has no
+  brackets. **A colour per person.** Word gives each editor their own colour
+  and lists them in its pane; every stretch here is one colour, because there
+  is no pane to hold the list and one machine has one person at it. Word's
+  "Find Next Region I Can Edit" and "Show All Regions I Can Edit" are that
+  pane's buttons and are not here either. Naming somebody other than the
+  person at the keyboard — Word's list of people to give a stretch to — needs
+  somewhere to keep a list of people, which this program has not got.
 - [ ] **J12. Where a certificate comes from, and the rest of signing.** The
   half of **J3** that is not arithmetic. Reading the certificate store the
   machine keeps — on Windows that is CryptoAPI, and on Linux there is no one
@@ -5038,6 +5089,13 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   called "Cover Pages" with something else in it would lie about what a
   person was picking. What is wanted instead is a set of this program's own,
   drawn here, under names that say whose they are.
+- [ ] **J23. The brackets and the colours of a marked stretch.** Word draws
+  `[` and `]` at the ends of a stretch with its own rule about who may edit
+  it, gives each editor their own colour, and lists the editors in its
+  Restrict Editing pane with Find Next Region I Can Edit and Show All Regions
+  I Can Edit beside them. **J11** shades every marked stretch in one colour
+  and has none of the rest, there being no pane to hold a list and no list of
+  people to give a stretch to.
 
 ## K — Proving it against Word rather than against ourselves
 

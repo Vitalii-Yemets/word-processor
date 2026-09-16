@@ -97,6 +97,8 @@ pub enum Command {
     OutlineView,
     Screenshot,
     BlockAuthors,
+    /// The stretch of a protected document that stays editable.
+    AllowEveryone,
     Feedback,
     ShowTraining,
     WhatsNew,

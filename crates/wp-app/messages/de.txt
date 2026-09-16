@@ -605,6 +605,9 @@ language = Deutsch
 = Eraser
 > Radierer
 
+= Everyone May Edit
+> Jeder darf bearbeiten
+
 = Exceptions...
 > Ausnahmen...
 
@@ -1624,6 +1627,12 @@ language = Deutsch
 
 = This program can open Word documents.
 > Dieses Programm kann Word-Dokumente öffnen.
+
+= This stretch is locked
+> Dieser Abschnitt ist gesperrt
+
+= This stretch may only be edited by {0}
+> Dieser Abschnitt darf nur von {0} bearbeitet werden
 
 = Title
 > Titel

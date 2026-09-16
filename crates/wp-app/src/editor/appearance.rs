@@ -105,12 +105,75 @@ impl Editor {
 }
 
 impl Editor {
+    /// Shades every stretch of the document that has its own rule about who
+    /// may edit it.
+    ///
+    /// Word does this and it is not decoration: a restricted document with an
+    /// exception in it looks exactly like a restricted document without one,
+    /// and a person would have to try typing in every paragraph to find the
+    /// one they are allowed in. The shading is the answer to "where may I
+    /// write".
+    pub(super) fn draw_marked_regions(&mut self) {
+        let marked = self.document.locked_regions();
+        if marked.is_empty() {
+            return;
+        }
+
+        let mut bands: Vec<(f32, f32, f32, f32)> = Vec::new();
+        for index in 0..self.pages.len() {
+            let (origin_x, origin_y) = self.page_origin(index);
+            let top = self.content_top() + origin_y - self.scroll_down();
+            for stretch in &marked {
+                for (x, y, width, height) in
+                    self.pages[index].selection_rects(stretch.start, stretch.end)
+                {
+                    bands.push((origin_x + x, top + y, width, height));
+                }
+            }
+        }
+
+        let colour = self.theme.marked_region;
+        for (x, y, width, height) in bands {
+            self.canvas.fill_rect(
+                x as i32,
+                y as i32,
+                width.ceil() as i32,
+                height.ceil() as i32,
+                colour,
+            );
+        }
+    }
+
     /// Locks the selection so that only this author may change it, or unlocks
     /// the stretch the caret is in.
     ///
     /// Word's Block Authors, which is one button that does both: in a document
     /// several people have open, you lock what you are working on and let it go
     /// again when you are done.
+    /// Word's exception to a restriction: the stretch that stays editable
+    /// while the rest of the document is shut.
+    ///
+    /// The same pair of markers Block Authors writes, naming everybody rather
+    /// than one person — see [`wp_docx::permissions`], where the one rule
+    /// behind both is set out.
+    pub(super) fn toggle_everyone(&mut self) -> Response {
+        if let Some(marked) = self.document.locked_here() {
+            if marked.for_everyone() {
+                let changed = self.document.unblock_authors();
+                self.relayout();
+                return self.edited(changed, "Exception taken off");
+            }
+            return self.report("This stretch already belongs to somebody");
+        }
+
+        let changed = self.document.allow_everyone();
+        if !changed {
+            return self.report("Select the text everyone is to be allowed to edit first");
+        }
+        self.relayout();
+        self.edited(changed, "Everyone may edit this")
+    }
+
     pub(super) fn toggle_block_authors(&mut self) -> Response {
         if self.document.locked_here().is_some() {
             let changed = self.document.unblock_authors();

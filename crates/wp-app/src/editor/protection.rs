@@ -18,6 +18,17 @@
 //! * **Filling in forms** — typing is allowed inside the answer of a form
 //!   field and nowhere else. See [`wp_docx::forms`].
 //!
+//! # The stretches a restriction lets through
+//!
+//! A restriction may carry exceptions: stretches of the document that stay
+//! editable while the rest is shut. They are written as the same pair of
+//! markers Block Authors writes — see [`wp_docx::permissions`] — and the rule
+//! is one rule read both ways. Inside a pair of markers only the people they
+//! name may edit; outside them, whatever the document says. So a stretch
+//! marked for everybody is a way in to a protected document, and a stretch
+//! marked for one person is a way out of an unprotected one, and the program
+//! does not have to know which sort of document it is looking at.
+//!
 //! # Limiting the formatting
 //!
 //! The other half of Word's dialog, and the one that has nothing to do with
@@ -296,13 +307,7 @@ impl Editor {
     /// that could not tell the difference could not let a form be filled in.
     #[must_use]
     pub(super) fn is_locked(&self) -> bool {
-        // A document opened read-only is locked everywhere, whatever else it
-        // says: the question was answered at the door. See
-        // [`super::readonly`].
-        if self.is_read_only() {
-            return true;
-        }
-        let Some(mode) = self.document.protection() else { return false };
+        let Some(mode) = self.restriction_now() else { return false };
         match mode {
             EditMode::ReadOnly | EditMode::Comments => true,
             // Allowed, and recorded. What stops the recording being switched
@@ -310,6 +315,24 @@ impl Editor {
             EditMode::TrackedChanges => false,
             EditMode::Forms => !self.inside_a_form_field(),
         }
+    }
+
+    /// Whether everything that would change is inside one stretch with its
+    /// own rule about who may edit it, and whether that rule admits the
+    /// person at the keyboard.
+    ///
+    /// `None` where the selection is not in one at all, which leaves the
+    /// answer to the rest of the document.
+    fn inside_a_marked_stretch(&self) -> Option<bool> {
+        let caret = self.document.caret();
+        let (start, end) = self.document.selection().unwrap_or((caret, caret));
+        let marked = self.document.locked_at(start)?;
+        // Half in and half out is out: an edit that ran off the end of the
+        // stretch would be an edit to the part that is shut.
+        if !marked.covers(end) {
+            return Some(false);
+        }
+        Some(marked.admits(&super::files::user_name()))
     }
 
     /// Whether everything that would change is inside one field of a form
@@ -348,6 +371,21 @@ impl Editor {
         if self.is_read_only() {
             return self.refuse_read_only();
         }
+        // A stretch that names somebody else says so by name: "this document
+        // is protected" would send a person to a dialog that would not help.
+        if let Some(marked) = self.document.locked_at(self.document.caret()) {
+            if !marked.admits(&super::files::user_name()) {
+                let named = marked.named().to_owned();
+                let note = if named.is_empty() {
+                    crate::messages::t("This stretch is locked").to_owned()
+                } else {
+                    crate::messages::with("This stretch may only be edited by {0}", &[&named])
+                };
+                self.status = note;
+                self.needs_redraw = true;
+                return Response::Redraw;
+            }
+        }
         let note = match self.document.protection() {
             Some(EditMode::Comments) => {
                 "This document is restricted to comments — Review ▸ Restrict Editing lifts it"
@@ -360,15 +398,33 @@ impl Editor {
         self.report(note)
     }
 
-    /// What restriction stands over the document as things are.
+    /// What restriction stands over the place the caret is in, as things are.
     ///
-    /// The document's own, or the read-only it asked for at the door and was
-    /// given - see [`super::readonly`]. One rule, because the ribbon and the
-    /// command both ask it and a button that looks pressable and does nothing
-    /// is what that is for.
+    /// Three things can make one, and they are asked in this order because
+    /// each overrules the next:
+    ///
+    /// 1. The document was opened read-only, which was settled at the door
+    ///    and holds everywhere - see [`super::readonly`].
+    /// 2. The caret is inside a stretch with its own rule about who may edit
+    ///    it. If it admits the person at the keyboard nothing else applies
+    ///    here, which is what makes an exception an exception; if it does
+    ///    not, this place is shut whatever the rest of the document says.
+    /// 3. What the document itself says.
+    ///
+    /// One answer, because the ribbon asks it to know what to grey out and
+    /// the command asks it to know whether to run, and a button that looks
+    /// pressable and does nothing is what that is for.
     #[must_use]
     pub(super) fn restriction_now(&self) -> Option<EditMode> {
-        self.document.protection().or_else(|| self.is_read_only().then_some(EditMode::ReadOnly))
+        if self.is_read_only() {
+            return Some(EditMode::ReadOnly);
+        }
+        match self.inside_a_marked_stretch() {
+            Some(true) => return None,
+            Some(false) => return Some(EditMode::ReadOnly),
+            None => {}
+        }
+        self.document.protection()
     }
 
     /// Whether the restriction stands in the way of a command, and what to
@@ -406,7 +462,7 @@ mod tests {
 
     fn editor() -> Editor {
         let mut body = Body::default();
-        body.blocks.push(Block::Paragraph(Paragraph::text("One")));
+        body.blocks.push(Block::Paragraph(Paragraph::text("One two three four five")));
         let bytes = Document::create(&body).expect("a document").save().expect("saving");
         let document = Document::open(&bytes).expect("reopening");
         let mut editor = Editor::new(library(), document, None);
@@ -673,5 +729,135 @@ mod tests {
             "thirty ticks were thrown away over a mistyped password"
         );
         assert!(dialog.said(PASSWORD).is_empty(), "the password was left in the box");
+    }
+    /// Restricts the document to nothing at all being changed, the short way.
+    fn read_only(editor: &mut Editor) {
+        editor
+            .document
+            .set_protection(Some(&wp_docx::protection::Protection::new(EditMode::ReadOnly)));
+    }
+
+    /// Marks a stretch of the first paragraph as one everybody may edit.
+    fn everyone_may_edit(editor: &mut Editor, from: usize, to: usize) {
+        editor.document.set_caret(wp_docx::TextPosition::new(0, from));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, to));
+        editor.run(Command::AllowEveryone);
+        editor.document.set_caret(wp_docx::TextPosition::new(0, from));
+    }
+
+    /// Types one letter and says whether it arrived.
+    fn typing_arrives(editor: &mut Editor) -> bool {
+        let before = editor.document.plain_text();
+        editor.handle(Event::Char('x'));
+        editor.document.plain_text() != before
+    }
+
+    #[test]
+    fn an_exception_is_editable_while_the_rest_of_the_document_is_not() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        // "One" of "One two three" - a stretch in the middle of the paragraph.
+        everyone_may_edit(&mut editor, 4, 7);
+        read_only(&mut editor);
+
+        // Inside it, typing arrives.
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 5));
+        assert!(!editor.is_locked(), "the exception is shut");
+        assert!(typing_arrives(&mut editor), "nothing could be typed into the exception");
+
+        // Outside it, nothing does.
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        assert!(editor.is_locked(), "the rest of the document is open");
+        assert!(!typing_arrives(&mut editor), "the restriction let something through");
+    }
+
+    #[test]
+    fn a_selection_that_runs_off_the_end_of_an_exception_is_refused() {
+        // Half in and half out is out: the edit would reach the part that is
+        // shut.
+        let mut editor = editor();
+        everyone_may_edit(&mut editor, 4, 7);
+        read_only(&mut editor);
+
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 5));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, 12));
+        assert!(editor.is_locked(), "a selection running out of the exception was let through");
+    }
+
+    #[test]
+    fn a_stretch_blocked_for_somebody_else_is_shut_even_with_no_restriction() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 4));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, 7));
+        editor.document.block_authors("Somebody Else");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 5));
+
+        assert_eq!(editor.document.protection(), None, "the document is not restricted");
+        assert!(editor.is_locked(), "a stretch belonging to somebody else took typing");
+        assert!(!typing_arrives(&mut editor));
+
+        // And it says whose it is rather than talking about a restriction.
+        editor.run(Command::Format(wp_docx::CharacterFormat::Bold));
+        assert!(editor.status.contains("Somebody Else"), "{}", editor.status);
+    }
+
+    #[test]
+    fn the_stretch_this_person_blocked_is_still_theirs_to_edit() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 4));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, 7));
+        editor.run(Command::BlockAuthors);
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 5));
+
+        assert!(!editor.is_locked(), "a person was locked out of their own stretch");
+        assert!(typing_arrives(&mut editor));
+    }
+
+    #[test]
+    fn the_button_takes_the_exception_off_again() {
+        let mut editor = editor();
+        everyone_may_edit(&mut editor, 4, 7);
+        assert_eq!(editor.document.locked_regions().len(), 1);
+
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 5));
+        editor.run(Command::AllowEveryone);
+        assert!(editor.document.locked_regions().is_empty(), "it would not come off");
+    }
+
+    #[test]
+    fn the_button_says_what_it_needs_when_nothing_is_selected() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 4));
+        editor.run(Command::AllowEveryone);
+        assert!(editor.document.locked_regions().is_empty());
+        assert!(editor.status.contains("Select the text"), "{}", editor.status);
+    }
+
+    #[test]
+    fn a_stretch_that_belongs_to_somebody_is_not_handed_to_everybody() {
+        // Blocked for the person at the keyboard, so they may edit it and the
+        // command runs - and finds that the stretch is already spoken for.
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 4));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, 7));
+        editor.run(Command::BlockAuthors);
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 5));
+
+        editor.run(Command::AllowEveryone);
+        assert!(editor.status.contains("already belongs"), "{}", editor.status);
+        assert!(!editor.document.locked_regions()[0].for_everyone(), "it was taken over");
+    }
+
+    #[test]
+    fn somebody_elses_stretch_cannot_be_handed_to_everybody_either() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 4));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, 7));
+        editor.document.block_authors("Somebody Else");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 5));
+
+        editor.run(Command::AllowEveryone);
+        assert!(editor.status.contains("Somebody Else"), "{}", editor.status);
+        assert!(!editor.document.locked_regions()[0].for_everyone(), "it was taken over");
     }
 }
