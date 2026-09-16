@@ -33,6 +33,11 @@ const ORIENTATION: usize = 10;
 /// Which question is being asked, so the answer can be acted on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Asking {
+    /// Whether a document that asks to be opened read-only is to be, and the
+    /// password that opens it for writing.
+    OpenReadOnly,
+    /// What a document should ask for the next time it is opened.
+    ReadOnlySettings,
     /// How much there is of the document. Word's Word Count: a dialog that
     /// tells rather than asks.
     WordCount,
@@ -154,6 +159,7 @@ impl Editor {
             match asking {
                 Some(Asking::TextOpen) => self.cancel_text_open(),
                 Some(Asking::Unseal) => self.cancel_unseal(),
+                Some(Asking::OpenReadOnly) => self.cancel_open_read_only(),
                 Some(Asking::TextSave) => self.cancel_text_save(),
                 _ => {}
             }
@@ -179,6 +185,8 @@ impl Editor {
             Some(Asking::Sort) => self.apply_sort(&dialog),
             Some(Asking::Formula) => self.apply_formula(&dialog),
             Some(Asking::Protect) => self.apply_protection(&dialog),
+            Some(Asking::OpenReadOnly) => self.apply_open_read_only(&dialog),
+            Some(Asking::ReadOnlySettings) => self.apply_read_only_settings(&dialog),
             Some(Asking::Unprotect) => self.apply_unprotection(&dialog),
             Some(Asking::Recipients) => self.apply_recipient_list(&dialog),
             Some(Asking::NewBlock) => self.apply_new_block(&dialog),

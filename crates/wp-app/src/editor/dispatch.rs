@@ -32,7 +32,17 @@ impl Editor {
             Command::New => self.new_document(),
             Command::Open => self.open_document(),
             Command::Save => {
-                self.save_now();
+                // A document opened read-only is not saved over the file it
+                // came from: that is exactly what it asked should not happen,
+                // and Word offers Save As instead of refusing outright.
+                if self.is_read_only() {
+                    self.status =
+                        crate::messages::t("This document was opened read-only: save a copy")
+                            .to_owned();
+                    self.save_as_now();
+                } else {
+                    self.save_now();
+                }
                 self.after_file_command()
             }
             Command::SaveAs => {

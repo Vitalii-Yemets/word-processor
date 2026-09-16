@@ -296,6 +296,12 @@ impl Editor {
     /// that could not tell the difference could not let a form be filled in.
     #[must_use]
     pub(super) fn is_locked(&self) -> bool {
+        // A document opened read-only is locked everywhere, whatever else it
+        // says: the question was answered at the door. See
+        // [`super::readonly`].
+        if self.is_read_only() {
+            return true;
+        }
         let Some(mode) = self.document.protection() else { return false };
         match mode {
             EditMode::ReadOnly | EditMode::Comments => true,
@@ -339,6 +345,9 @@ impl Editor {
 
     /// Says why nothing happened.
     pub(super) fn refuse_locked(&mut self) -> Response {
+        if self.is_read_only() {
+            return self.refuse_read_only();
+        }
         let note = match self.document.protection() {
             Some(EditMode::Comments) => {
                 "This document is restricted to comments — Review ▸ Restrict Editing lifts it"
@@ -351,6 +360,17 @@ impl Editor {
         self.report(note)
     }
 
+    /// What restriction stands over the document as things are.
+    ///
+    /// The document's own, or the read-only it asked for at the door and was
+    /// given - see [`super::readonly`]. One rule, because the ribbon and the
+    /// command both ask it and a button that looks pressable and does nothing
+    /// is what that is for.
+    #[must_use]
+    pub(super) fn restriction_now(&self) -> Option<EditMode> {
+        self.document.protection().or_else(|| self.is_read_only().then_some(EditMode::ReadOnly))
+    }
+
     /// Whether the restriction stands in the way of a command, and what to
     /// say if it does.
     ///
@@ -358,7 +378,7 @@ impl Editor {
     /// reads it too so that a button it greys out and a button this refuses
     /// are the same button.
     pub(super) fn refuse_restricted(&mut self, command: Command) -> Option<Response> {
-        let restriction = self.document.protection();
+        let restriction = self.restriction_now();
         let limits = self.document.formatting_limits();
         let here = !self.is_locked();
         // The formatting limit is asked about first, so that a command it

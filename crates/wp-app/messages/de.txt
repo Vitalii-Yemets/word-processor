@@ -38,6 +38,12 @@ language = Deutsch
 = Allow only this kind of editing in the document
 > Nur diese Bearbeitungen im Dokument zulassen
 
+= Always Open Read-Only
+> Immer schreibgeschützt öffnen
+
+= Always open read-only
+> Immer schreibgeschützt öffnen
+
 = An empty box takes the encryption off.
 > Ein leeres Feld hebt die Verschlüsselung auf.
 
@@ -611,6 +617,9 @@ language = Deutsch
 = File
 > Datei
 
+= File sharing
+> Dateifreigabe
+
 = File types
 > Dateitypen
 
@@ -676,6 +685,9 @@ language = Deutsch
 
 = General
 > Allgemein
+
+= General Options
+> Allgemeine Optionen
 
 = Glossaries
 > Glossare
@@ -1001,8 +1013,14 @@ language = Deutsch
 = Open documents at
 > Dokumente öffnen mit
 
+= Open read-only
+> Schreibgeschützt öffnen
+
 = OpenDocument Text (*.odt)
 > OpenDocument-Text (*.odt)
+
+= Opened read-only
+> Schreibgeschützt geöffnet
 
 = OpenType Features
 > OpenType-Funktionen
@@ -1033,6 +1051,12 @@ language = Deutsch
 
 = Outside
 > Außen
+
+= Password to modify
+> Kennwort zum Ändern
+
+= Password to modify (optional)
+> Kennwort zum Ändern (optional)
 
 = PDF Files (*.pdf)
 > PDF-Dateien (*.pdf)
@@ -1192,6 +1216,9 @@ language = Deutsch
 
 = Read Mode
 > Lesemodus
+
+= Read-Only Recommended
+> Schreibschutz empfohlen
 
 = Recently used
 > Zuletzt verwendet
@@ -1547,8 +1574,14 @@ language = Deutsch
 = Text from File
 > Text aus Datei
 
+= The author asked for it to be opened read-only.
+> Der Autor möchte, dass es schreibgeschützt geöffnet wird.
+
 = The selection is saved under this name.
 > Die Auswahl wird unter diesem Namen gespeichert.
+
+= The two passwords are not the same
+> Die beiden Kennwörter stimmen nicht überein
 
 = This document also carries Visual Basic macros
 > Dieses Dokument enthält auch Visual-Basic-Makros
@@ -1576,6 +1609,12 @@ language = Deutsch
 
 = Themes
 > Designs
+
+= This document is open read-only.
+> Dieses Dokument ist schreibgeschützt geöffnet.
+
+= This document was opened read-only: save a copy
+> Dieses Dokument wurde schreibgeschützt geöffnet: Kopie speichern
 
 = This document, before
 > Dieses Dokument, vorher
@@ -1756,6 +1795,9 @@ language = Deutsch
 
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 > {0} ist kein Bild, das dieses Programm lesen kann. PNG, JPEG, BMP, GIF, TIFF und die Metadateien sind es.
+
+= {0} is reserved.
+> {0} ist reserviert.
 
 = {0} of {1}
 > {0} von {1}

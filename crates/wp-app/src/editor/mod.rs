@@ -66,6 +66,7 @@ mod printpane;
 mod proofing;
 mod properties;
 mod protection;
+mod readonly;
 mod references;
 mod review;
 mod ribbondialog;
@@ -468,6 +469,10 @@ pub struct Editor {
     left_out: std::collections::BTreeSet<usize>,
     /// A file that turned out to be encrypted, waiting for its password.
     waiting_to_unseal: Option<sealing::Waiting>,
+    /// Whether the document open now was opened read-only, because it asked
+    /// to be. A property of this window and not of the document: see
+    /// [`readonly`].
+    opened_read_only: bool,
     /// Whether Word Count counts what is written round the edges of the body:
     /// notes and text boxes. Word remembers the tick between openings, so this
     /// lives here rather than in the dialog.
@@ -730,6 +735,7 @@ impl Editor {
             filling_in: None,
             left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,
+            opened_read_only: false,
             count_the_edges: false,
             under_caret: None,
             caret_only: false,

@@ -117,6 +117,10 @@ impl Editor {
                 Row::new("Encrypt with Password", "Make the document unreadable without a password")
             }
         }];
+        // Word's Always Open Read-Only, which is the other half of its
+        // Protect Document menu and the only place in the program a document
+        // can be asked to open read-only.
+        rows.push(Row::new("Always Open Read-Only", self.read_only_note()));
         rows.push(super::sealing::signature_row(&self.document));
 
         // The properties are lines to press, because in Word's Info they are
@@ -136,9 +140,10 @@ impl Editor {
             heading: name,
             facts,
             rows_heading: String::from("Properties"),
-            // The password and the signatures are above the heading, because
-            // neither is one of the document's properties.
-            rows_heading_at: 2,
+            // The password, the read-only and the signatures are above the
+            // heading, because none of them is one of the document's
+            // properties.
+            rows_heading_at: 3,
             rows,
             ..Contents::default()
         }
@@ -378,11 +383,12 @@ impl Editor {
                 self.close_backstage();
                 // The first line is the password; the rest are the
                 // properties, in the order the page listed them.
-                // The first two lines are the password and the signatures;
-                // the rest are the properties, in the order the page listed
-                // them.
-                match index.checked_sub(2) {
+                // The first three lines are the password, the read-only and
+                // the signatures; the rest are the properties, in the order
+                // the page listed them.
+                match index.checked_sub(3) {
                     None if index == 0 => self.open_encryption(),
+                    None if index == 1 => self.open_read_only_settings(),
                     None => self.report_signatures(),
                     Some(property) => self.choose_property(property),
                 }
@@ -592,11 +598,12 @@ mod tests {
         let contents = editor.info_page();
         // The password and the signatures first, then every property, which
         // is the order Word puts them in on that page.
-        assert_eq!(contents.rows.len(), Field::ALL.len() + 2);
+        assert_eq!(contents.rows.len(), Field::ALL.len() + 3);
         assert_eq!(contents.rows[0].title, "Encrypt with Password");
-        assert_eq!(contents.rows[1].title, "Digital Signatures");
-        assert_eq!(contents.rows[2].title, "Title");
-        assert_eq!(contents.rows_heading_at, 2, "the properties heading is under both");
+        assert_eq!(contents.rows[1].title, "Always Open Read-Only");
+        assert_eq!(contents.rows[2].title, "Digital Signatures");
+        assert_eq!(contents.rows[3].title, "Title");
+        assert_eq!(contents.rows_heading_at, 3, "the properties heading is under all three");
     }
 
     #[test]
@@ -610,7 +617,7 @@ mod tests {
     #[test]
     fn the_signature_line_says_whether_there_are_any() {
         let editor = editor();
-        assert!(editor.info_page().rows[1].note.contains("not signed"));
+        assert!(editor.info_page().rows[2].note.contains("not signed"));
     }
 
     #[test]

@@ -87,6 +87,7 @@ pub mod proofing;
 pub mod properties;
 pub mod protection;
 mod read;
+pub mod readonly;
 pub mod revisions;
 pub mod ruby;
 pub mod rules;

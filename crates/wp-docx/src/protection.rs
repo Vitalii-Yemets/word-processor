@@ -191,7 +191,10 @@ impl Password {
     }
 
     /// Reads whichever set of attributes the element carries, newer first.
-    fn read(element: &Element) -> Option<Self> {
+    ///
+    /// Crate-visible because the format writes a password the same way
+    /// wherever it writes one: see [`crate::readonly`].
+    pub(crate) fn read(element: &Element) -> Option<Self> {
         let attribute = |name: &str| element.attribute(Some(read::W), name);
         let (named, algorithm, hash, salt, spins) = match attribute("hashValue") {
             Some(hash) => {
@@ -235,7 +238,7 @@ impl Password {
     /// Every attribute that described the old password goes, the ones naming
     /// the provider that hashed it included: they describe something that is
     /// no longer there.
-    fn unwrite(element: &mut Element) {
+    pub(crate) fn unwrite(element: &mut Element) {
         for local in [
             "algorithmName",
             "hashValue",
@@ -255,7 +258,7 @@ impl Password {
     }
 
     /// Writes the ISO attributes onto an element.
-    fn write(&self, element: &mut Element, prefix: Option<&str>) {
+    pub(crate) fn write(&self, element: &mut Element, prefix: Option<&str>) {
         Self::unwrite(element);
         let name = |local: &str| edit::name_with(prefix, local);
         element.set_namespaced_attribute(&name("algorithmName"), read::W, &self.named);

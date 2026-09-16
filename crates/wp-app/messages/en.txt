@@ -39,6 +39,8 @@
 = Allow row to break across pages
 = Already in this document
 = Alt Text
+= Always Open Read-Only
+= Always open read-only
 = Always show these on screen
 = An empty box takes the encryption off.
 = Anybody who can open the file can take this off.
@@ -208,6 +210,7 @@
 = Export
 = Feedback
 = File
+= File sharing
 = File types
 = Find
 = Finish
@@ -230,6 +233,7 @@
 = Formula
 = Fractions (1/2) with fraction character
 = General
+= General Options
 = Glossaries
 = Glossary
 = Go to Footer
@@ -338,8 +342,10 @@
 = Open
 = Open a dictionary
 = Open documents at
+= Open read-only
 = OpenDocument Text (*.odt)
 = OpenType Features
+= Opened read-only
 = Opened {0}
 = Opened {0} as {1}
 = Options
@@ -374,6 +380,8 @@
 = Paragraph formatting
 = Paragraph…
 = Password
+= Password to modify
+= Password to modify (optional)
 = Paste
 = Paste as Picture
 = Paste function
@@ -402,6 +410,7 @@
 = Quick Access Toolbar
 = Quick Parts
 = Read Mode
+= Read-Only Recommended
 = Recently used
 = Recipients
 = Redo
@@ -520,6 +529,7 @@
 = Text files
 = Text formatting
 = Text from File
+= The author asked for it to be opened read-only.
 = The document is not encrypted.
 = The document is unreadable without it.
 = The file types could not be registered
@@ -528,9 +538,12 @@
 = The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
 = The letter goes to everybody ticked.
 = The selection is saved under this name.
+= The two passwords are not the same
 = Themes
 = Thesaurus
 = This document also carries Visual Basic macros
+= This document is open read-only.
+= This document was opened read-only: save a copy
 = This document, before
 = This program can open Word documents.
 = Title
@@ -592,6 +605,7 @@
 = {0} did not open. Try the password again.
 = {0} is encrypted.
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
+= {0} is reserved.
 = {0} of {1}
 = {0} point
 = {0} recovered

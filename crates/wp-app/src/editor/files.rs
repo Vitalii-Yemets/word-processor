@@ -270,6 +270,13 @@ impl Editor {
             self.document_name(),
             if compatibility { " [Compatibility Mode]" } else { "" }
         );
+        // Word's caption says so too, and it is the one place a person looks
+        // to find out why nothing they type is arriving.
+        let wanted = if self.opened_read_only {
+            wanted.replace(" — Word Processor", " (Read-Only) — Word Processor")
+        } else {
+            wanted
+        };
         if wanted != self.title {
             wp_shell::set_title(&wanted);
             self.title = wanted;
@@ -557,6 +564,9 @@ impl Editor {
         // they are; both halves of that are worth saying before somebody
         // wonders why nothing happened.
         self.carries_macros = self.document.has_macros();
+        // Whatever is opened is opened for writing until it asks not to be,
+        // which is asked at the door and not here: see [`super::readonly`].
+        self.opened_read_only = false;
         // Whatever was opened is not the text file the last one was.
         self.text_encoding = None;
         self.scroll = 0.0;
@@ -718,6 +728,11 @@ impl Editor {
                 self.set_document(document, Some(path.clone()));
                 self.status = crate::messages::with("Opened {0}", &[&path.display().to_string()]);
                 self.remember_recent(&path);
+                // A document may ask not to be written, and the asking
+                // happens at the door rather than at the first keystroke.
+                if let Some(response) = self.asked_at_the_door(&path) {
+                    return response;
+                }
                 Response::Redraw
             }
             Err(message) => {

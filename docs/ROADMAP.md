@@ -4808,13 +4808,50 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   read is not worth the scrolling. A locked style is left out of the gallery
   rather than shown with a padlock, which is what Word does. And this is a
   dialog where Word has a pane that stays open beside the document.
-- [ ] **J10. The passwords under Save As ▸ Tools ▸ General Options.**
+- [x] **J10. The passwords under Save As ▸ Tools ▸ General Options.**
   `w:writeProtection`: a document that asks to be opened read-only, and the
-  password that lets it be opened for writing. A different question from
-  **J1**'s — that one is what a reader may do to the text, this one is
-  whether the file opens for writing at all — and it needs somewhere in the
-  File page to be set from. The password to *open* is encryption and is
-  **J2**.
+  password that lets it be opened for writing.
+  *Done:* the third of the three passwords a `.docx` can carry, and the one
+  that had no counterpart here. They are easy to confuse and they answer
+  different questions: **J2**'s makes the file unreadable, **J1**'s says what
+  may be done to the text once it is open, and this one says whether the file
+  opens for writing at all. `wp-docx/src/readonly.rs` reads and writes
+  `w:writeProtection` — the recommendation, and the hash, in both the sets of
+  attributes the format has had — and it is written first in the settings,
+  which is where the schema puts it.
+  In the program, the question is asked at the door: a document that asks to
+  be opened read-only says so as it opens, and the answer is a property of
+  the window rather than of the document. A recommendation with no password
+  is a request and can be declined, which is what makes it a request; one
+  with a password is opened for writing by the password and read-only by
+  anything else. A document opened read-only refuses every command that would
+  change it, greys out the same ones on the ribbon, says (Read-Only) in the
+  caption, and sends Save to Save As rather than writing over the file that
+  asked not to be written. The File page carries Word's Always Open
+  Read-Only, which sets it and is also the way back out.
+  Along the way one rule was made of two: what restriction stands over the
+  document is asked in one place now, so that a document read-only because it
+  was opened that way and one read-only because it says so grey out the same
+  buttons.
+  *Proven by:* nine tests over the document — the recommendation and the
+  password each surviving a save and an open, both together, the right word
+  taken and a wrong one not, taking it off leaving nothing in the file, a
+  password taken off a recommendation leaving the recommendation, the older
+  attributes of a Word 2007 document read, the element written first as the
+  schema says, and the restriction alongside it untouched. Eight over the
+  program: a document that asks nothing not asked about, a recommendation
+  honoured and declined, cancelling at the door, the right password and a
+  wrong one, the caption and the ribbon both saying so, the File page setting
+  it with the two passwords having to agree and the ticks kept when they do
+  not, and the line on that page saying which of the four things is true.
+  Both dialogs photographed.
+  *Not done, and named here:* Word's General Options dialog also holds the
+  password to open, which is **J2** and is on the File page here rather than
+  in this dialog; the two are one dialog in Word and two lines in this
+  program's File page, which is a difference worth naming. There is no
+  information bar across the top of a read-only document with an Edit Anyway
+  button on it — the File page line does that job, and the bar itself is
+  furniture this program has not got.
 - [ ] **J11. The exceptions a restriction carries.** Word's Restrict Editing
   lets stretches of a protected document stay editable, by everybody or by
   named people, written as `w:permStart` and `w:permEnd`. Both markers are
