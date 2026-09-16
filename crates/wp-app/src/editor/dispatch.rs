@@ -288,6 +288,8 @@ impl Editor {
             Command::WrapText => self.open_wrapping(),
             Command::Position => self.open_position(),
             Command::QuickParts => self.open_quick_parts(),
+            Command::Control(which) => self.insert_content_control(which),
+            Command::LegacyFields => self.open_legacy_fields(),
             Command::WordArt => self.open_word_art(),
             Command::SelectionPane => self.open_selection_pane(),
 

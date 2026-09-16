@@ -50,6 +50,7 @@ pub mod combine;
 pub mod comments;
 pub mod compare;
 pub mod contents;
+pub mod controls;
 pub mod cover;
 pub mod depth;
 pub mod diagram;

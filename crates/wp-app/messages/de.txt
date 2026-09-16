@@ -317,6 +317,9 @@ language = Deutsch
 = Create New Building Block
 > Neuen Baustein erstellen
 
+= Check Box
+> Kontrollkästchen
+
 = Check
 > Prüfen
 
@@ -361,6 +364,15 @@ language = Deutsch
 
 = Color
 > Farbe
+
+= Code
+> Code
+
+= Combo Box
+> Kombinationsfeld
+
+= Controls
+> Steuerelemente
 
 = Colors
 > Farben
@@ -442,6 +454,12 @@ language = Deutsch
 
 = Default tab stops
 > Standardtabstopps
+
+= Date Picker
+> Datumsauswahl
+
+= Developer
+> Entwicklertools
 
 = Delete
 > Löschen
@@ -535,6 +553,9 @@ language = Deutsch
 
 = Edit Individual Documents
 > Einzelne Dokumente bearbeiten
+
+= Drop-Down List
+> Dropdownliste
 
 = Edit List
 > Liste bearbeiten
@@ -805,6 +826,12 @@ language = Deutsch
 
 = Line
 > Zeile
+
+= Legacy
+> Vorversionen
+
+= Legacy Tools
+> Tools aus Vorversionen
 
 = Line Numbers
 > Zeilennummern
@@ -1091,6 +1118,9 @@ language = Deutsch
 = Points
 > Punkt
 
+= Plain Text
+> Nur-Text
+
 = Position
 > Position
 
@@ -1153,6 +1183,9 @@ language = Deutsch
 
 = Recipients
 > Empfänger
+
+= Rich Text
+> Rich-Text
 
 = Redo
 > Wiederholen

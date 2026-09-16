@@ -324,6 +324,11 @@ impl Editor {
                 let rows = items.iter().map(|_| Row::new(Kind::Choice, icon)).collect();
                 (items, rows, None, WIDTH)
             }
+            Choice::LegacyField => {
+                let items = Editor::legacy_field_names();
+                let rows = items.iter().map(|_| Row::new(Kind::Choice, Icon::QuickParts)).collect();
+                (items, rows, None, 260.0)
+            }
             Choice::QuickPart => {
                 let items = self.quick_part_menu();
                 let saved = self.own_blocks().len();

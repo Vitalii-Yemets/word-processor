@@ -956,6 +956,16 @@ impl Editor {
             return Response::Redraw;
         }
 
+        // A tick box ticks when it is clicked and a drop-down drops open,
+        // which is the whole of what makes a form a form rather than a
+        // picture of one. Before the caret is moved, because what was
+        // clicked is the control and not the place between two letters.
+        if !modifiers.alt && !modifiers.shift {
+            if let Some(response) = self.used_a_control(position) {
+                return response;
+            }
+        }
+
         // Alt and a drag takes a rectangle of text rather than a stretch of it.
         if modifiers.alt {
             self.document.set_caret(position);
@@ -1477,6 +1487,9 @@ impl Editor {
             Choice::Hyphenation => Command::Hyphenation,
             Choice::Comparing => Command::Compare,
             Choice::Finishing => Command::FinishMerge,
+            Choice::LegacyField => Command::LegacyFields,
+            // Hangs where the caret is rather than under a button.
+            Choice::FillIn => Command::LegacyFields,
             // The strip's own menu hangs where it was opened, not under a
             // button of the ribbon.
             Choice::StatusBar => Command::ExpandGroup(0),
@@ -1534,6 +1547,8 @@ impl Editor {
             | Choice::Hyphenation
             | Choice::Comparing
             | Choice::Finishing
+            | Choice::LegacyField
+            | Choice::FillIn
             | Choice::StatusBar
             | Choice::PageNumbering
             | Choice::Margin
@@ -1706,6 +1721,8 @@ impl Editor {
             Choice::Hyphenation => self.choose_hyphenation(index),
             Choice::Comparing => self.choose_comparing(index),
             Choice::Finishing => self.choose_finishing(index),
+            Choice::LegacyField => self.choose_legacy_field(index),
+            Choice::FillIn => self.choose_fill_in(index),
             Choice::StatusBar => self.choose_status_part(index),
             Choice::PageNumbering => self.choose_page_numbering(index),
             Choice::Margin => self.choose_margins(index),

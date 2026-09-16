@@ -1893,6 +1893,19 @@ impl Editor {
             "fontdialog" => {
                 self.open_font_dialog();
             }
+            // A form made of every control the Developer tab offers, so that
+            // the tab and the controls can both be looked at.
+            "form" => {
+                self.set_view_option("tab=developer")?;
+                let end = self.document.paragraph_text(3).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(3, end));
+                self.document.type_text("  ");
+                for which in 0..6 {
+                    self.insert_content_control(which);
+                    self.document.type_text("  ");
+                }
+                self.relayout();
+            }
             // What the Quick Parts button drops open onto.
             "quickparts" => {
                 self.run(crate::chrome::Command::QuickParts);

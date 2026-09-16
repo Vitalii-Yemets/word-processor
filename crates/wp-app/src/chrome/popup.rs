@@ -164,6 +164,10 @@ pub enum Choice {
     Comparing,
     /// Which of the ways a mail merge can end.
     Finishing,
+    /// Which of the three older form fields.
+    LegacyField,
+    /// Which of a control's entries is being filled in.
+    FillIn,
     /// What the strip along the bottom shows.
     StatusBar,
     /// How a section numbers its pages.

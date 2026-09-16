@@ -81,6 +81,10 @@ pub enum Tab {
     Mailings,
     Review,
     View,
+    /// Word's Developer tab, which is where the controls a form is made of
+    /// live. Word hides it until it is asked for; this program shows it,
+    /// having nothing on it that a person needs protecting from.
+    Developer,
     Help,
     /// The two that appear only when the caret is in a table, as Word's do.
     TableDesign,
@@ -101,6 +105,7 @@ impl Tab {
         Tab::Mailings,
         Tab::Review,
         Tab::View,
+        Tab::Developer,
         Tab::Help,
     ];
 
@@ -120,6 +125,7 @@ impl Tab {
             Self::Mailings => "Mailings",
             Self::Review => "Review",
             Self::View => "View",
+            Self::Developer => "Developer",
             Self::Help => "Help",
             Self::TableDesign => "Table Design",
             Self::TableLayout => "Table Layout",
@@ -154,6 +160,8 @@ impl Tab {
             Self::Mailings => "M",
             Self::Review => "R",
             Self::View => "W",
+            // Word's own letter for it.
+            Self::Developer => "L",
             Self::Help => "Y",
             // Word reaches the two table tabs through J; with no other tab on
             // that letter here, they take one of their own.
@@ -252,6 +260,7 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::PageNumber, choice: Choice::PageNumberPlace, split: false },
     Menu { command: Command::SelectAll, choice: Choice::Selecting, split: false },
     Menu { command: Command::QuickParts, choice: Choice::QuickPart, split: false },
+    Menu { command: Command::LegacyFields, choice: Choice::LegacyField, split: false },
     Menu { command: Command::Compare, choice: Choice::Comparing, split: false },
     Menu { command: Command::FinishMerge, choice: Choice::Finishing, split: false },
     Menu { command: Command::AlignmentTab, choice: Choice::AlignmentTab, split: false },
@@ -1186,6 +1195,8 @@ impl Ribbon {
                     | Choice::Markup
                     | Choice::BorderStyle
                     | Choice::QuickPart
+                    | Choice::LegacyField
+                    | Choice::FillIn
                     | Choice::WordArt
                     | Choice::Drawing
                     | Choice::MergeKind
@@ -1839,6 +1850,45 @@ static REVIEW_GROUPS: &[Group] = &[
     },
 ];
 
+/// Word's Developer tab, as far as this program has one.
+///
+/// Word's has six groups; three of them are about Visual Basic, add-ins and
+/// mapping a control to XML, and none of those is here — see the roadmap,
+/// where not running Visual Basic is a decision. What is left is the part a
+/// form is actually made of: the controls, the older fields they replaced,
+/// and the restriction that turns a document into a form somebody fills in.
+static DEVELOPER_GROUPS: &[Group] = &[
+    Group {
+        label: "Controls",
+        items: &[
+            Item::Small(Command::Control(0), Icon::QuickParts, "Rich Text"),
+            Item::Small(Command::Control(1), Icon::TextBox, "Plain Text"),
+            Item::Break,
+            Item::Small(Command::Control(2), Icon::Accept, "Check Box"),
+            Item::Small(Command::Control(3), Icon::MultilevelList, "Combo Box"),
+            Item::Break,
+            Item::Small(Command::Control(4), Icon::MultilevelList, "Drop-Down List"),
+            Item::Small(Command::Control(5), Icon::DateTime, "Date Picker"),
+        ],
+        launcher: None,
+    },
+    Group {
+        label: "Legacy",
+        items: &[Item::Large(Command::LegacyFields, Icon::QuickParts, "Legacy Tools")],
+        launcher: None,
+    },
+    Group {
+        label: "Protect",
+        items: &[Item::Large(Command::RestrictEditing, Icon::RestrictEditing, "Restrict Editing")],
+        launcher: None,
+    },
+    Group {
+        label: "Code",
+        items: &[Item::Large(Command::Macros, Icon::Macros, "Macros")],
+        launcher: None,
+    },
+];
+
 static VIEW_GROUPS: &[Group] = &[
     Group {
         label: "Views",
@@ -2160,6 +2210,7 @@ pub fn groups_of(tab: Tab) -> &'static [Group] {
         Tab::Mailings => MAILINGS_GROUPS,
         Tab::Review => REVIEW_GROUPS,
         Tab::View => VIEW_GROUPS,
+        Tab::Developer => DEVELOPER_GROUPS,
         Tab::Help => HELP_GROUPS,
         Tab::TableDesign => TABLE_DESIGN_GROUPS,
         Tab::TableLayout => TABLE_LAYOUT_GROUPS,

@@ -109,6 +109,7 @@
 = Character code
 = Chart
 = Check
+= Check Box
 = Check for Errors
 = Choose commands from
 = Choose one to put it in, or to take it away.
@@ -121,10 +122,12 @@
 = Close
 = Close Header and Footer
 = Close the Comparison
+= Code
 = Color
 = Colors
 = Columns
 = Combine Revisions from Two Authors
+= Combo Box
 = Comma-separated values
 = Comment
 = Comments
@@ -132,6 +135,7 @@
 = Compare Two Documents
 = Compare with
 = Contents
+= Controls
 = Convert to Text
 = Copies
 = Copy
@@ -151,6 +155,7 @@
 = Dark Mode
 = Data
 = Date & Time
+= Date Picker
 = Default tab stops
 = Delete
 = Delete Column
@@ -159,6 +164,7 @@
 = Delete Table
 = Description
 = Design
+= Developer
 = Dictionaries
 = Dictionaries on this machine
 = Dictionary
@@ -181,6 +187,7 @@
 = Draft
 = Draw
 = Draw Table
+= Drop-Down List
 = Edges
 = Edit Individual Documents
 = Edit List
@@ -272,6 +279,8 @@
 = Leader
 = Left
 = Left:
+= Legacy
+= Legacy Tools
 = Line
 = Line Numbers
 = Line and Page Breaks
@@ -366,6 +375,7 @@
 = Picas
 = Pictures
 = Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
+= Plain Text
 = Plain Text (*.txt)
 = Points
 = Position
@@ -411,6 +421,7 @@
 = Results
 = Review
 = Reviewing Pane
+= Rich Text
 = Rich Text Format (*.rtf)
 = Right
 = Right:

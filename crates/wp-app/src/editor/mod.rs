@@ -17,6 +17,7 @@ mod commands;
 mod comparing;
 mod composing;
 mod context;
+mod controls;
 mod correcting;
 mod diagram;
 mod dialogs;
@@ -456,6 +457,8 @@ pub struct Editor {
     asking: Option<dialogs::Asking>,
     /// The two documents a comparison came from, shown beside the result.
     comparing: Option<comparing::Comparing>,
+    /// Which control is being filled in from a list that dropped open.
+    filling_in: Option<wp_docx::TextPosition>,
     /// Whether the document open now carries macros written in Visual Basic,
     /// which this program keeps and does not run.
     carries_macros: bool,
@@ -724,6 +727,7 @@ impl Editor {
             asking: None,
             comparing: None,
             carries_macros,
+            filling_in: None,
             left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,
             count_the_edges: false,

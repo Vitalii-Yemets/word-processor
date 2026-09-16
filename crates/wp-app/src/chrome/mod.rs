@@ -388,6 +388,11 @@ pub enum Command {
     ChooseSize,
     ChooseStyle,
     ChooseZoom,
+    /// One of the content controls, by its place in
+    /// `wp_docx::controls::ControlKind::ALL`.
+    Control(usize),
+    /// The three fields a form was made of before content controls.
+    LegacyFields,
 }
 
 impl Command {

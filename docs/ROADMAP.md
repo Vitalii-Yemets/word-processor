@@ -4701,13 +4701,55 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   program can now read but does not parse the project inside — and Word's
   trust centre, its trusted locations and its signed-project checking have no
   counterpart here, because there is nothing to trust: nothing runs.
-- [ ] **J8. Form fields, and the Developer tab they are made from.** The
+- [x] **J8. Form fields, and the Developer tab they are made from.** The
   three legacy fields — text, tick box, drop-down — put into a document,
   filled in, and behaving: a tick box that ticks, a drop-down that drops.
   And Word's content controls, `w:sdt`, which are the same idea written
-  again and are what a document made this decade uses. **J1** reads the
-  legacy fields and lets a text one be typed into, which is what a form
-  protection needs; this is the rest.
+  again and are what a document made this decade uses.
+  *Done:* both kinds, put in from a real tab and used with the mouse. The
+  older kind is a run of runs — `w:fldChar` begin carrying `w:ffData`, the
+  instruction, a separator, the answer, and an end — and `wp-docx/src/forms.rs`
+  now writes that as well as reading it, ticks the box by setting
+  `w:checked` and writing the character the box is drawn with, and answers a
+  drop-down by number, which is how the format stores the answer.
+  The newer kind is `wp-docx/src/controls.rs`: `w:sdt` wrapping ordinary runs,
+  with the six sorts Word's tab offers — rich text, plain text, tick box,
+  combo box, drop-down list and date. The tick box is the one Word did not
+  have room for in the original namespace, so it is written in the `w14` one
+  and that namespace is declared in the document it is used in.
+  Both wrap the words rather than replacing them, so a reader that knows
+  nothing of controls still sees the text.
+  In the program: Word's Developer tab, which is where these are made. Four
+  groups of it — Controls with the six buttons, Legacy with the menu of three,
+  Protect with Restrict Editing, Code with Macros. A click on a tick box
+  ticks it, a second click unticks it, and a click on either sort of list
+  drops it open under the caret and writes in what was picked. A click
+  anywhere else is still the caret's.
+  *Proven by:* eight tests over the older fields and eleven over the newer —
+  every sort put in and read back as the sort it was, a box ticked and
+  unticked through a save and an open, a list offering what it was given and
+  keeping the answer, words written into a text one and the control surviving
+  it, a sort refused what is not its own, two side by side told apart and the
+  right one of them ticked, and the XML checked to be the shape Word writes,
+  namespace and all. Seven more over the tab itself: every button puts its own
+  control in, every menu item its own field, a click ticks and unticks, a
+  click on a list opens it and the chosen word arrives, and a click in
+  ordinary text is not taken. The tab photographed with its four groups and
+  six controls standing in a document.
+  *Not done, and named here:* **a content control has no boundary drawn round
+  it.** Word draws a faint tag at each end so a person can see where one
+  starts; here it is visible only by what it does. **There is no Properties
+  dialog**, so a control is named and given its list when it is made and not
+  edited afterwards — the drop-downs are made with three example entries
+  rather than the empty list Word makes, because a list that drops open onto
+  nothing teaches nobody what it is for. Word's picture, repeating-section and
+  building-block-gallery controls are deliberately absent: the first two need
+  drawing and repeating machinery of their own, and the third is **J6**'s
+  galleries offered a second way. Design Mode is not there, having nothing to
+  show while there are no boundaries. Mapping a control to a piece of custom
+  XML — Word's other Developer group — is not done and is not planned: it is
+  a way of driving a document from a program, and this program is the one
+  reading the document.
 - [ ] **J9. Limiting formatting to a selection of styles.** The top half of
   Word's Restrict Editing: `w:formatting` on the protection, the styles
   marked `w:locked` in `styles.xml`, the dialog that lists every style with
