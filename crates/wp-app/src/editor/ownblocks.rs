@@ -63,7 +63,7 @@ impl Editor {
     }
 
     /// Writes it back, making the folder if it is not there.
-    fn save_own_template(&mut self, template: &Document) -> bool {
+    pub(super) fn save_own_template(&mut self, template: &Document) -> bool {
         let Some(path) = self.own_template_path() else { return false };
         if let Some(folder) = path.parent() {
             let _ = std::fs::create_dir_all(folder);

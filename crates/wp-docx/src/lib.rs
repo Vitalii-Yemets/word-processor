@@ -1842,6 +1842,94 @@ impl Document {
         true
     }
 
+    /// Copies a style from another document, exactly as it was written.
+    ///
+    /// Word's Organizer, which is how a style gets from a document into a
+    /// template or the other way about. The element is lifted whole rather
+    /// than read and written again: a style is full of properties this
+    /// program does not model, and a copy that kept only what it understood
+    /// would be a different style wearing the same name.
+    ///
+    /// A style of that identifier already here is replaced, which is what
+    /// copying onto one means and what Word asks about first.
+    pub fn copy_style_from(&mut self, other: &Document, id: &str) -> bool {
+        let Some(source) = other.styles_tree() else { return false };
+        let Some(wanted) = source
+            .root
+            .children_named(Some(read::W), "style")
+            .find(|style| {
+                style
+                    .attribute(Some(read::W), "styleId")
+                    .is_some_and(|found| found.eq_ignore_ascii_case(id))
+            })
+            .cloned()
+        else {
+            return false;
+        };
+
+        let Some(mut tree) = self.styles_tree() else { return false };
+        let before = tree.root.clone();
+        remove_style(&mut tree.root, id);
+        tree.root.push_element(wanted);
+        if tree.root == before {
+            return false;
+        }
+        self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
+        self.save_styles_tree(&tree);
+        self.mark_modified();
+        true
+    }
+
+    /// Takes a style out of the document.
+    ///
+    /// The paragraphs that used it are not touched: they name a style that is
+    /// no longer there, and the format's answer to that is the document
+    /// default, which is what Word leaves them looking like.
+    pub fn delete_style(&mut self, id: &str) -> bool {
+        let Some(mut tree) = self.styles_tree() else { return false };
+        if !remove_style(&mut tree.root, id) {
+            return false;
+        }
+        self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
+        self.save_styles_tree(&tree);
+        self.mark_modified();
+        true
+    }
+
+    /// Gives a style another name to be shown under.
+    ///
+    /// The identifier stays what it was, because everything that uses the
+    /// style refers to it by that: renaming the identifier would be renaming
+    /// every paragraph's reference to it as well, and Word's Organizer
+    /// renames what a person reads.
+    pub fn rename_style(&mut self, id: &str, name: &str) -> bool {
+        let name = name.trim();
+        if name.is_empty() {
+            return false;
+        }
+        let Some(mut tree) = self.styles_tree() else { return false };
+        let prefix = edit::prefix_for(&tree.root, WORDPROCESSING_NAMESPACE);
+        let Some(style) = tree.root.child_elements_mut().find(|style| {
+            style.is(Some(read::W), "style")
+                && style
+                    .attribute(Some(read::W), "styleId")
+                    .is_some_and(|found| found.eq_ignore_ascii_case(id))
+        }) else {
+            return false;
+        };
+
+        style.remove_children_named(Some(read::W), "name");
+        let mut element = Element::new(&edit::name_with(prefix.as_deref(), "name"), Some(read::W));
+        element.set_namespaced_attribute(&edit::name_with(prefix.as_deref(), "val"), read::W, name);
+        // The name goes first, which is where the schema puts it.
+        style.insert_element(0, element);
+
+        self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
+        self.save_styles_tree(&tree);
+        self.mark_modified();
+        true
+    }
+
     /// Which styles the document actually uses, by identifier.
     ///
     /// What Word's Styles pane shows when it is set to "In current document":
@@ -3139,6 +3227,20 @@ pub(crate) fn default_numbering() -> String {
 <w:num w:numId="{NUMBERED_LIST}"><w:abstractNumId w:val="1"/></w:num>
 </w:numbering>"#
     )
+}
+
+/// Takes the style of an identifier out of a styles part, if it is there.
+fn remove_style(root: &mut Element, id: &str) -> bool {
+    let before = root.children.len();
+    root.children.retain(|node| {
+        node.as_element().is_none_or(|style| {
+            !(style.is(Some(read::W), "style")
+                && style
+                    .attribute(Some(read::W), "styleId")
+                    .is_some_and(|found| found.eq_ignore_ascii_case(id)))
+        })
+    });
+    root.children.len() != before
 }
 
 /// A small stylesheet, so that documents created here have the styles their

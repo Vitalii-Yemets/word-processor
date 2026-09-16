@@ -2065,6 +2065,15 @@ Katherine Johnson,Hampton,katherine@example.com
                     self.open_compare_dialog();
                 }
             }
+            // Word's Manage Styles: the defaults a document starts from.
+            "managestyles" => {
+                self.open_manage_styles();
+            }
+            // And its second tab, the Organizer.
+            "organizer" => {
+                self.open_manage_styles();
+                self.dialog_key(wp_shell::Key::Tab, false, true);
+            }
             "exception" => {
                 self.document.set_caret(wp_docx::TextPosition::new(4, 0));
                 let end = self.document.paragraph_text(4).unwrap_or_default().len();

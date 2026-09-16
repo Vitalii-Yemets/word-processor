@@ -130,7 +130,13 @@ impl Editor {
         self.settings.theme_colors = colors;
         self.settings.theme_fonts = fonts;
         self.settings.save();
-        self.report(&format!("New documents will use {named} colours"))
+
+        // And into the template, which is where Word keeps it and what a new
+        // document is made from when there is one. The setting stands behind
+        // it for the machine that has no template yet.
+        let kept = self.keep_default_theme(&theme);
+        let said = self.said_of_a_default(&crate::messages::with("The {0} theme", &[&named]), kept);
+        self.report(&said)
     }
 }
 

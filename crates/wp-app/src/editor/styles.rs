@@ -112,7 +112,7 @@ impl Editor {
             }
             Hit::NewStyle => self.open_new_style(),
             Hit::Inspector => self.open_style_inspector(),
-            Hit::Manage => self.open_modify_style(),
+            Hit::Manage => self.open_manage_styles(),
         }
     }
 

@@ -239,6 +239,8 @@
 = Formatting restrictions
 = Formula
 = Fractions (1/2) with fraction character
+= From the template to this document
+= From this document to the template
 = General
 = General Options
 = Glossaries
@@ -264,6 +266,8 @@
 = Hyphens (--) with dash (—)
 = INitial CAps
 = Illustrations
+= In Normal.dotm
+= In this document
 = In use
 = Inches
 = Include textboxes, footnotes and endnotes
@@ -309,6 +313,7 @@
 = Mailings
 = Make Default
 = Manage Sources
+= Manage Styles
 = Margins
 = Mark Citation
 = Mark Entry
@@ -322,6 +327,7 @@
 = Merge Formatting
 = Millimeters
 = Mirror indents
+= Modify
 = More Layout Options…
 = More Rotation Options…
 = Move Down
@@ -336,6 +342,8 @@
 = New
 = New Window
 = New document from {0}
+= New documents based on this template
+= New name
 = Next
 = Next Footnote
 = None
@@ -359,6 +367,7 @@
 = Options
 = Order
 = Ordinals (1st) with superscript
+= Organizer
 = Orientation
 = Original
 = Outline
@@ -433,6 +442,7 @@
 = Remove
 = Remove Link
 = Remove Table
+= Rename
 = Repeat Header Rows
 = Repeat as header row at the top of each page
 = Replace
@@ -479,6 +489,7 @@
 = Send E-mail Messages
 = Set
 = Set As Default
+= Set Defaults
 = Set as Default
 = Setting
 = Shapes
@@ -500,6 +511,7 @@
 = Small caps
 = SmartArt
 = Sort
+= Space after
 = Space between cells
 = Spacing
 = Special Characters
@@ -545,6 +557,7 @@
 = Text files
 = Text formatting
 = Text from File
+= That style could not be changed
 = The author asked for it to be opened read-only.
 = The document is not encrypted.
 = The document is unreadable without it.
@@ -555,12 +568,14 @@
 = The letter goes to everybody ticked.
 = The selection is saved under this name.
 = The two passwords are not the same
+= The {0} theme
 = Themes
 = Thesaurus
 = This document
 = This document also carries Visual Basic macros
 = This document is not signed.
 = This document is open read-only.
+= This document only
 = This document was opened read-only: save a copy
 = This document, before
 = This machine's list of trusted issuers could not be read
@@ -579,6 +594,7 @@
 = Translate to
 = Translator Preferences
 = Type
+= Type the new name first
 = Underline
 = Undo
 = Unprotect Document
@@ -594,6 +610,7 @@
 = Web Layout
 = Web Page (*.htm;*.html)
 = Web Pages (*.htm;*.html;*.mht;*.mhtml)
+= What a paragraph looks like before anything is applied to it.
 = What's New
 = When correcting spelling
 = Where it goes
@@ -624,8 +641,10 @@
 = Zoom
 = unsaved changes
 = {0} characters
+= {0} copied
 = {0} could not be opened: {1}
 = {0} could not be read
+= {0} deleted
 = {0} did not open. Try the password again.
 = {0} is encrypted.
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
@@ -633,7 +652,10 @@
 = {0} of {1}
 = {0} point
 = {0} recovered
+= {0} renamed
 = {0} selected
+= {0} set for this and every new document
+= {0} set for this document only
 = {0} was not kept
 = {0} words
 = {0} {1}

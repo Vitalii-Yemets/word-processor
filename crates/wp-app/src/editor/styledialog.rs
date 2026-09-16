@@ -48,11 +48,13 @@ pub(super) const FORMAT_PARAGRAPH: &str = "Paragraph…";
 const NOTHING: &str = "(no style)";
 
 impl Editor {
-    /// Word's Modify Style, on whichever style the caret is in.
-    pub(super) fn open_modify_style(&mut self) -> Response {
-        let here = self.document.style_here();
-        let existing =
-            here.as_deref().and_then(|id| self.document.styles().get(id)).map(StyleDefinition::of);
+    /// Word's Modify Style, on the style that was chosen to modify.
+    ///
+    /// Word reaches it from the Manage Styles list and from a style's own
+    /// menu in the Styles pane; this program has the first of those, so a
+    /// style is named here rather than taken from where the caret is.
+    pub(super) fn open_modify_style_for(&mut self, id: &str) -> Response {
+        let existing = self.document.styles().get(id).map(StyleDefinition::of);
 
         match existing {
             Some(style) => {
@@ -405,7 +407,8 @@ mod tests {
         // from what it is based on.
         let mut editor = editor();
         editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
-        editor.open_modify_style();
+        let here = editor.document.style_here().expect("a style where the caret is");
+        editor.open_modify_style_for(&here);
 
         let style = editor.editing_style.as_ref().expect("a style being modified");
         assert_eq!(style.id, "Heading1");

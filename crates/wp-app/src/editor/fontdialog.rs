@@ -360,14 +360,20 @@ impl Editor {
         let change = authored(&wanted);
 
         let mut changed = self.document.set_character_format(&change);
-        if as_default {
-            // Word's Set As Default writes the formatting into the style every
-            // other style is built from, so it reaches new documents and every
-            // paragraph that never said otherwise.
-            changed |= self.document.set_default_character_format(&change);
+        if !as_default {
+            self.relayout();
+            return self.edited(changed, "Font");
         }
+
+        // Word's Set As Default writes the formatting into the style every
+        // other style is built from, so it reaches every paragraph of this
+        // document that never said otherwise - and into the template, so
+        // that it reaches the next document as well. See [`super::defaults`].
+        changed |= self.document.set_default_character_format(&change);
+        let kept = self.keep_default_font(&change);
         self.relayout();
-        self.edited(changed, if as_default { "Default font" } else { "Font" })
+        let said = self.said_of_a_default("Font", kept);
+        self.edited(changed, &said)
     }
 }
 

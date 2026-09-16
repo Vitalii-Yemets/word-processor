@@ -33,6 +33,9 @@ const ORIENTATION: usize = 10;
 /// Which question is being asked, so the answer can be acted on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Asking {
+    /// The defaults a document starts from, and the styles carried between
+    /// it and the template.
+    ManageStyles,
     /// What two documents are to be compared by, and where the answer goes.
     Compare,
     /// What the document is signed with, and what to sign it with.
@@ -190,6 +193,7 @@ impl Editor {
             Some(Asking::Sort) => self.apply_sort(&dialog),
             Some(Asking::Formula) => self.apply_formula(&dialog),
             Some(Asking::Protect) => self.apply_protection(&dialog),
+            Some(Asking::ManageStyles) => self.apply_manage_styles(&dialog),
             Some(Asking::Compare) => self.apply_comparison(&dialog),
             Some(Asking::Signatures) => self.apply_signature(&dialog),
             Some(Asking::OpenReadOnly) => self.apply_open_read_only(&dialog),
@@ -239,6 +243,20 @@ impl Editor {
                 Some(self.autocorrect_dialog_button(button))
             }
             (Some(Asking::Exceptions), ADD | DELETE) => Some(self.exceptions_dialog_button(button)),
+            // The Organizer's three: each changes one of the two lists and
+            // puts the dialog up again showing what is there now.
+            (Some(Asking::ManageStyles), button)
+                if matches!(
+                    button,
+                    super::managestyles::COPY
+                        | super::managestyles::DELETE
+                        | super::managestyles::RENAME
+                        | super::managestyles::MODIFY
+                ) =>
+            {
+                let dialog = self.dialog.clone()?;
+                Some(self.manage_styles_button(&dialog, button))
+            }
             // The two customising pages change a list and leave the dialog
             // standing, as the Tabs dialog's three do.
             (Some(Asking::Options), button)

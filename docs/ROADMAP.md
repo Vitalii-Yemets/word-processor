@@ -5125,13 +5125,52 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   letters that changed inside a word rather than the word, is not offered:
   this marks whole words, which is Word's own default. And a move is a whole
   paragraph here, where Word will call a moved sentence a move.
-- [ ] **J14. A person's defaults, kept where a person's defaults go.** Set as
+- [x] **J14. A person's defaults, kept where a person's defaults go.** Set as
   Default — on the Font dialog, on the Paragraph dialog, on the Design tab's
-  themes — writes into the document and into a setting this program keeps.
-  Word writes it into `Normal.dotm`, which **J6** now makes and reads, so
-  that a default is a default in every window and after a restart. With it:
-  Word's Organizer, which copies styles from one document or template to
-  another, and the Manage Styles dialog's Set Defaults page.
+  themes — wrote into the document and into a setting this program keeps.
+  Word writes it into `Normal.dotm`, which **J6** makes and reads.
+  *Done:* Set as Default means what it says. All three of Word's buttons
+  write twice now — into the document, because the person is looking at it
+  and expects it to change, and into the template, because that is what "from
+  now on" means. A default that reached only the document open at the time
+  was answering a different question from the one that was asked, and the
+  person would have found out a week later when the next document came up in
+  Calibri again. The template is read afresh, changed and written back, which
+  is the care `Normal.dotm` needs: holding it open would be two windows
+  writing over each other's defaults.
+  With them, Word's **Manage Styles**, which the Styles pane's button now
+  opens. Two of Word's four tabs are elsewhere in this program already —
+  Restrict is the style list inside Restrict Editing (**J9**) and Edit is the
+  Modify Style dialog — so what is here is the other two: **Set Defaults**,
+  which is the third place Word offers Set as Default and the one that says
+  plainly what the other two only imply, with its choice between this
+  document and every document; and the **Organizer**, which is how a style
+  gets out of the document it was made in and into the template, or back.
+  A style is copied as it was written rather than read and written again: a
+  style is full of properties this program does not model, and a copy that
+  kept only what it understood would be a different style wearing the same
+  name. Renaming changes the name and not the identifier, because everything
+  that uses a style refers to it by that.
+  *Proven by:* eight tests over the document — a style copied whole with what
+  it said intact, one that is not there not copied, a copy onto a style of
+  the same identifier replacing it and leaving one of it, a style taken away
+  with the rest untouched, a rename keeping the identifier the paragraphs
+  refer to and the name written where the schema wants it, and an empty name
+  refused. Six over the program: the dialog showing what a document actually
+  starts from rather than empty boxes, Set Defaults reaching the document,
+  the Organizer listing both files, a style deleted and renamed, and one that
+  is not there doing nothing. Both pages photographed.
+  *Not done, and named here:* **Word asks and this does not.** Word's Set as
+  Default puts up "Do you want to set the default font to Calibri 12? This
+  will affect all new documents based on the NORMAL template", with two
+  buttons; here the button on the dialog says which it is — Set as Default
+  means every document and OK means this one — and Manage Styles asks the
+  question outright with its Apply to. Word's Organizer also copies between
+  two files neither of which is open, through a pair of Close File buttons
+  that open any file; this copies between the document and the template,
+  which is what the button is for nine times in ten. The Organizer's other
+  three tabs — AutoText, toolbars and macros — belong to features that are
+  **J6**'s, not built, and **L**'s.
 - [ ] **J15. The boundary round a content control, and its Properties.**
   Word draws a faint tag at each end of a control so a person can see where
   one starts and ends; here a control is visible only by what it does. And

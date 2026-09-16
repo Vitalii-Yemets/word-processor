@@ -707,6 +707,12 @@ language = Deutsch
 = Fractions (1/2) with fraction character
 > Brüche (1/2) durch Bruchzeichen
 
+= From the template to this document
+> Von der Vorlage in dieses Dokument
+
+= From this document to the template
+> Von diesem Dokument in die Vorlage
+
 = General
 > Allgemein
 
@@ -775,6 +781,9 @@ language = Deutsch
 
 = Hyphens (--) with dash (—)
 > Bindestriche (--) durch Geviertstrich (—)
+
+= In this document
+> In diesem Dokument
 
 = INitial CAps
 > ERste BUchstaben
@@ -917,6 +926,9 @@ language = Deutsch
 = Mail Merge Recipients
 > Seriendruckempfänger
 
+= Manage Styles
+> Formatvorlagen verwalten
+
 = Margins
 > Seitenränder
 
@@ -956,6 +968,9 @@ language = Deutsch
 = Mirror indents
 > Einzüge spiegeln
 
+= Modify
+> Ändern
+
 = More Layout Options…
 > Weitere Layoutoptionen…
 
@@ -991,6 +1006,12 @@ language = Deutsch
 
 = New
 > Neu
+
+= New documents based on this template
+> Neue Dokumente auf Basis dieser Vorlage
+
+= New name
+> Neuer Name
 
 = New Window
 > Neues Fenster
@@ -1066,6 +1087,9 @@ language = Deutsch
 
 = Ordinals (1st) with superscript
 > Ordnungszahlen (1.) hochgestellt
+
+= Organizer
+> Organisieren
 
 = Orientation
 > Ausrichtung
@@ -1259,6 +1283,9 @@ language = Deutsch
 = Recipients
 > Empfänger
 
+= Rename
+> Umbenennen
+
 = Revised
 > Überarbeitet
 
@@ -1430,6 +1457,9 @@ language = Deutsch
 = Set as Default
 > Als Standard festlegen
 
+= Set Defaults
+> Standard festlegen
+
 = Setting
 > Einstellung
 
@@ -1489,6 +1519,9 @@ language = Deutsch
 
 = Sort
 > Sortieren
+
+= Space after
+> Abstand nach
 
 = Space between cells
 > Abstand zwischen Zellen
@@ -1625,6 +1658,9 @@ language = Deutsch
 = Text from File
 > Text aus Datei
 
+= That style could not be changed
+> Diese Formatvorlage konnte nicht geändert werden
+
 = The author asked for it to be opened read-only.
 > Der Autor möchte, dass es schreibgeschützt geöffnet wird.
 
@@ -1633,6 +1669,9 @@ language = Deutsch
 
 = The two passwords are not the same
 > Die beiden Kennwörter stimmen nicht überein
+
+= The {0} theme
+> Das Design {0}
 
 = This document
 > Diesem Dokument
@@ -1669,6 +1708,9 @@ language = Deutsch
 
 = This document is open read-only.
 > Dieses Dokument ist schreibgeschützt geöffnet.
+
+= This document only
+> Nur dieses Dokument
 
 = This document was opened read-only: save a copy
 > Dieses Dokument wurde schreibgeschützt geöffnet: Kopie speichern
@@ -1727,6 +1769,9 @@ language = Deutsch
 = Type
 > Typ
 
+= Type the new name first
+> Zuerst den neuen Namen eingeben
+
 = Unprotect Document
 > Dokumentschutz aufheben
 
@@ -1771,6 +1816,9 @@ language = Deutsch
 
 = Web Pages (*.htm;*.html;*.mht;*.mhtml)
 > Webseiten (*.htm;*.html;*.mht;*.mhtml)
+
+= What a paragraph looks like before anything is applied to it.
+> Wie ein Absatz aussieht, bevor etwas auf ihn angewendet wird.
 
 = What's New
 > Neuigkeiten
@@ -1862,11 +1910,17 @@ language = Deutsch
 = {0} characters
 > {0} Zeichen
 
+= {0} copied
+> {0} kopiert
+
 = {0} could not be opened: {1}
 > {0} konnte nicht geöffnet werden: {1}
 
 = {0} could not be read
 > {0} konnte nicht gelesen werden
+
+= {0} deleted
+> {0} gelöscht
 
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 > {0} ist kein Bild, das dieses Programm lesen kann. PNG, JPEG, BMP, GIF, TIFF und die Metadateien sind es.
@@ -1883,8 +1937,17 @@ language = Deutsch
 = {0} recovered
 > {0} wiederhergestellt
 
+= {0} renamed
+> {0} umbenannt
+
 = {0} selected
 > {0} markiert
+
+= {0} set for this and every new document
+> {0} für dieses und jedes neue Dokument festgelegt
+
+= {0} set for this document only
+> {0} nur für dieses Dokument festgelegt
 
 = {0} was not kept
 > {0} wurde nicht behalten

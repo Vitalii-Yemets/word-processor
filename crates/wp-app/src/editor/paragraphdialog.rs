@@ -313,11 +313,19 @@ impl Editor {
         let change = authored(&wanted);
 
         let mut changed = self.document.set_paragraph_format(&change);
-        if as_default {
-            changed |= self.document.set_default_paragraph_format(&change);
+        if !as_default {
+            self.relayout();
+            return self.edited(changed, "Paragraph");
         }
+
+        // Into the document's own defaults and into the template both, for
+        // the reason [`super::defaults`] gives: "from now on" means the next
+        // document too.
+        changed |= self.document.set_default_paragraph_format(&change);
+        let kept = self.keep_default_paragraph(&change);
         self.relayout();
-        self.edited(changed, if as_default { "Default paragraph" } else { "Paragraph" })
+        let said = self.said_of_a_default("Paragraph", kept);
+        self.edited(changed, &said)
     }
 }
 
