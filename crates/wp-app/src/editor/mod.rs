@@ -455,6 +455,10 @@ pub struct Editor {
     asking: Option<dialogs::Asking>,
     /// The two documents a comparison came from, shown beside the result.
     comparing: Option<comparing::Comparing>,
+    /// The people the merge is not for: Word's Edit Recipient List with the
+    /// tick taken off a row. Kept by number, because the list itself is read
+    /// afresh from its file each time.
+    left_out: std::collections::BTreeSet<usize>,
     /// A file that turned out to be encrypted, waiting for its password.
     waiting_to_unseal: Option<sealing::Waiting>,
     /// Whether Word Count counts what is written round the edges of the body:
@@ -712,6 +716,7 @@ impl Editor {
             dialog: None,
             asking: None,
             comparing: None,
+            left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,
             count_the_edges: false,
             under_caret: None,

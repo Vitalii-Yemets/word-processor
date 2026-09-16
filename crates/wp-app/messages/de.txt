@@ -521,6 +521,9 @@ language = Deutsch
 = Edges
 > Kanten
 
+= Edit Individual Documents
+> Einzelne Dokumente bearbeiten
+
 = Edit List
 > Liste bearbeiten
 
@@ -568,6 +571,9 @@ language = Deutsch
 
 = File types
 > Dateitypen
+
+= Finish & Merge
+> Fertig stellen und zusammenführen
 
 = Find
 > Suchen
@@ -818,6 +824,9 @@ language = Deutsch
 = Manage Sources
 > Quellen verwalten
 
+= Mail Merge Recipients
+> Seriendruckempfänger
+
 = Margins
 > Seitenränder
 
@@ -925,6 +934,9 @@ language = Deutsch
 
 = One or more margins are outside the printable area.
 > Mindestens ein Seitenrand liegt außerhalb des bedruckbaren Bereichs.
+
+= One File for Each Letter
+> Eine Datei je Brief
 
 = Open
 > Öffnen
@@ -1078,6 +1090,9 @@ language = Deutsch
 
 = Previous
 > Zurück
+
+= Print Documents
+> Dokumente drucken
 
 = Print
 > Drucken
@@ -1264,6 +1279,9 @@ language = Deutsch
 
 = Section: {0}
 > Abschnitt: {0}
+
+= Send E-mail Messages
+> E-Mail-Nachrichten senden
 
 = Select
 > Markieren
@@ -1471,6 +1489,9 @@ language = Deutsch
 
 = The document is unreadable without it.
 > Ohne das Kennwort ist das Dokument nicht lesbar.
+
+= The letter goes to everybody ticked.
+> Der Brief geht an alle Angehakten.
 
 = The file types could not be registered
 > Die Dateitypen konnten nicht registriert werden

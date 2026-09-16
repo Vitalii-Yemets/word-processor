@@ -82,6 +82,8 @@ pub(super) enum Asking {
     Protect,
     /// And the password back again, before the restriction is lifted.
     Unprotect,
+    /// Who a mail merge is for.
+    Recipients,
     /// The password of a file that cannot be read without one.
     Unseal,
     /// A password to make the document unreadable without, which is Word's
@@ -174,6 +176,7 @@ impl Editor {
             Some(Asking::Formula) => self.apply_formula(&dialog),
             Some(Asking::Protect) => self.apply_protection(&dialog),
             Some(Asking::Unprotect) => self.apply_unprotection(&dialog),
+            Some(Asking::Recipients) => self.apply_recipient_list(&dialog),
             Some(Asking::Unseal) => self.apply_unseal(&dialog),
             Some(Asking::Encrypt) => self.apply_encryption(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),

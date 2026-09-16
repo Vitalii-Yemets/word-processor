@@ -302,7 +302,7 @@ impl Editor {
             Command::NextRecipient => self.step_recipient(true),
             Command::PreviousRecipient => self.step_recipient(false),
             Command::CheckMergeErrors => self.check_merge(),
-            Command::FinishMerge => self.finish_merge(),
+            Command::FinishMerge => self.open_finishing(),
 
             // --- Proofing -----------------------------------------------------
             Command::Compare => self.open_ribbon_menu(Choice::Comparing),

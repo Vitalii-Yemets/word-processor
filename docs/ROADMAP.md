@@ -4560,8 +4560,52 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   dialog instead. And the two documents in the column do not scroll with the
   result — they show the page the caret is on, which is right when the
   comparison has not moved the pages about and approximate when it has.
-- [ ] **J5. Mail merge, finished.** The data sources, the field mapping, the
+- [x] **J5. Mail merge, finished.** The data sources, the field mapping, the
   preview, and the merge to a document, to a printer or to mail.
+  *Done:* the end of a merge, which is what was missing. Finish & Merge was
+  one command that wrote a file for each person; it is now Word's menu, with
+  Word's three ways out of a merge and one more.
+  **Edit Individual Documents** puts every letter into one new document, each
+  starting on a page of its own, which is what a person most often wants:
+  something to read through before a hundred sheets come out of the printer.
+  **Print Documents** does the same and then opens the Print page on the
+  result — Word prints them straight off; this puts them in front of the
+  person first, with the paper still in the tray, because a merge that goes
+  wrong goes wrong a hundred times. **Send E-mail Messages** hands each
+  letter to whatever the machine uses for mail, through a new
+  `wp_shell::mail`: the address comes from the column the list calls an
+  e-mail address, and nothing is sent — what comes up is a message waiting
+  for the person to look at and send, which is the only honest thing for a
+  word processor to do with somebody else's address book. **One File for Each
+  Letter** is what the command used to do, kept because Word gets there only
+  by merging to a document and saving it a page at a time.
+  And **who the merge is for**: Edit Recipient List was a list that dropped
+  open and picked whom to preview; it is now Word's Mail Merge Recipients
+  dialog, with a tick against every row. The tick is what it looks like — the
+  merge, and every one of the four endings, leaves out whoever is unticked.
+  Because the letters go where the letter is, this program having one window,
+  merging into the window asks about unsaved work first, the same question
+  New and Open ask.
+  *Proven by:* three recipients merged into one document with all three names
+  in it and two page breaks between them, not three and not one; a recipient
+  unticked getting no letter while the two beside them do; the dialog
+  starting with everybody ticked and one tick coming off; a merge with nobody
+  on the list saying so rather than opening an empty menu, and a merge with
+  everybody left out saying so rather than throwing the letter away. The
+  address escaping that a `mailto:` needs, held to the standard's unreserved
+  set, a space, a newline and a letter outside the alphabet. The Finish menu
+  photographed under its button and the recipients dialog photographed with
+  its ticks.
+  *Not done, and named here:* the rest of Word's Mail Merge Recipients
+  dialog — sorting, filtering, finding duplicates, finding a recipient, and
+  validating addresses. The letters go to mail as their words: `mailto:` is
+  how every desktop agrees to open a mail program and it carries text, so the
+  formatting does not go and neither does an attachment. Word's three other
+  data sources — Excel, Access, Outlook — are still not read, for the reason
+  written in [`wp_docx::merge`]: they are two file formats and a mail system,
+  and every one of them can write the delimited file this does read. Word's
+  Type a New List, which makes a list of recipients without a file to start
+  from, is not written.
 - [ ] **J6. Building blocks, Quick Parts and templates.** Including the
   `Normal.dotm` a person's own defaults live in.
 - [ ] **J7. Macros.** A VBA interpreter is a language implementation; it is

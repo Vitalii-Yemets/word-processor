@@ -1893,6 +1893,30 @@ impl Editor {
             "fontdialog" => {
                 self.open_font_dialog();
             }
+            // The ways a mail merge can end, with a list of people behind
+            // them so that the button is willing to drop open at all.
+            "finishmenu" => {
+                self.recipients = wp_docx::merge::Recipients::parse(
+                    b"Name,E-mail
+Ada Lovelace,ada@example.com
+Grace Hopper,grace@example.com
+",
+                );
+                self.run(crate::chrome::Command::FinishMerge);
+            }
+            // And who the merge is for, which is the one dialog with a tick
+            // against every row.
+            "recipients" => {
+                self.recipients = wp_docx::merge::Recipients::parse(
+                    b"Name,Town,E-mail
+Ada Lovelace,London,ada@example.com
+Grace Hopper,New York,grace@example.com
+Alan Turing,Wilmslow,alan@example.com
+Katherine Johnson,Hampton,katherine@example.com
+",
+                );
+                self.open_recipient_list();
+            }
             // The two things the Compare button drops open onto, which is
             // the only way to see that the button does drop open.
             "comparemenu" => {

@@ -107,8 +107,6 @@ pub enum Choice {
     Drawing,
     /// What a mail merge produces.
     MergeKind,
-    /// The people a letter is going to.
-    Recipient,
     /// The columns their list has.
     MergeField,
     /// What to do about a mistake in the writing.
@@ -164,6 +162,8 @@ pub enum Choice {
     Hyphenation,
     /// Which of the two ways of putting two documents together.
     Comparing,
+    /// Which of the ways a mail merge can end.
+    Finishing,
     /// What the strip along the bottom shows.
     StatusBar,
     /// How a section numbers its pages.

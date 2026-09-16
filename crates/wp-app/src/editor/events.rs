@@ -1449,7 +1449,6 @@ impl Editor {
             Choice::WordArt => Command::WordArt,
             Choice::Drawing => Command::SelectionPane,
             Choice::MergeKind => Command::StartMailMerge,
-            Choice::Recipient => Command::EditRecipientList,
             Choice::MergeField => Command::InsertMergeField,
             Choice::Correction => Command::Spelling,
             Choice::Synonym => Command::Thesaurus,
@@ -1477,6 +1476,7 @@ impl Editor {
             Choice::LineNumbers => Command::LineNumbers,
             Choice::Hyphenation => Command::Hyphenation,
             Choice::Comparing => Command::Compare,
+            Choice::Finishing => Command::FinishMerge,
             // The strip's own menu hangs where it was opened, not under a
             // button of the ribbon.
             Choice::StatusBar => Command::ExpandGroup(0),
@@ -1533,6 +1533,7 @@ impl Editor {
             | Choice::LineNumbers
             | Choice::Hyphenation
             | Choice::Comparing
+            | Choice::Finishing
             | Choice::StatusBar
             | Choice::PageNumbering
             | Choice::Margin
@@ -1579,7 +1580,6 @@ impl Editor {
             | Choice::WordArt
             | Choice::Drawing
             | Choice::MergeKind
-            | Choice::Recipient
             | Choice::MergeField
             | Choice::Correction
             | Choice::Synonym
@@ -1678,7 +1678,6 @@ impl Editor {
             Choice::WordArt => self.choose_word_art(index),
             Choice::Drawing => self.choose_drawing(index),
             Choice::MergeKind => self.choose_merge_kind(index),
-            Choice::Recipient => self.choose_recipient(index),
             Choice::MergeField => self.choose_merge_field(index),
             Choice::Correction => self.choose_correction(index),
             Choice::Synonym => self.take_synonym(index),
@@ -1706,6 +1705,7 @@ impl Editor {
             Choice::LineNumbers => self.choose_line_numbers(index),
             Choice::Hyphenation => self.choose_hyphenation(index),
             Choice::Comparing => self.choose_comparing(index),
+            Choice::Finishing => self.choose_finishing(index),
             Choice::StatusBar => self.choose_status_part(index),
             Choice::PageNumbering => self.choose_page_numbering(index),
             Choice::Margin => self.choose_margins(index),

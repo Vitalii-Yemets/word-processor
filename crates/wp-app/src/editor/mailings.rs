@@ -15,7 +15,10 @@ use wp_docx::merge::{merge_instruction, Kind, Recipients};
 use wp_shell::dialog::FileFilter;
 use wp_shell::Response;
 
+use crate::chrome::dialog::{Dialog, Field, TreeRow};
 use crate::chrome::{Choice, Command, Popup};
+
+use super::dialogs::Asking;
 
 use super::Editor;
 
@@ -114,37 +117,6 @@ impl Editor {
 
         let count = self.recipients.len();
         self.report(&format!("{count} recipients, {} columns", self.recipients.headers.len()))
-    }
-
-    /// Shows who is on the list.
-    pub(super) fn open_recipient_list(&mut self) -> Response {
-        if self.close_popup_if(Choice::Recipient) {
-            return Response::Redraw;
-        }
-        if self.recipients.is_empty() {
-            return self.report("No recipients yet — use Select Recipients");
-        }
-        let Some((left, top, _)) = self.ribbon.command_rect(Command::EditRecipientList) else {
-            return Response::Ignored;
-        };
-
-        let items = (0..self.recipients.len()).map(|at| self.describe_recipient(at)).collect();
-        self.popup =
-            Some(Popup::new(Choice::Recipient, items, self.preview_record, left, top, 320.0));
-        self.needs_redraw = true;
-        Response::Redraw
-    }
-
-    /// Shows the letter as it will go to whoever was chosen.
-    pub(super) fn choose_recipient(&mut self, index: usize) -> Response {
-        self.popup = None;
-        if index >= self.recipients.len() {
-            return Response::Ignored;
-        }
-        self.preview_record = Some(index);
-        self.relayout();
-        self.needs_redraw = true;
-        self.report(&format!("Showing {}", self.describe_recipient(index)))
     }
 
     /// Drops open the columns the list has.
@@ -278,55 +250,6 @@ impl Editor {
         self.report(&format!("The list has no column called {}", missing.join(", ")))
     }
 
-    /// Writes one letter per recipient into a document of its own.
-    pub(super) fn finish_merge(&mut self) -> Response {
-        if self.recipients.is_empty() {
-            return self.report("No recipients yet — use Select Recipients");
-        }
-        let Some(folder) = wp_shell::dialog::save_file(
-            "Finish & Merge",
-            &[FileFilter { label: "Word documents", pattern: "*.docx" }],
-            self.file.as_deref(),
-        ) else {
-            return Response::Ignored;
-        };
-
-        // One file per person, named after the file that was asked for with the
-        // number of the letter on the end. A single document holding every
-        // letter is Word's other answer; this is the one that can be printed a
-        // letter at a time.
-        let stem = folder.with_extension("");
-        let mut written = 0usize;
-        let mut skipped = 0usize;
-        for index in 0..self.recipients.len() {
-            let record = self.recipients.record(index);
-            // A rule in the letter can say to leave somebody out.
-            if self.document.record_is_skipped(&record) {
-                skipped += 1;
-                continue;
-            }
-
-            let mut copy = self.document.clone();
-            // The rules first: what a rule says can itself hold merge fields.
-            copy.apply_merge_rules(&record, written + 1);
-            copy.apply_merge_record(&record);
-            let bytes = match copy.save() {
-                Ok(bytes) => bytes,
-                Err(error) => return self.report(&format!("Letter {index} failed: {error}")),
-            };
-            written += 1;
-            let path = PathBuf::from(format!("{}-{}.docx", stem.to_string_lossy(), written));
-            if let Err(error) = std::fs::write(&path, bytes) {
-                return self.report(&format!("{} could not be written: {error}", path.display()));
-            }
-        }
-
-        if skipped > 0 {
-            return self.report(&format!("{written} letters written, {skipped} skipped by a rule"));
-        }
-        self.report(&format!("{written} letters written"))
-    }
-
     /// Puts one merge field in, without laying the document out again.
     fn insert_merge_field(&mut self, column: &str) -> bool {
         // What the field shows before anything works it out: the column's name
@@ -408,5 +331,430 @@ impl Editor {
                 colour,
             );
         }
+    }
+}
+
+/// The four ways a merge can end.
+///
+/// Word's three — a new document, the printer, mail — and the one this
+/// program adds, which is a file for each letter. Word gets to that by
+/// merging to a document and saving it a page at a time; a person who wants
+/// a hundred files should not have to.
+pub(super) fn endings() -> Vec<String> {
+    use crate::messages::t;
+    vec![
+        t("Edit Individual Documents").to_owned(),
+        t("Print Documents").to_owned(),
+        t("Send E-mail Messages").to_owned(),
+        t("One File for Each Letter").to_owned(),
+    ]
+}
+
+impl Editor {
+    /// Drops open the ways a merge can end.
+    pub(super) fn open_finishing(&mut self) -> Response {
+        if self.recipients.is_empty() {
+            return self.report("No recipients yet — use Select Recipients");
+        }
+        self.open_ribbon_menu(Choice::Finishing)
+    }
+
+    /// Does whichever was chosen.
+    pub(super) fn choose_finishing(&mut self, index: usize) -> Response {
+        self.popup = None;
+        match index {
+            0 => self.merge_to_a_document(),
+            1 => self.merge_to_the_printer(),
+            2 => self.merge_to_mail(),
+            3 => self.merge_to_files(),
+            _ => Response::Ignored,
+        }
+    }
+
+    /// Every letter, one after another, in one new document.
+    ///
+    /// Word's Edit Individual Documents, and what a person most often wants:
+    /// something to read through before a hundred sheets of paper come out of
+    /// the printer.
+    pub(super) fn merge_to_a_document(&mut self) -> Response {
+        // The letters go where the letter is, this program having one window.
+        // So the letter it came from has to be safe first, which is the same
+        // question New and Open ask.
+        if !self.may_discard() {
+            return Response::Ignored;
+        }
+        let (body, written, skipped) = self.merged_body();
+        if written == 0 {
+            return self.report("Every recipient was left out");
+        }
+        let made = match wp_docx::Document::create(&body) {
+            Ok(document) => document,
+            Err(error) => {
+                return self.report(&format!("The letters could not be put together: {error}"))
+            }
+        };
+        let bytes = match made.save() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return self.report(&format!("The letters could not be put together: {error}"))
+            }
+        };
+        let Ok(document) = wp_docx::Document::open(&bytes) else {
+            return self.report("The letters could not be put together");
+        };
+
+        // A new document with no file of its own, which is what Word gives
+        // back: the letters are the result, and the letter they came from is
+        // untouched.
+        self.set_document(document, None);
+        self.report(&note(written, skipped, "letters"))
+    }
+
+    /// The same, and then the Print page on it.
+    ///
+    /// Word prints them straight off. This puts them in front of the person
+    /// first, which is the same journey with the sheet of paper still in the
+    /// tray: a merge that goes wrong goes wrong a hundred times.
+    pub(super) fn merge_to_the_printer(&mut self) -> Response {
+        let response = self.merge_to_a_document();
+        if self.recipients.is_empty() {
+            return response;
+        }
+        self.open_print()
+    }
+
+    /// Each letter handed to the machine's mail program.
+    ///
+    /// The address comes from whichever column the list calls an e-mail
+    /// address — see [`super::matching`], which is where a column is matched
+    /// to what it means. Nothing is sent: what comes up is a message waiting
+    /// for the person to look at and send, which is the only honest thing for
+    /// a word processor to do with somebody else's address book.
+    pub(super) fn merge_to_mail(&mut self) -> Response {
+        let Some(column) = self.address_column("e-mail", EMAIL_COLUMNS) else {
+            return self
+                .report("No column of e-mail addresses — Match Fields says which column is which");
+        };
+        let subject = self.document_name();
+
+        let mut sent = 0usize;
+        let mut without = 0usize;
+        for index in self.included() {
+            let record = self.recipients.record(index);
+            let Some(address) = self.recipients.value(index, &column).filter(|to| !to.is_empty())
+            else {
+                without += 1;
+                continue;
+            };
+            let mut copy = self.document.clone();
+            copy.apply_merge_rules(&record, sent + 1);
+            copy.apply_merge_record(&record);
+            if !wp_shell::mail::compose(&address, &subject, &copy.plain_text()) {
+                return self.report("This machine has no mail program to hand a letter to");
+            }
+            sent += 1;
+        }
+
+        if without > 0 {
+            return self.report(&format!(
+                "{sent} letters handed to the mail program, {without} with no address"
+            ));
+        }
+        self.report(&format!("{sent} letters handed to the mail program"))
+    }
+
+    /// One file for each letter, named after the file that was asked for.
+    pub(super) fn merge_to_files(&mut self) -> Response {
+        let Some(chosen) = wp_shell::dialog::save_file(
+            t("Finish & Merge"),
+            &[FileFilter { label: "Word documents", pattern: "*.docx" }],
+            self.file.as_deref(),
+        ) else {
+            return Response::Ignored;
+        };
+
+        let stem = chosen.with_extension("");
+        let mut written = 0usize;
+        let mut skipped = 0usize;
+        for index in 0..self.recipients.len() {
+            if !self.is_included(index) {
+                skipped += 1;
+                continue;
+            }
+            let record = self.recipients.record(index);
+            if self.document.record_is_skipped(&record) {
+                skipped += 1;
+                continue;
+            }
+
+            let mut copy = self.document.clone();
+            // The rules first: what a rule says can itself hold merge fields.
+            copy.apply_merge_rules(&record, written + 1);
+            copy.apply_merge_record(&record);
+            let bytes = match copy.save() {
+                Ok(bytes) => bytes,
+                Err(error) => return self.report(&format!("Letter {index} failed: {error}")),
+            };
+            written += 1;
+            let path = PathBuf::from(format!("{}-{}.docx", stem.to_string_lossy(), written));
+            if let Err(error) = std::fs::write(&path, bytes) {
+                return self.report(&format!("{} could not be written: {error}", path.display()));
+            }
+        }
+        self.report(&note(written, skipped, "letters written"))
+    }
+
+    /// Every letter's blocks, one after another, each starting on a new page.
+    ///
+    /// Gives back what was built, how many letters went in and how many
+    /// people were left out.
+    fn merged_body(&mut self) -> (wp_docx::model::Body, usize, usize) {
+        let mut body = wp_docx::model::Body::default();
+        let mut written = 0usize;
+        let mut skipped = 0usize;
+
+        for index in 0..self.recipients.len() {
+            if !self.is_included(index) {
+                skipped += 1;
+                continue;
+            }
+            let record = self.recipients.record(index);
+            if self.document.record_is_skipped(&record) {
+                skipped += 1;
+                continue;
+            }
+
+            let mut copy = self.document.clone();
+            copy.apply_merge_rules(&record, written + 1);
+            copy.apply_merge_record(&record);
+            let mut blocks = copy.body().blocks;
+            if written > 0 {
+                // Each letter starts on a sheet of its own, which is what a
+                // letter is. Word writes a section break; a page break is the
+                // same thing where the letters share a page setup, and they
+                // do — they are copies of one document.
+                if let Some(wp_docx::model::Block::Paragraph(first)) = blocks.first_mut() {
+                    first.properties.page_break_before = Some(true);
+                }
+            }
+            body.blocks.extend(blocks);
+            written += 1;
+        }
+        (body, written, skipped)
+    }
+
+    /// Whether a person is one of those the merge is for.
+    pub(super) fn is_included(&self, index: usize) -> bool {
+        !self.left_out.contains(&index)
+    }
+
+    /// Everybody it is for, in order.
+    fn included(&self) -> Vec<usize> {
+        (0..self.recipients.len()).filter(|index| self.is_included(*index)).collect()
+    }
+}
+
+/// The names a list gives the column holding an e-mail address.
+const EMAIL_COLUMNS: &[&str] =
+    &["E-mail", "Email", "E-mail Address", "Email Address", "Mail", "Почта"];
+
+/// How a merge reports itself, with the people left out counted if there were
+/// any.
+fn note(written: usize, skipped: usize, what: &str) -> String {
+    if skipped > 0 {
+        format!("{written} {what}, {skipped} left out")
+    } else {
+        format!("{written} {what}")
+    }
+}
+
+impl Editor {
+    /// Word's Mail Merge Recipients: everybody on the list, with a tick
+    /// against those the letter is for.
+    ///
+    /// A dialog rather than a list that drops open, because what it is for is
+    /// not picking one person but going down the whole list and taking a few
+    /// off it. Word's is a dialog too, and a larger one: it sorts, it filters
+    /// and it finds duplicates, which is named in the roadmap.
+    pub(super) fn open_recipient_list(&mut self) -> Response {
+        if self.recipients.is_empty() {
+            return self.report("No recipients yet — use Select Recipients");
+        }
+        let rows = (0..self.recipients.len())
+            .map(|at| TreeRow::ticked(0, &self.describe_recipient(at), self.is_included(at)))
+            .collect();
+        let dialog = Dialog::new(
+            "Mail Merge Recipients",
+            vec![
+                Field::note("The letter goes to everybody ticked."),
+                Field::Tree {
+                    label: "Recipients".to_owned(),
+                    rows,
+                    current: self.preview_record.unwrap_or(0),
+                    scroll: 0,
+                },
+            ],
+        );
+        self.ask(Asking::Recipients, dialog)
+    }
+
+    /// Takes the ticks back off the dialog.
+    pub(super) fn apply_recipient_list(&mut self, dialog: &Dialog) -> Response {
+        let Some(Field::Tree { rows, current, .. }) = dialog.fields.get(RECIPIENT_ROWS) else {
+            return Response::Ignored;
+        };
+        self.left_out.clear();
+        for (at, row) in rows.iter().enumerate() {
+            if row.tick == Some(false) {
+                self.left_out.insert(at);
+            }
+        }
+        // The row the keyboard was on is the one the preview shows, which is
+        // what makes going down the list and looking at each letter work.
+        if *current < self.recipients.len() && self.is_included(*current) {
+            self.preview_record = Some(*current);
+        }
+        self.relayout();
+        self.needs_redraw = true;
+
+        let left_out = self.left_out.len();
+        if left_out > 0 {
+            return self.report(&format!(
+                "{} recipients, {left_out} left out",
+                self.recipients.len() - left_out
+            ));
+        }
+        self.report(&format!("{} recipients", self.recipients.len()))
+    }
+}
+
+/// Where the list of people sits in that dialog.
+const RECIPIENT_ROWS: usize = 1;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chrome::dialog::Answer;
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Event};
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    /// A letter with two merge fields in it, and three people to send it to.
+    fn editor() -> Editor {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Dear ")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+
+        editor.recipients = Recipients::parse(
+            b"Name,E-mail\nAda Lovelace,ada@example.com\nGrace Hopper,grace@example.com\nAlan Turing,alan@example.com\n",
+        );
+        // The field goes after the words, which is where the caret is.
+        let end = editor.document.paragraph_text(0).unwrap_or_default().len();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, end));
+        editor.document.insert_field(&merge_instruction("Name"), "«Name»");
+        editor.relayout();
+        // Saved, so that merging does not stop to ask about the letter: what
+        // that asks is tested where saving is.
+        let _ = editor.document.mark_saved();
+        editor
+    }
+
+    #[test]
+    fn the_button_offers_the_three_ways_word_offers_and_one_more() {
+        let items = endings();
+        assert_eq!(items.len(), 4);
+        assert!(items[0].contains("Individual Documents"), "{items:?}");
+        assert!(items[1].contains("Print"), "{items:?}");
+        assert!(items[2].contains("E-mail"), "{items:?}");
+        assert!(items[3].contains("Each Letter"), "{items:?}");
+    }
+
+    #[test]
+    fn merging_to_a_document_puts_every_letter_in_one() {
+        let mut editor = editor();
+        editor.merge_to_a_document();
+
+        let text = editor.document.plain_text();
+        for name in ["Ada Lovelace", "Grace Hopper", "Alan Turing"] {
+            assert!(text.contains(name), "{name} is not in the letters: {text:?}");
+        }
+        // And the letter that was merged is gone: what is open now is the
+        // result, with no file of its own.
+        assert!(editor.file.is_none());
+    }
+
+    #[test]
+    fn each_letter_after_the_first_starts_on_a_new_page() {
+        let mut editor = editor();
+        editor.merge_to_a_document();
+
+        let mut breaks = 0usize;
+        for at in 0..editor.document.paragraph_count() {
+            editor.document.set_caret(wp_docx::TextPosition::new(at, 0));
+            if editor.document.paragraph_format_here().page_break_before {
+                breaks += 1;
+            }
+        }
+        assert_eq!(breaks, 2, "three letters need two breaks between them");
+    }
+
+    #[test]
+    fn a_recipient_left_out_gets_no_letter() {
+        let mut editor = editor();
+        editor.left_out.insert(1);
+        editor.merge_to_a_document();
+
+        let text = editor.document.plain_text();
+        assert!(text.contains("Ada Lovelace"));
+        assert!(!text.contains("Grace Hopper"), "somebody left out got a letter: {text:?}");
+        assert!(text.contains("Alan Turing"));
+    }
+
+    #[test]
+    fn the_recipient_dialog_ticks_everybody_and_takes_a_tick_off() {
+        let mut editor = editor();
+        editor.open_recipient_list();
+        let dialog = editor.dialog.as_mut().expect("the dialog");
+        let Some(Field::Tree { rows, .. }) = dialog.fields.get_mut(RECIPIENT_ROWS) else {
+            panic!("no list of recipients");
+        };
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|row| row.tick == Some(true)), "somebody started unticked");
+        rows[1].tick = Some(false);
+
+        editor.finish_dialog(Answer::Accept);
+        assert!(editor.is_included(0));
+        assert!(!editor.is_included(1), "the tick did not come off");
+        assert!(editor.is_included(2));
+        assert!(editor.status.contains("1 left out"), "{}", editor.status);
+    }
+
+    #[test]
+    fn a_merge_with_nobody_on_the_list_says_so_rather_than_writing_nothing() {
+        let mut editor = editor();
+        editor.recipients = Recipients::default();
+        editor.open_finishing();
+        assert!(editor.status.contains("No recipients"), "{}", editor.status);
+        assert!(editor.popup.is_none(), "it offered to finish a merge with nobody on it");
+    }
+
+    #[test]
+    fn everybody_left_out_is_said_rather_than_an_empty_document_made() {
+        let mut editor = editor();
+        for index in 0..3 {
+            editor.left_out.insert(index);
+        }
+        let before = editor.document.plain_text();
+        editor.merge_to_a_document();
+        assert_eq!(editor.document.plain_text(), before, "the letter was thrown away");
+        assert!(editor.status.contains("left out"), "{}", editor.status);
     }
 }

@@ -252,6 +252,7 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::PageNumber, choice: Choice::PageNumberPlace, split: false },
     Menu { command: Command::SelectAll, choice: Choice::Selecting, split: false },
     Menu { command: Command::Compare, choice: Choice::Comparing, split: false },
+    Menu { command: Command::FinishMerge, choice: Choice::Finishing, split: false },
     Menu { command: Command::AlignmentTab, choice: Choice::AlignmentTab, split: false },
     Menu { command: Command::NextNote, choice: Choice::NoteJump, split: true },
     Menu { command: Command::AcceptChange, choice: Choice::Accepting, split: true },
@@ -1136,6 +1137,7 @@ impl Ribbon {
                     | Choice::LineNumbers
                     | Choice::Hyphenation
                     | Choice::Comparing
+                    | Choice::Finishing
                     | Choice::StatusBar
                     | Choice::PageNumbering
                     | Choice::Printer
@@ -1186,7 +1188,6 @@ impl Ribbon {
                     | Choice::WordArt
                     | Choice::Drawing
                     | Choice::MergeKind
-                    | Choice::Recipient
                     | Choice::MergeField
                     | Choice::Correction
                     | Choice::Accessibility

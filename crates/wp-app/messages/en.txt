@@ -178,6 +178,7 @@
 = Draw
 = Draw Table
 = Edges
+= Edit Individual Documents
 = Edit List
 = Editing
 = Editing restrictions
@@ -196,6 +197,7 @@
 = File types
 = Find
 = Finish
+= Finish & Merge
 = First Column
 = First Letter
 = Font
@@ -274,6 +276,7 @@
 = Links
 = Lock aspect ratio
 = Macros
+= Mail Merge Recipients
 = Mailings
 = Make Default
 = Manage Sources
@@ -311,6 +314,7 @@
 = OK
 = Office display language
 = On
+= One File for Each Letter
 = One Page
 = One or more margins are outside the printable area.
 = Open
@@ -367,6 +371,7 @@
 = Print
 = Print All Pages
 = Print Current Page
+= Print Documents
 = Print Layout
 = Print One Sided
 = Print Selection
@@ -430,6 +435,7 @@
 = Select Recipients
 = Selection Pane
 = Send Backward
+= Send E-mail Messages
 = Set
 = Set As Default
 = Set as Default
@@ -499,6 +505,7 @@
 = The file types were registered
 = The files below were recovered.
 = The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
+= The letter goes to everybody ticked.
 = Themes
 = Thesaurus
 = This document, before

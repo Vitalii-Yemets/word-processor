@@ -1516,6 +1516,94 @@ pub mod random {
     }
 }
 
+/// Handing a letter to whatever the machine uses for mail.
+///
+/// # Why a word processor does not send mail itself
+///
+/// Because sending mail means a server, an account, a password and a
+/// protocol, and none of those belongs to a document. What Word does is hand
+/// the letter to Outlook, which is the machine's mail program; what this does
+/// is hand it to whatever the machine's mail program is, which is a question
+/// the operating system already answers.
+///
+/// # What can be handed over, and what cannot
+///
+/// The address, the subject and the words. Not the formatting, and not an
+/// attachment: the way every desktop agrees to open a mail program is a
+/// `mailto:` address, and that carries text and nothing else. A merge to mail
+/// therefore sends the letter as the words it says. That is a real limitation
+/// and it is said here rather than discovered.
+pub mod mail {
+    /// Opens the machine's mail program with a letter in it, and says whether
+    /// it could.
+    ///
+    /// Nothing is sent: what comes up is a message waiting to be looked at
+    /// and sent by the person, which is what handing a letter to a mail
+    /// program means and is the only honest thing for a word processor to do
+    /// with somebody else's address book.
+    pub fn compose(to: &str, subject: &str, body: &str) -> bool {
+        let mut url = String::from("mailto:");
+        url.push_str(&escaped(to));
+        url.push_str("?subject=");
+        url.push_str(&escaped(subject));
+        url.push_str("&body=");
+        url.push_str(&escaped(body));
+        open(&url)
+    }
+
+    /// Everything that is not a letter or a digit written as its number,
+    /// which is what an address has to be to survive being an address.
+    ///
+    /// The unreserved set of the standard, and nothing else: a space in a
+    /// subject is `%20` and a newline in the words is `%0D%0A`, which is
+    /// what a mail program expects to find and turn back.
+    fn escaped(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        for byte in text.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(byte as char);
+                }
+                b'\n' => out.push_str("%0D%0A"),
+                other => out.push_str(&format!("%{other:02X}")),
+            }
+        }
+        out
+    }
+
+    /// Hands it to the desktop, which is where every other address this
+    /// program does not open itself goes. See [`crate::desktop::open`],
+    /// which is also where the check lives that a program is not talked into
+    /// running something by a document.
+    fn open(url: &str) -> bool {
+        crate::desktop::open(url)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::escaped;
+
+        #[test]
+        fn what_has_to_be_written_as_a_number_is() {
+            assert_eq!(escaped("a b"), "a%20b");
+            assert_eq!(escaped("x&y=z"), "x%26y%3Dz");
+            assert_eq!(escaped("one\ntwo"), "one%0D%0Atwo");
+            assert_eq!(escaped("a-b_c.d~e"), "a-b_c.d~e", "the unreserved set is left alone");
+        }
+
+        #[test]
+        fn an_address_survives_being_written() {
+            assert_eq!(escaped("somebody@example.com"), "somebody%40example.com");
+        }
+
+        #[test]
+        fn a_letter_outside_the_alphabet_is_written_as_its_bytes() {
+            // Two bytes in UTF-8, so two numbers.
+            assert_eq!(escaped("é"), "%C3%A9");
+        }
+    }
+}
+
 /// Tells the desktop what the window looks like, so that the parts it draws
 /// itself match the parts this program draws.
 ///
