@@ -2854,6 +2854,127 @@ pub(crate) fn choose_default_programs() -> bool {
         || open_in_shell("control.exe /name Microsoft.DefaultPrograms")
 }
 
+// --- What the machine says about numbers, lengths, dates and paper --------
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetUserDefaultLocaleName(name: *mut u16, length: i32) -> i32;
+    fn GetLocaleInfoEx(locale: *const u16, kind: u32, data: *mut u16, length: i32) -> i32;
+}
+
+/// What the system calls the things this asks it for.
+const LOCALE_IMEASURE: u32 = 0x0000_000D;
+const LOCALE_SDECIMAL: u32 = 0x0000_000E;
+const LOCALE_STHOUSAND: u32 = 0x0000_000F;
+const LOCALE_ITIME: u32 = 0x0000_0023;
+const LOCALE_SSHORTDATE: u32 = 0x0000_001F;
+const LOCALE_SMONTHNAME1: u32 = 0x0000_0038;
+const LOCALE_SDAYNAME1: u32 = 0x0000_002A;
+const LOCALE_IPAPERSIZE: u32 = 0x0000_100A;
+/// What `LOCALE_IPAPERSIZE` calls the two sheets this program knows.
+const PAPER_LETTER: &str = "1";
+
+/// One of the things the system knows about this machine's settings.
+fn locale_string(name: &[u16], kind: u32) -> Option<String> {
+    let mut buffer = [0u16; 128];
+    // SAFETY: the name is a null-terminated string and the buffer is as
+    // long as the length passed with it.
+    let written =
+        unsafe { GetLocaleInfoEx(name.as_ptr(), kind, buffer.as_mut_ptr(), buffer.len() as i32) };
+    if written <= 1 {
+        return None;
+    }
+    // The count includes the terminator.
+    Some(String::from_utf16_lossy(&buffer[..written as usize - 1]))
+}
+
+pub(crate) fn locale() -> crate::locale::Locale {
+    use crate::locale::{DateOrder, Locale, Paper};
+
+    let mut name = [0u16; 85];
+    // SAFETY: the buffer is as long as the length passed with it.
+    let written = unsafe { GetUserDefaultLocaleName(name.as_mut_ptr(), name.len() as i32) };
+    let name: Vec<u16> = if written > 0 { name[..written as usize].to_vec() } else { vec![0] };
+
+    let mut locale = Locale {
+        name: String::from_utf16_lossy(&name).trim_end_matches('\0').to_owned(),
+        ..Locale::default()
+    };
+    // "0" is metric; "1" is the measurements of the United States.
+    if let Some(measure) = locale_string(&name, LOCALE_IMEASURE) {
+        locale.metric = measure.trim() == "0";
+    }
+    if let Some(decimal) =
+        locale_string(&name, LOCALE_SDECIMAL).and_then(|mark| mark.chars().next())
+    {
+        locale.decimal = decimal;
+    }
+    locale.thousands = locale_string(&name, LOCALE_STHOUSAND).and_then(|mark| mark.chars().next());
+    if let Some(format) = locale_string(&name, LOCALE_SSHORTDATE) {
+        if let Some((order, separator)) = date_shape(&format) {
+            locale.date_order = order;
+            locale.date_separator = separator;
+        }
+    }
+    // "1" is a twenty-four hour clock.
+    if let Some(time) = locale_string(&name, LOCALE_ITIME) {
+        locale.twenty_four_hour = time.trim() == "1";
+    }
+    let months: Vec<String> =
+        (0..12).filter_map(|month| locale_string(&name, LOCALE_SMONTHNAME1 + month)).collect();
+    if months.len() == 12 {
+        locale.months = months;
+    }
+    // The system's list starts on Monday, as this program's does.
+    let days: Vec<String> =
+        (0..7).filter_map(|day| locale_string(&name, LOCALE_SDAYNAME1 + day)).collect();
+    if days.len() == 7 {
+        locale.days = days;
+    }
+    locale.paper = match locale_string(&name, LOCALE_IPAPERSIZE) {
+        Some(paper) if paper.trim() == PAPER_LETTER => Paper::Letter,
+        Some(_) => Paper::A4,
+        // A machine that does not say is taken to be what its measurements
+        // say it is.
+        None if locale.metric => Paper::A4,
+        None => Paper::Letter,
+    };
+    let _ = DateOrder::MonthDayYear;
+    locale
+}
+
+/// Which way round a short date goes, and what it is written with.
+///
+/// Windows writes the format with the letters Word's own field codes use:
+/// `dd/MM/yyyy`, `M/d/yyyy`, `yyyy-MM-dd`.
+fn date_shape(format: &str) -> Option<(crate::locale::DateOrder, char)> {
+    use crate::locale::DateOrder;
+
+    let mut parts: Vec<char> = Vec::new();
+    let mut separator = None;
+    for character in format.chars() {
+        match character {
+            'd' | 'M' | 'y' => {
+                let part = if character == 'M' { 'm' } else { character };
+                if parts.last() != Some(&part) {
+                    parts.push(part);
+                }
+            }
+            '\'' => {}
+            _ if character.is_whitespace() => {}
+            _ if separator.is_none() && !parts.is_empty() => separator = Some(character),
+            _ => {}
+        }
+    }
+    let order = match parts.as_slice() {
+        ['d', 'm', ..] => DateOrder::DayMonthYear,
+        ['m', 'd', ..] => DateOrder::MonthDayYear,
+        ['y', ..] => DateOrder::YearMonthDay,
+        _ => return None,
+    };
+    Some((order, separator.unwrap_or('/')))
+}
+
 #[link(name = "dwmapi")]
 extern "system" {
     fn DwmSetWindowAttribute(
@@ -3196,5 +3317,19 @@ mod frame_tests {
     fn black_and_white_come_out_as_themselves() {
         assert_eq!(colour_reference((0, 0, 0)), 0);
         assert_eq!(colour_reference((0xFF, 0xFF, 0xFF)), 0x00FF_FFFF);
+    }
+}
+
+#[cfg(test)]
+mod locale_tests {
+    use super::date_shape;
+    use crate::locale::DateOrder;
+
+    #[test]
+    fn a_short_date_says_which_way_round_it_goes() {
+        assert_eq!(date_shape("M/d/yyyy"), Some((DateOrder::MonthDayYear, '/')));
+        assert_eq!(date_shape("dd.MM.yyyy"), Some((DateOrder::DayMonthYear, '.')));
+        assert_eq!(date_shape("yyyy-MM-dd"), Some((DateOrder::YearMonthDay, '-')));
+        assert_eq!(date_shape("nothing of the kind"), None);
     }
 }

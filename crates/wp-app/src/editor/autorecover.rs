@@ -72,17 +72,14 @@ impl Recovered {
         let _ = std::fs::remove_file(self.sidecar());
     }
 
-    /// What the pane shows under the name: when the copy was taken, without
-    /// the letters that make a timestamp a machine's rather than a person's.
+    /// What the pane shows under the name: when the copy was taken, in the
+    /// date and the clock this machine writes.
+    ///
+    /// The copy itself records the moment the one way everything agrees
+    /// on; this is the same moment as the person reads one.
     #[must_use]
     pub fn when(&self) -> String {
-        let shown = self.saved.replace('T', " ");
-        let shown = shown.trim_end_matches('Z');
-        // The seconds are noise on a copy taken every ten minutes.
-        match shown.rfind(':') {
-            Some(at) if shown.len() - at == 3 => shown[..at].to_owned(),
-            _ => shown.to_owned(),
-        }
+        crate::locale::moment(&self.saved)
     }
 }
 
@@ -360,7 +357,13 @@ mod tests {
         assert_eq!(read.name, "Letter.docx");
         assert_eq!(read.original.as_deref(), Some(Path::new("/home/a/Letter.docx")));
         assert_eq!(read.copy, PathBuf::from("/tmp/r/1-2.docx"));
-        assert_eq!(read.when(), "2026-09-16 11:22", "the seconds are not shown");
+        assert_eq!(
+            read.when(),
+            crate::locale::moment("2026-09-16T11:22:33Z"),
+            "shown as this machine writes a date and a time, without the seconds"
+        );
+        assert!(read.when().contains("11:22"), "the time is there: {}", read.when());
+        assert!(!read.when().contains(":33"), "and the seconds are not");
     }
 
     #[test]

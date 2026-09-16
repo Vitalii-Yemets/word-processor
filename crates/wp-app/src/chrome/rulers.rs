@@ -65,6 +65,9 @@ pub struct Measurements {
     pub margin_right: f32,
     /// How many pixels there are to the inch at the current zoom.
     pub pixels_per_inch: f32,
+    /// How the ruler counts: how far apart the numbered marks are and how
+    /// many small ones there are between them. See [`Steps`].
+    pub steps: Steps,
     pub indents: Indents,
 }
 
@@ -170,6 +173,38 @@ fn stop_selector(canvas: &mut Canvas, left: f32, top: f32, chosen: TabAlignment,
 }
 
 /// Draws the ruler across the top of the page area.
+/// How a ruler is marked out.
+///
+/// An inch is divided into eighths and numbered every inch; a centimetre
+/// is divided into halves and numbered every centimetre. Which of the two
+/// a ruler shows is what Options says measurements are shown in — Word's
+/// ruler follows that setting, and a ruler in inches over a page set up in
+/// centimetres would be a ruler nobody could measure with.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Steps {
+    /// How far apart the small marks are, in pixels.
+    pub small: f32,
+    /// How many of them make one numbered mark.
+    pub per_number: i32,
+    /// Which of them is drawn taller: every half inch, every centimetre.
+    pub taller: i32,
+}
+
+impl Steps {
+    /// Marks every eighth of an inch, a taller one every half, a number
+    /// every inch.
+    #[must_use]
+    pub fn inches(pixels_per_inch: f32) -> Self {
+        Self { small: pixels_per_inch / 8.0, per_number: 8, taller: 4 }
+    }
+
+    /// Marks every half centimetre, a number every centimetre.
+    #[must_use]
+    pub fn centimetres(pixels_per_inch: f32) -> Self {
+        Self { small: pixels_per_inch / 2.54 / 2.0, per_number: 2, taller: 2 }
+    }
+}
+
 pub fn draw_horizontal(
     canvas: &mut Canvas,
     engine: &mut LayoutEngine<'_>,
@@ -217,7 +252,7 @@ pub fn draw_horizontal(
     // Marks every eighth of an inch, a taller one every half, and a number at
     // every whole inch — counting outwards from the left margin in both
     // directions, because both are measured from the text.
-    let step = measurements.pixels_per_inch / 8.0;
+    let Steps { small: step, per_number, taller } = measurements.steps;
     if step >= 2.0 {
         let mut index = -((text_left - measurements.page_left) / step).floor() as i32;
         let last = ((measurements.page_left + measurements.page_width - text_left) / step) as i32;
@@ -229,9 +264,9 @@ pub fn draw_horizontal(
                 continue;
             }
 
-            let inches = index.abs();
-            if inches % 8 == 0 && inches != 0 {
-                let text = (inches / 8).to_string();
+            let marks = index.abs();
+            if marks % per_number == 0 && marks != 0 {
+                let text = (marks / per_number).to_string();
                 let measured = engine.simple_line(&text, 0.0, 0.0, 6.5, theme.ruler_tick);
                 let line = engine.simple_line(
                     &text,
@@ -241,7 +276,7 @@ pub fn draw_horizontal(
                     theme.ruler_tick,
                 );
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
-            } else if inches % 4 == 0 {
+            } else if marks % taller == 0 {
                 canvas.fill_rect(x as i32, (band_top + 3.0) as i32, 1, 5, theme.ruler_tick);
             } else {
                 canvas.fill_rect(x as i32, (band_top + 4.0) as i32, 1, 3, theme.ruler_tick);
@@ -298,6 +333,9 @@ pub struct Vertical {
     pub margin_top: f32,
     pub margin_bottom: f32,
     pub pixels_per_inch: f32,
+    /// How the ruler counts: how far apart the numbered marks are and how
+    /// many small ones there are between them. See [`Steps`].
+    pub steps: Steps,
 }
 
 pub fn draw_vertical(
@@ -308,8 +346,16 @@ pub fn draw_vertical(
     measurements: Vertical,
     theme: &Theme,
 ) {
-    let Vertical { top, bottom, page_top, page_height, margin_top, margin_bottom, pixels_per_inch } =
-        measurements;
+    let Vertical {
+        top,
+        bottom,
+        page_top,
+        page_height,
+        margin_top,
+        margin_bottom,
+        pixels_per_inch,
+        steps,
+    } = measurements;
     canvas.fill_rect(
         left as i32,
         top as i32,
@@ -360,7 +406,8 @@ pub fn draw_vertical(
         );
     }
 
-    let step = pixels_per_inch / 8.0;
+    let _ = pixels_per_inch;
+    let Steps { small: step, per_number, taller } = steps;
     if step < 2.0 {
         return;
     }
@@ -377,9 +424,9 @@ pub fn draw_vertical(
             continue;
         }
 
-        let inches = (index - 1).abs();
-        if inches % 8 == 0 && inches != 0 {
-            let text = (inches / 8).to_string();
+        let marks = (index - 1).abs();
+        if marks % per_number == 0 && marks != 0 {
+            let text = (marks / per_number).to_string();
             let measured = engine.simple_line(&text, 0.0, 0.0, 6.5, theme.ruler_tick);
             let line = engine.simple_line(
                 &text,
@@ -389,7 +436,7 @@ pub fn draw_vertical(
                 theme.ruler_tick,
             );
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
-        } else if inches % 4 == 0 {
+        } else if marks % taller == 0 {
             canvas.fill_rect((band_left + 2.0) as i32, y as i32, 6, 1, theme.ruler_tick);
         } else {
             canvas.fill_rect((band_left + 3.0) as i32, y as i32, 4, 1, theme.ruler_tick);
@@ -562,7 +609,7 @@ pub fn hit_vertical(left: f32, measurements: Vertical, x: i32, y: i32) -> Option
 #[cfg(test)]
 mod tests {
     use super::{
-        hit_horizontal, hit_vertical, Hit, Indents, Measurements, PlacedStop, TabAlignment,
+        hit_horizontal, hit_vertical, Hit, Indents, Measurements, PlacedStop, Steps, TabAlignment,
         Vertical, VerticalHit, HORIZONTAL_HEIGHT, VERTICAL_WIDTH,
     };
 
@@ -577,6 +624,7 @@ mod tests {
             margin_left: 96.0,
             margin_right: 96.0,
             pixels_per_inch: 96.0,
+            steps: Steps::inches(96.0),
             indents: Indents::default(),
         }
     }
@@ -591,6 +639,7 @@ mod tests {
             margin_top: 96.0,
             margin_bottom: 96.0,
             pixels_per_inch: 96.0,
+            steps: Steps::inches(96.0),
         }
     }
 

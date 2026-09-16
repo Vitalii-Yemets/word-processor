@@ -200,8 +200,10 @@ pub fn draw(
     };
 
     if state.shows.page {
-        let position =
-            messages::with("Page {0} of {1}", &[&state.page.to_string(), &state.pages.to_string()]);
+        let position = messages::with(
+            "Page {0} of {1}",
+            &[&crate::locale::count(state.page), &crate::locale::count(state.pages)],
+        );
         write(canvas, engine, renderer, &position, text, &mut left);
     }
     if state.shows.section {
@@ -213,17 +215,19 @@ pub fn draw(
         let words = if state.words == 1 {
             t("1 word").to_owned()
         } else {
-            messages::with("{0} words", &[&state.words.to_string()])
+            messages::with("{0} words", &[&crate::locale::count(state.words)])
         };
         write(canvas, engine, renderer, &words, text, &mut left);
     }
     if state.shows.characters {
-        let characters = messages::with("{0} characters", &[&state.characters.to_string()]);
+        let characters =
+            messages::with("{0} characters", &[&crate::locale::count(state.characters)]);
         write(canvas, engine, renderer, &characters, dim, &mut left);
     }
 
     if state.selected_characters > 0 {
-        let selected = messages::with("{0} selected", &[&state.selected_characters.to_string()]);
+        let selected =
+            messages::with("{0} selected", &[&crate::locale::count(state.selected_characters)]);
         write(canvas, engine, renderer, &selected, dim, &mut left);
     }
     if state.shows.language {

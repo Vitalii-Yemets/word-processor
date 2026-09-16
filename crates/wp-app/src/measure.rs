@@ -113,9 +113,14 @@ impl Unit {
 }
 
 /// A length from the file, as a person would type it.
+///
+/// With the mark between the whole part and the fraction that this
+/// machine writes numbers with: half a centimetre is `0,50` in Germany
+/// and `0.50` in England, and a box that showed the wrong one would be a
+/// box a person retyped.
 #[must_use]
 pub fn format(twips: i32, unit: Unit) -> String {
-    format!("{:.*}", unit.places(), f64::from(twips) / unit.twips())
+    crate::locale::number(f64::from(twips) / unit.twips(), unit.places())
 }
 
 /// A length as it was typed, in the twentieths of a point the file stores.

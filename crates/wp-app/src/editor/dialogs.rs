@@ -563,6 +563,9 @@ mod tests {
         let bytes = Document::create(&body).expect("a document").save().expect("saving");
         let document = Document::open(&bytes).expect("reopening");
         let mut editor = Editor::new(library(), document, None);
+        // These tests are written in inches, so they say so: what a box
+        // shows otherwise depends on the machine the test runs on.
+        editor.unit = crate::measure::Unit::Inches;
         editor.handle(Event::Resized { width: 1200, height: 800 });
         editor
     }

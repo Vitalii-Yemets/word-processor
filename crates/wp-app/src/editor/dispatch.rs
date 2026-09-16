@@ -159,7 +159,9 @@ impl Editor {
             Command::Footer => self.open_furniture(wp_docx::furniture::Furniture::Footer),
             Command::PageNumber => self.open_furniture(wp_docx::furniture::Furniture::Footer),
             Command::InsertDate => {
-                let today = super::files::today();
+                // In the month names and the order this machine writes a
+                // date in, which is what Word puts in.
+                let today = crate::locale::today();
                 let changed = self.document.type_text(&today);
                 self.edited(changed, &today)
             }

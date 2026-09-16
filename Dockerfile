@@ -86,6 +86,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # privileges, and everything in this container is root — so the tests start
 # it as somebody else. The user exists for that and for nothing else: the
 # build, the program and every other test run as they did.
+# Two locales besides the plain one, so that the tests can ask the C
+# library what a German machine says about numbers, lengths and dates and
+# get a German answer. Test data, like the fonts and the dictionaries: what
+# a person's own machine says is whatever their own machine says.
+RUN apt-get update && apt-get install -y --no-install-recommends locales \
+ && sed -i 's/^# *\(de_DE.UTF-8\|en_US.UTF-8\)/\1/' /etc/locale.gen \
+ && locale-gen \
+ && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --create-home --shell /bin/sh compositor
 
 RUN rustup target add x86_64-pc-windows-gnu \

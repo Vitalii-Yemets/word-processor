@@ -4276,8 +4276,48 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the handful whose meaning is a direction — the indent buttons, the
   bullet arrows — and those are drawn from the icon catalogue rather than
   as paths, so they keep pointing the way they did. Word turns them.
-- [ ] **I3. The user's locale.** Dates, numbers, paper sizes and measurement
+- [x] **I3. The user's locale.** Dates, numbers, paper sizes and measurement
   units — inches or centimetres — as the system says.
+  *Done:* the machine is asked, because a person who has told their
+  computer they are in Germany has already said that a length is in
+  centimetres, that a comma stands before a fraction, that paper is A4 and
+  that a date is written with the day first. On Windows that is
+  `GetUserDefaultLocaleName` and `GetLocaleInfoEx` — the measurement, the
+  two marks a number is written with, the short date, the months and the
+  days, the clock and the paper. On Linux it is the C library, which is
+  where the answer lives: `setlocale` to take the machine's own settings,
+  `localeconv` for the marks, and `nl_langinfo` for the measurement, the
+  short date's order, the month and day names and the clock — with the
+  paper read from `/etc/papersize`, since the library hands that back in a
+  form that has changed between versions.
+  What follows from it: lengths are shown and typed in the machine's own
+  unit until Options says otherwise, and the rulers count in it — eighths
+  of an inch or half centimetres, numbered every inch or every centimetre;
+  a number carries the machine's own decimal mark, so a margin is `1.00"`
+  in one place and `2,54 cm` in another; a count in the strip along the
+  bottom has its thousands marked off; a new document is made on the paper
+  the machine prints on; the date Insert puts in is in the machine's month
+  names and order; and the Document Recovery pane shows when a copy was
+  taken in the machine's date and clock, while the copy itself keeps the
+  one form everything agrees on.
+  This is not the language of the interface, which is **I1**'s and is
+  chosen in Options: a person may well want a program in English on a
+  machine set to German, as Word lets them, and then the words are English
+  and the numbers are still German.
+  Held to: the shell's own tests ask the C library as a German machine and
+  as an American one — the image carries both locales for the purpose —
+  and hold it to centimetres, a comma, the day first, "Januar", a
+  twenty-four hour clock and A4 against inches, a point, the month first,
+  "January", a twelve-hour clock and Letter; the pictures of Page Setup on
+  each of those two machines, looked at.
+  *Not done, and named here:* the first day of the week, which nothing in
+  this program yet asks about — there is no calendar in it; the names of
+  the months in a document's own field codes, which Word writes by the
+  document's language rather than the machine's; and Word's Date and Time
+  dialog, which offers a dozen forms of today and is not written — Insert
+  puts in the long form and nothing offers the others. Numbers inside the
+  document — a table's sums, a numbered list — are the document's and are
+  written as the document says, not as the machine does.
 
 ## J — Protection, collaboration and the rest of Word's features
 

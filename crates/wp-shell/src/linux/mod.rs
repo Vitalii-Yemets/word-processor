@@ -28,6 +28,7 @@
 mod dialogs;
 mod files;
 pub(crate) mod keys;
+mod locale;
 mod wayland;
 pub(crate) mod x11;
 mod xshell;
@@ -39,6 +40,7 @@ use crate::{App, DragEffect, Error, WindowCommand, WindowOptions};
 
 pub(crate) use dialogs::{ask_ok_cancel, ask_to_save, ask_yes_no, choose_file, show_error};
 pub(crate) use files::{associate_kinds, choose_default_programs, opens_kind, remember_document};
+pub(crate) use locale::locale;
 
 /// Which window system this program is talking to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

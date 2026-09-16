@@ -562,6 +562,11 @@ impl Editor {
                 // A new document is made with whatever theme was last set as
                 // the default, which is what the Design tab's button is for.
                 let _ = document.set_theme(&self.default_theme());
+                // And on the paper this machine prints on: A4 nearly
+                // everywhere, Letter in North America. Word asks the
+                // system the same question.
+                let (width, height) = crate::locale::paper();
+                document.set_page_size(width, height);
                 self.set_document(document, None);
                 self.status = String::from("New document");
                 Response::Redraw

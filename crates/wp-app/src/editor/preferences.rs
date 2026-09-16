@@ -63,9 +63,12 @@ impl Editor {
             self.autocorrect = rules.clone();
         }
         self.ribbon.custom = settings.chrome.clone();
-        if let Some(unit) = &settings.unit {
-            self.unit = crate::measure::Unit::from_name(unit);
-        }
+        // The unit is the machine's own until the person says otherwise in
+        // Options, which is where Word takes it from too.
+        self.unit = match &settings.unit {
+            Some(unit) => crate::measure::Unit::from_name(unit),
+            None => crate::locale::unit(),
+        };
         if let Some(zoom) = settings.zoom {
             self.zoom =
                 zoom.clamp(crate::chrome::status::MIN_ZOOM, crate::chrome::status::MAX_ZOOM);

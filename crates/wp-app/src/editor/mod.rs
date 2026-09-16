@@ -748,7 +748,9 @@ impl Editor {
             formatting_a_style: false,
             symbol_subset: 0,
             recent_symbols: Vec::new(),
-            unit: crate::measure::Unit::default(),
+            // The machine's own measurement until the person says
+            // otherwise in Options. See [`crate::locale`].
+            unit: crate::locale::unit(),
             show_marks: false,
             slider: None,
             status_buttons: Vec::new(),
@@ -1696,6 +1698,9 @@ mod tests {
         let document = Document::open(&bytes).expect("reopening");
 
         let mut editor = Editor::new(library(), document, None);
+        // These tests are written in inches, so they say so: what a box
+        // shows otherwise depends on the machine the test runs on.
+        editor.unit = crate::measure::Unit::Inches;
         editor.view_width = 1200;
         editor.view_height = 800;
         editor.relayout();

@@ -457,7 +457,14 @@ impl Editor {
 
         let indents = self.document.indents_here();
         let to_pixels = |twips: i32| twips as f32 / TWIPS_PER_POINT * scale;
+        // The ruler counts in whatever measurements are shown in.
+        let steps = if self.unit == crate::measure::Unit::Inches {
+            rulers::Steps::inches(pixels_per_inch)
+        } else {
+            rulers::Steps::centimetres(pixels_per_inch)
+        };
         let horizontal = Measurements {
+            steps,
             top: self.ruler_top(),
             left_edge: self.pane_width(),
             page_left,
@@ -473,6 +480,7 @@ impl Editor {
         };
 
         let vertical = rulers::Vertical {
+            steps,
             top: self.whole_content_top(),
             bottom: self.window_bottom(),
             page_top: self.content_top() + page_origin_y - self.scroll_down(),

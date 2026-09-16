@@ -1347,6 +1347,121 @@ pub mod files {
     }
 }
 
+/// What the machine's owner has said about how things are written.
+///
+/// # Why this is asked rather than decided
+///
+/// Because a person who has told their computer they are in Germany has
+/// already said that a length is in centimetres, that a decimal point is a
+/// comma, that paper is A4 and that today is written with the day first.
+/// Asking them again in this program's own settings would be asking a
+/// question they have answered. Word asks the system for exactly these,
+/// and so does this.
+///
+/// # What is here and what is not
+///
+/// What the interface needs to write a number, a length, a date and a
+/// sheet of paper. Not the language of the interface — that is chosen in
+/// Options and lives in the catalogues, because a person may well want a
+/// program in English on a machine set to French. Word keeps the two
+/// apart in the same way.
+pub mod locale {
+    /// Which sheet of paper a new document is on.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Paper {
+        /// 210 by 297 millimetres, which is everywhere but North America.
+        A4,
+        /// 8.5 by 11 inches.
+        Letter,
+    }
+
+    /// The order the parts of a short date are written in.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum DateOrder {
+        DayMonthYear,
+        MonthDayYear,
+        YearMonthDay,
+    }
+
+    /// Everything this program asks the machine about.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Locale {
+        /// What the place is called: `en-GB`, `de-DE`. Empty where the
+        /// machine does not say.
+        pub name: String,
+        /// Whether lengths are metric.
+        pub metric: bool,
+        pub paper: Paper,
+        /// What stands between the whole part of a number and its fraction.
+        pub decimal: char,
+        /// What stands between the thousands, if anything does.
+        pub thousands: Option<char>,
+        pub date_order: DateOrder,
+        /// What goes between the parts of a short date.
+        pub date_separator: char,
+        /// The months and the days, as this machine writes them, from
+        /// January and from Monday.
+        pub months: Vec<String>,
+        pub days: Vec<String>,
+        /// Whether the clock has twenty-four hours on it.
+        pub twenty_four_hour: bool,
+    }
+
+    impl Default for Locale {
+        /// What a machine that says nothing is taken to be: the way this
+        /// program's own documentation is written.
+        fn default() -> Self {
+            Self {
+                name: String::new(),
+                metric: false,
+                paper: Paper::Letter,
+                decimal: '.',
+                thousands: Some(','),
+                date_order: DateOrder::MonthDayYear,
+                date_separator: '/',
+                months: MONTHS.iter().map(|month| (*month).to_owned()).collect(),
+                days: DAYS.iter().map(|day| (*day).to_owned()).collect(),
+                twenty_four_hour: false,
+            }
+        }
+    }
+
+    /// The English names, for a machine that gives none.
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    const DAYS: [&str; 7] =
+        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+    /// What this machine says. Asked once: it does not change while a
+    /// program runs, and asking the system costs a call apiece.
+    #[must_use]
+    pub fn current() -> &'static Locale {
+        static ASKED: std::sync::OnceLock<Locale> = std::sync::OnceLock::new();
+        ASKED.get_or_init(|| {
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                crate::platform::locale()
+            }
+            #[cfg(not(any(windows, target_os = "linux")))]
+            {
+                Locale::default()
+            }
+        })
+    }
+}
+
 /// Tells the desktop what the window looks like, so that the parts it draws
 /// itself match the parts this program draws.
 ///

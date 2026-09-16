@@ -18,6 +18,7 @@
 mod autocorrect;
 mod chrome;
 mod editor;
+mod locale;
 mod measure;
 pub mod messagelist;
 pub mod messages;
