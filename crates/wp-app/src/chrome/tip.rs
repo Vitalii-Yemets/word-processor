@@ -23,6 +23,8 @@ use wp_docx::CharacterFormat;
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::Canvas;
 
+use crate::messages;
+
 use super::theme::Theme;
 use super::Command;
 
@@ -60,6 +62,7 @@ impl Tip {
         engine: &mut LayoutEngine<'_>,
         window_width: f32,
     ) -> Self {
+        let label = messages::translated(label);
         let text = match shortcut_of(command) {
             Some(keys) => format!("{label}  ({keys})"),
             None => label.to_owned(),

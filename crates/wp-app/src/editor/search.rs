@@ -257,7 +257,7 @@ impl Editor {
         self.count_matches();
         self.jump_to_match(true, false);
         self.needs_redraw = true;
-        self.status = format!("Replaced one of \"{needle}\"");
+        self.status = crate::messages::with("Replaced one of \"{0}\"", &[&needle]);
         Response::Redraw
     }
 

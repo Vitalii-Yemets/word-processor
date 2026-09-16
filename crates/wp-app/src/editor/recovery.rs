@@ -62,7 +62,7 @@ impl Editor {
             return Response::Ignored;
         }
         let Ok(bytes) = std::fs::read(&entry.copy) else {
-            self.status = format!("{} could not be read", entry.name);
+            self.status = crate::messages::with("{0} could not be read", &[&entry.name]);
             return Response::Redraw;
         };
         match Document::open(&bytes) {
@@ -73,7 +73,7 @@ impl Editor {
                 // what makes Save ask, and the title show that there is
                 // something to lose.
                 self.document.mark_modified();
-                self.status = format!("{} recovered", entry.name);
+                self.status = crate::messages::with("{0} recovered", &[&entry.name]);
                 if let Some(pane) = &mut self.recovery {
                     pane.opened = Some(index);
                 }
@@ -82,7 +82,10 @@ impl Editor {
                 Response::Redraw
             }
             Err(error) => {
-                self.status = format!("{} could not be opened: {error}", entry.name);
+                self.status = crate::messages::with(
+                    "{0} could not be opened: {1}",
+                    &[&entry.name, &error.to_string()],
+                );
                 Response::Redraw
             }
         }
@@ -94,7 +97,7 @@ impl Editor {
         let Some(entry) = pane.entries.get(index).cloned() else { return Response::Ignored };
         entry.remove();
         pane.remove(index);
-        self.status = format!("{} was not kept", entry.name);
+        self.status = crate::messages::with("{0} was not kept", &[&entry.name]);
         if self.recovery.as_ref().is_some_and(|pane| pane.entries.is_empty()) {
             self.recovery = None;
         }

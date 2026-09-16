@@ -24,6 +24,8 @@ use wp_layout::{LayoutEngine, Renderer, TextStyle};
 use wp_raster::{Canvas, Color};
 
 use super::icons::{self, Icon};
+use crate::messages::t;
+
 use super::theme::Theme;
 use super::{Choice, Command, ToolbarState};
 
@@ -302,9 +304,9 @@ impl MiniBar {
                     fade(theme.field),
                 );
                 let text = match choice {
-                    Choice::Font => state.font.clone().unwrap_or_else(|| "(default)".to_owned()),
+                    Choice::Font => state.font.clone().unwrap_or_else(|| t("(default)").to_owned()),
                     Choice::Size => super::format_size(state.size),
-                    Choice::Style => state.style.clone().unwrap_or_else(|| "Normal".to_owned()),
+                    Choice::Style => state.style.clone().unwrap_or_else(|| t("Normal").to_owned()),
                     _ => String::new(),
                 };
                 let line = engine.simple_line(&text, left + 5.0, middle + 4.0, 8.5, color);

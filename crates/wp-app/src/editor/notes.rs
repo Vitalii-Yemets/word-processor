@@ -41,7 +41,10 @@ impl Editor {
                 })
             }
             Err(error) => {
-                wp_shell::dialog::show_error(&format!("Cannot add the note: {error}"));
+                wp_shell::dialog::show_error(&crate::messages::with(
+                    "Cannot add the note: {0}",
+                    &[&error.to_string()],
+                ));
                 Response::Ignored
             }
         }

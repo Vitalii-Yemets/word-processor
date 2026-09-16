@@ -8,6 +8,7 @@
 //! being touched. Where that file is, is written into the document's settings,
 //! which is where Word writes it too.
 
+use crate::messages::t;
 use std::path::PathBuf;
 
 use wp_docx::merge::{merge_instruction, Kind, Recipients};
@@ -88,7 +89,7 @@ impl Editor {
             FileFilter { label: "Text files", pattern: "*.txt" },
             FileFilter { label: "All files", pattern: "*.*" },
         ];
-        let Some(path) = wp_shell::dialog::open_file("Select Recipients", &filters) else {
+        let Some(path) = wp_shell::dialog::open_file(t("Select Recipients"), &filters) else {
             return Response::Ignored;
         };
 

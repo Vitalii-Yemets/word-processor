@@ -19,6 +19,8 @@ mod autocorrect;
 mod chrome;
 mod editor;
 mod measure;
+pub mod messagelist;
+pub mod messages;
 mod sample;
 mod settings;
 #[cfg(all(test, target_os = "linux"))]

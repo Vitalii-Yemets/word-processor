@@ -4,6 +4,7 @@
 //! that were left: one puts a place to sign at the caret, the other puts
 //! somebody else's document there.
 
+use crate::messages::t;
 use wp_docx::signature::Signer;
 use wp_docx::Document;
 use wp_shell::dialog::FileFilter;
@@ -45,7 +46,7 @@ impl Editor {
             FileFilter { label: "Word documents", pattern: "*.docx" },
             FileFilter { label: "All files", pattern: "*.*" },
         ];
-        let Some(path) = wp_shell::dialog::open_file("Text from File", &filters) else {
+        let Some(path) = wp_shell::dialog::open_file(t("Text from File"), &filters) else {
             return Response::Ignored;
         };
 

@@ -30,6 +30,7 @@
 //! - Translator Preferences says which language to translate into, from
 //!   among the dictionaries the machine has.
 
+use crate::messages::t;
 use wp_dict::bilingual::{self, Bilingual};
 use wp_docx::translate::Glossary;
 use wp_docx::TextPosition;
@@ -362,7 +363,7 @@ impl Editor {
             FileFilter { label: "Glossaries", pattern: "*.txt" },
             FileFilter { label: "All files", pattern: "*.*" },
         ];
-        let Some(path) = wp_shell::dialog::open_file("Glossary", &filters) else {
+        let Some(path) = wp_shell::dialog::open_file(t("Glossary"), &filters) else {
             return Response::Ignored;
         };
 

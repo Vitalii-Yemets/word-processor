@@ -1368,7 +1368,13 @@ impl Editor {
     fn toggle(&mut self, format: CharacterFormat, name: &str) -> Response {
         let changed = self.document.toggle_format(format);
         let on = self.document.format_is_on(format);
-        self.status = format!("{name} {}", if on { "on" } else { "off" });
+        self.status = crate::messages::with(
+            "{0} {1}",
+            &[
+                &crate::messages::translated(name),
+                if on { crate::messages::t("on") } else { crate::messages::t("off") },
+            ],
+        );
         if changed {
             self.relayout();
             self.reveal_caret();
@@ -1400,7 +1406,7 @@ impl Editor {
             return self.report("Already at the end of the sizes");
         };
         let changed = self.document.set_size(wanted);
-        self.status = format!("{} point", chrome::format_size(wanted));
+        self.status = crate::messages::with("{0} point", &[&chrome::format_size(wanted)]);
         if changed {
             self.relayout();
             self.reveal_caret();

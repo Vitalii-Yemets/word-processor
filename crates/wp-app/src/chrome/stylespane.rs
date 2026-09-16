@@ -23,6 +23,8 @@
 use wp_layout::{LayoutEngine, Renderer, TextStyle};
 use wp_raster::{Canvas, Color};
 
+use crate::messages::t;
+
 use super::theme::Theme;
 
 /// How wide the pane is drawn.
@@ -183,7 +185,7 @@ impl StylesPane {
         canvas.fill_rect(left as i32, top as i32, 1, (bottom - top) as i32, theme.pane_edge);
 
         // The caption, with the cross that shuts the pane.
-        let line = engine.simple_line("Styles", left + PADDING, top + 24.0, 10.0, theme.text);
+        let line = engine.simple_line(t("Styles"), left + PADDING, top + 24.0, 10.0, theme.text);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
         let close_left = left + width - 26.0;
         if self.hovered == Some(Hit::Close) {
@@ -288,7 +290,7 @@ impl StylesPane {
             canvas.fill_rect((box_left + 3.0) as i32, (box_top + 3.0) as i32, 8, 8, theme.accent);
         }
         let line =
-            engine.simple_line("Show Preview", box_left + 22.0, box_top + 12.0, 8.5, theme.text);
+            engine.simple_line(t("Show Preview"), box_left + 22.0, box_top + 12.0, 8.5, theme.text);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
         self.placed.push((Hit::ShowPreview, box_left, box_top, width - PADDING * 2.0, 16.0));
 

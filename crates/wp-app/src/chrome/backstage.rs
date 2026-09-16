@@ -25,6 +25,8 @@ use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::Canvas;
 
 use super::icons::{self, Icon};
+use crate::messages::{self, t};
+
 use super::theme::Theme;
 
 /// How wide the rail down the left is.
@@ -283,7 +285,7 @@ impl Backstage {
             }
 
             let colour = if chosen { theme.text } else { theme.bar_text() };
-            let line = engine.simple_line(place.label(), PADDING, y + 21.0, 9.5, colour);
+            let line = engine.simple_line(t(place.label()), PADDING, y + 21.0, 9.5, colour);
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
             self.placed.push((hit, 0.0, y, RAIL_WIDTH, RAIL_ROW));
 
@@ -313,13 +315,15 @@ impl Backstage {
         let room = (width - left - PADDING * 1.5).max(1.0);
         let mut y = top + 52.0;
 
-        let line = engine.simple_line(&contents.heading, left, y, 20.0, theme.text);
+        let heading = messages::translated(&contents.heading);
+        let line = engine.simple_line(&heading, left, y, 20.0, theme.text);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
         y += 30.0;
 
         // What the page is telling rather than offering.
         for (label, value) in &contents.facts {
-            let line = engine.simple_line(label, left, y + 13.0, 9.0, theme.dim_text);
+            let label = messages::translated(label);
+            let line = engine.simple_line(&label, left, y + 13.0, 9.0, theme.dim_text);
             renderer.draw_within(canvas, &line, left, y, 150.0, 20.0);
             let shown = if value.is_empty() { "—" } else { value.as_str() };
             let line = engine.simple_line(shown, left + 160.0, y + 13.0, 9.0, theme.text);
@@ -341,8 +345,8 @@ impl Backstage {
 
         if !contents.rows_heading.is_empty() {
             y += 10.0;
-            let line =
-                engine.simple_line(&contents.rows_heading, left, y + 12.0, 9.0, theme.emphasis);
+            let rows_heading = messages::translated(&contents.rows_heading);
+            let line = engine.simple_line(&rows_heading, left, y + 12.0, 9.0, theme.emphasis);
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
             canvas.fill_rect(left as i32, (y + 18.0) as i32, room as i32, 1, theme.pane_edge);
             y += 26.0;
@@ -351,8 +355,8 @@ impl Backstage {
         if fixed >= contents.rows.len() {
             self.overflow = 0.0;
             if !contents.nothing.is_empty() {
-                let line =
-                    engine.simple_line(&contents.nothing, left, y + 14.0, 9.0, theme.dim_text);
+                let nothing = messages::translated(&contents.nothing);
+                let line = engine.simple_line(&nothing, left, y + 14.0, 9.0, theme.dim_text);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
             }
             return;
@@ -404,10 +408,15 @@ impl Backstage {
                 theme.hover,
             );
         }
-        let line = engine.simple_line(&row.title, left, top + 19.0, 10.0, theme.text);
+        // A row's title is a document's name where the page lists documents
+        // and a command where it lists commands; the catalogue knows the
+        // commands and nothing about the names.
+        let title = messages::translated(&row.title);
+        let line = engine.simple_line(&title, left, top + 19.0, 10.0, theme.text);
         renderer.draw_within(canvas, &line, left, top, room, 24.0);
         if !row.note.is_empty() {
-            let line = engine.simple_line(&row.note, left, top + 35.0, 8.0, theme.dim_text);
+            let note = messages::translated(&row.note);
+            let line = engine.simple_line(&note, left, top + 35.0, 8.0, theme.dim_text);
             renderer.draw_within(canvas, &line, left, top + 24.0, room, 18.0);
         }
         self.placed.push((hit, left - 10.0, top, room + 20.0, ROW_HEIGHT));

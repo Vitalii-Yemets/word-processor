@@ -17,6 +17,8 @@
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::Canvas;
 
+use crate::messages::{self, t};
+
 use super::theme::Theme;
 
 /// How wide the pane is until someone drags it.
@@ -249,7 +251,7 @@ impl Navigation {
         canvas.fill_rect(0, top as i32, width as i32, height as i32, theme.pane);
         canvas.fill_rect((width - 1.0) as i32, top as i32, 1, height as i32, theme.pane_edge);
 
-        let title = engine.simple_line("Navigation", 12.0, top + 18.0, 10.0, theme.text);
+        let title = engine.simple_line(t("Navigation"), 12.0, top + 18.0, 10.0, theme.text);
         renderer.draw_onto(canvas, &title, 0.0, 0.0);
 
         // The button that closes the pane, where every pane keeps it.
@@ -353,15 +355,18 @@ impl Navigation {
             let x = index as f32 * each;
             let chosen = *section == self.section;
             let colour = if chosen { theme.text } else { theme.dim_text };
-            let measured = engine.simple_line(section.label(), 0.0, 0.0, 8.0, colour);
+            let measured = engine.simple_line(t(section.label()), 0.0, 0.0, 8.0, colour);
             let line = engine.simple_line(
-                section.label(),
-                x + (each - measured.width) / 2.0,
+                t(section.label()),
+                x + ((each - measured.width) / 2.0).max(2.0),
                 tabs_top + 15.0,
                 8.0,
                 colour,
             );
-            renderer.draw_onto(canvas, &line, 0.0, 0.0);
+            // Kept inside its own quarter of the pane: a language whose word
+            // for "Headings" is half again as long as ours must not write it
+            // over the tab beside it.
+            renderer.draw_within(canvas, &line, x, tabs_top, each - 2.0, TAB_HEIGHT);
             if chosen {
                 canvas.fill_rect(
                     x as i32 + 6,
@@ -401,7 +406,9 @@ impl Navigation {
         outline(canvas, 10, box_top as i32, (self.width - 20.0) as i32, SEARCH_HEIGHT as i32, edge);
 
         let empty = self.search.is_empty();
-        let text = if empty { "Search document" } else { self.search.as_str() };
+        // The words in an empty box are the program speaking; what is typed
+        // into it is the person's, and stays as they typed it.
+        let text = if empty { t("Search document") } else { self.search.as_str() };
         let colour = if empty { theme.dim_text } else { theme.text };
         let line = engine.simple_line(text, 16.0, box_top + 16.0, 8.5, colour);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
@@ -431,7 +438,8 @@ impl Navigation {
         self.scroll = self.scroll.min(total.saturating_sub(self.rows));
 
         if total == 0 {
-            let line = engine.simple_line(when_empty, 12.0, list_top + 16.0, 8.0, theme.dim_text);
+            let empty_line = messages::translated(when_empty);
+            let line = engine.simple_line(&empty_line, 12.0, list_top + 16.0, 8.0, theme.dim_text);
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
             return;
         }

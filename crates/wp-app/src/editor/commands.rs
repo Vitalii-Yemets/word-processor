@@ -353,7 +353,10 @@ impl Editor {
                 self.edited(changed, &format!("{name}: {label}"))
             }
             Err(error) => {
-                wp_shell::dialog::show_error(&format!("Cannot set that: {error}"));
+                wp_shell::dialog::show_error(&crate::messages::with(
+                    "Cannot set that: {0}",
+                    &[&error.to_string()],
+                ));
                 Response::Ignored
             }
         }

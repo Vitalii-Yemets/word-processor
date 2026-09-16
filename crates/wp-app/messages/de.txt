@@ -1,0 +1,1633 @@
+# The catalogue for Deutsch: Word's own German words, where Word has
+# one for the same thing.
+language = Deutsch
+
+= (Ctrl)
+> (Strg)
+
+= (default)
+> (Standard)
+
+= (no style)
+> (keine Formatvorlage)
+
+= (none)
+> (keine)
+
+= (not matched)
+> (nicht zugeordnet)
+
+= *Bold* and _italic_ with real formatting
+> *Fett* und _kursiv_ mit echter Formatierung
+
+= 1 word
+> 1 Wort
+
+= 100%
+> 100 %
+
+= AaBbCcDdEe
+> AaBbCcDdEe
+
+= Above
+> Oberhalb
+
+= Accept
+> Annehmen
+
+= Accept All
+> Alle annehmen
+
+= Accessibility
+> Barrierefreiheit
+
+= Add
+> Hinzufügen
+
+= Add Source
+> Quelle hinzufügen
+
+= Address
+> Adresse
+
+= Advanced
+> Erweitert
+
+= After:
+> Nach:
+
+= Align
+> Ausrichten
+
+= Align Left
+> Linksbündig
+
+= Alignment
+> Ausrichtung
+
+= All
+> Alle
+
+= All caps
+> Großbuchstaben
+
+= All files
+> Alle Dateien
+
+= All files (*.*)
+> Alle Dateien (*.*)
+
+= All styles
+> Alle Formatvorlagen
+
+= Allow character substitution
+> Zeichenersetzung zulassen
+
+= Allow overlap
+> Überlappen zulassen
+
+= Allow row to break across pages
+> Zeilenwechsel auf Seiten zulassen
+
+= Already in this document
+> Bereits in diesem Dokument
+
+= Alt Text
+> Alternativtext
+
+= Always show these on screen
+> Diese immer am Bildschirm anzeigen
+
+= Appearance
+> Darstellung
+
+= Apply as you type
+> Während der Eingabe anwenden
+
+= Apply to
+> Übernehmen für
+
+= Arrange
+> Anordnen
+
+= Arrange All
+> Alle anordnen
+
+= Art
+> Bildrahmen
+
+= As you type
+> Während der Eingabe
+
+= AutoCorrect
+> AutoKorrektur
+
+= AutoCorrect Exceptions
+> AutoKorrektur-Ausnahmen
+
+= AutoCorrect Options...
+> AutoKorrektur-Optionen...
+
+= AutoCorrect options
+> AutoKorrektur-Optionen
+
+= AutoCorrect...
+> AutoKorrektur...
+
+= AutoFit
+> AutoAnpassen
+
+= AutoFormat As You Type
+> AutoFormat während der Eingabe
+
+= AutoRecover file location
+> Speicherort für AutoWiederherstellen-Dateien
+
+= Automatic bulleted and numbered lists
+> Automatische Aufzählung und Nummerierung
+
+= Automatically add words to list
+> Wörter automatisch zur Liste hinzufügen
+
+= Autosaved {0}
+> Automatisch gespeichert {0}
+
+= Banded Columns
+> Verbundene Spalten
+
+= Banded Rows
+> Verbundene Zeilen
+
+= Before:
+> Vor:
+
+= Below
+> Unterhalb
+
+= Bibliography
+> Literaturverzeichnis
+
+= Blank Page
+> Leere Seite
+
+= Blank document
+> Leeres Dokument
+
+= Block Authors
+> Autoren blockieren
+
+= Bold
+> Fett
+
+= Bookmark
+> Textmarke
+
+= Bookmark name
+> Textmarkenname
+
+= Border Painter
+> Rahmen übertragen
+
+= Border Styles
+> Rahmenarten
+
+= Border lines
+> Rahmenlinien
+
+= Borders
+> Rahmen
+
+= Borders and Shading
+> Rahmen und Schattierung
+
+= Borders…
+> Rahmen…
+
+= Bottom
+> Unten
+
+= Breaks
+> Umbrüche
+
+= Bring Forward
+> Eine Ebene nach vorne
+
+= Browse
+> Durchsuchen
+
+= Cancel
+> Abbrechen
+
+= Cannot add the comment: {0}
+> Kommentar kann nicht hinzugefügt werden: {0}
+
+= Cannot add the note: {0}
+> Fußnote kann nicht hinzugefügt werden: {0}
+
+= Cannot insert the picture: {0}
+> Bild kann nicht eingefügt werden: {0}
+
+= Cannot make a document: {0}
+> Dokument kann nicht erstellt werden: {0}
+
+= Cannot open {0}: {1}
+> {0} kann nicht geöffnet werden: {1}
+
+= Cannot read {0}: {1}
+> {0} kann nicht gelesen werden: {1}
+
+= Cannot save: {0}
+> Speichern nicht möglich: {0}
+
+= Cannot set that: {0}
+> Das kann nicht festgelegt werden: {0}
+
+= Cannot write {0}: {1}
+> {0} kann nicht geschrieben werden: {1}
+
+= Capitalize first letter of sentences
+> Ersten Buchstaben im Satz großschreiben
+
+= Capitalize names of days
+> Wochentage großschreiben
+
+= Caption
+> Beschriftung
+
+= Captions
+> Beschriftungen
+
+= Catalogues can be added in
+> Kataloge können abgelegt werden in
+
+= Cell
+> Zelle
+
+= Cell Size
+> Zellengröße
+
+= Cell margins
+> Zellbegrenzungen
+
+= Centimeters
+> Zentimeter
+
+= Change how the text is corrected as you type
+> Ändern, wie Text während der Eingabe korrigiert wird
+
+= Changes
+> Änderungen
+
+= Character
+> Zeichen
+
+= Character Spacing
+> Zeichenabstand
+
+= Character code
+> Zeichencode
+
+= Chart
+> Diagramm
+
+= Check
+> Prüfen
+
+= Check for Errors
+> Fehler suchen
+
+= Choose commands from
+> Befehle auswählen
+
+= Citation
+> Zitat
+
+= Citations & Bibliography
+> Zitate und Literaturverzeichnis
+
+= Clear
+> Löschen
+
+= Clear All
+> Alle löschen
+
+= Click a shape or a picture first
+> Klicken Sie zuerst auf eine Form oder ein Bild
+
+= Clipboard
+> Zwischenablage
+
+= Close
+> Schließen
+
+= Close Header and Footer
+> Kopf- und Fußzeile schließen
+
+= Color
+> Farbe
+
+= Colors
+> Farben
+
+= Columns
+> Spalten
+
+= Comma-separated values
+> Kommagetrennte Werte
+
+= Comment
+> Kommentar
+
+= Comments
+> Kommentare
+
+= Compare
+> Vergleichen
+
+= Compare with
+> Vergleichen mit
+
+= Contents
+> Inhalt
+
+= Convert to Text
+> In Text konvertieren
+
+= Copies
+> Exemplare
+
+= Copy
+> Kopieren
+
+= Correct TWo INitial CApitals
+> ZWei GRoßbuchstaben am WOrtanfang korrigieren
+
+= Correct accidental use of cAPS LOCK key
+> Unbeabsichtigtes Verwenden der fESTSTELLTASTE korrigieren
+
+= Cover Page
+> Deckblatt
+
+= Create
+> Erstellen
+
+= Create a PDF
+> PDF erstellen
+
+= Cross-reference
+> Querverweis
+
+= Custom Margins…
+> Benutzerdefinierte Seitenränder…
+
+= Custom Print
+> Benutzerdefinierter Druck
+
+= Customize Quick Access Toolbar
+> Symbolleiste für den Schnellzugriff anpassen
+
+= Customize Ribbon
+> Menüband anpassen
+
+= Customize the Ribbon
+> Menüband anpassen
+
+= Cut
+> Ausschneiden
+
+= Dark Mode
+> Dunkler Modus
+
+= Data
+> Daten
+
+= Date & Time
+> Datum und Uhrzeit
+
+= Default tab stops
+> Standardtabstopps
+
+= Delete
+> Löschen
+
+= Delete Column
+> Spalte löschen
+
+= Delete Note
+> Fußnote löschen
+
+= Delete Row
+> Zeile löschen
+
+= Delete Table
+> Tabelle löschen
+
+= Description
+> Beschreibung
+
+= Design
+> Entwurf
+
+= Dictionaries
+> Wörterbücher
+
+= Dictionaries on this machine
+> Wörterbücher auf diesem Rechner
+
+= Dictionary
+> Wörterbuch
+
+= Different First Page
+> Erste Seite anders
+
+= Different Odd & Even Pages
+> Gerade und ungerade Seiten anders
+
+= Display
+> Anzeige
+
+= Distance
+> Abstand
+
+= Distance from text
+> Abstand vom Text
+
+= Distribute
+> Verteilen
+
+= Document
+> Dokument
+
+= Document Formatting
+> Dokumentformatierung
+
+= Document Info
+> Dokumentinformationen
+
+= Document Recovery
+> Dokumentwiederherstellung
+
+= Don't add space between paragraphs of the same style
+> Keinen Abstand zwischen Absätzen gleicher Formatvorlage einfügen
+
+= Don't capitalize after
+> Nicht großschreiben nach
+
+= Don't correct
+> Nicht korrigieren
+
+= Don't hyphenate
+> Keine Silbentrennung
+
+= Double strikethrough
+> Doppelt durchgestrichen
+
+= Draft
+> Entwurf
+
+= Draw
+> Zeichnen
+
+= Draw Table
+> Tabelle zeichnen
+
+= Edges
+> Kanten
+
+= Edit List
+> Liste bearbeiten
+
+= Editing
+> Bearbeiten
+
+= Effects
+> Effekte
+
+= End lines with
+> Zeilen beenden mit
+
+= Envelopes
+> Umschläge
+
+= Equation
+> Formel
+
+= Eraser
+> Radierer
+
+= Exceptions...
+> Ausnahmen...
+
+= Export
+> Exportieren
+
+= Feedback
+> Feedback
+
+= File
+> Datei
+
+= File types
+> Dateitypen
+
+= Find
+> Suchen
+
+= Finish
+> Fertig stellen
+
+= First Column
+> Erste Spalte
+
+= First Letter
+> Erster Buchstabe
+
+= Font
+> Schriftart
+
+= Fonts
+> Schriftarten
+
+= Font…
+> Schriftart…
+
+= Footer
+> Fußzeile
+
+= Footer from Bottom:
+> Fußzeile von unten:
+
+= Footnote
+> Fußnote
+
+= Footnotes
+> Fußnoten
+
+= Format Page Numbers
+> Seitenzahlen formatieren
+
+= Format Painter
+> Format übertragen
+
+= Formatting Marks
+> Formatierungszeichen
+
+= Formatting exceptions
+> Ausnahmen bei der Formatierung
+
+= Formatting marks
+> Formatierungszeichen
+
+= Formula
+> Formel
+
+= Fractions (1/2) with fraction character
+> Brüche (1/2) durch Bruchzeichen
+
+= General
+> Allgemein
+
+= Glossaries
+> Glossare
+
+= Glossary
+> Glossar
+
+= Go to Footer
+> Zu Fußzeile wechseln
+
+= Go to Header
+> Zu Kopfzeile wechseln
+
+= Greeting
+> Grußzeile
+
+= Gridlines
+> Gitternetzlinien
+
+= Group
+> Gruppieren
+
+= Header
+> Kopfzeile
+
+= Header & Footer
+> Kopf- und Fußzeile
+
+= Header Row
+> Überschriftzeile
+
+= Header from Top:
+> Kopfzeile von oben:
+
+= Headings
+> Überschriften
+
+= Height:
+> Höhe:
+
+= Help
+> Hilfe
+
+= Hidden
+> Ausgeblendet
+
+= Hide White Space
+> Leerraum ausblenden
+
+= Hide spelling errors in this document only
+> Rechtschreibfehler nur in diesem Dokument ausblenden
+
+= Highlight
+> Texthervorhebungsfarbe
+
+= Home
+> Start
+
+= Hyphenation
+> Silbentrennung
+
+= Hyphens (--) with dash (—)
+> Bindestriche (--) durch Geviertstrich (—)
+
+= INitial CAps
+> ERste BUchstaben
+
+= Illustrations
+> Illustrationen
+
+= In use
+> Verwendet
+
+= Inches
+> Zoll
+
+= Include textboxes, footnotes and endnotes
+> Textfelder, Fuß- und Endnoten einschließen
+
+= Indentation
+> Einzug
+
+= Indents and Spacing
+> Einzüge und Abstände
+
+= Index
+> Index
+
+= Info
+> Informationen
+
+= Insert
+> Einfügen
+
+= Insert Alignment Tab
+> Tabstopp einfügen
+
+= Insert Endnote
+> Endnote einfügen
+
+= Insert Index
+> Index einfügen
+
+= Insert Picture
+> Bild einfügen
+
+= Insert Table
+> Tabelle einfügen
+
+= Insert line breaks
+> Zeilenumbrüche einfügen
+
+= Interface language
+> Sprache der Benutzeroberfläche
+
+= Internet and network paths with hyperlinks
+> Internet- und Netzwerkpfade durch Hyperlinks
+
+= Italic
+> Kursiv
+
+= Keep Source Formatting
+> Ursprüngliche Formatierung beibehalten
+
+= Keep Text Only
+> Nur den Text übernehmen
+
+= Keep lines together
+> Zeilen nicht trennen
+
+= Keep the last AutoRecovered version if I close without saving
+> Beim Schließen ohne Speichern die letzte automatisch gespeicherte Version beibehalten
+
+= Keep with next
+> Absätze nicht trennen
+
+= Kerning from
+> Unterschneidung ab
+
+= Labels
+> Etiketten
+
+= Language
+> Sprache
+
+= Last Column
+> Letzte Spalte
+
+= Layout
+> Layout
+
+= Leader
+> Füllzeichen
+
+= Left
+> Links
+
+= Left:
+> Links:
+
+= Line
+> Zeile
+
+= Line Numbers
+> Zeilennummern
+
+= Line and Page Breaks
+> Zeilen- und Seitenumbruch
+
+= Link
+> Link
+
+= Link to Previous
+> Mit vorheriger verknüpfen
+
+= Links
+> Links
+
+= Lock aspect ratio
+> Seitenverhältnis sperren
+
+= Macros
+> Makros
+
+= Mailings
+> Sendungen
+
+= Make Default
+> Als Standard festlegen
+
+= Manage Sources
+> Quellen verwalten
+
+= Margins
+> Seitenränder
+
+= Mark Citation
+> Zitat festlegen
+
+= Mark Entry
+> Eintrag festlegen
+
+= Mark spelling mistakes as you type
+> Rechtschreibung während der Eingabe prüfen
+
+= Match Fields
+> Felder abgleichen
+
+= Measure from
+> Messen von
+
+= Media
+> Medien
+
+= Merge
+> Zusammenführen
+
+= Merge Cells
+> Zellen verbinden
+
+= Merge Field
+> Seriendruckfeld
+
+= Merge Formatting
+> Formatierung zusammenführen
+
+= Millimeters
+> Millimeter
+
+= Mirror indents
+> Einzüge spiegeln
+
+= More Layout Options…
+> Weitere Layoutoptionen…
+
+= More Rotation Options…
+> Weitere Drehoptionen…
+
+= Move Down
+> Nach unten
+
+= Move Up
+> Nach oben
+
+= Move object with text
+> Objekt mit Text verschieben
+
+= My list has a header row
+> Liste hat Überschriften
+
+= Name
+> Name
+
+= Navigation
+> Navigation
+
+= Navigation Pane
+> Navigationsbereich
+
+= Navigation pane
+> Navigationsbereich
+
+= New
+> Neu
+
+= New Window
+> Neues Fenster
+
+= New document from {0}
+> Neues Dokument aus {0}
+
+= Next
+> Weiter
+
+= Next Footnote
+> Nächste Fußnote
+
+= None
+> Ohne
+
+= Normal
+> Standard
+
+= Number format
+> Zahlenformat
+
+= OK
+> OK
+
+= Office display language
+> Anzeigesprache
+
+= On
+> Ein
+
+= One Page
+> Eine Seite
+
+= One or more margins are outside the printable area.
+> Mindestens ein Seitenrand liegt außerhalb des bedruckbaren Bereichs.
+
+= Open
+> Öffnen
+
+= Open a dictionary
+> Wörterbuch öffnen
+
+= Open documents at
+> Dokumente öffnen mit
+
+= OpenDocument Text (*.odt)
+> OpenDocument-Text (*.odt)
+
+= OpenType Features
+> OpenType-Funktionen
+
+= Opened {0}
+> {0} geöffnet
+
+= Opened {0} as {1}
+> {0} als {1} geöffnet
+
+= Options
+> Optionen
+
+= Order
+> Reihenfolge
+
+= Ordinals (1st) with superscript
+> Ordnungszahlen (1.) hochgestellt
+
+= Orientation
+> Ausrichtung
+
+= Outline
+> Gliederung
+
+= Outline level
+> Gliederungsebene
+
+= Outside
+> Außen
+
+= PDF Files (*.pdf)
+> PDF-Dateien (*.pdf)
+
+= PDF documents (*.pdf)
+> PDF-Dokumente (*.pdf)
+
+= Page Background
+> Seitenhintergrund
+
+= Page Borders
+> Seitenränder
+
+= Page Break
+> Seitenumbruch
+
+= Page Color
+> Seitenfarbe
+
+= Page Movement
+> Seitenbewegung
+
+= Page Number
+> Seitenzahl
+
+= Page Reference
+> Seitenverweis
+
+= Page Setup
+> Seite einrichten
+
+= Page Width
+> Seitenbreite
+
+= Page break before
+> Seitenumbruch oberhalb
+
+= Page display
+> Seitenanzeige
+
+= Page {0} of {1}
+> Seite {0} von {1}
+
+= Pages
+> Seiten
+
+= Pages:
+> Seiten:
+
+= Pagination
+> Paginierung
+
+= Paper
+> Papier
+
+= Paper size
+> Papierformat
+
+= Paragraph
+> Absatz
+
+= Paragraph Spacing
+> Absatzabstand
+
+= Paragraph Spacing for the whole document
+> Absatzabstand für das ganze Dokument
+
+= Paragraph formatting
+> Absatzformatierung
+
+= Paragraph…
+> Absatz…
+
+= Paste
+> Einfügen
+
+= Paste as Picture
+> Als Grafik einfügen
+
+= Paste function
+> Einfügefunktion
+
+= Picas
+> Pica
+
+= Pictures
+> Bilder
+
+= Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
+> Bilder (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
+
+= Plain Text (*.txt)
+> Nur Text (*.txt)
+
+= Points
+> Punkt
+
+= Position
+> Position
+
+= Preview
+> Vorschau
+
+= Preview Results
+> Vorschau Ergebnisse
+
+= Previous
+> Zurück
+
+= Print
+> Drucken
+
+= Print All Pages
+> Alle Seiten drucken
+
+= Print Current Page
+> Aktuelle Seite drucken
+
+= Print Layout
+> Drucklayout
+
+= Print One Sided
+> Einseitiger Druck
+
+= Print Selection
+> Auswahl drucken
+
+= Print on Both Sides
+> Beidseitiger Druck
+
+= Printing stopped after {0} sheets
+> Druck nach {0} Blättern abgebrochen
+
+= Proofing
+> Dokumentprüfung
+
+= Properties
+> Eigenschaften
+
+= Protect
+> Schützen
+
+= Quick Access Toolbar
+> Symbolleiste für den Schnellzugriff
+
+= Quick Parts
+> Schnellbausteine
+
+= Read Mode
+> Lesemodus
+
+= Recently used
+> Zuletzt verwendet
+
+= Recipients
+> Empfänger
+
+= Redo
+> Wiederholen
+
+= References
+> Verweise
+
+= Registered. Choose this program in the page that opened
+> Registriert. Wählen Sie dieses Programm auf der geöffneten Seite aus
+
+= Reject
+> Ablehnen
+
+= Reject All
+> Alle ablehnen
+
+= Relative to the page or the text
+> Relativ zur Seite oder zum Text
+
+= Remove
+> Entfernen
+
+= Remove Link
+> Link entfernen
+
+= Remove Table
+> Tabelle entfernen
+
+= Repeat Header Rows
+> Überschriften wiederholen
+
+= Repeat as header row at the top of each page
+> Als Überschrift auf jeder Seite wiederholen
+
+= Replace
+> Ersetzen
+
+= Replace as you type
+> Während der Eingabe ersetzen
+
+= Replace text as you type
+> Text während der Eingabe ersetzen
+
+= Replaced one of "{0}"
+> Ein Vorkommen von „{0}“ ersetzt
+
+= Reset
+> Zurücksetzen
+
+= Restrict Editing
+> Bearbeitung einschränken
+
+= Results
+> Ergebnisse
+
+= Review
+> Überprüfen
+
+= Reviewing Pane
+> Überarbeitungsbereich
+
+= Rich Text Format (*.rtf)
+> Rich-Text-Format (*.rtf)
+
+= Right
+> Rechts
+
+= Right:
+> Rechts:
+
+= Rotate
+> Drehen
+
+= Row
+> Zeile
+
+= Rows & Columns
+> Zeilen und Spalten
+
+= Ruler
+> Lineal
+
+= Rulers
+> Lineale
+
+= Rules
+> Regeln
+
+= Save
+> Speichern
+
+= Save As
+> Speichern unter
+
+= Save AutoRecover information
+> AutoWiederherstellen-Informationen speichern
+
+= Save as
+> Speichern unter
+
+= Save as PDF
+> Als PDF speichern
+
+= Save documents
+> Dokumente speichern
+
+= Saved {0}
+> {0} gespeichert
+
+= Saved {0} as OpenDocument Text
+> {0} als OpenDocument-Text gespeichert
+
+= Saved {0} as Rich Text Format
+> {0} im Rich-Text-Format gespeichert
+
+= Saved {0} as a web page
+> {0} als Webseite gespeichert
+
+= Saved {0} pages to {1}
+> {0} Seiten in {1} gespeichert
+
+= Scale
+> Skalieren
+
+= Screenshot
+> Bildschirmfoto
+
+= Search document
+> Dokument durchsuchen
+
+= Section: {0}
+> Abschnitt: {0}
+
+= Select
+> Markieren
+
+= Select Recipients
+> Empfänger auswählen
+
+= Selection Pane
+> Auswahlbereich
+
+= Send Backward
+> Eine Ebene nach hinten
+
+= Set
+> Festlegen
+
+= Set As Default
+> Als Standard festlegen
+
+= Set as Default
+> Als Standard festlegen
+
+= Setting
+> Einstellung
+
+= Shapes
+> Formen
+
+= Show
+> Anzeigen
+
+= Show Marks
+> Zeichen anzeigen
+
+= Show Markup
+> Markup anzeigen
+
+= Show Preview
+> Vorschau anzeigen
+
+= Show measurements in
+> Maßeinheiten anzeigen in
+
+= Show/Hide Formatting Marks
+> Formatierungszeichen ein-/ausblenden
+
+= Side to Side
+> Nebeneinander
+
+= Signature Line
+> Signaturzeile
+
+= Single File Web Page (*.mht;*.mhtml)
+> Webseite in einer Datei (*.mht;*.mhtml)
+
+= Size
+> Größe
+
+= Small caps
+> Kapitälchen
+
+= SmartArt
+> SmartArt
+
+= Sort
+> Sortieren
+
+= Space between cells
+> Abstand zwischen Zellen
+
+= Spacing
+> Abstand
+
+= Special Characters
+> Sonderzeichen
+
+= Spelling
+> Rechtschreibung
+
+= Split
+> Teilen
+
+= Split Cells
+> Zellen teilen
+
+= Start Mail Merge
+> Seriendruck starten
+
+= Start Merge
+> Seriendruck starten
+
+= Strikethrough
+> Durchgestrichen
+
+= Style
+> Formatvorlage
+
+= Style based on
+> Formatvorlage basiert auf
+
+= Style for following paragraph
+> Formatvorlage für folgenden Absatz
+
+= Styles
+> Formatvorlagen
+
+= Subscript
+> Tiefgestellt
+
+= Subset
+> Teilmenge
+
+= Superscript
+> Hochgestellt
+
+= Suppress line numbers
+> Zeilennummern unterdrücken
+
+= Switch Modes
+> Modus wechseln
+
+= Symbol
+> Symbol
+
+= Symbols
+> Symbole
+
+= Tab stop position
+> Tabstoppposition
+
+= Tab stops
+> Tabstopps
+
+= Table
+> Tabelle
+
+= Table Design
+> Tabellenentwurf
+
+= Table Layout
+> Tabellenlayout
+
+= Table Properties
+> Tabelleneigenschaften
+
+= Table Style Options
+> Optionen für Tabellenformat
+
+= Table Styles
+> Tabellenformatvorlagen
+
+= Table of Authorities
+> Rechtsgrundlagenverzeichnis
+
+= Table of Contents
+> Inhaltsverzeichnis
+
+= Table of Figures
+> Abbildungsverzeichnis
+
+= Tables
+> Tabellen
+
+= Tabs
+> Tabstopps
+
+= Tabs…
+> Tabstopps…
+
+= Tell me what you want to do
+> Was möchten Sie tun?
+
+= Text
+> Text
+
+= Text Box
+> Textfeld
+
+= Text Direction
+> Textrichtung
+
+= Text Files (*.txt)
+> Textdateien (*.txt)
+
+= Text Wrapping
+> Textumbruch
+
+= Text encoding
+> Textcodierung
+
+= Text files
+> Textdateien
+
+= Text formatting
+> Textformatierung
+
+= Text from File
+> Text aus Datei
+
+= The file types could not be registered
+> Die Dateitypen konnten nicht registriert werden
+
+= The file types were registered
+> Die Dateitypen wurden registriert
+
+= The files below were recovered.
+> Die folgenden Dateien wurden wiederhergestellt.
+
+= The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
+> Die folgenden Features können in Dokumenten ohne Makros nicht gespeichert werden:\n\n    • VBA-Projekt\n\nUm eine Datei mit diesen Features zu speichern, wählen Sie Nein und dann einen Dateityp mit Makros in der Liste der Dateitypen.\n\nUm weiter als Dokument ohne Makros zu speichern, wählen Sie Ja.\n\n{0} als Dokument ohne Makros speichern?
+
+= Themes
+> Designs
+
+= Thesaurus
+> Thesaurus
+
+= This program can open Word documents.
+> Dieses Programm kann Word-Dokumente öffnen.
+
+= Title
+> Titel
+
+= Top
+> Oben
+
+= Total Row
+> Ergebniszeile
+
+= Track Changes
+> Änderungen nachverfolgen
+
+= Tracking
+> Nachverfolgung
+
+= Training
+> Schulung
+
+= Translate
+> Übersetzen
+
+= Translate from
+> Übersetzen von
+
+= Translate to
+> Übersetzen in
+
+= Translator Preferences
+> Übersetzungseinstellungen
+
+= Type
+> Typ
+
+= Underline
+> Unterstrichen
+
+= Undo
+> Rückgängig
+
+= Update Index
+> Index aktualisieren
+
+= Update Table
+> Tabelle aktualisieren
+
+= Use a dark window
+> Dunkles Fenster verwenden
+
+= Use contextual alternates
+> Kontextbezogene Alternativen verwenden
+
+= Video
+> Video
+
+= View
+> Ansicht
+
+= View Gridlines
+> Gitternetzlinien anzeigen
+
+= Views
+> Ansichten
+
+= Watermark
+> Wasserzeichen
+
+= Web Layout
+> Weblayout
+
+= Web Page (*.htm;*.html)
+> Webseite (*.htm;*.html)
+
+= Web Pages (*.htm;*.html;*.mht;*.mhtml)
+> Webseiten (*.htm;*.html;*.mht;*.mhtml)
+
+= What's New
+> Neuigkeiten
+
+= When correcting spelling
+> Bei der Rechtschreibprüfung
+
+= Where it goes
+> Speicherort
+
+= White space between pages
+> Leerraum zwischen den Seiten
+
+= Widow/Orphan control
+> Absatzkontrolle
+
+= Width
+> Breite
+
+= Width:
+> Breite:
+
+= Window
+> Fenster
+
+= With
+> Durch
+
+= Word 97-2003 Documents (*.doc)
+> Word 97-2003-Dokumente (*.doc)
+
+= Word Count
+> Wörter zählen
+
+= Word Document (*.docx)
+> Word-Dokument (*.docx)
+
+= Word Macro-Enabled Document (*.docm)
+> Word-Dokument mit Makros (*.docm)
+
+= Word Macro-Enabled Template (*.dotm)
+> Word-Vorlage mit Makros (*.dotm)
+
+= Word Template (*.dotx)
+> Word-Vorlage (*.dotx)
+
+= Word documents
+> Word-Dokumente
+
+= Word documents (*.docx;*.docm;*.dotx;*.dotm)
+> Word-Dokumente (*.docx;*.docm;*.dotx;*.dotm)
+
+= Word documents do not open in this program.
+> Word-Dokumente werden nicht mit diesem Programm geöffnet.
+
+= Word documents do not open in this program. Make Default registers it and opens the system's own page for choosing.
+> Word-Dokumente werden nicht mit diesem Programm geöffnet. „Als Standard festlegen“ registriert es und öffnet die Seite des Systems für die Auswahl.
+
+= Word documents now open in this program
+> Word-Dokumente werden jetzt mit diesem Programm geöffnet
+
+= Word documents open in this program.
+> Word-Dokumente werden mit diesem Programm geöffnet.
+
+= Word will now convert your PDF to an editable Word document. This may take a while. The resulting Word document will be optimized to allow you to edit the text, so it might not look exactly like the original PDF, especially if the original file contained lots of graphics.
+> Word konvertiert Ihr PDF jetzt in ein bearbeitbares Word-Dokument. Dies kann eine Weile dauern. Das entstehende Word-Dokument wird für die Textbearbeitung optimiert und sieht daher möglicherweise nicht genau wie das ursprüngliche PDF aus, besonders wenn die Ausgangsdatei viele Grafiken enthielt.
+
+= WordArt
+> WordArt
+
+= Wrap Text
+> Textumbruch
+
+= Write & Insert Fields
+> Felder schreiben und einfügen
+
+= Zoom
+> Zoom
+
+= unsaved changes
+> nicht gespeicherte Änderungen
+
+= {0} characters
+> {0} Zeichen
+
+= {0} could not be opened: {1}
+> {0} konnte nicht geöffnet werden: {1}
+
+= {0} could not be read
+> {0} konnte nicht gelesen werden
+
+= {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
+> {0} ist kein Bild, das dieses Programm lesen kann. PNG, JPEG, BMP, GIF, TIFF und die Metadateien sind es.
+
+= {0} of {1}
+> {0} von {1}
+
+= {0} point
+> {0} Punkt
+
+= {0} recovered
+> {0} wiederhergestellt
+
+= {0} selected
+> {0} markiert
+
+= {0} was not kept
+> {0} wurde nicht behalten
+
+= {0} words
+> {0} Wörter
+
+= {0} {1}
+> {0} {1}
+
+= {0}x{1} Table
+> Tabelle {0}x{1}
+
+= “Straight quotes” with “smart quotes”
+> „Gerade Anführungszeichen“ durch „typografische Anführungszeichen“
+

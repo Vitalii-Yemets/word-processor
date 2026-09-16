@@ -30,6 +30,8 @@ use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::Canvas;
 
 use super::icons::{self, Icon};
+use crate::messages;
+
 use super::theme::Theme;
 
 pub const WIDTH: f32 = 58.0;
@@ -107,8 +109,9 @@ impl PasteBadge {
 
         icons::draw_sized(canvas, self.icon, self.left + 3.0, self.top + 3.0, 16.0, theme.text);
         if !self.label.is_empty() {
+            let label = messages::translated(self.label);
             let line =
-                engine.simple_line(self.label, self.left + 21.0, self.top + 15.0, 7.5, theme.text);
+                engine.simple_line(&label, self.left + 21.0, self.top + 15.0, 7.5, theme.text);
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
         }
         chevron(canvas, self.left + width - 9.0, self.top + HEIGHT / 2.0, theme.dim_text);

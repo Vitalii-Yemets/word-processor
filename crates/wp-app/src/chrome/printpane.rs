@@ -14,6 +14,8 @@ use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::{Canvas, Color};
 
 use super::icons::{self, Icon};
+use crate::messages::{self, t};
+
 use super::theme::Theme;
 
 /// How wide the column of settings is.
@@ -477,7 +479,7 @@ impl PrintPane {
         icons::draw_sized(canvas, Icon::Previous, left, *y, 20.0, theme.text);
         self.placed.push((Hit::Back, left - 4.0, *y - 4.0, 28.0, 28.0));
 
-        let line = engine.simple_line("Print", left + 34.0, *y + 16.0, 14.0, theme.text);
+        let line = engine.simple_line(t("Print"), left + 34.0, *y + 16.0, 14.0, theme.text);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
         *y += 44.0;
     }
@@ -494,7 +496,7 @@ impl PrintPane {
         let colour = if self.hovered == Some(Hit::Print) { theme.emphasis } else { theme.accent };
         canvas.fill_rect(left as i32, *y as i32, width as i32, height as i32, colour);
         icons::draw_sized(canvas, Icon::Print, left + 10.0, *y + 10.0, 20.0, theme.on_accent());
-        let line = engine.simple_line("Print", left + 40.0, *y + 25.0, 11.0, theme.on_accent());
+        let line = engine.simple_line(t("Print"), left + 40.0, *y + 25.0, 11.0, theme.on_accent());
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
         self.placed.push((Hit::Print, left, *y, width, height));
         *y += height + 14.0;
@@ -508,7 +510,7 @@ impl PrintPane {
         y: &mut f32,
         theme: &Theme,
     ) {
-        let line = engine.simple_line("Copies", 16.0, *y + 17.0, 9.0, theme.text);
+        let line = engine.simple_line(t("Copies"), 16.0, *y + 17.0, 9.0, theme.text);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
 
         let (left, width) = (100.0f32, 70.0f32);
@@ -538,7 +540,8 @@ impl PrintPane {
         y: &mut f32,
         theme: &Theme,
     ) {
-        let line = engine.simple_line(text, 16.0, *y + 10.0, 9.0, theme.accent);
+        let heading = messages::translated(text);
+        let line = engine.simple_line(&heading, 16.0, *y + 10.0, 9.0, theme.accent);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
         canvas.fill_rect(16, (*y + 16.0) as i32, (COLUMN_WIDTH - 32.0) as i32, 1, theme.pane_edge);
         *y += 24.0;
@@ -562,14 +565,16 @@ impl PrintPane {
         canvas.fill_rect(left as i32, *y as i32, width as i32, BOX_HEIGHT as i32, background);
         outline(canvas, left, *y, width, BOX_HEIGHT, theme.field_edge);
 
-        let line = engine.simple_line(label, left + 8.0, *y + 17.0, 9.0, theme.text);
+        let label = messages::translated(label);
+        let line = engine.simple_line(&label, left + 8.0, *y + 17.0, 9.0, theme.text);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
         chevron(canvas, left + width - 18.0, *y + BOX_HEIGHT / 2.0, theme.text);
         self.placed.push((hit, left, *y, width, BOX_HEIGHT));
         *y += BOX_HEIGHT;
 
         if !note.is_empty() {
-            let line = engine.simple_line(note, left + 8.0, *y + 12.0, 8.0, theme.dim_text);
+            let note = messages::translated(note);
+            let line = engine.simple_line(&note, left + 8.0, *y + 12.0, 8.0, theme.dim_text);
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
             *y += 16.0;
         }
@@ -586,7 +591,7 @@ impl PrintPane {
         y: &mut f32,
         theme: &Theme,
     ) {
-        let line = engine.simple_line("Pages:", 16.0, *y + 17.0, 9.0, theme.dim_text);
+        let line = engine.simple_line(t("Pages:"), 16.0, *y + 17.0, 9.0, theme.dim_text);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
 
         let (left, width) = (66.0f32, COLUMN_WIDTH - 82.0);
@@ -615,7 +620,7 @@ impl PrintPane {
         y: &mut f32,
         theme: &Theme,
     ) {
-        let text = "One or more margins are outside the printable area.";
+        let text = t("One or more margins are outside the printable area.");
         let line = engine.simple_line(text, 16.0, *y + 12.0, 8.0, theme.danger);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
         *y += 20.0;
@@ -637,7 +642,10 @@ impl PrintPane {
         icons::draw_sized(canvas, Icon::Previous, left, y, 16.0, theme.text);
         self.placed.push((Hit::Previous, left - 4.0, y - 4.0, 24.0, 24.0));
 
-        let counted = format!("{} of {}", state.showing, state.pages.max(1));
+        let counted = messages::with(
+            "{0} of {1}",
+            &[&state.showing.to_string(), &state.pages.max(1).to_string()],
+        );
         let line = engine.simple_line(&counted, left + 28.0, y + 12.0, 9.0, theme.text);
         let measured = line.width - (left + 28.0);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);

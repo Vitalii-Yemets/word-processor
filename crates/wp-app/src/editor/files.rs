@@ -1,6 +1,7 @@
 //! Opening, saving and printing — everything that puts the document on disk or
 //! on paper.
 
+use crate::messages::t;
 use std::path::{Path, PathBuf};
 
 use wp_docx::kinds::Kind;
@@ -91,6 +92,25 @@ pub fn media_type_of(path: &Path) -> &'static str {
         .map(|extension| format!(".{}", extension.to_string_lossy().to_lowercase()))
         .unwrap_or_default();
     DESKTOP_KINDS.iter().find(|kind| kind.extension == extension).map_or("", |kind| kind.media_type)
+}
+
+/// The file types as the person reads them.
+///
+/// What the Open and Save dialogs put in their list of types is the
+/// program's own words — "Word Document", "All files" — and the system's
+/// dialog shows whatever it is given, so they are translated here, on the
+/// way out. The patterns are not: `*.docx` is the same in every language.
+#[must_use]
+pub fn readable(
+    filters: &'static [wp_shell::dialog::FileFilter],
+) -> Vec<wp_shell::dialog::FileFilter> {
+    filters
+        .iter()
+        .map(|filter| wp_shell::dialog::FileFilter {
+            label: crate::messages::t(filter.label),
+            pattern: filter.pattern,
+        })
+        .collect()
 }
 
 /// What a document with no file of its own is called.
@@ -299,14 +319,18 @@ impl Editor {
                 }
             };
             if let Err(error) = written {
-                let message = format!("Cannot write {}: {error}", path.display());
+                let message = crate::messages::with(
+                    "Cannot write {0}: {1}",
+                    &[&path.display().to_string(), &error.to_string()],
+                );
                 wp_shell::dialog::show_error(&message);
                 self.status = message;
                 return false;
             }
             let _ = self.document.mark_saved();
             self.file = Some(path.to_path_buf());
-            self.status = format!("Saved {} as a web page", path.display());
+            self.status =
+                crate::messages::with("Saved {0} as a web page", &[&path.display().to_string()]);
             self.update_title();
             self.remember_recent(path);
             return true;
@@ -316,14 +340,20 @@ impl Editor {
         if is_rtf_path(path) {
             let bytes = wp_rtf::write(&self.document);
             if let Err(error) = std::fs::write(path, &bytes) {
-                let message = format!("Cannot write {}: {error}", path.display());
+                let message = crate::messages::with(
+                    "Cannot write {0}: {1}",
+                    &[&path.display().to_string(), &error.to_string()],
+                );
                 wp_shell::dialog::show_error(&message);
                 self.status = message;
                 return false;
             }
             let _ = self.document.mark_saved();
             self.file = Some(path.to_path_buf());
-            self.status = format!("Saved {} as Rich Text Format", path.display());
+            self.status = crate::messages::with(
+                "Saved {0} as Rich Text Format",
+                &[&path.display().to_string()],
+            );
             self.update_title();
             self.remember_recent(path);
             return true;
@@ -334,30 +364,36 @@ impl Editor {
             let bytes = match wp_odt::save(&self.document) {
                 Ok(bytes) => bytes,
                 Err(error) => {
-                    let message = format!("Cannot save: {error}");
+                    let message = crate::messages::with("Cannot save: {0}", &[&error.to_string()]);
                     wp_shell::dialog::show_error(&message);
                     self.status = message;
                     return false;
                 }
             };
             if let Err(error) = std::fs::write(path, &bytes) {
-                let message = format!("Cannot write {}: {error}", path.display());
+                let message = crate::messages::with(
+                    "Cannot write {0}: {1}",
+                    &[&path.display().to_string(), &error.to_string()],
+                );
                 wp_shell::dialog::show_error(&message);
                 self.status = message;
                 return false;
             }
             let _ = self.document.mark_saved();
             self.file = Some(path.to_path_buf());
-            self.status = format!("Saved {} as OpenDocument Text", path.display());
+            self.status = crate::messages::with(
+                "Saved {0} as OpenDocument Text",
+                &[&path.display().to_string()],
+            );
             self.update_title();
             self.remember_recent(path);
             return true;
         }
         if let Some(kind) = kind_of_path(path) {
             if !kind.allows_macros() && self.document.has_macros() {
-                let question = format!(
-                    "The following features cannot be saved in macro-free documents:\n\n    \u{2022} VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {} as a macro-free document?",
-                    path.file_name().and_then(|name| name.to_str()).unwrap_or(UNTITLED)
+                let question = crate::messages::with(
+                    "The following features cannot be saved in macro-free documents:\n\n    \u{2022} VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?",
+                    &[path.file_name().and_then(|name| name.to_str()).unwrap_or(UNTITLED)],
                 );
                 if !wp_shell::dialog::ask_yes_no(&question) {
                     self.status = String::from("Not saved");
@@ -370,7 +406,7 @@ impl Editor {
         let bytes = match self.document.save() {
             Ok(bytes) => bytes,
             Err(error) => {
-                let message = format!("Cannot save: {error}");
+                let message = crate::messages::with("Cannot save: {0}", &[&error.to_string()]);
                 wp_shell::dialog::show_error(&message);
                 self.status = message;
                 return false;
@@ -378,7 +414,10 @@ impl Editor {
         };
 
         if let Err(error) = std::fs::write(path, &bytes) {
-            let message = format!("Cannot write {}: {error}", path.display());
+            let message = crate::messages::with(
+                "Cannot write {0}: {1}",
+                &[&path.display().to_string(), &error.to_string()],
+            );
             wp_shell::dialog::show_error(&message);
             self.status = message;
             return false;
@@ -388,7 +427,7 @@ impl Editor {
         // saved.
         let _ = self.document.mark_saved();
         self.file = Some(path.to_path_buf());
-        self.status = format!("Saved {}", path.display());
+        self.status = crate::messages::with("Saved {0}", &[&path.display().to_string()]);
         self.update_title();
         self.remember_recent(path);
         self.saved_to_disk();
@@ -451,7 +490,7 @@ impl Editor {
     /// name is not, and the dialog opens where the folder is rather than
     /// wherever it happened to be last.
     pub(super) fn save_into(&mut self, suggested: &Path) -> bool {
-        match wp_shell::dialog::save_file("Save as", SAVE_FILTERS, Some(suggested)) {
+        match wp_shell::dialog::save_file(t("Save as"), &readable(SAVE_FILTERS), Some(suggested)) {
             Some(path) => self.write_document(&path),
             None => {
                 self.status = String::from("Not saved");
@@ -528,7 +567,10 @@ impl Editor {
                 Response::Redraw
             }
             Err(error) => {
-                wp_shell::dialog::show_error(&format!("Cannot make a document: {error}"));
+                wp_shell::dialog::show_error(&crate::messages::with(
+                    "Cannot make a document: {0}",
+                    &[&error.to_string()],
+                ));
                 Response::Ignored
             }
         }
@@ -538,7 +580,7 @@ impl Editor {
         if !self.may_discard() {
             return Response::Ignored;
         }
-        let Some(path) = wp_shell::dialog::open_file("Open", DOCUMENT_FILTERS) else {
+        let Some(path) = wp_shell::dialog::open_file(t("Open"), &readable(DOCUMENT_FILTERS)) else {
             return Response::Ignored;
         };
         self.open_path(&path)
@@ -560,7 +602,8 @@ impl Editor {
         match made {
             Ok(document) => {
                 self.set_document(document, None);
-                self.status = format!("New document from {}", path.display());
+                self.status =
+                    crate::messages::with("New document from {0}", &[&path.display().to_string()]);
                 self.remember_recent(path);
                 Response::Redraw
             }
@@ -591,7 +634,10 @@ impl Editor {
             return match std::fs::read(&path) {
                 Ok(bytes) => self.open_text_path(&path, bytes),
                 Err(error) => {
-                    let message = format!("Cannot read {}: {error}", path.display());
+                    let message = crate::messages::with(
+                        "Cannot read {0}: {1}",
+                        &[&path.display().to_string(), &error.to_string()],
+                    );
                     wp_shell::dialog::show_error(&message);
                     self.status = message;
                     self.needs_redraw = true;
@@ -632,7 +678,7 @@ impl Editor {
         match opened {
             Ok(document) => {
                 self.set_document(document, Some(path.clone()));
-                self.status = format!("Opened {}", path.display());
+                self.status = crate::messages::with("Opened {0}", &[&path.display().to_string()]);
                 self.remember_recent(&path);
                 Response::Redraw
             }

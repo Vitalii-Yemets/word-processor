@@ -11,6 +11,8 @@
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::{Canvas, Color};
 
+use crate::messages;
+
 use super::theme::Theme;
 
 /// The side of one swatch and the gap around the grid.
@@ -200,8 +202,11 @@ impl Palette {
             .hovered
             .and_then(|index| self.entries().get(index))
             .map_or(self.kind.title(), |(name, _)| name);
+        // A colour's name is one of the program's words; the title of the
+        // palette is another.
+        let name = messages::translated(name);
         let line = engine.simple_line(
-            name,
+            &name,
             self.left + PADDING,
             self.top + self.height() - 8.0,
             8.0,

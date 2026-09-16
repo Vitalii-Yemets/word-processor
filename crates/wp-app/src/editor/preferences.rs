@@ -46,6 +46,10 @@ impl Editor {
         if let Some(white_space) = settings.white_space {
             self.joined_pages = !white_space;
         }
+        // The language first: everything drawn after this is drawn in it.
+        if let Some(language) = &settings.language {
+            crate::messages::set_language(language);
+        }
         if let Some(on) = settings.autosave {
             self.autosave = on;
         }

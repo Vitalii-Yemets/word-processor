@@ -7,6 +7,8 @@
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::Canvas;
 
+use crate::messages;
+
 use super::icons::{self, Icon};
 use super::theme::Theme;
 
@@ -557,7 +559,11 @@ impl Popup {
                     color,
                 );
             }
-            let line = engine.simple_line(text, text_left, y + 15.0, 9.0, color);
+            // A menu's rows are the program's words; a list of fonts or of
+            // the person's own styles has nothing in the catalogue and comes
+            // back as it was.
+            let text = messages::translated(text);
+            let line = engine.simple_line(&text, text_left, y + 15.0, 9.0, color);
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
             y += row_height;
         }

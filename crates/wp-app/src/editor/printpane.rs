@@ -10,6 +10,7 @@
 //! same line breaks, the same number of them. That is what makes it a preview
 //! rather than an illustration.
 
+use crate::messages::t;
 use wp_layout::{Device, LayoutEngine, Page, Renderer};
 use wp_raster::{Canvas, Color, Transform};
 use wp_shell::Response;
@@ -440,8 +441,11 @@ impl Editor {
     pub(super) fn write_pdf(&mut self, chosen: &[usize]) -> bool {
         let name = self.document_name();
         let suggested = std::path::PathBuf::from(format!("{name}.pdf"));
-        let Some(path) = wp_shell::dialog::save_file("Save as PDF", PDF_FILTERS, Some(&suggested))
-        else {
+        let Some(path) = wp_shell::dialog::save_file(
+            t("Save as PDF"),
+            &super::files::readable(PDF_FILTERS),
+            Some(&suggested),
+        ) else {
             self.status = String::from("Not saved");
             return false;
         };
@@ -455,11 +459,17 @@ impl Editor {
         let bytes = wp_pdf::write(&pages, self.library, &name);
         match std::fs::write(&path, &bytes) {
             Ok(()) => {
-                self.status = format!("Saved {} pages to {}", pages.len(), path.display());
+                self.status = crate::messages::with(
+                    "Saved {0} pages to {1}",
+                    &[&pages.len().to_string(), &path.display().to_string()],
+                );
                 true
             }
             Err(error) => {
-                wp_shell::dialog::show_error(&format!("Cannot write {}: {error}", path.display()));
+                wp_shell::dialog::show_error(&crate::messages::with(
+                    "Cannot write {0}: {1}",
+                    &[&path.display().to_string(), &error.to_string()],
+                ));
                 self.status = String::from("Not saved");
                 false
             }
@@ -542,7 +552,8 @@ impl Editor {
             };
         } else {
             printer.cancel();
-            self.status = format!("Printing stopped after {printed} sheets");
+            self.status =
+                crate::messages::with("Printing stopped after {0} sheets", &[&printed.to_string()]);
         }
         self.close_print()
     }

@@ -7,6 +7,7 @@
 //! moving. So the marks are drawn over the page from the same ranges the
 //! selection is drawn from, and the layout knows nothing about them.
 
+use crate::messages::t;
 use wp_docx::proofing::{Dictionary, Issue, Kind};
 use wp_docx::TextPosition;
 use wp_shell::dialog::FileFilter;
@@ -310,7 +311,7 @@ impl Editor {
             FileFilter { label: "Dictionaries", pattern: "*.dic;*.txt" },
             FileFilter { label: "All files", pattern: "*.*" },
         ];
-        let Some(path) = wp_shell::dialog::open_file("Open a dictionary", &filters) else {
+        let Some(path) = wp_shell::dialog::open_file(t("Open a dictionary"), &filters) else {
             return Response::Ignored;
         };
         let name = path.file_stem().map(|name| name.to_string_lossy().into_owned());

@@ -20,6 +20,8 @@
 
 use wp_shell::Response;
 
+use crate::messages::t;
+
 use crate::chrome::dialog::{Answer, Button, Dialog, Field};
 use crate::chrome::theme::{Mode, Theme};
 use crate::measure::Unit;
@@ -48,24 +50,30 @@ const RULERS: usize = 13;
 const NAVIGATION: usize = 14;
 const WHITE_SPACE: usize = 15;
 
+// Language.
+const TAB_LANGUAGE: usize = 16;
+const DISPLAY_LANGUAGE: usize = 17;
+const LANGUAGE_CHOICE: usize = 18;
+const LANGUAGE_SAID: usize = 19;
+
 // Save.
-const TAB_SAVE: usize = 16;
-const SAVING: usize = 17;
-const AUTOSAVE: usize = 18;
-const AUTOSAVE_MINUTES: usize = 19;
-const KEEP_AUTOSAVED: usize = 20;
-const RECOVERY_FOLDER: usize = 21;
+const TAB_SAVE: usize = 20;
+const SAVING: usize = 21;
+const AUTOSAVE: usize = 22;
+const AUTOSAVE_MINUTES: usize = 23;
+const KEEP_AUTOSAVED: usize = 24;
+const RECOVERY_FOLDER: usize = 25;
 
 // Proofing.
-const TAB_PROOFING: usize = 22;
-const AUTOCORRECT: usize = 23;
-const AUTOCORRECT_SAID: usize = 24;
-const CORRECTING: usize = 25;
-const PROOFING: usize = 26;
-const HIDE_SPELLING: usize = 27;
+const TAB_PROOFING: usize = 26;
+const AUTOCORRECT: usize = 27;
+const AUTOCORRECT_SAID: usize = 28;
+const CORRECTING: usize = 29;
+const PROOFING: usize = 30;
+const HIDE_SPELLING: usize = 31;
 
 /// Which tab of the dialog Proofing is, so its button is drawn on that one.
-const TAB_PROOFING_PAGE: usize = 3;
+const TAB_PROOFING_PAGE: usize = 4;
 /// And which General is, for the button that registers the file types.
 const TAB_GENERAL_PAGE: usize = 0;
 
@@ -75,6 +83,12 @@ pub(super) const AUTOCORRECT_OPTIONS: &str = "AutoCorrect Options...";
 /// The button that tells the desktop this program opens Word documents.
 /// Word's own wording for it.
 pub(super) const MAKE_DEFAULT: &str = "Make Default";
+
+/// Which language in the list is the one being read now.
+fn language_index() -> usize {
+    let language = crate::messages::language();
+    crate::messages::languages().iter().position(|(code, _)| *code == language).unwrap_or(0)
+}
 
 impl Editor {
     /// Opens Word's Options.
@@ -93,16 +107,15 @@ impl Editor {
     pub(super) fn default_program_line(&self) -> String {
         let kinds = super::files::DESKTOP_KINDS;
         let Some(word) = kinds.iter().find(|kind| kind.extension == ".docx") else {
-            return "This program can open Word documents.".to_owned();
+            return t("This program can open Word documents.").to_owned();
         };
         if wp_shell::files::opens(word) {
-            "Word documents open in this program.".to_owned()
+            t("Word documents open in this program.").to_owned()
         } else if wp_shell::files::defaults_are_chosen_by_hand() {
-            "Word documents do not open in this program. Make Default registers \
-             it and opens the system's own page for choosing."
+            t("Word documents do not open in this program. Make Default registers it and opens the system's own page for choosing.")
                 .to_owned()
         } else {
-            "Word documents do not open in this program.".to_owned()
+            t("Word documents do not open in this program.").to_owned()
         }
     }
 
@@ -120,14 +133,14 @@ impl Editor {
         let word = kinds.iter().find(|kind| kind.extension == ".docx");
         let now_opens = word.is_some_and(wp_shell::files::opens);
         self.status = if !registered {
-            "The file types could not be registered".to_owned()
+            t("The file types could not be registered").to_owned()
         } else if now_opens {
-            "Word documents now open in this program".to_owned()
+            t("Word documents now open in this program").to_owned()
         } else if wp_shell::files::defaults_are_chosen_by_hand() {
             wp_shell::files::choose_defaults();
-            "Registered. Choose this program in the page that opened".to_owned()
+            t("Registered. Choose this program in the page that opened").to_owned()
         } else {
-            "The file types were registered".to_owned()
+            t("The file types were registered").to_owned()
         };
         // The dialog is standing, and the line it shows is now out of date.
         let line = self.default_program_line();
@@ -173,6 +186,23 @@ impl Editor {
             check("Rulers", self.show_rulers),
             check("Navigation pane", self.show_navigation),
             check("White space between pages", !self.joined_pages),
+            // --- Language --------------------------------------------------
+            // Word's own page for this, and Word's own wording. What it
+            // offers is English, whatever came with the program, and
+            // whatever the person has put in the folder named below.
+            Field::Tab("Language".to_owned()),
+            Field::Group("Office display language".to_owned()),
+            Field::Choice {
+                label: "Interface language".to_owned(),
+                items: crate::messages::languages().into_iter().map(|(_, name)| name).collect(),
+                current: language_index(),
+            },
+            Field::Said {
+                label: "Catalogues can be added in".to_owned(),
+                value: crate::messages::folder()
+                    .map(|folder| folder.display().to_string())
+                    .unwrap_or_else(|| "nowhere this program can read".to_owned()),
+            },
             // --- Save ------------------------------------------------------
             Field::Tab("Save".to_owned()),
             Field::Group("Save documents".to_owned()),
@@ -232,6 +262,10 @@ impl Editor {
             (RULERS, "a tick box"),
             (NAVIGATION, "a tick box"),
             (WHITE_SPACE, "a tick box"),
+            (TAB_LANGUAGE, "a tab"),
+            (DISPLAY_LANGUAGE, "a group"),
+            (LANGUAGE_CHOICE, "a list"),
+            (LANGUAGE_SAID, "a line"),
             (TAB_SAVE, "a tab"),
             (SAVING, "a group"),
             (AUTOSAVE, "a tick box"),
@@ -306,6 +340,14 @@ impl Editor {
         // Word's wording is the white space; the editor keeps whether the
         // pages are joined, which is the other way round.
         self.joined_pages = !dialog.ticked(WHITE_SPACE);
+        // The language before anything else is read out of the dialog: the
+        // dialog is about to be drawn again, and in the new language.
+        let languages = crate::messages::languages();
+        let chosen = dialog.chose(LANGUAGE_CHOICE);
+        if let Some((code, _)) = languages.get(chosen) {
+            crate::messages::set_language(code);
+            self.settings.language = Some(code.clone());
+        }
         self.autosave = dialog.ticked(AUTOSAVE);
         if let Ok(minutes) = dialog.said(AUTOSAVE_MINUTES).trim().parse::<u32>() {
             self.autosave_minutes = minutes.clamp(1, 120);

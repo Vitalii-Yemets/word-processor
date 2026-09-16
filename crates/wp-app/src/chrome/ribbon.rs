@@ -26,6 +26,8 @@ use wp_docx::CharacterFormat;
 use wp_layout::{LayoutEngine, Renderer, TextStyle};
 use wp_raster::{Canvas, Color};
 
+use crate::messages::t;
+
 use super::customise::Showing;
 use super::icons::{self, Icon};
 use super::theme::Theme;
@@ -579,7 +581,7 @@ impl Ribbon {
             } else {
                 theme.bar_dim_text()
             };
-            let measured = engine.simple_line(tab.label(), 0.0, 0.0, 9.0, color);
+            let measured = engine.simple_line(t(tab.label()), 0.0, 0.0, 9.0, color);
             let width = measured.width + 24.0;
 
             if file {
@@ -600,7 +602,7 @@ impl Ribbon {
                 );
             }
 
-            let line = engine.simple_line(tab.label(), x + 12.0, top + 21.0, 9.0, color);
+            let line = engine.simple_line(t(tab.label()), x + 12.0, top + 21.0, 9.0, color);
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
 
             self.tabs.push((*tab, x, width));
@@ -610,7 +612,7 @@ impl Ribbon {
         // "Tell me what you want to do", which is where a person goes when they
         // cannot find a command — so it is the one thing on the strip that is
         // not a tab.
-        let hint = "Tell me what you want to do";
+        let hint = t("Tell me what you want to do");
         let dim = theme.bar_dim_text();
         icons::draw_sized(canvas, Icon::Help, x + 12.0, top + 7.0, 18.0, dim);
         let line = engine.simple_line(hint, x + 38.0, top + 21.0, 8.5, dim);
@@ -719,10 +721,10 @@ impl Ribbon {
 
             // The name of the group, centred under it: the thing that makes a
             // ribbon findable rather than a wall of icons.
-            let measured = engine.simple_line(group.label, 0.0, 0.0, 7.5, theme.dim_text);
+            let measured = engine.simple_line(t(group.label), 0.0, 0.0, 7.5, theme.dim_text);
             let label_x = start + (widest - measured.width) / 2.0;
             let line = engine.simple_line(
-                group.label,
+                t(group.label),
                 label_x.max(start),
                 self.top + TAB_HEIGHT + RIBBON_HEIGHT - 5.0,
                 7.5,
@@ -762,15 +764,15 @@ impl Ribbon {
         arrow
             + match item {
                 Item::Large(_, _, label) => {
-                    engine.simple_line(label, 0.0, 0.0, 8.0, colour).width.max(icons::LARGE_SIZE)
+                    engine.simple_line(t(label), 0.0, 0.0, 8.0, colour).width.max(icons::LARGE_SIZE)
                         + 14.0
                 }
                 Item::Small(_, _, label) => {
-                    engine.simple_line(label, 0.0, 0.0, 8.0, colour).width + icons::SIZE + 14.0
+                    engine.simple_line(t(label), 0.0, 0.0, 8.0, colour).width + icons::SIZE + 14.0
                 }
                 Item::Button(..) | Item::Letter(..) => ROW_HEIGHT,
                 Item::Measure(_, label, width) => {
-                    engine.simple_line(label, 0.0, 0.0, 8.0, colour).width + width + 14.0
+                    engine.simple_line(t(label), 0.0, 0.0, 8.0, colour).width + width + 14.0
                 }
                 Item::Field(_, _, width) => *width,
                 Item::StyleGallery => STYLE_TILE_WIDTH * self.style_tiles as f32,
@@ -902,10 +904,10 @@ impl Ribbon {
             );
         }
 
-        let measured = engine.simple_line(group.label, 0.0, 0.0, 7.5, theme.text);
+        let measured = engine.simple_line(t(group.label), 0.0, 0.0, 7.5, theme.text);
         let baseline = if icon.is_some() { top + height - 14.0 } else { top + height / 2.0 };
         let line = engine.simple_line(
-            group.label,
+            t(group.label),
             x + (COLLAPSED_WIDTH - measured.width.min(COLLAPSED_WIDTH - 4.0)) / 2.0,
             baseline,
             7.5,
@@ -1026,9 +1028,9 @@ impl Ribbon {
                 // underneath it, so a descender and the arrow are not drawn on
                 // top of one another.
                 let baseline = top + height - if menu_of(command).is_some() { 12.0 } else { 7.0 };
-                let measured = engine.simple_line(label, 0.0, 0.0, 8.0, color);
+                let measured = engine.simple_line(t(label), 0.0, 0.0, 8.0, color);
                 let line = engine.simple_line(
-                    label,
+                    t(label),
                     left + (width - measured.width) / 2.0,
                     baseline,
                     8.0,
@@ -1040,7 +1042,7 @@ impl Ribbon {
                 let icon_top = top + (ROW_HEIGHT - icons::SIZE) / 2.0;
                 icons::draw(canvas, *icon, left + 4.0, icon_top, color);
                 let line =
-                    engine.simple_line(label, left + icons::SIZE + 9.0, top + 17.0, 8.0, color);
+                    engine.simple_line(t(label), left + icons::SIZE + 9.0, top + 17.0, 8.0, color);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
             }
             Item::Button(_, icon) => {
@@ -1081,7 +1083,7 @@ impl Ribbon {
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
             }
             Item::Measure(_, label, box_width) => {
-                let line = engine.simple_line(label, left, top + 17.0, 8.0, theme.dim_text);
+                let line = engine.simple_line(t(label), left, top + 17.0, 8.0, theme.dim_text);
                 let measured = line.width - left;
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
 

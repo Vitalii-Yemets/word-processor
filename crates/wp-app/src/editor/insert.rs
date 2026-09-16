@@ -1,5 +1,6 @@
 //! Putting a table or a picture into the document, and switching the theme.
 
+use crate::messages::t;
 use wp_docx::EMU_PER_INCH;
 use wp_shell::App;
 use wp_shell::Response;
@@ -44,7 +45,10 @@ impl Editor {
 
     /// Asks for a picture and puts it where the caret is.
     pub(super) fn insert_picture(&mut self) -> Response {
-        let Some(path) = wp_shell::dialog::open_file("Insert Picture", PICTURE_FILTERS) else {
+        let Some(path) = wp_shell::dialog::open_file(
+            t("Insert Picture"),
+            &super::files::readable(PICTURE_FILTERS),
+        ) else {
             return Response::Ignored;
         };
         self.insert_picture_file(&path)
@@ -57,7 +61,10 @@ impl Editor {
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(error) => {
-                wp_shell::dialog::show_error(&format!("Cannot read {}: {error}", path.display()));
+                wp_shell::dialog::show_error(&crate::messages::with(
+                    "Cannot read {0}: {1}",
+                    &[&path.display().to_string(), &error.to_string()],
+                ));
                 return Response::Ignored;
             }
         };
@@ -67,9 +74,9 @@ impl Editor {
         // is wider than the text is brought down to fit, because a photograph
         // from a camera is thousands of pixels across.
         let Ok(image) = wp_image::decode(&bytes) else {
-            wp_shell::dialog::show_error(&format!(
-                "{} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.",
-                path.display()
+            wp_shell::dialog::show_error(&crate::messages::with(
+                "{0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.",
+                &[&path.display().to_string()],
             ));
             return Response::Ignored;
         };
@@ -92,7 +99,10 @@ impl Editor {
                 self.edited(inserted, "Picture")
             }
             Err(error) => {
-                wp_shell::dialog::show_error(&format!("Cannot insert the picture: {error}"));
+                wp_shell::dialog::show_error(&crate::messages::with(
+                    "Cannot insert the picture: {0}",
+                    &[&error.to_string()],
+                ));
                 Response::Ignored
             }
         }
@@ -302,6 +312,16 @@ impl Editor {
                     wp_shell::CompositionAttribute::Input,
                 ];
                 self.compose("日本語をにゅう".to_owned(), 7, attributes.to_vec());
+            }
+            // The interface in another language, and in the pseudo-language
+            // that shows what has not been through the catalogue.
+            "german" => {
+                crate::messages::set_language("de");
+                self.relayout();
+            }
+            "pseudo" => {
+                crate::messages::set_language(crate::messages::PSEUDO);
+                self.relayout();
             }
             // The Document Recovery pane, as the first start after a crash
             // shows it: the copies a run that did not end left behind, with
@@ -681,6 +701,13 @@ impl Editor {
             // The Save page of Options: how often a copy of the work is
             // taken, and where it goes.
             "savepage" => {
+                self.open_options();
+                if let Some(dialog) = &mut self.dialog {
+                    dialog.show_tab(3);
+                }
+            }
+            // The page where the language of the interface is chosen.
+            "languagepage" => {
                 self.open_options();
                 if let Some(dialog) = &mut self.dialog {
                     dialog.show_tab(2);

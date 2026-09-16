@@ -18,6 +18,8 @@
 use wp_layout::{LayoutEngine, Renderer, TextStyle};
 use wp_raster::{Canvas, Color};
 
+use crate::messages::{self, t};
+
 use super::theme::Theme;
 use crate::editor::autorecover::Recovered;
 
@@ -141,7 +143,7 @@ impl RecoveryPane {
 
         // The caption, with the cross that shuts the pane.
         let caption = engine.styled_line(
-            "Document Recovery",
+            t("Document Recovery"),
             PADDING,
             top + 24.0,
             10.0,
@@ -166,7 +168,7 @@ impl RecoveryPane {
         // Word's own sentence, which says the one thing a person needs to
         // know: these are copies, and saving is what keeps them.
         let said = engine.simple_line(
-            "The files below were recovered.",
+            t("The files below were recovered."),
             PADDING,
             top + 44.0,
             9.0,
@@ -202,7 +204,7 @@ impl RecoveryPane {
             renderer.draw_within(canvas, &name, 0.0, y, width - 40.0, ROW);
 
             // What Word writes under the name: that it is a copy, and when.
-            let said = format!("Autosaved {}", entry.when());
+            let said = messages::with("Autosaved {0}", &[&entry.when()]);
             let when = engine.simple_line(&said, PADDING + 4.0, y + 34.0, 8.5, theme.dim_text);
             renderer.draw_within(canvas, &when, 0.0, y + 20.0, width - 40.0, ROW - 20.0);
 
@@ -253,7 +255,7 @@ impl RecoveryPane {
         let face = if self.hovered == Some(Hit::Close) { theme.hover } else { theme.field };
         canvas.fill_rect(left as i32, button_top as i32, button_width as i32, height as i32, face);
         outline(canvas, left, button_top, button_width, height, theme.field_edge);
-        let label = engine.simple_line("Close", left + 22.0, button_top + 17.0, 9.0, theme.text);
+        let label = engine.simple_line(t("Close"), left + 22.0, button_top + 17.0, 9.0, theme.text);
         renderer.draw_within(canvas, &label, left, button_top, button_width, height);
     }
 }

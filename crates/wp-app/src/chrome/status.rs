@@ -9,6 +9,8 @@
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::{Canvas, Color};
 
+use crate::messages::{self, t};
+
 use super::theme::Theme;
 use super::Command;
 
@@ -196,26 +198,30 @@ pub fn draw(
     };
 
     if state.shows.page {
-        let position = format!("Page {} of {}", state.page, state.pages);
+        let position =
+            messages::with("Page {0} of {1}", &[&state.page.to_string(), &state.pages.to_string()]);
         write(canvas, engine, renderer, &position, text, &mut left);
     }
     if state.shows.section {
-        let section = format!("Section: {}", state.section);
+        let section = messages::with("Section: {0}", &[&state.section.to_string()]);
         write(canvas, engine, renderer, &section, text, &mut left);
     }
 
     if state.shows.words {
-        let words =
-            if state.words == 1 { "1 word".to_owned() } else { format!("{} words", state.words) };
+        let words = if state.words == 1 {
+            t("1 word").to_owned()
+        } else {
+            messages::with("{0} words", &[&state.words.to_string()])
+        };
         write(canvas, engine, renderer, &words, text, &mut left);
     }
     if state.shows.characters {
-        let characters = format!("{} characters", state.characters);
+        let characters = messages::with("{0} characters", &[&state.characters.to_string()]);
         write(canvas, engine, renderer, &characters, dim, &mut left);
     }
 
     if state.selected_characters > 0 {
-        let selected = format!("{} selected", state.selected_characters);
+        let selected = messages::with("{0} selected", &[&state.selected_characters.to_string()]);
         write(canvas, engine, renderer, &selected, dim, &mut left);
     }
     if state.shows.language {
@@ -223,10 +229,13 @@ pub fn draw(
     }
 
     if state.modified {
-        write(canvas, engine, renderer, "unsaved changes", dim, &mut left);
+        write(canvas, engine, renderer, t("unsaved changes"), dim, &mut left);
     }
     if !state.note.is_empty() {
-        write(canvas, engine, renderer, &state.note, dim, &mut left);
+        // What the last command said, which the program wrote and the
+        // catalogue may have a translation of.
+        let note = messages::translated(&state.note);
+        write(canvas, engine, renderer, &note, dim, &mut left);
     }
 
     // The right side: the zoom, with a slider and the buttons either end.

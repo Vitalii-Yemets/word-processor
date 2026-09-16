@@ -4127,8 +4127,68 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
 ## I — The language of the interface
 
-- [ ] **I1. Message catalogues.** Every string in the interface comes from a
+- [x] **I1. Message catalogues.** Every string in the interface comes from a
   catalogue rather than from the code.
+  *Done:* the catalogue is keyed by the English sentence, as `gettext`'s
+  are and for the same reasons — the code still says what will be on the
+  screen, a message nobody has translated falls back to something true
+  rather than to a number, and changing the English makes a new message
+  that has to be translated again instead of quietly keeping the old
+  translation of a sentence that no longer exists. A message is asked for
+  by `t("Align Left")`, which gives back a `&'static str`: the translation
+  is leaked once, the first time it is wanted, so nothing that draws the
+  interface had to change shape and no label is allocated on a repaint.
+  What a dialog says is looked up where the dialog is drawn rather than at
+  the several hundred places where dialogs are built — the labels,
+  captions, headings and the words a list is made of go through the
+  catalogue; the values do not, because a name typed into a box, a
+  measurement or a font is the person's and has no translation. The same
+  goes for the menus, the panes, the File page and the strip along the
+  bottom. A sentence with something in it — "Page 3 of 8", "Saved {0}" —
+  is one message with numbered places in it, so a language that puts the
+  parts the other way round can.
+  The catalogues are files: those that come with the program are built
+  into it, and a person may put one of their own in the settings folder,
+  which is read first — somebody whose language nobody has translated into
+  can translate it themselves without a compiler. The language is chosen
+  on Word's own Language page in Options and takes effect at once, without
+  the restart Word asks for. `messages/en.txt` is the list of every message
+  the program can say, written by a test that reads the source for `t(`
+  and walks the tables the ribbon, the tabs and the panes are made of; the
+  test beside it holds the list to exactly what the program says, so a
+  message added and not listed fails, and so does a message listed after
+  the code stopped saying it. There are 543 of them, and `messages/de.txt`
+  translates all 543 into German, in Word's own German words.
+  One catalogue is not a language: the pseudo-language writes every
+  message in accented letters between brackets, which is how a picture of
+  the window shows what did *not* come through the catalogue — anything
+  still in plain English was written into the code where it is drawn.
+  Held to: the catalogue reads back what it wrote, a message with no
+  translation comes back in English, the pseudo-language marks everything
+  it is given and leaves what is filled in alone, the message list matches
+  the program, and three pictures — the window in German, the window in
+  the pseudo-language, and Options in German — looked at. The strip of
+  tabs in a dialog gives up the room between its tabs, and then their
+  width, rather than running off the edge of the dialog in a language
+  whose words are longer; the pane's tabs are clipped to their own quarter
+  for the same reason.
+  *Not done, and named here:* the document's own words are not the
+  program's and are not translated — a built-in style name is shown as the
+  document holds it, where Word shows "Überschrift 1" for the "Heading 1"
+  in the file; the name of the document's language in the strip along the
+  bottom is in English; and the fonts keep their own names, which is
+  right. A consequence of keying by the English: a style or a heading
+  whose name happens to be a message — a style actually called "Normal" —
+  is shown translated in the places where names pass through the
+  catalogue, which is what Word does with the built-in ones and not what
+  it does with a style somebody named themselves. The letters Alt puts
+  over the ribbon are English, where Word's are the language's. What the
+  system's own dialogs say — the buttons of a message box, the question
+  about saving changes, which the shell builds — is the system's language
+  on Windows and English elsewhere. Numbers, dates and measurements are
+  **I3**, and a window that reverses for Arabic and Hebrew is **I2**.
+  German is the one language that comes with the program; the folder is
+  how another arrives.
 - [ ] **I2. A mirrored interface.** For Arabic and Hebrew the whole window
   reverses: the ribbon, the panes, the scrollbar, the dialogs.
 - [ ] **I3. The user's locale.** Dates, numbers, paper sizes and measurement

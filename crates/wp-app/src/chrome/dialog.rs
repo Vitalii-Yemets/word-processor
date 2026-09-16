@@ -22,7 +22,9 @@
 //! cancel, and a click anywhere outside that does nothing at all — because a
 //! modal dialog is modal.
 
+use crate::messages;
 use wp_docx::model::{Alignment, ResolvedParagraphProperties, ResolvedRunProperties};
+
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::{Canvas, Color};
 use wp_shell::Key;
@@ -302,6 +304,54 @@ impl Field {
                 | Self::Group(_)
                 | Self::Lines { .. }
         )
+    }
+
+    /// The same field with everything it says in the person's own language.
+    ///
+    /// What a dialog says is of two kinds, and only one of them is a message.
+    /// The labels, headings, captions and the words a list is made of are the
+    /// program speaking, and go through the catalogue. The values do not: a
+    /// name typed into a box, a measurement, a font, the text of a document
+    /// are the person's and stay exactly as they are. That is the whole of
+    /// the rule, and it is applied here — once, where a field is drawn —
+    /// rather than at the several hundred places where dialogs are built.
+    #[must_use]
+    pub fn in_the_readers_language(self) -> Self {
+        use crate::messages::translated as m;
+        match self {
+            Self::Heading(text) => Self::Heading(m(&text)),
+            Self::Said { label, value } => Self::Said { label: m(&label), value },
+            Self::Text { label, value } => Self::Text { label: m(&label), value },
+            Self::Number { label, value, unit } => Self::Number { label: m(&label), value, unit },
+            Self::Check { label, on } => Self::Check { label: m(&label), on },
+            // The items of a list are the program's words where the list is
+            // one the program wrote — "Single", "Double", "Exactly" — and the
+            // person's where it is a list of fonts or of their own headings.
+            // A name nobody has translated comes back as it was, so both are
+            // right without having to be told apart.
+            Self::Choice { label, items, current } => Self::Choice {
+                label: m(&label),
+                items: items.iter().map(|item| m(item)).collect(),
+                current,
+            },
+            Self::Tab(label) => Self::Tab(m(&label)),
+            Self::Grid { label, items, current, scroll } => {
+                Self::Grid { label: m(&label), items, current, scroll }
+            }
+            Self::Pairs { label, second, rows, current, scroll } => {
+                Self::Pairs { label: m(&label), second: m(&second), rows, current, scroll }
+            }
+            Self::Tree { label, rows, current, scroll } => Self::Tree {
+                label: m(&label),
+                rows: rows.into_iter().map(|row| TreeRow { text: m(&row.text), ..row }).collect(),
+                current,
+                scroll,
+            },
+            Self::Lines { label, lines } => Self::Lines { label: m(&label), lines },
+            Self::Group(caption) => Self::Group(m(&caption)),
+            // Nothing to translate: a picture of the document, or a marker.
+            other @ (Self::Preview(_) | Self::Shape(_) | Self::Columns(_)) => other,
+        }
     }
 
     /// The word down the left-hand column, for the fields that have one.
@@ -1428,10 +1478,40 @@ impl Dialog {
             theme.pane_edge,
         );
 
+        // The words are longer in some languages than in others, and a strip
+        // of tabs that ran off the edge of its own dialog would be a strip
+        // with a page nobody can reach. The room between one tab and the
+        // next is given up first, down to nothing; what is still too wide
+        // after that is shared out, and a label is drawn inside the tab it
+        // belongs to rather than over the one beside it.
+        let shown: Vec<String> = labels.iter().map(|label| messages::translated(label)).collect();
+        let widths: Vec<f32> = shown
+            .iter()
+            .map(|label| engine.simple_line(label, 0.0, 0.0, 9.0, theme.text).width)
+            .collect();
+        let room = width - PADDING * 2.0;
+        let wanted: f32 = widths.iter().map(|measured| measured + PADDING * 2.0).sum();
+        let gap = if wanted <= room {
+            PADDING
+        } else {
+            let text: f32 = widths.iter().sum();
+            ((room - text) / (labels.len() as f32 * 2.0)).max(2.0)
+        };
+        let squeeze = {
+            let text: f32 = widths.iter().sum();
+            let with_gaps = text + gap * labels.len() as f32 * 2.0;
+            if with_gaps > room {
+                room / with_gaps
+            } else {
+                1.0
+            }
+        };
+
         let mut x = left + PADDING;
-        for (index, label) in labels.iter().enumerate() {
-            let measured = engine.simple_line(label, 0.0, 0.0, 9.0, theme.text).width;
-            let tab_width = measured + PADDING * 2.0;
+        for (index, label) in shown.iter().enumerate() {
+            let label = label.as_str();
+            let measured = widths[index] * squeeze;
+            let tab_width = measured + gap * 2.0;
             let showing = index == self.tab;
 
             if showing {
@@ -1463,8 +1543,8 @@ impl Dialog {
             }
 
             let colour = if showing { theme.text } else { theme.dim_text };
-            let line = engine.simple_line(label, x + PADDING, strip_top + 19.0, 9.0, colour);
-            renderer.draw_onto(canvas, &line, 0.0, 0.0);
+            let line = engine.simple_line(label, x + gap, strip_top + 19.0, 9.0, colour);
+            renderer.draw_within(canvas, &line, x, strip_top, tab_width, TAB_HEIGHT);
 
             self.placed.push((Hit::Tab(index), x, strip_top, tab_width, TAB_HEIGHT));
             x += tab_width;
@@ -1493,7 +1573,8 @@ impl Dialog {
             1,
             theme.pane_edge,
         );
-        let line = engine.simple_line(&self.title, left + PADDING, top + 22.0, 10.0, theme.text);
+        let title = messages::translated(&self.title);
+        let line = engine.simple_line(&title, left + PADDING, top + 22.0, 10.0, theme.text);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
 
         // The cross at the right-hand end, which every dialog has.
@@ -1523,7 +1604,9 @@ impl Dialog {
         let widest = (0..self.fields.len())
             .filter(|index| self.on_this_tab(*index))
             .filter_map(|index| self.fields[index].label())
-            .map(|label| engine.simple_line(label, 0.0, 0.0, 9.0, theme.text).width)
+            .map(|label| {
+                engine.simple_line(&messages::translated(label), 0.0, 0.0, 9.0, theme.text).width
+            })
             .fold(0.0f32, f32::max);
         let room = width - PADDING * 2.0;
         let label_width = (widest + PADDING).clamp(130.0, (room - 120.0).max(130.0));
@@ -1658,6 +1741,7 @@ impl Dialog {
         );
 
         // The caption, with the line rubbed out behind it.
+        let caption = &messages::translated(caption);
         let measured = engine.simple_line(caption, 0.0, 0.0, 8.5, theme.text).width;
         let text_left = box_left + PADDING;
         canvas.fill_rect(
@@ -1684,6 +1768,7 @@ impl Dialog {
         theme: &Theme,
     ) {
         let Some(field) = self.fields.get(index).cloned() else { return };
+        let field = field.in_the_readers_language();
         let focused = self.focus == index;
         let Place { label_x, label_y, box_x, box_y, box_width } = place;
 
@@ -2128,7 +2213,8 @@ impl Dialog {
             if !self.button_showing(index) {
                 continue;
             }
-            let button = self.buttons[index].clone();
+            let mut button = self.buttons[index].clone();
+            button.label = messages::translated(&button.label);
             let measured =
                 engine.simple_line(&button.label, 0.0, 0.0, 9.0, theme.text).width + 32.0;
             let button_width = measured.max(80.0);

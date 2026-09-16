@@ -183,12 +183,18 @@ impl Editor {
             Ok(document) => {
                 self.set_document(document, Some(path.to_path_buf()));
                 self.text_encoding = Some(encoding);
-                self.status = format!("Opened {} as {}", path.display(), encoding.name());
+                self.status = crate::messages::with(
+                    "Opened {0} as {1}",
+                    &[&path.display().to_string(), encoding.name()],
+                );
                 self.remember_recent(path);
                 Response::Redraw
             }
             Err(error) => {
-                let message = format!("Cannot open {}: {error}", path.display());
+                let message = crate::messages::with(
+                    "Cannot open {0}: {1}",
+                    &[&path.display().to_string(), &error.to_string()],
+                );
                 wp_shell::dialog::show_error(&message);
                 self.status = message;
                 self.needs_redraw = true;

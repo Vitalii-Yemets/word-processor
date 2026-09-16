@@ -9,6 +9,8 @@
 use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::Canvas;
 
+use crate::messages::{self, t};
+
 use super::theme::Theme;
 
 /// How many columns the grid offers, which is what Word offers.
@@ -102,8 +104,10 @@ impl TableGrid {
         // The caption, which is what Word puts there: "4x3 Table", or an
         // instruction while nothing is chosen.
         let caption = match self.chosen {
-            Some((rows, columns)) => format!("{columns}x{rows} Table"),
-            None => "Insert Table".to_owned(),
+            Some((rows, columns)) => {
+                messages::with("{0}x{1} Table", &[&columns.to_string(), &rows.to_string()])
+            }
+            None => t("Insert Table").to_owned(),
         };
         let line = engine.simple_line(
             &caption,

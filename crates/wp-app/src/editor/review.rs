@@ -1,5 +1,6 @@
 //! Comments and tracked changes, from the Review tab.
 
+use crate::messages::t;
 use wp_docx::languages::LANGUAGES;
 use wp_docx::revisions::{Decision, Reviser};
 use wp_docx::TextPosition;
@@ -56,7 +57,10 @@ impl Editor {
                 self.report("Comment added")
             }
             Err(error) => {
-                wp_shell::dialog::show_error(&format!("Cannot add the comment: {error}"));
+                wp_shell::dialog::show_error(&crate::messages::with(
+                    "Cannot add the comment: {0}",
+                    &[&error.to_string()],
+                ));
                 Response::Ignored
             }
         }
@@ -396,7 +400,7 @@ impl Editor {
     /// Compares this document with another and marks the difference.
     pub(super) fn compare_documents(&mut self) -> Response {
         let filters = [wp_shell::dialog::FileFilter { label: "Word documents", pattern: "*.docx" }];
-        let Some(path) = wp_shell::dialog::open_file("Compare with", &filters) else {
+        let Some(path) = wp_shell::dialog::open_file(t("Compare with"), &filters) else {
             return Response::Ignored;
         };
 

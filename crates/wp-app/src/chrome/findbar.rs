@@ -15,6 +15,8 @@ use wp_layout::{LayoutEngine, Renderer};
 use wp_raster::{Canvas, Color};
 
 use super::icons::{self, Icon};
+use crate::messages;
+
 use super::theme::Theme;
 
 /// How tall the strip is.
@@ -287,7 +289,8 @@ impl FindBar {
                 .iter()
                 .map(|(hit, _, label)| {
                     let text = shown(*hit, label, dropped);
-                    engine.simple_line(text, 0.0, 0.0, 8.0, theme.text).width + 34.0
+                    engine.simple_line(&messages::translated(text), 0.0, 0.0, 8.0, theme.text).width
+                        + 34.0
                 })
                 .sum()
         };
@@ -409,7 +412,8 @@ impl FindBar {
         baseline: f32,
         theme: &Theme,
     ) -> f32 {
-        let line = engine.simple_line(label, left, baseline, 8.0, theme.dim_text);
+        let label = messages::translated(label);
+        let line = engine.simple_line(&label, left, baseline, 8.0, theme.dim_text);
         let label_width = line.width - left;
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
 
@@ -463,7 +467,8 @@ impl FindBar {
         baseline: f32,
         theme: &Theme,
     ) -> f32 {
-        let measured = engine.simple_line(label, 0.0, 0.0, 8.0, theme.text).width;
+        let label = messages::translated(label);
+        let measured = engine.simple_line(&label, 0.0, 0.0, 8.0, theme.text).width;
         let width = measured + 30.0;
 
         let on = (hit == Hit::MatchCase && self.match_case)
@@ -488,7 +493,7 @@ impl FindBar {
         let ink = if on { theme.on_accent() } else { theme.text };
 
         icons::draw_sized(canvas, icon, left + 4.0, top + 3.0, 16.0, ink);
-        let line = engine.simple_line(label, left + 24.0, baseline, 8.0, ink);
+        let line = engine.simple_line(&label, left + 24.0, baseline, 8.0, ink);
         renderer.draw_onto(canvas, &line, 0.0, 0.0);
 
         self.placed.push((hit, left, top, width, FIELD_HEIGHT));

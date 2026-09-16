@@ -70,6 +70,10 @@ pub struct Settings {
     pub unit: Option<String>,
     /// Which language Translate translates into, as a two-letter code.
     pub translate_to: Option<String>,
+    /// Which language the interface is read in, as its code. Nothing means
+    /// the program has never been told, and it is read in English.
+    /// See [`crate::messages`].
+    pub language: Option<String>,
     /// Whether a copy of the work is written where a crash cannot take it.
     /// See [`crate::editor::autorecover`].
     pub autosave: Option<bool>,
@@ -216,6 +220,7 @@ impl Settings {
                 "white-space" => settings.white_space = parse_flag(value),
                 "unit" => settings.unit = Some(value.to_owned()),
                 "translate-to" => settings.translate_to = Some(value.to_owned()),
+                "language" => settings.language = Some(value.to_owned()),
                 "autosave" => settings.autosave = parse_flag(value),
                 "autosave-minutes" => settings.autosave_minutes = value.parse().ok(),
                 "keep-autosaved" => settings.keep_autosaved = parse_flag(value),
@@ -326,6 +331,9 @@ impl Settings {
         }
         if let Some(to) = &self.translate_to {
             write("translate-to", to.clone());
+        }
+        if let Some(language) = &self.language {
+            write("language", language.clone());
         }
         if let Some(on) = self.autosave {
             write("autosave", flag(on));
@@ -499,6 +507,7 @@ mod tests {
             white_space: Some(false),
             unit: Some("centimetres".to_owned()),
             translate_to: Some("de".to_owned()),
+            language: Some("de".to_owned()),
             autosave: Some(false),
             autosave_minutes: Some(5),
             keep_autosaved: Some(false),
