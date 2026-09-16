@@ -4030,7 +4030,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   and the whole editor — ribbon, rulers, page, fonts — comes up on it,
   is photographed, and closes from its frame's request. Both pictures
   looked at.
-  *Not done, and named here:* Wayland, which is **H8**; the X input
+  *Not done, and named here:* Wayland, which is **H8** and now done; the X input
   method (XIM), so Chinese, Japanese and Korean cannot yet be composed on
   Linux — typed characters arrive, compositions do not; drag and drop
   between programs (XDND) — the events exist, nothing on Linux raises
@@ -4109,21 +4109,59 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   documents with this program": registering can be undone from the
   desktop's own page, and taking another program's kinds away from it in
   its absence is not something this program should offer.
-- [ ] **H8. Wayland.** The Wayland shell alongside the X11 one, chosen at
-  start by `WAYLAND_DISPLAY`: the wire protocol over the compositor's
-  socket, `wl_registry`, `wl_compositor`, `wl_shm` with the buffer in a
-  file made by `memfd_create` and mapped by `mmap` — the two calls, with
-  `sendmsg` for passing the file descriptor, being the whole of what is
-  declared against the C library; `xdg_wm_base` and `xdg_toplevel` for
-  the window, with the program's own caption and `xdg_toplevel.move`
-  and `resize` for the frame's work, `set_minimized`, `set_maximized`
-  and `close`; `wl_seat` with `wl_keyboard` — the keymap it hands over
-  in the xkb format, read by this program — and `wl_pointer`;
-  `wl_data_device` for the clipboard and drag and drop; `wl_output` and
-  `wp_fractional_scale` for density; `zwp_text_input_v3` for an input
-  method. *Done when:* the editor comes up on a headless compositor in
-  the image, is photographed, takes typing and closes, as the X11 tests
-  do it.
+- [x] **H8. Wayland.** The Wayland shell alongside the X11 one, chosen at
+  start by `WAYLAND_DISPLAY`.
+  *Done:* the protocol is spoken over the compositor's socket, message by
+  message, with no `libwayland` and nothing generated: the interfaces are
+  written out with each opcode beside its name, and what is not written
+  out is what this program does not say. A window is a surface with a
+  window role — `xdg_wm_base`, `xdg_surface`, `xdg_toplevel` — which the
+  program does not draw into until the compositor has said how big it is
+  to be, because on Wayland that is the compositor's to say. The pixels
+  go through memory both programs can see: a file made by `memfd_create`,
+  sized and mapped, handed over as a descriptor. A descriptor cannot be
+  written into a stream, so it goes beside the message as ancillary data
+  — `sendmsg` and `recvmsg`, which with the four that make and map the
+  file are the whole of what this program declares against the C library,
+  the same rule the Windows shell follows with Win32.
+  The window has no frame of the compositor's, since the program draws
+  its own: the caption and the edges ask the compositor to move and
+  resize through `xdg_toplevel`, and minimising, maximising and closing
+  go the same way. The keyboard arrives as a file in xkb's own text
+  format, which this program reads — the key names and what each
+  produces at each level — rather than handing to `libxkbcommon`; Shift,
+  Caps Lock and the third level work as they do everywhere, and a
+  keyboard that appears or goes away is taken and let go as the seat says
+  so. The pointer brings its own cursor, because a Wayland client has no
+  other kind: the arrow, the I-beam, the resize arrows and the hand are
+  drawn here and handed over as a surface. The clipboard is
+  `wl_data_device`: text, HTML, Rich Text and PNG offered and taken
+  through a pair of joined sockets. The density is the compositor's
+  preferred scale, as a whole number or as a fraction where it offers
+  one.
+  Held to, against sway running with no screen in the build image: a
+  window opens, is painted, and is photographed by `grim` — another
+  client, so what is checked is what the compositor is showing rather
+  than what this program believes it drew; `wtype` types into it and the
+  keys arrive as characters; text put on the clipboard comes back; and
+  the whole editor comes up the same way, takes "Hello from Wayland" into
+  its document, refuses to close while that typing is unsaved, and closes
+  when it is saved. Both pictures looked at. Two faults found by those
+  tests and fixed: arguments were padded to eight bytes where the
+  protocol pads to four, and a buffer the compositor had finished with was
+  never marked free again — which stopped the window being redrawn after
+  its second frame.
+  *Not done, and named here:* a client cannot photograph the screen or
+  list another program's windows on Wayland — that is the protocol's own
+  rule, and Word's Screenshot button therefore finds nothing there; doing
+  it properly needs the desktop's portal, which is D-Bus and is not in
+  this program yet. Drag and drop between programs (`wl_data_device`'s
+  half of it) and the input method (`zwp_text_input_v3`) are not written,
+  so Chinese, Japanese and Korean cannot be composed on Wayland any more
+  than on X11. Windows are not arranged side by side — Word's Arrange All
+  — because a Wayland client cannot place its own window. Printing is
+  **A5**'s. The keymap reader takes the levels and the names and not
+  compose sequences or dead keys, which belong to an input method.
 
 ## I — The language of the interface
 

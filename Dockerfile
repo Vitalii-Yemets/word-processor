@@ -51,6 +51,13 @@ FROM rust:1.98.0-bookworm
 # read back off the server's own frame buffer, in a container that has no
 # display. A test tool too; the shell speaks the X protocol itself and links
 # to nothing.
+#
+# Sway is a Wayland compositor that will run without a screen as well, and
+# grim and wtype are the two clients that photograph what it shows and type
+# into it. Together they are to the Wayland shell what Xvfb is to the X one:
+# a real compositor on the other end of the socket, so that what this
+# program sends can be seen to have arrived. Test tools again; the shell
+# speaks the Wayland protocol itself and links to none of them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         mingw-w64 \
         file \
@@ -70,7 +77,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         dict-freedict-eng-deu \
         libreoffice-writer-nogui \
         xvfb \
+        sway \
+        grim \
+        wtype \
     && rm -rf /var/lib/apt/lists/*
+
+# Sway will not run as root — it refuses to start where it cannot drop
+# privileges, and everything in this container is root — so the tests start
+# it as somebody else. The user exists for that and for nothing else: the
+# build, the program and every other test run as they did.
+RUN useradd --create-home --shell /bin/sh compositor
 
 RUN rustup target add x86_64-pc-windows-gnu \
  && rustup component add clippy rustfmt

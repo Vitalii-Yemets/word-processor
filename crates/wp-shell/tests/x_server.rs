@@ -60,6 +60,9 @@ impl Server {
             }
             std::thread::sleep(Duration::from_millis(50));
         }
+        // An X server is not a Wayland compositor: whatever a test before
+        // this one left in the environment is not what this one uses.
+        std::env::remove_var("WAYLAND_DISPLAY");
         std::env::set_var("DISPLAY", display);
         Some(server)
     }

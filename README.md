@@ -45,7 +45,10 @@ model are all implemented here, and so are the fonts, text shaping, layout,
 rasterization and the interface. The only external code the binary touches is
 the operating system's own ABI: Win32 on Windows, declared directly with
 `extern "system"` rather than through a binding crate, and on Linux the X11
-wire protocol spoken over the server's socket, with no Xlib at all.
+and Wayland wire protocols spoken over their own sockets, with no Xlib and no
+`libwayland` — six calls against the C library for passing a file descriptor
+and sharing a block of memory, which have no equivalent in the standard
+library.
 
 **Windows first, Linux supported.** The core carries no operating-system
 dependency at all — it turns a document into a pixel buffer with nothing but
