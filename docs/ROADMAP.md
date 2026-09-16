@@ -3471,6 +3471,29 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the build image, which is the same want as the spelling dictionaries'; the
   Translator pane as a pane, with its own text box, for the reason **F4**
   gives for the thesaurus.
+- [ ] **F9. The rest of AutoFormat As You Type.** Word's list has three lines
+  this program has not: a table made from `+---+---+` and Enter, its built-in
+  heading styles from a line typed and entered twice (which Word itself ships
+  switched off), and the thin blue bar the pointer rests on before the
+  correction box opens, which is one hover more than this does. Named in
+  **F5**.
+- [ ] **F10. Word's AutoFormat tab.** Reformatting a whole document at once
+  rather than as it is typed: the command, the dialog that asks what to
+  change, and the review of what it did. Named in **F5**.
+- [ ] **F11. Math AutoCorrect.** The tab that turns `\alpha` into α as it is
+  typed, and the list behind it. It waits on the equation editor, which is
+  where the result has to go. Named in **F5**.
+- [ ] **F12. Word's Actions tab.** The menu a word offers when the program
+  recognises what kind of thing it is — a date, an address, a name — and the
+  actions it hangs off that. Named in **F5**.
+- [ ] **F13. The Translator as a pane, and a second pair of languages.** Word
+  translates from a pane with its own box to type in, which is the same want
+  **F4** names for the thesaurus, and it translates between more than the one
+  pair on the build image — the same question as the spelling dictionaries':
+  where the data comes from and where it lives. Machine translation of whole
+  sentences is not part of this: it cannot be done on a machine without a
+  model, and it will not be done by posting somebody's document somewhere.
+  Named in **F6**.
 
 ## G — The files Word can open
 
@@ -3805,6 +3828,57 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   page. Reading it back is not the test; Word opening it is, and until
   something that is not this program can be made to open one here,
   LibreOffice reading it is what stands in.
+- [ ] **G9. The rest of the Rich Text reader.** `.rtf` opens and reads its
+  text, its formatting, its tables and its pictures; what it does not read is
+  headers and footers, footnotes, sections and page setup, nested tables and
+  cell merging, table and paragraph borders and shading, drawings (`\shp`)
+  and metafile pictures, fields other than links, bookmarks, comments and
+  revision marks, right-to-left text, and character and table styles. Each is
+  one more destination or one more control word in the same reader. Named in
+  **G3**.
+- [ ] **G10. The rest of the web-page reader, and Web Layout view.** What a
+  page from Word carries and this does not read: headers and footers,
+  footnotes, comments, text boxes and shapes (VML) inside the conditional
+  comments this reader walks past; nested tables, cell merging, borders and
+  shading; character and table styles; `@font-face`; right-to-left text. And
+  two of Word's own: "Web Page, Filtered", which is this page with the `mso-`
+  properties left out and is a tick box away, and Web Layout view, which
+  shows a page as a browser would rather than on paper. Named in **G4**.
+- [ ] **G11. The rest of the `.doc` reader.** Headers and footers, footnotes,
+  endnotes and comments; sections past the first; nested tables, cell merging,
+  borders and shading; drawings that are not pictures; bookmarks; fields other
+  than links; revision marks; the properties streams; the Word 95 and earlier
+  layouts, whose block has no piece table; and encrypted files. Named in
+  **G5**.
+- [ ] **G12. The rest of the ODF reader.** Headers and footers, footnotes,
+  endnotes and comments; tracked changes; sections and columns; frames that
+  are not pictures, shapes and text boxes; fields other than links; cell
+  merging, cell borders and shading; nested tables; character styles by name;
+  bookmarks; tables of contents; the settings part. Named in **G6**.
+- [ ] **G13. The rest of the PDF reader.** Encrypted files (RC4 and AES with
+  the empty password); JPEG 2000, fax and JBIG2 pictures, and inline
+  pictures; the predefined CJK CMaps; Type 3 glyph procedures; headers,
+  footers and page numbers told from repeated lines; footnotes; tables drawn
+  with horizontal rules only or with none; text drawn rotated; and the
+  reading order of pages with more than two columns of unequal height. Named
+  in **G7**.
+- [ ] **G14. The East Asian encodings, and the rest of opening a text file.**
+  Shift-JIS, GBK, Big5 and EUC-KR are tables of thousands and a stage of
+  their own. With them: Word's "Confirm file format conversion on open",
+  which asks even when it is sure; Word's red marks on the characters an
+  encoding cannot write, which this counts instead; and Word's "Recover Text
+  from Any File", which opens a file of any extension as text. Named in
+  **G2**.
+- [ ] **G15. A document that takes its styles from its template.** Word's
+  Developer ▸ Document Template ▸ Automatically update: the attached template
+  is read on opening and its styles are applied over the document's own.
+  **G1** attaches the template and does not do this, which is the other half
+  of what an attachment is for.
+- [ ] **G16. An installer, and the file kinds it claims.** Double-clicking a
+  `.docx` should open it here, and double-clicking a `.dotx` should make a new
+  document from it; both are the shell's associations, and associations are
+  the installer's to write. There is no installer. Named in **G1** and
+  **H7**.
 
 ## H — The system around the window
 
@@ -4162,6 +4236,41 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   — because a Wayland client cannot place its own window. Printing is
   **A5**'s. The keymap reader takes the levels and the names and not
   compose sequences or dead keys, which belong to an input method.
+- [ ] **H9. Composing Chinese, Japanese and Korean on Linux.** The input
+  method: XIM on X11 and `zwp_text_input_v3` on Wayland. Typed characters
+  arrive on both today and compositions do not, which means the languages
+  half the world writes in cannot be typed there at all. **H1** is the
+  Windows half and is done. Named in **H6** and **H8**.
+- [ ] **H10. Drag and drop between programs on Linux.** XDND on X11 and
+  `wl_data_device`'s half of it on Wayland. The events exist inside the
+  program — **H3** built them for Windows — and nothing on Linux raises them.
+  Named in **H6** and **H8**.
+- [ ] **H11. AT-SPI: what a screen reader on Linux is told.** The Windows
+  half is **H4**; this is the same information over the other desktop's
+  interface, which is D-Bus and is not in this program yet. Named in **H6**.
+- [ ] **H12. The rest of what a screen reader is told.** Lines as the layout
+  breaks them rather than paragraphs; the attributes of a range — bold, font,
+  size — which every one of today answers "not supported"; the panes,
+  dialogs, menus and lists as elements of their own; the ribbon's boxes as
+  edit controls; the rulers and the scroll bar; and announcing what happens
+  rather than only where the selection is — a dialog opening, a status
+  message. Named in **H4**.
+- [ ] **H13. The desktop portal.** D-Bus, and the two things on Wayland that
+  cannot be done without it: a screenshot, which the protocol forbids a
+  client to take for itself and which Word's Screenshot button therefore
+  finds nothing for, and windows arranged side by side, which a Wayland
+  client cannot do to itself either. Named in **H8**.
+- [ ] **H14. The rest of the clipboard.** Word's own native format — the
+  package it puts on the clipboard beside the others — which this program
+  neither writes nor reads, so a paste between two copies of Word carries
+  more than a paste from here does; and a selection handed over in pieces
+  (`INCR` on X11), which today is declined rather than taken. Named in **H2**
+  and **H6**.
+- [ ] **H15. The rest of Word's recent documents.** Its jump list has tasks
+  and a pinned list of its own, which needs the shell's custom destination
+  lists; its row menu offers Save As and Show Repairs; and Manage Document
+  lists the copies of never-saved documents at any time, where this offers
+  them at the next start and not after that. Named in **H7**.
 
 ## I — The language of the interface
 
@@ -4318,6 +4427,24 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   puts in the long form and nothing offers the others. Numbers inside the
   document — a table's sums, a numbered list — are the document's and are
   written as the document says, not as the machine does.
+- [ ] **I4. The document's own words in the person's language.** Word shows
+  the built-in style called "Heading 1" as "Überschrift 1" to a German, and
+  names the document's language in the strip along the bottom in the
+  program's language. Both are shown here as the document holds them, which
+  is right for a style somebody named themselves and wrong for the built-in
+  ones. Done when the built-in names are recognised and translated and a
+  style of one's own is left alone. Named in **I1**.
+- [ ] **I5. The letters Alt puts over the ribbon, in the language.** Word's
+  key tips are the language's; these are English whatever is loaded, so a
+  German pressing Alt sees letters that do not match the words under them.
+  Named in **I1**.
+- [ ] **I6. A window that really reads right to left.** **I2** turns the
+  window and proves it with a mirrored pseudo-language; what is missing is a
+  real Arabic or Hebrew catalogue, which is a translation rather than a
+  mechanism, and the handful of icons whose meaning is a direction — the
+  indent buttons, the bullet arrows — which keep pointing the way they did
+  because they are drawn from the icon catalogue rather than as paths. Word
+  turns them. Named in **I2**.
 
 ## J — Protection, collaboration and the rest of Word's features
 
@@ -4648,59 +4775,38 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   with something else in it would be lying about what a person was picking.
   Nor is the rest of Word's organiser: the columns it sorts by, and editing
   a block's name, gallery, category or description after it is saved.
-- [x] **J7. Macros.** A VBA interpreter is a language implementation; it is
-  listed here so that the decision not to write one is a decision and not an
-  oversight.
-  *Decided:* **this program will not run Visual Basic.** Not now and not
-  later, and the reason is not the work.
-  Visual Basic for Applications is a language with a specification, a runtime,
-  an object model of some hundreds of types, forms, an editor and a debugger.
-  Writing it would be writing a second program larger than this one, and the
-  part a person would actually get is not the language but the object model —
-  `Selection.TypeText`, `ActiveDocument.SaveAs` — which is not a language
-  implementation at all but a promise to keep every one of those hundreds of
-  types behaving as Word's does, for ever. Half of that promise is worse than
-  none: a macro that runs and does something slightly different is a macro
-  that quietly corrupts a document, and nobody would know which half they had.
-  The second reason is the one that settles it. A document that can run a
-  program is a document that can do anything the person opening it can do,
-  and every mass outbreak of document-borne malware for thirty years has come
-  through exactly this door. Word answers with a warning bar, a trust centre,
-  signed projects and a list of trusted locations — a whole apparatus that
-  exists to make a feature safe that was not worth having. This program's
-  answer is that opening a file, from anywhere, cannot run anything. That is
-  not a limitation to be apologised for; it is the strongest thing a word
-  processor can say about itself, and it is worth more to a person than
-  running somebody's macro would be.
-  *Done, because deciding is not the whole of it:* the two things that follow
-  from the decision and must be true of the program.
-  **Somebody else's macros are kept.** A `.docm` carries its Visual Basic in
-  `word/vbaProject.bin`, and a word processor that quietly dropped it would
-  be handing back a document somebody has to write again. It survives being
-  opened, edited and saved, byte for byte, and goes only when the file is
-  saved as a kind that cannot hold it — which Word refuses to do without
+- [x] **J7. Somebody else's macros, kept and told about.** What a `.docm`
+  carries, carried through this program without being lost and without being
+  run behind anybody's back.
+  *Done:* **a document's Visual Basic survives.** A `.docm` keeps its project
+  in `word/vbaProject.bin`, and a word processor that quietly dropped it
+  would be handing back a document somebody has to write again. It survives
+  being opened, edited and saved, byte for byte, and goes only when the file
+  is saved as a kind that cannot hold it — which Word refuses to do without
   asking, and so does this.
   **And the program says so.** A document carrying Visual Basic says so on
-  the macro list, where a person looking for macros looks; pressing that line
-  says what happens to them, which is that they are kept and not run. A list
-  that showed only what this program can record would read as a document with
-  no macros in it, and that is the one thing it must not say.
-  What is offered instead is in `wp-app/src/editor/macros.rs`: a recorder.
-  The buttons pressed and the words typed, in order, played back. No
-  language, nothing to run but what a person did with their own hands, and —
-  because the recording lives with the program and not in the document —
-  nothing a file can bring with it.
+  the macro list, where a person looking for macros looks. A list that showed
+  only what this program can record would read as a document with no macros
+  in it, and that is the one thing it must not say.
+  There is also a recorder, in `wp-app/src/editor/macros.rs`: the buttons
+  pressed and the words typed, in order, played back. That is Word's Record
+  Macro, minus the part where the recording is written out as Visual Basic.
   *Proven by:* a document carrying a Visual Basic project opened, edited and
   saved with the project's bytes unchanged; the same document saved as a
   macro-free kind, and the part, its content type and the relationship
   pointing at it all gone together; the macro list saying a document carries
   Visual Basic when it does and not saying it when it does not; and that line
-  pressed, saying that they are kept and not run.
-  *Not done, and named here:* nothing that would run a macro. A document's
-  macros are not listed by name — the names are inside a compound file this
-  program can now read but does not parse the project inside — and Word's
-  trust centre, its trusted locations and its signed-project checking have no
-  counterpart here, because there is nothing to trust: nothing runs.
+  pressed, saying what happens to them.
+  *Not done, and named here:* **nothing runs a macro yet.** This entry used
+  to say that nothing ever would, and that was a decision taken here rather
+  than asked for; it is withdrawn. Word's own behaviour is the specification:
+  a document's macros do not run until the person opening it says so, and
+  then they do. The first half of that is built and the second is **L1** to
+  **L7**, where the language, the object model and the trust that gates them
+  are set out in the order they have to be built.
+  A document's macros are not listed by name — the names are inside the
+  compound file, which this program can read without yet parsing the project
+  in it — and that is **L1**.
 - [x] **J8. Form fields, and the Developer tab they are made from.** The
   three legacy fields — text, tick box, drop-down — put into a document,
   filled in, and behaving: a tick box that ticks, a drop-down that drops.
@@ -4883,6 +4989,55 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   that a default is a default in every window and after a restart. With it:
   Word's Organizer, which copies styles from one document or template to
   another, and the Manage Styles dialog's Set Defaults page.
+- [ ] **J15. The boundary round a content control, and its Properties.**
+  Word draws a faint tag at each end of a control so a person can see where
+  one starts and ends; here a control is visible only by what it does. And
+  Word's Properties dialog names a control, gives it its list, and says
+  whether it can be deleted or its contents edited — without which a control
+  is made once and never changed. Both named in **J8**, and **L10**'s Design
+  Mode waits on the first of them.
+- [ ] **J16. The rest of Word's Restrict Editing pane.** "Allow AutoFormat to
+  override formatting restrictions" (`w:autoFormatOverride`), which waits on
+  an autocorrect that applies formatting; "Block Quick Style Set switching"
+  (`w:styleLockQFSet`), which waits on there being Quick Style Sets to block
+  — the attribute is kept through a round trip already; the latent styles
+  listed one at a time rather than locked as a body; a locked style shown
+  with a padlock rather than left out of the gallery; and the pane itself,
+  which in Word stays open beside the document where this has a dialog. Named
+  in **J9**.
+- [ ] **J17. The information bar, and General Options as one dialog.** Word
+  puts a bar across the top of a document to say something about it and offer
+  one button — Edit Anyway on a read-only document, Enable Content on one
+  carrying macros (**L6**). This program has no such furniture and says those
+  things in the strip along the bottom and on the File page. With it: Word's
+  General Options holds the password to open and the password to modify in
+  one dialog, where this has two lines on the File page. Named in **J10**.
+- [ ] **J18. The rest of the Mail Merge Recipients dialog.** Sorting,
+  filtering, finding duplicates, finding a recipient and validating
+  addresses; and Word's Type a New List, which makes a list of recipients
+  without a file to start from. Named in **J5**.
+- [ ] **J19. The rest of the Building Blocks Organizer.** The columns it
+  sorts by, and editing a block's name, gallery, category or description
+  after it is saved. With it, Word's AutoText gallery, which is the same
+  machinery under a second name and is read and written by `wp-docx` with no
+  menu of its own. Named in **J6**.
+- [ ] **J20. Word's Compare dialog, and the pages that follow the result.**
+  The dialog with its two drop-downs and its options, where the two commands
+  ask through the system's own file dialog today; and the two documents in
+  the column scrolling with the result rather than showing the page the caret
+  is on. Named in **J4**.
+- [ ] **J21. The `\006DataSpaces` storage, and the encryptions before 2007.**
+  Office writes a `\006DataSpaces` storage beside the two streams of an
+  encrypted file; this program does not, on the reading that it belongs to
+  the rights-management path rather than to a password, and that reading is
+  unproven until Word itself opens a file this wrote — which is **K1**. The
+  RC4 schemes Office used before 2007 are named in **J2** and not read.
+- [ ] **J22. Word's own galleries of content.** Its cover pages, its page
+  numbers, its watermarks: **J6** built the machinery and deliberately did
+  not fill the galleries, because they are Word's own content and a gallery
+  called "Cover Pages" with something else in it would lie about what a
+  person was picking. What is wanted instead is a set of this program's own,
+  drawn here, under names that say whose they are.
 
 ## K — Proving it against Word rather than against ourselves
 
@@ -4904,6 +5059,93 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   decision as **E2**, **E6** and **E14**: where data of that kind comes from
   and where it lives.
 
+## L — Visual Basic for Applications
+
+Word runs the macros a document carries, once the person opening it has said
+so. This program keeps them and does not run them; **J7** is that half, and
+this section is the other. The order matters, because each of these is worth
+having on its own and none of them is worth having before the one above it.
+
+The thing being copied is not only the language. A macro that runs and does
+something slightly different from what Word does is worse than a macro that
+does not run, because nobody can tell which they have got; so every item here
+is finished when what it does matches Word on documents that were written for
+Word, and each names the tests that show it.
+
+And nothing here changes what happens when a file is opened: **L6** is the
+gate, it is built before anything is allowed to run, and until it exists the
+interpreter is reachable only from the macro list a person opened themselves.
+
+- [ ] **L1. The project inside `vbaProject.bin`, read.** The compound file is
+  already read — **J2** built it — and inside it is the VBA storage: a `dir`
+  stream naming every module, and one stream per module holding compressed
+  source. The compression is the run-length scheme of [MS-OVBA] §2.4.1, which
+  is small and exactly specified. Done when a document's macros are listed by
+  name in Word's Macros dialog, with their module and their source shown, and
+  when the bytes survive a save untouched as they do now.
+- [ ] **L2. The language: reading it.** A lexer and a parser for VBA — the
+  statement forms, the expression grammar with its precedence, `If`, `For`,
+  `For Each`, `Do`, `While`, `Select Case`, `With`, procedures and functions
+  with `ByRef` and `ByVal`, `Option Explicit`, types, arrays, `Const`, `Enum`
+  and the line continuation. Done when every module of a corpus of real
+  macros parses to a tree and back to the same source, and when a syntax
+  error names its line the way Word's editor does.
+- [ ] **L3. The language: running it.** The interpreter over that tree.
+  Variants and the coercions between them, which are most of what VBA is;
+  arrays with their bases and `ReDim`; strings, dates and currency with
+  Word's own arithmetic; `Err`, `On Error Resume Next` and `On Error GoTo`;
+  and the standard library a macro actually uses — `Left`, `Mid`, `InStr`,
+  `Replace`, `Format`, `MsgBox`, `InputBox`, `Rnd`, the file statements.
+  Done against a suite of macros whose answers are known, each checked
+  against what Word gives for the same input.
+- [ ] **L4. The object model: the document.** `Application`,
+  `ActiveDocument`, `Documents`, `Selection`, `Range` and everything
+  reachable from them that this program already models — paragraphs, runs,
+  styles, tables, sections, headers, footnotes, comments, bookmarks, fields,
+  content controls, find and replace. This is the part a macro is actually
+  written against, and the part that has to be right rather than merely
+  present: a property this program cannot answer must say so and stop, not
+  guess. Done when the macros in the corpus that only touch the document run
+  and leave the document as Word leaves it, byte for byte where that is
+  possible and paragraph for paragraph where it is not.
+- [ ] **L5. The editor and the debugger.** Word's Visual Basic Editor: the
+  project tree, a window per module with the source in it, `F5` to run, `F8`
+  to step, breakpoints, the immediate window and the watch. Done when a macro
+  can be written, run, stopped in the middle and looked at, and when what is
+  edited is written back into the document's project.
+- [ ] **L6. The trust that gates all of it.** Word's answer to the fact that
+  a document can carry a program: nothing runs on opening; a bar across the
+  top says the document carries macros and offers to enable them for this
+  document; a trust centre holds the setting; a list of trusted locations
+  runs them without asking; and a project signed by a certificate that is
+  trusted runs without asking too — **J3** and **J12** are where certificates
+  are read and checked. Done when a document carrying an `AutoOpen` does
+  nothing at all until somebody says so, and when every route to running one
+  goes through this.
+- [ ] **L7. Forms, and the rest of it.** `UserForm` with its controls, the
+  events a document and its controls raise — `Document_Open`, `AutoNew`,
+  `AutoClose`, the content-control events — and the class modules a project
+  may define. The last of it, and named separately because a program that
+  ran every macro but these would still be worth having.
+
+- [ ] **L8. Mapping a content control to custom XML.** Word's Developer tab
+  carries an XML Mapping pane: a `customXml` part in the package, and a
+  content control bound to a node of it by an XPath, so that the document and
+  the data are two views of one thing. **J8** built the controls and said
+  this was not planned; that, like **J7**'s, was a decision taken here rather
+  than asked for, and it is withdrawn. Done when a control bound to a node
+  shows what the node says, writing in the control writes the node, and both
+  survive a round trip through Word.
+- [ ] **L9. The three content controls that are not built.** Word's picture,
+  repeating-section and building-block-gallery controls. The first holds a
+  picture and needs the drawing machinery hung inside a control; the second
+  repeats its content and needs a way of repeating; the third offers **J6**'s
+  galleries from inside the document. Done when each can be put in, used, and
+  read back by Word as what it is.
+- [ ] **L10. Design Mode.** Word's button that draws the boundary round every
+  content control and lets the placeholder text be edited. It waits on a
+  control having a boundary to draw at all, which **J8** named as not done.
+
 ---
 
 ## The order of the work
@@ -4915,9 +5157,15 @@ later item makes the layout do more. Then the interface (**C**), which is the
 largest body of work but also the most divisible: each dialog is finished on its
 own and shows up immediately.
 
-**D** to **K** are ordered by how often a real document needs them, and that
+**D** to **L** are ordered by how often a real document needs them, and that
 order is a judgement rather than a rule: a document that will not open because
 of a metafile picture moves **D2** to the front of the queue.
+
+Everything a finished item names as not done has an item of its own, in the
+section it belongs to and in the same queue as the rest. A *Not done, and
+named here* paragraph is the record of what a piece of work left behind; the
+item it turns into is where that gets finished. Nothing is closed by deciding
+against it.
 
 ---
 

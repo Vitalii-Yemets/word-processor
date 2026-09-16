@@ -66,18 +66,17 @@ that keeps all of it, and an edit rewrites only the nodes it must. A document
 opened and saved untouched comes back byte for byte identical; one that is
 edited differs only where it was edited. This is tested, not merely intended.
 
-**Opening a document cannot run anything.** This program does not implement
-Visual Basic, and will not. Half an object model is worse than none — a macro
-that runs and does something slightly different is one that quietly corrupts a
-document — and a document that can run a program is the door every mass
-outbreak of document-borne malware has come through for thirty years. Word
-answers that with a warning bar, a trust centre and signed projects, an
-apparatus built to make safe a feature that was not worth having. The answer
-here is that there is nothing to make safe. Somebody else's macros are kept
-untouched through an edit and a save, and the program says a document carries
-them; it does not run them. What is offered instead is a recorder: the buttons
-pressed and the words typed, played back, kept with the program and not in the
-document.
+**Nothing runs until somebody says so.** A document can carry a program —
+Visual Basic — and every mass outbreak of document-borne malware for thirty
+years has come through that door. Word's answer is a bar across the top of the
+document, a trust centre, trusted locations and signed projects: a macro runs
+when the person opening the file says it may, and not before. That is the
+behaviour being copied here, in that order. Today somebody else's macros are
+kept untouched through an edit and a save and the program says a document
+carries them; running them is the section of the roadmap that builds the
+language, the object model and the trust that gates them, and the gate is
+built before anything is allowed through it. There is also a recorder: the
+buttons pressed and the words typed, played back.
 
 **Multilingual from the ground up.** Not a translation added at the end. The text
 engine lays out bidirectional scripts and shapes the ones that need shaping:
