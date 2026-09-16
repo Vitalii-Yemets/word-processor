@@ -45,6 +45,7 @@ pub mod casing;
 pub mod cells;
 pub mod chart;
 pub mod clipboard;
+pub mod combine;
 pub mod comments;
 pub mod compare;
 pub mod contents;

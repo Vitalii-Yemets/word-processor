@@ -162,6 +162,8 @@ pub enum Choice {
     LineNumbers,
     /// Whether words are broken across lines.
     Hyphenation,
+    /// Which of the two ways of putting two documents together.
+    Comparing,
     /// What the strip along the bottom shows.
     StatusBar,
     /// How a section numbers its pages.

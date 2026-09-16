@@ -14,6 +14,7 @@ mod chart;
 mod citations;
 mod clipboardformats;
 mod commands;
+mod comparing;
 mod composing;
 mod context;
 mod correcting;
@@ -452,6 +453,8 @@ pub struct Editor {
     dialog: Option<crate::chrome::dialog::Dialog>,
     /// What that dialog is asking, so its answer can be acted on.
     asking: Option<dialogs::Asking>,
+    /// The two documents a comparison came from, shown beside the result.
+    comparing: Option<comparing::Comparing>,
     /// A file that turned out to be encrypted, waiting for its password.
     waiting_to_unseal: Option<sealing::Waiting>,
     /// Whether Word Count counts what is written round the edges of the body:
@@ -708,6 +711,7 @@ impl Editor {
             print_device: wp_layout::Device::screen(),
             dialog: None,
             asking: None,
+            comparing: None,
             waiting_to_unseal: None,
             count_the_edges: false,
             under_caret: None,
@@ -915,6 +919,7 @@ impl Editor {
         (self.view_width as f32
             - self.content_left()
             - self.styles_pane_width()
+            - self.compare_pane_width()
             - crate::chrome::SCROLLBAR_THICKNESS)
             .max(1.0)
     }

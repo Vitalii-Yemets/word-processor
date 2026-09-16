@@ -164,6 +164,95 @@ impl Document {
     }
 }
 
+/// One tracked change, as a reader of the document sees it listed.
+///
+/// What Word's Reviewing Pane shows: who, when, what kind, where, and the
+/// words. Read off the document rather than kept alongside it, because the
+/// document is where it lives.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Change {
+    pub author: String,
+    pub date: String,
+    pub kind: ChangeKind,
+    /// Which paragraph it is in, counted the way every other position in this
+    /// program is.
+    pub paragraph: usize,
+    /// The words it covers. Empty for a change to formatting, which covers
+    /// no words of its own.
+    pub text: String,
+}
+
+/// What sort of change it is.
+///
+/// Three, not two: the format has a third kind that wraps nothing and
+/// records what a run's properties said before somebody changed them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChangeKind {
+    Insertion,
+    Deletion,
+    Formatting,
+}
+
+impl Document {
+    /// Every tracked change in the body, in the order they appear.
+    #[must_use]
+    pub fn changes(&self) -> Vec<Change> {
+        let mut out = Vec::new();
+        for (paragraph, element) in self.paragraph_elements().into_iter().enumerate() {
+            gather_changes(element, paragraph, &mut out);
+        }
+        out
+    }
+}
+
+/// Finds every change under an element.
+fn gather_changes(element: &Element, paragraph: usize, out: &mut Vec<Change>) {
+    for child in element.child_elements() {
+        if child.namespace.as_deref() != Some(read::W) {
+            continue;
+        }
+        let kind = match child.local_name() {
+            "ins" => Some(ChangeKind::Insertion),
+            "del" => Some(ChangeKind::Deletion),
+            "rPrChange" | "pPrChange" => Some(ChangeKind::Formatting),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            out.push(Change {
+                author: child.attribute(Some(read::W), "author").unwrap_or_default().to_owned(),
+                date: child.attribute(Some(read::W), "date").unwrap_or_default().to_owned(),
+                kind,
+                paragraph,
+                text: if kind == ChangeKind::Formatting {
+                    String::new()
+                } else {
+                    changed_text(child)
+                },
+            });
+        }
+        gather_changes(child, paragraph, out);
+    }
+}
+
+/// The words inside a change, whichever element they are written in.
+///
+/// Deleted text is written in `w:delText` rather than `w:t`, which is the one
+/// thing about reading a deletion that is not the same as reading anything
+/// else.
+fn changed_text(element: &Element) -> String {
+    let mut out = String::new();
+    for child in element.child_elements() {
+        if child.namespace.as_deref() == Some(read::W)
+            && matches!(child.local_name(), "t" | "delText")
+        {
+            out.push_str(&child.text_content());
+        } else {
+            out.push_str(&changed_text(child));
+        }
+    }
+    out
+}
+
 /// Counts every `w:ins` and `w:del` under an element.
 fn count_revisions(element: &Element, count: &mut usize) {
     for child in element.child_elements() {

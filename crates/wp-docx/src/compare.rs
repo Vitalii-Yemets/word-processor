@@ -232,10 +232,10 @@ impl Document {
             match edit {
                 Edit::Same(_, _) => {}
                 Edit::Change(mine_at, theirs_at) => {
-                    marked += self.compare_paragraph(*mine_at, &theirs[*theirs_at]);
+                    marked += self.mark_paragraph_difference(*mine_at, &theirs[*theirs_at]);
                 }
                 Edit::Removed(mine_at) => {
-                    marked += self.delete_paragraph_tracked(*mine_at);
+                    marked += self.mark_paragraph_deleted(*mine_at);
                 }
                 Edit::Added(theirs_at) => {
                     marked += self.add_paragraph_tracked(&plan[..at], &theirs[*theirs_at]);
@@ -251,7 +251,7 @@ impl Document {
     }
 
     /// Marks the difference between one paragraph and its new text.
-    fn compare_paragraph(&mut self, paragraph: usize, wanted: &str) -> usize {
+    pub(crate) fn mark_paragraph_difference(&mut self, paragraph: usize, wanted: &str) -> usize {
         let current = self.paragraph_text(paragraph).unwrap_or_default();
         if current == wanted {
             return 0;
@@ -307,7 +307,7 @@ impl Document {
     }
 
     /// Marks a whole paragraph as deleted.
-    fn delete_paragraph_tracked(&mut self, paragraph: usize) -> usize {
+    pub(crate) fn mark_paragraph_deleted(&mut self, paragraph: usize) -> usize {
         let text = self.paragraph_text(paragraph).unwrap_or_default();
         if text.is_empty() {
             return 0;

@@ -117,13 +117,16 @@
 = Clipboard
 = Close
 = Close Header and Footer
+= Close the Comparison
 = Color
 = Colors
 = Columns
+= Combine Revisions from Two Authors
 = Comma-separated values
 = Comment
 = Comments
 = Compare
+= Compare Two Documents
 = Compare with
 = Contents
 = Convert to Text
@@ -498,6 +501,7 @@
 = The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
 = Themes
 = Thesaurus
+= This document, before
 = This program can open Word documents.
 = Title
 = Top

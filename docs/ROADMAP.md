@@ -4513,8 +4513,53 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   exclusive canonicalisation — nothing this reads or writes names it, and a
   canonicalisation nothing exercises is one that is quietly wrong — and
   signing with anything but RSA.
-- [ ] **J4. Compare and merge, finished.** Word's three-way merge and its
+- [x] **J4. Compare and merge, finished.** Word's three-way merge and its
   compare view.
+  *Done:* the two things Word's Compare button drops open onto, and the view
+  that makes either of them readable.
+  **Combine** is the three-way merge, and the third way is the point: given
+  only two revisions there is no telling whether a sentence is in one and not
+  the other because somebody added it or because somebody took it away, and
+  the original settles it. What comes out holds both sets of changes, each
+  marked with the name of whoever made it — read off each document's own
+  record of who wrote it last, so that two people's work is two people's
+  work and not one anonymous heap. Where the two of them did the same thing
+  it is marked once; where they did different things in the same place both
+  go in and the place is counted a **conflict**, because two people wrote two
+  different things and only a person can say which. A merge that quietly
+  chose one would be a merge that lost work without saying so.
+  **The compare view** is the column Word puts beside the result: the
+  document as it was above, the one it was compared with below, each laid out
+  as a real page rather than described in words. It opens by itself after a
+  comparison — which is when a person most needs it, because a document full
+  of tracked changes is hard to read and the question they actually have is
+  what it said before — and the page area makes room for it rather than being
+  covered up.
+  Under both: `Document::changes()`, which is every tracked change in the
+  body with who made it, when, of what kind and over which words. Word's
+  Reviewing Pane is a list of exactly that, and until now this program could
+  count its changes and not say whose they were.
+  *Proven by:* two people changing different paragraphs and both changes
+  coming through, marked as theirs; two people writing the same thing marked
+  once and by the first of them; two people writing different things in one
+  place kept both and counted as a disagreement; a paragraph each of them
+  added coming through as two additions; one taking a paragraph out while the
+  other left it alone, and while the other rewrote it, which is the case that
+  is a conflict and the case that is not; a combining surviving a save and an
+  opening; and a combining undone in one press, because one thing done is one
+  thing to undo. The column's width coming off the page area and going back.
+  The menu photographed under its button, and the view photographed with the
+  result in the middle and the two it came from beside it.
+  *Not done, and named here:* comparing **formatting** — a paragraph whose
+  words neither author touched but whose look one of them changed is not
+  seen, and Word's compare options list a dozen such things (moves as moves
+  rather than as a deletion and an insertion, case, white space, tables,
+  headers and footers, notes, text boxes, fields). That is **J13**. Word's
+  Compare dialog, with its two drop-downs and its options, is not written:
+  the two commands ask for their documents through the system's own file
+  dialog instead. And the two documents in the column do not scroll with the
+  result — they show the page the caret is on, which is right when the
+  comparison has not moved the pages about and approximate when it has.
 - [ ] **J5. Mail merge, finished.** The data sources, the field mapping, the
   preview, and the merge to a document, to a printer or to mail.
 - [ ] **J6. Building blocks, Quick Parts and templates.** Including the
@@ -4556,6 +4601,15 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Signature Line — double-clicking one to sign it — countersignatures, and
   XAdES, which is the signature standard with a timestamp in it, so that a
   signature outlives the certificate that made it.
+- [ ] **J13. Everything else two documents can differ by.** **J4** compares
+  the words. Word compares more: formatting, so that a paragraph nobody
+  retyped but somebody re-styled is seen to have changed; moves, so that a
+  paragraph carried from one place to another is one move rather than a
+  deletion and an insertion; and the list its Compare dialog offers — case,
+  white space, tables, headers and footers, footnotes and endnotes, text
+  boxes and fields. With it: that dialog itself, which is where a person
+  chooses which of those to look at and whether the result goes into a new
+  document or into one of the two.
 
 ## K — Proving it against Word rather than against ourselves
 

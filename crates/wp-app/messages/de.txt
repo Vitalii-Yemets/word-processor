@@ -332,6 +332,15 @@ language = Deutsch
 = Clipboard
 > Zwischenablage
 
+= Close the Comparison
+> Vergleich schließen
+
+= Combine Revisions from Two Authors
+> Änderungen von zwei Autoren zusammenführen
+
+= Compare Two Documents
+> Zwei Dokumente vergleichen
+
 = Close
 > Schließen
 
@@ -1477,6 +1486,9 @@ language = Deutsch
 
 = Themes
 > Designs
+
+= This document, before
+> Dieses Dokument, vorher
 
 = Thesaurus
 > Thesaurus

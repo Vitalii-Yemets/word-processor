@@ -251,6 +251,7 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::ChangeCase, choice: Choice::LetterCase, split: false },
     Menu { command: Command::PageNumber, choice: Choice::PageNumberPlace, split: false },
     Menu { command: Command::SelectAll, choice: Choice::Selecting, split: false },
+    Menu { command: Command::Compare, choice: Choice::Comparing, split: false },
     Menu { command: Command::AlignmentTab, choice: Choice::AlignmentTab, split: false },
     Menu { command: Command::NextNote, choice: Choice::NoteJump, split: true },
     Menu { command: Command::AcceptChange, choice: Choice::Accepting, split: true },
@@ -1134,6 +1135,7 @@ impl Ribbon {
                     | Choice::Source
                     | Choice::LineNumbers
                     | Choice::Hyphenation
+                    | Choice::Comparing
                     | Choice::StatusBar
                     | Choice::PageNumbering
                     | Choice::Printer

@@ -305,7 +305,7 @@ impl Editor {
             Command::FinishMerge => self.finish_merge(),
 
             // --- Proofing -----------------------------------------------------
-            Command::Compare => self.compare_documents(),
+            Command::Compare => self.open_ribbon_menu(Choice::Comparing),
             Command::Spelling => self.next_issue(),
             Command::Correct(index) => self.take_spelling(index as usize),
             Command::IgnoreAll => self.ignore_pending(),

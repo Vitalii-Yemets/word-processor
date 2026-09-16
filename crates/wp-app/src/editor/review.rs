@@ -415,7 +415,11 @@ impl Editor {
 
         // Named after what it is rather than after a person: nobody wrote these
         // changes, they were worked out.
+        let before = self.document.clone();
         let marked = self.document.compare_with(&revised, "Compare");
+        // The two it came from, beside the result, which is what makes a
+        // document full of tracked changes readable.
+        self.show_comparison(&before, &revised, &path, None);
         self.relayout();
         self.reveal_caret();
 

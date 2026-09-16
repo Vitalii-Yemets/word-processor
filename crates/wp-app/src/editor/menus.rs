@@ -324,6 +324,15 @@ impl Editor {
                 let rows = items.iter().map(|_| Row::new(Kind::Choice, icon)).collect();
                 (items, rows, None, WIDTH)
             }
+            Choice::Comparing => {
+                let items = super::comparing::choices();
+                let rows = vec![
+                    Row::new(Kind::Choice, Icon::Compare),
+                    Row::new(Kind::Choice, Icon::Compare),
+                    Row::new(Kind::Choice, Icon::Close),
+                ];
+                (items, rows, None, 300.0)
+            }
             Choice::Tracking => {
                 let locked = self.document.protection()
                     == Some(wp_docx::protection::EditMode::TrackedChanges);

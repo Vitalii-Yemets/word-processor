@@ -1893,6 +1893,29 @@ impl Editor {
             "fontdialog" => {
                 self.open_font_dialog();
             }
+            // The two things the Compare button drops open onto, which is
+            // the only way to see that the button does drop open.
+            "comparemenu" => {
+                self.run(crate::chrome::Command::Compare);
+            }
+            // Word's Compare, with the two documents it came from beside
+            // the result: the same document compared with a changed copy of
+            // itself, which is the only way to photograph the view on a
+            // machine with no files to compare.
+            "compared" => {
+                let mut revised = self.document.clone();
+                revised.set_caret(wp_docx::TextPosition::new(3, 0));
+                revised.clear_selection();
+                let end = revised.paragraph_text(3).unwrap_or_default().len();
+                revised.extend_selection_to(wp_docx::TextPosition::new(3, end));
+                revised.delete_selection();
+                revised.type_text("A paragraph the other version says differently.");
+
+                let before = self.document.clone();
+                self.document.compare_with(&revised, "Compare");
+                self.show_comparison(&before, &revised, std::path::Path::new("Revised.docx"), None);
+                self.relayout();
+            }
             // Word's Encrypt with Password, off the File page.
             "encrypt" => {
                 self.open_encryption();
