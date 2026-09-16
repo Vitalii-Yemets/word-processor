@@ -4648,9 +4648,59 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   with something else in it would be lying about what a person was picking.
   Nor is the rest of Word's organiser: the columns it sorts by, and editing
   a block's name, gallery, category or description after it is saved.
-- [ ] **J7. Macros.** A VBA interpreter is a language implementation; it is
+- [x] **J7. Macros.** A VBA interpreter is a language implementation; it is
   listed here so that the decision not to write one is a decision and not an
   oversight.
+  *Decided:* **this program will not run Visual Basic.** Not now and not
+  later, and the reason is not the work.
+  Visual Basic for Applications is a language with a specification, a runtime,
+  an object model of some hundreds of types, forms, an editor and a debugger.
+  Writing it would be writing a second program larger than this one, and the
+  part a person would actually get is not the language but the object model —
+  `Selection.TypeText`, `ActiveDocument.SaveAs` — which is not a language
+  implementation at all but a promise to keep every one of those hundreds of
+  types behaving as Word's does, for ever. Half of that promise is worse than
+  none: a macro that runs and does something slightly different is a macro
+  that quietly corrupts a document, and nobody would know which half they had.
+  The second reason is the one that settles it. A document that can run a
+  program is a document that can do anything the person opening it can do,
+  and every mass outbreak of document-borne malware for thirty years has come
+  through exactly this door. Word answers with a warning bar, a trust centre,
+  signed projects and a list of trusted locations — a whole apparatus that
+  exists to make a feature safe that was not worth having. This program's
+  answer is that opening a file, from anywhere, cannot run anything. That is
+  not a limitation to be apologised for; it is the strongest thing a word
+  processor can say about itself, and it is worth more to a person than
+  running somebody's macro would be.
+  *Done, because deciding is not the whole of it:* the two things that follow
+  from the decision and must be true of the program.
+  **Somebody else's macros are kept.** A `.docm` carries its Visual Basic in
+  `word/vbaProject.bin`, and a word processor that quietly dropped it would
+  be handing back a document somebody has to write again. It survives being
+  opened, edited and saved, byte for byte, and goes only when the file is
+  saved as a kind that cannot hold it — which Word refuses to do without
+  asking, and so does this.
+  **And the program says so.** A document carrying Visual Basic says so on
+  the macro list, where a person looking for macros looks; pressing that line
+  says what happens to them, which is that they are kept and not run. A list
+  that showed only what this program can record would read as a document with
+  no macros in it, and that is the one thing it must not say.
+  What is offered instead is in `wp-app/src/editor/macros.rs`: a recorder.
+  The buttons pressed and the words typed, in order, played back. No
+  language, nothing to run but what a person did with their own hands, and —
+  because the recording lives with the program and not in the document —
+  nothing a file can bring with it.
+  *Proven by:* a document carrying a Visual Basic project opened, edited and
+  saved with the project's bytes unchanged; the same document saved as a
+  macro-free kind, and the part, its content type and the relationship
+  pointing at it all gone together; the macro list saying a document carries
+  Visual Basic when it does and not saying it when it does not; and that line
+  pressed, saying that they are kept and not run.
+  *Not done, and named here:* nothing that would run a macro. A document's
+  macros are not listed by name — the names are inside a compound file this
+  program can now read but does not parse the project inside — and Word's
+  trust centre, its trusted locations and its signed-project checking have no
+  counterpart here, because there is nothing to trust: nothing runs.
 - [ ] **J8. Form fields, and the Developer tab they are made from.** The
   three legacy fields — text, tick box, drop-down — put into a document,
   filled in, and behaving: a tick box that ticks, a drop-down that drops.

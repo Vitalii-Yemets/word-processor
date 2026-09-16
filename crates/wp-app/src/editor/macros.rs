@@ -25,6 +25,7 @@ use wp_shell::Response;
 
 use crate::chrome::findbar::{FindBar, Purpose};
 use crate::chrome::{ribbon, Choice, Command, Popup};
+use crate::messages::t;
 
 use super::Editor;
 
@@ -96,6 +97,12 @@ impl Editor {
         }
         self.macro_names = self.settings.macro_names();
         items.extend(self.macro_names.iter().map(|name| format!("Run: {name}")));
+        // A document with Visual Basic in it must say so here, of all
+        // places: a person who opens this list and sees only what they
+        // recorded would read it as a document with no macros in it.
+        if self.carries_macros {
+            items.push(t("This document also carries Visual Basic macros").to_owned());
+        }
 
         self.popup = Some(Popup::new(Choice::Macro, items, None, left, top, 300.0));
         self.needs_redraw = true;
@@ -109,7 +116,11 @@ impl Editor {
         let heading = if self.recording.is_some() { 2 } else { 1 };
         if index >= heading {
             let Some(name) = self.macro_names.get(index - heading).cloned() else {
-                return Response::Ignored;
+                // Past the recorded ones is the line about the document's
+                // own macros, which is there to be read rather than run.
+                return self.report(
+                    "This document carries Visual Basic macros. They are kept as they are and not run.",
+                );
             };
             return self.play_macro(&name);
         }
@@ -247,5 +258,102 @@ mod tests {
     #[test]
     fn nothing_recorded_reads_back_as_nothing() {
         assert!(read_steps("").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod document_macros {
+    use crate::chrome::Command;
+    use wp_docx::kinds::Kind;
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Event};
+
+    use crate::editor::Editor;
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    /// A document carrying a Visual Basic project, made the way a test can.
+    fn with_macros() -> Document {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("one")));
+        let mut document = Document::create(&body).expect("a document");
+        document.set_kind(Kind::MacroEnabledDocument);
+
+        let bytes = document.save().expect("saving");
+        let mut package = wp_opc::Package::open(&bytes).expect("a package");
+        package.add_part(
+            "word/vbaProject.bin",
+            "application/vnd.ms-office.vbaProject",
+            vec![0xD0, 0xCF, 0x11, 0xE0, 1, 2, 3, 4],
+        );
+        let mut relationships = package.relationships("word/document.xml").expect("relationships");
+        relationships.add(
+            "http://schemas.microsoft.com/office/2006/relationships/vbaProject",
+            "vbaProject.bin",
+            wp_opc::TargetMode::Internal,
+        );
+        package.set_relationships(&relationships).expect("writing them");
+        let bytes = package.save().expect("saving the package");
+        Document::open(&bytes).expect("reopening")
+    }
+
+    fn editor(document: Document) -> Editor {
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor
+    }
+
+    #[test]
+    fn a_document_with_visual_basic_in_it_says_so_on_the_macro_list() {
+        let mut editor = editor(with_macros());
+        editor.set_view_option("tab=view").expect("the View tab");
+        editor.draw(1400, 900);
+        editor.run(Command::Macros);
+
+        let popup = editor.popup.as_ref().expect("the list");
+        let lines: Vec<String> =
+            (0..8).filter_map(|at| popup.item(at).map(str::to_owned)).collect();
+        assert!(
+            lines.iter().any(|line| line.contains("Visual Basic")),
+            "the list says nothing about the document's own macros: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn a_document_without_them_says_nothing_about_them() {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("one")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let mut editor = editor(Document::open(&bytes).expect("reopening"));
+        editor.set_view_option("tab=view").expect("the View tab");
+        editor.draw(1400, 900);
+        editor.run(Command::Macros);
+
+        let popup = editor.popup.as_ref().expect("the list");
+        let lines: Vec<String> =
+            (0..8).filter_map(|at| popup.item(at).map(str::to_owned)).collect();
+        assert!(
+            !lines.iter().any(|line| line.contains("Visual Basic")),
+            "it says a document has macros when it has none: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn pressing_that_line_says_what_happens_to_them() {
+        let mut editor = editor(with_macros());
+        editor.set_view_option("tab=view").expect("the View tab");
+        editor.draw(1400, 900);
+        editor.run(Command::Macros);
+        // The line about the document's own macros is the last one.
+        let popup = editor.popup.as_ref().expect("the list");
+        let last = (0..8).filter(|at| popup.item(*at).is_some()).count() - 1;
+        editor.choose_macro(last);
+
+        assert!(editor.status.contains("not run"), "{}", editor.status);
+        assert!(editor.status.contains("kept"), "{}", editor.status);
     }
 }

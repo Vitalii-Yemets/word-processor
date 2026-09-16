@@ -29,3 +29,8 @@ wp-text = { path = "../wp-text" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# The tests build a document carrying a Visual Basic project, which
+# means reaching the package under it.
+wp-opc = { path = "../wp-opc" }

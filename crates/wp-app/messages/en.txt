@@ -514,6 +514,7 @@
 = The selection is saved under this name.
 = Themes
 = Thesaurus
+= This document also carries Visual Basic macros
 = This document, before
 = This program can open Word documents.
 = Title

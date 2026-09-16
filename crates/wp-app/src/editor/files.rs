@@ -551,6 +551,12 @@ impl Editor {
     pub(super) fn set_document(&mut self, document: Document, file: Option<PathBuf>) {
         self.document = document;
         self.file = file;
+        // A document that carries macros is a document a person has to be
+        // told about. This program does not run them — see
+        // [`super::macros`], where that is a decision — and they are kept as
+        // they are; both halves of that are worth saying before somebody
+        // wonders why nothing happened.
+        self.carries_macros = self.document.has_macros();
         // Whatever was opened is not the text file the last one was.
         self.text_encoding = None;
         self.scroll = 0.0;

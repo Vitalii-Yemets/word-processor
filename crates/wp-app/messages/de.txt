@@ -1502,6 +1502,9 @@ language = Deutsch
 = The selection is saved under this name.
 > Die Auswahl wird unter diesem Namen gespeichert.
 
+= This document also carries Visual Basic macros
+> Dieses Dokument enthält auch Visual-Basic-Makros
+
 = The document is not encrypted.
 > Das Dokument ist nicht verschlüsselt.
 

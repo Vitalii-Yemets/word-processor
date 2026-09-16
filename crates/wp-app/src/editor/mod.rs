@@ -456,6 +456,9 @@ pub struct Editor {
     asking: Option<dialogs::Asking>,
     /// The two documents a comparison came from, shown beside the result.
     comparing: Option<comparing::Comparing>,
+    /// Whether the document open now carries macros written in Visual Basic,
+    /// which this program keeps and does not run.
+    carries_macros: bool,
     /// The people the merge is not for: Word's Edit Recipient List with the
     /// tick taken off a row. Kept by number, because the list itself is read
     /// afresh from its file each time.
@@ -598,6 +601,9 @@ impl Editor {
             .with_dpi(DPI)
             .with_automatic_colors(theme.page_text, theme.table_line);
         let pages = engine.layout_document(&document);
+        // Asked once here as well as on every open: a document handed
+        // straight to a new editor never goes through the opening path.
+        let carries_macros = document.has_macros();
 
         Self {
             document,
@@ -717,6 +723,7 @@ impl Editor {
             dialog: None,
             asking: None,
             comparing: None,
+            carries_macros,
             left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,
             count_the_edges: false,

@@ -66,6 +66,19 @@ that keeps all of it, and an edit rewrites only the nodes it must. A document
 opened and saved untouched comes back byte for byte identical; one that is
 edited differs only where it was edited. This is tested, not merely intended.
 
+**Opening a document cannot run anything.** This program does not implement
+Visual Basic, and will not. Half an object model is worse than none — a macro
+that runs and does something slightly different is one that quietly corrupts a
+document — and a document that can run a program is the door every mass
+outbreak of document-borne malware has come through for thirty years. Word
+answers that with a warning bar, a trust centre and signed projects, an
+apparatus built to make safe a feature that was not worth having. The answer
+here is that there is nothing to make safe. Somebody else's macros are kept
+untouched through an edit and a save, and the program says a document carries
+them; it does not run them. What is offered instead is a recorder: the buttons
+pressed and the words typed, played back, kept with the program and not in the
+document.
+
 **Multilingual from the ground up.** Not a translation added at the end. The text
 engine lays out bidirectional scripts and shapes the ones that need shaping:
 Arabic and Syriac join, and ligatures are taken wherever a font offers them. The
