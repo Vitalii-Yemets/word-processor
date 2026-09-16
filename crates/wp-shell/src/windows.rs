@@ -580,6 +580,7 @@ extern "system" {
 #[link(name = "kernel32")]
 extern "system" {
     fn GetModuleHandleW(name: *const u16) -> Handle;
+    fn LoadLibraryW(name: *const u16) -> Handle;
     fn GetProcAddress(module: Handle, name: *const u8) -> *const c_void;
     fn GetACP() -> u32;
     fn GetOEMCP() -> u32;
@@ -1539,6 +1540,20 @@ pub(crate) fn to_device(window: Handle, (x, y): (i32, i32)) -> (i32, i32) {
 /// How many of a window's pixels one of the application's is.
 pub(crate) fn scale_of(window: Handle) -> f32 {
     SCALES.with(|scales| scales.borrow().get(&(window as usize)).copied().unwrap_or(1.0))
+}
+
+/// A function of a library this program does not link against, found by name.
+///
+/// The library is loaded if it is not loaded already and is then left where
+/// it is: the pointers taken out of it are kept for the life of the process,
+/// and a library that were unloaded under them would turn every one of them
+/// into a crash.
+pub(crate) unsafe fn library_function(library: &str, name: &[u8]) -> *const c_void {
+    let module = LoadLibraryW(wide(library).as_ptr());
+    if module.is_null() {
+        return core::ptr::null();
+    }
+    GetProcAddress(module, name.as_ptr())
 }
 
 /// A function of user32 that only newer versions of Windows have, found by
