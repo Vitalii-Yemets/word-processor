@@ -29,6 +29,9 @@ language = Deutsch
 = A certificate is a file; its key is the file beside it.
 > Ein Zertifikat ist eine Datei; sein Schlüssel ist die Datei daneben.
 
+= A new document
+> Ein neues Dokument
+
 = AaBbCcDdEe
 > AaBbCcDdEe
 
@@ -284,6 +287,9 @@ language = Deutsch
 = Captions
 > Beschriftungen
 
+= Case changes
+> Änderungen der Groß-/Kleinschreibung
+
 = Catalogues can be added in
 > Kataloge können abgelegt werden in
 
@@ -334,6 +340,9 @@ language = Deutsch
 
 = Chart
 > Diagramm
+
+= Compare Documents
+> Dokumente vergleichen
 
 = Create New Building Block
 > Neuen Baustein erstellen
@@ -677,6 +686,9 @@ language = Deutsch
 = Format Painter
 > Format übertragen
 
+= Formatting
+> Formatierung
+
 = Formatting Marks
 > Formatierungszeichen
 
@@ -959,6 +971,9 @@ language = Deutsch
 = Move object with text
 > Objekt mit Text verschieben
 
+= Moves
+> Verschiebungen
+
 = My list has a header row
 > Liste hat Überschriften
 
@@ -1054,6 +1069,9 @@ language = Deutsch
 
 = Orientation
 > Ausrichtung
+
+= Original
+> Original
 
 = Outline
 > Gliederung
@@ -1241,6 +1259,9 @@ language = Deutsch
 = Recipients
 > Empfänger
 
+= Revised
+> Überarbeitet
+
 = Rich Text
 > Rich-Text
 
@@ -1417,6 +1438,12 @@ language = Deutsch
 
 = Show
 > Anzeigen
+
+= Show changes
+> Änderungen anzeigen
+
+= Show changes in
+> Änderungen anzeigen in
 
 = Show Marks
 > Zeichen anzeigen
@@ -1607,6 +1634,9 @@ language = Deutsch
 = The two passwords are not the same
 > Die beiden Kennwörter stimmen nicht überein
 
+= This document
+> Diesem Dokument
+
 = This document also carries Visual Basic macros
 > Dieses Dokument enthält auch Visual-Basic-Makros
 
@@ -1750,6 +1780,12 @@ language = Deutsch
 
 = Where it goes
 > Speicherort
+
+= Where the comparison goes
+> Wohin der Vergleich geht
+
+= White space
+> Leerraum
 
 = White space between pages
 > Leerraum zwischen den Seiten

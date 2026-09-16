@@ -2047,6 +2047,24 @@ Katherine Johnson,Hampton,katherine@example.com
             "signatures" => {
                 self.open_signatures();
             }
+            // Word's Compare dialog: what counts as a difference, and where
+            // the answer goes.
+            "comparedialog" => {
+                let mut body = wp_docx::model::Body::default();
+                body.blocks.push(wp_docx::model::Block::Paragraph(
+                    wp_docx::model::Paragraph::text("The revised copy"),
+                ));
+                let bytes = wp_docx::Document::create(&body)
+                    .and_then(|document| document.save())
+                    .unwrap_or_default();
+                if let Ok(revised) = wp_docx::Document::open(&bytes) {
+                    self.to_compare = Some((
+                        std::path::PathBuf::from("Contract (Agnes).docx"),
+                        Box::new(revised),
+                    ));
+                    self.open_compare_dialog();
+                }
+            }
             "exception" => {
                 self.document.set_caret(wp_docx::TextPosition::new(4, 0));
                 let end = self.document.paragraph_text(4).unwrap_or_default().len();

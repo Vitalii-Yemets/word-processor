@@ -191,6 +191,11 @@ pub enum ChangeKind {
     Insertion,
     Deletion,
     Formatting,
+    /// Text carried from one place to another: one change rather than a
+    /// deletion and an insertion that happen to say the same thing. Word
+    /// writes it as `w:moveFrom` where it was and `w:moveTo` where it went.
+    MovedFrom,
+    MovedTo,
 }
 
 impl Document {
@@ -215,6 +220,8 @@ fn gather_changes(element: &Element, paragraph: usize, out: &mut Vec<Change>) {
             "ins" => Some(ChangeKind::Insertion),
             "del" => Some(ChangeKind::Deletion),
             "rPrChange" | "pPrChange" => Some(ChangeKind::Formatting),
+            "moveFrom" => Some(ChangeKind::MovedFrom),
+            "moveTo" => Some(ChangeKind::MovedTo),
             _ => None,
         };
         if let Some(kind) = kind {
@@ -257,7 +264,10 @@ fn changed_text(element: &Element) -> String {
 fn count_revisions(element: &Element, count: &mut usize) {
     for child in element.child_elements() {
         if child.namespace.as_deref() == Some(read::W)
-            && matches!(child.local_name(), "ins" | "del" | "rPrChange")
+            && matches!(
+                child.local_name(),
+                "ins" | "del" | "rPrChange" | "pPrChange" | "moveFrom" | "moveTo"
+            )
         {
             *count += 1;
         }
@@ -288,7 +298,10 @@ fn resolve_within(
         // inside a run's properties of what they said before. Accepting one
         // takes the record away and leaves the formatting; rejecting it puts
         // the old properties back.
-        if child.local_name() == "rPr" && child.child(Some(read::W), "rPrChange").is_some() {
+        if matches!(child.local_name(), "rPr" | "pPr")
+            && (child.child(Some(read::W), "rPrChange").is_some()
+                || child.child(Some(read::W), "pPrChange").is_some())
+        {
             if let Some(properties) = element.children[index].as_element_mut() {
                 resolve_format_change(properties, decision, prefix);
                 *resolved += 1;
@@ -297,9 +310,23 @@ fn resolve_within(
             continue;
         }
 
+        // The marks round a move say where it begins and ends. They carry
+        // nothing themselves, and a move that has been decided has no range
+        // left to mark.
+        if matches!(
+            child.local_name(),
+            "moveFromRangeStart" | "moveFromRangeEnd" | "moveToRangeStart" | "moveToRangeEnd"
+        ) {
+            element.children.remove(index);
+            continue;
+        }
+
+        // A move is an insertion and a deletion that know about each other.
+        // Accepting one keeps where it went and drops where it was, which is
+        // exactly what accepting an insertion and a deletion does.
         let kind = match child.local_name() {
-            "ins" => Some(RevisionKind::Inserted),
-            "del" => Some(RevisionKind::Deleted),
+            "ins" | "moveTo" => Some(RevisionKind::Inserted),
+            "del" | "moveFrom" => Some(RevisionKind::Deleted),
             _ => None,
         };
 
@@ -342,23 +369,28 @@ fn resolve_within(
     }
 }
 
-/// Accepts or rejects one run's recorded formatting change.
+/// Accepts or rejects one recorded formatting change.
 ///
 /// Accepting: the record goes and the formatting stays, which is what the run
-/// already says. Rejecting: everything the run's properties say is thrown away
-/// and replaced by what the record kept.
+/// or the paragraph already says. Rejecting: everything its properties say is
+/// thrown away and replaced by what the record kept.
+///
+/// The same for a run and for a paragraph, because the format writes both the
+/// same way: a copy of what was there, inside the properties it is about.
 fn resolve_format_change(properties: &mut Element, decision: Decision, prefix: Option<&str>) {
-    let Some(change) = properties.child(Some(read::W), "rPrChange") else { return };
+    let local = if properties.local_name() == "pPr" { "pPrChange" } else { "rPrChange" };
+    let Some(change) = properties.child(Some(read::W), local) else { return };
     if decision == Decision::Accept {
-        properties.remove_children_named(Some(read::W), "rPrChange");
+        properties.remove_children_named(Some(read::W), local);
         return;
     }
 
-    // What the run said before, which the record holds as a `w:rPr` of its own.
-    // A record with nothing in it means the run had no properties at all, and
+    // What it said before, which the record holds as a copy of its own kind.
+    // A record with nothing in it means there were no properties at all, and
     // putting none back is exactly right.
+    let inside = if local == "pPrChange" { "pPr" } else { "rPr" };
     let before = change
-        .child(Some(read::W), "rPr")
+        .child(Some(read::W), inside)
         .map(|element| element.children.clone())
         .unwrap_or_default();
     properties.children = before;

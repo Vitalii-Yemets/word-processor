@@ -13,6 +13,7 @@
 = *Bold* and _italic_ with real formatting
 = 1 word
 = 100%
+= A new document
 = A password that is lost cannot be recovered.
 = AaBbCcDdEe
 = Above
@@ -100,6 +101,7 @@
 = Capitalize names of days
 = Caption
 = Captions
+= Case changes
 = Catalogues can be added in
 = Cell
 = Cell Size
@@ -138,6 +140,7 @@
 = Comment
 = Comments
 = Compare
+= Compare Documents
 = Compare Two Documents
 = Compare with
 = Contents
@@ -229,6 +232,7 @@
 = Footnotes
 = Format Page Numbers
 = Format Painter
+= Formatting
 = Formatting Marks
 = Formatting exceptions
 = Formatting marks
@@ -323,6 +327,7 @@
 = Move Down
 = Move Up
 = Move object with text
+= Moves
 = My list has a header row
 = Name
 = Navigation
@@ -355,6 +360,7 @@
 = Order
 = Ordinals (1st) with superscript
 = Orientation
+= Original
 = Outline
 = Outline level
 = Outside
@@ -439,6 +445,7 @@
 = Results
 = Review
 = Reviewing Pane
+= Revised
 = Rich Text
 = Rich Text Format (*.rtf)
 = Right
@@ -479,6 +486,8 @@
 = Show Marks
 = Show Markup
 = Show Preview
+= Show changes
+= Show changes in
 = Show measurements in
 = Show/Hide Formatting Marks
 = Side to Side
@@ -548,6 +557,7 @@
 = The two passwords are not the same
 = Themes
 = Thesaurus
+= This document
 = This document also carries Visual Basic macros
 = This document is not signed.
 = This document is open read-only.
@@ -587,6 +597,8 @@
 = What's New
 = When correcting spelling
 = Where it goes
+= Where the comparison goes
+= White space
 = White space between pages
 = Widow/Orphan control
 = Width

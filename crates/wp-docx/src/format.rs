@@ -486,6 +486,69 @@ fn record_format_change(
     properties.push_element(change);
 }
 
+/// Replaces one element's properties with another's, keeping what they said.
+///
+/// `local` is `rPr` for a run and `pPr` for a paragraph, and the format
+/// writes both the same way: the properties themselves, with a copy of what
+/// they said before inside a `w:rPrChange` or a `w:pPrChange`. This is what a
+/// comparison uses to say "nobody retyped this paragraph and somebody
+/// re-styled it".
+///
+/// Says whether anything differed. Properties that already carry a record are
+/// left alone: what is worth keeping is what nobody has touched.
+pub(crate) fn note_properties_change(
+    element: &mut Element,
+    local: &str,
+    wanted: Option<&Element>,
+    reviser: &crate::revisions::Reviser,
+    id: i32,
+    prefix: Option<&str>,
+) -> bool {
+    let recorded = if local == "pPr" { "pPrChange" } else { "rPrChange" };
+    let mine = element.child(Some(W), local);
+
+    // What each says, without the record of an earlier change, which is not
+    // part of what the properties mean.
+    let said = |properties: Option<&Element>| -> Vec<wp_xml::tree::Node> {
+        properties.map_or_else(Vec::new, |properties| {
+            properties
+                .children
+                .iter()
+                .filter(|node| node.as_element().is_none_or(|child| child.local_name() != recorded))
+                .cloned()
+                .collect()
+        })
+    };
+    let before = said(mine);
+    let after = said(wanted);
+    if before == after {
+        return false;
+    }
+
+    if element.child(Some(W), local).is_none() {
+        // Both go first in what holds them: a run's properties before its
+        // text, a paragraph's before its runs.
+        element.insert_element(0, Element::new(&name_with(prefix, local), Some(W)));
+    }
+    let Some(properties) = element.child_mut(Some(W), local) else { return false };
+    if properties.child(Some(W), recorded).is_none() {
+        let mut copy = Element::new(&name_with(prefix, local), Some(W));
+        copy.children = before;
+        let mut change = Element::new(&name_with(prefix, recorded), Some(W));
+        crate::revisions::stamp(&mut change, id, reviser, prefix);
+        change.push_element(copy);
+        properties.children = after;
+        properties.push_element(change);
+    } else {
+        let record = properties.child(Some(W), recorded).cloned();
+        properties.children = after;
+        if let Some(record) = record {
+            properties.push_element(record);
+        }
+    }
+    true
+}
+
 /// Writes authored properties into a `w:rPr`, wherever that `rPr` lives.
 ///
 /// A run has one, and so does a style, and so does the document's own set of

@@ -470,6 +470,10 @@ pub struct Editor {
     left_out: std::collections::BTreeSet<usize>,
     /// A file that turned out to be encrypted, waiting for its password.
     waiting_to_unseal: Option<sealing::Waiting>,
+    /// The document a comparison is waiting to be made against, while the
+    /// dialog asks what to compare by. Boxed because a document is large and
+    /// this is empty almost always.
+    to_compare: Option<(std::path::PathBuf, Box<wp_docx::Document>)>,
     /// Whether the document open now was opened read-only, because it asked
     /// to be. A property of this window and not of the document: see
     /// [`readonly`].
@@ -736,6 +740,7 @@ impl Editor {
             filling_in: None,
             left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,
+            to_compare: None,
             opened_read_only: false,
             count_the_edges: false,
             under_caret: None,

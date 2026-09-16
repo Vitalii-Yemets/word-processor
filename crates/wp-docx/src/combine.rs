@@ -210,7 +210,18 @@ fn what_was_done(
                 }
                 after = Some(*at);
             }
-            Edit::Added(theirs) => added.push((after, revised[*theirs].clone())),
+            Edit::Added(theirs) | Edit::MovedTo(theirs, _) => {
+                added.push((after, revised[*theirs].clone()));
+            }
+            // A combining does not pair moves up - it has no options and
+            // asks for none - but the plan it works from is the same sort of
+            // plan, so the two halves are read as what they are made of.
+            Edit::MovedFrom(at, _) => {
+                if let Some(slot) = did.get_mut(*at) {
+                    *slot = Did::Removed;
+                }
+                after = Some(*at);
+            }
         }
     }
     (did, added)

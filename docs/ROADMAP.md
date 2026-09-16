@@ -5076,15 +5076,55 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   checked; the three that carry the weight are. Word's Signatures **pane**,
   the digital half of the Signature Line, countersignatures and XAdES are
   **J25**.
-- [ ] **J13. Everything else two documents can differ by.** **J4** compares
-  the words. Word compares more: formatting, so that a paragraph nobody
-  retyped but somebody re-styled is seen to have changed; moves, so that a
-  paragraph carried from one place to another is one move rather than a
-  deletion and an insertion; and the list its Compare dialog offers — case,
-  white space, tables, headers and footers, footnotes and endnotes, text
-  boxes and fields. With it: that dialog itself, which is where a person
-  chooses which of those to look at and whether the result goes into a new
-  document or into one of the two.
+- [x] **J13. Everything else two documents can differ by.** **J4** compares
+  the words. Word compares more: formatting, moves, and the list its Compare
+  dialog offers.
+  *Done:* what counts as a difference, asked rather than decided.
+  **Formatting.** A paragraph nobody retyped and somebody re-styled has
+  changed, and a comparison that only read the words would say the two
+  documents were identical. What is compared is what the paragraph itself
+  says — its style, its alignment, its indents, its spacing — and what each of
+  its runs says where the runs line up. The old properties are kept in a
+  `w:pPrChange` or a `w:rPrChange`, which is what rejecting the change puts
+  back, and `w:pPrChange` is written now as well as read.
+  **Moves.** A paragraph carried from one place to another came out of a
+  comparison as a deletion and an insertion that happened to say the same
+  thing, four pages apart, for a reviewer to work out for themselves. It is
+  one change now: `w:moveFrom` where it was, `w:moveTo` where it went, and
+  the marks that name the two halves of one move. Accepting one keeps where
+  it went and drops where it was; rejecting it does the reverse. Only whole
+  paragraphs, and only where the words are untouched — a paragraph that moved
+  and was edited is an edit, and calling it a move would say nothing about
+  the edit.
+  **Case and white space.** Two of Word's tick boxes, and the two that change
+  what "the same" means: with them off, "The Cat" and "the cat" are one
+  paragraph and one space is two. The comparison is done on what the options
+  say to compare and written back as what was actually there, so ignoring the
+  case never changes anybody's capital letters.
+  **The dialog.** Word asks before it compares, and so does this now: the two
+  documents by name, the four tick boxes, and where the answer goes — a new
+  document, which is Word's default and here means the result loses the file
+  it came from, or this one.
+  *Proven by:* fifteen tests over the document — a re-styled paragraph seen
+  to have changed and its record rejected and accepted; formatting left alone
+  when it is not being compared; a moved paragraph written as a move, with
+  its marks, and accepted and rejected both ways round; a move not asked for
+  coming out as a deletion and an insertion; an edited paragraph and a blank
+  line not called moves; case and spacing noticed or not as asked, with the
+  words unchanged either way; the words still winning when everything is on;
+  and the key a comparison compares by. Four over the program: the dialog
+  naming both documents and offering what Word offers, a tick changing what
+  is compared, a comparison into a new document letting go of the file it
+  came from and one into this document keeping it, and a cancelled dialog
+  comparing nothing. The dialog photographed.
+  *Not done, and named here:* **the parts of a document this compares are its
+  paragraphs.** Word's dialog also offers headers and footers, footnotes and
+  endnotes, text boxes, fields and comments, and each of those lives in a
+  part or a stream of its own that this comparison does not walk at all. That
+  is **J26**. Word's "Show changes at: character level", which marks the
+  letters that changed inside a word rather than the word, is not offered:
+  this marks whole words, which is Word's own default. And a move is a whole
+  paragraph here, where Word will call a moved sentence a move.
 - [ ] **J14. A person's defaults, kept where a person's defaults go.** Set as
   Default — on the Font dialog, on the Paragraph dialog, on the Design tab's
   themes — writes into the document and into a setting this program keeps.
@@ -5166,6 +5206,14 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   over another. And **XAdES**, the standard that puts a timestamp from
   somebody else into a signature so that it outlives the certificate that
   made it — which needs a timestamp authority, and therefore a network.
+- [ ] **J26. Comparing the rest of a document.** **J13** compares the
+  paragraphs of the body. Word's Compare dialog also offers headers and
+  footers, footnotes and endnotes, text boxes, fields and comments, and each
+  of those is a part or a stream of its own: a comparison that does not walk
+  them says two documents are the same when one of them has a different
+  footer on every page. Done when each can be compared and the differences
+  come out as tracked changes in the part they belong to, with a tick box
+  apiece in the dialog that already has four.
 
 ## K — Proving it against Word rather than against ourselves
 

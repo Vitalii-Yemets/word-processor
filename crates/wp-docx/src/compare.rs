@@ -19,8 +19,70 @@
 //! becoming "the cat sat down" is one word added, not a whole paragraph
 //! replaced, and marking it as the latter makes the comparison useless.
 
+use wp_xml::tree::Element;
+
 use crate::revisions::Reviser;
-use crate::{Document, TextPosition};
+use crate::{edit, position, read, Document, TextPosition};
+
+/// What a comparison is to take notice of.
+///
+/// Word's Compare dialog is a list of tick boxes, and every one of them is a
+/// question about what counts as a difference. A person comparing a draft
+/// against its retyped copy does not want to be told that a space became two;
+/// one comparing a contract does. So they are asked rather than decided.
+///
+/// The defaults are Word's: everything on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Options {
+    /// Whether a paragraph carried from one place to another is one move
+    /// rather than a deletion and an insertion.
+    pub moves: bool,
+    /// Whether a paragraph nobody retyped but somebody re-styled has changed.
+    pub formatting: bool,
+    /// Whether "The" becoming "the" is a change.
+    pub case: bool,
+    /// Whether one space becoming two is.
+    pub white_space: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self { moves: true, formatting: true, case: true, white_space: true }
+    }
+}
+
+impl Options {
+    /// What two pieces of text are compared as.
+    ///
+    /// The text itself where everything is being taken notice of, and
+    /// otherwise the same text with what is being ignored flattened out of
+    /// it. The original is still what gets written into the document: this is
+    /// only what decides whether two pieces are the same.
+    #[must_use]
+    pub fn key(&self, text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut last_was_space = false;
+        for character in text.chars() {
+            if !self.white_space && character.is_whitespace() {
+                if !last_was_space {
+                    out.push(' ');
+                }
+                last_was_space = true;
+                continue;
+            }
+            last_was_space = false;
+            if self.case {
+                out.push(character);
+            } else {
+                out.extend(character.to_lowercase());
+            }
+        }
+        if !self.white_space {
+            return out.trim().to_owned();
+        }
+        out
+    }
+}
 
 /// One step of turning the first sequence into the second.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,6 +209,12 @@ pub enum Edit {
     Removed(usize),
     /// In the revision only.
     Added(usize),
+    /// In the original only, and the same words turn up somewhere else in the
+    /// revision: this is where they were. The number ties the two halves of
+    /// one move together.
+    MovedFrom(usize, u32),
+    /// And this is where they went.
+    MovedTo(usize, u32),
 }
 
 /// Turns a difference into what is to be done, pairing changes up.
@@ -200,6 +268,43 @@ pub fn edits(steps: &[Step]) -> Vec<Edit> {
     out
 }
 
+/// Pairs a paragraph that went with the same paragraph that arrived.
+///
+/// A paragraph carried from one place to another comes out of a difference as
+/// a deletion and an insertion that happen to say the same thing. Word calls
+/// that a move and marks it as one, and for a good reason: a reviewer reading
+/// "this paragraph was deleted" and, four pages later, "this paragraph was
+/// added" has to work out for themselves that it is the same paragraph.
+///
+/// Only whole paragraphs, and only where the words are exactly what the
+/// options say counts as the same. Word will call a moved sentence a move;
+/// this is the case that matters and the one that cannot be a coincidence.
+#[must_use]
+pub fn paired_moves(plan: &[Edit], mine: &[String], theirs: &[String]) -> Vec<Edit> {
+    let mut out = plan.to_vec();
+    let mut name = 1u32;
+
+    for from in 0..out.len() {
+        let Edit::Removed(mine_at) = out[from] else { continue };
+        let Some(text) = mine.get(mine_at) else { continue };
+        // An empty paragraph matches every other empty paragraph, and calling
+        // that a move would be calling every blank line a move.
+        if text.trim().is_empty() {
+            continue;
+        }
+        // The first that has not been paired already: once one is, it is no
+        // longer an addition and cannot be found twice.
+        let found = (0..out.len())
+            .find(|to| matches!(out[*to], Edit::Added(index) if theirs.get(index) == Some(text)));
+        let Some(to) = found else { continue };
+        let Edit::Added(theirs_at) = out[to] else { continue };
+        out[from] = Edit::MovedFrom(mine_at, name);
+        out[to] = Edit::MovedTo(theirs_at, name);
+        name += 1;
+    }
+    out
+}
+
 impl Document {
     /// Turns this document into a comparison of itself with another.
     ///
@@ -207,13 +312,28 @@ impl Document {
     /// added marked as inserted and what it dropped marked as deleted. Returns
     /// how many changes were marked.
     pub fn compare_with(&mut self, revised: &Document, author: &str) -> usize {
+        self.compare_with_options(revised, author, Options::default())
+    }
+
+    /// The same, taking notice of what it is asked to.
+    pub fn compare_with_options(
+        &mut self,
+        revised: &Document,
+        author: &str,
+        options: Options,
+    ) -> usize {
         let mine: Vec<String> = (0..self.paragraph_count())
             .map(|at| self.paragraph_text(at).unwrap_or_default())
             .collect();
         let theirs: Vec<String> = (0..revised.paragraph_count())
             .map(|at| revised.paragraph_text(at).unwrap_or_default())
             .collect();
-        let plan = edits(&difference(&mine, &theirs));
+        // Compared as what the options say to compare, and written back as
+        // what was actually there.
+        let my_keys: Vec<String> = mine.iter().map(|text| options.key(text)).collect();
+        let their_keys: Vec<String> = theirs.iter().map(|text| options.key(text)).collect();
+        let plan = edits(&difference(&my_keys, &their_keys));
+        let plan = if options.moves { paired_moves(&plan, &my_keys, &their_keys) } else { plan };
 
         let was_tracking = self.tracking_changes();
         let was_reviser = self.reviser.clone();
@@ -230,15 +350,34 @@ impl Document {
         let mut marked = 0usize;
         for (at, edit) in plan.iter().enumerate().rev() {
             match edit {
-                Edit::Same(_, _) => {}
+                Edit::Same(mine_at, theirs_at) => {
+                    if options.formatting {
+                        marked += self.mark_formatting(*mine_at, revised, *theirs_at);
+                    }
+                }
                 Edit::Change(mine_at, theirs_at) => {
                     marked += self.mark_paragraph_difference(*mine_at, &theirs[*theirs_at]);
+                    if options.formatting {
+                        marked += self.mark_formatting(*mine_at, revised, *theirs_at);
+                    }
                 }
                 Edit::Removed(mine_at) => {
                     marked += self.mark_paragraph_deleted(*mine_at);
                 }
                 Edit::Added(theirs_at) => {
-                    marked += self.add_paragraph_tracked(&plan[..at], &theirs[*theirs_at]);
+                    marked += self.add_paragraph_tracked(&plan[..at], &theirs[*theirs_at]).0;
+                }
+                Edit::MovedFrom(mine_at, name) => {
+                    marked += self.mark_paragraph_deleted(*mine_at);
+                    self.rename_tracked(*mine_at, "del", "moveFrom", *name);
+                }
+                Edit::MovedTo(theirs_at, name) => {
+                    let (added, into) =
+                        self.add_paragraph_tracked(&plan[..at], &theirs[*theirs_at]);
+                    if added > 0 {
+                        self.rename_tracked(into, "ins", "moveTo", *name);
+                    }
+                    marked += added;
                 }
             }
         }
@@ -306,6 +445,135 @@ impl Document {
         marked
     }
 
+    /// Marks the difference between one paragraph's formatting and another's.
+    ///
+    /// A paragraph nobody retyped and somebody re-styled is a change, and one
+    /// a comparison that only read the words would miss entirely. What is
+    /// compared is what the paragraph itself says — its style, its alignment,
+    /// its indents, its spacing — and what each of its runs says, where the
+    /// runs line up.
+    ///
+    /// The old properties are kept in a `w:pPrChange` or a `w:rPrChange`,
+    /// which is what rejecting the change puts back.
+    fn mark_formatting(&mut self, at: usize, revised: &Document, theirs: usize) -> usize {
+        let Some(wanted) =
+            revised.paragraph_elements().get(theirs).map(|element| (*element).clone())
+        else {
+            return 0;
+        };
+        let prefix = self.prefix();
+        let Some(path) = position::paragraph_path(&self.tree().root, at) else { return 0 };
+        let reviser = self.reviser.clone();
+        let id = self.next_revision_id();
+        let Some(mine) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+            return 0;
+        };
+
+        let mut marked = 0usize;
+        if crate::format::note_properties_change(
+            mine,
+            "pPr",
+            wanted.child(Some(read::W), "pPr"),
+            &reviser,
+            id,
+            prefix.as_deref(),
+        ) {
+            marked += 1;
+        }
+
+        // The runs, where there are the same number of them saying the same
+        // words. Anything else is a paragraph whose text changed, and the
+        // words are what the rest of the comparison is for.
+        let mut theirs_runs: Vec<Element> =
+            wanted.child_elements().filter(|child| child.is(Some(read::W), "r")).cloned().collect();
+        let mine_runs = mine
+            .child_elements()
+            .filter(|child| child.is(Some(read::W), "r"))
+            .map(|run| run.text_content())
+            .collect::<Vec<String>>();
+        if mine_runs.len() == theirs_runs.len()
+            && mine_runs.iter().zip(&theirs_runs).all(|(text, run)| *text == run.text_content())
+        {
+            let mut which = 0usize;
+            for run in mine.child_elements_mut() {
+                if !run.is(Some(read::W), "r") {
+                    continue;
+                }
+                let wanted = theirs_runs[which].child(Some(read::W), "rPr").cloned();
+                if crate::format::note_properties_change(
+                    run,
+                    "rPr",
+                    wanted.as_ref(),
+                    &reviser,
+                    id,
+                    prefix.as_deref(),
+                ) {
+                    marked += 1;
+                }
+                which += 1;
+            }
+        }
+        theirs_runs.clear();
+
+        if marked > 0 {
+            self.mark_modified();
+        }
+        marked
+    }
+
+    /// Turns a tracked deletion or insertion into the half of a move.
+    ///
+    /// The marking is done by the ordinary machinery — a move is a deletion
+    /// in one place and an insertion in another, and the format says as much
+    /// by writing them the same way with another name. So this renames what
+    /// was written and puts the marks round it that say which move it is.
+    fn rename_tracked(&mut self, paragraph: usize, from: &str, to: &str, name: u32) {
+        let prefix = self.prefix();
+        let Some(path) = position::paragraph_path(&self.tree().root, paragraph) else { return };
+        let Some(element) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+            return;
+        };
+
+        let mut found = false;
+        for child in element.child_elements_mut() {
+            if child.is(Some(read::W), from) {
+                child.name = edit::name_with(prefix.as_deref(), to);
+                found = true;
+            }
+        }
+        if !found {
+            return;
+        }
+
+        // Word brackets a move with marks naming it, so that a reader can
+        // tell which "moved from" belongs to which "moved to".
+        let marks = (format!("{to}RangeStart"), format!("{to}RangeEnd"));
+        let mut start = Element::new(&edit::name_with(prefix.as_deref(), &marks.0), Some(read::W));
+        start.set_namespaced_attribute(
+            &edit::name_with(prefix.as_deref(), "id"),
+            read::W,
+            &name.to_string(),
+        );
+        start.set_namespaced_attribute(
+            &edit::name_with(prefix.as_deref(), "name"),
+            read::W,
+            &format!("move{name}"),
+        );
+        let mut end = Element::new(&edit::name_with(prefix.as_deref(), &marks.1), Some(read::W));
+        end.set_namespaced_attribute(
+            &edit::name_with(prefix.as_deref(), "id"),
+            read::W,
+            &name.to_string(),
+        );
+
+        // Inside the paragraph, round everything in it: a move of a whole
+        // paragraph is what this marks.
+        let at = usize::from(element.child(Some(read::W), "pPr").is_some());
+        element.insert_element(at, start);
+        element.push_element(end);
+        self.mark_modified();
+    }
+
     /// Marks a whole paragraph as deleted.
     pub(crate) fn mark_paragraph_deleted(&mut self, paragraph: usize) -> usize {
         let text = self.paragraph_text(paragraph).unwrap_or_default();
@@ -321,12 +589,16 @@ impl Document {
     ///
     /// `earlier` is the plan up to this point, which says which paragraph of
     /// the original the new one belongs after.
-    fn add_paragraph_tracked(&mut self, earlier: &[Edit], text: &str) -> usize {
+    /// Says how much was marked, and which paragraph it went into.
+    fn add_paragraph_tracked(&mut self, earlier: &[Edit], text: &str) -> (usize, usize) {
         let after = earlier
             .iter()
             .filter_map(|edit| match edit {
-                Edit::Same(mine, _) | Edit::Change(mine, _) | Edit::Removed(mine) => Some(*mine),
-                Edit::Added(_) => None,
+                Edit::Same(mine, _)
+                | Edit::Change(mine, _)
+                | Edit::Removed(mine)
+                | Edit::MovedFrom(mine, _) => Some(*mine),
+                Edit::Added(_) | Edit::MovedTo(_, _) => None,
             })
             .max();
 
@@ -336,7 +608,7 @@ impl Document {
                 self.set_caret(TextPosition::new(paragraph, end));
                 self.clear_selection();
                 self.press_enter();
-                usize::from(self.type_text(text))
+                (usize::from(self.type_text(text)), paragraph + 1)
             }
             None => {
                 // Before everything: written at the start, then a break after
@@ -345,7 +617,7 @@ impl Document {
                 self.clear_selection();
                 let written = self.type_text(text);
                 self.press_enter();
-                usize::from(written)
+                (usize::from(written), 0)
             }
         }
     }

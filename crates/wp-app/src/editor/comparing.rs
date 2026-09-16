@@ -20,7 +20,12 @@
 //! documents beside the result are laid out once and drawn, and nothing can
 //! be typed into them.
 
+use wp_docx::compare::Options;
 use wp_docx::Document;
+
+use crate::chrome::dialog::{Dialog, Field};
+
+use super::dialogs::Asking;
 use wp_layout::{LayoutEngine, Page};
 use wp_shell::Response;
 
@@ -76,6 +81,68 @@ pub(super) struct Comparing {
     pub revised: String,
     pub original_pages: Vec<Page>,
     pub revised_pages: Vec<Page>,
+}
+
+/// Where each answer sits in the Compare dialog.
+///
+/// Named rather than counted twice, for the reason every other dialog in this
+/// program names its rows.
+pub(super) const MOVES: usize = 3;
+pub(super) const FORMATTING: usize = 4;
+pub(super) const CASE: usize = 5;
+pub(super) const WHITE_SPACE: usize = 6;
+pub(super) const INTO: usize = 8;
+
+/// What the dialog said to take notice of.
+#[must_use]
+pub(super) fn options_from(dialog: &crate::chrome::dialog::Dialog) -> Options {
+    Options {
+        moves: dialog.ticked(MOVES),
+        formatting: dialog.ticked(FORMATTING),
+        case: dialog.ticked(CASE),
+        white_space: dialog.ticked(WHITE_SPACE),
+    }
+}
+
+impl Editor {
+    /// Word's Compare dialog: what the two documents are, what counts as a
+    /// difference, and where the answer goes.
+    pub(super) fn open_compare_dialog(&mut self) -> Response {
+        let (original, revised) = match &self.to_compare {
+            Some((path, _)) => (self.document_name(), name_of(path)),
+            None => return Response::Ignored,
+        };
+        let defaults = Options::default();
+
+        let dialog = Dialog::new(
+            "Compare Documents",
+            vec![
+                Field::Said { label: "Original".to_owned(), value: original },
+                Field::Said { label: "Revised".to_owned(), value: revised },
+                Field::Heading("Show changes".to_owned()),
+                Field::Check { label: "Moves".to_owned(), on: defaults.moves },
+                Field::Check { label: "Formatting".to_owned(), on: defaults.formatting },
+                Field::Check { label: "Case changes".to_owned(), on: defaults.case },
+                Field::Check { label: "White space".to_owned(), on: defaults.white_space },
+                Field::Heading("Show changes in".to_owned()),
+                Field::Choice {
+                    label: "Where the comparison goes".to_owned(),
+                    items: vec![
+                        crate::messages::t("A new document").to_owned(),
+                        crate::messages::t("This document").to_owned(),
+                    ],
+                    current: 0,
+                },
+            ],
+        )
+        .wide(460.0);
+        self.ask(Asking::Compare, dialog)
+    }
+
+    /// Gives up on a comparison that was asked about and not answered.
+    pub(super) fn cancel_comparison(&mut self) {
+        self.to_compare = None;
+    }
 }
 
 impl Editor {
@@ -290,6 +357,7 @@ fn name_of(path: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chrome::dialog::Answer;
     use wp_docx::model::{Block, Body, Paragraph};
     use wp_layout::FontLibrary;
     use wp_shell::{App, Event};
@@ -308,6 +376,16 @@ mod tests {
         let mut editor = Editor::new(library(), document, None);
         editor.handle(Event::Resized { width: 1400, height: 900 });
         editor
+    }
+
+    /// The same three paragraphs with the case of one of them changed, which
+    /// is a difference only if case is being compared.
+    fn cased() -> Vec<u8> {
+        let mut body = Body::default();
+        for line in ["one", "TWO", "three"] {
+            body.blocks.push(Block::Paragraph(Paragraph::text(line)));
+        }
+        Document::create(&body).expect("a document").save().expect("saving")
     }
 
     fn revised() -> Document {
@@ -383,5 +461,90 @@ mod tests {
 
         editor.choose_comparing(choices().len() - 1);
         assert!(editor.comparing.is_none(), "the last line did not close it");
+    }
+    /// Puts a document in the way a file dialog would have, and opens the
+    /// question Word asks before it compares.
+    fn about_to_compare(editor: &mut Editor, revised: Document) {
+        editor.to_compare = Some((std::path::PathBuf::from("Revised.docx"), Box::new(revised)));
+        editor.open_compare_dialog();
+    }
+
+    #[test]
+    fn the_dialog_names_both_documents_and_offers_what_word_offers() {
+        let mut editor = editor();
+        about_to_compare(&mut editor, revised());
+        let dialog = editor.dialog.as_ref().expect("the dialog");
+
+        assert_eq!(dialog.title, "Compare Documents");
+        // A row the dialog says rather than asks, so it is read as one.
+        let Some(Field::Said { value, .. }) = dialog.fields.get(1) else {
+            panic!("the revised document is not named: {:?}", dialog.fields.get(1))
+        };
+        assert!(value.contains("Revised"), "{value}");
+        for row in [MOVES, FORMATTING, CASE, WHITE_SPACE] {
+            assert!(dialog.ticked(row), "row {row} is not ticked to begin with");
+        }
+        assert_eq!(dialog.chose(INTO), 0, "the answer does not go into a new document");
+    }
+
+    #[test]
+    fn what_the_ticks_say_is_what_is_compared() {
+        // The same two documents, compared twice: once taking notice of the
+        // case and once not.
+        let mut told = editor();
+        told.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        about_to_compare(&mut told, Document::open(&cased()).expect("a document"));
+        told.finish_dialog(Answer::Accept);
+        assert!(
+            told.document.changes().iter().any(|change| {
+                change.kind == wp_docx::revisions::ChangeKind::Insertion
+                    || change.kind == wp_docx::revisions::ChangeKind::Deletion
+            }),
+            "a change of case was not marked"
+        );
+
+        let mut ignored = editor();
+        about_to_compare(&mut ignored, Document::open(&cased()).expect("a document"));
+        if let Some(Field::Check { on, .. }) =
+            ignored.dialog.as_mut().expect("the dialog").fields.get_mut(CASE)
+        {
+            *on = false;
+        }
+        ignored.finish_dialog(Answer::Accept);
+        assert!(
+            ignored.document.changes().is_empty(),
+            "a change of case was marked when case was not being compared: {:?}",
+            ignored.document.changes()
+        );
+    }
+
+    #[test]
+    fn a_comparison_into_a_new_document_leaves_the_file_it_came_from_alone() {
+        let mut fresh = editor();
+        fresh.file = Some(std::path::PathBuf::from("Original.docx"));
+        about_to_compare(&mut fresh, revised());
+        fresh.finish_dialog(Answer::Accept);
+        assert!(fresh.file.is_none(), "the result kept the name of the document it came from");
+
+        // And into this document, where it keeps it.
+        let mut kept = editor();
+        kept.file = Some(std::path::PathBuf::from("Original.docx"));
+        about_to_compare(&mut kept, revised());
+        if let Some(Field::Choice { current, .. }) =
+            kept.dialog.as_mut().expect("the dialog").fields.get_mut(INTO)
+        {
+            *current = 1;
+        }
+        kept.finish_dialog(Answer::Accept);
+        assert_eq!(kept.file.as_deref(), Some(std::path::Path::new("Original.docx")));
+    }
+
+    #[test]
+    fn saying_no_to_the_dialog_compares_nothing() {
+        let mut editor = editor();
+        about_to_compare(&mut editor, revised());
+        editor.finish_dialog(Answer::Cancel);
+        assert!(editor.to_compare.is_none(), "the document it was going to compare is still there");
+        assert!(editor.document.changes().is_empty());
     }
 }

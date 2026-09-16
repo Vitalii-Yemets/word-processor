@@ -6,6 +6,7 @@ use wp_docx::revisions::{Decision, Reviser};
 use wp_docx::TextPosition;
 use wp_shell::Response;
 
+use crate::chrome::dialog::Dialog;
 use crate::chrome::findbar::FindBar;
 use crate::chrome::{Choice, Command, Popup};
 
@@ -413,10 +414,29 @@ impl Editor {
             Err(error) => return self.report(&format!("It could not be opened: {error}")),
         };
 
+        // Word asks what to compare before it compares; so does this, and the
+        // document that was picked waits until it has been answered.
+        self.to_compare = Some((path, Box::new(revised)));
+        self.open_compare_dialog()
+    }
+
+    /// Carries the comparison out, with what the dialog said.
+    pub(super) fn apply_comparison(&mut self, dialog: &Dialog) -> Response {
+        let Some((path, revised)) = self.to_compare.take() else { return Response::Ignored };
+        let options = super::comparing::options_from(dialog);
+        let into_a_new_one = dialog.chose(super::comparing::INTO) == 0;
+
         // Named after what it is rather than after a person: nobody wrote these
         // changes, they were worked out.
         let before = self.document.clone();
-        let marked = self.document.compare_with(&revised, "Compare");
+        if into_a_new_one {
+            // Word's default: the result is a document of its own, and
+            // neither of the two it came from is touched. One window, so what
+            // that means here is that the result loses the file it came from
+            // and has to be saved somewhere before it can overwrite anything.
+            self.file = None;
+        }
+        let marked = self.document.compare_with_options(&revised, "Compare", options);
         // The two it came from, beside the result, which is what makes a
         // document full of tracked changes readable.
         self.show_comparison(&before, &revised, &path, None);
