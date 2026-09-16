@@ -54,6 +54,7 @@ mod notes;
 mod numbering;
 mod optionsdialog;
 mod outline;
+mod ownblocks;
 mod pagebordersdialog;
 mod pagesetup;
 mod paragraphdialog;

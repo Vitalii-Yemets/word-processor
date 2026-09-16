@@ -476,7 +476,7 @@ pub(super) fn personal_templates() -> Vec<PathBuf> {
 
 /// Where Word keeps a person's own templates: `Custom Office Templates` under
 /// their documents.
-fn personal_templates_folder() -> Option<PathBuf> {
+pub(super) fn personal_templates_folder() -> Option<PathBuf> {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .ok()

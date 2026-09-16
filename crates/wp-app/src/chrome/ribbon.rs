@@ -251,6 +251,7 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::ChangeCase, choice: Choice::LetterCase, split: false },
     Menu { command: Command::PageNumber, choice: Choice::PageNumberPlace, split: false },
     Menu { command: Command::SelectAll, choice: Choice::Selecting, split: false },
+    Menu { command: Command::QuickParts, choice: Choice::QuickPart, split: false },
     Menu { command: Command::Compare, choice: Choice::Comparing, split: false },
     Menu { command: Command::FinishMerge, choice: Choice::Finishing, split: false },
     Menu { command: Command::AlignmentTab, choice: Choice::AlignmentTab, split: false },

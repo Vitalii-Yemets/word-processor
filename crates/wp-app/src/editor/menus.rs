@@ -324,6 +324,24 @@ impl Editor {
                 let rows = items.iter().map(|_| Row::new(Kind::Choice, icon)).collect();
                 (items, rows, None, WIDTH)
             }
+            Choice::QuickPart => {
+                let items = self.quick_part_menu();
+                let saved = self.own_blocks().len();
+                let rows = items
+                    .iter()
+                    .enumerate()
+                    .map(|(at, _)| {
+                        let icon = match at {
+                            _ if at < saved => Icon::QuickParts,
+                            at if at == saved => Icon::Save,
+                            at if at == saved + 1 => Icon::Settings,
+                            _ => Icon::Properties,
+                        };
+                        Row::new(Kind::Choice, icon)
+                    })
+                    .collect();
+                (items, rows, None, 300.0)
+            }
             Choice::Finishing => {
                 let items = super::mailings::endings();
                 let rows = vec![

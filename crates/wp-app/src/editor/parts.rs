@@ -47,24 +47,45 @@ const ART_SIZE: f64 = 40.0;
 impl Editor {
     // --- Quick parts ----------------------------------------------------------
 
-    /// Drops open the fields that can be dropped into the text.
+    /// Drops open what Word's Quick Parts button drops open: the pieces a
+    /// person has saved, the two commands that manage them, and the document
+    /// properties that can be put in as fields.
     pub(super) fn open_quick_parts(&mut self) -> Response {
-        if self.close_popup_if(Choice::QuickPart) {
-            return Response::Redraw;
-        }
-        let Some((left, top, _)) = self.ribbon.command_rect(Command::QuickParts) else {
-            return Response::Ignored;
-        };
-        let items = PARTS.iter().map(|(label, _)| (*label).to_owned()).collect();
-        self.popup = Some(Popup::new(Choice::QuickPart, items, None, left, top, 240.0));
-        self.needs_redraw = true;
-        Response::Redraw
+        self.open_ribbon_menu(Choice::QuickPart)
     }
 
-    /// Puts the field that was chosen at the caret.
+    /// What is on that menu, in Word's order.
+    ///
+    /// The saved pieces first, because that is what a person opens the menu
+    /// for once they have saved any.
+    pub(super) fn quick_part_menu(&self) -> Vec<String> {
+        use crate::messages::t;
+        let mut items: Vec<String> =
+            self.own_blocks().into_iter().map(|block| block.name).collect();
+        items.push(t("Save Selection to Quick Part Gallery").to_owned());
+        items.push(t("Building Blocks Organizer").to_owned());
+        items.extend(PARTS.iter().map(|(label, _)| (*label).to_owned()));
+        items
+    }
+
+    /// Does whichever line was pressed.
     pub(super) fn choose_quick_part(&mut self, index: usize) -> Response {
         self.popup = None;
-        let Some((label, instruction)) = PARTS.get(index).copied() else {
+        let saved = self.own_blocks();
+
+        // The saved pieces, then the two commands, then the fields.
+        if let Some(block) = saved.get(index) {
+            let name = block.name.clone();
+            return self.insert_own_block(&name);
+        }
+        let past = index - saved.len();
+        if past == 0 {
+            return self.save_selection_as_block();
+        }
+        if past == 1 {
+            return self.open_organizer();
+        }
+        let Some((label, instruction)) = PARTS.get(past - 2).copied() else {
             return Response::Ignored;
         };
 

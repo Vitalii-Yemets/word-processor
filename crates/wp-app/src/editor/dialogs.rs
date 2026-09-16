@@ -84,6 +84,10 @@ pub(super) enum Asking {
     Unprotect,
     /// Who a mail merge is for.
     Recipients,
+    /// A name for the piece of the document being saved.
+    NewBlock,
+    /// Everything saved, and what to do with one of them.
+    Organizer,
     /// The password of a file that cannot be read without one.
     Unseal,
     /// A password to make the document unreadable without, which is Word's
@@ -177,6 +181,10 @@ impl Editor {
             Some(Asking::Protect) => self.apply_protection(&dialog),
             Some(Asking::Unprotect) => self.apply_unprotection(&dialog),
             Some(Asking::Recipients) => self.apply_recipient_list(&dialog),
+            Some(Asking::NewBlock) => self.apply_new_block(&dialog),
+            Some(Asking::Organizer) => {
+                self.apply_organizer(&dialog, answer == Answer::Named(super::ownblocks::DELETE))
+            }
             Some(Asking::Unseal) => self.apply_unseal(&dialog),
             Some(Asking::Encrypt) => self.apply_encryption(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),

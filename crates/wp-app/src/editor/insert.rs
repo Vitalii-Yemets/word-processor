@@ -1893,6 +1893,10 @@ impl Editor {
             "fontdialog" => {
                 self.open_font_dialog();
             }
+            // What the Quick Parts button drops open onto.
+            "quickparts" => {
+                self.run(crate::chrome::Command::QuickParts);
+            }
             // The ways a mail merge can end, with a list of people behind
             // them so that the button is willing to drop open at all.
             "finishmenu" => {

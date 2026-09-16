@@ -1,0 +1,308 @@
+//! Building blocks: pieces of a document saved by name and put back later.
+//!
+//! # What a building block is
+//!
+//! A piece of a document — a paragraph, a table, a whole cover page — kept
+//! under a name so that it can be dropped into another document without
+//! being typed again. Word's Quick Parts, its AutoText, its cover pages and
+//! its headers and footers galleries are all the same thing: a list of these
+//! with a different gallery name on each.
+//!
+//! # Where they live
+//!
+//! Not in the document that uses them. A block is kept in a *template*, and
+//! the template a person's own blocks live in is `Normal.dotm` — the one Word
+//! makes when it first runs and writes everything personal into. So a block
+//! saved in one document is there in the next, which is the whole point of
+//! saving one.
+//!
+//! # How the format writes them
+//!
+//! In a second document inside the package: a part related as the glossary
+//! document, holding `w:docPart` entries. Each has a name, a gallery and a
+//! category — which together are how Word decides which menu it appears on —
+//! and a body, which is ordinary document content.
+//!
+//! ```text
+//! word/glossary/document.xml
+//!   <w:glossaryDocument><w:docParts>
+//!     <w:docPart>
+//!       <w:docPartPr><w:name w:val="Signature"/>
+//!         <w:category><w:name w:val="General"/><w:gallery w:val="quickParts"/></w:category>
+//!       </w:docPartPr>
+//!       <w:docPartBody><w:p><w:r><w:t>Yours faithfully,</w:t></w:r></w:p></w:docPartBody>
+//!     </w:docPart>
+//!   </w:docParts></w:glossaryDocument>
+//! ```
+//!
+//! # What is deliberately not here
+//!
+//! The galleries Word fills for itself — its cover pages, its page numbers,
+//! its watermarks, its tables of contents. Those are Word's own content,
+//! shipped inside Word, and a program that offered a gallery called "Cover
+//! Pages" with something else in it would be lying about what a person was
+//! picking. The galleries here are the ones a person fills themselves.
+
+use wp_xml::tree::{Element, XmlTree};
+
+use crate::model::Body;
+use crate::{edit, read, Document, Error};
+
+/// Where the glossary document lives inside the package.
+const PART: &str = "word/glossary/document.xml";
+
+/// What the package calls a relationship to it.
+const RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/glossaryDocument";
+
+/// And what kind of part it is.
+const CONTENT_TYPE: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document.glossary+xml";
+
+/// The gallery a block a person saves goes into, unless they say otherwise.
+pub const QUICK_PARTS: &str = "quickParts";
+
+/// The other gallery a person fills themselves, which Word puts on a menu of
+/// its own.
+pub const AUTO_TEXT: &str = "autoText";
+
+/// And the category a block goes in inside its gallery.
+pub const GENERAL: &str = "General";
+
+/// One saved piece of a document.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BuildingBlock {
+    /// What it is called, which is what a person picks off a menu.
+    pub name: String,
+    /// Which menu that is: [`QUICK_PARTS`], [`AUTO_TEXT`] or one of Word's
+    /// own.
+    pub gallery: String,
+    /// The heading it sits under inside that menu.
+    pub category: String,
+    /// What it is for, shown in the organiser.
+    pub description: String,
+}
+
+impl BuildingBlock {
+    /// A block in the gallery a person's own pieces go to.
+    #[must_use]
+    pub fn named(name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            gallery: QUICK_PARTS.to_owned(),
+            category: GENERAL.to_owned(),
+            description: String::new(),
+        }
+    }
+
+    /// The same in another gallery.
+    #[must_use]
+    pub fn in_gallery(mut self, gallery: &str) -> Self {
+        self.gallery = gallery.to_owned();
+        self
+    }
+}
+
+impl Document {
+    /// Every block the document carries, in the order they were saved.
+    #[must_use]
+    pub fn building_blocks(&self) -> Vec<BuildingBlock> {
+        let Some(root) = self.glossary_root() else { return Vec::new() };
+        let Some(parts) = root.child(Some(read::W), "docParts") else { return Vec::new() };
+        parts
+            .child_elements()
+            .filter(|child| child.is(Some(read::W), "docPart"))
+            .map(read_block)
+            .collect()
+    }
+
+    /// The blocks of one gallery.
+    #[must_use]
+    pub fn blocks_in(&self, gallery: &str) -> Vec<BuildingBlock> {
+        self.building_blocks().into_iter().filter(|block| block.gallery == gallery).collect()
+    }
+
+    /// What one of them holds.
+    #[must_use]
+    pub fn building_block_body(&self, name: &str) -> Option<Body> {
+        let root = self.glossary_root()?;
+        let parts = root.child(Some(read::W), "docParts")?;
+        let found = parts
+            .child_elements()
+            .filter(|child| child.is(Some(read::W), "docPart"))
+            .find(|child| read_block(child).name == name)?;
+        let body = found.child(Some(read::W), "docPartBody")?;
+        Some(read::read_part(body))
+    }
+
+    /// Saves a piece of a document under a name.
+    ///
+    /// A block of the same name is written over, which is what Word asks
+    /// about and then does: two blocks with one name is a menu where one of
+    /// them can never be picked.
+    pub fn add_building_block(&mut self, block: &BuildingBlock, body: &Body) -> bool {
+        if block.name.trim().is_empty() {
+            return false;
+        }
+        let prefix = self.prefix();
+        let mut root = self.glossary_root().unwrap_or_else(|| new_glossary(prefix.as_deref()));
+        let name = |local: &str| edit::name_with(prefix.as_deref(), local);
+
+        // The list of them, made if this is the first.
+        if root.child(Some(read::W), "docParts").is_none() {
+            root.push_element(Element::new(&name("docParts"), Some(read::W)));
+        }
+        let Some(parts) = root.child_mut(Some(read::W), "docParts") else { return false };
+        parts.children.retain(|node| {
+            node.as_element().is_none_or(|child| {
+                !child.is(Some(read::W), "docPart") || read_block(child).name != block.name
+            })
+        });
+        parts.push_element(write_block(block, body, prefix.as_deref()));
+
+        self.save_glossary_root(root)
+    }
+
+    /// Takes one away. Says whether there was one.
+    pub fn remove_building_block(&mut self, name: &str) -> bool {
+        let Some(mut root) = self.glossary_root() else { return false };
+        let Some(parts) = root.child_mut(Some(read::W), "docParts") else { return false };
+        let before = parts.children.len();
+        parts.children.retain(|node| {
+            node.as_element().is_none_or(|child| {
+                !child.is(Some(read::W), "docPart") || read_block(child).name != name
+            })
+        });
+        if parts.children.len() == before {
+            return false;
+        }
+        self.save_glossary_root(root)
+    }
+
+    /// Puts a block's content into the document at the caret.
+    ///
+    /// Returns whether there was a block of that name to put in.
+    pub fn insert_building_block(&mut self, from: &Document, name: &str) -> bool {
+        let Some(body) = from.building_block_body(name) else { return false };
+        if body.blocks.is_empty() {
+            return false;
+        }
+        self.paste_blocks(&body.blocks)
+    }
+
+    /// The glossary document, read afresh.
+    fn glossary_root(&self) -> Option<Element> {
+        let text = self.package().xml_part(PART)?.ok()?;
+        XmlTree::parse(&text).ok().map(|tree| tree.root)
+    }
+
+    /// Writes it back, making the part and its relationship if this is the
+    /// first block.
+    fn save_glossary_root(&mut self, root: Element) -> bool {
+        let tree = XmlTree {
+            standalone: Some(true),
+            has_declaration: true,
+            doctype: None,
+            before_root: Vec::new(),
+            root,
+            after_root: Vec::new(),
+        };
+        let Ok(xml) = tree.to_xml() else { return false };
+
+        let fresh = self.package().part(PART).is_none();
+        self.package_mut().set_part(PART, xml.into_bytes());
+        if fresh {
+            let mut types = self.package().content_types().clone();
+            types.set_override(&format!("/{PART}"), CONTENT_TYPE);
+            self.package_mut().set_content_types(types);
+
+            let main = self.main_part().to_owned();
+            if let Ok(mut relationships) = self.package().relationships(&main) {
+                relationships.add(
+                    RELATIONSHIP,
+                    "glossary/document.xml",
+                    wp_opc::TargetMode::Internal,
+                );
+                let _ = self.package_mut().set_relationships(&relationships);
+            }
+        }
+        self.mark_modified();
+        true
+    }
+}
+
+/// An empty glossary document.
+fn new_glossary(prefix: Option<&str>) -> Element {
+    let mut root = Element::new(&edit::name_with(prefix, "glossaryDocument"), Some(read::W));
+    root.declarations.push((prefix.map(str::to_owned), read::W.to_owned()));
+    root
+}
+
+/// Reads what a `w:docPart` says about itself.
+fn read_block(element: &Element) -> BuildingBlock {
+    let properties = element.child(Some(read::W), "docPartPr");
+    let said = |parent: Option<&Element>, local: &str| {
+        parent
+            .and_then(|parent| parent.child(Some(read::W), local))
+            .and_then(|child| child.attribute(Some(read::W), "val"))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let category = properties.and_then(|properties| properties.child(Some(read::W), "category"));
+    BuildingBlock {
+        name: said(properties, "name"),
+        gallery: said(category, "gallery"),
+        category: said(category, "name"),
+        description: said(properties, "description"),
+    }
+}
+
+/// Writes one.
+fn write_block(block: &BuildingBlock, body: &Body, prefix: Option<&str>) -> Element {
+    let name = |local: &str| edit::name_with(prefix, local);
+    let valued = |local: &str, value: &str| {
+        let mut element = Element::new(&name(local), Some(read::W));
+        element.set_namespaced_attribute(&name("val"), read::W, value);
+        element
+    };
+
+    let mut category = Element::new(&name("category"), Some(read::W));
+    category.push_element(valued("name", &block.category));
+    category.push_element(valued("gallery", &block.gallery));
+
+    let mut properties = Element::new(&name("docPartPr"), Some(read::W));
+    properties.push_element(valued("name", &block.name));
+    properties.push_element(category);
+    // What sort of thing it is: a piece of content that goes where the caret
+    // is, which is what every block a person saves is.
+    let mut types = Element::new(&name("types"), Some(read::W));
+    types.push_element(valued("type", "bbPlcHdr"));
+    properties.push_element(types);
+    let mut behaviors = Element::new(&name("behaviors"), Some(read::W));
+    behaviors.push_element(valued("behavior", "content"));
+    properties.push_element(behaviors);
+    if !block.description.is_empty() {
+        properties.push_element(valued("description", &block.description));
+    }
+
+    let mut content = Element::new(&name("docPartBody"), Some(read::W));
+    for block in &body.blocks {
+        content.push_element(edit::block_element(block, prefix));
+    }
+
+    let mut part = Element::new(&name("docPart"), Some(read::W));
+    part.push_element(properties);
+    part.push_element(content);
+    part
+}
+
+/// Makes a template with nothing in it but a place for blocks to live.
+///
+/// What `Normal.dotm` is before anything has been saved into it: a document
+/// with one empty paragraph, which is what a new document made from it comes
+/// out as.
+pub fn empty_template() -> Result<Document, Error> {
+    let mut body = Body::default();
+    body.blocks.push(crate::model::Block::Paragraph(crate::model::Paragraph::default()));
+    Document::create(&body)
+}

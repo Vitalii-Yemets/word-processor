@@ -284,6 +284,12 @@ language = Deutsch
 = Centimeters
 > Zentimeter
 
+= Building Blocks Organizer
+> Organizer für Bausteine
+
+= Building blocks
+> Bausteine
+
 = Change how the text is corrected as you type
 > Ändern, wie Text während der Eingabe korrigiert wird
 
@@ -302,8 +308,14 @@ language = Deutsch
 = Character code
 > Zeichencode
 
+= Choose one to put it in, or to take it away.
+> Wählen Sie einen aus, um ihn einzufügen oder zu entfernen.
+
 = Chart
 > Diagramm
+
+= Create New Building Block
+> Neuen Baustein erstellen
 
 = Check
 > Prüfen
@@ -1280,6 +1292,9 @@ language = Deutsch
 = Section: {0}
 > Abschnitt: {0}
 
+= Save Selection to Quick Part Gallery
+> Auswahl im Schnellbausteine-Katalog speichern
+
 = Send E-mail Messages
 > E-Mail-Nachrichten senden
 
@@ -1483,6 +1498,9 @@ language = Deutsch
 
 = Text from File
 > Text aus Datei
+
+= The selection is saved under this name.
+> Die Auswahl wird unter diesem Namen gespeichert.
 
 = The document is not encrypted.
 > Das Dokument ist nicht verschlüsselt.

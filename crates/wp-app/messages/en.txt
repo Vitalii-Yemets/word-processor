@@ -80,6 +80,8 @@
 = Breaks
 = Bring Forward
 = Browse
+= Building Blocks Organizer
+= Building blocks
 = Cancel
 = Cannot add the comment: {0}
 = Cannot add the note: {0}
@@ -109,6 +111,7 @@
 = Check
 = Check for Errors
 = Choose commands from
+= Choose one to put it in, or to take it away.
 = Citation
 = Citations & Bibliography
 = Clear
@@ -136,6 +139,7 @@
 = Correct accidental use of cAPS LOCK key
 = Cover Page
 = Create
+= Create New Building Block
 = Create a PDF
 = Cross-reference
 = Custom Margins…
@@ -419,6 +423,7 @@
 = Save
 = Save As
 = Save AutoRecover information
+= Save Selection to Quick Part Gallery
 = Save as
 = Save as PDF
 = Save documents
@@ -506,6 +511,7 @@
 = The files below were recovered.
 = The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
 = The letter goes to everybody ticked.
+= The selection is saved under this name.
 = Themes
 = Thesaurus
 = This document, before

@@ -4606,8 +4606,48 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   and every one of them can write the delimited file this does read. Word's
   Type a New List, which makes a list of recipients without a file to start
   from, is not written.
-- [ ] **J6. Building blocks, Quick Parts and templates.** Including the
+- [x] **J6. Building blocks, Quick Parts and templates.** Including the
   `Normal.dotm` a person's own defaults live in.
+  *Done:* a piece of a document saved under a name and put back in the next
+  one, which is what a building block is and what makes it worth having. The
+  format is the glossary document — a second document inside the package,
+  holding `w:docPart` entries with a name, a gallery and a category — and it
+  is read and written in `wp-docx/src/blocks.rs`.
+  Where they live matters as much as how they are written, and it is the half
+  that was missing: a block kept in the document it was saved from would be
+  no use whatever. So they go into a template, and the template a person's own
+  things live in is the one Word calls `Normal.dotm`, in the folder Word keeps
+  personal templates in. A new blank document is made from it where there is
+  one, which is what "a person's own defaults" means and what Word does.
+  In the program, Word's Quick Parts menu: the pieces a person has saved
+  first, then Save Selection to Quick Part Gallery and the Building Blocks
+  Organizer, then the document properties that can be put in as fields, which
+  is all that menu used to hold. Saving asks what to call it; the organiser
+  lists what is there and puts one in or takes one away.
+  *Proven by:* a block saved, the template written and opened again, and the
+  block still there with its words, its gallery and its category; one put
+  into another document where the caret is; one saved twice under a name
+  ending as one block with the later content, because two blocks of one name
+  is a menu where one can never be picked; one with no name refused; one
+  taken away and not taken away twice; two galleries kept apart; a block
+  holding a table coming back as a table; and the part written where the
+  format says with the content type and the relationship it must have. The
+  menu photographed under its button.
+  Along the way the catalogue of what this program can say learnt that a file
+  name is not a message: `Normal.dotm` is what the file on disk is called,
+  and a translated one would point at nothing.
+  *Not done, and named here:* **Set as Default does not write into the
+  template.** The Font dialog's and the Design tab's buttons set a default for
+  the document and for the next new one; Word writes them into `Normal.dotm`,
+  so that they are a person's defaults in every program window and after a
+  restart. That is **J14**. Word's AutoText gallery, which is the same
+  machinery under a second name, is read and written by `wp-docx` and has no
+  menu of its own. The galleries Word fills for itself — its cover pages, its
+  page numbers, its watermarks — are deliberately not offered: they are
+  Word's own content, shipped inside Word, and a gallery called "Cover Pages"
+  with something else in it would be lying about what a person was picking.
+  Nor is the rest of Word's organiser: the columns it sorts by, and editing
+  a block's name, gallery, category or description after it is saved.
 - [ ] **J7. Macros.** A VBA interpreter is a language implementation; it is
   listed here so that the decision not to write one is a decision and not an
   oversight.
@@ -4654,6 +4694,13 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   boxes and fields. With it: that dialog itself, which is where a person
   chooses which of those to look at and whether the result goes into a new
   document or into one of the two.
+- [ ] **J14. A person's defaults, kept where a person's defaults go.** Set as
+  Default — on the Font dialog, on the Paragraph dialog, on the Design tab's
+  themes — writes into the document and into a setting this program keeps.
+  Word writes it into `Normal.dotm`, which **J6** now makes and reads, so
+  that a default is a default in every window and after a restart. With it:
+  Word's Organizer, which copies styles from one document or template to
+  another, and the Manage Styles dialog's Set Defaults page.
 
 ## K — Proving it against Word rather than against ourselves
 

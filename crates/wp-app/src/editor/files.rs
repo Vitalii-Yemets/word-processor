@@ -563,6 +563,13 @@ impl Editor {
         if !self.may_discard() {
             return Response::Ignored;
         }
+        // A person's own defaults live in a template called Normal, which is
+        // Word's name for it and Word's behaviour: a new blank document is
+        // made from that template where there is one. See
+        // [`super::ownblocks`].
+        if let Some(path) = self.own_template_path().filter(|path| path.is_file()) {
+            return self.new_from_template(&path);
+        }
         // One empty paragraph, so there is somewhere for the caret to be.
         let mut body = Body::default();
         body.blocks.push(Block::Paragraph(Paragraph::default()));

@@ -217,11 +217,30 @@ fn is_a_name(text: &str) -> bool {
     if text == "WordProcessor" {
         return true;
     }
+    // A file name is a file name in every language: `Normal.dotm` is what
+    // the file on disk is called, and a translated one would point at
+    // nothing.
+    if is_a_file_name(text) {
+        return true;
+    }
     text.starts_with("http")
         || text.contains('/')
         || text.contains('_')
         || (text.contains('-') && text == text.to_lowercase())
         || text.chars().all(|character| character.is_lowercase() || character == '.')
+}
+
+/// Whether a word is a file's name: something, a dot, and a short ending
+/// that is all letters.
+///
+/// `Normal.dotm` and `settings.xml` are names; `Yours faithfully.` is a
+/// sentence with a full stop, which is why the ending has to be short and
+/// have no space before it.
+fn is_a_file_name(text: &str) -> bool {
+    let Some((stem, ending)) = text.rsplit_once('.') else { return false };
+    !stem.is_empty()
+        && (1..=5).contains(&ending.chars().count())
+        && ending.chars().all(|character| character.is_ascii_alphanumeric())
 }
 
 /// The string literal beginning at the quotation mark, with its escapes
