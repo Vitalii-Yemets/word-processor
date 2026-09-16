@@ -1,0 +1,25 @@
+[package]
+name = "wp-crypt"
+description = "The encryption Office puts round a package: opening one and writing one"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-cipher = { path = "../wp-cipher" }
+wp-hash = { path = "../wp-hash" }
+wp-ole = { path = "../wp-ole" }
+wp-text = { path = "../wp-text" }
+wp-xml = { path = "../wp-xml" }
+
+[dev-dependencies]
+# The tests lay out a 2007 document by hand, so that what reads one is held
+# to arithmetic done outside it.
+wp-ole = { path = "../wp-ole" }
+wp-cipher = { path = "../wp-cipher" }
+wp-hash = { path = "../wp-hash" }
+wp-text = { path = "../wp-text" }
+
+[lints]
+workspace = true

@@ -105,26 +105,39 @@ impl Editor {
             (String::from("Last saved by"), properties.last_modified_by.clone()),
         ];
 
+        // Above the properties, because Word puts Protect Document at the top
+        // of its Info page and because a document that is encrypted is the
+        // first thing a person wants to be told about it.
+        let mut rows = vec![match self.document.password() {
+            Some(_) => Row::new(
+                "Encrypt with Password",
+                "This document is encrypted. Change the password, or take it off",
+            ),
+            None => {
+                Row::new("Encrypt with Password", "Make the document unreadable without a password")
+            }
+        }];
+
         // The properties are lines to press, because in Word's Info they are
         // boxes to type in: the panel down the right of that page is the one
         // place a title or an author is set.
-        let rows = Field::ALL
-            .iter()
-            .map(|field| {
-                let value = field.read(&properties);
-                let note = if value.trim().is_empty() {
-                    format!("Add {}", field.label().to_lowercase())
-                } else {
-                    value
-                };
-                Row::new(field.label(), note)
-            })
-            .collect();
+        rows.extend(Field::ALL.iter().map(|field| {
+            let value = field.read(&properties);
+            let note = if value.trim().is_empty() {
+                format!("Add {}", field.label().to_lowercase())
+            } else {
+                value
+            };
+            Row::new(field.label(), note)
+        }));
 
         Contents {
             heading: name,
             facts,
             rows_heading: String::from("Properties"),
+            // The password is above the heading, because it is not one of
+            // the document's properties.
+            rows_heading_at: 1,
             rows,
             ..Contents::default()
         }
@@ -362,7 +375,12 @@ impl Editor {
             // of typing, which is where a title or an author is set.
             Place::Info => {
                 self.close_backstage();
-                self.choose_property(index)
+                // The first line is the password; the rest are the
+                // properties, in the order the page listed them.
+                match index.checked_sub(1) {
+                    None => self.open_encryption(),
+                    Some(property) => self.choose_property(property),
+                }
             }
             Place::New => {
                 self.close_backstage();
@@ -567,8 +585,20 @@ mod tests {
     fn info_offers_every_property_word_offers() {
         let editor = editor();
         let contents = editor.info_page();
-        assert_eq!(contents.rows.len(), Field::ALL.len());
-        assert_eq!(contents.rows[0].title, "Title");
+        // The password first, then every property, which is the order Word
+        // puts them in on that page.
+        assert_eq!(contents.rows.len(), Field::ALL.len() + 1);
+        assert_eq!(contents.rows[0].title, "Encrypt with Password");
+        assert_eq!(contents.rows[1].title, "Title");
+        assert_eq!(contents.rows_heading_at, 1, "the properties heading is under the password");
+    }
+
+    #[test]
+    fn the_password_line_says_whether_there_is_one() {
+        let mut editor = editor();
+        assert!(editor.info_page().rows[0].note.contains("unreadable without"));
+        editor.document.set_password(Some("Fenchurch"));
+        assert!(editor.info_page().rows[0].note.contains("is encrypted"));
     }
 
     #[test]

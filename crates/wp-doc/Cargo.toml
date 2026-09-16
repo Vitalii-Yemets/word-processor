@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+wp-ole = { path = "../wp-ole" }
 # Workspace-internal only. The document model to read into, the code pages
 # the old text is in, the pictures' formats, and the deflate a metafile in a
 # drawing is squeezed with.

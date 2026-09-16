@@ -403,7 +403,17 @@ impl Editor {
             self.document.set_kind(kind);
         }
 
-        let bytes = match self.document.save() {
+        // Encrypted if the document has a password, which is what keeps a
+        // document somebody encrypted encrypted.
+        let Some(saved) = self.bytes_to_write() else {
+            let message = String::from(
+                "Cannot save: this machine would not give the random bytes an encrypted document needs",
+            );
+            wp_shell::dialog::show_error(&message);
+            self.status = message;
+            return false;
+        };
+        let bytes = match saved {
             Ok(bytes) => bytes,
             Err(error) => {
                 let message = crate::messages::with("Cannot save: {0}", &[&error.to_string()]);
@@ -656,7 +666,17 @@ impl Editor {
         }
         let rich = is_rtf_path(&path);
         let web = web_kind(&path);
-        let opened = std::fs::read(&path)
+        let read = std::fs::read(&path);
+        // An encrypted document is not a broken one. Read as a package it
+        // would fail as "not a zip", which tells a person nothing they can
+        // do anything about; what it needs is the question being asked.
+        if let Ok(bytes) = &read {
+            if wp_docx::sealing::is_sealed(bytes) {
+                let bytes = bytes.clone();
+                return self.ask_to_unseal(&path, bytes);
+            }
+        }
+        let opened = read
             .map_err(|error| format!("Cannot read {}: {error}", path.display()))
             .and_then(|bytes| {
                 if is_doc_path(&path) {

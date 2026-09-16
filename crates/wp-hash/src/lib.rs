@@ -284,6 +284,49 @@ pub fn to_hex(bytes: &[u8]) -> String {
     })
 }
 
+/// A message authenticated with a key: HMAC, as RFC 2104 lays it down.
+///
+/// # What it is for
+///
+/// An encrypted document carries one of these over its own encrypted bytes.
+/// Decrypting tells you what the bytes say; this tells you whether they are
+/// the bytes that were written, or whether somebody has changed a block in
+/// the middle of a file they could not read. A cipher on its own does not
+/// answer that question, and the format is right to ask it.
+///
+/// # Why it is not simply the hash of the key and the message
+///
+/// Because these hashes can be continued: given the hash of `key ++ message`
+/// and nothing else, somebody can work out the hash of `key ++ message ++
+/// more` without knowing the key at all. So the key goes in twice, round the
+/// outside and the inside, with a different padding each time, and the outer
+/// hash is over a fixed sixty-four or a hundred and twenty-eight bytes, which
+/// leaves nothing to continue.
+#[must_use]
+pub fn hmac_sha512(key: &[u8], message: &[u8]) -> [u8; 64] {
+    /// SHA-512 works on blocks of a hundred and twenty-eight bytes, and that
+    /// is the length the key is brought to.
+    const BLOCK: usize = 128;
+
+    // A key longer than a block is hashed down to fit; a shorter one is
+    // padded with zeroes. Both are what the standard says.
+    let mut padded = [0u8; BLOCK];
+    if key.len() > BLOCK {
+        padded[..64].copy_from_slice(&sha512(key));
+    } else {
+        padded[..key.len()].copy_from_slice(key);
+    }
+
+    let mut inner = Vec::with_capacity(BLOCK + message.len());
+    inner.extend(padded.iter().map(|byte| byte ^ 0x36));
+    inner.extend_from_slice(message);
+
+    let mut outer = Vec::with_capacity(BLOCK + 64);
+    outer.extend(padded.iter().map(|byte| byte ^ 0x5C));
+    outer.extend_from_slice(&sha512(&inner));
+    sha512(&outer)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,5 +384,50 @@ mod tests {
     fn a_hash_is_written_as_the_letters_a_file_carries() {
         assert_eq!(to_hex(&[0x00, 0x0f, 0xff]), "000fff");
         assert_eq!(to_hex(&[]), "");
+    }
+
+    /// RFC 4231's own examples, which are the test vectors for HMAC over the
+    /// SHA-2 family.
+    #[test]
+    fn the_authenticated_messages_of_the_standards_own_examples() {
+        assert_eq!(
+            to_hex(&hmac_sha512(&[0x0b; 20], b"Hi There")),
+            concat!(
+                "87aa7cdea5ef619d4ff0b4241a1d6cb0",
+                "2379f4e2ce4ec2787ad0b30545e17cde",
+                "daa833b7d6b8a702038b274eaea3f4e4",
+                "be9d914eeb61f1702e696c203a126854",
+            )
+        );
+        assert_eq!(
+            to_hex(&hmac_sha512(b"Jefe", b"what do ya want for nothing?")),
+            concat!(
+                "164b7a7bfcf819e2e395fbe73b56e0a3",
+                "87bd64222e831fd610270cd7ea250554",
+                "9758bf75c05a994a6d034f65f8f0e6fd",
+                "caeab1a34d4a6b4b636e070a38bce737",
+            )
+        );
+        // A key longer than the block, which is the case that is got wrong.
+        assert_eq!(
+            to_hex(&hmac_sha512(
+                &[0xaa; 131],
+                b"Test Using Larger Than Block-Size Key - Hash Key First"
+            )),
+            concat!(
+                "80b24263c7c1a3ebb71493c1dd7be8b4",
+                "9b46d1f41b4aeec1121b013783f8f352",
+                "6b56d037e05f2598bd0fd2215d6a1e52",
+                "95e64f73f63f0aec8b915a985d786598",
+            )
+        );
+    }
+
+    #[test]
+    fn a_message_that_was_changed_does_not_authenticate() {
+        let key = b"the key";
+        let sealed = hmac_sha512(key, b"pay Alice ten pounds");
+        assert_ne!(sealed, hmac_sha512(key, b"pay Alice ten pouNds"));
+        assert_ne!(sealed, hmac_sha512(b"another key", b"pay Alice ten pounds"));
     }
 }

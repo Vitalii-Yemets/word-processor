@@ -4385,8 +4385,72 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   marked `w:permStart w:ed="everyone"` that stay editable inside a
   protected document — are read as blocked stretches (**F**'s Block
   Authors) and are not yet let through the restriction: **J11**.
-- [ ] **J2. Encryption.** Opening and writing the encrypted `.docx` Word makes,
+- [x] **J2. Encryption.** Opening and writing the encrypted `.docx` Word makes,
   which is an OLE compound file with the package encrypted inside it.
+  *Done:* an encrypted document opens, and a document can be encrypted. Not
+  the same password as **J1**'s and worth keeping apart: that one stops a
+  person lifting a restriction while the text sits in the file for anybody to
+  unzip; this one means there is no text in the file at all, only a compound
+  file holding one enciphered stream, and no program can read it without the
+  word — this one included.
+  Four crates, each with one job. **wp-cipher** is AES, written from the
+  standard: the key schedule for all three key lengths, the block, and the two
+  ways of using it the Office formats ask for — chained, and, for the older
+  scheme, not chained at all. **wp-ole** is the compound file, which was a
+  corner of the crate that reads `.doc` files and is now a crate of its own,
+  because an encrypted document written yesterday is one of these too; it
+  reads as it did and now writes, including the part of that format a writer
+  is likeliest to leave out, the directory the FAT needs once it outgrows the
+  hundred and nine sectors the header can name. **wp-hash** gained HMAC.
+  **wp-crypt** is the scheme itself.
+  Both schemes are read. **Agile**, which Office has written since 2010: the
+  description is XML, the cipher is AES chained, the hash SHA-512, the
+  password hashed a hundred thousand times over, the package cut into pieces
+  of four thousand and ninety-six bytes each chained from a vector of its own,
+  and an authenticated hash over the whole of it so that a byte changed by
+  somebody who could not read the document is noticed rather than deciphered
+  into nonsense. **Standard**, which Office 2007 wrote: a fixed run of bytes,
+  SHA-1, fifty thousand turns, and the package enciphered block by block with
+  no chaining. Only the first is written, because writing the second would be
+  making a new document weaker on purpose.
+  In the program: a file that turns out to be encrypted stops and asks for its
+  password instead of failing as a broken zip, and asks again on a wrong one;
+  a document opened that way remembers, so that saving it leaves it encrypted;
+  and File ▸ Info carries Word's Encrypt with Password, where an empty box
+  takes the encryption off. The salts come from the machine, fresh on every
+  save, so two saves of the same document under the same password are not the
+  same bytes. A machine that will not give them refuses to save rather than
+  writing the document in the clear.
+  *Proven by:* AES against FIPS 197's own three worked examples, one for each
+  key length, and against SP 800-38A's chained ones, which the single-block
+  examples say nothing about; HMAC against RFC 4231, the longer-than-a-block
+  key included. The compound file written and read back at every length round
+  the two boundaries that matter, with a storage inside it, with two hundred
+  streams found by walking the directory tree the way a reader walks it rather
+  than by looking through the entries, and with an eight-million-byte stream,
+  which is past what the header alone can describe. A document laid out by
+  hand from the specification and read — for the 2007 scheme and for the
+  agile one, with the key's arithmetic done in the test rather than by the
+  code under test, and in the shapes this program reads but never writes:
+  SHA-1, a hundred-and-twenty-eight and a hundred-and-ninety-two bit keys, a
+  spin count that is nobody's default, and a document with no integrity check
+  at all. Then the round trips: a package of every awkward length, the text
+  and the password both searched for in the sealed bytes and not found, a byte
+  changed in the middle and caught, and a wrong password refused. The Encrypt
+  Document dialog photographed and looked at.
+  *Not done, and named here:* **no second opinion on the container.** Every
+  piece of arithmetic here is held to somebody else's numbers, but whether
+  Word itself opens a file this program encrypted has not been tried, because
+  there is no Word here and LibreOffice 7.4 — what the build image carries —
+  takes no password on its command line or through `--infilter`, so it cannot
+  be handed one either. The test that would do it is written and skipped, and
+  this is what **K1** is for. What is most likely to be wrong if anything is:
+  the `\006DataSpaces` storage, which Office writes beside the two streams and
+  this does not, on the reading that it belongs to the rights-management path
+  rather than to a password. The older RC4 schemes Office used before 2007 are
+  not read and are named rather than attempted. Nothing here is constant-time
+  against an attacker who can watch the cache; what is defended is a file
+  against somebody who has it and not the password.
 - [ ] **J3. Digital signatures.**
 - [ ] **J4. Compare and merge, finished.** Word's three-way merge and its
   compare view.

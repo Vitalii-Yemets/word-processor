@@ -124,6 +124,10 @@ should: everything else must come out as it went in.
 | `wp-zip` | ZIP archives, including Zip64 |
 | `wp-xml` | XML pull parser and writer, namespace-aware |
 | `wp-opc` | Parts, content types, relationships |
+| `wp-ole` | The compound file: the file system Office wrapped a document in |
+| `wp-hash` | SHA-1, SHA-512 and HMAC, which the passwords and signatures need |
+| `wp-cipher` | AES, and the two ways of using it the Office formats ask for |
+| `wp-crypt` | The encryption Office puts round a package |
 | `wp-docx` | The WordprocessingML document model and styles |
 | `wp-font` | TrueType and OpenType parsing: metrics, character mapping, outlines |
 | `wp-shape` | Turning characters into the glyphs that draw them: joining, ligatures |

@@ -6,6 +6,7 @@ version = 3
 name = "wp-app"
 version = "0.0.1"
 dependencies = [
+ "wp-crypt",
  "wp-dict",
  "wp-doc",
  "wp-docx",
@@ -31,6 +32,10 @@ name = "wp-break"
 version = "0.0.1"
 
 [[package]]
+name = "wp-cipher"
+version = "0.0.1"
+
+[[package]]
 name = "wp-cli"
 version = "0.0.1"
 dependencies = [
@@ -43,6 +48,17 @@ dependencies = [
  "wp-pdf",
  "wp-raster",
  "wp-rtf",
+]
+
+[[package]]
+name = "wp-crypt"
+version = "0.0.1"
+dependencies = [
+ "wp-cipher",
+ "wp-hash",
+ "wp-ole",
+ "wp-text",
+ "wp-xml",
 ]
 
 [[package]]
@@ -63,6 +79,7 @@ dependencies = [
  "wp-deflate",
  "wp-docx",
  "wp-image",
+ "wp-ole",
  "wp-text",
 ]
 
@@ -70,6 +87,7 @@ dependencies = [
 name = "wp-docx"
 version = "0.0.1"
 dependencies = [
+ "wp-crypt",
  "wp-dict",
  "wp-grammar",
  "wp-hash",
@@ -140,6 +158,10 @@ dependencies = [
  "wp-xml",
  "wp-zip",
 ]
+
+[[package]]
+name = "wp-ole"
+version = "0.0.1"
 
 [[package]]
 name = "wp-opc"

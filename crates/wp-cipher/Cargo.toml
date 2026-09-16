@@ -1,0 +1,13 @@
+[package]
+name = "wp-cipher"
+description = "AES, and the two ways of using it that the Office formats ask for"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Nothing. A cipher is arithmetic.
+
+[lints]
+workspace = true

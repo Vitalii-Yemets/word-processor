@@ -296,6 +296,19 @@ pub struct ParagraphSample {
 }
 
 impl Field {
+    /// A sentence the dialog is saying, rather than a label with an answer
+    /// beside it.
+    ///
+    /// Drawn across the whole width of the panel, and translated — because
+    /// what it says is the program's own words. A [`Self::Said`] with a label
+    /// is the other thing entirely: a label down the left and a piece of the
+    /// document beside it, and the piece of the document is nobody's to
+    /// translate.
+    #[must_use]
+    pub fn note(text: &str) -> Self {
+        Self::Said { label: String::new(), value: text.to_owned() }
+    }
+
     /// Whether the keyboard can land on it.
     #[must_use]
     pub fn takes_focus(&self) -> bool {
@@ -326,6 +339,12 @@ impl Field {
         use crate::messages::translated as m;
         match self {
             Self::Heading(text) => Self::Heading(m(&text)),
+            // A line with no label is the dialog speaking, and what it says
+            // is the program's words; a line with one is a label and a piece
+            // of the document, and only the label is the program's.
+            Self::Said { label, value } if label.is_empty() => {
+                Self::Said { label, value: m(&value) }
+            }
             Self::Said { label, value } => Self::Said { label: m(&label), value },
             Self::Text { label, value } => Self::Text { label: m(&label), value },
             Self::Secret { label, value } => Self::Secret { label: m(&label), value },

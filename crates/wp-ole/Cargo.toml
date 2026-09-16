@@ -1,0 +1,13 @@
+[package]
+name = "wp-ole"
+description = "The compound file: the file system in a file that Office wrote before 2007 and still wraps an encrypted document in"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Nothing. A file system is bookkeeping.
+
+[lints]
+workspace = true

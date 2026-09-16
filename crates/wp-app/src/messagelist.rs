@@ -156,6 +156,7 @@ pub fn messages_in(text: &str) -> BTreeSet<String> {
         "Field::Tab(",
         "Field::Group(",
         "Field::Heading(",
+        "Field::note(",
         "Dialog::new(",
         "Dialog::with_buttons(",
         "Row::new(",

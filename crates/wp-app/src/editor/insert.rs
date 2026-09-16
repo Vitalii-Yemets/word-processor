@@ -1893,8 +1893,10 @@ impl Editor {
             "fontdialog" => {
                 self.open_font_dialog();
             }
-            // Word's Restrict Editing, which is the one dialog in this
-            // program with a password in it.
+            // Word's Encrypt with Password, off the File page.
+            "encrypt" => {
+                self.open_encryption();
+            }
             "restrict" => {
                 self.open_protection();
             }

@@ -8,7 +8,7 @@
 //! word processor. The format is [MS-DOC] over [MS-CFB]: a file system in
 //! a file, a table of contents at the start of its main stream, text in
 //! pieces, formatting in pages of sprms, and everything else in tables of
-//! its own. [`cfb`] reads the file system, [`fib`] the table of contents,
+//! its own. [`wp_ole`] reads the file system, [`fib`] the table of contents,
 //! [`sprm`] the modifiers, and [`read`] puts the document together.
 //!
 //! # What is here
@@ -23,7 +23,6 @@
 
 #![forbid(unsafe_code)]
 
-pub mod cfb;
 pub mod fib;
 mod read;
 pub mod sprm;
@@ -47,6 +46,18 @@ pub enum Error {
     Malformed(&'static str),
     /// The document could not be built from what was read.
     Document(String),
+}
+
+impl From<wp_ole::Error> for Error {
+    /// A compound file that will not open is a document that will not open,
+    /// and the three things that can be wrong with one are the same three.
+    fn from(error: wp_ole::Error) -> Self {
+        match error {
+            wp_ole::Error::NotCompound => Self::NotCompound,
+            wp_ole::Error::Truncated(what) => Self::Truncated(what),
+            wp_ole::Error::Malformed(what) => Self::Malformed(what),
+        }
+    }
 }
 
 impl core::fmt::Display for Error {

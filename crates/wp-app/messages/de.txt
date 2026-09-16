@@ -32,6 +32,15 @@ language = Deutsch
 = Above
 > Oberhalb
 
+= A password that is lost cannot be recovered.
+> Ein verlorenes Kennwort kann nicht wiederhergestellt werden.
+
+= An empty box takes the encryption off.
+> Ein leeres Feld hebt die Verschlüsselung auf.
+
+= Anybody who can open the file can take this off.
+> Wer die Datei öffnen kann, kann dies aufheben.
+
 = Accept
 > Annehmen
 
@@ -284,6 +293,9 @@ language = Deutsch
 = Character
 > Zeichen
 
+= Change Password
+> Kennwort ändern
+
 = Character Spacing
 > Zeichenabstand
 
@@ -508,6 +520,12 @@ language = Deutsch
 
 = Effects
 > Effekte
+
+= Encrypt Document
+> Dokument verschlüsseln
+
+= Encrypt with Password
+> Mit Kennwort verschlüsseln
 
 = End lines with
 > Zeilen beenden mit
@@ -1435,6 +1453,12 @@ language = Deutsch
 
 = Text from File
 > Text aus Datei
+
+= The document is not encrypted.
+> Das Dokument ist nicht verschlüsselt.
+
+= The document is unreadable without it.
+> Ohne das Kennwort ist das Dokument nicht lesbar.
 
 = The file types could not be registered
 > Die Dateitypen konnten nicht registriert werden

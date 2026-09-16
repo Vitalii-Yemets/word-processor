@@ -82,6 +82,11 @@ pub(super) enum Asking {
     Protect,
     /// And the password back again, before the restriction is lifted.
     Unprotect,
+    /// The password of a file that cannot be read without one.
+    Unseal,
+    /// A password to make the document unreadable without, which is Word's
+    /// Encrypt with Password.
+    Encrypt,
 }
 
 impl Editor {
@@ -142,6 +147,7 @@ impl Editor {
         if answer == Answer::Cancel {
             match asking {
                 Some(Asking::TextOpen) => self.cancel_text_open(),
+                Some(Asking::Unseal) => self.cancel_unseal(),
                 Some(Asking::TextSave) => self.cancel_text_save(),
                 _ => {}
             }
@@ -168,6 +174,8 @@ impl Editor {
             Some(Asking::Formula) => self.apply_formula(&dialog),
             Some(Asking::Protect) => self.apply_protection(&dialog),
             Some(Asking::Unprotect) => self.apply_unprotection(&dialog),
+            Some(Asking::Unseal) => self.apply_unseal(&dialog),
+            Some(Asking::Encrypt) => self.apply_encryption(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),
             Some(Asking::AutoCorrect) => self.apply_autocorrect_dialog(&dialog),
             Some(Asking::Translator) => self.apply_translator_preferences(&dialog),

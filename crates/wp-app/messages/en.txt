@@ -13,6 +13,7 @@
 = *Bold* and _italic_ with real formatting
 = 1 word
 = 100%
+= A password that is lost cannot be recovered.
 = AaBbCcDdEe
 = Above
 = Accept
@@ -38,6 +39,8 @@
 = Already in this document
 = Alt Text
 = Always show these on screen
+= An empty box takes the encryption off.
+= Anybody who can open the file can take this off.
 = Appearance
 = Apply as you type
 = Apply to
@@ -96,6 +99,7 @@
 = Cell Size
 = Cell margins
 = Centimeters
+= Change Password
 = Change how the text is corrected as you type
 = Changes
 = Character
@@ -174,6 +178,8 @@
 = Editing
 = Editing restrictions
 = Effects
+= Encrypt Document
+= Encrypt with Password
 = End lines with
 = Enter new password (optional)
 = Envelopes
@@ -483,6 +489,8 @@
 = Text files
 = Text formatting
 = Text from File
+= The document is not encrypted.
+= The document is unreadable without it.
 = The file types could not be registered
 = The file types were registered
 = The files below were recovered.
@@ -546,6 +554,8 @@
 = {0} characters
 = {0} could not be opened: {1}
 = {0} could not be read
+= {0} did not open. Try the password again.
+= {0} is encrypted.
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 = {0} of {1}
 = {0} point

@@ -86,6 +86,7 @@ mod read;
 pub mod revisions;
 pub mod ruby;
 pub mod rules;
+pub mod sealing;
 pub mod search;
 pub mod sections;
 pub mod settings;
@@ -173,6 +174,12 @@ const MARGIN_TWIPS: &str = "1440";
 pub enum Error {
     /// The package layer could not read or write the file.
     Package(wp_opc::Error),
+    /// The file is an encrypted document, which opens with a password and
+    /// not without one. See [`Document::open_sealed`].
+    Sealed,
+    /// A password was given and it is not the password, or the file is
+    /// encrypted a way this program does not read.
+    Unsealing(wp_crypt::Error),
     /// A part is not valid XML.
     Xml { part: String, source: wp_xml::Error },
 }
@@ -181,6 +188,8 @@ impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Package(error) => write!(f, "{error}"),
+            Self::Sealed => write!(f, "the document is encrypted and needs its password"),
+            Self::Unsealing(error) => write!(f, "{error}"),
             Self::Xml { part, source } => write!(f, "part {part:?} is not valid XML: {source}"),
         }
     }
@@ -191,6 +200,12 @@ impl std::error::Error for Error {}
 impl From<wp_opc::Error> for Error {
     fn from(error: wp_opc::Error) -> Self {
         Self::Package(error)
+    }
+}
+
+impl From<wp_crypt::Error> for Error {
+    fn from(error: wp_crypt::Error) -> Self {
+        Self::Unsealing(error)
     }
 }
 
@@ -282,11 +297,26 @@ pub struct Document {
     /// gesture puts it back: a gesture moves the caret about to do its work,
     /// and the person was not where it went.
     gesture_caret: TextPosition,
+    /// The password the document was opened with, and is to be written back
+    /// under.
+    ///
+    /// Kept so that saving an encrypted document leaves it encrypted. Not
+    /// kept in the file, obviously, and not written anywhere: it lives as
+    /// long as the document is open and no longer.
+    password: Option<String>,
 }
 
 impl Document {
     /// Opens a `.docx` from its bytes.
+    ///
+    /// An encrypted document is refused with [`Error::Sealed`] rather than
+    /// with the package layer's complaint that the bytes are not a zip: what
+    /// a program has to do about one is ask for the password, and it can only
+    /// do that if it is told which kind of failure this was.
     pub fn open(bytes: &[u8]) -> Result<Self, Error> {
+        if wp_crypt::is_encrypted(bytes) {
+            return Err(Error::Sealed);
+        }
         let package = Package::open(bytes)?;
         let main_part = package.main_document_part()?;
 
@@ -304,6 +334,7 @@ impl Document {
 
         let mut document = Self {
             package,
+            password: None,
             document_part: main_part.clone(),
             main_part,
             tree,
@@ -364,6 +395,7 @@ impl Document {
 
         Ok(Self {
             package,
+            password: None,
             main_part: "word/document.xml".to_owned(),
             document_part: "word/document.xml".to_owned(),
             tree,

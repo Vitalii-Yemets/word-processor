@@ -27,10 +27,10 @@ use wp_docx::model::{
 };
 use wp_text::Encoding;
 
-use crate::cfb::CompoundFile;
 use crate::fib::{Fib, Table as FibTable};
 use crate::sprm::{self, Sprm};
 use crate::Error;
+use wp_ole::CompoundFile;
 
 /// The character that stands where a picture goes in the text, until the
 /// picture is put in.

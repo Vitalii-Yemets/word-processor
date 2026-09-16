@@ -71,6 +71,7 @@ mod ruler;
 mod rules;
 mod screenshot;
 mod scrolling;
+mod sealing;
 mod search;
 mod selecting;
 mod shapes;
@@ -451,6 +452,8 @@ pub struct Editor {
     dialog: Option<crate::chrome::dialog::Dialog>,
     /// What that dialog is asking, so its answer can be acted on.
     asking: Option<dialogs::Asking>,
+    /// A file that turned out to be encrypted, waiting for its password.
+    waiting_to_unseal: Option<sealing::Waiting>,
     /// Whether Word Count counts what is written round the edges of the body:
     /// notes and text boxes. Word remembers the tick between openings, so this
     /// lives here rather than in the dialog.
@@ -705,6 +708,7 @@ impl Editor {
             print_device: wp_layout::Device::screen(),
             dialog: None,
             asking: None,
+            waiting_to_unseal: None,
             count_the_edges: false,
             under_caret: None,
             caret_only: false,

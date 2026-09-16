@@ -86,14 +86,8 @@ impl Editor {
                 // Word's dialog says this, and it is the truest sentence in
                 // it: a password on a document that is not encrypted stops a
                 // person, not a program.
-                Field::Said {
-                    label: String::new(),
-                    value: "The document is not encrypted.".to_owned(),
-                },
-                Field::Said {
-                    label: String::new(),
-                    value: "Anybody who can open the file can take this off.".to_owned(),
-                },
+                Field::note("The document is not encrypted."),
+                Field::note("Anybody who can open the file can take this off."),
                 Field::Secret {
                     label: "Enter new password (optional)".to_owned(),
                     value: String::new(),
