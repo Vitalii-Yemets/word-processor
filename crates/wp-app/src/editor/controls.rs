@@ -22,7 +22,10 @@ use wp_docx::forms::FormKind;
 use wp_docx::TextPosition;
 use wp_shell::Response;
 
+use crate::chrome::dialog::{Dialog, Field};
 use crate::chrome::Choice;
+
+use super::dialogs::Asking;
 
 use super::Editor;
 
@@ -40,6 +43,113 @@ const LEGACY: &[(FormKind, &str)] = &[
 /// Properties dialog. This puts three in, because a drop-down that drops open
 /// onto nothing teaches nobody anything about what it is for.
 const EXAMPLE_ITEMS: &[&str] = &["First", "Second", "Third"];
+
+/// Where each answer sits in the Properties dialog.
+const TITLE: usize = 1;
+const TAG: usize = 2;
+const NO_DELETE: usize = 3;
+const NO_EDIT: usize = 4;
+const ITEMS: usize = 6;
+
+impl Editor {
+    /// Word's Properties, on the control the caret is in.
+    ///
+    /// A control made and never changed is a control whose name is wrong for
+    /// ever and whose list is whatever it was born with. This is where both
+    /// are put right.
+    pub(super) fn open_control_properties(&mut self) -> Response {
+        let Some(control) = self.document.control_at(self.document.caret()) else {
+            return self.report("Put the caret in a content control first");
+        };
+
+        let mut fields = vec![
+            Field::note(control.kind.label()),
+            Field::Text { label: "Title".to_owned(), value: control.alias.clone() },
+            Field::Text { label: "Tag".to_owned(), value: control.tag.clone() },
+            Field::Check {
+                label: "Content control cannot be deleted".to_owned(),
+                on: control.locked_delete,
+            },
+            Field::Check { label: "Contents cannot be edited".to_owned(), on: control.locked_edit },
+        ];
+        if control.kind.has_items() {
+            fields.push(Field::Heading("Drop-down list properties".to_owned()));
+            fields.push(Field::Text {
+                label: "Items, separated by semicolons".to_owned(),
+                value: control
+                    .items
+                    .iter()
+                    .map(|(shown, _)| shown.as_str())
+                    .collect::<Vec<&str>>()
+                    .join("; "),
+            });
+        }
+        self.ask(
+            Asking::ControlProperties,
+            Dialog::new("Content Control Properties", fields).wide(520.0),
+        )
+    }
+
+    /// Writes what the dialog said onto the control.
+    pub(super) fn apply_control_properties(&mut self, dialog: &Dialog) -> Response {
+        let at = self.document.caret();
+        let Some(control) = self.document.control_at(at) else { return Response::Ignored };
+
+        let mut changed = self.document.set_control_properties(
+            at,
+            &dialog.said(TITLE),
+            &dialog.said(TAG),
+            dialog.ticked(NO_DELETE),
+            dialog.ticked(NO_EDIT),
+        );
+        if control.kind.has_items() {
+            let items: Vec<String> =
+                dialog.said(ITEMS).split(';').map(|item| item.trim().to_owned()).collect();
+            changed |= self.document.set_control_items(at, &items);
+        }
+        self.relayout();
+        self.edited(changed, "Properties")
+    }
+
+    /// Whether the caret is inside a control whose contents are locked.
+    ///
+    /// The lock is the document's, not a restriction's, so it holds whether
+    /// or not anything else does — which is the point of it: a form's labels
+    /// stay labels while its boxes are filled in.
+    pub(super) fn inside_a_locked_control(&self) -> bool {
+        let caret = self.document.caret();
+        let (start, end) = self.document.selection().unwrap_or((caret, caret));
+        self.document
+            .control_at(start)
+            .is_some_and(|control| control.locked_edit && control.covers(end))
+    }
+
+    /// Whether what is about to be deleted would take a control with it.
+    ///
+    /// Word refuses, and says so: a control marked as one that cannot be
+    /// deleted is one somebody meant to keep.
+    pub(super) fn would_delete_a_locked_control(&self) -> Option<String> {
+        let caret = self.document.caret();
+        let (start, end) = self.document.selection()?;
+        let _ = caret;
+        self.document
+            .controls()
+            .into_iter()
+            .find(|control| control.locked_delete && control.start >= start && control.end <= end)
+            .map(|control| {
+                if control.alias.is_empty() {
+                    control.kind.label().to_owned()
+                } else {
+                    control.alias.clone()
+                }
+            })
+    }
+
+    /// Says why a deletion did nothing.
+    pub(super) fn refuse_deleting_a_control(&mut self, named: &str) -> Response {
+        self.report(&crate::messages::with("{0} is a control that cannot be deleted", &[named]))
+    }
+}
 
 impl Editor {
     /// Puts one of the content controls in at the caret.
@@ -167,6 +277,7 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chrome::Command;
     use wp_docx::model::{Block, Body, Paragraph};
     use wp_docx::Document;
     use wp_layout::FontLibrary;
@@ -270,5 +381,116 @@ mod tests {
         editor.insert_content_control(1);
         let at = editor.document.controls()[0].start;
         assert!(editor.used_a_control(at).is_none(), "a text control swallowed the click");
+    }
+    /// Puts a control in, opens its Properties, and hands the dialog back.
+    fn properties_of(editor: &mut Editor, which: usize) {
+        editor.insert_content_control(which);
+        let at = editor.document.controls()[0].start;
+        editor.document.set_caret(at);
+        editor.run(Command::ControlProperties);
+    }
+
+    #[test]
+    fn the_properties_dialog_shows_what_the_control_says_and_writes_back_what_it_is_told() {
+        let mut editor = editor();
+        properties_of(&mut editor, 1);
+        let dialog = editor.dialog.as_mut().expect("the dialog");
+        assert_eq!(dialog.title, "Content Control Properties");
+
+        if let Some(Field::Text { value, .. }) = dialog.fields.get_mut(TITLE) {
+            *value = "Family name".to_owned();
+        }
+        if let Some(Field::Text { value, .. }) = dialog.fields.get_mut(TAG) {
+            *value = "family".to_owned();
+        }
+        if let Some(Field::Check { on, .. }) = dialog.fields.get_mut(NO_DELETE) {
+            *on = true;
+        }
+        editor.finish_dialog(crate::chrome::dialog::Answer::Accept);
+
+        let control = &editor.document.controls()[0];
+        assert_eq!(control.alias, "Family name");
+        assert_eq!(control.tag, "family");
+        assert!(control.locked_delete);
+        assert!(!control.locked_edit);
+    }
+
+    #[test]
+    fn a_list_control_is_offered_its_list_and_a_text_one_is_not() {
+        let mut listed = editor();
+        properties_of(&mut listed, 4);
+        let dialog = listed.dialog.as_ref().expect("the dialog");
+        assert!(dialog.fields.len() > ITEMS, "a drop-down was not offered its list");
+        assert!(dialog.said(ITEMS).contains("First"), "{}", dialog.said(ITEMS));
+
+        let mut plain = editor();
+        properties_of(&mut plain, 1);
+        let dialog = plain.dialog.as_ref().expect("the dialog");
+        assert!(dialog.fields.len() <= ITEMS, "a text control was offered a list");
+    }
+
+    #[test]
+    fn the_list_typed_into_the_dialog_is_the_list_the_control_offers() {
+        let mut editor = editor();
+        properties_of(&mut editor, 4);
+        if let Some(Field::Text { value, .. }) =
+            editor.dialog.as_mut().expect("the dialog").fields.get_mut(ITEMS)
+        {
+            *value = "Dr; Professor".to_owned();
+        }
+        editor.finish_dialog(crate::chrome::dialog::Answer::Accept);
+
+        let items: Vec<String> =
+            editor.document.controls()[0].items.iter().map(|(shown, _)| shown.clone()).collect();
+        assert_eq!(items, vec!["Dr".to_owned(), "Professor".to_owned()]);
+    }
+
+    #[test]
+    fn nothing_to_be_had_properties_of_says_so() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        editor.run(Command::ControlProperties);
+        assert!(editor.dialog.is_none(), "a dialog opened on no control at all");
+        assert!(editor.status.contains("content control"), "{}", editor.status);
+    }
+
+    #[test]
+    fn a_control_whose_contents_are_locked_takes_no_typing() {
+        let mut editor = editor();
+        editor.insert_content_control(1);
+        let at = editor.document.controls()[0].start;
+        editor.document.set_control_properties(at, "Label", "label", false, true);
+        editor.document.set_caret(editor.document.controls()[0].start);
+
+        assert!(editor.is_locked(), "a locked control is open");
+        let before = editor.document.plain_text();
+        editor.handle(Event::Char('x'));
+        assert_eq!(editor.document.plain_text(), before, "a locked control took typing");
+        editor.run(Command::Format(wp_docx::CharacterFormat::Bold));
+        assert!(editor.status.contains("cannot be edited"), "{}", editor.status);
+
+        // And outside it the document is open as it was.
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        assert!(!editor.is_locked(), "the whole document was shut by one control");
+    }
+
+    #[test]
+    fn a_control_that_cannot_be_deleted_is_not_deleted() {
+        let mut editor = editor();
+        editor.insert_content_control(1);
+        let at = editor.document.controls()[0].start;
+        editor.document.set_control_properties(at, "Keep me", "keep", true, false);
+
+        // Everything selected, which is what would take the control with it.
+        let end = editor.document.paragraph_text(0).unwrap_or_default().len();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, end));
+        assert!(editor.would_delete_a_locked_control().is_some());
+
+        let before = editor.document.plain_text();
+        editor.handle(Event::KeyDown { key: wp_shell::Key::Delete, modifiers: Default::default() });
+        assert_eq!(editor.document.plain_text(), before, "a control that cannot be deleted went");
+        assert!(editor.status.contains("cannot be deleted"), "{}", editor.status);
+        assert_eq!(editor.document.controls().len(), 1);
     }
 }

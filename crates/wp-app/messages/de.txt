@@ -344,6 +344,15 @@ language = Deutsch
 = Compare Documents
 > Dokumente vergleichen
 
+= Content control cannot be deleted
+> Inhaltssteuerelement kann nicht gelöscht werden
+
+= Content Control Properties
+> Eigenschaften des Inhaltssteuerelements
+
+= Contents cannot be edited
+> Inhalt kann nicht bearbeitet werden
+
 = Create New Building Block
 > Neuen Baustein erstellen
 
@@ -577,6 +586,9 @@ language = Deutsch
 
 = Draw Table
 > Tabelle zeichnen
+
+= Drop-down list properties
+> Eigenschaften der Dropdownliste
 
 = Edges
 > Kanten
@@ -841,6 +853,9 @@ language = Deutsch
 
 = Italic
 > Kursiv
+
+= Items, separated by semicolons
+> Einträge, durch Semikolon getrennt
 
 = Keep Source Formatting
 > Ursprüngliche Formatierung beibehalten
@@ -1265,6 +1280,9 @@ language = Deutsch
 = Purpose
 > Zweck
 
+= Put the caret in a content control first
+> Setzen Sie zuerst die Einfügemarke in ein Inhaltssteuerelement
+
 = Quick Access Toolbar
 > Symbolleiste für den Schnellzugriff
 
@@ -1628,6 +1646,9 @@ language = Deutsch
 = Tabs…
 > Tabstopps…
 
+= Tag
+> Tag
+
 = Tell me what you want to do
 > Was möchten Sie tun?
 
@@ -1663,6 +1684,9 @@ language = Deutsch
 
 = The author asked for it to be opened read-only.
 > Der Autor möchte, dass es schreibgeschützt geöffnet wird.
+
+= The contents of this control cannot be edited
+> Der Inhalt dieses Steuerelements kann nicht bearbeitet werden
 
 = The selection is saved under this name.
 > Die Auswahl wird unter diesem Namen gespeichert.
@@ -1921,6 +1945,9 @@ language = Deutsch
 
 = {0} deleted
 > {0} gelöscht
+
+= {0} is a control that cannot be deleted
+> {0} ist ein Steuerelement, das nicht gelöscht werden kann
 
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 > {0} ist kein Bild, das dieses Programm lesen kann. PNG, JPEG, BMP, GIF, TIFF und die Metadateien sind es.

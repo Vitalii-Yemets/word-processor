@@ -91,6 +91,10 @@ pub struct Theme {
     /// The faint grid the View tab can put over the page.
     pub gridline: Color,
 
+    /// The faint tag Word draws at each end of a content control, so that a
+    /// person can see where one starts and ends without clicking in it.
+    pub control_edge: Color,
+
     /// Behind a stretch of the document with its own rule about who may edit
     /// it: Word shades an exception to a restriction, and a stretch blocked
     /// for one author, so that a person can see where they may type before
@@ -155,6 +159,7 @@ impl Theme {
 
             gridline: Color::rgb(0x45, 0x45, 0x45),
             marked_region: Color::rgba(0xC8, 0xA0, 0x38, 0x4D),
+            control_edge: Color::rgb(0x8A, 0x8A, 0x8A),
             ruler_paper: Color::rgb(0x5E, 0x5E, 0x5E),
             ruler_margin: Color::rgb(0x38, 0x38, 0x38),
             ruler_tick: Color::rgb(0xA0, 0xA0, 0xA0),
@@ -201,6 +206,7 @@ impl Theme {
 
             gridline: Color::rgb(0xDC, 0xDC, 0xDC),
             marked_region: Color::rgba(0xFF, 0xD9, 0x66, 0x66),
+            control_edge: Color::rgb(0xA0, 0xA0, 0xA0),
             ruler_paper: Color::WHITE,
             ruler_margin: Color::rgb(0xC4, 0xC4, 0xC4),
             ruler_tick: Color::rgb(0x60, 0x60, 0x60),

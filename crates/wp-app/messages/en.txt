@@ -143,7 +143,10 @@
 = Compare Documents
 = Compare Two Documents
 = Compare with
+= Content Control Properties
+= Content control cannot be deleted
 = Contents
+= Contents cannot be edited
 = Controls
 = Convert to Text
 = Copies
@@ -197,6 +200,7 @@
 = Draw
 = Draw Table
 = Drop-Down List
+= Drop-down list properties
 = Edges
 = Edit Individual Documents
 = Edit List
@@ -285,6 +289,7 @@
 = Interface language
 = Internet and network paths with hyperlinks
 = Italic
+= Items, separated by semicolons
 = Keep Source Formatting
 = Keep Text Only
 = Keep lines together
@@ -547,6 +552,7 @@
 = Tables
 = Tabs
 = Tabs…
+= Tag
 = Tell me what you want to do
 = Text
 = Text Box
@@ -646,6 +652,7 @@
 = {0} could not be read
 = {0} deleted
 = {0} did not open. Try the password again.
+= {0} is a control that cannot be deleted
 = {0} is encrypted.
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 = {0} is reserved.

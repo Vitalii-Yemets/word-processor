@@ -120,6 +120,15 @@ pub struct Control {
     pub items: Vec<(String, String)>,
     /// Whether a tick box is ticked.
     pub checked: bool,
+    /// Whether the control may be taken out of the document, and whether what
+    /// is inside it may be changed.
+    ///
+    /// Word's `w:lock`, and its Properties dialog's two tick boxes. A form
+    /// somebody is meant to fill in and not dismantle is a form whose boxes
+    /// cannot be deleted and whose labels cannot be retyped, and those are
+    /// these two.
+    pub locked_delete: bool,
+    pub locked_edit: bool,
     /// Where the content starts and ends.
     pub start: TextPosition,
     pub end: TextPosition,
@@ -216,6 +225,88 @@ impl Document {
         self.change_control(&control, |_, content, prefix| write_content(content, &shown, prefix))
     }
 
+    /// Word's Properties: what a control is called, and what may be done to
+    /// it.
+    ///
+    /// The identifier a program uses — Word calls it the tag — is kept beside
+    /// the name a person reads, because the two are for different readers and
+    /// a control that had only one of them would be missing whichever the
+    /// other reader wanted.
+    pub fn set_control_properties(
+        &mut self,
+        at: TextPosition,
+        alias: &str,
+        tag: &str,
+        locked_delete: bool,
+        locked_edit: bool,
+    ) -> bool {
+        let Some(control) = self.control_at(at) else { return false };
+        let (alias, tag) = (alias.trim().to_owned(), tag.trim().to_owned());
+        self.change_control(&control, move |properties, _, prefix| {
+            for (local, value) in [("alias", alias.as_str()), ("tag", tag.as_str())] {
+                properties.remove_children_named(Some(read::W), local);
+                if value.is_empty() {
+                    continue;
+                }
+                let mut element = Element::new(&edit::name_with(prefix, local), Some(read::W));
+                element.set_namespaced_attribute(&edit::name_with(prefix, "val"), read::W, value);
+                properties.insert_element(0, element);
+            }
+
+            properties.remove_children_named(Some(read::W), "lock");
+            if locked_delete || locked_edit {
+                let mut element = Element::new(&edit::name_with(prefix, "lock"), Some(read::W));
+                element.set_namespaced_attribute(
+                    &edit::name_with(prefix, "val"),
+                    read::W,
+                    lock_word(locked_delete, locked_edit),
+                );
+                properties.push_element(element);
+            }
+        })
+    }
+
+    /// What a list offers, set after the control was made.
+    ///
+    /// Word's Properties dialog has Add, Modify and Remove under the list;
+    /// this takes the whole list, because a list is a small thing and
+    /// replacing it is one edit to undo rather than three.
+    pub fn set_control_items(&mut self, at: TextPosition, items: &[String]) -> bool {
+        let Some(control) = self.control_at(at) else { return false };
+        if !control.kind.has_items() {
+            return false;
+        }
+        let Some(local) = control.kind.element().map(str::to_owned) else { return false };
+        let items: Vec<String> = items
+            .iter()
+            .map(|item| item.trim().to_owned())
+            .filter(|item| !item.is_empty())
+            .collect();
+        if items.is_empty() {
+            return false;
+        }
+        let shown = items[0].clone();
+
+        self.change_control(&control, move |properties, content, prefix| {
+            properties.remove_children_named(Some(read::W), &local);
+            let mut list = Element::new(&edit::name_with(prefix, &local), Some(read::W));
+            for item in &items {
+                let mut entry = Element::new(&edit::name_with(prefix, "listItem"), Some(read::W));
+                entry.set_namespaced_attribute(
+                    &edit::name_with(prefix, "displayText"),
+                    read::W,
+                    item,
+                );
+                entry.set_namespaced_attribute(&edit::name_with(prefix, "value"), read::W, item);
+                list.push_element(entry);
+            }
+            properties.push_element(list);
+            // What it shows has to be one of what it offers, or the control
+            // would be showing an answer that is no longer on its list.
+            write_content(content, &shown, prefix);
+        })
+    }
+
     /// Writes words into a control's content.
     pub fn set_control_text(&mut self, at: TextPosition, text: &str) -> bool {
         let Some(control) = self.control_at(at) else { return false };
@@ -296,6 +387,8 @@ fn walk(element: &Element, paragraph: usize, offset: &mut usize, found: &mut Vec
                         .and_then(|box_of| box_of.child(Some(W14), "checked"))
                         .and_then(|checked| checked.attribute(Some(W14), "val"))
                         .is_some_and(|value| matches!(value, "1" | "true" | "on")),
+                    locked_delete: locked(properties).0,
+                    locked_edit: locked(properties).1,
                     start,
                     end: TextPosition::new(paragraph, *offset),
                 });
@@ -315,6 +408,32 @@ fn said(properties: Option<&Element>, local: &str) -> String {
         .and_then(|child| child.attribute(Some(read::W), "val"))
         .unwrap_or_default()
         .to_owned()
+}
+
+/// What `w:lock` says: whether the control may be deleted, and whether its
+/// contents may be edited.
+///
+/// One attribute with four words in it, which is how the format writes two
+/// answers: `sdtLocked` is the control, `contentLocked` is what is in it,
+/// `sdtContentLocked` is both, and anything else is neither.
+fn locked(properties: Option<&Element>) -> (bool, bool) {
+    match said(properties, "lock").as_str() {
+        "sdtLocked" => (true, false),
+        "contentLocked" => (false, true),
+        "sdtContentLocked" => (true, true),
+        _ => (false, false),
+    }
+}
+
+/// And the word for a pair of answers.
+#[must_use]
+fn lock_word(delete: bool, edit: bool) -> &'static str {
+    match (delete, edit) {
+        (true, true) => "sdtContentLocked",
+        (true, false) => "sdtLocked",
+        (false, true) => "contentLocked",
+        (false, false) => "unlocked",
+    }
 }
 
 /// Which kind the properties name.

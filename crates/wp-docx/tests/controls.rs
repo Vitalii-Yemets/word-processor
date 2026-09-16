@@ -170,3 +170,84 @@ fn the_text_inside_a_control_is_part_of_the_document_like_any_other() {
     assert!(document.plain_text().starts_with("Name: "));
     assert_eq!(document.paragraph_count(), 1);
 }
+
+#[test]
+fn a_control_can_be_named_after_it_is_made() {
+    let mut document = with_control(ControlKind::PlainText, "Surname", &[]);
+    let at = document.controls()[0].start;
+    assert!(document.set_control_properties(at, "Family name", "family", false, false));
+
+    let reopened = round_trip(&document);
+    let control = &reopened.controls()[0];
+    assert_eq!(control.alias, "Family name");
+    assert_eq!(control.tag, "family");
+    assert!(!control.locked_delete);
+    assert!(!control.locked_edit);
+}
+
+#[test]
+fn the_two_locks_are_written_and_read_as_the_one_word_the_format_uses() {
+    for (delete, edit, word) in [
+        (true, false, "sdtLocked"),
+        (false, true, "contentLocked"),
+        (true, true, "sdtContentLocked"),
+    ] {
+        let mut document = with_control(ControlKind::PlainText, "Surname", &[]);
+        let at = document.controls()[0].start;
+        assert!(document.set_control_properties(at, "Surname", "surname", delete, edit));
+
+        let bytes = document.save().expect("saving");
+        let package = wp_opc::Package::open(&bytes).expect("a package");
+        let xml = package.xml_part("word/document.xml").expect("the document").expect("readable");
+        assert!(xml.contains(&format!("w:val=\"{word}\"")), "{word}: {xml}");
+
+        let control = &round_trip(&document).controls()[0];
+        assert_eq!(control.locked_delete, delete, "{word}");
+        assert_eq!(control.locked_edit, edit, "{word}");
+    }
+}
+
+#[test]
+fn taking_the_locks_off_takes_the_element_away() {
+    let mut document = with_control(ControlKind::PlainText, "Surname", &[]);
+    let at = document.controls()[0].start;
+    document.set_control_properties(at, "Surname", "surname", true, true);
+    let at = document.controls()[0].start;
+    assert!(document.set_control_properties(at, "Surname", "surname", false, false));
+
+    let bytes = document.save().expect("saving");
+    let package = wp_opc::Package::open(&bytes).expect("a package");
+    let xml = package.xml_part("word/document.xml").expect("the document").expect("readable");
+    assert!(!xml.contains("w:lock"), "an unlocked control still carries a lock: {xml}");
+}
+
+#[test]
+fn a_list_can_be_given_another_list_after_it_is_made() {
+    let mut document = with_control(ControlKind::DropDown, "Title", &["Mr", "Ms"]);
+    let at = document.controls()[0].start;
+    let items = ["Dr".to_owned(), "Professor".to_owned(), "  ".to_owned()];
+    assert!(document.set_control_items(at, &items));
+
+    let reopened = round_trip(&document);
+    let control = &reopened.controls()[0];
+    assert_eq!(
+        control.items,
+        vec![("Dr".to_owned(), "Dr".to_owned()), ("Professor".to_owned(), "Professor".to_owned())],
+        "an empty entry was kept, or the old list was"
+    );
+    // What it shows has to be one of what it offers.
+    assert!(reopened.plain_text().contains("Dr"), "{}", reopened.plain_text());
+    assert!(!reopened.plain_text().contains("Mr"), "the old answer is still showing");
+}
+
+#[test]
+fn a_list_of_nothing_is_refused_and_a_control_with_no_list_takes_none() {
+    let mut document = with_control(ControlKind::DropDown, "Title", &["Mr"]);
+    let at = document.controls()[0].start;
+    assert!(!document.set_control_items(at, &[]), "a list was emptied");
+    assert!(!document.set_control_items(at, &["  ".to_owned()]), "a list of nothing was taken");
+
+    let mut text = with_control(ControlKind::PlainText, "Surname", &[]);
+    let at = text.controls()[0].start;
+    assert!(!text.set_control_items(at, &["one".to_owned()]), "a text control was given a list");
+}

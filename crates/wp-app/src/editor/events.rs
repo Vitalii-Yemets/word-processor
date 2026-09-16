@@ -1984,6 +1984,12 @@ impl Editor {
                     self.moved()
                 }
                 Key::Backspace | Key::Delete if self.is_locked() => self.refuse_locked(),
+                // A control somebody marked as one that cannot be deleted is
+                // one they meant to keep, whatever is selected round it.
+                Key::Backspace | Key::Delete if self.would_delete_a_locked_control().is_some() => {
+                    let named = self.would_delete_a_locked_control().unwrap_or_default();
+                    self.refuse_deleting_a_control(&named)
+                }
                 Key::Backspace => {
                     let changed = self.document.delete_word_back();
                     self.edited(changed, "")
@@ -2046,6 +2052,12 @@ impl Editor {
             // A space with no modifier arrives as typing rather than as a key,
             // so there is nothing to do here with one that got this far.
             Key::Space => Response::Ignored,
+            // A control somebody marked as one that cannot be deleted is one
+            // they meant to keep, whatever is selected round it.
+            Key::Backspace | Key::Delete if self.would_delete_a_locked_control().is_some() => {
+                let named = self.would_delete_a_locked_control().unwrap_or_default();
+                self.refuse_deleting_a_control(&named)
+            }
             Key::Backspace => {
                 let changed = self.document.backspace();
                 self.edited(changed, "")

@@ -33,6 +33,8 @@ const ORIENTATION: usize = 10;
 /// Which question is being asked, so the answer can be acted on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Asking {
+    /// What a content control is called, and what may be done to it.
+    ControlProperties,
     /// The defaults a document starts from, and the styles carried between
     /// it and the template.
     ManageStyles,
@@ -193,6 +195,7 @@ impl Editor {
             Some(Asking::Sort) => self.apply_sort(&dialog),
             Some(Asking::Formula) => self.apply_formula(&dialog),
             Some(Asking::Protect) => self.apply_protection(&dialog),
+            Some(Asking::ControlProperties) => self.apply_control_properties(&dialog),
             Some(Asking::ManageStyles) => self.apply_manage_styles(&dialog),
             Some(Asking::Compare) => self.apply_comparison(&dialog),
             Some(Asking::Signatures) => self.apply_signature(&dialog),

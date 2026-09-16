@@ -2074,6 +2074,13 @@ Katherine Johnson,Hampton,katherine@example.com
                 self.open_manage_styles();
                 self.dialog_key(wp_shell::Key::Tab, false, true);
             }
+            // Word's Content Control Properties, on a drop-down.
+            "controlproperties" => {
+                self.insert_content_control(4);
+                let at = self.document.controls()[0].start;
+                self.document.set_caret(at);
+                self.run(crate::chrome::Command::ControlProperties);
+            }
             "exception" => {
                 self.document.set_caret(wp_docx::TextPosition::new(4, 0));
                 let end = self.document.paragraph_text(4).unwrap_or_default().len();

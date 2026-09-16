@@ -300,6 +300,7 @@ impl Editor {
             Command::QuickParts => self.open_quick_parts(),
             Command::Control(which) => self.insert_content_control(which),
             Command::LegacyFields => self.open_legacy_fields(),
+            Command::ControlProperties => self.open_control_properties(),
             Command::WordArt => self.open_word_art(),
             Command::SelectionPane => self.open_selection_pane(),
 

@@ -371,6 +371,9 @@ impl Editor {
         if self.is_read_only() {
             return self.refuse_read_only();
         }
+        if self.inside_a_locked_control() {
+            return self.report("The contents of this control cannot be edited");
+        }
         // A stretch that names somebody else says so by name: "this document
         // is protected" would send a person to a dialog that would not help.
         if let Some(marked) = self.document.locked_at(self.document.caret()) {
@@ -423,6 +426,12 @@ impl Editor {
             Some(true) => return None,
             Some(false) => return Some(EditMode::ReadOnly),
             None => {}
+        }
+        // A control whose contents are locked is shut wherever it is, and by
+        // the document rather than by a restriction: see
+        // [`super::controls`].
+        if self.inside_a_locked_control() {
+            return Some(EditMode::ReadOnly);
         }
         self.document.protection()
     }

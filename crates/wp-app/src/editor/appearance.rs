@@ -105,6 +105,54 @@ impl Editor {
 }
 
 impl Editor {
+    /// Draws the faint tag at each end of every content control.
+    ///
+    /// Word's boundary, and the reason it has one: a control is a box
+    /// somebody is meant to fill in, and a box nobody can see is a box
+    /// nobody knows to fill in. Two short uprights with a lip at the top and
+    /// the bottom, which is Word's shape and reads as a bracket without
+    /// being a letter.
+    pub(super) fn draw_control_edges(&mut self) {
+        let controls = self.document.controls();
+        if controls.is_empty() {
+            return;
+        }
+
+        // Where each end is on the page, gathered before anything is drawn so
+        // that the canvas is not borrowed while the pages are being read.
+        let mut edges: Vec<(f32, f32, f32)> = Vec::new();
+        for index in 0..self.pages.len() {
+            let (origin_x, origin_y) = self.page_origin(index);
+            let top = self.content_top() + origin_y - self.scroll_down();
+            for control in &controls {
+                for (at, ending) in [(control.start, false), (control.end, true)] {
+                    // A range of no width at the position itself, which is
+                    // what asks the layout where that position is.
+                    let rects = self.pages[index].selection_rects(
+                        at,
+                        wp_docx::TextPosition::new(at.paragraph, at.offset + 1),
+                    );
+                    let Some((x, y, width, height)) = rects.first().copied() else { continue };
+                    let edge = if ending { x + width } else { x };
+                    let _ = ending;
+                    edges.push((origin_x + edge, top + y, height));
+                }
+            }
+        }
+
+        let colour = self.theme.control_edge;
+        for (x, y, height) in edges {
+            let height = height.max(2.0);
+            // The upright.
+            self.canvas.fill_rect(x as i32, y as i32, 1, height.ceil() as i32, colour);
+            // And the two lips, one at each end of it, which are what make it
+            // a tag rather than a caret.
+            for lip in [y, y + height - 1.0] {
+                self.canvas.fill_rect(x as i32, lip as i32, 3, 1, colour);
+            }
+        }
+    }
+
     /// Shades every stretch of the document that has its own rule about who
     /// may edit it.
     ///

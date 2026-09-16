@@ -1875,6 +1875,10 @@ static DEVELOPER_GROUPS: &[Group] = &[
             Item::Break,
             Item::Small(Command::Control(4), Icon::MultilevelList, "Drop-Down List"),
             Item::Small(Command::Control(5), Icon::DateTime, "Date Picker"),
+            Item::Break,
+            // Word's Properties, which is what a control is named and given
+            // its list from after it has been put in.
+            Item::Small(Command::ControlProperties, Icon::Properties, "Properties"),
         ],
         launcher: None,
     },

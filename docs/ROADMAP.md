@@ -5171,13 +5171,49 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   which is what the button is for nine times in ten. The Organizer's other
   three tabs — AutoText, toolbars and macros — belong to features that are
   **J6**'s, not built, and **L**'s.
-- [ ] **J15. The boundary round a content control, and its Properties.**
+- [x] **J15. The boundary round a content control, and its Properties.**
   Word draws a faint tag at each end of a control so a person can see where
-  one starts and ends; here a control is visible only by what it does. And
-  Word's Properties dialog names a control, gives it its list, and says
-  whether it can be deleted or its contents edited — without which a control
-  is made once and never changed. Both named in **J8**, and **L10**'s Design
-  Mode waits on the first of them.
+  one starts and ends, and its Properties dialog names a control, gives it
+  its list, and says whether it can be deleted or its contents edited.
+  *Done:* both, and the two locks are enforced rather than merely written.
+  **The boundary.** A tag at each end of every control, in a colour of its
+  own in both themes: a short upright with a lip at the top and the bottom,
+  which is Word's shape and reads as a bracket without being a letter. The
+  reason it is there is the reason Word has one — a control is a box somebody
+  is meant to fill in, and a box nobody can see is a box nobody knows to fill
+  in.
+  **Properties**, on the Developer tab beside the six controls that make one.
+  The title a person reads and the tag a program uses, kept side by side
+  because they are for different readers; the two tick boxes; and, for a list,
+  the list itself. A control made and never changed was a control whose name
+  was wrong for ever and whose list was whatever it was born with.
+  **The locks do something.** `w:lock` is one attribute with four words in
+  it, which is how the format writes two answers, and both are read and
+  written. A control whose contents are locked takes no typing and greys out
+  the ribbon while the caret is in it — by the document rather than by a
+  restriction, so it holds whether or not anything else does, which is the
+  point of it: a form's labels stay labels while its boxes are filled in. One
+  that cannot be deleted is not deleted, whatever is selected round it, and
+  says so by name.
+  *Proven by:* five tests over the document — a control named after it was
+  made, the two locks written and read back as the one word the format uses
+  for each pair, the lock taken off leaving no element behind, a list given
+  another list with the empty entries dropped and what it shows made one of
+  what it offers, and a list of nothing refused. Six over the program: the
+  dialog showing what the control says and writing back what it is told, a
+  list control offered its list and a text one not, the list typed into the
+  dialog becoming the list the control offers, the dialog refusing to open on
+  no control at all, a locked control taking no typing while the rest of the
+  document stays open, and one that cannot be deleted surviving a selection
+  that covered it. The dialog photographed, and the boundaries in a document.
+  *Not done, and named here:* **the tab with the control's name on it.** Word
+  draws the title in a small grey tab above the control when the caret is in
+  one; here the name is in the strip along the bottom, which says the same
+  thing in a place a person has to look at rather than one they cannot miss.
+  Word's Properties dialog also carries the placeholder text, a style for the
+  contents, a date's format and calendar, and Add, Modify and Remove under
+  the list where this takes the whole list at once. **L10**'s Design Mode is
+  now unblocked: it has a boundary to draw.
 - [ ] **J16. The rest of Word's Restrict Editing pane.** "Allow AutoFormat to
   override formatting restrictions" (`w:autoFormatOverride`), which waits on
   an autocorrect that applies formatting; "Block Quick Style Set switching"
@@ -5357,9 +5393,11 @@ interpreter is reachable only from the macro list a person opened themselves.
   repeats its content and needs a way of repeating; the third offers **J6**'s
   galleries from inside the document. Done when each can be put in, used, and
   read back by Word as what it is.
-- [ ] **L10. Design Mode.** Word's button that draws the boundary round every
-  content control and lets the placeholder text be edited. It waits on a
-  control having a boundary to draw at all, which **J8** named as not done.
+- [ ] **L10. Design Mode.** Word's button that turns every content control
+  into its own name and lets the placeholder text be edited in place. **J15**
+  drew the boundary it needed, so what is left is the mode itself: the tags
+  showing the title rather than bracketing the content, and typing inside one
+  changing what the control shows before anybody has filled it in.
 
 ---
 

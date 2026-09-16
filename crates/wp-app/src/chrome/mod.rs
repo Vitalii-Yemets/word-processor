@@ -395,6 +395,8 @@ pub enum Command {
     Control(usize),
     /// The three fields a form was made of before content controls.
     LegacyFields,
+    /// What a content control is called, and what may be done to it.
+    ControlProperties,
 }
 
 impl Command {
