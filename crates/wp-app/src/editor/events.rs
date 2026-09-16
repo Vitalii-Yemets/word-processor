@@ -1476,7 +1476,6 @@ impl Editor {
             Choice::ThemeFonts => Command::ThemeFonts,
             Choice::LineNumbers => Command::LineNumbers,
             Choice::Hyphenation => Command::Hyphenation,
-            Choice::Protection => Command::RestrictEditing,
             // The strip's own menu hangs where it was opened, not under a
             // button of the ribbon.
             Choice::StatusBar => Command::ExpandGroup(0),
@@ -1532,7 +1531,6 @@ impl Editor {
             | Choice::Source
             | Choice::LineNumbers
             | Choice::Hyphenation
-            | Choice::Protection
             | Choice::StatusBar
             | Choice::PageNumbering
             | Choice::Margin
@@ -1705,7 +1703,6 @@ impl Editor {
             Choice::ThemeFonts => self.choose_theme_fonts(index),
             Choice::LineNumbers => self.choose_line_numbers(index),
             Choice::Hyphenation => self.choose_hyphenation(index),
-            Choice::Protection => self.choose_protection(index),
             Choice::StatusBar => self.choose_status_part(index),
             Choice::PageNumbering => self.choose_page_numbering(index),
             Choice::Margin => self.choose_margins(index),

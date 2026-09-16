@@ -77,6 +77,11 @@ pub(super) enum Asking {
     Sort,
     /// Arithmetic over the cells of a table.
     Formula,
+    /// What a reader of this document may do to it, and the password behind
+    /// the answer.
+    Protect,
+    /// And the password back again, before the restriction is lifted.
+    Unprotect,
 }
 
 impl Editor {
@@ -161,6 +166,8 @@ impl Editor {
             Some(Asking::Layout) => self.apply_layout_dialog(&dialog),
             Some(Asking::Sort) => self.apply_sort(&dialog),
             Some(Asking::Formula) => self.apply_formula(&dialog),
+            Some(Asking::Protect) => self.apply_protection(&dialog),
+            Some(Asking::Unprotect) => self.apply_unprotection(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),
             Some(Asking::AutoCorrect) => self.apply_autocorrect_dialog(&dialog),
             Some(Asking::Translator) => self.apply_translator_preferences(&dialog),

@@ -31,6 +31,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod base64;
+
 mod tables;
 
 /// An encoding a text file can be in.

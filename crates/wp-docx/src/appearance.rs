@@ -1,16 +1,16 @@
-//! Line numbers, hyphenation, the colour of the page, and who may edit it.
+//! Line numbers, hyphenation and the colour of the page.
 //!
-//! # Four unrelated things in one place
+//! # Three unrelated things in one place
 //!
 //! They have nothing in common to a reader. They have everything in common to
 //! this program: each is one switch, written once, that changes how the whole
 //! document behaves — and each of them lives in a different part of the file.
-//! Line numbers are section properties; hyphenation and protection are
-//! settings; the page colour is a child of the document itself and a setting
-//! saying to honour it.
+//! Line numbers are section properties; hyphenation is a setting; the page
+//! colour is a child of the document itself and a setting saying to honour it.
 //!
-//! Keeping them together is what keeps four one-line features from becoming
-//! four modules.
+//! Keeping them together is what keeps three one-line features from becoming
+//! three modules. Who may edit the document was here too until it grew a
+//! password: see [`crate::protection`].
 
 use wp_xml::tree::Element;
 
@@ -73,58 +73,6 @@ impl Default for LineNumbers {
     fn default() -> Self {
         Self { count_by: 1, start: 1, restart: Restart::Continuous, distance: None }
     }
-}
-
-/// What a reader is allowed to do to a protected document.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum EditMode {
-    /// Nothing at all.
-    #[default]
-    ReadOnly,
-    /// Only leave comments.
-    Comments,
-    /// Edit, but every change is recorded.
-    TrackedChanges,
-    /// Only fill in form fields.
-    Forms,
-}
-
-impl EditMode {
-    #[must_use]
-    fn word(self) -> &'static str {
-        match self {
-            Self::ReadOnly => "readOnly",
-            Self::Comments => "comments",
-            Self::TrackedChanges => "trackedChanges",
-            Self::Forms => "forms",
-        }
-    }
-
-    #[must_use]
-    fn from_word(word: &str) -> Option<Self> {
-        match word {
-            "readOnly" => Some(Self::ReadOnly),
-            "comments" => Some(Self::Comments),
-            "trackedChanges" => Some(Self::TrackedChanges),
-            "forms" => Some(Self::Forms),
-            _ => None,
-        }
-    }
-
-    /// What a person is shown when picking one.
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::ReadOnly => "No changes (Read only)",
-            Self::Comments => "Comments",
-            Self::TrackedChanges => "Tracked changes",
-            Self::Forms => "Filling in forms",
-        }
-    }
-
-    /// Every one that can be picked, in Word's order.
-    pub const ALL: &'static [Self] =
-        &[Self::ReadOnly, Self::Comments, Self::TrackedChanges, Self::Forms];
 }
 
 impl Document {
@@ -311,51 +259,6 @@ impl Document {
         self.mark_modified();
         true
     }
-
-    // --- Who may edit it ------------------------------------------------------
-
-    /// What a reader is allowed to do, if the document says.
-    #[must_use]
-    pub fn protection(&self) -> Option<EditMode> {
-        let root = self.settings_root()?;
-        let element = root.child(Some(read::W), "documentProtection")?;
-        // Written but not enforced means Word ignores it, and so does this.
-        if matches!(
-            element.attribute(Some(read::W), "enforcement"),
-            None | Some("0" | "false" | "off")
-        ) {
-            return None;
-        }
-        EditMode::from_word(element.attribute(Some(read::W), "edit").unwrap_or_default())
-    }
-
-    /// Restricts editing, or lifts the restriction.
-    ///
-    /// There is no password. A password on a `.docx` protects nothing — the
-    /// file says so itself, in plain text, and any program may ignore it —
-    /// so offering one would be claiming a safety this cannot give.
-    pub fn set_protection(&mut self, wanted: Option<EditMode>) -> bool {
-        if self.protection() == wanted {
-            return false;
-        }
-        let Some(mut root) = self.settings_root() else { return false };
-        root.remove_children_named(Some(read::W), "documentProtection");
-
-        if let Some(mode) = wanted {
-            let prefix = self.prefix();
-            let name = |local: &str| edit::name_with(prefix.as_deref(), local);
-            let mut element = Element::new(&name("documentProtection"), Some(read::W));
-            element.set_namespaced_attribute(&name("edit"), read::W, mode.word());
-            element.set_namespaced_attribute(&name("enforcement"), read::W, "1");
-            edit::insert_ordered(&mut root, element, crate::settings::SETTINGS_ORDER);
-        }
-
-        if !self.save_settings_root(root) {
-            return false;
-        }
-        self.mark_modified();
-        true
-    }
 }
 
 #[cfg(test)]
@@ -370,15 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn every_edit_mode_survives_being_written_and_read_back() {
-        for mode in EditMode::ALL {
-            assert_eq!(EditMode::from_word(mode.word()), Some(*mode));
-        }
-    }
-
-    #[test]
-    fn an_unknown_word_is_not_a_mode() {
-        assert_eq!(EditMode::from_word("something else"), None);
+    fn an_unknown_word_is_not_a_restart() {
         assert_eq!(Restart::from_word("something else"), Restart::Continuous);
     }
 

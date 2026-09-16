@@ -23,8 +23,8 @@ impl Editor {
         // A protected document is protected against the ribbon too, not only
         // against typing.
         self.record_command(command);
-        if self.is_locked() && !command.is_allowed_when_locked() {
-            return self.refuse_locked();
+        if let Some(refusal) = self.refuse_restricted(command) {
+            return refusal;
         }
 
         match command {

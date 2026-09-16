@@ -32,6 +32,7 @@
 = All files (*.*)
 = All styles
 = Allow character substitution
+= Allow only this kind of editing
 = Allow overlap
 = Allow row to break across pages
 = Already in this document
@@ -171,8 +172,10 @@
 = Edges
 = Edit List
 = Editing
+= Editing restrictions
 = Effects
 = End lines with
+= Enter new password (optional)
 = Envelopes
 = Equation
 = Eraser
@@ -338,6 +341,7 @@
 = Paragraph Spacing for the whole document
 = Paragraph formatting
 = Paragraph…
+= Password
 = Paste
 = Paste as Picture
 = Paste function
@@ -367,6 +371,7 @@
 = Recently used
 = Recipients
 = Redo
+= Reenter password to confirm
 = References
 = Registered. Choose this program in the page that opened
 = Reject
@@ -383,6 +388,7 @@
 = Replaced one of "{0}"
 = Reset
 = Restrict Editing
+= Restricted to
 = Results
 = Review
 = Reviewing Pane
@@ -440,6 +446,7 @@
 = Split Cells
 = Start Mail Merge
 = Start Merge
+= Start enforcing protection
 = Strikethrough
 = Style
 = Style based on
@@ -496,6 +503,7 @@
 = Type
 = Underline
 = Undo
+= Unprotect Document
 = Update Index
 = Update Table
 = Use a dark window

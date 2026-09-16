@@ -162,8 +162,6 @@ pub enum Choice {
     LineNumbers,
     /// Whether words are broken across lines.
     Hyphenation,
-    /// What a reader is allowed to do.
-    Protection,
     /// What the strip along the bottom shows.
     StatusBar,
     /// How a section numbers its pages.

@@ -1893,6 +1893,18 @@ impl Editor {
             "fontdialog" => {
                 self.open_font_dialog();
             }
+            // Word's Restrict Editing, which is the one dialog in this
+            // program with a password in it.
+            "restrict" => {
+                self.open_protection();
+            }
+            "restricted" => {
+                // The document already protected, so the strip along the
+                // bottom and the refusal can be seen rather than described.
+                self.open_protection();
+                self.finish_dialog(crate::chrome::dialog::Answer::Accept);
+                self.run(crate::chrome::Command::Format(wp_docx::CharacterFormat::Bold));
+            }
             "fontadvanced" => {
                 self.open_font_dialog();
                 // The second tab, so the half of the dialog that is not the

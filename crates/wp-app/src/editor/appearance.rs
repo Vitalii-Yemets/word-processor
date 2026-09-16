@@ -1,6 +1,6 @@
-//! Line numbers, hyphenation and who may edit the document.
+//! Line numbers, hyphenation and the colour of the page.
 
-use wp_docx::appearance::{EditMode, LineNumbers, Restart};
+use wp_docx::appearance::{LineNumbers, Restart};
 use wp_shell::Response;
 
 use crate::chrome::{Choice, Command, Popup};
@@ -77,45 +77,6 @@ impl Editor {
         self.edited(changed, if on { "Hyphenation: automatic" } else { "Hyphenation: none" })
     }
 
-    /// Drops open what a reader may be allowed to do.
-    pub(super) fn open_protection(&mut self) -> Response {
-        if self.close_popup_if(Choice::Protection) {
-            return Response::Redraw;
-        }
-        let Some((left, top, _)) = self.ribbon.command_rect(Command::RestrictEditing) else {
-            return Response::Ignored;
-        };
-
-        let here = self.document.protection();
-        let current = match here {
-            None => Some(0),
-            Some(mode) => EditMode::ALL.iter().position(|entry| *entry == mode).map(|at| at + 1),
-        };
-        let mut items = vec!["Stop Protection".to_owned()];
-        items.extend(EditMode::ALL.iter().map(|mode| mode.label().to_owned()));
-        self.popup = Some(Popup::new(Choice::Protection, items, current, left, top, 260.0));
-        self.needs_redraw = true;
-        Response::Redraw
-    }
-
-    /// Restricts editing, or lifts the restriction.
-    pub(super) fn choose_protection(&mut self, index: usize) -> Response {
-        self.popup = None;
-        // The first line lifts it; the rest are the kinds, in order.
-        let wanted = index.checked_sub(1).and_then(|at| EditMode::ALL.get(at).copied());
-        if index > 0 && wanted.is_none() {
-            return Response::Ignored;
-        }
-
-        let changed = self.document.set_protection(wanted);
-        let note = match wanted {
-            None => "Protection lifted".to_owned(),
-            Some(mode) => format!("Restricted to: {}", mode.label()),
-        };
-        self.needs_redraw = true;
-        self.edited(changed, &note)
-    }
-
     /// Closes an open list if it is the one asked about.
     ///
     /// Pressing a button whose list is already open closes it, which is what
@@ -144,17 +105,6 @@ impl Editor {
 }
 
 impl Editor {
-    /// Whether the document says it may not be edited.
-    #[must_use]
-    pub(super) fn is_locked(&self) -> bool {
-        self.document.protection() == Some(EditMode::ReadOnly)
-    }
-
-    /// Says why nothing happened.
-    pub(super) fn refuse_locked(&mut self) -> Response {
-        self.report("This document is protected — Review ▸ Restrict Editing lifts it")
-    }
-
     /// Locks the selection so that only this author may change it, or unlocks
     /// the stretch the caret is in.
     ///

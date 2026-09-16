@@ -83,6 +83,9 @@ language = Deutsch
 = Allow character substitution
 > Zeichenersetzung zulassen
 
+= Allow only this kind of editing
+> Nur diese Art der Bearbeitung zulassen
+
 = Allow overlap
 > Überlappen zulassen
 
@@ -497,6 +500,9 @@ language = Deutsch
 = Edit List
 > Liste bearbeiten
 
+= Editing restrictions
+> Bearbeitungseinschränkungen
+
 = Editing
 > Bearbeiten
 
@@ -505,6 +511,9 @@ language = Deutsch
 
 = End lines with
 > Zeilen beenden mit
+
+= Enter new password (optional)
+> Neues Kennwort eingeben (optional)
 
 = Envelopes
 > Umschläge
@@ -1001,6 +1010,9 @@ language = Deutsch
 = Paragraph…
 > Absatz…
 
+= Password
+> Kennwort
+
 = Paste
 > Einfügen
 
@@ -1088,6 +1100,9 @@ language = Deutsch
 = Redo
 > Wiederholen
 
+= Reenter password to confirm
+> Kennwort zur Bestätigung erneut eingeben
+
 = References
 > Verweise
 
@@ -1132,6 +1147,9 @@ language = Deutsch
 
 = Reset
 > Zurücksetzen
+
+= Restricted to
+> Eingeschränkt auf
 
 = Restrict Editing
 > Bearbeitung einschränken
@@ -1301,6 +1319,9 @@ language = Deutsch
 = Split Cells
 > Zellen teilen
 
+= Start enforcing protection
+> Schutz anwenden
+
 = Start Mail Merge
 > Seriendruck starten
 
@@ -1468,6 +1489,9 @@ language = Deutsch
 
 = Type
 > Typ
+
+= Unprotect Document
+> Dokumentschutz aufheben
 
 = Underline
 > Unterstrichen

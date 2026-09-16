@@ -1,0 +1,13 @@
+[package]
+name = "wp-hash"
+description = "The hashes the Word formats use: SHA-1 and the SHA-2 family, implemented from scratch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Nothing. A hash is arithmetic.
+
+[lints]
+workspace = true

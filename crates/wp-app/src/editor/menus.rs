@@ -326,7 +326,7 @@ impl Editor {
             }
             Choice::Tracking => {
                 let locked = self.document.protection()
-                    == Some(wp_docx::appearance::EditMode::TrackedChanges);
+                    == Some(wp_docx::protection::EditMode::TrackedChanges);
                 let items = vec![
                     "Track Changes".to_owned(),
                     if locked { "Unlock Tracking" } else { "Lock Tracking" }.to_owned(),
@@ -651,17 +651,13 @@ impl Editor {
         match index {
             0 => self.toggle_track_changes(),
             1 => {
-                let locked = self.document.protection()
-                    == Some(wp_docx::appearance::EditMode::TrackedChanges);
+                use wp_docx::protection::{EditMode, Protection};
+                let locked = self.document.protection() == Some(EditMode::TrackedChanges);
                 // Word's Lock Tracking stops the recording being switched off.
                 // Here that is the document's own restriction to tracked
                 // changes, which is the same thing written down.
-                let wanted =
-                    if locked { None } else { Some(wp_docx::appearance::EditMode::TrackedChanges) };
-                if !locked && !self.document.tracking_changes() {
-                    self.toggle_track_changes();
-                }
-                let changed = self.document.set_protection(wanted);
+                let wanted = (!locked).then(|| Protection::new(EditMode::TrackedChanges));
+                let changed = self.document.set_protection(wanted.as_ref());
                 self.needs_redraw = true;
                 self.edited(changed, if locked { "Tracking unlocked" } else { "Tracking locked" })
             }

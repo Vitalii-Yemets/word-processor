@@ -440,6 +440,63 @@ impl Command {
                 | Self::RestrictEditing
         )
     }
+
+    /// Whether the command only makes a comment or takes one away.
+    ///
+    /// The one thing a document restricted to comments is for.
+    #[must_use]
+    pub fn is_a_comment(self) -> bool {
+        matches!(self, Self::NewComment | Self::DeleteComment)
+    }
+
+    /// Whether it takes back what was just done, or puts it back.
+    #[must_use]
+    pub fn is_undoing(self) -> bool {
+        matches!(self, Self::Undo | Self::Redo)
+    }
+
+    /// Whether it moves text through the clipboard.
+    #[must_use]
+    pub fn is_clipboard(self) -> bool {
+        matches!(self, Self::Cut | Self::Paste | Self::PasteTextOnly)
+    }
+
+    /// Whether a restriction on the document lets this command run.
+    ///
+    /// `here` says whether the place the caret is in may be edited at all,
+    /// which only a form protection makes a question.
+    ///
+    /// Written as an allow-list on purpose. A list of what is forbidden goes
+    /// out of date the next time a button is added, and it goes out of date
+    /// silently and in the dangerous direction.
+    ///
+    /// One answer, asked twice: the ribbon asks it to know whether to grey a
+    /// button out, and the editor asks it to know whether to run one. A
+    /// button that looks pressable and does nothing is the thing this is for.
+    #[must_use]
+    pub fn is_allowed_under(
+        self,
+        restriction: Option<wp_docx::protection::EditMode>,
+        here: bool,
+    ) -> bool {
+        use wp_docx::protection::EditMode;
+        let Some(mode) = restriction else { return true };
+        if self.is_allowed_when_locked() {
+            return true;
+        }
+        match mode {
+            EditMode::ReadOnly => false,
+            // Undoing is allowed so that a comment can be taken back the way
+            // everything else in this program is taken back.
+            EditMode::Comments => self.is_a_comment() || self.is_undoing(),
+            // Everything, because everything will be recorded.
+            EditMode::TrackedChanges => true,
+            // Filling in a form is typing, and typing is not a command. What
+            // is let through is what somebody filling one in still needs, and
+            // only where they are allowed to be.
+            EditMode::Forms => (self.is_undoing() || self.is_clipboard()) && here,
+        }
+    }
 }
 
 /// Which lines a table draws.
@@ -510,6 +567,12 @@ pub struct ToolbarState {
     pub erasing: bool,
     /// Whether the comments are listed in the pane.
     pub show_comments: bool,
+    /// What the document's restriction lets be pressed, if it has one.
+    pub restricted: Option<wp_docx::protection::EditMode>,
+    /// Whether the place the caret is in may be edited. Only a form
+    /// protection makes that a question: everything else is the same answer
+    /// everywhere in the document.
+    pub can_edit_here: bool,
     /// The colours the two coloured buttons would apply.
     pub text_color: Color,
     pub highlight_color: Color,
@@ -663,6 +726,9 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
 /// Whether a command can be used at all right now.
 #[must_use]
 pub fn is_enabled(command: Command, state: &ToolbarState) -> bool {
+    if !command.is_allowed_under(state.restricted, state.can_edit_here) {
+        return false;
+    }
     match command {
         Command::Undo => state.can_undo,
         Command::Redo => state.can_redo,

@@ -1134,7 +1134,6 @@ impl Ribbon {
                     | Choice::Source
                     | Choice::LineNumbers
                     | Choice::Hyphenation
-                    | Choice::Protection
                     | Choice::StatusBar
                     | Choice::PageNumbering
                     | Choice::Printer
@@ -1257,7 +1256,15 @@ impl Ribbon {
             outline(canvas, x, top, STYLE_TILE_WIDTH - 3.0, height, theme.field_edge);
 
             // The specimen, in the style's own formatting, shrunk to fit.
-            let ink = if chosen { theme.on_accent() } else { theme.text };
+            // Grey where the document says a style may not be applied, for
+            // the reason every other button on the ribbon goes grey there.
+            let ink = if chosen {
+                theme.on_accent()
+            } else if super::is_enabled(command, state) {
+                theme.text
+            } else {
+                theme.disabled_text
+            };
             let style = TextStyle {
                 bold: sample.bold,
                 italic: sample.italic,

@@ -63,7 +63,10 @@ impl Editor {
                     access_key: command_keys(command),
                     rect: (left as i32, top as i32, width as i32, height as i32),
                     selected: on.unwrap_or(false),
-                    enabled: true,
+                    // The same answer the eye is given: a button drawn grey
+                    // is a button a screen reader must call unavailable, or
+                    // the two accounts of the window disagree.
+                    enabled: crate::chrome::is_enabled(command, &state),
                     focused: false,
                 });
             }

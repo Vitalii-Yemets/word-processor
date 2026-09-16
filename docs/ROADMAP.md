@@ -4321,8 +4321,70 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
 ## J — Protection, collaboration and the rest of Word's features
 
-- [ ] **J1. Document protection.** Read-only, filling in forms only, tracked
+- [x] **J1. Document protection.** Read-only, filling in forms only, tracked
   changes forced on, and the password behind them.
+  *Done:* all four of Word's restrictions, each one true of the program and
+  not only written in the file. **No changes** refuses every command that
+  would alter the document and greys the buttons that would have run them.
+  **Comments** refuses the same and lets a comment be made and taken away,
+  which is the whole of what the restriction is for. **Tracked changes**
+  switches the recording on, keeps it on — `set_tracking_changes(false)` is
+  refused while it stands, which is what Word's Lock Tracking is — and lets
+  everything else through, because everything else will be recorded.
+  **Filling in forms** reads the form fields the document has, in
+  `wp-docx/src/forms.rs`, and allows typing inside the answer of a text
+  field and nowhere else, with a section let out of it where `w:formProt`
+  says so.
+  One rule, asked twice: `Command::is_allowed_under` is read by the ribbon
+  to decide whether to grey a button and by the editor to decide whether to
+  run one, so a control that looks pressable and a control that works are
+  the same control. It is written as an allow-list, because a list of what
+  is forbidden goes out of date the next time a button is added and does it
+  silently.
+  The password: `wp-hash` is a new crate carrying SHA-1 and SHA-512 written
+  from the standard, and `wp_text::base64` is the one base64 in the
+  workspace — the picture in a mail message and the hash of a password in
+  an attribute are the same problem, and `wp-html` now asks it rather than
+  carrying a second copy. The salt comes from the machine, through a new
+  `wp_shell::random`: `/dev/urandom` on Unix and `RtlGenRandom` on Windows,
+  because no arithmetic makes a byte nobody can guess. The hash is the
+  format's own — salt and the password as UTF-16LE, then a hundred thousand
+  turns of hashing the last answer with the turn number after it — written
+  in the attributes Word writes now (`w:algorithmName`, `w:hashValue`,
+  `w:saltValue`, `w:spinCount`) and read from those or from the ones Word
+  2007 wrote (`w:cryptAlgorithmSid`, `w:hash`, `w:salt`,
+  `w:cryptSpinCount`). A document naming a hash this program has not got
+  keeps its restriction and refuses every answer, and says which hash it
+  wanted rather than saying the password was wrong.
+  Said plainly where it matters: the dialog carries Word's own sentence —
+  the document is not encrypted, and anybody who can open the file can take
+  the restriction off. The password stops a person, not a program. Making
+  the bytes themselves unreadable is **J2**.
+  *Proven by:* `wp-hash` against the standard's own vectors, the
+  one-million-`a` case included; a password written, saved, reopened and
+  found to open only for the word that made it, at the format's full
+  hundred thousand turns; the password itself searched for in the saved
+  bytes and not found; the Word 2007 attributes built in a test out of
+  arithmetic done outside the code being tested, and read back and checked;
+  a document protected here converted by LibreOffice, whose own writer puts
+  the element back — and the password still opens it, which it could not do
+  if LibreOffice had not read the attributes as a password; the form field
+  a test builds the way Word writes one, found with its answer in the right
+  place and a check box and a drop-down told apart from it; and the
+  Restrict Editing dialog and a protected window photographed and looked
+  at.
+  *Not done, and named here:* **making** a form field — this program reads
+  and fills in the ones a document has, and has no Developer tab, no
+  command that puts a text box, a tick box or a drop-down into a document,
+  and no way to tick a box or pick from a drop-down once one is there. That
+  is **J8**. Limiting formatting to a selection of styles — `w:formatting`
+  is read and written back so that a document does not lose it here, and
+  nothing enforces it and no control offers it, which is **J9**. Word's
+  other two passwords, the ones under Save As ▸ Tools ▸ General Options:
+  **J10**. And the exceptions a restriction may carry — the stretches
+  marked `w:permStart w:ed="everyone"` that stay editable inside a
+  protected document — are read as blocked stretches (**F**'s Block
+  Authors) and are not yet let through the restriction: **J11**.
 - [ ] **J2. Encryption.** Opening and writing the encrypted `.docx` Word makes,
   which is an OLE compound file with the package encrypted inside it.
 - [ ] **J3. Digital signatures.**
@@ -4335,6 +4397,30 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 - [ ] **J7. Macros.** A VBA interpreter is a language implementation; it is
   listed here so that the decision not to write one is a decision and not an
   oversight.
+- [ ] **J8. Form fields, and the Developer tab they are made from.** The
+  three legacy fields — text, tick box, drop-down — put into a document,
+  filled in, and behaving: a tick box that ticks, a drop-down that drops.
+  And Word's content controls, `w:sdt`, which are the same idea written
+  again and are what a document made this decade uses. **J1** reads the
+  legacy fields and lets a text one be typed into, which is what a form
+  protection needs; this is the rest.
+- [ ] **J9. Limiting formatting to a selection of styles.** The top half of
+  Word's Restrict Editing: `w:formatting` on the protection, the styles
+  marked `w:locked` in `styles.xml`, the dialog that lists every style with
+  a tick box, and direct formatting refused while it stands. **J1** keeps
+  the flag through a round trip and enforces nothing.
+- [ ] **J10. The passwords under Save As ▸ Tools ▸ General Options.**
+  `w:writeProtection`: a document that asks to be opened read-only, and the
+  password that lets it be opened for writing. A different question from
+  **J1**'s — that one is what a reader may do to the text, this one is
+  whether the file opens for writing at all — and it needs somewhere in the
+  File page to be set from. The password to *open* is encryption and is
+  **J2**.
+- [ ] **J11. The exceptions a restriction carries.** Word's Restrict Editing
+  lets stretches of a protected document stay editable, by everybody or by
+  named people, written as `w:permStart` and `w:permEnd`. Both markers are
+  already read and written for Block Authors; what is missing is letting
+  them through a restriction, and the shading Word paints round them.
 
 ## K — Proving it against Word rather than against ourselves
 

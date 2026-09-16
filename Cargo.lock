@@ -72,10 +72,12 @@ version = "0.0.1"
 dependencies = [
  "wp-dict",
  "wp-grammar",
+ "wp-hash",
  "wp-image",
  "wp-normal",
  "wp-opc",
  "wp-segment",
+ "wp-text",
  "wp-xml",
  "wp-zip",
 ]
@@ -86,6 +88,10 @@ version = "0.0.1"
 
 [[package]]
 name = "wp-grammar"
+version = "0.0.1"
+
+[[package]]
+name = "wp-hash"
 version = "0.0.1"
 
 [[package]]

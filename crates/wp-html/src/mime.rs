@@ -189,60 +189,19 @@ pub fn encode_quoted_printable(bytes: &[u8]) -> String {
     out
 }
 
-const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
+/// Bytes as the letters a mail message carries them in.
+///
+/// The writing itself is [`wp_text::base64`]: one way of writing bytes as
+/// letters is enough for a program, and a picture in a mail message and
+/// the hash of a password in a document are the same problem.
 #[must_use]
 pub fn encode_base64(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 4 / 3 + 4);
-    let mut line = 0;
-    for chunk in bytes.chunks(3) {
-        let mut value: u32 = 0;
-        for (index, byte) in chunk.iter().enumerate() {
-            value |= u32::from(*byte) << (16 - 8 * index);
-        }
-        for index in 0..4 {
-            if index <= chunk.len() {
-                let digit = (value >> (18 - 6 * index)) & 63;
-                out.push(BASE64[digit as usize] as char);
-            } else {
-                out.push('=');
-            }
-        }
-        line += 4;
-        if line >= 76 {
-            out.push_str("\r\n");
-            line = 0;
-        }
-    }
-    if line > 0 {
-        out.push_str("\r\n");
-    }
-    out
+    wp_text::base64::encode_wrapped(bytes)
 }
 
 #[must_use]
 pub fn decode_base64(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
-    let mut value: u32 = 0;
-    let mut held = 0;
-    for &byte in bytes {
-        let digit = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' | b'-' => 62,
-            b'/' | b'_' => 63,
-            _ => continue,
-        };
-        value = (value << 6) | u32::from(digit);
-        held += 6;
-        if held >= 8 {
-            held -= 8;
-            out.push((value >> held) as u8);
-            value &= (1 << held) - 1;
-        }
-    }
-    out
+    wp_text::base64::decode(bytes)
 }
 
 #[cfg(test)]

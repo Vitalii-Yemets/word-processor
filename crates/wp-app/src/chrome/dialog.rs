@@ -132,6 +132,12 @@ pub enum Field {
     Said { label: String, value: String },
     /// A box with words in it.
     Text { label: String, value: String },
+    /// A box with a password in it, drawn as dots.
+    ///
+    /// The dots are not security — anybody who can see the screen can see the
+    /// keyboard — they are courtesy: a password is typed in front of whoever
+    /// is standing behind, and every program that asks for one hides it.
+    Secret { label: String, value: String },
     /// A box with a number in it, and what the number is measured in.
     Number { label: String, value: String, unit: &'static str },
     /// A box that is ticked or not.
@@ -322,6 +328,7 @@ impl Field {
             Self::Heading(text) => Self::Heading(m(&text)),
             Self::Said { label, value } => Self::Said { label: m(&label), value },
             Self::Text { label, value } => Self::Text { label: m(&label), value },
+            Self::Secret { label, value } => Self::Secret { label: m(&label), value },
             Self::Number { label, value, unit } => Self::Number { label: m(&label), value, unit },
             Self::Check { label, on } => Self::Check { label: m(&label), on },
             // The items of a list are the program's words where the list is
@@ -374,6 +381,7 @@ impl Field {
             Self::Grid { .. } | Self::Pairs { .. } | Self::Tree { .. } | Self::Lines { .. } => None,
             Self::Said { label, .. }
             | Self::Text { label, .. }
+            | Self::Secret { label, .. }
             | Self::Number { label, .. }
             | Self::Choice { label, .. } => Some(label),
         }
@@ -392,6 +400,7 @@ impl Field {
             Self::Heading(_) => "a heading",
             Self::Said { .. } => "a line",
             Self::Text { .. } => "a box",
+            Self::Secret { .. } => "a password box",
             Self::Number { .. } => "a number",
             Self::Check { .. } => "a tick box",
             Self::Choice { .. } => "a list",
@@ -601,8 +610,12 @@ impl Dialog {
 
         for (field, before) in self.fields.iter_mut().zip(previous.fields.iter()) {
             if let (
-                Field::Text { value, .. } | Field::Number { value, .. },
-                Field::Text { value: typed, .. } | Field::Number { value: typed, .. },
+                Field::Text { value, .. }
+                | Field::Secret { value, .. }
+                | Field::Number { value, .. },
+                Field::Text { value: typed, .. }
+                | Field::Secret { value: typed, .. }
+                | Field::Number { value: typed, .. },
             ) = (field, before)
             {
                 *value = typed.clone();
@@ -686,7 +699,11 @@ impl Dialog {
     #[must_use]
     pub fn said(&self, index: usize) -> String {
         match self.fields.get(index) {
-            Some(Field::Text { value, .. } | Field::Number { value, .. }) => value.clone(),
+            Some(
+                Field::Text { value, .. }
+                | Field::Secret { value, .. }
+                | Field::Number { value, .. },
+            ) => value.clone(),
             Some(Field::Choice { items, current, .. }) => {
                 items.get(*current).cloned().unwrap_or_default()
             }
@@ -898,8 +915,11 @@ impl Dialog {
                 Reaction::Changed
             }
             Key::Backspace => {
-                if let Some(Field::Text { value, .. } | Field::Number { value, .. }) =
-                    self.fields.get_mut(self.focus)
+                if let Some(
+                    Field::Text { value, .. }
+                    | Field::Secret { value, .. }
+                    | Field::Number { value, .. },
+                ) = self.fields.get_mut(self.focus)
                 {
                     value.pop();
                     return Reaction::Changed;
@@ -927,7 +947,7 @@ impl Dialog {
         }
 
         match self.fields.get_mut(self.focus) {
-            Some(Field::Text { value, .. }) => {
+            Some(Field::Text { value, .. } | Field::Secret { value, .. }) => {
                 value.push(character);
                 Reaction::Changed
             }
@@ -2093,8 +2113,13 @@ impl Dialog {
             Field::Said { label, value } => {
                 let line = engine.simple_line(&label, label_x, box_y + 16.0, 9.0, theme.text);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
-                let line = engine.simple_line(&value, box_x, box_y + 16.0, 9.0, theme.text);
-                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                // A line with nothing in the left-hand column runs the whole
+                // width of the panel. It is something the dialog is saying
+                // rather than the answer to a label, and there is no reason
+                // to start it a third of the way across.
+                let from = if label.is_empty() { label_x } else { box_x };
+                let line = engine.simple_line(&value, from, box_y + 16.0, 9.0, theme.text);
+                renderer.draw_within(canvas, &line, from, box_y, box_x + box_width - from, ROW);
             }
 
             Field::Check { label, on } => {
@@ -2137,7 +2162,14 @@ impl Dialog {
                 ));
             }
 
-            Field::Text { label, value } | Field::Number { label, value, .. } => {
+            Field::Text { label, value }
+            | Field::Secret { label, value }
+            | Field::Number { label, value, .. } => {
+                // What is shown, which for a password is one dot a letter.
+                let value = match &self.fields[index] {
+                    Field::Secret { .. } => "{2022}".repeat(value.chars().count()),
+                    _ => value,
+                };
                 let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
                 self.draw_box(canvas, box_x, box_y, box_width, focused, theme);

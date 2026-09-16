@@ -9,9 +9,11 @@ license.workspace = true
 [dependencies]
 wp-dict = { path = "../wp-dict" }
 wp-grammar = { path = "../wp-grammar" }
+wp-hash = { path = "../wp-hash" }
 wp-opc = { path = "../wp-opc" }
 wp-normal = { path = "../wp-normal" }
 wp-segment = { path = "../wp-segment" }
+wp-text = { path = "../wp-text" }
 wp-xml = { path = "../wp-xml" }
 
 [lints]
@@ -21,3 +23,7 @@ workspace = true
 # Used only by the tests, to build an archive that is not a valid package.
 wp-zip = { path = "../wp-zip" }
 wp-image = { path = "../wp-image" }
+# And to hash a password the way an older Word did, so that reading one back
+# is tested against arithmetic done outside the code under test.
+wp-hash = { path = "../wp-hash" }
+wp-text = { path = "../wp-text" }

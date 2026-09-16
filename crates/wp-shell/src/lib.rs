@@ -1462,6 +1462,60 @@ pub mod locale {
     }
 }
 
+/// Bytes nobody can guess.
+///
+/// # Why a shell crate carries them
+///
+/// Because no arithmetic makes them. Anything a program can work out from what
+/// it already holds is something anybody else can work out too; bytes that
+/// cannot be guessed come from the machine, which is watching a keyboard, a
+/// disc and a clock that nothing else can see. That makes it a question for the
+/// operating system, and the operating system is what this crate is for.
+///
+/// # What they are for here
+///
+/// The salt under a password. A salt is what stops two documents locked with
+/// the same word carrying the same hash, and it is worth nothing unless it
+/// could not have been guessed.
+pub mod random {
+    /// Fills the slice with bytes from the machine's own source, and says
+    /// whether it could.
+    ///
+    /// A machine that will not give them is a machine that cannot make a salt,
+    /// and the caller has to say so rather than make one up: a salt taken from
+    /// the clock is a salt that can be worked out again, and writing one would
+    /// be claiming a protection this cannot give.
+    pub fn fill(bytes: &mut [u8]) -> bool {
+        #[cfg(windows)]
+        {
+            // RtlGenRandom, which every program on Windows ends up at and
+            // which the library exports under this name and no other.
+            #[link(name = "advapi32")]
+            extern "system" {
+                fn SystemFunction036(buffer: *mut u8, length: u32) -> u8;
+            }
+            let Ok(length) = u32::try_from(bytes.len()) else { return false };
+            unsafe { SystemFunction036(bytes.as_mut_ptr(), length) != 0 }
+        }
+        #[cfg(not(windows))]
+        {
+            use std::io::Read;
+            // Every Unix has it, it does not block once the machine has
+            // started, and it is where the system's own library reads from.
+            std::fs::File::open("/dev/urandom")
+                .and_then(|mut source| source.read_exact(bytes))
+                .is_ok()
+        }
+    }
+
+    /// A fresh array of them, or nothing if the machine would not give any.
+    #[must_use]
+    pub fn bytes<const N: usize>() -> Option<[u8; N]> {
+        let mut out = [0u8; N];
+        fill(&mut out).then_some(out)
+    }
+}
+
 /// Tells the desktop what the window looks like, so that the parts it draws
 /// itself match the parts this program draws.
 ///

@@ -58,7 +58,15 @@ impl Document {
     }
 
     /// Reads the setting out of the package, which is done once on opening.
+    ///
+    /// A document restricted to tracked changes records them whether or not
+    /// the switch itself was written. That is what the restriction means, and
+    /// it is what Word's Lock Tracking writes: the restriction and the switch
+    /// are one button in Word's menu because they are one thing.
     pub(crate) fn read_tracking_setting(&self) -> bool {
+        if self.protection() == Some(crate::protection::EditMode::TrackedChanges) {
+            return true;
+        }
         let Some(settings) = self.settings_root() else { return false };
         settings
             .child(Some(read::W), "trackChanges")
@@ -66,7 +74,14 @@ impl Document {
     }
 
     /// Turns the recording of changes on or off.
+    ///
+    /// Switching it off is refused while the document is restricted to
+    /// tracked changes: a restriction that could be stepped round by pressing
+    /// the button beside it would be no restriction at all.
     pub fn set_tracking_changes(&mut self, on: bool) -> bool {
+        if !on && self.protection() == Some(crate::protection::EditMode::TrackedChanges) {
+            return false;
+        }
         if !self.set_setting_flag("trackChanges", on) {
             return false;
         }

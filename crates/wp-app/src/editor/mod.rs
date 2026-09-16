@@ -62,6 +62,7 @@ mod preferences;
 mod printpane;
 mod proofing;
 mod properties;
+mod protection;
 mod references;
 mod review;
 mod ribbondialog;

@@ -44,6 +44,15 @@ pub(crate) fn on_off(element: &Element) -> bool {
     !matches!(value(element), Some("0" | "false" | "off"))
 }
 
+/// Reads an on/off attribute, where not writing it at all means off.
+///
+/// Not the same question as [`on_off`], which is asked of an element that is
+/// there: an attribute that is absent has said nothing, and the schema gives
+/// every one of these a default of off.
+pub(crate) fn attribute_is_on(element: &Element, local: &str) -> bool {
+    element.attribute(Some(W), local).is_some_and(on_off_value)
+}
+
 /// Elements that hold runs but add nothing to the text themselves.
 fn is_transparent_inline(element: &Element) -> bool {
     element.namespace.as_deref() == Some(W)
