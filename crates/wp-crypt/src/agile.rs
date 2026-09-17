@@ -345,6 +345,10 @@ pub(crate) fn seal(package: &[u8], password: &str, fresh: &Fresh) -> Vec<u8> {
     info.extend_from_slice(description.as_bytes());
 
     let mut builder = wp_ole::Builder::new();
+    // What the format says is done to the package, beside the package it was
+    // done to. Office writes it; a reader stricter than Word would be within
+    // its rights to refuse a file without it. See [`crate::spaces`].
+    builder.item(crate::spaces::storage());
     builder.stream(crate::INFO, info);
     builder.stream(crate::PACKAGE, enciphered);
     builder.build()

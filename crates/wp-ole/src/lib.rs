@@ -374,6 +374,32 @@ fn parse_entry(bytes: &[u8]) -> Entry {
 
 // --- Writing one -------------------------------------------------------------
 
+/// Writes a list of things into the directory, and says where each of them
+/// went.
+///
+/// Recursive, because a storage may hold storages: what comes back is the
+/// numbers of the entries at this level, and each storage's own children have
+/// been written and joined to it before it is returned.
+fn lay_out(items: &[Item], written: &mut Vec<Written>) -> Vec<usize> {
+    let mut here = Vec::new();
+    for item in items {
+        here.push(written.len());
+        match item {
+            Item::Stream { name, bytes } => {
+                written.push(Written::stream(name, bytes.clone()));
+            }
+            Item::Storage { name, items } => {
+                let at = written.len();
+                written.push(Written::storage(name));
+                let inside = lay_out(items, written);
+                let child = tree(written, &inside);
+                written[at].child = child;
+            }
+        }
+    }
+    here
+}
+
 /// A compound file being built: a tree of storages and streams.
 ///
 /// # Why building it is harder than reading it
@@ -391,18 +417,32 @@ pub struct Builder {
 }
 
 #[derive(Clone, Debug)]
-enum Item {
+pub enum Item {
     Stream {
         name: String,
         bytes: Vec<u8>,
     },
-    /// A storage and everything in it. One level deep is all this writes,
-    /// which is all the encrypted documents it makes need; a deeper tree
-    /// would be the same code with a recursion in it.
+    /// A storage and everything in it, to any depth: a storage may hold
+    /// storages, which is what the description of an encrypted document is
+    /// made of.
     Storage {
         name: String,
-        streams: Vec<(String, Vec<u8>)>,
+        items: Vec<Item>,
     },
+}
+
+impl Item {
+    /// A stream of bytes under a name.
+    #[must_use]
+    pub fn stream(name: &str, bytes: Vec<u8>) -> Self {
+        Self::Stream { name: name.to_owned(), bytes }
+    }
+
+    /// A storage holding whatever is given.
+    #[must_use]
+    pub fn storage(name: &str, items: Vec<Item>) -> Self {
+        Self::Storage { name: name.to_owned(), items }
+    }
 }
 
 impl Builder {
@@ -419,7 +459,15 @@ impl Builder {
 
     /// Adds a storage holding the named streams.
     pub fn storage(&mut self, name: &str, streams: Vec<(String, Vec<u8>)>) -> &mut Self {
-        self.items.push(Item::Storage { name: name.to_owned(), streams });
+        let items = streams.into_iter().map(|(name, bytes)| Item::stream(&name, bytes)).collect();
+        self.items.push(Item::storage(name, items));
+        self
+    }
+
+    /// Adds anything at all at the top of the file, storages inside storages
+    /// included.
+    pub fn item(&mut self, item: Item) -> &mut Self {
+        self.items.push(item);
         self
     }
 
@@ -432,26 +480,7 @@ impl Builder {
         // below do — but it has to be settled before anything can point at
         // anything.
         let mut written: Vec<Written> = vec![Written::root()];
-        let mut top: Vec<usize> = Vec::new();
-        for item in &self.items {
-            top.push(written.len());
-            match item {
-                Item::Stream { name, bytes } => {
-                    written.push(Written::stream(name, bytes.clone()));
-                }
-                Item::Storage { name, streams } => {
-                    let at = written.len();
-                    written.push(Written::storage(name));
-                    let mut inside = Vec::new();
-                    for (name, bytes) in streams {
-                        inside.push(written.len());
-                        written.push(Written::stream(name, bytes.clone()));
-                    }
-                    let child = tree(&mut written, &inside);
-                    written[at].child = child;
-                }
-            }
-        }
+        let top = lay_out(&self.items, &mut written);
         written[0].child = tree(&mut written, &top);
 
         // The streams themselves. Long ones get sectors of their own; short

@@ -5432,12 +5432,48 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   these are, where this signs them "Compare". And the two halves of the
   column show whole pages rather than scrolling within one, which is right
   while a page is small enough to read and would not be on a longer one.
-- [ ] **J21. The `\006DataSpaces` storage, and the encryptions before 2007.**
-  Office writes a `\006DataSpaces` storage beside the two streams of an
-  encrypted file; this program does not, on the reading that it belongs to
-  the rights-management path rather than to a password, and that reading is
-  unproven until Word itself opens a file this wrote — which is **K1**. The
-  RC4 schemes Office used before 2007 are named in **J2** and not read.
+- [x] **J21. The `\006DataSpaces` storage, and the encryptions before 2007.**
+  What an encrypted file says was done to it, and the two schemes Office used
+  before AES.
+  *Done:* **the storage.** The format does not say "this file is encrypted".
+  It says the stream called `EncryptedPackage` has had a transform applied to
+  it, names the transform, and says what that transform needs to know —
+  because the same machinery carries the rights-management path, where the
+  transform is a different one and the key comes from a server. A file that
+  said nothing about that was a file saying nothing about what was done to
+  it; the four little structures are written now, in the shape the
+  specification gives them, and read on the way in: a file naming a transform
+  this program has not got is refused rather than half-deciphered, and one
+  with no storage at all is taken at its word, as Word takes it. The compound
+  file writer learnt to nest storages inside storages on the way, which this
+  needed and nothing had needed before.
+  **RC4.** A document somebody encrypted in Word 97 or Word 2003 is still
+  their document, and a word processor that cannot open it has lost it.
+  Reading a weak cipher is not endorsing it; refusing to read one is losing
+  somebody's work to make a point. So both schemes are read and neither is
+  ever written: the CryptoAPI one, which is the same header as the AES scheme
+  with the cipher named differently and a key for every five hundred and
+  twelve bytes; and Word 97's own, which has no header at all and whose key
+  is MD5 all the way down. Sealing a document is still AES with a two hundred
+  and fifty-six bit key and nothing else.
+  *Proven by:* RC4 against RFC 6229's own test vectors and against OpenSSL
+  both ways round at seven lengths — OpenSSL keeps it in a provider that has
+  to be asked for by name, which is a fair comment on the cipher and no help
+  to somebody with a document from 2003. MD5 against RFC 1321's seven
+  examples and against OpenSSL at every awkward length round the padding.
+  Then whole files, each assembled here byte by byte from the specification's
+  own description and opened by code that had no part in assembling it: one
+  encrypted the 2003 way at forty bits and at a hundred and twenty-eight, one
+  the 1997 way, a wrong password refused rather than deciphering to nonsense,
+  the storage found where the format says with the transform that means a
+  password, a file whose transform is another one refused, and a file with no
+  storage opened.
+  *Not done, and named here:* whether Word opens what this writes is still
+  unproven, and is **K1**: there is no Word in the build image, and
+  LibreOffice 7.4 takes no password on its command line. What the storage
+  changes is that a reader stricter than Word now has nothing to object to.
+  The rights-management path itself — asking a server for a key — is not
+  done and is not planned: it is a licence server, not a file format.
 - [ ] **J22. Word's own galleries of content.** Its cover pages, its page
   numbers, its watermarks: **J6** built the machinery and deliberately did
   not fill the galleries, because they are Word's own content and a gallery

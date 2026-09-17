@@ -464,6 +464,90 @@ pub fn hmac_sha512(key: &[u8], message: &[u8]) -> [u8; 64] {
     sha512(&outer)
 }
 
+/// MD5, which is what the encryption Office used before 2007 is built on.
+///
+/// # Why it is here
+///
+/// Not because it is any good: MD5 has been broken for twenty years and
+/// nothing this program writes uses it. It is here because a document
+/// somebody encrypted in Word 2003 has its key made with it, and a word
+/// processor that cannot open that document has lost it. See
+/// [`wp_crypt`]'s RC4 path, which is the only caller.
+///
+/// # What it is
+///
+/// Four numbers stirred through sixty-four steps for every sixty-four bytes
+/// of the message, each step adding one word of the message, one constant
+/// from a table, and a rotation. The table is the integer part of the sine of
+/// the step number times two to the thirty-two, which is where the numbers
+/// come from and why they look like nothing at all.
+#[must_use]
+pub fn md5(message: &[u8]) -> [u8; 16] {
+    /// How far each step rotates, four rounds of four repeated.
+    const SHIFTS: [u32; 64] = [
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, //
+        5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, //
+        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, //
+        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    ];
+
+    // The sines, worked out once at the first call rather than written down:
+    // a table of sixty-four numbers nobody can check by eye is a table that
+    // can be wrong in one place for ever.
+    let mut table = [0u32; 64];
+    for (step, entry) in table.iter_mut().enumerate() {
+        let sine = ((step + 1) as f64).sin().abs();
+        *entry = (sine * 4_294_967_296.0) as u32;
+    }
+
+    let mut state: [u32; 4] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476];
+
+    // The message, a one bit, noughts, and its length in bits at the end.
+    let mut padded = message.to_vec();
+    padded.push(0x80);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&((message.len() as u64) * 8).to_le_bytes());
+
+    for block in padded.chunks(64) {
+        let mut words = [0u32; 16];
+        for (at, word) in words.iter_mut().enumerate() {
+            *word = u32::from_le_bytes([
+                block[at * 4],
+                block[at * 4 + 1],
+                block[at * 4 + 2],
+                block[at * 4 + 3],
+            ]);
+        }
+
+        let [mut a, mut b, mut c, mut d] = state;
+        for step in 0..64usize {
+            let (mixed, which) = match step / 16 {
+                0 => ((b & c) | (!b & d), step),
+                1 => ((d & b) | (!d & c), (5 * step + 1) % 16),
+                2 => (b ^ c ^ d, (3 * step + 5) % 16),
+                _ => (c ^ (b | !d), (7 * step) % 16),
+            };
+            let sum = a.wrapping_add(mixed).wrapping_add(table[step]).wrapping_add(words[which]);
+            a = d;
+            d = c;
+            c = b;
+            b = b.wrapping_add(sum.rotate_left(SHIFTS[step]));
+        }
+        state[0] = state[0].wrapping_add(a);
+        state[1] = state[1].wrapping_add(b);
+        state[2] = state[2].wrapping_add(c);
+        state[3] = state[3].wrapping_add(d);
+    }
+
+    let mut out = [0u8; 16];
+    for (at, word) in state.iter().enumerate() {
+        out[at * 4..at * 4 + 4].copy_from_slice(&word.to_le_bytes());
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

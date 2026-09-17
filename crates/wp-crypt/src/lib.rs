@@ -43,6 +43,16 @@
 use wp_ole::CompoundFile;
 
 mod agile;
+mod rc4;
+
+/// The key the oldest of the schemes makes, which a test builds a file with.
+///
+/// Lifted out of [`rc4`] rather than the whole module being opened: what a
+/// caller outside this crate can want is to make one of these files, and the
+/// key is the only part of it that cannot be worked out from the standard in
+/// a page.
+pub use rc4::binary_key;
+mod spaces;
 mod standard;
 
 /// What can go wrong with an encrypted document.
@@ -79,9 +89,9 @@ impl core::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 /// The name of the stream holding the description.
-const INFO: &str = "EncryptionInfo";
+pub(crate) const INFO: &str = "EncryptionInfo";
 /// And the one holding the document.
-const PACKAGE: &str = "EncryptedPackage";
+pub(crate) const PACKAGE: &str = "EncryptedPackage";
 
 /// Whether these bytes are an encrypted Office document.
 ///
@@ -101,6 +111,13 @@ pub fn open(bytes: &[u8], password: &str) -> Result<Vec<u8>, Error> {
     let file = CompoundFile::open(bytes.to_vec()).map_err(|_| Error::NotEncrypted)?;
     let info = file.stream(INFO).ok_or(Error::NotEncrypted)?;
     let package = file.stream(PACKAGE).ok_or(Error::NotEncrypted)?;
+    // What the file says was done to the package. A file naming a transform
+    // this program has not got is a file it must not claim to have opened -
+    // a rights-managed one, whose key comes from a server nobody here can
+    // ask. See [`spaces`].
+    if !spaces::understood(&file) {
+        return Err(Error::Unsupported(String::from("a transform this program has not got")));
+    }
     if info.len() < 8 {
         return Err(Error::Damaged("description"));
     }
@@ -111,6 +128,10 @@ pub fn open(bytes: &[u8], password: &str) -> Result<Vec<u8>, Error> {
         (4, 4) => agile::open(&info[8..], &package, password),
         (2..=4, 2) => standard::open(&info[8..], &package, password),
         (_, 3) => Err(Error::Unsupported(String::from("a key from a rights server"))),
+        // Word 97's own, which is RC4 with a forty-bit key and no header at
+        // all: the salt and the verifier follow the version and nothing
+        // else does. See [`rc4`].
+        (1, 1) => rc4::open_binary(&info[8..], &package, password),
         (2..=4, 1) => Err(Error::Unsupported(String::from("the RC4 cipher"))),
         _ => Err(Error::Unsupported(format!("version {major}.{minor} of the encryption"))),
     }
@@ -179,7 +200,7 @@ pub const SPINS: u32 = 100_000;
 
 /// The password as the formats hash it: two bytes a character, least
 /// significant first.
-fn utf16(password: &str) -> Vec<u8> {
+pub(crate) fn utf16(password: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(password.len() * 2);
     for unit in password.encode_utf16() {
         out.extend_from_slice(&unit.to_le_bytes());
@@ -214,7 +235,7 @@ fn same(left: &[u8], right: &[u8]) -> bool {
 
 /// The eight bytes at the front of `EncryptedPackage`, which say how long the
 /// package was before it was padded out to whole blocks.
-fn declared_length(package: &[u8]) -> Result<usize, Error> {
+pub(crate) fn declared_length(package: &[u8]) -> Result<usize, Error> {
     let eight: [u8; 8] =
         package.get(..8).ok_or(Error::Damaged("package"))?.try_into().expect("eight bytes");
     usize::try_from(u64::from_le_bytes(eight)).map_err(|_| Error::Damaged("package"))

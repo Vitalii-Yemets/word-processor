@@ -479,3 +479,65 @@ mod tests {
         assert_ne!(chained[..16], chained[16..], "and what chaining is for");
     }
 }
+
+/// RC4, the cipher Office used before AES.
+///
+/// # Why it is here at all
+///
+/// Not to write anything with. Documents encrypted before 2007 are encrypted
+/// with it, and a word processor that cannot open a document somebody
+/// encrypted in 2003 is a word processor that has lost their document. It
+/// reads them; it never writes one — see [`crate`]'s own note, and the
+/// roadmap, where sealing a document with anything but AES is not offered.
+///
+/// # What it is
+///
+/// A box of two hundred and fifty-six bytes, shuffled by the key, and then
+/// shuffled one step further for every byte of the message. The byte it lands
+/// on is exclusive-ored with the message, which is why enciphering and
+/// deciphering are the same operation and why this function is called for
+/// both.
+#[derive(Clone, Debug)]
+pub struct Rc4 {
+    box_of: [u8; 256],
+    i: u8,
+    j: u8,
+}
+
+impl Rc4 {
+    /// The cipher with a key in it.
+    #[must_use]
+    pub fn new(key: &[u8]) -> Self {
+        let mut box_of = [0u8; 256];
+        for (at, entry) in box_of.iter_mut().enumerate() {
+            *entry = at as u8;
+        }
+        if !key.is_empty() {
+            let mut j = 0u8;
+            for at in 0..256usize {
+                j = j.wrapping_add(box_of[at]).wrapping_add(key[at % key.len()]);
+                box_of.swap(at, j as usize);
+            }
+        }
+        Self { box_of, i: 0, j: 0 }
+    }
+
+    /// Enciphers, or deciphers, in place: with this cipher they are one thing.
+    pub fn apply(&mut self, bytes: &mut [u8]) {
+        for byte in bytes {
+            self.i = self.i.wrapping_add(1);
+            self.j = self.j.wrapping_add(self.box_of[self.i as usize]);
+            self.box_of.swap(self.i as usize, self.j as usize);
+            let at = self.box_of[self.i as usize].wrapping_add(self.box_of[self.j as usize]);
+            *byte ^= self.box_of[at as usize];
+        }
+    }
+}
+
+/// The whole of a message under one key, which is what a stream of them is.
+#[must_use]
+pub fn rc4(key: &[u8], bytes: &[u8]) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+    Rc4::new(key).apply(&mut out);
+    out
+}

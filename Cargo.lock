@@ -42,6 +42,9 @@ version = "0.0.1"
 [[package]]
 name = "wp-cipher"
 version = "0.0.1"
+dependencies = [
+ "wp-hash",
+]
 
 [[package]]
 name = "wp-cli"

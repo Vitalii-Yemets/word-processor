@@ -11,3 +11,7 @@ license.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# The tests hold this to OpenSSL, and print what it makes as hexadecimal.
+wp-hash = { path = "../wp-hash" }

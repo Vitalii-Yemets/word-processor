@@ -47,8 +47,14 @@ pub(crate) fn open(info: &[u8], package: &[u8], password: &str) -> Result<Vec<u8
     // 0x660E, 0x660F and 0x6610 are AES with a key of a hundred and
     // twenty-eight, a hundred and ninety-two and two hundred and fifty-six
     // bits. Anything else in this field is RC4 or older.
+    // RC4 under the same header, which is what Office wrote between 2002 and
+    // 2007: the description is this one and the cipher is the older one. See
+    // [`crate::rc4`].
+    if algorithm == crate::rc4::ALGORITHM {
+        return crate::rc4::open_cryptoapi(header, verifier, package, password);
+    }
     if !matches!(algorithm, 0x660E..=0x6610) {
-        return Err(Error::Unsupported(String::from("a cipher older than AES")));
+        return Err(Error::Unsupported(String::from("a cipher this program has not got")));
     }
     let key_bytes = (key_bits / 8) as usize;
 
