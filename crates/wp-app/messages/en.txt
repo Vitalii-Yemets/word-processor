@@ -33,6 +33,7 @@
 = All files
 = All files (*.*)
 = All styles
+= Allow AutoFormat to override formatting restrictions
 = Allow character substitution
 = Allow only this kind of editing
 = Allow only this kind of editing in the document
@@ -71,6 +72,7 @@
 = Blank Page
 = Blank document
 = Block Authors
+= Block Quick Style Set switching
 = Block Theme or Scheme switching
 = Bold
 = Bookmark
@@ -528,8 +530,10 @@
 = Start enforcing protection
 = Strikethrough
 = Style
+= Style Set
 = Style based on
 = Style for following paragraph
+= Style set: {0}
 = Styles
 = Subscript
 = Subset

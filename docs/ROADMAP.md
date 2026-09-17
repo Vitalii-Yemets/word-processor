@@ -5214,15 +5214,63 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   contents, a date's format and calendar, and Add, Modify and Remove under
   the list where this takes the whole list at once. **L10**'s Design Mode is
   now unblocked: it has a boundary to draw.
-- [ ] **J16. The rest of Word's Restrict Editing pane.** "Allow AutoFormat to
-  override formatting restrictions" (`w:autoFormatOverride`), which waits on
-  an autocorrect that applies formatting; "Block Quick Style Set switching"
-  (`w:styleLockQFSet`), which waits on there being Quick Style Sets to block
-  — the attribute is kept through a round trip already; the latent styles
-  listed one at a time rather than locked as a body; a locked style shown
-  with a padlock rather than left out of the gallery; and the pane itself,
-  which in Word stays open beside the document where this has a dialog. Named
-  in **J9**.
+- [x] **J16. The rest of Word's Restrict Editing pane.** The boxes under
+  "Formatting restrictions" that **J9** left, and the styles its list did not
+  reach.
+  *Done:* **"Block Quick Style Set switching"**, which needed something to
+  block. Word's Design tab opens with a gallery of style sets, and every one
+  is a table of what the built-in styles should say: picking one changes
+  every heading in the document at once without a paragraph being touched.
+  That is what makes it worth having and exactly what makes it worth locking
+  — a document that limited formatting and left the set free could be
+  reformatted entirely in one click. So there are five sets, named for what
+  they do and drawn here rather than borrowed from Word, and `w:styleLockQFSet`
+  is read, written and enforced: the button greys out and the gallery does
+  not open.
+  **"Allow AutoFormat to override formatting restrictions"**,
+  `w:autoFormatOverride`, which is the one box on that half of Word's pane
+  that lets something through rather than shutting it. Typing `*word*` turns
+  it bold, which is formatting by hand under another name; without the box
+  the marks now stay as marks, and with it the correction goes through.
+  **The latent styles, one at a time.** A `styles.xml` defines a few dozen
+  and mentions a few hundred, and the mentioned ones are as real to somebody
+  applying a style as the defined ones: a restriction that dealt only with
+  the defined ones left three hundred doors open. **J9** locked them as a
+  body; they are listed in the dialog now, each with its own tick, and each
+  is locked by its own `w:lsdException` — made where the document had none,
+  because saying something about one is what makes it an exception.
+  **The padlock.** The gallery leaves a locked style out, because a tile that
+  does nothing when it is clicked should not be there; the Styles pane is the
+  list of everything the document has, so it keeps them and says which they
+  are. Word draws a padlock; this says the word, because a padlock is a
+  picture only a font that has one can draw.
+  Along the way a style could not carry a border or a shading at all: the
+  writer that puts formatting into a style did not write either, so the rule
+  under a heading had to be written on every paragraph. Both are written into
+  a style now, which is what a set of styles needs to say anything about
+  shape.
+  *Proven by:* eight tests over the document — both new attributes through a
+  round trip and written the way Word writes them, the latent styles read one
+  at a time with their own locked state, one locked and freed by name, one
+  the document never mentioned given an exception of its own, and a locked
+  latent style unavailable only while something is enforced. Ten over the
+  program: the correction refused while formatting is limited and let through
+  when the box says so, the style-set button greyed out and its gallery
+  refused to open when the set is fixed and both working when it is not, every
+  set having a name and a word about it, every heading a set names being
+  written, the set in use being the one the styles match, a set past the end
+  writing nothing, and the rule and the band arriving where the set says.
+  The gallery photographed, and a document with a set applied.
+  Along the way the catalogue of what this program can say learnt that a
+  colour is not a message: six hexadecimal digits are the same colour in
+  every language.
+  *Not done, and named here:* **the pane itself.** Word's Restrict Editing is
+  a task pane that stays open beside the document, where this has a dialog.
+  What the pane is *for* — ticking Everyone and then selecting the text it
+  applies to — is a button on the Review tab here (**J11**), and the rest of
+  what stands in it is **J23**, which is where the pane belongs. The five
+  style sets are this program's own five; Word ships seventeen, and they are
+  its content rather than a format.
 - [ ] **J17. The information bar, and General Options as one dialog.** Word
   puts a bar across the top of a document to say something about it and offer
   one button — Edit Anyway on a read-only document, Enable Content on one
@@ -5256,13 +5304,15 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   called "Cover Pages" with something else in it would lie about what a
   person was picking. What is wanted instead is a set of this program's own,
   drawn here, under names that say whose they are.
-- [ ] **J23. The brackets and the colours of a marked stretch.** Word draws
-  `[` and `]` at the ends of a stretch with its own rule about who may edit
-  it, gives each editor their own colour, and lists the editors in its
-  Restrict Editing pane with Find Next Region I Can Edit and Show All Regions
-  I Can Edit beside them. **J11** shades every marked stretch in one colour
-  and has none of the rest, there being no pane to hold a list and no list of
-  people to give a stretch to.
+- [ ] **J23. Word's Restrict Editing pane, and what stands in it.** The pane
+  itself, which in Word stays open beside the document where this program has
+  a dialog — **J16** named that difference and this is where it is closed.
+  In it: the brackets Word draws at the ends of a stretch with its own rule
+  about who may edit it, a colour for each editor rather than the one colour
+  **J11** shades them all in, the list of who those editors are, and the Find
+  Next Region I Can Edit and Show All Regions I Can Edit that walk them. The
+  list is what the rest waits on: there is nowhere to keep a list of people
+  and nothing to give a stretch to but the person at the keyboard.
 - [ ] **J24. Signing with a key the system holds.** Windows keeps a person's
   certificates and their private keys in a store of its own, and signs
   without ever handing the key to the program that asked:

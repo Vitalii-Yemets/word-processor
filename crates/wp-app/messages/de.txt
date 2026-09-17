@@ -32,6 +32,9 @@ language = Deutsch
 = A new document
 > Ein neues Dokument
 
+= A rule under every heading
+> Eine Linie unter jeder Überschrift
+
 = AaBbCcDdEe
 > AaBbCcDdEe
 
@@ -40,6 +43,9 @@ language = Deutsch
 
 = A password that is lost cannot be recovered.
 > Ein verlorenes Kennwort kann nicht wiederhergestellt werden.
+
+= Allow AutoFormat to override formatting restrictions
+> AutoFormat darf Formatierungseinschränkungen überschreiben
 
 = Allow only this kind of editing in the document
 > Nur diese Bearbeitungen im Dokument zulassen
@@ -203,6 +209,9 @@ language = Deutsch
 = Block Authors
 > Autoren blockieren
 
+= Block Quick Style Set switching
+> Wechseln des Schnellformatvorlagen-Satzes blockieren
+
 = Block Theme or Scheme switching
 > Wechseln des Designs oder Schemas blockieren
 
@@ -311,6 +320,9 @@ language = Deutsch
 = Building blocks
 > Bausteine
 
+= Centred
+> Zentriert
+
 = Certificate
 > Zertifikat
 
@@ -340,6 +352,9 @@ language = Deutsch
 
 = Chart
 > Diagramm
+
+= Compact
+> Kompakt
 
 = Compare Documents
 > Dokumente vergleichen
@@ -767,6 +782,12 @@ language = Deutsch
 = Headings
 > Überschriften
 
+= Headings down the middle
+> Überschriften in der Mitte
+
+= Headings on a band
+> Überschriften auf einem Balken
+
 = Height:
 > Höhe:
 
@@ -914,6 +935,9 @@ language = Deutsch
 = Line and Page Breaks
 > Zeilen- und Seitenumbruch
 
+= Lines
+> Linien
+
 = Link
 > Link
 
@@ -925,6 +949,9 @@ language = Deutsch
 
 = Lock aspect ratio
 > Seitenverhältnis sperren
+
+= locked
+> gesperrt
 
 = Macros
 > Makros
@@ -1220,6 +1247,9 @@ language = Deutsch
 = Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
 > Bilder (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
 
+= Plain
+> Schlicht
+
 = Plain Text (*.txt)
 > Nur Text (*.txt)
 
@@ -1481,6 +1511,9 @@ language = Deutsch
 = Setting
 > Einstellung
 
+= Shaded
+> Schattiert
+
 = Shapes
 > Formen
 
@@ -1579,6 +1612,12 @@ language = Deutsch
 
 = Style for following paragraph
 > Formatvorlage für folgenden Absatz
+
+= Style Set
+> Formatvorlagensatz
+
+= Style set: {0}
+> Formatvorlagensatz: {0}
 
 = Styles
 > Formatvorlagen
@@ -1688,6 +1727,12 @@ language = Deutsch
 = The contents of this control cannot be edited
 > Der Inhalt dieses Steuerelements kann nicht bearbeitet werden
 
+= The headings a new document starts with
+> Die Überschriften, mit denen ein neues Dokument beginnt
+
+= The same headings, closer together
+> Dieselben Überschriften, enger gesetzt
+
 = The selection is saved under this name.
 > Die Auswahl wird unter diesem Namen gespeichert.
 
@@ -1726,6 +1771,9 @@ language = Deutsch
 
 = Themes
 > Designs
+
+= This document fixes its style set — Review ▸ Restrict Editing lifts it
+> Dieses Dokument legt seinen Formatvorlagensatz fest — Überprüfen ▸ Bearbeitung einschränken hebt es auf
 
 = This document is not signed.
 > Dieses Dokument ist nicht signiert.

@@ -348,7 +348,7 @@ impl EditMode {
         &[Self::ReadOnly, Self::Comments, Self::TrackedChanges, Self::Forms];
 }
 
-/// What a formatting restriction forbids, as two answers.
+/// What a formatting restriction forbids.
 ///
 /// Carried about rather than asked for twice: the ribbon needs it to know
 /// which buttons to grey out and the editor needs it to know which commands to
@@ -360,13 +360,18 @@ pub struct Limits {
     pub formatting: bool,
     /// Word's "Block Theme or Scheme switching".
     pub theme: bool,
+    /// Word's "Block Quick Style Set switching".
+    pub style_set: bool,
+    /// Word's "Allow AutoFormat to override formatting restrictions", which
+    /// is the one that lets something through rather than shutting it.
+    pub auto_format: bool,
 }
 
 impl Limits {
     /// Whether anything is forbidden at all.
     #[must_use]
     pub fn any(self) -> bool {
-        self.formatting || self.theme
+        self.formatting || self.theme || self.style_set
     }
 }
 
@@ -391,6 +396,23 @@ pub struct Protection {
     /// restriction that forbade every direct change and left the theme free
     /// would be a restriction anybody could walk round.
     pub theme_locked: bool,
+    /// Whether the set of styles a document is formatted with is fixed too.
+    ///
+    /// Word's "Block Quick Style Set switching", the third box under the same
+    /// heading. A style set changes every heading in the document at once, so
+    /// a restriction that forbade direct formatting and left the set free
+    /// would be a restriction anybody could walk round in one click. See
+    /// `wp_app`'s style sets.
+    pub style_set_locked: bool,
+    /// Whether the corrections a program makes as somebody types may format
+    /// text the restriction forbids them to format by hand.
+    ///
+    /// Word's "Allow AutoFormat to override formatting restrictions". It
+    /// sounds like a loophole and is the opposite of one: without it a
+    /// document that limits formatting cannot have a `*word*` turned bold as
+    /// it is typed, which is a correction the person asked for by typing the
+    /// marks.
+    pub auto_format_override: bool,
     pub password: Option<Password>,
 }
 
@@ -413,6 +435,7 @@ impl Protection {
     pub fn limiting_formatting(mut self, theme_too: bool) -> Self {
         self.formatting = true;
         self.theme_locked = theme_too;
+        self.style_set_locked = theme_too;
         self
     }
 
@@ -448,6 +471,8 @@ impl Document {
         self.protection_rules().map_or_else(Limits::default, |rules| Limits {
             formatting: rules.formatting,
             theme: rules.theme_locked,
+            style_set: rules.style_set_locked,
+            auto_format: rules.auto_format_override,
         })
     }
 
@@ -473,6 +498,8 @@ impl Document {
             mode: element.attribute(Some(read::W), "edit").and_then(EditMode::from_word),
             formatting: read::attribute_is_on(element, "formatting"),
             theme_locked: read::attribute_is_on(element, "styleLockTheme"),
+            style_set_locked: read::attribute_is_on(element, "styleLockQFSet"),
+            auto_format_override: read::attribute_is_on(element, "autoFormatOverride"),
             password: Password::read(element),
         };
         // An enforced restriction that restricts nothing is not one. Word
@@ -519,9 +546,12 @@ impl Document {
             Some(mode) => element.set_namespaced_attribute(&name("edit"), read::W, mode.word()),
             None => element.remove_namespaced_attribute(read::W, "edit"),
         }
-        for (local, on) in
-            [("formatting", wanted.formatting), ("styleLockTheme", wanted.theme_locked)]
-        {
+        for (local, on) in [
+            ("formatting", wanted.formatting),
+            ("styleLockTheme", wanted.theme_locked),
+            ("styleLockQFSet", wanted.style_set_locked),
+            ("autoFormatOverride", wanted.auto_format_override),
+        ] {
             if on {
                 element.set_namespaced_attribute(&name(local), read::W, "1");
             } else {

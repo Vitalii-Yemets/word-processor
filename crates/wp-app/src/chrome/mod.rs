@@ -397,6 +397,8 @@ pub enum Command {
     LegacyFields,
     /// What a content control is called, and what may be done to it.
     ControlProperties,
+    /// Which set of styles the whole document is formatted with.
+    StyleSet,
 }
 
 impl Command {
@@ -531,11 +533,19 @@ impl Command {
         matches!(self, Self::Themes | Self::ThemeColors | Self::ThemeFonts | Self::PageColor)
     }
 
+    /// Whether it changes the set of styles the whole document is formatted
+    /// with, which is every heading in it at once.
+    #[must_use]
+    pub fn is_style_set_switching(self) -> bool {
+        matches!(self, Self::StyleSet)
+    }
+
     /// Whether a limit on the formatting lets this command run.
     #[must_use]
     pub fn is_allowed_by(self, limits: wp_docx::protection::Limits) -> bool {
         !(limits.formatting && self.is_direct_formatting())
             && !(limits.theme && self.is_theme_switching())
+            && !(limits.style_set && self.is_style_set_switching())
     }
 
     /// Whether a restriction on the document lets this command run.

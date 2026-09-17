@@ -300,6 +300,13 @@ impl Editor {
 
     /// Gives `*bold*` its formatting and takes the marks away.
     fn put_emphasis(&mut self, ends_at: usize, emphasis: &Emphasis) {
+        // A document that limits formatting to a selection of styles is one
+        // where this correction is formatting by hand under another name.
+        // Word's Restrict Editing has a box that lets it through; without it
+        // the marks stay as marks. See [`super::protection`].
+        if !self.autoformat_may_override() {
+            return;
+        }
         let caret = self.document.caret();
         let Some(text) = self.document.paragraph_text(caret.paragraph) else { return };
         if emphasis.close >= ends_at || emphasis.open >= emphasis.close {

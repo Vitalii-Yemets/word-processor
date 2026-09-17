@@ -324,6 +324,17 @@ impl Editor {
                 let rows = items.iter().map(|_| Row::new(Kind::Choice, icon)).collect();
                 (items, rows, None, WIDTH)
             }
+            Choice::StyleSet => {
+                // The name with what it does under it, because "Lines" and
+                // "Shaded" say nothing until somebody has tried them.
+                let items: Vec<String> = Editor::style_set_names()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(at, name)| format!("{name} — {}", Editor::style_set_note(at)))
+                    .collect();
+                let rows = items.iter().map(|_| Row::new(Kind::Choice, Icon::Theme)).collect();
+                (items, rows, self.style_set_in_use(), 390.0)
+            }
             Choice::LegacyField => {
                 let items = Editor::legacy_field_names();
                 let rows = items.iter().map(|_| Row::new(Kind::Choice, Icon::QuickParts)).collect();

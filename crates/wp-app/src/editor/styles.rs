@@ -65,16 +65,23 @@ impl Editor {
             if self.styles_pane.showing == Showing::InUse && !is_used(&style.id) {
                 continue;
             }
-            // The same rule as the gallery: a document that limits formatting
-            // to a selection of styles does not list the rest, because a row
-            // that refuses to be clicked is a row that should not be there.
-            if limited && style.locked {
-                continue;
-            }
+
             let resolved = styles.resolve_run(Some(&style.id), &Default::default());
+            // The gallery leaves a locked style out, because a tile that does
+            // nothing when it is clicked should not be there. The pane is the
+            // list of everything the document has, so it keeps them and says
+            // which they are. Word draws a padlock beside the name; this says
+            // the word, because a padlock is a picture only a font that has
+            // one can draw and the pane's text is drawn in the document's.
+            let name = style.name.clone().unwrap_or_else(|| style.id.clone());
+            let name = if limited && style.locked {
+                format!("{name} ({})", crate::messages::t("locked"))
+            } else {
+                name
+            };
             out.push(Entry {
                 id: Some(style.id.clone()),
-                name: style.name.clone().unwrap_or_else(|| style.id.clone()),
+                name,
                 style: TextStyle {
                     bold: resolved.bold,
                     italic: resolved.italic,

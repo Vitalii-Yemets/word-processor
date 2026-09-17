@@ -166,6 +166,8 @@ pub enum Choice {
     Finishing,
     /// Which of the three older form fields.
     LegacyField,
+    /// Which set of styles the whole document is formatted with.
+    StyleSet,
     /// Which of a control's entries is being filled in.
     FillIn,
     /// What the strip along the bottom shows.

@@ -28,6 +28,16 @@
 //! leaves the marks in place when a restriction is lifted, which is what makes
 //! putting the same restriction back a matter of one tick.
 //!
+//! # The two sorts of style a document holds
+//!
+//! A `styles.xml` **defines** a few dozen and **mentions** a few hundred. The
+//! mentioned ones are `w:lsdException` entries inside `w:latentStyles`: Word's
+//! built-in styles that this document has not needed yet, each with its own
+//! say about whether it is hidden, how it sorts, and whether it is locked.
+//! They are as real as the defined ones to somebody applying a style, so a
+//! restriction that dealt only with the defined ones would leave three hundred
+//! doors open.
+//!
 //! # Latent styles
 //!
 //! A `styles.xml` defines some styles and mentions hundreds. The mentioned
@@ -48,6 +58,16 @@ use crate::{edit, read, styles::Styles, Document};
 /// list comes after it, so the mark goes in front of the first one found.
 const AFTER_LOCKED: &[&str] =
     &["pPr", "rPr", "tblPr", "trPr", "tcPr", "tblStylePr", "personal", "personalCompose"];
+
+/// One of the styles a document mentions without defining.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Latent {
+    /// The name Word knows it by, which is what the exception carries: there
+    /// is no identifier, because there is no definition to identify.
+    pub name: String,
+    /// Whether this one may not be applied.
+    pub locked: bool,
+}
 
 impl Document {
     /// Whether the document limits formatting to a selection of styles right
@@ -93,6 +113,101 @@ impl Document {
             .filter(|style| !style.locked)
             .map(|style| style.id.clone())
             .collect()
+    }
+
+    /// Every style the document mentions without defining, in the order it
+    /// mentions them.
+    ///
+    /// Empty where the styles part has no `w:latentStyles` at all, which is
+    /// what a document made by this program has: the list is Word's, and a
+    /// document that never met Word has nothing latent about it.
+    #[must_use]
+    pub fn latent_styles(&self) -> Vec<Latent> {
+        let Some(tree) = self.styles_tree() else { return Vec::new() };
+        let Some(latent) = tree.root.child(Some(read::W), "latentStyles") else {
+            return Vec::new();
+        };
+        let default_locked = read::attribute_is_on(latent, "defLockedState");
+        latent
+            .children_named(Some(read::W), "lsdException")
+            .filter_map(|exception| {
+                let name = exception.attribute(Some(read::W), "name")?;
+                Some(Latent {
+                    name: name.to_owned(),
+                    locked: exception
+                        .attribute(Some(read::W), "locked")
+                        .map_or(default_locked, read::on_off_value),
+                })
+            })
+            .collect()
+    }
+
+    /// Whether one of them may be applied as things stand.
+    #[must_use]
+    pub fn latent_style_is_available(&self, name: &str) -> bool {
+        !self.formatting_is_limited()
+            || !self
+                .latent_styles()
+                .iter()
+                .any(|latent| latent.name.eq_ignore_ascii_case(name) && latent.locked)
+    }
+
+    /// Locks one of them by name, or frees it.
+    ///
+    /// The exception is made where there is none: a latent style covered only
+    /// by the default state has nothing of its own to change, and saying
+    /// something about one is what makes it an exception.
+    pub fn set_latent_style_locked(&mut self, name: &str, locked: bool) -> bool {
+        let name = name.trim().to_owned();
+        if name.is_empty() {
+            return false;
+        }
+        self.change_styles(move |root, prefix| {
+            if root.child(Some(read::W), "latentStyles").is_none() {
+                lock_latent(root, false, prefix);
+            }
+            let Some(latent) =
+                root.child_elements_mut().find(|child| child.is(Some(read::W), "latentStyles"))
+            else {
+                return false;
+            };
+
+            if latent
+                .child_elements()
+                .find(|child| {
+                    child.is(Some(read::W), "lsdException")
+                        && child
+                            .attribute(Some(read::W), "name")
+                            .is_some_and(|found| found.eq_ignore_ascii_case(&name))
+                })
+                .is_none()
+            {
+                let mut exception =
+                    Element::new(&edit::name_with(prefix, "lsdException"), Some(read::W));
+                exception.set_namespaced_attribute(
+                    &edit::name_with(prefix, "name"),
+                    read::W,
+                    &name,
+                );
+                latent.push_element(exception);
+            }
+
+            let Some(exception) = latent.child_elements_mut().find(|child| {
+                child.is(Some(read::W), "lsdException")
+                    && child
+                        .attribute(Some(read::W), "name")
+                        .is_some_and(|found| found.eq_ignore_ascii_case(&name))
+            }) else {
+                return false;
+            };
+            let before = exception.attribute(Some(read::W), "locked").map(str::to_owned);
+            exception.set_namespaced_attribute(
+                &edit::name_with(prefix, "locked"),
+                read::W,
+                if locked { "1" } else { "0" },
+            );
+            before.as_deref() != exception.attribute(Some(read::W), "locked")
+        })
     }
 
     /// Marks one style locked, or unlocks it.

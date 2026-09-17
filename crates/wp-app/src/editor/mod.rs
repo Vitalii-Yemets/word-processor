@@ -89,6 +89,7 @@ mod stationery;
 mod statusmenu;
 mod styledialog;
 mod styles;
+mod stylesets;
 mod symboldialog;
 mod tablecheck;
 mod tabledialog;

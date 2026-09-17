@@ -68,10 +68,12 @@ use super::Editor;
 const LIMIT: usize = 1;
 const STYLES: usize = 2;
 const THEME: usize = 3;
-const RESTRICT: usize = 5;
-const MODE: usize = 6;
-const PASSWORD: usize = 10;
-const AGAIN: usize = 11;
+const STYLE_SET: usize = 4;
+const AUTO_FORMAT: usize = 5;
+const RESTRICT: usize = 7;
+const MODE: usize = 8;
+const PASSWORD: usize = 12;
+const AGAIN: usize = 13;
 
 /// And the one box of the dialog that asks for it back.
 const ANSWER: usize = 1;
@@ -100,13 +102,13 @@ impl Editor {
     /// Every style the restriction can allow or forbid, as identifier and
     /// name.
     ///
-    /// The document's own, in the order it defines them. The hundreds a
-    /// `styles.xml` merely mentions are not listed — a list of three hundred
-    /// styles nobody has used is not a list anybody can read — and they are
-    /// locked together with everything unticked here. See
-    /// [`wp_docx::locking`].
+    /// The document's own first, in the order it defines them, and then the
+    /// ones it mentions without defining — Word's latent styles, which are as
+    /// real to somebody applying a style as the defined ones and would
+    /// otherwise be three hundred doors left open. See [`wp_docx::locking`].
     fn lockable_styles(&self) -> Vec<(String, String)> {
-        self.document
+        let mut out: Vec<(String, String)> = self
+            .document
             .styles()
             .all()
             .iter()
@@ -114,16 +116,41 @@ impl Editor {
                 let name = style.name.clone().unwrap_or_else(|| style.id.clone());
                 (style.id.clone(), super::insert::title_case(&name))
             })
-            .collect()
+            .collect();
+        out.extend(
+            self.document
+                .latent_styles()
+                .into_iter()
+                .map(|latent| (latent.name.clone(), super::insert::title_case(&latent.name))),
+        );
+        out
+    }
+
+    /// How many of that list are styles the document actually defines.
+    ///
+    /// The two halves are ticked the same way and written down differently:
+    /// a defined style carries `w:locked`, a latent one is an exception
+    /// inside `w:latentStyles`.
+    fn defined_style_count(&self) -> usize {
+        self.document.styles().all().len()
     }
 
     /// The dialog that puts a restriction on.
     fn protect_dialog(&self) -> Dialog {
         let modes = EditMode::ALL.iter().map(|mode| mode.label().to_owned()).collect();
+        let defined = self.defined_style_count();
         let rows = self
             .lockable_styles()
             .into_iter()
-            .map(|(id, name)| TreeRow::ticked(0, &name, !self.document.style_is_locked(&id)))
+            .enumerate()
+            .map(|(at, (id, name))| {
+                let allowed = if at < defined {
+                    !self.document.style_is_locked(&id)
+                } else {
+                    self.document.latent_style_is_available(&id)
+                };
+                TreeRow::ticked(0, &name, allowed)
+            })
             .collect();
         Dialog::new(
             "Restrict Editing",
@@ -140,6 +167,15 @@ impl Editor {
                     scroll: 0,
                 },
                 Field::Check { label: "Block Theme or Scheme switching".to_owned(), on: false },
+                Field::Check { label: "Block Quick Style Set switching".to_owned(), on: false },
+                // The one box under this heading that lets something through
+                // rather than shutting it: a `*word*` turned bold as it is
+                // typed is a correction the person asked for by typing the
+                // marks, and Word offers to let it through.
+                Field::Check {
+                    label: "Allow AutoFormat to override formatting restrictions".to_owned(),
+                    on: false,
+                },
                 Field::Heading("Editing restrictions".to_owned()),
                 Field::Check {
                     label: "Allow only this kind of editing in the document".to_owned(),
@@ -226,6 +262,8 @@ impl Editor {
             mode,
             formatting: limit,
             theme_locked: limit && dialog.ticked(THEME),
+            style_set_locked: limit && dialog.ticked(STYLE_SET),
+            auto_format_override: dialog.ticked(AUTO_FORMAT),
             password: None,
         };
         if !word.is_empty() {
@@ -241,7 +279,16 @@ impl Editor {
         // whichever way the box was ticked.
         let allowed = self.allowed_by(dialog);
         if limit {
+            let defined = self.defined_style_count();
+            let names = self.lockable_styles();
             self.document.allow_only_styles(&allowed);
+            // And the ones the document only mentions, each by name: they
+            // have no definition to carry a mark, so the mark goes on the
+            // exception instead.
+            for (id, _) in names.into_iter().skip(defined) {
+                let locked = !allowed.iter().any(|allowed| allowed.eq_ignore_ascii_case(&id));
+                self.document.set_latent_style_locked(&id, locked);
+            }
         } else {
             self.document.allow_every_style();
         }
@@ -360,6 +407,8 @@ impl Editor {
     pub(super) fn refuse_limited(&mut self, command: Command) -> Response {
         let note = if command.is_theme_switching() {
             "This document fixes its theme — Review ▸ Restrict Editing lifts it"
+        } else if command.is_style_set_switching() {
+            "This document fixes its style set — Review ▸ Restrict Editing lifts it"
         } else {
             "This document limits formatting to its styles — Review ▸ Restrict Editing lifts it"
         };
@@ -399,6 +448,19 @@ impl Editor {
             _ => "This document is protected — Review ▸ Restrict Editing lifts it",
         };
         self.report(note)
+    }
+
+    /// Whether a correction made as somebody types may format text the
+    /// restriction forbids them to format by hand.
+    ///
+    /// Word's "Allow AutoFormat to override formatting restrictions", which
+    /// is the only box on that half of its pane that lets something through.
+    /// A document that does not say so gets the plain answer: a restriction
+    /// on formatting is a restriction on formatting, whoever asked for it.
+    #[must_use]
+    pub(super) fn autoformat_may_override(&self) -> bool {
+        let limits = self.document.formatting_limits();
+        !limits.formatting || limits.auto_format
     }
 
     /// What restriction stands over the place the caret is in, as things are.
@@ -868,5 +930,81 @@ mod tests {
         editor.run(Command::AllowEveryone);
         assert!(editor.status.contains("Somebody Else"), "{}", editor.status);
         assert!(!editor.document.locked_regions()[0].for_everyone(), "it was taken over");
+    }
+    #[test]
+    fn a_correction_that_formats_is_refused_while_formatting_is_limited() {
+        // Typing `*word*` turns it bold, which is formatting by hand under
+        // another name. Word's Restrict Editing has a box that lets it
+        // through; without it the marks stay marks.
+        let mut editor = editor();
+        limit_formatting(&mut editor, &["Title"], false);
+        assert!(!editor.autoformat_may_override());
+
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        for character in "*word* ".chars() {
+            editor.handle(Event::Char(character));
+        }
+        assert!(
+            editor.document.plain_text().contains("*word*"),
+            "the marks went: {}",
+            editor.document.plain_text()
+        );
+    }
+
+    #[test]
+    fn the_box_that_lets_it_through_lets_it_through() {
+        let mut editor = editor();
+        editor.run(Command::RestrictEditing);
+        let dialog = editor.dialog.as_mut().expect("the dialog");
+        for (row, on) in [(LIMIT, true), (AUTO_FORMAT, true), (RESTRICT, false)] {
+            if let Some(Field::Check { on: value, .. }) = dialog.fields.get_mut(row) {
+                *value = on;
+            }
+        }
+        editor.finish_dialog(Answer::Accept);
+        assert!(editor.document.formatting_is_limited());
+        assert!(editor.autoformat_may_override(), "the box was ticked and changed nothing");
+
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        for character in "*word* ".chars() {
+            editor.handle(Event::Char(character));
+        }
+        assert!(
+            !editor.document.plain_text().contains("*word*"),
+            "the correction was refused anyway: {}",
+            editor.document.plain_text()
+        );
+    }
+
+    #[test]
+    fn a_fixed_style_set_cannot_be_switched() {
+        let mut editor = editor();
+        editor.run(Command::RestrictEditing);
+        let dialog = editor.dialog.as_mut().expect("the dialog");
+        for (row, on) in [(LIMIT, true), (STYLE_SET, true), (RESTRICT, false)] {
+            if let Some(Field::Check { on: value, .. }) = dialog.fields.get_mut(row) {
+                *value = on;
+            }
+        }
+        editor.finish_dialog(Answer::Accept);
+
+        let state = editor.toolbar_state();
+        assert!(!crate::chrome::is_enabled(Command::StyleSet, &state), "the button is still lit");
+        editor.run(Command::StyleSet);
+        assert!(editor.status.contains("style set"), "{}", editor.status);
+        assert!(editor.popup.is_none(), "the gallery opened anyway");
+    }
+
+    #[test]
+    fn a_style_set_that_is_not_fixed_can_be() {
+        let mut editor = editor();
+        assert!(crate::chrome::is_enabled(Command::StyleSet, &editor.toolbar_state()));
+        // The gallery hangs under its button, so the tab it is on has to be
+        // the one showing - as it is when a person presses it.
+        editor.ribbon.tab = crate::chrome::ribbon::Tab::Design;
+        let (width, height) = (editor.view_width, editor.view_height);
+        editor.draw(width, height);
+        editor.run(Command::StyleSet);
+        assert!(editor.popup.is_some(), "the gallery did not open");
     }
 }

@@ -235,14 +235,17 @@ fn what_the_program_does_not_model_survives_a_restriction_being_written_again() 
     let mut document = document();
     assert!(document.set_protection(Some(&Protection::new(EditMode::ReadOnly))));
 
-    // Word's "Block Quick Style Set switching", which this program does not
-    // model because it has no Quick Style Sets to block. A document that
-    // carries one must not lose it by being restricted again here.
+    // An attribute out of a namespace this program has never heard of, which
+    // is the only sort left now that the restriction's own are all modelled.
+    // A document that carries one must not lose it by being restricted again
+    // here.
     let bytes = document.save().expect("saving");
     let mut package = wp_opc::Package::open(&bytes).expect("a package");
     let settings = package.xml_part("word/settings.xml").expect("settings").expect("readable");
-    let settings =
-        settings.replace("<w:documentProtection ", "<w:documentProtection w:styleLockQFSet=\"1\" ");
+    let settings = settings.replace(
+        "<w:documentProtection ",
+        "<w:documentProtection demo:note=\"kept\" xmlns:demo=\"http://example.invalid/demo\" ",
+    );
     package.add_part(
         "word/settings.xml",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml",
@@ -254,9 +257,112 @@ fn what_the_program_does_not_model_survives_a_restriction_being_written_again() 
     let bytes = document.save().expect("saving");
     let package = wp_opc::Package::open(&bytes).expect("a package");
     let settings = package.xml_part("word/settings.xml").expect("settings").expect("readable");
-    assert!(
-        settings.contains("styleLockQFSet"),
-        "an attribute this program does not model was lost"
-    );
+    assert!(settings.contains("demo:note"), "an attribute this program does not model was lost");
     assert!(settings.contains("w:edit=\"comments\""));
+}
+
+#[test]
+fn the_other_two_boxes_of_the_pane_survive_a_round_trip() {
+    let mut document = document();
+    let wanted = Protection {
+        formatting: true,
+        style_set_locked: true,
+        auto_format_override: true,
+        ..Protection::default()
+    };
+    assert!(document.set_protection(Some(&wanted)));
+
+    let document = round_trip(&document);
+    let rules = document.protection_rules().expect("a restriction");
+    assert!(rules.style_set_locked);
+    assert!(rules.auto_format_override);
+
+    let limits = document.formatting_limits();
+    assert!(limits.style_set);
+    assert!(limits.auto_format);
+}
+
+#[test]
+fn they_are_written_the_way_word_writes_them() {
+    let mut document = document();
+    document.set_protection(Some(&Protection {
+        formatting: true,
+        style_set_locked: true,
+        auto_format_override: true,
+        ..Protection::default()
+    }));
+    let bytes = document.save().expect("saving");
+    let package = wp_opc::Package::open(&bytes).expect("a package");
+    let settings = package.xml_part("word/settings.xml").expect("settings").expect("readable");
+
+    assert!(settings.contains("w:styleLockQFSet=\"1\""), "{settings}");
+    assert!(settings.contains("w:autoFormatOverride=\"1\""), "{settings}");
+}
+
+/// A styles part with the latent styles a document out of Word carries.
+fn with_latent_styles() -> Document {
+    let document = document();
+    let bytes = document.save().expect("saving");
+    let mut package = wp_opc::Package::open(&bytes).expect("a package");
+    let styles = package.xml_part("word/styles.xml").expect("styles").expect("readable");
+    let styles = styles.replace(
+        "<w:docDefaults>",
+        "<w:latentStyles w:count=\"3\">\
+         <w:lsdException w:name=\"Intense Quote\"/>\
+         <w:lsdException w:name=\"Subtle Emphasis\"/>\
+         <w:lsdException w:name=\"Book Title\" w:locked=\"1\"/>\
+         </w:latentStyles><w:docDefaults>",
+    );
+    package.add_part(
+        "word/styles.xml",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml",
+        styles.into_bytes(),
+    );
+    Document::open(&package.save().expect("saving")).expect("reopening")
+}
+
+#[test]
+fn the_styles_a_document_only_mentions_are_listed_one_at_a_time() {
+    let document = with_latent_styles();
+    let latent = document.latent_styles();
+    assert_eq!(latent.len(), 3, "{latent:?}");
+    assert_eq!(latent[0].name, "Intense Quote");
+    assert!(!latent[0].locked);
+    assert!(latent[2].locked, "the one that says it is locked is not");
+}
+
+#[test]
+fn a_latent_style_can_be_locked_and_freed_by_name() {
+    let mut document = with_latent_styles();
+    assert!(document.set_latent_style_locked("Intense Quote", true));
+    let document = round_trip(&document);
+    assert!(document.latent_styles()[0].locked, "it was not locked");
+
+    let mut document = document;
+    assert!(document.set_latent_style_locked("Intense Quote", false));
+    assert!(!round_trip(&document).latent_styles()[0].locked);
+    assert!(!document.set_latent_style_locked("  ", true), "a style of no name was locked");
+}
+
+#[test]
+fn one_the_document_never_mentioned_is_given_an_exception_of_its_own() {
+    let mut document = with_latent_styles();
+    assert!(document.set_latent_style_locked("Quote Char", true));
+
+    let document = round_trip(&document);
+    let latent = document.latent_styles();
+    assert_eq!(latent.len(), 4, "{latent:?}");
+    assert!(latent.iter().any(|style| style.name == "Quote Char" && style.locked));
+}
+
+#[test]
+fn a_locked_latent_style_is_unavailable_only_while_something_is_enforced() {
+    let mut document = with_latent_styles();
+    assert!(document.latent_style_is_available("Book Title"), "nothing is being enforced yet");
+
+    document.set_protection(Some(&Protection::on_formatting()));
+    let document = round_trip(&document);
+    assert!(!document.latent_style_is_available("Book Title"));
+    assert!(document.latent_style_is_available("Intense Quote"));
+    assert!(document.latent_style_is_available("Anything Else"), "one nobody mentioned");
 }

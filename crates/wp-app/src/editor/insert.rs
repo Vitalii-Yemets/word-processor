@@ -2081,6 +2081,22 @@ Katherine Johnson,Hampton,katherine@example.com
                 self.document.set_caret(at);
                 self.run(crate::chrome::Command::ControlProperties);
             }
+            // The gallery of style sets, on the Design tab where it lives.
+            "stylesets" => {
+                self.ribbon.tab = crate::chrome::ribbon::Tab::Design;
+                // Drawn again before the gallery is asked for: the menu hangs
+                // under its button, and a ribbon that has not drawn the tab
+                // does not know where the button is.
+                self.needs_redraw = true;
+                let (width, height) = (self.view_width, self.view_height);
+                self.draw(width, height);
+                self.run(crate::chrome::Command::StyleSet);
+            }
+            // And the Lines set applied, so that what one does can be seen.
+            "setapplied" => {
+                self.choose_style_set(1);
+                self.relayout();
+            }
             "exception" => {
                 self.document.set_caret(wp_docx::TextPosition::new(4, 0));
                 let end = self.document.paragraph_text(4).unwrap_or_default().len();

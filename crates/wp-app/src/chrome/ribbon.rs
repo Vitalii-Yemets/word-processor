@@ -261,6 +261,7 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::SelectAll, choice: Choice::Selecting, split: false },
     Menu { command: Command::QuickParts, choice: Choice::QuickPart, split: false },
     Menu { command: Command::LegacyFields, choice: Choice::LegacyField, split: false },
+    Menu { command: Command::StyleSet, choice: Choice::StyleSet, split: false },
     Menu { command: Command::Compare, choice: Choice::Comparing, split: false },
     Menu { command: Command::FinishMerge, choice: Choice::Finishing, split: false },
     Menu { command: Command::AlignmentTab, choice: Choice::AlignmentTab, split: false },
@@ -1196,6 +1197,7 @@ impl Ribbon {
                     | Choice::BorderStyle
                     | Choice::QuickPart
                     | Choice::LegacyField
+                    | Choice::StyleSet
                     | Choice::FillIn
                     | Choice::WordArt
                     | Choice::Drawing
@@ -1585,6 +1587,7 @@ static DESIGN_GROUPS: &[Group] = &[
     Group {
         label: "Document Formatting",
         items: &[
+            Item::Large(Command::StyleSet, Icon::Theme, "Style Set"),
             Item::Large(Command::Themes, Icon::Themes, "Themes"),
             Item::Large(Command::ThemeColors, Icon::Colors, "Colors"),
             Item::Large(Command::ThemeFonts, Icon::Fonts, "Fonts"),

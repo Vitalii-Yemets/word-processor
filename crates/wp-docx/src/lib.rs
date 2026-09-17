@@ -1830,6 +1830,16 @@ impl Document {
         // And the formatting, into the style's own `pPr` and `rPr`.
         let paragraph = child_or_new(element, "pPr", prefix.as_deref());
         format::write_paragraph_properties(paragraph, &wanted.paragraph, prefix.as_deref());
+        // The borders and the shading are written apart from the rest,
+        // because a paragraph's are set from their own dialog and a style's
+        // come with the definition: the one writer that does both takes the
+        // properties rather than the paragraph round them.
+        format::write_borders_into(paragraph, &wanted.paragraph.borders, prefix.as_deref());
+        format::write_shading_into(
+            paragraph,
+            wanted.paragraph.shading.as_deref(),
+            prefix.as_deref(),
+        );
         let run = child_or_new(element, "rPr", prefix.as_deref());
         format::write_run_properties(run, &wanted.run, prefix.as_deref());
 

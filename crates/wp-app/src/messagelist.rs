@@ -223,11 +223,26 @@ fn is_a_name(text: &str) -> bool {
     if is_a_file_name(text) {
         return true;
     }
+    // And a colour is six hexadecimal digits, which is the same colour to
+    // everybody.
+    if is_a_colour(text) {
+        return true;
+    }
     text.starts_with("http")
         || text.contains('/')
         || text.contains('_')
         || (text.contains('-') && text == text.to_lowercase())
         || text.chars().all(|character| character.is_lowercase() || character == '.')
+}
+
+/// Whether a word is a colour: six hexadecimal digits, as the format writes
+/// one.
+///
+/// A word of six letters that happen to be hexadecimal - `facade` - is all
+/// lowercase and is already not a message by the rule above this one, so
+/// what this has to catch is the ones with a digit or a capital in them.
+fn is_a_colour(text: &str) -> bool {
+    text.len() == 6 && text.chars().all(|character| character.is_ascii_hexdigit())
 }
 
 /// Whether a word is a file's name: something, a dot, and a short ending

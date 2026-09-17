@@ -997,8 +997,19 @@ pub(crate) fn set_paragraph_borders(
     prefix: Option<&str>,
 ) {
     let properties = paragraph_properties_of(paragraph, prefix);
-    properties.remove_children_named(Some(W), "pBdr");
+    write_borders_into(properties, borders, prefix);
+}
 
+/// The same, into properties that have already been found.
+///
+/// A style has a `w:pPr` of its own and no paragraph round it, and a border
+/// in a style is what draws the rule under every heading at once.
+pub(crate) fn write_borders_into(
+    properties: &mut Element,
+    borders: &ParagraphBorders,
+    prefix: Option<&str>,
+) {
+    properties.remove_children_named(Some(W), "pBdr");
     if borders.is_empty() {
         return;
     }
@@ -1016,8 +1027,16 @@ pub(crate) fn set_paragraph_shading(
     prefix: Option<&str>,
 ) {
     let properties = paragraph_properties_of(paragraph, prefix);
-    properties.remove_children_named(Some(W), "shd");
+    write_shading_into(properties, fill, prefix);
+}
 
+/// And the same for properties already found.
+pub(crate) fn write_shading_into(
+    properties: &mut Element,
+    fill: Option<&str>,
+    prefix: Option<&str>,
+) {
+    properties.remove_children_named(Some(W), "shd");
     let Some(fill) = fill else { return };
     let mut shading = Element::new(&name_with(prefix, "shd"), Some(W));
     shading.set_namespaced_attribute(&name_with(prefix, "val"), W, "clear");
