@@ -45,9 +45,9 @@ struct Says {
 }
 
 /// One set: a name, a word about it, and what it says about each style.
-struct Set {
-    name: &'static str,
-    note: &'static str,
+pub(crate) struct Set {
+    pub(crate) name: &'static str,
+    pub(crate) note: &'static str,
     says: &'static [Says],
 }
 
@@ -55,7 +55,7 @@ struct Set {
 ///
 /// Five, because a gallery of one is not a gallery and a gallery of twenty is
 /// a wall. Each changes the four styles a document's shape is made of.
-const SETS: &[Set] = &[
+pub(crate) const SETS: &[Set] = &[
     Set {
         name: "Plain",
         note: "The headings a new document starts with",

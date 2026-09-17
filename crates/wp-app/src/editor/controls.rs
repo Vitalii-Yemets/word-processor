@@ -59,7 +59,7 @@ impl Editor {
     /// are put right.
     pub(super) fn open_control_properties(&mut self) -> Response {
         let Some(control) = self.document.control_at(self.document.caret()) else {
-            return self.report("Put the caret in a content control first");
+            return self.report(crate::messages::t("Put the caret in a content control first"));
         };
 
         let mut fields = vec![

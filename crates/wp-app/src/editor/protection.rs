@@ -345,12 +345,15 @@ impl Editor {
     /// restrictions with different ways out, and a person told "this document
     /// is protected" when the document is not would look for the wrong thing.
     pub(super) fn refuse_limited(&mut self, command: Command) -> Response {
+        // Named where each stands: a sentence reached through a variable is
+        // one the catalogue never sees.
+        use crate::messages::t;
         let note = if command.is_theme_switching() {
-            "This document fixes its theme — Review ▸ Restrict Editing lifts it"
+            t("This document fixes its theme — Review ▸ Restrict Editing lifts it")
         } else if command.is_style_set_switching() {
-            "This document fixes its style set — Review ▸ Restrict Editing lifts it"
+            t("This document fixes its style set — Review ▸ Restrict Editing lifts it")
         } else {
-            "This document limits formatting to its styles — Review ▸ Restrict Editing lifts it"
+            t("This document limits formatting to its styles — Review ▸ Restrict Editing lifts it")
         };
         self.report(note)
     }
@@ -361,7 +364,8 @@ impl Editor {
             return self.refuse_read_only();
         }
         if self.inside_a_locked_control() {
-            return self.report("The contents of this control cannot be edited");
+            return self
+                .report(crate::messages::t("The contents of this control cannot be edited"));
         }
         // A stretch that names somebody else says so by name: "this document
         // is protected" would send a person to a dialog that would not help.

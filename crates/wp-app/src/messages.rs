@@ -49,6 +49,18 @@ use std::sync::{Mutex, OnceLock};
 /// would map every message to itself.
 const BUILT_IN: &[(&str, &str, &str)] = &[("de", "Deutsch", include_str!("../messages/de.txt"))];
 
+/// Every catalogue that travels with the program: its tag, its name, and
+/// what is in it.
+///
+/// Public so that the test holding every catalogue to the list of what the
+/// program says can walk them all rather than naming them one by one — a
+/// language added and not added to that test would be a language nobody
+/// checked.
+#[must_use]
+pub fn built_in() -> &'static [(&'static str, &'static str, &'static str)] {
+    BUILT_IN
+}
+
 /// The language whose "translation" is the English message written in
 /// accented letters, for finding messages that never reach this module.
 pub const PSEUDO: &str = "qps";

@@ -5865,17 +5865,39 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   comparing a changed header keeps the watermark behind it, and what the model
   cannot name survives a body being rebuilt — the second said at the level the
   first happens at.
-- [ ] **J30. The messages that live in tables.** The catalogue is gathered
-  twice over: `t("…")` found by reading the source, and labels walked out of
-  the tables the program is built from. The second half is short. The style
-  sets' names and their notes, the merge's column names, the info bar's
-  reasons, the organiser's own words — none of them sit next to a `t(`, and
-  none of them are walked, so `messages/en.txt` does not list them and the
-  test that holds the program to that list cannot see them. It shows: the
-  German catalogue carries thirty-five messages `en.txt` has never listed,
-  written there by hand as each was added. Done when every such table is
-  walked, the two files hold the same messages, and a test says so — the
-  point of the list being that nobody has to keep it by hand.
+- [x] **J30. The messages that live in tables.**
+  **Thirty-four messages the program says were in no list.** The German
+  catalogue carried every one of them, written in by hand as each was added —
+  which is exactly the work the list exists to make unnecessary, and exactly
+  the evidence that it was not doing it.
+  They came from four places. *Tables nobody walked*: the arrangements a cover
+  page comes in, the quick style sets' names and their notes, the columns a
+  new list of people starts with, and what the bar across the top says with
+  what its button offers. Those are walked now.
+  *Sentences picked by a condition and handed over as a variable* — the two
+  halves of the password note, the three refusals a limited document gives.
+  A message reached through a variable is one the catalogue never sees, so
+  each is named where it stands.
+  *Sentences said straight to the strip along the bottom*, which nothing was
+  reading. Seven of those, each now named where it stands.
+  And one that was being **thrown away on purpose**: the word "locked" beside
+  a style nobody may use. The gatherer guesses that a single lowercase word is
+  the program talking to itself — a key, a marker, an address — and that guess
+  is right almost always. But a string inside `t(` is a message by
+  construction: that call exists to look one up. So the guess is for the
+  looser shapes, a label or a constant, where a program's own name and a
+  person's words look alike, and what is asked for by name is taken at its
+  word.
+  **And a test, which is the point.** Every catalogue that travels with the
+  program is now held to the list three ways: it lists nothing the program has
+  stopped saying, it lists everything the program says, and it says every one
+  of them in its own language rather than listing it and leaving it in
+  English. None of those three shows up by using the program — the tests run
+  in English, where a missing translation looks exactly like a translation
+  that was not needed.
+  *Proven by:* the test above, and the two catalogues agreeing exactly: nought
+  in one that is not in the other, nought listed without being said. The three
+  messages that had never been translated at all are translated.
 - [ ] **J31. A selection of several stretches at once.** Word lets a person
   hold more than one piece of a document selected — Ctrl and drag adds to the
   selection rather than replacing it — and a good deal is built on that:

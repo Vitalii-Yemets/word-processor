@@ -110,6 +110,28 @@ fn from_the_tables() -> BTreeSet<String> {
     for (_, shown) in crate::editor::ownblocks::GALLERIES {
         out.insert((*shown).to_owned());
     }
+    // The arrangements a cover page comes in.
+    for layout in wp_docx::cover::Layout::ALL {
+        out.insert(layout.label().to_owned());
+    }
+    // The quick style sets: what each is called and what it says about
+    // itself, both of which a person reads off the menu.
+    for set in crate::editor::stylesets::SETS {
+        out.insert(set.name.to_owned());
+        out.insert(set.note.to_owned());
+    }
+    // The columns a list of people starts with, which are the headings of a
+    // table somebody is about to type into.
+    for column in crate::editor::mailings::NEW_LIST_COLUMNS {
+        out.insert((*column).to_owned());
+    }
+    // What the bar across the top says, and what its button offers.
+    for because in crate::chrome::infobar::Because::ALL {
+        out.insert(because.said().to_owned());
+        if let Some(button) = because.button() {
+            out.insert(button.to_owned());
+        }
+    }
     out
 }
 
@@ -209,10 +231,19 @@ pub fn messages_in(text: &str) -> BTreeSet<String> {
                 continue;
             }
             let Some(literal) = literal_at(text, from + quote) else { continue };
-            // A message is something to read; a one-letter marker or an
-            // empty string is not, and neither is a name the program uses
-            // to talk to itself — a key in a file, an address, a marker.
-            if literal.chars().count() > 1 && !is_a_name(&literal) {
+            // A message is something to read; a one-letter marker or an empty
+            // string is not, and neither is a name the program uses to talk
+            // to itself — a key in a file, an address, a marker.
+            //
+            // Except inside `t(` and `with(`, where whatever is written is a
+            // message by construction: those two calls exist to look a
+            // message up. The guess about names is for the looser shapes — a
+            // label, a constant — where a program's own name and a person's
+            // words look alike. Without the exception a message that happens
+            // to be one lowercase word, like the "locked" beside a style
+            // nobody may use, is dropped for looking like an identifier.
+            let asked_for = call == "t(" || call == "with(";
+            if literal.chars().count() > 1 && (asked_for || !is_a_name(&literal)) {
                 out.insert(literal);
             }
         }
@@ -333,6 +364,53 @@ mod tests {
             stale.is_empty(),
             "messages/en.txt lists what the program no longer says: {stale:#?}"
         );
+    }
+
+    /// The catalogue of a language lists what the program says, and all of it.
+    ///
+    /// The list is what a translator works from, and the two ways it can be
+    /// wrong are both silent. A message the catalogue does not list is one
+    /// nobody was asked to translate and one that comes out in English on a
+    /// German machine. A message it lists that the program no longer says is
+    /// work somebody did for nothing and a line that will puzzle the next
+    /// person to read it.
+    ///
+    /// Neither shows up by using the program: English is the language the
+    /// tests run in, and a missing translation looks exactly like a
+    /// translation that was not needed. So it is checked here.
+    #[test]
+    fn every_language_lists_what_the_program_says_and_nothing_else() {
+        let said = crate::messages::sources(LIST);
+        for (tag, _, catalogue) in crate::messages::built_in() {
+            let listed = crate::messages::sources(catalogue);
+
+            let missing: Vec<&String> = said.difference(&listed).take(10).collect();
+            assert!(
+                missing.is_empty(),
+                "messages/{tag}.txt does not list what the program says: {missing:#?}"
+            );
+            let stale: Vec<&String> = listed.difference(&said).take(10).collect();
+            assert!(
+                stale.is_empty(),
+                "messages/{tag}.txt lists what the program no longer says: {stale:#?}"
+            );
+
+            // And every one of them is actually said in that language, since
+            // a listed message with nothing under it is a message that comes
+            // out in English.
+            let untranslated: Vec<&str> = catalogue
+                .split("\n\n")
+                .filter_map(|block| {
+                    let message = block.lines().find_map(|line| line.strip_prefix("= "))?;
+                    block.lines().all(|line| !line.starts_with("> ")).then_some(message)
+                })
+                .take(10)
+                .collect();
+            assert!(
+                untranslated.is_empty(),
+                "messages/{tag}.txt lists these without saying them: {untranslated:#?}"
+            );
+        }
     }
 
     /// Writes the list, for when messages have been added or changed.

@@ -21,6 +21,7 @@
 = A new document
 = A password that is lost cannot be recovered.
 = A password to modify does not encrypt the file.
+= A rule under every heading
 = A to Z
 = AaBbCcDdEe
 = Above
@@ -31,6 +32,7 @@
 = Add Source
 = Add Users
 = Address
+= Address Line 1
 = Advanced
 = After:
 = Against a rule, to the right
@@ -75,6 +77,7 @@
 = Automatic bulleted and numbered lists
 = Automatically add words to list
 = Autosaved {0}
+= Banded
 = Banded Columns
 = Banded Rows
 = Before:
@@ -124,6 +127,7 @@
 = Cell Size
 = Cell margins
 = Centimeters
+= Centred
 = Certificate
 = Change Password
 = Change how the text is corrected as you type
@@ -136,10 +140,12 @@
 = Check Box
 = Check for Errors
 = Checked styles are currently allowed
+= Choose a column to sort by
 = Choose commands from
 = Choose one to put it in, to refile it, or to take it away.
 = Citation
 = Citations & Bibliography
+= City
 = Clear
 = Clear All
 = Click a shape or a picture first
@@ -158,6 +164,8 @@
 = Comma-separated values
 = Comment
 = Comments
+= Compact
+= Company
 = Compare
 = Compare Documents
 = Compare Two Documents
@@ -174,6 +182,7 @@
 = Correct accidental use of cAPS LOCK key
 = Countersign
 = Countersigned by {0}
+= Country
 = Cover Page
 = Cover Pages
 = Cover page taken off
@@ -226,10 +235,12 @@
 = Drop-Down List
 = Drop-down list properties
 = Edges
+= Edit Anyway
 = Edit Individual Documents
 = Edit List
 = Editing
 = Effects
+= Email
 = Encrypt Document
 = Encrypt with Password
 = End lines with
@@ -258,6 +269,7 @@
 = Finish & Merge
 = First Column
 = First Letter
+= First Name
 = Font
 = Fonts
 = Font…
@@ -298,6 +310,8 @@
 = Headers
 = Headers and footers
 = Headings
+= Headings down the middle
+= Headings on a band
 = Height:
 = Help
 = Hidden
@@ -343,6 +357,7 @@
 = Labels
 = Language
 = Last Column
+= Last Name
 = Layout
 = Leader
 = Left
@@ -353,6 +368,7 @@
 = Line
 = Line Numbers
 = Line and Page Breaks
+= Lines
 = Link
 = Link to Previous
 = Links
@@ -402,6 +418,7 @@
 = No names were typed
 = No two of them say the same thing
 = Nobody has been asked to sign.
+= Nobody was typed, so no list was made
 = None
 = Normal
 = Nothing is restricted: tick one of the two boxes
@@ -478,6 +495,7 @@
 = Picas
 = Pictures
 = Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
+= Plain
 = Plain Text
 = Plain Text (*.txt)
 = Plain, in the middle
@@ -485,6 +503,7 @@
 = Plain, to the right
 = Points
 = Position
+= Postcode
 = Preview
 = Preview Results
 = Previous
@@ -502,6 +521,7 @@
 = Protect
 = Purpose
 = Put one and its key in this folder, or use one the machine holds:
+= Put the caret in a content control first
 = Quick Access Toolbar
 = Quick Parts
 = Read Mode
@@ -581,6 +601,7 @@
 = Set as Default
 = Setting
 = Settings…
+= Shaded
 = Shapes
 = Show
 = Show All Regions I Can Edit
@@ -666,14 +687,18 @@
 = That style could not be changed
 = That watermark is no longer saved
 = The author asked for it to be opened read-only.
+= The contents of this control cannot be edited
 = The document is not encrypted.
 = The document is unreadable without it.
 = The file types could not be registered
 = The file types were registered
 = The files below were recovered.
 = The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
+= The headings a new document starts with
 = The letter goes to everybody ticked.
+= The list was not saved, so nothing is merged
 = The next stretch you may edit
+= The same headings, closer together
 = The selection is saved to the {0} gallery.
 = The two passwords are not the same
 = The words are open; the formatting is limited to this document's styles.
@@ -684,12 +709,18 @@
 = Thesaurus
 = This document
 = This document also carries Visual Basic macros
+= This document carries macros. They are kept and not run.
+= This document fixes its style set — Review ▸ Restrict Editing lifts it
+= This document fixes its theme — Review ▸ Restrict Editing lifts it
 = This document has no watermark to save
+= This document is encrypted. An empty box takes that off.
 = This document is not signed.
 = This document is open read-only.
 = This document is protected from editing.
+= This document limits formatting to its styles — Review ▸ Restrict Editing lifts it
 = This document only
 = This document was opened read-only: save a copy
+= This document was recovered after the program stopped.
 = This document, before
 = This machine would not give the random bytes a password needs
 = This machine would not sign with that certificate
@@ -703,6 +734,7 @@
 = This stretch is locked
 = This stretch may only be edited by {0}
 = Title
+= Title at the foot
 = Top
 = Top of Page
 = Total Row
@@ -716,7 +748,9 @@
 = Type
 = Type a New List...
 = Type one person, press Add, and type the next.
+= Type somebody first
 = Type the new name first
+= Type what a row has to hold
 = Underline
 = Undo
 = Unprotect Document
@@ -748,6 +782,7 @@
 = Width:
 = Window
 = With
+= With one, the file itself cannot be read without it.
 = Word 97-2003 Documents (*.doc)
 = Word Count
 = Word Document (*.docx)
@@ -774,6 +809,9 @@
 = Z to A
 = Zoom
 = in this machine's store
+= locked
+= off
+= on
 = unsaved changes
 = {0} added to the list
 = {0} characters

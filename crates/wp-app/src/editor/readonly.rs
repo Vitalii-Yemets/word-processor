@@ -206,10 +206,14 @@ impl Editor {
                 // whether it opens for writing. Saying which is which where
                 // they are typed is the only place it can be said.
                 Field::Heading("Password to open".to_owned()),
+                // Named where each stands rather than picked by a condition
+                // and handed over: the catalogue of what the program can say
+                // is gathered by reading the source, and a sentence reached
+                // through a variable is one no translator ever sees.
                 Field::note(if sealed {
-                    "This document is encrypted. An empty box takes that off."
+                    crate::messages::t("This document is encrypted. An empty box takes that off.")
                 } else {
-                    "With one, the file itself cannot be read without it."
+                    crate::messages::t("With one, the file itself cannot be read without it.")
                 }),
                 Field::Secret { label: "Password to open".to_owned(), value: String::new() },
                 Field::Secret {

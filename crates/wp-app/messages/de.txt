@@ -41,9 +41,6 @@ language = Deutsch
 = A block has to have a name
 > Ein Baustein braucht einen Namen
 
-= A certificate is a file; its key is the file beside it.
-> Ein Zertifikat ist eine Datei; sein Schlüssel ist die Datei daneben.
-
 = A new document
 > Ein neues Dokument
 
@@ -221,6 +218,9 @@ language = Deutsch
 = AutoText
 > AutoText
 
+= Banded
+> Mit Band
+
 = Banded Columns
 > Verbundene Spalten
 
@@ -397,9 +397,6 @@ language = Deutsch
 
 = Choose a column to sort by
 > Eine Spalte zum Sortieren wählen
-
-= Choose one to put it in, or to take it away.
-> Wählen Sie einen aus, um ihn einzufügen oder zu entfernen.
 
 = Chart
 > Diagramm
@@ -959,6 +956,9 @@ language = Deutsch
 = Hyphens (--) with dash (—)
 > Bindestriche (--) durch Geviertstrich (—)
 
+= In Normal.dotm
+> In Normal.dotm
+
 = In brackets
 > In Klammern
 
@@ -1268,11 +1268,17 @@ language = Deutsch
 = There is no part of this document you may edit
 > Es gibt keinen Teil dieses Dokuments, den Sie bearbeiten dürfen
 
+= This document fixes its theme — Review ▸ Restrict Editing lifts it
+> Dieses Dokument legt sein Design fest — Überprüfen ▸ Bearbeitung einschränken hebt es auf
+
 = This document has no watermark to save
 > Dieses Dokument hat kein Wasserzeichen zum Speichern
 
 = This document is protected from editing.
 > Dieses Dokument ist vor Bearbeitung geschützt.
+
+= This document limits formatting to its styles — Review ▸ Restrict Editing lifts it
+> Dieses Dokument beschränkt die Formatierung auf seine Formatvorlagen — Überprüfen ▸ Bearbeitung einschränken hebt es auf
 
 = This machine would not give the random bytes a password needs
 > Dieser Rechner liefert die Zufallsbytes nicht, die ein Kennwort braucht
@@ -1288,6 +1294,9 @@ language = Deutsch
 
 = This signs the whole document.
 > Dies signiert das gesamte Dokument.
+
+= Title at the foot
+> Titel am Fuß
 
 = Top of Page
 > Seitenanfang
@@ -2411,6 +2420,12 @@ language = Deutsch
 = Zoom
 > Zoom
 
+= off
+> aus
+
+= on
+> ein
+
 = unsaved changes
 > nicht gespeicherte Änderungen
 
@@ -2435,8 +2450,14 @@ language = Deutsch
 = {0} deleted
 > {0} gelöscht
 
+= {0} did not open. Try the password again.
+> {0} wurde nicht geöffnet. Kennwort erneut versuchen.
+
 = {0} is a control that cannot be deleted
 > {0} ist ein Steuerelement, das nicht gelöscht werden kann
+
+= {0} is encrypted.
+> {0} ist verschlüsselt.
 
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 > {0} ist kein Bild, das dieses Programm lesen kann. PNG, JPEG, BMP, GIF, TIFF und die Metadateien sind es.

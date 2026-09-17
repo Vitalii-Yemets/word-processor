@@ -57,6 +57,10 @@ pub enum Because {
 }
 
 impl Because {
+    /// Every reason a bar can be up, for the catalogue of everything the
+    /// program can say.
+    pub const ALL: &'static [Self] = &[Self::ReadOnly, Self::Macros, Self::Recovered];
+
     /// What the bar says.
     #[must_use]
     pub fn said(self) -> &'static str {

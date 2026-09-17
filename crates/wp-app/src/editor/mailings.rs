@@ -304,7 +304,7 @@ impl Editor {
 /// shape of an address: who, where, and how else to reach them. A column
 /// nobody fills in costs nothing — the file simply has an empty one — and a
 /// column that is not here can be added by typing its name into the last box.
-pub(super) const NEW_LIST_COLUMNS: &[&str] = &[
+pub(crate) const NEW_LIST_COLUMNS: &[&str] = &[
     "Title",
     "First Name",
     "Last Name",
@@ -386,7 +386,7 @@ impl Editor {
             .map(|(at, name)| ((*name).to_owned(), dialog.said(FIRST_BOX + at)))
             .collect();
         if values.iter().all(|(_, value)| value.trim().is_empty()) {
-            return self.report("Type somebody first");
+            return self.report(crate::messages::t("Type somebody first"));
         }
         self.typed_recipients.add(&values);
         let count = self.typed_recipients.len();
@@ -407,12 +407,12 @@ impl Editor {
             self.typed_recipients.add(&values);
         }
         if self.typed_recipients.is_empty() {
-            return self.report("Nobody was typed, so no list was made");
+            return self.report(crate::messages::t("Nobody was typed, so no list was made"));
         }
 
         let filters = [FileFilter { label: "Comma-separated files", pattern: "*.csv" }];
         let Some(path) = wp_shell::dialog::save_file(t("Save Address List"), &filters, None) else {
-            return self.report("The list was not saved, so nothing is merged");
+            return self.report(crate::messages::t("The list was not saved, so nothing is merged"));
         };
         if let Err(error) = std::fs::write(&path, self.typed_recipients.to_delimited()) {
             return self.report(&format!("Cannot write {}: {error}", path.display()));
@@ -809,7 +809,7 @@ impl Editor {
         let said = match button {
             SORT => {
                 let Some(column) = column else {
-                    return self.report("Choose a column to sort by");
+                    return self.report(crate::messages::t("Choose a column to sort by"));
                 };
                 let order = self.recipients.sorted_by(&column, dialog.chose(RECIPIENT_ORDER) == 0);
                 // The ticks go with the rows they were against, or sorting a
@@ -827,7 +827,7 @@ impl Editor {
             }
             FILTER => {
                 if wanted.trim().is_empty() {
-                    return self.report("Type what a row has to hold");
+                    return self.report(crate::messages::t("Type what a row has to hold"));
                 }
                 let keep = self.recipients.matching(column.as_deref().unwrap_or(""), &wanted);
                 let before = self.left_out.len();
