@@ -35,13 +35,19 @@
 //!   </w:docParts></w:glossaryDocument>
 //! ```
 //!
-//! # What is deliberately not here
+//! # Word's own galleries, and this program's
 //!
-//! The galleries Word fills for itself — its cover pages, its page numbers,
-//! its watermarks, its tables of contents. Those are Word's own content,
-//! shipped inside Word, and a program that offered a gallery called "Cover
-//! Pages" with something else in it would be lying about what a person was
-//! picking. The galleries here are the ones a person fills themselves.
+//! Word fills some of these galleries itself — its cover pages, its page
+//! numbers, its watermarks — with content shipped inside Word. That content
+//! is not here and cannot be: a gallery offering "Accent Bar 2" and drawing
+//! something else would be lying about what a person was picking.
+//!
+//! What is here is the names of those galleries, so that two things work.
+//! A block a person saves into one goes in under the name Word reads, and so
+//! turns up in Word's own gallery rather than nowhere. And a document written
+//! by Word, whose glossary holds Word's blocks, shows them on the menu they
+//! belong on. The designs this program offers alongside them are its own, and
+//! are drawn in the program rather than kept here.
 
 use wp_xml::tree::{Element, XmlTree};
 
@@ -68,6 +74,35 @@ pub const AUTO_TEXT: &str = "autoText";
 
 /// And the category a block goes in inside its gallery.
 pub const GENERAL: &str = "General";
+
+/// The gallery Word's cover pages are in.
+pub const COVER_PAGES: &str = "coverPg";
+
+/// Its page numbers, which are four galleries rather than one: Word asks
+/// where the number goes before it asks what it looks like, and what looks
+/// right at the head of a page does not look right in the margin.
+pub const PAGE_NUMBERS: &str = "pgNum";
+pub const PAGE_NUMBERS_TOP: &str = "pgNumT";
+pub const PAGE_NUMBERS_BOTTOM: &str = "pgNumB";
+pub const PAGE_NUMBERS_MARGINS: &str = "pgNumMargins";
+
+/// Its watermarks.
+pub const WATERMARKS: &str = "watermarks";
+
+/// Its headers and its footers, which are galleries of their own and not the
+/// same as the page-number ones: a header design is a whole header, where a
+/// page-number design is the number by itself.
+pub const HEADERS: &str = "hdrs";
+pub const FOOTERS: &str = "ftrs";
+
+/// Its tables, its equations, its text boxes, its tables of contents and its
+/// bibliographies, which are named so that a block saved into one of them is
+/// not quietly refiled under something else.
+pub const TABLES: &str = "tbls";
+pub const EQUATIONS: &str = "eq";
+pub const TEXT_BOXES: &str = "txtBox";
+pub const CONTENTS: &str = "tblOfContents";
+pub const BIBLIOGRAPHIES: &str = "bib";
 
 /// One saved piece of a document.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

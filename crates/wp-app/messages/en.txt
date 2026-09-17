@@ -28,6 +28,7 @@
 = Address
 = Advanced
 = After:
+= Against a rule, to the right
 = Align
 = Align Left
 = Alignment
@@ -74,6 +75,8 @@
 = Banded Rows
 = Before:
 = Below
+= Between dashes
+= Bibliographies
 = Bibliography
 = Blank Page
 = Blank document
@@ -165,6 +168,7 @@
 = Correct TWo INitial CApitals
 = Correct accidental use of cAPS LOCK key
 = Cover Page
+= Cover Pages
 = Create
 = Create New Building Block
 = Create a PDF
@@ -224,6 +228,7 @@
 = Enter new password (optional)
 = Envelopes
 = Equation
+= Equations
 = Eraser
 = Every column
 = Every one of them has a name and an address
@@ -247,6 +252,7 @@
 = Font…
 = Footer
 = Footer from Bottom:
+= Footers
 = Footnote
 = Footnotes
 = Format Page Numbers
@@ -274,6 +280,7 @@
 = Header & Footer
 = Header Row
 = Header from Top:
+= Headers
 = Headings
 = Height:
 = Help
@@ -288,6 +295,7 @@
 = INitial CAps
 = Illustrations
 = In Normal.dotm
+= In brackets
 = In this document
 = In use
 = Inches
@@ -376,6 +384,7 @@
 = OK
 = Office display language
 = On
+= On a grey band
 = On the list
 = One File for Each Letter
 = One Page
@@ -400,17 +409,26 @@
 = Outside
 = PDF Files (*.pdf)
 = PDF documents (*.pdf)
+= Page 1
+= Page 1 of 4
 = Page Background
 = Page Borders
 = Page Break
 = Page Color
 = Page Movement
 = Page Number
+= Page Numbers
+= Page Numbers at the Foot
+= Page Numbers at the Top
+= Page Numbers in the Margin
 = Page Reference
 = Page Setup
 = Page Width
 = Page break before
 = Page display
+= Page number at the foot: {0}
+= Page number at the top: {0}
+= Page number: {0}
 = Page {0} of {1}
 = Pages
 = Pages:
@@ -434,6 +452,9 @@
 = Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
 = Plain Text
 = Plain Text (*.txt)
+= Plain, in the middle
+= Plain, to the left
+= Plain, to the right
 = Points
 = Position
 = Preview
@@ -497,6 +518,8 @@
 = Save As
 = Save AutoRecover information
 = Save Selection to AutoText Gallery
+= Save Selection to Cover Page Gallery
+= Save Selection to Page Number Gallery
 = Save Selection to Quick Part Gallery
 = Save as
 = Save as PDF
@@ -578,12 +601,14 @@
 = Table of Contents
 = Table of Figures
 = Tables
+= Tables of Contents
 = Tabs
 = Tabs…
 = Tag
 = Tell me what you want to do
 = Text
 = Text Box
+= Text Boxes
 = Text Direction
 = Text Files (*.txt)
 = Text Wrapping
@@ -600,8 +625,7 @@
 = The files below were recovered.
 = The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
 = The letter goes to everybody ticked.
-= The selection is saved to the AutoText gallery.
-= The selection is saved under this name.
+= The selection is saved to the {0} gallery.
 = The {0} theme
 = Themes
 = Thesaurus
@@ -647,6 +671,7 @@
 = View Gridlines
 = Views
 = Watermark
+= Watermarks
 = Web Layout
 = Web Page (*.htm;*.html)
 = Web Pages (*.htm;*.html;*.mht;*.mhtml)

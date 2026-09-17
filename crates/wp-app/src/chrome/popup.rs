@@ -5,7 +5,7 @@
 //! two ways of drawing and two ways of handling a click.
 
 use wp_layout::{LayoutEngine, Renderer};
-use wp_raster::Canvas;
+use wp_raster::{Canvas, Color};
 
 use crate::messages;
 
@@ -71,6 +71,9 @@ pub enum Choice {
     LetterCase,
     /// Where a page number goes.
     PageNumberPlace,
+    /// And what it looks like once that is settled: the gallery under one of
+    /// those places.
+    PageNumberDesign,
     /// What Select selects.
     Selecting,
     /// Which note to go to.
@@ -222,6 +225,12 @@ pub enum Kind {
     /// Something that does not apply just now — Cut with nothing selected.
     /// Shown, so the menu keeps its shape, but grey and unpickable.
     Disabled,
+    /// Something that opens another menu rather than doing anything itself.
+    ///
+    /// Picked like a choice and drawn with the triangle every menu in the
+    /// world puts on one, because a row that looks like it will act and
+    /// instead opens a second list has misled the person who pressed it.
+    Submenu,
 }
 
 /// One row, as far as anything but its text is concerned.
@@ -259,9 +268,15 @@ impl Row {
         Self { kind: Kind::Heading, icon: Icon::None }
     }
 
+    /// A row that opens another menu.
+    #[must_use]
+    pub fn submenu(icon: Icon) -> Self {
+        Self { kind: Kind::Submenu, icon }
+    }
+
     #[must_use]
     fn pickable(self) -> bool {
-        self.kind == Kind::Choice
+        matches!(self.kind, Kind::Choice | Kind::Submenu)
     }
 }
 
@@ -541,9 +556,10 @@ impl Popup {
 
             // Only a choice lights up: a heading and something that does not
             // apply are there to be read, not pressed.
-            let background = if kind == Kind::Choice && self.hovered == Some(index) {
+            let pickable = matches!(kind, Kind::Choice | Kind::Submenu);
+            let background = if pickable && self.hovered == Some(index) {
                 Some(theme.emphasis)
-            } else if kind == Kind::Choice && self.current == Some(index) {
+            } else if pickable && self.current == Some(index) {
                 Some(theme.hover)
             } else {
                 None
@@ -578,13 +594,41 @@ impl Popup {
             let text = messages::translated(text);
             let line = engine.simple_line(&text, text_left, y + 15.0, 9.0, color);
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
+            if kind == Kind::Submenu {
+                draw_arrow(canvas, self.left + self.width - ARROW_ROOM, y, row_height, color);
+            }
             y += row_height;
         }
     }
 }
 
+/// How far in from the right edge the triangle on a submenu row is drawn.
+const ARROW_ROOM: f32 = 12.0;
+
+/// How tall that triangle is, in pixels.
+const ARROW_HEIGHT: i32 = 7;
+
+/// The triangle on a row that opens another menu.
+///
+/// Drawn rather than written, because the character for one is in a part of
+/// Unicode that plenty of text fonts have nothing in: a menu whose arrows came
+/// out as empty boxes on somebody else's machine would be worse than no arrows
+/// at all.
+fn draw_arrow(canvas: &mut Canvas, left: f32, top: f32, row_height: f32, color: Color) {
+    let x = left as i32;
+    let y = (top + (row_height - ARROW_HEIGHT as f32) / 2.0) as i32;
+    // Four columns, each two pixels shorter than the one before it and
+    // starting a pixel lower, which is a triangle pointing the way the menu
+    // will open.
+    for step in 0..(ARROW_HEIGHT / 2 + 1) {
+        let tall = ARROW_HEIGHT - step * 2;
+        canvas.fill_rect(x + step, y + step, 1, tall.max(1), color);
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     /// A menu of three things with a line across the middle of it.
@@ -604,6 +648,39 @@ mod tests {
         let list = Popup::new(Choice::Font, vec!["Calibri".to_owned()], None, 0.0, 0.0, 100.0);
         assert_eq!(list.row(0), Row::default());
         assert_eq!(list.hit(10, 10), Some(0));
+    }
+
+    #[test]
+    fn a_row_that_opens_another_menu_can_be_picked_like_any_other() {
+        // It is not a heading and it is not greyed: pressing it is how the
+        // second menu opens, so it has to be pressable.
+        let list = Popup::new(
+            Choice::PageNumberPlace,
+            vec!["Top of Page".to_owned()],
+            None,
+            0.0,
+            0.0,
+            200.0,
+        )
+        .with_rows(vec![Row::submenu(Icon::Header)]);
+        assert_eq!(list.row(0).kind, Kind::Submenu);
+        assert_eq!(list.hit(10, 10), Some(0), "a submenu row was not pickable");
+    }
+
+    #[test]
+    fn the_triangle_on_one_is_drawn_inside_the_menu() {
+        // Drawn rather than written, so what holds it to anything is where
+        // the pixels land: inside the right-hand edge, and in the row.
+        let mut canvas = Canvas::new(200, 60);
+        canvas.fill_rect(0, 0, 200, 60, Color::rgb(0xFF, 0xFF, 0xFF));
+        draw_arrow(&mut canvas, 180.0, 10.0, ROW_HEIGHT, Color::rgb(0, 0, 0));
+
+        let ink = |x: usize, y: usize| canvas.pixel(x, y) != Color::rgb(0xFF, 0xFF, 0xFF);
+        let middle = 10 + (ROW_HEIGHT as usize) / 2;
+        assert!(ink(180, middle), "nothing was drawn");
+        assert!(!ink(179, middle), "it began before it was asked to");
+        // And it comes to a point: the far column is shorter than the near one.
+        assert!(!ink(183, middle - 3), "it is a block, not a triangle");
     }
 
     #[test]

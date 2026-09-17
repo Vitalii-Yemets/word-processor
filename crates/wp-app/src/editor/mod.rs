@@ -21,6 +21,7 @@ mod context;
 mod controls;
 mod correcting;
 mod defaults;
+pub(crate) mod designs;
 mod diagram;
 mod dialogs;
 mod dispatch;
@@ -58,7 +59,7 @@ mod notes;
 mod numbering;
 mod optionsdialog;
 mod outline;
-mod ownblocks;
+pub(crate) mod ownblocks;
 mod pagebordersdialog;
 mod pagesetup;
 mod paragraphdialog;
@@ -471,9 +472,19 @@ pub struct Editor {
     /// List: it is not the merge's list until it has been saved. See
     /// [`mailings`].
     typed_recipients: wp_docx::merge::Recipients,
-    /// Whether the block being named is going to the AutoText gallery rather
-    /// than to Quick Parts. See [`ownblocks`].
-    saving_to_auto_text: bool,
+    /// Which gallery the block being named is going into.
+    ///
+    /// Word asks the same question from half a dozen menus — Quick Parts,
+    /// AutoText, the page-number galleries, the cover pages — and the answer
+    /// is the same dialog every time, so which menu asked has to be kept or
+    /// the block goes quietly to the wrong one. See [`ownblocks`].
+    saving_to: &'static str,
+    /// Where the page number the gallery is about is going.
+    ///
+    /// Word's Page Number button asks where before it asks what, and the
+    /// gallery that asks what has to remember the answer to the first
+    /// question. See [`designs`].
+    page_number_place: designs::Place,
     /// The people the merge is not for: Word's Edit Recipient List with the
     /// tick taken off a row. Kept by number, because the list itself is read
     /// afresh from its file each time.
@@ -710,7 +721,8 @@ impl Editor {
             pending_issue: None,
             recipients: wp_docx::merge::Recipients::default(),
             typed_recipients: wp_docx::merge::Recipients::default(),
-            saving_to_auto_text: false,
+            saving_to: wp_docx::blocks::QUICK_PARTS,
+            page_number_place: designs::Place::Bottom,
             recipient_file: None,
             preview_record: None,
             word_art_style: 0,

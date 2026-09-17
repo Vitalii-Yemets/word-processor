@@ -2194,6 +2194,26 @@ ogg,lancre
                 self.document.set_line_numbers(Some(wp_docx::appearance::LineNumbers::default()));
                 self.relayout();
             }
+            "pagenumbers" => {
+                // The gallery of page-number designs: the second of the two
+                // questions the Page Number button asks, and the one that had
+                // nothing behind it until this program drew its own.
+                self.ribbon.tab = crate::chrome::ribbon::Tab::Insert;
+                self.needs_redraw = true;
+                self.paint(self.view_width, self.view_height);
+                self.open_page_number_designs(super::designs::Place::Bottom);
+            }
+            "pagenumberdrawn" => {
+                // Two of the designs on the page itself: the band behind the
+                // number at the foot, and the rule under the one at the head.
+                // A gallery that offered an arrangement the page could not
+                // draw would be offering a picture of one.
+                self.page_number_place = super::designs::Place::Bottom;
+                self.choose_page_number_design(7);
+                self.page_number_place = super::designs::Place::Top;
+                self.choose_page_number_design(8);
+                self.relayout();
+            }
             "numbering" => {
                 // The menu that says how the section numbers its pages.
                 self.ribbon.tab = crate::chrome::ribbon::Tab::Insert;

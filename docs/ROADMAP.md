@@ -5474,12 +5474,61 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   changes is that a reader stricter than Word now has nothing to object to.
   The rights-management path itself — asking a server for a key — is not
   done and is not planned: it is a licence server, not a file format.
-- [ ] **J22. Word's own galleries of content.** Its cover pages, its page
-  numbers, its watermarks: **J6** built the machinery and deliberately did
-  not fill the galleries, because they are Word's own content and a gallery
-  called "Cover Pages" with something else in it would lie about what a
-  person was picking. What is wanted instead is a set of this program's own,
-  drawn here, under names that say whose they are.
+- [x] **J22. Word's own galleries of content.**
+  **Two questions, not one.** Word's Page Number button asks where the number
+  goes and then what it looks like. This program asked the first and answered
+  the second for the person: Top of Page put a plain centred number at the
+  top and that was the whole of it. So the three places open a gallery now,
+  and carry the triangle every menu in the world puts on a row that opens
+  another — a row that looks like it will act and instead opens a second list
+  has misled whoever pressed it.
+  **The gallery is this program's own.** Word ships twenty-odd arrangements
+  called "Accent Bar 2" and "Vertical Outline 1", and **J6** would not put
+  something else behind those names. These are nine, drawn here, named for
+  what they draw: plain to the left, the middle and the right; "Page 1";
+  "Page 1 of 4"; in brackets; between dashes; on a grey band; against a rule.
+  A design is two decisions and nothing else — how the number reads and what
+  is drawn round it — and everything else follows from where it was asked
+  for, which is why the rule under a running head is drawn above a running
+  foot: both face the text. Where the number goes into a sentence there is no
+  paragraph of its own to align or to shade, so what is offered there is the
+  readings and one of each, rather than three lines that would do the same
+  thing.
+  **And the half of a gallery that is the person's.** Every one of Word's is
+  half its own content and half what somebody saved into it, and the second
+  half was missing from all of them. The page-number galleries and the cover
+  pages now list what the person has put there and end with the line that
+  puts another one there. That needed the galleries to be named as the format
+  names them — `pgNum`, `pgNumT`, `pgNumB`, `coverPg`, `watermarks` and the
+  rest — so that a block saved here turns up in Word's own gallery rather
+  than nowhere, and a block out of a document Word wrote turns up on the menu
+  it belongs on. Save Selection carries which gallery asked, instead of the
+  one flag that could only tell Quick Parts from AutoText, and the organiser
+  can name every gallery there is: one that could not would have shown a
+  saved page-number design as a Quick Part and quietly refiled it there the
+  moment anybody pressed Modify.
+  *Proven by:* fifteen tests over the designs and the gallery — every design
+  holds a `PAGE` field, no two draw the same thing, the rule faces the text
+  at either end of the page, the band is a band, a design chosen at the foot
+  writes a footer and leaves the head alone and the other way about, a number
+  at the caret goes into the text and touches neither, the separator does
+  nothing, and the last line asks what to call what is being saved and files
+  it under `pgNumB` rather than under Quick Parts. Pictures: the place menu
+  with its three triangles, the gallery of nine under Bottom of Page, and the
+  page itself with the band drawn at the foot and the rule at the head — a
+  gallery offering an arrangement the page could not draw would be offering a
+  picture of one.
+  *Not done, and named here:* Word's fourth place, Page Margins, is **J27** —
+  it is a text box anchored to the margin, not a header. Its
+  "Remove Current Cover Page" is **J28**: nothing marks which blocks of the
+  document are the cover page, so nothing can take them away again. The
+  watermark gallery still has only its first half, and that is **J29**,
+  because a watermark here is a word painted behind the sheet rather than
+  content in the header, and a building block cannot be one. And the
+  catalogue of messages misses anything that reaches the interface out of a
+  table — which is why `messages/de.txt` carried German for thirty-five
+  messages `en.txt` does not list, and why the page-number designs had to be
+  walked into it by hand: **J30**.
 - [ ] **J23. Word's Restrict Editing pane, and what stands in it.** The pane
   itself, which in Word stays open beside the document where this program has
   a dialog — **J16** named that difference and this is where it is closed.
@@ -5515,6 +5564,41 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   footer on every page. Done when each can be compared and the differences
   come out as tracked changes in the part they belong to, with a tick box
   apiece in the dialog that already has four.
+- [ ] **J27. Page numbers in the margin.** Word's fourth place for one, and
+  the one **J22** did not offer: a number standing in the margin beside the
+  text rather than above or below it. It is not a header — it is a text box
+  anchored to the page's margin, floating, with the field inside it — so it
+  needs the anchored drawing machinery rather than the furniture machinery,
+  and a gallery of its own designs to go with it. Done when Page Margins
+  stands on the place menu with designs behind it, the box lands in the
+  margin on every page, and `pgNumMargins` is a gallery a person can save
+  into like the other three.
+- [ ] **J28. Taking a cover page off again.** Word's Remove Current Cover
+  Page, the line at the foot of that gallery. It cannot be written until
+  something marks which blocks of the document are the cover page: Word wraps
+  one in a `w:sdt` of the building-block kind, which is what lets it find the
+  page it put in and take away exactly that. Done when a cover page put in
+  here carries that mark, the line is on the menu, and taking one away leaves
+  the document as it was before — including the page break that came with it.
+- [ ] **J29. The watermark gallery's other half.** Word's watermarks are
+  building blocks: a shape holding the word, placed in the header, saved in
+  a gallery a person can add to. This program's is a `Watermark` — a word, an
+  angle and a colour — painted behind each sheet as the sheet is drawn, which
+  is why nothing a person saves can be one and why the gallery stops at the
+  six presets. Done when a watermark is content in the header, drawn from
+  there, so that Save Selection to the Watermark Gallery means something and
+  a watermark somebody else's Word wrote comes back as what it is.
+- [ ] **J30. The messages that live in tables.** The catalogue is gathered
+  twice over: `t("…")` found by reading the source, and labels walked out of
+  the tables the program is built from. The second half is short. The style
+  sets' names and their notes, the merge's column names, the info bar's
+  reasons, the organiser's own words — none of them sit next to a `t(`, and
+  none of them are walked, so `messages/en.txt` does not list them and the
+  test that holds the program to that list cannot see them. It shows: the
+  German catalogue carries thirty-five messages `en.txt` has never listed,
+  written there by hand as each was added. Done when every such table is
+  walked, the two files hold the same messages, and a test says so — the
+  point of the list being that nobody has to keep it by hand.
 
 ## K — Proving it against Word rather than against ourselves
 

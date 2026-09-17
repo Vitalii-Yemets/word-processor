@@ -56,6 +56,9 @@ language = Deutsch
 = Address Line 1
 > Adresszeile 1
 
+= Against a rule, to the right
+> An einer Linie, rechts
+
 = Allow AutoFormat to override formatting restrictions
 > AutoFormat darf Formatierungseinschränkungen überschreiben
 
@@ -217,6 +220,12 @@ language = Deutsch
 
 = Below
 > Unterhalb
+
+= Between dashes
+> Zwischen Gedankenstrichen
+
+= Bibliographies
+> Literaturverzeichnisse
 
 = Bibliography
 > Literaturverzeichnis
@@ -412,6 +421,9 @@ language = Deutsch
 
 = Country
 > Land
+
+= Cover Pages
+> Deckblätter
 
 = Create New Building Block
 > Neuen Baustein erstellen
@@ -695,6 +707,9 @@ language = Deutsch
 = Equation
 > Formel
 
+= Equations
+> Formeln
+
 = Eraser
 > Radierer
 
@@ -766,6 +781,9 @@ language = Deutsch
 
 = Footer from Bottom:
 > Fußzeile von unten:
+
+= Footers
+> Fußzeilen
 
 = Footnote
 > Fußnote
@@ -848,6 +866,9 @@ language = Deutsch
 = Header from Top:
 > Kopfzeile von oben:
 
+= Headers
+> Kopfzeilen
+
 = Headings
 > Überschriften
 
@@ -886,6 +907,9 @@ language = Deutsch
 
 = Hyphens (--) with dash (—)
 > Bindestriche (--) durch Geviertstrich (—)
+
+= In brackets
+> In Klammern
 
 = In this document
 > In diesem Dokument
@@ -1024,6 +1048,63 @@ language = Deutsch
 
 = Lock aspect ratio
 > Seitenverhältnis sperren
+
+= On a grey band
+> Auf grauem Band
+
+= Page 1
+> Seite 1
+
+= Page 1 of 4
+> Seite 1 von 4
+
+= Page Numbers
+> Seitenzahlen
+
+= Page Numbers at the Foot
+> Seitenzahlen unten
+
+= Page Numbers at the Top
+> Seitenzahlen oben
+
+= Page Numbers in the Margin
+> Seitenzahlen am Seitenrand
+
+= Page number at the foot: {0}
+> Seitenzahl unten: {0}
+
+= Page number at the top: {0}
+> Seitenzahl oben: {0}
+
+= Page number: {0}
+> Seitenzahl: {0}
+
+= Plain, in the middle
+> Einfach, zentriert
+
+= Plain, to the left
+> Einfach, links
+
+= Plain, to the right
+> Einfach, rechts
+
+= Save Selection to Cover Page Gallery
+> Auswahl im Deckblatt-Katalog speichern
+
+= Save Selection to Page Number Gallery
+> Auswahl im Seitenzahlen-Katalog speichern
+
+= Tables of Contents
+> Inhaltsverzeichnisse
+
+= Text Boxes
+> Textfelder
+
+= The selection is saved to the {0} gallery.
+> Die Auswahl wird im Katalog {0} gespeichert.
+
+= Watermarks
+> Wasserzeichen
 
 = locked
 > gesperrt
@@ -1843,12 +1924,6 @@ language = Deutsch
 
 = The same headings, closer together
 > Dieselben Überschriften, enger gesetzt
-
-= The selection is saved to the AutoText gallery.
-> Die Auswahl wird im AutoText-Katalog gespeichert.
-
-= The selection is saved under this name.
-> Die Auswahl wird unter diesem Namen gespeichert.
 
 = The two passwords are not the same
 > Die beiden Kennwörter stimmen nicht überein

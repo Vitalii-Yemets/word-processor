@@ -1500,6 +1500,12 @@ impl Editor {
             // already carries a menu of its own: it is a submenu, and it
             // places itself rather than being looked up by button.
             Choice::AutoText => return self.open_auto_text(),
+            // And the page-number designs hang under the Page Number button
+            // the same way, once the menu above them has said where the
+            // number is going.
+            Choice::PageNumberDesign => {
+                return self.open_page_number_designs(self.page_number_place)
+            }
             // Hangs where the caret is rather than under a button.
             Choice::FillIn => Command::LegacyFields,
             // The strip's own menu hangs where it was opened, not under a
@@ -1629,6 +1635,7 @@ impl Editor {
             | Choice::MatchColumn
             | Choice::TextEffect
             | Choice::Envelope
+            | Choice::PageNumberDesign
             | Choice::Label => (Vec::new(), None),
             Choice::Zoom => {
                 let index = chrome::ZOOMS.iter().position(|value| (value - self.zoom).abs() < 0.5);
@@ -1740,6 +1747,7 @@ impl Editor {
             Choice::StyleSet => self.choose_style_set(index),
             Choice::RecipientSource => self.choose_recipient_source(index),
             Choice::AutoText => self.choose_auto_text(index),
+            Choice::PageNumberDesign => self.choose_page_number_design(index),
             Choice::FillIn => self.choose_fill_in(index),
             Choice::StatusBar => self.choose_status_part(index),
             Choice::PageNumbering => self.choose_page_numbering(index),

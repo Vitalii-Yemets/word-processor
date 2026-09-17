@@ -94,6 +94,19 @@ fn from_the_tables() -> BTreeSet<String> {
     for unit in crate::measure::Unit::ALL {
         out.insert(unit.label().to_owned());
     }
+    // The page-number gallery: the name of every design in it, and what the
+    // program says once one has gone in.
+    for design in crate::editor::designs::DESIGNS {
+        out.insert(design.name.to_owned());
+    }
+    for place in crate::editor::designs::Place::ALL {
+        out.insert(place.said().to_owned());
+    }
+    // And the name of every gallery a building block can be filed under,
+    // which the organiser shows and the dialog that saves one names.
+    for (_, shown) in crate::editor::ownblocks::GALLERIES {
+        out.insert((*shown).to_owned());
+    }
     out
 }
 

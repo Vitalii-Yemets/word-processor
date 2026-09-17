@@ -250,6 +250,9 @@ impl Editor {
                     CaseChange::ALL.iter().map(|case| case.label().to_owned()).collect();
                 plain(items)
             }
+            // Word asks where the number goes before it asks what it looks
+            // like, so the first three rows open a second menu rather than
+            // putting anything in. See [`super::designs`].
             Choice::PageNumberPlace => {
                 let items = vec![
                     "Top of Page".to_owned(),
@@ -260,9 +263,9 @@ impl Editor {
                     "Remove Page Numbers".to_owned(),
                 ];
                 let rows = vec![
-                    Row::new(Kind::Choice, Icon::Header),
-                    Row::new(Kind::Choice, Icon::Footer),
-                    Row::new(Kind::Choice, Icon::PageNumber),
+                    Row::submenu(Icon::Header),
+                    Row::submenu(Icon::Footer),
+                    Row::submenu(Icon::PageNumber),
                     Row::separator(),
                     Row::new(Kind::Choice, Icon::PageNumber),
                     Row::new(Kind::Choice, Icon::LetterClear),
@@ -638,23 +641,15 @@ impl Editor {
     }
 
     fn choose_page_number(&mut self, index: usize) -> Response {
-        let caption = self.document_name();
-        let put = |editor: &mut Self, kind: Furniture, preset: Preset, note: &str| -> Response {
-            match editor.document.set_furniture(kind, preset, Alignment::Center, &caption) {
-                Ok(changed) => editor.edited(changed, note),
-                Err(error) => editor.report(&format!("Cannot set that: {error}")),
-            }
-        };
-
+        use super::designs::Place;
         match index {
-            0 => put(self, Furniture::Header, Preset::PageNumber, "Page number at the top"),
-            1 => put(self, Furniture::Footer, Preset::PageNumber, "Page number at the foot"),
-            // Word's Current Position drops the number where the caret is, as a
-            // field, so it counts like any other page number.
-            2 => {
-                let changed = self.document.insert_field("PAGE", "1");
-                self.edited(changed, "Page number")
-            }
+            // The three places, each of which opens the gallery of designs
+            // that can go there. Word's Current Position drops the number
+            // where the caret is, as a field, so it counts like any other
+            // page number.
+            0 => self.open_page_number_designs(Place::Top),
+            1 => self.open_page_number_designs(Place::Bottom),
+            2 => self.open_page_number_designs(Place::Here),
             4 => self.open_page_numbering(),
             5 => {
                 let header = self.document.set_furniture(

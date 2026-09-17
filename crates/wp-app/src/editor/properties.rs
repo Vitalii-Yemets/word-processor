@@ -14,6 +14,8 @@ use wp_docx::properties::Properties;
 use wp_shell::Response;
 
 use crate::chrome::findbar::{FindBar, Purpose};
+use crate::chrome::icons::Icon;
+use crate::chrome::popup::{Kind, Row};
 use crate::chrome::{Choice, Command, Popup};
 
 use super::Editor;
@@ -142,16 +144,53 @@ impl Editor {
             return Response::Ignored;
         };
 
-        let items = Layout::ALL.iter().map(|layout| layout.label().to_owned()).collect();
-        self.popup = Some(Popup::new(Choice::Cover, items, None, left, top, 220.0));
+        let (items, rows) = self.cover_gallery();
+        self.popup = Some(Popup::new(Choice::Cover, items, None, left, top, 260.0).with_rows(rows));
         self.needs_redraw = true;
         Response::Redraw
+    }
+
+    /// What is in that gallery.
+    ///
+    /// The three arrangements this program draws, then whatever the person has
+    /// saved into the cover-page gallery, then the line that saves another.
+    /// Word's is the same two halves — its own designs and the person's — and
+    /// a gallery with only the first half is one a person can never add to.
+    pub(super) fn cover_gallery(&self) -> (Vec<String>, Vec<Row>) {
+        let mut items: Vec<String> =
+            Layout::ALL.iter().map(|layout| layout.label().to_owned()).collect();
+        let mut rows: Vec<Row> =
+            items.iter().map(|_| Row::new(Kind::Choice, Icon::CoverPage)).collect();
+
+        for block in self.blocks_in_gallery(wp_docx::blocks::COVER_PAGES) {
+            items.push(block);
+            rows.push(Row::new(Kind::Choice, Icon::QuickParts));
+        }
+
+        items.push(String::new());
+        rows.push(Row::separator());
+        items.push(crate::messages::t("Save Selection to Cover Page Gallery").to_owned());
+        rows.push(Row::new(Kind::Choice, Icon::Save));
+        (items, rows)
     }
 
     /// Puts a cover page on the front of the document.
     pub(super) fn choose_cover_page(&mut self, index: usize) -> Response {
         self.popup = None;
-        let Some(layout) = Layout::ALL.get(index).copied() else { return Response::Ignored };
+        let Some(layout) = Layout::ALL.get(index).copied() else {
+            let saved = self.blocks_in_gallery(wp_docx::blocks::COVER_PAGES);
+            let past = index - Layout::ALL.len();
+            if let Some(name) = saved.get(past).cloned() {
+                // A cover page goes at the front, whatever the caret was on.
+                self.document.move_caret(wp_docx::TextPosition::default(), false);
+                return self.insert_own_block(&name);
+            }
+            // The separator, which cannot be pressed, then the line that saves.
+            if past == saved.len() + 1 {
+                return self.save_selection_to(wp_docx::blocks::COVER_PAGES);
+            }
+            return Response::Ignored;
+        };
 
         // What goes on it comes from the document's own properties. With none
         // set there is nothing to write, and saying so is more use than putting
@@ -190,5 +229,53 @@ impl Editor {
             cover.date = super::files::today();
         }
         cover
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+
+    fn editor() -> Editor {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("One")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let library: &'static wp_layout::FontLibrary =
+            Box::leak(Box::new(wp_layout::FontLibrary::scan_system()));
+        Editor::new(library, document, None)
+    }
+
+    #[test]
+    fn the_cover_gallery_is_the_arrangements_then_the_way_to_save_one_of_your_own() {
+        let editor = editor();
+        let (items, rows) = editor.cover_gallery();
+        assert_eq!(items.len(), rows.len());
+        let drawn = Layout::ALL.len();
+        let saved = editor.blocks_in_gallery(wp_docx::blocks::COVER_PAGES).len();
+        assert_eq!(items.len(), drawn + saved + 2, "{items:?}");
+        assert!(items[drawn + saved].is_empty(), "the separator carries no words");
+        assert_eq!(items[drawn + saved + 1], "Save Selection to Cover Page Gallery");
+    }
+
+    #[test]
+    fn saving_one_files_it_under_cover_pages_and_not_under_quick_parts() {
+        let mut editor = editor();
+        editor.document.select_all();
+        let (items, _) = editor.cover_gallery();
+        editor.choose_cover_page(items.len() - 1);
+        assert!(editor.dialog.is_some(), "it did not ask what to call it");
+        assert_eq!(editor.saving_to, "coverPg");
+    }
+
+    #[test]
+    fn the_separator_on_it_does_nothing() {
+        let mut editor = editor();
+        let saved = editor.blocks_in_gallery(wp_docx::blocks::COVER_PAGES).len();
+        let separator = Layout::ALL.len() + saved;
+        assert!(matches!(editor.choose_cover_page(separator), Response::Ignored));
+        assert!(editor.dialog.is_none());
     }
 }

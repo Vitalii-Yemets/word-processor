@@ -21,7 +21,7 @@
 
 use std::path::PathBuf;
 
-use wp_docx::blocks::{BuildingBlock, AUTO_TEXT, QUICK_PARTS};
+use wp_docx::blocks::{self, BuildingBlock, AUTO_TEXT, QUICK_PARTS};
 use wp_docx::Document;
 use wp_shell::Response;
 
@@ -50,6 +50,32 @@ pub(super) const MODIFY: &str = "Modify";
 
 /// What the organiser can be sorted by, which are the columns Word's has.
 const COLUMNS: &[&str] = &["Name", "Gallery", "Category"];
+
+/// Every gallery a block can be filed under: what the file calls it, and what
+/// a person reads.
+///
+/// Word's own galleries are in here as well as the two a person fills, because
+/// a block can get into one of them — saved from the page-number gallery, or
+/// read out of a document Word wrote — and an organiser that could not name it
+/// would show the block under a gallery it is not in, and refile it there the
+/// moment anybody pressed Modify.
+pub(crate) const GALLERIES: &[(&str, &str)] = &[
+    (QUICK_PARTS, "Quick Parts"),
+    (AUTO_TEXT, "AutoText"),
+    (blocks::COVER_PAGES, "Cover Pages"),
+    (blocks::PAGE_NUMBERS, "Page Numbers"),
+    (blocks::PAGE_NUMBERS_TOP, "Page Numbers at the Top"),
+    (blocks::PAGE_NUMBERS_BOTTOM, "Page Numbers at the Foot"),
+    (blocks::PAGE_NUMBERS_MARGINS, "Page Numbers in the Margin"),
+    (blocks::WATERMARKS, "Watermarks"),
+    (blocks::HEADERS, "Headers"),
+    (blocks::FOOTERS, "Footers"),
+    (blocks::TABLES, "Tables"),
+    (blocks::EQUATIONS, "Equations"),
+    (blocks::TEXT_BOXES, "Text Boxes"),
+    (blocks::CONTENTS, "Tables of Contents"),
+    (blocks::BIBLIOGRAPHIES, "Bibliographies"),
+];
 
 /// The button that takes a block away rather than putting one in.
 pub(super) const DELETE: &str = "Delete";
@@ -162,30 +188,31 @@ impl Editor {
         if index != saved.len() {
             return Response::Ignored;
         }
-        if self.document.selection().is_none() {
-            return self.report("Select what to save first");
-        }
-        self.saving_to_auto_text = true;
-        let dialog = Dialog::new(
-            "Create New Building Block",
-            vec![
-                Field::note("The selection is saved to the AutoText gallery."),
-                Field::Text { label: "Name".to_owned(), value: String::new() },
-            ],
-        );
-        self.ask(Asking::NewBlock, dialog)
+        self.save_selection_to(AUTO_TEXT)
     }
 
     /// Word's Save Selection to Quick Part Gallery: asks what to call it.
     pub(super) fn save_selection_as_block(&mut self) -> Response {
+        self.save_selection_to(QUICK_PARTS)
+    }
+
+    /// The same question from whichever gallery asked it.
+    ///
+    /// Which gallery is part of the question rather than a detail of it: a
+    /// person saving a design from the page-number gallery means it to be in
+    /// the page-number gallery, and the dialog says so before they name it.
+    pub(super) fn save_selection_to(&mut self, gallery: &'static str) -> Response {
         if self.document.selection().is_none() {
             return self.report("Select what to save first");
         }
-        self.saving_to_auto_text = false;
+        self.saving_to = gallery;
         let dialog = Dialog::new(
             "Create New Building Block",
             vec![
-                Field::note("The selection is saved under this name."),
+                Field::note(&crate::messages::with(
+                    "The selection is saved to the {0} gallery.",
+                    &[&gallery_name(gallery)],
+                )),
                 Field::Text { label: "Name".to_owned(), value: String::new() },
             ],
         );
@@ -211,11 +238,7 @@ impl Editor {
         // Which gallery it goes to is whichever menu asked, so that Save
         // Selection to AutoText Gallery does not quietly put it under Quick
         // Parts.
-        let block = if self.saving_to_auto_text {
-            BuildingBlock::named(name).in_gallery(AUTO_TEXT)
-        } else {
-            BuildingBlock::named(name)
-        };
+        let block = BuildingBlock::named(name).in_gallery(self.saving_to);
         if !template.add_building_block(&block, &body) {
             return self.report("It could not be saved");
         }
@@ -298,11 +321,14 @@ impl Editor {
                 Field::Text { label: "Name".to_owned(), value: chosen.name.clone() },
                 Field::Choice {
                     label: "Gallery".to_owned(),
-                    items: vec![
-                        crate::messages::t("Quick Parts").to_owned(),
-                        crate::messages::t("AutoText").to_owned(),
-                    ],
-                    current: usize::from(chosen.gallery == AUTO_TEXT),
+                    items: GALLERIES
+                        .iter()
+                        .map(|(_, shown)| crate::messages::t(shown).to_owned())
+                        .collect(),
+                    current: GALLERIES
+                        .iter()
+                        .position(|(name, _)| *name == chosen.gallery)
+                        .unwrap_or_default(),
                 },
                 Field::Text { label: "Category".to_owned(), value: chosen.category.clone() },
                 Field::Text { label: "Description".to_owned(), value: chosen.description.clone() },
@@ -353,11 +379,9 @@ impl Editor {
         let Some(block) = blocks.get(current).cloned() else { return Response::Ignored };
         let wanted = BuildingBlock {
             name: dialog.said(BLOCK_NAME).trim().to_owned(),
-            gallery: if dialog.chose(BLOCK_GALLERY) == 1 {
-                AUTO_TEXT.to_owned()
-            } else {
-                QUICK_PARTS.to_owned()
-            },
+            gallery: GALLERIES
+                .get(dialog.chose(BLOCK_GALLERY))
+                .map_or_else(|| QUICK_PARTS.to_owned(), |(name, _)| (*name).to_owned()),
             category: {
                 let said = dialog.said(BLOCK_CATEGORY);
                 let said = said.trim();
@@ -391,12 +415,10 @@ impl Editor {
 /// The file says `quickParts` and `autoText`, which are names for a program;
 /// Word shows Quick Parts and AutoText, and so does this.
 fn gallery_name(gallery: &str) -> String {
-    use crate::messages::t;
-    match gallery {
-        AUTO_TEXT => t("AutoText").to_owned(),
-        QUICK_PARTS => t("Quick Parts").to_owned(),
-        other => other.to_owned(),
-    }
+    GALLERIES
+        .iter()
+        .find(|(name, _)| *name == gallery)
+        .map_or_else(|| gallery.to_owned(), |(_, shown)| crate::messages::t(shown).to_owned())
 }
 
 #[cfg(test)]
@@ -447,6 +469,29 @@ mod tests {
         assert_eq!(gallery_name(QUICK_PARTS), "Quick Parts");
         assert_eq!(gallery_name(AUTO_TEXT), "AutoText");
         assert_eq!(gallery_name("somethingElse"), "somethingElse", "one Word does not name");
+    }
+
+    #[test]
+    fn every_gallery_word_has_can_be_named_and_no_two_are_named_the_same() {
+        // A block can reach any of them — saved from the page-number gallery,
+        // or read out of a document Word wrote — and the organiser has to be
+        // able to say which one it is in without refiling it.
+        for (name, shown) in GALLERIES {
+            assert_eq!(&gallery_name(name), &crate::messages::t(shown).to_owned());
+        }
+        for (at, (name, shown)) in GALLERIES.iter().enumerate() {
+            for (other, other_shown) in &GALLERIES[at + 1..] {
+                assert_ne!(name, other, "two galleries are filed under {name}");
+                assert_ne!(shown, other_shown, "two galleries are shown as {shown}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_gallery_nobody_named_is_shown_as_whatever_the_file_called_it() {
+        // Word has custom galleries as well, and a block in one of them is
+        // better shown under a name nobody translated than hidden.
+        assert_eq!(gallery_name("custom3"), "custom3");
     }
 
     #[test]
