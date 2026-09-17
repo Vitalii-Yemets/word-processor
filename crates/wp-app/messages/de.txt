@@ -1187,6 +1187,9 @@ language = Deutsch
 = Restricted to: {0}, formatting limited
 > Eingeschränkt auf: {0}, Formatierung beschränkt
 
+= Save Current Watermark to Gallery
+> Aktuelles Wasserzeichen im Katalog speichern
+
 = Save Selection to Cover Page Gallery
 > Auswahl im Deckblatt-Katalog speichern
 
@@ -1238,8 +1241,14 @@ language = Deutsch
 = Text boxes
 > Textfelder
 
+= That is not a watermark any more
+> Das ist kein Wasserzeichen mehr
+
 = That line is no longer in this document
 > Diese Zeile ist nicht mehr in diesem Dokument
+
+= That watermark is no longer saved
+> Dieses Wasserzeichen ist nicht mehr gespeichert
 
 = The next stretch you may edit
 > Der nächste Bereich, den Sie bearbeiten dürfen
@@ -1258,6 +1267,9 @@ language = Deutsch
 
 = There is no part of this document you may edit
 > Es gibt keinen Teil dieses Dokuments, den Sie bearbeiten dürfen
+
+= This document has no watermark to save
+> Dieses Dokument hat kein Wasserzeichen zum Speichern
 
 = This document is protected from editing.
 > Dieses Dokument ist vor Bearbeitung geschützt.

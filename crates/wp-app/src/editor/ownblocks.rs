@@ -226,7 +226,14 @@ impl Editor {
         if name.is_empty() {
             return self.report("A building block needs a name");
         }
-        let blocks = self.document.copy_selection();
+        // A watermark is not in the text and cannot be selected, so what goes
+        // into that gallery is the watermark the document has. Everything else
+        // is whatever a person picked out.
+        let blocks = if self.saving_to == wp_docx::blocks::WATERMARKS {
+            self.document.watermark_content().map(|body| body.blocks).unwrap_or_default()
+        } else {
+            self.document.copy_selection()
+        };
         if blocks.is_empty() {
             return self.report("There is nothing selected to save");
         }

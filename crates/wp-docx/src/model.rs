@@ -714,6 +714,22 @@ pub enum RunContent {
     /// Only the reference: the chart lives in a part of its own, the same way
     /// a picture does. See [`crate::chart`].
     Chart(ChartReference),
+    /// A drawing this program has no model for, kept exactly as it was read.
+    ///
+    /// # Why anything is kept this way
+    ///
+    /// Because the model of a document is a view of it and not the document.
+    /// Editing goes through the tree, so what the model does not understand
+    /// is never in danger — until something builds a part *from* the model,
+    /// which comparing a header does, and saving a building block does. What
+    /// the model could not name used to be dropped on the floor at that
+    /// point, and a watermark is exactly such a thing: a VML shape with a
+    /// text path in it, which is neither a picture nor a shape this program
+    /// draws.
+    ///
+    /// So it is carried whole. Nothing here reads it and nothing changes it;
+    /// what is written back is the element that was read.
+    Carried(Box<wp_xml::tree::Element>),
     /// A word with its reading printed over it.
     ///
     /// Two lists of runs rather than a string: both halves are text, with
@@ -1025,6 +1041,7 @@ impl Run {
                 | RunContent::Chart(_)
                 | RunContent::Diagram(_)
                 | RunContent::Ink(_)
+                | RunContent::Carried(_)
                 | RunContent::NoteReference { .. } => {}
                 // The word under the reading is what the document says here;
                 // the reading is not part of the sentence.

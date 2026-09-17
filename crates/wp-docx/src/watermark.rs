@@ -139,6 +139,57 @@ impl Document {
     }
 }
 
+impl Document {
+    /// The watermark as content, ready to be kept somewhere else.
+    ///
+    /// One paragraph: the one the shape sits in. What a person saves into the
+    /// watermark gallery is this, and what they get back when they pick it is
+    /// the same shape put into the header of another document — which is what
+    /// Word's own watermark building blocks hold.
+    ///
+    /// The shape itself is carried whole and not understood: see
+    /// [`crate::model::RunContent::Carried`].
+    #[must_use]
+    pub fn watermark_content(&self) -> Option<crate::model::Body> {
+        let header = self.furniture(Furniture::Header)?;
+        let paragraph = header.blocks.into_iter().find(|block| match block {
+            crate::model::Block::Paragraph(paragraph) => holds_a_watermark(paragraph),
+            crate::model::Block::Table(_) => false,
+        })?;
+        Some(crate::model::Body { blocks: vec![paragraph] })
+    }
+}
+
+/// The watermark a piece of content holds, if it holds one.
+///
+/// What comes out of a building block saved from the gallery, read back into
+/// the word, the angle and the colour that put it on again.
+#[must_use]
+pub fn in_content(body: &crate::model::Body) -> Option<Watermark> {
+    for block in &body.blocks {
+        let crate::model::Block::Paragraph(paragraph) = block else { continue };
+        for run in &paragraph.runs {
+            for piece in &run.content {
+                let crate::model::RunContent::Carried(element) = piece else { continue };
+                if let Some(found) = read_watermark(element) {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Whether a paragraph is the one the watermark's shape sits in.
+fn holds_a_watermark(paragraph: &crate::model::Paragraph) -> bool {
+    paragraph.runs.iter().any(|run| {
+        run.content.iter().any(|piece| match piece {
+            crate::model::RunContent::Carried(element) => read_watermark(element).is_some(),
+            _ => false,
+        })
+    })
+}
+
 /// Reads a watermark out of a header, if one is in there.
 fn read_watermark(element: &Element) -> Option<Watermark> {
     for child in element.child_elements() {
@@ -333,5 +384,123 @@ mod tests {
         let mut paragraph = Element::new("w:p", Some(read::W));
         paragraph.push_element(Element::new("w:r", Some(read::W)));
         assert!(!holds_watermark(&paragraph));
+    }
+}
+
+#[cfg(test)]
+mod carried_through {
+    use super::*;
+    use crate::furniture::{Furniture, Preset};
+    use crate::model::{Alignment, Block, Body, Paragraph};
+
+    fn document(line: &str) -> Document {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text(line)));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        Document::open(&bytes).expect("reopening")
+    }
+
+    fn with_a_header(said: &str) -> Document {
+        let mut document = document("The body of it");
+        document
+            .set_furniture(Furniture::Header, Preset::Text, Alignment::Center, said)
+            .expect("a header");
+        document
+    }
+
+    #[test]
+    fn comparing_a_changed_header_keeps_the_watermark_behind_it() {
+        // A watermark is a VML shape with a text path in it — neither a
+        // picture nor a shape this program draws — so the model has no name
+        // for it. Comparing a header builds it afresh from the model, and
+        // what the model could not name used to be dropped on the floor.
+        let mut mine = with_a_header("Draft");
+        mine.set_watermark(Some(&Watermark::saying("DRAFT")));
+        assert!(mine.watermark().is_some(), "it did not go on");
+
+        let theirs = with_a_header("Final");
+        mine.compare_with(&theirs, "Somebody");
+
+        let after = mine.watermark().expect("the watermark went with the comparison");
+        assert_eq!(after.text, "DRAFT");
+        assert!(after.diagonal);
+    }
+
+    #[test]
+    fn what_the_model_cannot_name_survives_a_body_being_rebuilt() {
+        // The same thing said at the level it happens: read a header into the
+        // model, write the model back, and the shape is still there.
+        let mut mine = with_a_header("Draft");
+        mine.set_watermark(Some(&Watermark::saying("SAMPLE")));
+
+        let body = mine.furniture(Furniture::Header).expect("a header");
+        mine.set_furniture_body(Furniture::Header, crate::furniture::Which::Default, &body)
+            .expect("writing it back");
+
+        assert_eq!(
+            mine.watermark().map(|found| found.text),
+            Some(String::from("SAMPLE")),
+            "the shape did not survive the round trip"
+        );
+    }
+}
+
+#[cfg(test)]
+mod the_gallery {
+    use super::*;
+    use crate::model::{Block, Body, Paragraph};
+
+    fn document() -> Document {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("The body of it")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        Document::open(&bytes).expect("reopening")
+    }
+
+    #[test]
+    fn a_watermark_can_be_taken_out_as_content_and_read_back_in() {
+        // The whole of what the gallery's other half needs: what a person
+        // saves is the shape itself, and what they get back is the word, the
+        // angle and the colour that put it on again.
+        let mut mine = document();
+        mine.set_watermark(Some(&Watermark {
+            text: String::from("CONFIDENTIAL"),
+            diagonal: false,
+            color: String::from("FF0000"),
+            font: String::from("Calibri"),
+        }));
+
+        let content = mine.watermark_content().expect("the watermark as content");
+        let read_back = in_content(&content).expect("a watermark in it");
+        assert_eq!(read_back.text, "CONFIDENTIAL");
+        assert!(!read_back.diagonal, "the angle was lost");
+        assert_eq!(read_back.color, "FF0000", "the colour was lost");
+    }
+
+    #[test]
+    fn a_document_with_no_watermark_has_none_to_save() {
+        let document = document();
+        assert!(document.watermark_content().is_none());
+    }
+
+    #[test]
+    fn content_that_is_not_a_watermark_is_not_read_as_one() {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Just some words")));
+        assert!(in_content(&body).is_none());
+    }
+
+    #[test]
+    fn what_comes_out_goes_back_into_another_document() {
+        // Which is what a gallery is for: a watermark saved from one document
+        // and put on another.
+        let mut mine = document();
+        mine.set_watermark(Some(&Watermark::saying("SAMPLE")));
+        let content = mine.watermark_content().expect("the content");
+
+        let mut other = document();
+        let found = in_content(&content).expect("a watermark");
+        assert!(other.set_watermark(Some(&found)));
+        assert_eq!(other.watermark().map(|one| one.text), Some(String::from("SAMPLE")));
     }
 }

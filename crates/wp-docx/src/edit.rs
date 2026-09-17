@@ -1034,6 +1034,11 @@ pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> El
             // this program does not model — see [`crate::group`]. Making and
             // breaking groups moves the elements themselves instead.
             RunContent::Group(_) => {}
+            // Written back exactly as it was read, because nothing here knows
+            // what it is. See [`crate::model::RunContent::Carried`].
+            RunContent::Carried(element_of) => {
+                element.push_element((**element_of).clone());
+            }
             // An equation is not written from inside a run: it is a sibling
             // of the runs, and `paragraph_element` writes it there.
             RunContent::Math(_) => {}

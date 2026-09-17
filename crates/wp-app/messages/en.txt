@@ -550,6 +550,7 @@
 = Save Address List
 = Save As
 = Save AutoRecover information
+= Save Current Watermark to Gallery
 = Save Selection to AutoText Gallery
 = Save Selection to Cover Page Gallery
 = Save Selection to Page Number Gallery
@@ -660,8 +661,10 @@
 = Text files
 = Text formatting
 = Text from File
+= That is not a watermark any more
 = That line is no longer in this document
 = That style could not be changed
+= That watermark is no longer saved
 = The author asked for it to be opened read-only.
 = The document is not encrypted.
 = The document is unreadable without it.
@@ -681,6 +684,7 @@
 = Thesaurus
 = This document
 = This document also carries Visual Basic macros
+= This document has no watermark to save
 = This document is not signed.
 = This document is open read-only.
 = This document is protected from editing.

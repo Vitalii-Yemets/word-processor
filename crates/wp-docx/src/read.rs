@@ -742,6 +742,10 @@ fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
                     content.push(RunContent::Shape(Box::new(shape)));
                 } else if let Some(picture) = read_picture(child) {
                     content.push(RunContent::Picture(Box::new(picture)));
+                } else {
+                    // Nothing here knows what it is, which is not a reason to
+                    // lose it: see [`RunContent::Carried`].
+                    content.push(RunContent::Carried(Box::new(child.clone())));
                 }
             }
             _ => {}

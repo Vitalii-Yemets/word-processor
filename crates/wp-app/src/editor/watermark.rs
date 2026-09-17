@@ -100,11 +100,23 @@ impl Editor {
         let mut items = vec!["No Watermark".to_owned()];
         items.extend(presets.iter().map(|preset| preset.text.clone()));
         items.extend(presets.iter().map(|preset| format!("{} — across", preset.text)));
+        // Then whatever the person has saved into the gallery themselves,
+        // which is the half of it Word has and this had not.
+        items.extend(self.blocks_in_gallery(wp_docx::blocks::WATERMARKS));
+        items.push(crate::messages::t("Save Current Watermark to Gallery").to_owned());
         items.push("Custom Watermark…".to_owned());
 
         self.popup = Some(Popup::new(Choice::Watermark, items, current, left, top, 240.0));
         self.needs_redraw = true;
         Response::Redraw
+    }
+
+    /// How many lines of the menu are this program's own.
+    ///
+    /// Nothing, the six words, and the six across — after which come the
+    /// person's own, and then the two commands.
+    fn watermark_presets_shown(&self) -> usize {
+        1 + Watermark::presets().len() * 2
     }
 
     /// Puts on whichever watermark was chosen.
@@ -114,12 +126,31 @@ impl Editor {
 
         // The list is: nothing, the diagonal ones, the flat ones, then a line
         // for typing something of your own.
+        let own = self.blocks_in_gallery(wp_docx::blocks::WATERMARKS);
+        let after_presets = self.watermark_presets_shown();
         let wanted = match index.checked_sub(1) {
             None => None,
             Some(at) if at < presets.len() => Some(presets[at].clone()),
             Some(at) if at < presets.len() * 2 => {
                 Some(Watermark { diagonal: false, ..presets[at - presets.len()].clone() })
             }
+            // One the person saved: what the block holds is the shape itself,
+            // read back into the word, the angle and the colour that put it
+            // on again.
+            Some(_) if index < after_presets + own.len() => {
+                let name = own[index - after_presets].clone();
+                let Some(template) = self.own_template() else {
+                    return self.report("There is no template on this machine");
+                };
+                let Some(body) = template.building_block_body(&name) else {
+                    return self.report(crate::messages::t("That watermark is no longer saved"));
+                };
+                let Some(found) = wp_docx::watermark::in_content(&body) else {
+                    return self.report(crate::messages::t("That is not a watermark any more"));
+                };
+                Some(found)
+            }
+            Some(_) if index == after_presets + own.len() => return self.save_watermark(),
             Some(_) => return self.start_watermark(),
         };
 
@@ -130,6 +161,33 @@ impl Editor {
         let changed = self.document.set_watermark(wanted.as_ref());
         self.needs_redraw = true;
         self.edited(changed, &note)
+    }
+
+    /// Word's Save Selection to the Watermark Gallery.
+    ///
+    /// What is saved is the watermark the document has rather than whatever
+    /// happens to be selected: a watermark is not in the text and cannot be
+    /// selected, and offering to save a selection that could never be one
+    /// would be offering something that never works.
+    fn save_watermark(&mut self) -> Response {
+        if self.document.watermark().is_none() {
+            return self.report(crate::messages::t("This document has no watermark to save"));
+        }
+        self.saving_to = wp_docx::blocks::WATERMARKS;
+        let dialog = crate::chrome::dialog::Dialog::new(
+            "Create New Building Block",
+            vec![
+                crate::chrome::dialog::Field::note(&crate::messages::with(
+                    "The selection is saved to the {0} gallery.",
+                    &[&crate::messages::t("Watermarks").to_owned()],
+                )),
+                crate::chrome::dialog::Field::Text {
+                    label: "Name".to_owned(),
+                    value: String::new(),
+                },
+            ],
+        );
+        self.ask(super::dialogs::Asking::NewBlock, dialog)
     }
 
     /// Opens the strip that takes a watermark of your own.

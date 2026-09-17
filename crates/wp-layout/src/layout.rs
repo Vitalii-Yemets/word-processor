@@ -3646,6 +3646,11 @@ impl<'a> LayoutEngine<'a> {
                         end_offset: *offset,
                     });
                 }
+                // A drawing nothing here models is not drawn and takes no room
+                // in the line: what it is, is the file's business, and what is
+                // wanted of this program is that it does not lose it. See
+                // [`wp_docx::model::RunContent::Carried`].
+                RunContent::Carried(_) => {}
                 RunContent::Ink(reference) => {
                     paragraph_text.push(' ');
                     // Ink takes one character of the paragraph, the same as

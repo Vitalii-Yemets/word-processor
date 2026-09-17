@@ -5828,14 +5828,43 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   words it had and the paragraphs it had, to the one; it can be undone, since
   one act to a person is one thing to undo; and a document that merely begins
   with a title is not a cover page.
-- [ ] **J29. The watermark gallery's other half.** Word's watermarks are
-  building blocks: a shape holding the word, placed in the header, saved in
-  a gallery a person can add to. This program's is a `Watermark` — a word, an
-  angle and a colour — painted behind each sheet as the sheet is drawn, which
-  is why nothing a person saves can be one and why the gallery stops at the
-  six presets. Done when a watermark is content in the header, drawn from
-  there, so that Save Selection to the Watermark Gallery means something and
-  a watermark somebody else's Word wrote comes back as what it is.
+- [x] **J29. The watermark gallery's other half.**
+  **The item was written against a wrong belief of mine**, and finding that
+  out was most of the work. I had said a watermark here is a value painted
+  behind each sheet and not content in the header. It is content in the
+  header, and has been since it was written: Word's own VML shape, written
+  where Word writes it and read back from there — which is why a watermark
+  somebody else's Word wrote already came back as what it is. What was true
+  is that nothing could be *saved* into the gallery, and the reason was one
+  layer down.
+  **The model drops what it cannot name.** A watermark is a VML shape with a
+  text path in it, which is neither a picture nor a shape this program draws,
+  so reading a header into the model threw it away. That did not matter while
+  the model was only ever a view — editing goes through the tree — but it
+  matters the moment something builds a part *from* the model. Two things do:
+  saving a building block, and **comparing a header**, which **J26** had just
+  taught this program to do. So comparing two documents whose headers differed
+  quietly destroyed the watermark behind them. That was a bug I had put in a
+  week's work earlier and had not noticed; it is fixed here, and the fix is
+  the same one the gallery needed.
+  What the model cannot name is now carried whole: read as the element it was,
+  written back as the element it was, understood by nothing in between. A
+  watermark survives a header being rebuilt, and so does anything else this
+  program has no name for.
+  **And the gallery has its other half.** The menu lists what a person has
+  saved, and Save Current Watermark to Gallery puts the shape itself in —
+  the shape, not a description of it, so what comes back out is the word, the
+  angle and the colour that put it on again. Saved rather than "Save
+  Selection", because a watermark is not in the text and cannot be selected,
+  and offering to save a selection that could never be one would be offering
+  something that never works.
+  *Proven by:* six tests. A watermark comes out as content and reads back with
+  its angle and its colour; one saved from one document goes on to another,
+  which is what a gallery is for; a document with none has none to save; words
+  that are not a watermark are not read as one. And the two that matter most:
+  comparing a changed header keeps the watermark behind it, and what the model
+  cannot name survives a body being rebuilt — the second said at the level the
+  first happens at.
 - [ ] **J30. The messages that live in tables.** The catalogue is gathered
   twice over: `t("…")` found by reading the source, and labels walked out of
   the tables the program is built from. The second half is short. The style
