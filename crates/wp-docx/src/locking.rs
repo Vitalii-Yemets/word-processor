@@ -67,6 +67,8 @@ pub struct Latent {
     pub name: String,
     /// Whether this one may not be applied.
     pub locked: bool,
+    /// And whether the document puts it forward as one to write with.
+    pub recommended: bool,
 }
 
 impl Document {
@@ -137,6 +139,9 @@ impl Document {
                     locked: exception
                         .attribute(Some(read::W), "locked")
                         .map_or(default_locked, read::on_off_value),
+                    recommended: exception
+                        .attribute(Some(read::W), "qFormat")
+                        .is_some_and(read::on_off_value),
                 })
             })
             .collect()

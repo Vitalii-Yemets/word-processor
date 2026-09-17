@@ -75,6 +75,14 @@ pub struct Style {
     /// though nothing were locked, and that is the format's rule rather than a
     /// choice made here. See [`crate::locking`].
     pub locked: bool,
+    /// Whether the document puts this one forward as one to write with.
+    ///
+    /// `w:qFormat`, which Word calls a quick style: the ones it shows in the
+    /// gallery on the ribbon and the ones its Recommended Minimum ticks. It
+    /// is the template's own answer to "which of these three hundred styles
+    /// is this document actually for", and no list invented here could be
+    /// right about a template nobody here has seen.
+    pub recommended: bool,
     pub paragraph: ParagraphProperties,
     pub run: RunProperties,
     /// The lines a table style draws. Empty for every other kind of style.
@@ -261,6 +269,7 @@ impl Styles {
                     .attribute(Some(W), "default")
                     .is_some_and(|flag| !matches!(flag, "0" | "false")),
                 locked: definition.child(Some(W), "locked").is_some_and(on_off),
+                recommended: definition.child(Some(W), "qFormat").is_some_and(on_off),
                 paragraph: definition
                     .child(Some(W), "pPr")
                     .map(read_paragraph_properties)

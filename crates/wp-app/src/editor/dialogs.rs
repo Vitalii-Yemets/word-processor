@@ -259,6 +259,19 @@ impl Editor {
                 let dialog = self.dialog.clone()?;
                 Some(self.add_typed_recipient(&dialog))
             }
+            // Word's three buttons above the list of styles, each of which
+            // ticks what it names and leaves the dialog standing.
+            (Some(Asking::FormattingLimits), button)
+                if matches!(
+                    button,
+                    super::protection::ALL_OF_THEM
+                        | super::protection::RECOMMENDED
+                        | super::protection::NONE_OF_THEM
+                ) =>
+            {
+                let dialog = self.dialog.clone()?;
+                Some(self.formatting_button(&dialog, button))
+            }
             (Some(Asking::Organizer), super::ownblocks::MODIFY) => {
                 let dialog = self.dialog.clone()?;
                 Some(self.organizer_button(&dialog, super::ownblocks::MODIFY))

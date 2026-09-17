@@ -1175,6 +1175,9 @@ language = Deutsch
 = Put one and its key in this folder, or use one the machine holds:
 > Eines mit seinem Schlüssel in diesen Ordner legen oder eines aus dem Speicher des Rechners verwenden:
 
+= Recommended Minimum
+> Empfohlenes Minimum
+
 = Remove Current Cover Page
 > Aktuelles Deckblatt entfernen
 

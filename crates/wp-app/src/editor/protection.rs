@@ -55,7 +55,7 @@ use wp_docx::forms::FormKind;
 use wp_docx::protection::{EditMode, Protection};
 use wp_shell::Response;
 
-use crate::chrome::dialog::{Dialog, Field, TreeRow};
+use crate::chrome::dialog::{Answer, Button, Dialog, Field, TreeRow};
 use crate::chrome::Command;
 
 use super::dialogs::Asking;
@@ -73,6 +73,14 @@ const STYLE_SET: usize = 5;
 
 /// And the one box of the dialog that asks a password back.
 const ANSWER: usize = 1;
+
+/// Word's three buttons above the list of styles.
+///
+/// The difference between ticking three boxes and ticking three hundred. Two
+/// of them are a loop; the third is the interesting one.
+pub(super) const ALL_OF_THEM: &str = "All";
+pub(super) const RECOMMENDED: &str = "Recommended Minimum";
+pub(super) const NONE_OF_THEM: &str = "None";
 
 impl Editor {
     /// Every style the restriction can allow or forbid, as identifier and
@@ -139,7 +147,7 @@ impl Editor {
                 TreeRow::ticked(0, &name, allowed)
             })
             .collect();
-        Dialog::new(
+        Dialog::with_buttons(
             "Formatting Restrictions",
             vec![
                 Field::Check {
@@ -170,7 +178,98 @@ impl Editor {
                     on: self.restrict_style_set_locked,
                 },
             ],
+            vec![
+                Button {
+                    label: ALL_OF_THEM.to_owned(),
+                    answer: Answer::Named(ALL_OF_THEM),
+                    default: false,
+                },
+                Button {
+                    label: RECOMMENDED.to_owned(),
+                    answer: Answer::Named(RECOMMENDED),
+                    default: false,
+                },
+                Button {
+                    label: NONE_OF_THEM.to_owned(),
+                    answer: Answer::Named(NONE_OF_THEM),
+                    default: false,
+                },
+                Button { label: "OK".to_owned(), answer: Answer::Accept, default: true },
+                Button { label: "Cancel".to_owned(), answer: Answer::Cancel, default: false },
+            ],
         )
+    }
+
+    /// Which styles the document puts forward as the ones to write with.
+    ///
+    /// The template's own answer, out of the `w:qFormat` each style carries,
+    /// and not a list invented here: a document made from somebody's template
+    /// is for whatever that template says it is for, and this program has
+    /// never seen it.
+    ///
+    /// A document that says nothing — no style marked at all — gets the
+    /// headings and the body style, because a set that recommends nothing
+    /// would tick nothing and make the button useless. That is a guess, and
+    /// it is only made where there is nothing to read.
+    #[must_use]
+    fn recommended_styles(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .document
+            .styles()
+            .all()
+            .iter()
+            .filter(|style| style.recommended)
+            .map(|style| style.id.clone())
+            .collect();
+        out.extend(
+            self.document
+                .latent_styles()
+                .into_iter()
+                .filter(|latent| latent.recommended)
+                .map(|latent| latent.name),
+        );
+        if !out.is_empty() {
+            return out;
+        }
+
+        // Nothing said, so the ones every document is written with.
+        self.lockable_styles()
+            .into_iter()
+            .map(|(id, _)| id)
+            .filter(|id| {
+                let lowered = id.to_lowercase();
+                lowered == "normal" || lowered.starts_with("heading") || lowered == "title"
+            })
+            .collect()
+    }
+
+    /// One of the three buttons: ticks what it names and leaves the dialog up.
+    pub(super) fn formatting_button(&mut self, dialog: &Dialog, button: &str) -> Response {
+        let wanted: Vec<String> = match button {
+            ALL_OF_THEM => self.lockable_styles().into_iter().map(|(id, _)| id).collect(),
+            NONE_OF_THEM => Vec::new(),
+            RECOMMENDED => self.recommended_styles(),
+            _ => return Response::Ignored,
+        };
+
+        let mut again = dialog.clone();
+        // Ticking any of them means the limit is on: a person who presses
+        // Recommended Minimum has said which styles they want, and leaving
+        // the box above unticked would throw the answer away.
+        if let Some(Field::Check { on, .. }) = again.fields.get_mut(LIMIT) {
+            *on = button != ALL_OF_THEM;
+        }
+        let styles = self.lockable_styles();
+        if let Some(Field::Tree { rows, .. }) = again.fields.get_mut(STYLES) {
+            for (row, (id, _)) in rows.iter_mut().zip(&styles) {
+                row.tick = Some(wanted.iter().any(|one| one.eq_ignore_ascii_case(id)));
+            }
+        }
+        self.status = crate::messages::with(
+            "{0} styles allowed",
+            &[&wanted.len().min(styles.len()).to_string()],
+        );
+        self.ask(Asking::FormattingLimits, again)
     }
 
     /// The dialog that asks for the password back.
@@ -651,6 +750,94 @@ mod tests {
         // what writes the two boxes down.
         editor.start_enforcing();
         type_password(editor, "");
+    }
+
+    #[test]
+    fn the_three_buttons_tick_what_they_name() {
+        // The difference between ticking three boxes and ticking three
+        // hundred. Two of them are a loop; the third is the interesting one.
+        let mut editor = editor();
+        editor.run(Command::RestrictEditing);
+        editor.open_formatting_limits();
+
+        let all = editor.lockable_styles().len();
+        assert!(all > 3, "a document with three styles proves nothing");
+
+        for (button, wanted) in
+            [(NONE_OF_THEM, Some(0)), (ALL_OF_THEM, Some(all)), (RECOMMENDED, None)]
+        {
+            let dialog = editor.dialog.clone().expect("the dialog");
+            editor.formatting_button(&dialog, button);
+            let dialog = editor.dialog.as_ref().expect("it stayed up");
+            let ticked =
+                dialog.tree_rows(STYLES).iter().filter(|row| row.tick == Some(true)).count();
+            match wanted {
+                Some(exactly) => assert_eq!(ticked, exactly, "{button} ticked the wrong number"),
+                // Recommended ticks what the document recommends: as many as
+                // it marks, never more than it has, and never nothing —
+                // a button that ticked nothing would be None under another
+                // name. How many that is, is the document's business, and in
+                // one whose every style is recommended it is all of them.
+                None => {
+                    assert_eq!(ticked, editor.recommended_styles().len());
+                    assert!(ticked > 0, "{button} ticked nothing");
+                    assert!(ticked <= all, "{button} ticked more styles than there are");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_recommended_set_is_the_documents_own_answer() {
+        // Out of what each style carries, not a list invented here: a
+        // document made from somebody's template is for whatever that
+        // template says it is for.
+        let mut editor = editor();
+        let recommended = editor.recommended_styles();
+        assert!(!recommended.is_empty(), "nothing was recommended at all");
+
+        // Every one of them is a style the document has or mentions.
+        let known = editor.lockable_styles();
+        for id in &recommended {
+            assert!(
+                known.iter().any(|(had, _)| had.eq_ignore_ascii_case(id)),
+                "{id} is recommended and is not a style this document has"
+            );
+        }
+
+        // And the ones the document marks are the ones that come back.
+        let marked: Vec<String> = editor
+            .document
+            .styles()
+            .all()
+            .iter()
+            .filter(|style| style.recommended)
+            .map(|style| style.id.clone())
+            .collect();
+        if !marked.is_empty() {
+            for id in &marked {
+                assert!(recommended.contains(id), "{id} is marked and was not recommended");
+            }
+        }
+    }
+
+    #[test]
+    fn pressing_all_turns_the_limit_off_and_the_others_turn_it_on() {
+        // Ticking every style is not a limit, and saying it is would leave a
+        // document claiming a restriction that restricts nothing. Picking a
+        // few is a limit, and leaving the box above unticked would throw the
+        // answer away.
+        let mut editor = editor();
+        editor.run(Command::RestrictEditing);
+        editor.open_formatting_limits();
+
+        let dialog = editor.dialog.clone().expect("the dialog");
+        editor.formatting_button(&dialog, ALL_OF_THEM);
+        assert!(!editor.dialog.as_ref().expect("up").ticked(LIMIT), "every style is a limit");
+
+        let dialog = editor.dialog.clone().expect("the dialog");
+        editor.formatting_button(&dialog, RECOMMENDED);
+        assert!(editor.dialog.as_ref().expect("up").ticked(LIMIT), "a few styles is not a limit");
     }
 
     #[test]

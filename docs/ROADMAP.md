@@ -5962,15 +5962,40 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   not a pane down the side — it fills the window, and its settings are laid
   out by a different hand — so it is a different piece of work rather than one
   more caller of this one.
-- [ ] **J33. All, Recommended Minimum and None.** The three buttons above
-  Word's list of styles in the Formatting Restrictions dialog, and the
-  difference between ticking three boxes and ticking three hundred. None and
-  All are a loop; Recommended Minimum is the interesting one — it is the set
-  Word considers enough to write a document with, and the format records which
-  styles a template recommends. Done when the three buttons are there, the
-  recommended set comes from what the document says rather than from a list
-  invented here, and a document made from a template gets that template's
-  answer.
+- [x] **J33. All, Recommended Minimum and None.**
+  **Two of them are a loop; the third is the interesting one.** All ticks
+  every style and None ticks none, and writing those took an afternoon of
+  nothing. Recommended Minimum is the one worth having: it is the set the
+  document itself puts forward as the styles it is meant to be written with,
+  and the format records it — `w:qFormat` on each definition, and the same
+  attribute on each `w:lsdException` for the hundreds a `styles.xml` mentions
+  without defining. So the answer is read rather than invented: a document
+  made from somebody's template gets that template's answer, and this program
+  has never seen that template.
+  A document that marks nothing at all gets the headings, Title and Normal,
+  because a button that ticked nothing would be None under another name. That
+  is a guess, it is the only one here, and it is made only where there is
+  nothing to read.
+  **Ticking every style is not a limit.** Pressing All turns the box above
+  off, because a document claiming a formatting restriction that permits all
+  three hundred styles is claiming a restriction that restricts nothing;
+  pressing either of the other two turns it on, because somebody who has just
+  said which styles they want should not have the answer thrown away by an
+  unticked box. The dialog stays up afterwards — the buttons are a way of
+  filling the list in, not a way of leaving — and the status line says how
+  many styles are allowed, so that the difference between three and three
+  hundred can be seen without counting ticks.
+  *Proven by:* three tests. Each button ticks what it names — None exactly
+  none, All exactly as many as the document has, Recommended exactly as many
+  as the document recommends, never none and never more than there are; every
+  recommended style is one the document has or mentions, and every style the
+  document marks comes back; and All leaves the limit off while the other two
+  turn it on.
+  *Not done, and named here:* the recommended set can be read and not
+  written. Word's Manage Styles has a Recommend tab where the marks
+  themselves are moved about, and nothing here writes `w:qFormat` — a
+  document's own idea of what it is for survives a round trip untouched, but
+  cannot yet be changed from inside this program.
 
 ## K — Proving it against Word rather than against ourselves
 

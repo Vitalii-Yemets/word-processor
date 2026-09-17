@@ -528,6 +528,7 @@
 = Read-Only Recommended
 = Recently used
 = Recipients
+= Recommended Minimum
 = Redo
 = Reenter password to confirm
 = References
