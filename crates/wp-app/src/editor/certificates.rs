@@ -8,14 +8,24 @@
 //! are what makes a signature worth anything: a certificate is a name and a
 //! key until somebody the machine already trusts vouches for it.
 //!
-//! **The person's own certificates** come from a folder beside the one their
-//! templates live in. That is not where Word keeps them — Windows holds a
-//! person's certificates and their keys in a store of its own, and hands out
-//! signatures without ever handing out the key — and it is what can be done
-//! here honestly on both systems at once: a certificate and its key are two
-//! files, and signing is arithmetic this program does itself. Signing with a
-//! key Windows holds and will not part with is in the roadmap; it cannot be
-//! written against a system this is not built on.
+//! **The person's own certificates** come from two places, and the difference
+//! between them is who holds the key.
+//!
+//! From **a folder** beside the one their templates live in: a certificate and
+//! its key are two files, this program reads both, and the signing is
+//! arithmetic it does itself. That works on every system alike, and it is the
+//! only thing that works on one with no certificate store.
+//!
+//! From **the system's own store**, where Windows keeps a person's
+//! certificates. The key there is not something this program can have, and
+//! that is the point of keeping it there: the system signs on the person's
+//! behalf and hands back a signature, never the key. It is also the only way
+//! a key on a smart card or in a TPM can be used at all, and it is where the
+//! certificate a person already signs their mail with lives. See
+//! [`wp_shell::certificates::sign_with_held`].
+//!
+//! Both are offered in one list, because a person picking a certificate is
+//! picking who they are and not which of two mechanisms will do the sums.
 //!
 //! # What "trusted" is allowed to mean
 //!
@@ -37,21 +47,69 @@ use wp_sign::trust::Trust;
 
 use super::Editor;
 
-/// What one of the person's own certificates is: the certificate, the key
-/// beside it, and what to call it in a list.
+/// What one of the person's own certificates is: the certificate, and where
+/// whatever will sign with it is to be found.
 #[derive(Clone, Debug)]
 pub(super) struct Own {
     pub certificate: Certificate,
-    pub key: wp_rsa::PrivateKey,
-    /// The file it came from, which is what tells two certificates of the
-    /// same name apart.
-    pub file: String,
+    pub from: From,
+}
+
+/// Which of the two places a certificate came from, and what that means for
+/// signing with it.
+#[derive(Clone, Debug)]
+pub(super) enum From {
+    /// A folder this program reads: the key is two files away and the signing
+    /// is arithmetic done here.
+    Folder {
+        key: wp_rsa::PrivateKey,
+        /// The file it came from, which is what tells two certificates of the
+        /// same name apart.
+        file: String,
+    },
+    /// The system's own store: the key stays there and the system signs.
+    System,
 }
 
 impl Own {
     /// The line a person picks from.
+    ///
+    /// The subject and then where it came from, because a person may well
+    /// have the same certificate in both places and the two sign by different
+    /// routes: one of them can ask for a smart card and the other cannot.
     pub fn label(&self) -> String {
-        format!("{} ({})", self.certificate.subject, self.file)
+        match &self.from {
+            From::Folder { file, .. } => format!("{} ({file})", self.certificate.subject),
+            From::System => format!(
+                "{} ({})",
+                self.certificate.subject,
+                crate::messages::t("in this machine's store")
+            ),
+        }
+    }
+
+    /// Whatever will sign with it.
+    pub fn signs(&self) -> Box<dyn wp_sign::Signs> {
+        match &self.from {
+            From::Folder { key, .. } => Box::new(key.clone()),
+            From::System => Box::new(Held { certificate: self.certificate.der.clone() }),
+        }
+    }
+}
+
+/// Signing through the system, which never hands the key over.
+///
+/// What crosses the wall is a hash one way and a signature the other. The
+/// hashing is done here because the system will not be handed a document, and
+/// the signing is done there because this program will not be handed a key.
+struct Held {
+    certificate: Vec<u8>,
+}
+
+impl wp_sign::Signs for Held {
+    fn sign(&self, algorithm: wp_rsa::Algorithm, message: &[u8]) -> Option<Vec<u8>> {
+        let hash = algorithm.of(message);
+        wp_shell::certificates::sign_with_held(&self.certificate, algorithm.name(), &hash)
     }
 }
 
@@ -78,8 +136,30 @@ pub(super) fn own_folder() -> Option<PathBuf> {
 /// cannot be used is a list nobody can use.
 #[must_use]
 pub(super) fn own_certificates() -> Vec<Own> {
-    let Some(folder) = own_folder() else { return Vec::new() };
-    own_certificates_in(&folder)
+    // The system's first, because on a machine that has a store that is where
+    // a person's real certificate is and the folder is the fallback.
+    let mut out = held_certificates();
+    if let Some(folder) = own_folder() {
+        out.extend(own_certificates_in(&folder));
+    }
+    out
+}
+
+/// The certificates the system holds, as this program's own list has them.
+///
+/// A certificate the system cannot read back as a certificate is left out
+/// rather than shown as a name nobody can make sense of: whatever is in a
+/// store is the store's business, and what this program lists is what it
+/// could sign with.
+#[must_use]
+pub(super) fn held_certificates() -> Vec<Own> {
+    wp_shell::certificates::held_certificates()
+        .into_iter()
+        .filter_map(|held| {
+            Certificate::read(&held.certificate)
+                .map(|certificate| Own { certificate, from: From::System })
+        })
+        .collect()
 }
 
 /// The same, out of a folder that is named rather than found.
@@ -103,7 +183,7 @@ pub(super) fn own_certificates_in(folder: &std::path::Path) -> Vec<Own> {
         let Some(certificate) = Certificate::read(&der) else { continue };
         let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
         let Some(key) = key_beside(folder, stem) else { continue };
-        out.push(Own { certificate, key, file: name.to_owned() });
+        out.push(Own { certificate, from: From::Folder { key, file: name.to_owned() } });
     }
     out
 }
@@ -187,7 +267,9 @@ impl Editor {
             // whether or not there is anything to sign with. The folder is a
             // row of its own because a path and a sentence on one line is a
             // path with its end cut off.
-            fields.push(Field::note("To sign, put a certificate and its key in this folder:"));
+            fields.push(Field::note(
+                "To sign, use a certificate from this machine's own store, or put one and its key in this folder:",
+            ));
             fields.push(Field::Said { label: "Folder".to_owned(), value: folder });
         } else {
             fields.push(Field::Choice {
@@ -225,13 +307,26 @@ impl Editor {
         let signer = wp_sign::Signer {
             certificate: own.certificate.der.clone(),
             chain: chain_for(&own.certificate, &mine),
-            key: own.key.clone(),
+            key: own.signs(),
             reason: why,
             at: super::files::timestamp(),
         };
+        let through_the_system = matches!(own.from, From::System);
         let bytes = match self.document.save_signed(&signer) {
             Ok(bytes) => bytes,
-            Err(error) => return self.report(&format!("Cannot sign: {error}")),
+            Err(error) => {
+                if through_the_system {
+                    // The store would not sign. What this program knows is
+                    // that it asked and was refused; why is the system's to
+                    // say, and the usual reasons are a card that is not in
+                    // the reader and a key the store will not use without
+                    // being asked on screen.
+                    return self.report(crate::messages::t(
+                        "This machine would not sign with that certificate",
+                    ));
+                }
+                return self.report(&format!("Cannot sign: {error}"));
+            }
         };
         if let Err(error) = std::fs::write(&path, bytes) {
             return self.report(&format!("Cannot write {}: {error}", path.display()));
@@ -415,6 +510,59 @@ mod tests {
     }
 
     #[test]
+    fn where_a_certificate_came_from_is_on_the_line_a_person_picks() {
+        // A person may well have the same certificate in both places, and the
+        // two sign by different routes: one of them can want a smart card and
+        // the other cannot. A list that showed one name twice would be asking
+        // them to guess.
+        let folder = folder("labelled", "der");
+        let mine = own_certificates_in(&folder.0);
+        let own = mine.first().expect("a certificate");
+        assert!(own.label().ends_with(".der)"), "{}", own.label());
+
+        let held = Own { certificate: own.certificate.clone(), from: From::System };
+        assert!(held.label().ends_with("(in this machine's store)"), "{}", held.label());
+        assert_ne!(own.label(), held.label());
+    }
+
+    #[test]
+    fn a_key_in_a_folder_signs_through_the_same_door_the_system_would() {
+        // The signing went behind a trait so that a key this program can read
+        // and one it cannot look the same to whatever is signing. What that
+        // has to not change is the signature: the same key over the same
+        // bytes, through the trait, is the signature the key makes.
+        let folder = folder("through-the-door", "der");
+        let mine = own_certificates_in(&folder.0);
+        let own = mine.first().expect("a certificate");
+        let From::Folder { key, .. } = &own.from else { panic!("it came from a folder") };
+
+        let message = b"what a SignedInfo comes to";
+        let straight = key.sign(wp_rsa::Algorithm::Sha256, message).expect("signing");
+        let through = own.signs().sign(wp_rsa::Algorithm::Sha256, message).expect("signing");
+        assert_eq!(straight, through);
+    }
+
+    #[test]
+    fn a_certificate_the_system_holds_cannot_be_signed_with_where_there_is_no_system() {
+        // On a machine with no store there is nothing to ask, and the honest
+        // answer to "sign this" is that it was not signed. The build
+        // container is such a machine, which is what makes this testable at
+        // all: what is being checked is the refusal, not the store.
+        let folder = folder("no-store", "der");
+        let mine = own_certificates_in(&folder.0);
+        let own = mine.first().expect("a certificate");
+        let held = Own { certificate: own.certificate.clone(), from: From::System };
+
+        let made = held.signs().sign(wp_rsa::Algorithm::Sha256, b"anything");
+        #[cfg(not(windows))]
+        assert_eq!(made, None, "a machine with no store signed something");
+        // On Windows it may well sign, and whether it does is the store's
+        // business: what this asserts there is that asking does not panic.
+        #[cfg(windows)]
+        let _ = made;
+    }
+
+    #[test]
     fn a_certificate_with_no_key_beside_it_is_not_offered() {
         // It could not sign, and a list of things that cannot be used is a
         // list nobody can use.
@@ -457,7 +605,7 @@ mod tests {
         let signer = wp_sign::Signer {
             certificate: own.certificate.der.clone(),
             chain: chain_for(&own.certificate, &mine),
-            key: own.key.clone(),
+            key: own.signs(),
             reason: String::from("Because it is mine"),
             // A few months after OpenSSL made the certificate: it dates one
             // from the minute it runs, and a moment earlier the same day is

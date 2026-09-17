@@ -1193,6 +1193,12 @@ language = Deutsch
 = This machine would not give the random bytes a password needs
 > Dieser Rechner liefert die Zufallsbytes nicht, die ein Kennwort braucht
 
+= This machine would not sign with that certificate
+> Dieser Rechner hat mit diesem Zertifikat nicht signiert
+
+= To sign, use a certificate from this machine's own store, or put one and its key in this folder:
+> Zum Signieren ein Zertifikat aus dem Speicher dieses Rechners verwenden oder eines mit seinem Schlüssel in diesen Ordner legen:
+
 = Watermarks
 > Wasserzeichen
 
@@ -1216,6 +1222,9 @@ language = Deutsch
 
 = Your permissions
 > Ihre Berechtigungen
+
+= in this machine's store
+> im Speicher dieses Rechners
 
 = locked
 > gesperrt
@@ -2119,9 +2128,6 @@ language = Deutsch
 
 = Title
 > Titel
-
-= To sign, put a certificate and its key in this folder:
-> Zum Signieren ein Zertifikat und seinen Schlüssel in diesen Ordner legen:
 
 = Top
 > Oben

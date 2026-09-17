@@ -86,7 +86,7 @@ fn signer(keys: &Keys) -> wp_sign::Signer {
     wp_sign::Signer {
         certificate: keys.certificate.clone(),
         chain: Vec::new(),
-        key: wp_rsa::PrivateKey::new(&private.modulus, &private.exponent),
+        key: Box::new(wp_rsa::PrivateKey::new(&private.modulus, &private.exponent)),
         reason: String::from("Because it is mine"),
         at: String::from("2026-09-16T12:00:00Z"),
     }

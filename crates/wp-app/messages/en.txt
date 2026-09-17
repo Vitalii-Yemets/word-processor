@@ -665,6 +665,7 @@
 = This document was opened read-only: save a copy
 = This document, before
 = This machine would not give the random bytes a password needs
+= This machine would not sign with that certificate
 = This machine's list of trusted issuers could not be read
 = This one
 = This person
@@ -672,7 +673,7 @@
 = This stretch is locked
 = This stretch may only be edited by {0}
 = Title
-= To sign, put a certificate and its key in this folder:
+= To sign, use a certificate from this machine's own store, or put one and its key in this folder:
 = Top
 = Total Row
 = Track Changes
@@ -741,6 +742,7 @@
 = Your permissions
 = Z to A
 = Zoom
+= in this machine's store
 = unsaved changes
 = {0} added to the list
 = {0} characters

@@ -5590,16 +5590,60 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   dialog has All, Recommended Minimum and None above its list of styles, which
   is the difference between ticking three boxes and ticking three hundred:
   **J33**.
-- [ ] **J24. Signing with a key the system holds.** Windows keeps a person's
-  certificates and their private keys in a store of its own, and signs
-  without ever handing the key to the program that asked:
-  `CryptAcquireCertificatePrivateKey` and `NCryptSignHash`. **J12** signs
-  with a key it can read, out of a folder, which is what can be done on both
-  systems at once; this is the other way, and it is the way a person who
-  already has a certificate on Windows would expect to sign. Done when the MY
-  store is listed beside the folder and a signature made through the system
-  checks out here and in Word. It needs a Windows machine to be written
-  against, which is why it is not **J12**.
+- [x] **J24. Signing with a key the system holds.**
+  **What signing needs is not a key.** That was the thing to see. **J12** had
+  a signer carrying a `PrivateKey`, which is fine as long as the key is
+  something this program can have — and on Windows it is not, and is not meant
+  to be. A person's certificates live in a store the system keeps; the system
+  signs on their behalf and hands back a signature, never the key. That is the
+  point of a store, and it is the only way a key on a smart card or in a TPM
+  can be used at all. So the signer takes something that *will sign* — a
+  trait, `Signs` — and a key read out of a file is one of those while the
+  system is another, neither knowing about the other. Nothing about the
+  signature changes: the same `SignedInfo`, the same PKCS#1 v1.5 padding over
+  the same `DigestInfo`. Only the arithmetic happens somewhere else.
+  **The store, read.** `CertOpenSystemStoreW` on MY, and every certificate in
+  it that has a key behind it — asked as a property rather than by acquiring
+  the key, because acquiring one can put a smart-card dialog on the screen and
+  a list being drawn is no place for that. The name is the system's own
+  display name, which is what a person recognises. Certificates with no key
+  are left out: offering one would be offering to do something that cannot be
+  done.
+  **The signing.** `CryptAcquireCertificatePrivateKey` for a key of the newer
+  sort, silently — a program should ask before it signs, not while it is
+  signing — then `NCryptSignHash` with PKCS#1 padding and the hash's own name.
+  The hash is made here and the padding is written there, which is the one
+  place in the program where the two halves of a signature happen on opposite
+  sides of a wall. Every function is found by name at run time, as the rest of
+  this crate finds its newer ones: a program that will not start because a
+  library is missing is worse than one that says it could not read the store.
+  **Both lists are one list.** A person picking a certificate is picking who
+  they are, not which of two mechanisms does the sums, so the store's and the
+  folder's are offered together — the store's first, because on a machine that
+  has one that is where the real certificate is. The line says where each came
+  from, because the same certificate can be in both places and the two sign by
+  different routes: one of them can want a card in the reader and the other
+  cannot.
+  *Proven by:* the whole of it compiles and lints clean for
+  `x86_64-pc-windows-gnu`, which is the target it exists for. What can be run
+  here is run here: the trait changed no signature — the same key over the
+  same bytes, through the trait, is byte for byte the signature the key makes
+  — the hash named to the system is the hash that was made, a machine with no
+  store lists nothing rather than guessing, signing with a certificate no
+  store holds is refused rather than returning an empty signature, and the
+  line a person picks says which of the two places it came from. The rest
+  stands on **J12**'s proof, because it is the same signature: what OpenSSL
+  signs this program accepts, and what this program signs OpenSSL and
+  `xmlsec1` accept.
+  *Not done, and named here:* **whether the Windows calls work has not been
+  run.** It cannot be, here: there is no Windows machine in this build and
+  nothing is installed on the one this is written on, so what is proven is
+  that it compiles for Windows and that everything either side of the system
+  call is right. Running it — the store listed on a real machine, a signature
+  made through it, and Word opening the result — belongs with **K1**, which is
+  where this project's "against Word rather than against ourselves" lives. No
+  amount of care here substitutes for it, and the entry says so rather than
+  implying the calls have been seen to work.
 - [ ] **J25. The rest of what Word does with signatures.** Its Signatures
   **pane**, which stands open beside the document listing what it carries and
   what it wants — where **J12** has a dialog. The digital half of the

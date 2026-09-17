@@ -219,6 +219,378 @@ fn windows_roots() -> Vec<Vec<u8>> {
     out
 }
 
+// --- The person's own certificates, which the system holds ------------------
+
+/// One of the person's own certificates, as the system has it.
+///
+/// The certificate itself travels — it is public, and it goes into the
+/// signature — but the key does not and cannot: what comes back from
+/// [`sign_with_held`] is a signature, made by the system, over bytes handed to
+/// it. That is the whole point of a store: a key that can be copied out is a
+/// key that has been copied out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Held {
+    /// The certificate as it was written, which is what goes into a signature.
+    pub certificate: Vec<u8>,
+    /// What the system calls it, which is what a person recognises it by.
+    pub name: String,
+}
+
+/// Every certificate in the person's own store that has a key to sign with.
+///
+/// Empty on a system with no such store, which is every system but Windows:
+/// there is no one place a person's certificates live on Linux, and inventing
+/// one would be inventing a store rather than reading one. What is read there
+/// is a folder, and that is [`wp_app`]'s business rather than this crate's.
+///
+/// Certificates without a key are left out. A certificate whose key is
+/// somewhere else is somebody else's certificate as far as signing goes, and
+/// offering it would be offering to do something that cannot be done.
+#[must_use]
+pub fn held_certificates() -> Vec<Held> {
+    #[cfg(windows)]
+    {
+        windows_held()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+/// Signs a hash with the key the system holds for a certificate.
+///
+/// `hash` is the digest itself and not the message: this is the one place in
+/// the program where the hashing and the signing happen on opposite sides of a
+/// wall, because the system will sign a hash and will not be handed a
+/// document. `algorithm` is what the system calls the hash — `SHA256` and the
+/// like — which is how it knows what to write into the padding.
+///
+/// `None` where there is no such store, no such certificate in it, no key
+/// behind that certificate, or the system refused. Which of those it was is
+/// not reported, because the only one a person can do anything about is the
+/// certificate, and they picked that off a list this module made.
+#[must_use]
+pub fn sign_with_held(certificate: &[u8], algorithm: &str, hash: &[u8]) -> Option<Vec<u8>> {
+    #[cfg(windows)]
+    {
+        windows_sign(certificate, algorithm, hash)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (certificate, algorithm, hash);
+        None
+    }
+}
+
+/// What Windows calls the store a person's own certificates are in.
+///
+/// Word signs from this one, and so does everything else on the machine that
+/// signs as the person rather than as the machine.
+#[cfg(windows)]
+const PERSONAL: &str = "MY\0";
+
+/// The shape `CertEnumCertificatesInStore` hands back.
+///
+/// Named here as well as in [`windows_roots`] because the two walks are
+/// otherwise unrelated and a shared private type between them would be one
+/// more thing to keep in step for no gain.
+#[cfg(windows)]
+#[repr(C)]
+struct CertContext {
+    encoding: u32,
+    encoded: *const u8,
+    length: u32,
+    info: *const core::ffi::c_void,
+    store: *const core::ffi::c_void,
+}
+
+/// What `NCryptSignHash` is told about the padding.
+///
+/// PKCS#1 v1.5, which is what a `.docx` signature uses and what
+/// [`wp_rsa`] does on the other path. The one field is the name of the hash,
+/// which the padding writes down beside the digest.
+#[cfg(windows)]
+#[repr(C)]
+struct Pkcs1PaddingInfo {
+    algorithm: *const u16,
+}
+
+/// Every certificate in the personal store, with a key, as the system has it.
+#[cfg(windows)]
+fn windows_held() -> Vec<Held> {
+    use core::ffi::c_void;
+
+    type OpenStore = unsafe extern "system" fn(*const u16, *const u16) -> *const c_void;
+    type NextCertificate =
+        unsafe extern "system" fn(*const c_void, *const CertContext) -> *const CertContext;
+    type CloseStore = unsafe extern "system" fn(*const c_void, u32) -> i32;
+    type ContextProperty =
+        unsafe extern "system" fn(*const CertContext, u32, *mut c_void, *mut u32) -> i32;
+    type NameString = unsafe extern "system" fn(
+        *const CertContext,
+        u32,
+        u32,
+        *const c_void,
+        *mut u16,
+        u32,
+    ) -> u32;
+
+    /// The property that says a certificate has a key behind it, and where.
+    const KEY_PROVIDER: u32 = 2;
+    /// The name a person would recognise, which is what Word's own list shows.
+    const SIMPLE_DISPLAY_NAME: u32 = 4;
+
+    let mut out = Vec::new();
+    unsafe {
+        let open = crate::windows::library_function("crypt32.dll", b"CertOpenSystemStoreW\0");
+        let next =
+            crate::windows::library_function("crypt32.dll", b"CertEnumCertificatesInStore\0");
+        let close = crate::windows::library_function("crypt32.dll", b"CertCloseStore\0");
+        let property =
+            crate::windows::library_function("crypt32.dll", b"CertGetCertificateContextProperty\0");
+        let named = crate::windows::library_function("crypt32.dll", b"CertGetNameStringW\0");
+        if open.is_null()
+            || next.is_null()
+            || close.is_null()
+            || property.is_null()
+            || named.is_null()
+        {
+            return out;
+        }
+        let open: OpenStore = core::mem::transmute(open);
+        let next: NextCertificate = core::mem::transmute(next);
+        let close: CloseStore = core::mem::transmute(close);
+        let property: ContextProperty = core::mem::transmute(property);
+        let named: NameString = core::mem::transmute(named);
+
+        let store_name: Vec<u16> = PERSONAL.encode_utf16().collect();
+        let store = open(core::ptr::null(), store_name.as_ptr());
+        if store.is_null() {
+            return out;
+        }
+
+        let mut context = next(store, core::ptr::null());
+        while !context.is_null() {
+            let found = &*context;
+            if !found.encoded.is_null() && found.length > 0 {
+                // Whether there is a key behind it, asked of the property
+                // rather than by acquiring the key: acquiring one can put a
+                // dialog on the screen asking for a smart card, and a list
+                // being drawn is no place for that.
+                let mut size = 0u32;
+                let has_key =
+                    property(context, KEY_PROVIDER, core::ptr::null_mut(), &mut size) != 0;
+                if has_key {
+                    let mut name = vec![0u16; 256];
+                    let written = named(
+                        context,
+                        SIMPLE_DISPLAY_NAME,
+                        0,
+                        core::ptr::null(),
+                        name.as_mut_ptr(),
+                        name.len() as u32,
+                    );
+                    // What comes back counts the terminator, and a name of
+                    // nothing but a terminator is no name at all.
+                    let name = if written > 1 {
+                        String::from_utf16_lossy(&name[..(written - 1) as usize])
+                    } else {
+                        String::new()
+                    };
+                    out.push(Held {
+                        certificate: core::slice::from_raw_parts(
+                            found.encoded,
+                            found.length as usize,
+                        )
+                        .to_vec(),
+                        name,
+                    });
+                }
+            }
+            context = next(store, context);
+        }
+        // Every context the walk handed back was freed by the walk itself,
+        // which is what passing the last one back in means.
+        close(store, 0);
+    }
+    out
+}
+
+/// Hands a hash to the system and takes back a signature.
+#[cfg(windows)]
+fn windows_sign(certificate: &[u8], algorithm: &str, hash: &[u8]) -> Option<Vec<u8>> {
+    use core::ffi::c_void;
+
+    type OpenStore = unsafe extern "system" fn(*const u16, *const u16) -> *const c_void;
+    type NextCertificate =
+        unsafe extern "system" fn(*const c_void, *const CertContext) -> *const CertContext;
+    type CloseStore = unsafe extern "system" fn(*const c_void, u32) -> i32;
+    type FreeContext = unsafe extern "system" fn(*const CertContext) -> i32;
+    type DuplicateContext = unsafe extern "system" fn(*const CertContext) -> *const CertContext;
+    type AcquireKey = unsafe extern "system" fn(
+        *const CertContext,
+        u32,
+        *const c_void,
+        *mut usize,
+        *mut u32,
+        *mut i32,
+    ) -> i32;
+    type SignHash = unsafe extern "system" fn(
+        usize,
+        *const c_void,
+        *const u8,
+        u32,
+        *mut u8,
+        u32,
+        *mut u32,
+        u32,
+    ) -> i32;
+    type FreeObject = unsafe extern "system" fn(usize) -> i32;
+
+    /// Ask for a key of the newer sort, which is the one `NCryptSignHash`
+    /// takes. The older interface is a different call with a different handle,
+    /// and a certificate whose key is only reachable that way is left alone
+    /// rather than half-supported.
+    const ONLY_NEWER_KEY: u32 = 0x0004_0000;
+    /// And do not put a dialog on the screen. A program that signs should ask
+    /// before it signs, not while it is signing; where the key needs a card or
+    /// a PIN this fails and says so, which is the truthful answer.
+    const WITHOUT_ASKING: u32 = 0x0000_0040;
+    /// Padding as PKCS#1 v1.5, which is what a `.docx` signature is.
+    const PKCS1_PADDING: u32 = 0x0000_0002;
+
+    unsafe {
+        let open = crate::windows::library_function("crypt32.dll", b"CertOpenSystemStoreW\0");
+        let next =
+            crate::windows::library_function("crypt32.dll", b"CertEnumCertificatesInStore\0");
+        let close = crate::windows::library_function("crypt32.dll", b"CertCloseStore\0");
+        let free_context =
+            crate::windows::library_function("crypt32.dll", b"CertFreeCertificateContext\0");
+        let duplicate =
+            crate::windows::library_function("crypt32.dll", b"CertDuplicateCertificateContext\0");
+        let acquire =
+            crate::windows::library_function("crypt32.dll", b"CryptAcquireCertificatePrivateKey\0");
+        let sign = crate::windows::library_function("ncrypt.dll", b"NCryptSignHash\0");
+        let free_key = crate::windows::library_function("ncrypt.dll", b"NCryptFreeObject\0");
+        if open.is_null()
+            || next.is_null()
+            || close.is_null()
+            || free_context.is_null()
+            || duplicate.is_null()
+            || acquire.is_null()
+            || sign.is_null()
+            || free_key.is_null()
+        {
+            return None;
+        }
+        let open: OpenStore = core::mem::transmute(open);
+        let next: NextCertificate = core::mem::transmute(next);
+        let close: CloseStore = core::mem::transmute(close);
+        let free_context: FreeContext = core::mem::transmute(free_context);
+        let duplicate: DuplicateContext = core::mem::transmute(duplicate);
+        let acquire: AcquireKey = core::mem::transmute(acquire);
+        let sign: SignHash = core::mem::transmute(sign);
+        let free_key: FreeObject = core::mem::transmute(free_key);
+
+        let store_name: Vec<u16> = PERSONAL.encode_utf16().collect();
+        let store = open(core::ptr::null(), store_name.as_ptr());
+        if store.is_null() {
+            return None;
+        }
+
+        // The certificate is found by its own bytes. Windows has ways of
+        // searching a store, and every one of them wants a different handle
+        // or a hash worked out first; the bytes are what the caller already
+        // has, and a store holds tens of certificates rather than thousands.
+        let mut wanted = core::ptr::null();
+        let mut context = next(store, core::ptr::null());
+        while !context.is_null() {
+            let found = &*context;
+            let same = !found.encoded.is_null()
+                && found.length as usize == certificate.len()
+                && core::slice::from_raw_parts(found.encoded, found.length as usize) == certificate;
+            if same {
+                // Kept out of the walk, because the walk frees whatever it is
+                // handed next and this one has to outlive it.
+                wanted = duplicate(context);
+                break;
+            }
+            context = next(store, context);
+        }
+        if !context.is_null() {
+            // The walk was stopped early, so the context it stopped on is
+            // this code's to free rather than the walk's.
+            free_context(context);
+        }
+        close(store, 0);
+        if wanted.is_null() {
+            return None;
+        }
+
+        let mut key = 0usize;
+        let mut kind = 0u32;
+        let mut ours = 0i32;
+        let got = acquire(
+            wanted,
+            ONLY_NEWER_KEY | WITHOUT_ASKING,
+            core::ptr::null(),
+            &mut key,
+            &mut kind,
+            &mut ours,
+        );
+        free_context(wanted);
+        if got == 0 || key == 0 {
+            return None;
+        }
+
+        let named: Vec<u16> = format!("{algorithm}\0").encode_utf16().collect();
+        let padding = Pkcs1PaddingInfo { algorithm: named.as_ptr() };
+        let padding_ptr: *const c_void = core::ptr::from_ref(&padding).cast();
+
+        // Asked twice, as every Windows call that returns a buffer is: once
+        // for the length, once for the bytes.
+        let mut needed = 0u32;
+        let measured = sign(
+            key,
+            padding_ptr,
+            hash.as_ptr(),
+            hash.len() as u32,
+            core::ptr::null_mut(),
+            0,
+            &mut needed,
+            PKCS1_PADDING,
+        );
+        if measured != 0 || needed == 0 {
+            if ours != 0 {
+                free_key(key);
+            }
+            return None;
+        }
+
+        let mut signature = vec![0u8; needed as usize];
+        let mut written = 0u32;
+        let made = sign(
+            key,
+            padding_ptr,
+            hash.as_ptr(),
+            hash.len() as u32,
+            signature.as_mut_ptr(),
+            signature.len() as u32,
+            &mut written,
+            PKCS1_PADDING,
+        );
+        if ours != 0 {
+            free_key(key);
+        }
+        if made != 0 {
+            return None;
+        }
+        signature.truncate(written as usize);
+        Some(signature)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +617,27 @@ mod tests {
         assert_eq!(decode_base64(b"TWFuTWFu"), b"ManMan");
         // And the whitespace a PEM file is full of.
         assert_eq!(decode_base64(b"TWFu\n TWFu\r\n"), b"ManMan");
+    }
+
+    #[test]
+    fn the_personal_store_is_read_or_is_empty_and_never_a_crash() {
+        // The same bargain the roots are read on, and the one that matters
+        // more here: a machine with no such store has to come back with
+        // nothing rather than with a guess, because what is listed is what a
+        // person will be offered to sign with.
+        for held in held_certificates() {
+            assert!(looks_like_a_certificate(&held.certificate), "not a certificate");
+        }
+    }
+
+    #[test]
+    fn signing_with_a_certificate_no_store_holds_is_refused() {
+        // Not answered with an empty signature or a panic: a signature that
+        // was not made has to come back as one that was not made. On a
+        // machine with a store this asks it about a certificate that is not
+        // in it, and on one without it asks nothing at all; both say no.
+        let nobodys = vec![0x30, 0x82, 0x01, 0x00];
+        assert_eq!(sign_with_held(&nobodys, "SHA256", &[0u8; 32]), None);
     }
 
     #[test]

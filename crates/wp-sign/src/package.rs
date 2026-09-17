@@ -390,6 +390,33 @@ fn by_id<'a>(element: &'a Element, id: &str) -> Option<&'a Element> {
     element.child_elements().find_map(|child| by_id(child, id))
 }
 
+/// Something that can turn a message into a signature.
+///
+/// # Why this is not simply a key
+///
+/// Because on Windows the key is not something this program can have. A
+/// person's certificates live in a store the system keeps, and the system
+/// signs on their behalf without ever handing the key out — which is the
+/// point of keeping it there, and is the only way a key on a smart card or in
+/// a TPM can be used at all. What the program sends is the bytes to be
+/// signed; what comes back is the signature.
+///
+/// So what signing needs is not a key but something that will sign. A key
+/// this program read out of a file is one of those, the system is another,
+/// and neither has to know about the other.
+pub trait Signs {
+    /// Signs a message, or nothing where the key would not or could not.
+    fn sign(&self, algorithm: Algorithm, message: &[u8]) -> Option<Vec<u8>>;
+}
+
+/// A key this program can read is the simple case: it does the arithmetic
+/// itself.
+impl Signs for PrivateKey {
+    fn sign(&self, algorithm: Algorithm, message: &[u8]) -> Option<Vec<u8>> {
+        PrivateKey::sign(self, algorithm, message)
+    }
+}
+
 /// Who is signing, and with what.
 pub struct Signer {
     /// Their certificate, as it was written.
@@ -401,7 +428,8 @@ pub struct Signer {
     /// and the roots its machine trusts, and everything in between has to
     /// come with the document.
     pub chain: Vec<Vec<u8>>,
-    pub key: PrivateKey,
+    /// Whatever will do the signing: a key out of a file, or the system.
+    pub key: Box<dyn Signs>,
     /// What they say about why, which Word shows.
     pub reason: String,
     /// When, as `YYYY-MM-DDThh:mm:ssZ`.

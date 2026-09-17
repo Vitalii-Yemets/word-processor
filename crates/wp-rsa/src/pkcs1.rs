@@ -65,6 +65,20 @@ impl Algorithm {
         }
     }
 
+    /// The hash's own name, as everything but an XML signature writes it.
+    ///
+    /// Wanted where a signature is made by something outside this program —
+    /// an operating system holding the key — and told which hash was used by
+    /// name rather than by a web address.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Sha1 => "SHA1",
+            Self::Sha256 => "SHA256",
+            Self::Sha512 => "SHA512",
+        }
+    }
+
     /// The name the XML signature standard calls it by.
     #[must_use]
     pub fn uri(self) -> &'static str {
@@ -194,6 +208,27 @@ impl PrivateKey {
                 .power_modulo(&self.exponent, &self.modulus)
                 .to_be_bytes(self.length),
         )
+    }
+}
+
+#[cfg(test)]
+mod naming {
+    use super::*;
+
+    #[test]
+    fn the_name_a_system_is_given_is_the_hash_that_was_made() {
+        // Where the signing happens outside this program, the hash is made
+        // here and named there, and the two have to be the same hash. Telling
+        // a system SHA256 while handing it a SHA-512 digest would produce a
+        // signature that verifies nowhere and says nothing about why.
+        for (algorithm, name, length) in [
+            (Algorithm::Sha1, "SHA1", 20),
+            (Algorithm::Sha256, "SHA256", 32),
+            (Algorithm::Sha512, "SHA512", 64),
+        ] {
+            assert_eq!(algorithm.name(), name);
+            assert_eq!(algorithm.of(b"anything at all").len(), length, "{name}");
+        }
     }
 }
 

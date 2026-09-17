@@ -886,7 +886,7 @@ fn sign(path: &str, out: &str, certificate: &str, key: &str, why: &str) -> Resul
         // The command line takes one certificate and no chain; the program
         // itself carries what its store has. See wp-app's certificates.
         chain: Vec::new(),
-        key: wp_rsa::PrivateKey::new(&private.modulus, &private.exponent),
+        key: Box::new(wp_rsa::PrivateKey::new(&private.modulus, &private.exponent)),
         reason: why.to_owned(),
         at: now(),
     };
