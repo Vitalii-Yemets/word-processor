@@ -25,6 +25,7 @@ pub mod minibar;
 pub mod mirror;
 pub mod navigation;
 pub mod palette;
+pub mod pane;
 pub mod pastebadge;
 pub mod popup;
 pub mod printpane;

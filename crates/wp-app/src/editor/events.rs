@@ -311,6 +311,25 @@ impl App for Editor {
                         Response::Ignored
                     };
                 }
+                // The wheel over one of the panes down the side scrolls that
+                // pane rather than the document, which is what a person means
+                // by turning it while the pointer is over one.
+                if self.over_restrict_pane(self.pointer_x as i32) {
+                    return if self.restrict_pane.scroll_by(-lines * super::PANE_STEP) {
+                        self.needs_redraw = true;
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    };
+                }
+                if self.over_signature_pane(self.pointer_x as i32) {
+                    return if self.signature_pane.scroll_by(-lines * super::PANE_STEP) {
+                        self.needs_redraw = true;
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    };
+                }
                 // Over the navigation pane the wheel scrolls the outline.
                 // The wheel over the styles pane scrolls its list.
                 if self.over_styles_pane(self.pointer_x as i32) {

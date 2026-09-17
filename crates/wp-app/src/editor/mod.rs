@@ -141,6 +141,12 @@ const CARET_MARGIN: f32 = 40.0;
 /// Dots per inch a document is laid out at before zoom. 96 is what Windows
 /// calls 100%.
 pub const DPI: f32 = 96.0;
+
+/// How far one notch of the wheel moves a pane, in pixels.
+///
+/// Three lines of a pane's own text, which is what the wheel moves everywhere
+/// else in this program and in every other.
+const PANE_STEP: f32 = 3.0 * 13.0;
 /// Points per inch, for turning page metrics into pixels.
 /// How wide the caret is drawn, in pixels.
 const CARET_WIDTH: i32 = 2;

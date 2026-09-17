@@ -5928,13 +5928,40 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the assumption was a fortnight stale. The roadmap is written as work is
   closed, and a sentence about another part of the program put into it at that
   moment is a sentence nobody checked.
-- [ ] **J32. The panes that do not scroll.** The Restrict Editing pane draws
-  down the window and stops where the window does: a document with twenty
-  people on its exceptions list has the rest of them off the bottom, with no
-  way to reach them. The Styles pane scrolls and this does not, which is one
-  pane knowing something the other does not rather than a decision. Done when
-  a pane too tall for its window can be scrolled, with the wheel and with a
-  bar, and a test says what happens when there is more than there is room for.
+- [x] **J32. The panes that do not scroll.**
+  **It was two copies of the same idea and only one had been taught.** The
+  Restrict Editing pane and the Signatures pane each carried their own pen —
+  the same struct, the same six methods, written out twice — and neither knew
+  what the Styles pane knew. So the fix was not to teach a third copy but to
+  stop having copies: one pen, in one place, which every pane down the side of
+  the window is drawn with, and the scrolling lives in it.
+  **A pane is scrolled by where its pen starts.** Everything a pane draws is
+  placed by running a number down the column, so beginning that number higher
+  up the window moves the whole column and nothing else has to know. What
+  stops it running away is how far the column reached the last time it was
+  drawn, which is only knowable once it has been drawn — so the pane remembers
+  it, and the offset is pulled back when the pane shrinks. Somebody who
+  scrolls to the foot of a long list and then deletes most of it should not be
+  left looking below the end of what is there.
+  The caption does not scroll with the rest: it is the pane's own name and the
+  way out, and a pane you cannot shut because you scrolled its cross away
+  would be worse than one you cannot reach the bottom of. The wheel over a
+  pane moves that pane rather than the document, and a bar down its edge says
+  how much there is and where in it we are — but only when there is more than
+  there is room for, since a bar beside a pane that fits is a bar saying there
+  is something below when there is not.
+  *Proven by:* eight tests. A pane that fits cannot be scrolled and is given
+  no bar; one that does not scrolls as far as what is left below and no
+  further, either way; a pane that shrinks pulls the view back with it; the
+  bar appears only when it is wanted and moves down as the pane does, measured
+  in pixels rather than looked at. And three at the other end: thirty people
+  on an exceptions list in a four-hundred-pixel window overflows and scrolls,
+  an empty pane in a tall window does not move, and the wheel over the pane
+  leaves the document where it was.
+  *Not done, and named here:* the **Print** page does not scroll either. It is
+  not a pane down the side — it fills the window, and its settings are laid
+  out by a different hand — so it is a different piece of work rather than one
+  more caller of this one.
 - [ ] **J33. All, Recommended Minimum and None.** The three buttons above
   Word's list of styles in the Formatting Restrictions dialog, and the
   difference between ticking three boxes and ticking three hundred. None and

@@ -661,6 +661,62 @@ mod tests {
     }
 
     #[test]
+    fn a_pane_taller_than_the_window_can_be_scrolled_and_says_so() {
+        // What the item is about: a document with twenty people on its
+        // exceptions list had the rest of them off the bottom, with no way to
+        // reach them.
+        let mut editor = editor();
+        editor.extra_editors = (0..30).map(|number| format!("Somebody the {number}th")).collect();
+        editor.open_signatures();
+        editor.open_protection();
+        editor.handle(Event::Resized { width: 1400, height: 400 });
+        editor.draw(1400, 400);
+
+        assert!(editor.restrict_pane.overflows(), "thirty people fitted in four hundred pixels");
+        assert!(editor.restrict_pane.scroll_by(120.0), "it would not scroll");
+        editor.draw(1400, 400);
+
+        // And not past the end of itself.
+        while editor.restrict_pane.scroll_by(500.0) {}
+        assert!(!editor.restrict_pane.scroll_by(500.0), "it scrolled past its own end");
+    }
+
+    #[test]
+    fn a_pane_that_fits_does_not_scroll() {
+        // Nothing to reach, so nothing moves and no bar is drawn beside it
+        // claiming there is more below.
+        let mut editor = editor();
+        editor.open_protection();
+        editor.handle(Event::Resized { width: 1400, height: 1200 });
+        editor.draw(1400, 1200);
+
+        assert!(!editor.restrict_pane.overflows());
+        assert!(!editor.restrict_pane.scroll_by(120.0), "an empty pane moved");
+    }
+
+    #[test]
+    fn the_wheel_over_the_pane_moves_the_pane_and_not_the_document() {
+        let mut editor = editor();
+        editor.extra_editors = (0..30).map(|number| format!("Person {number}")).collect();
+        editor.open_protection();
+        editor.handle(Event::Resized { width: 1400, height: 400 });
+        editor.draw(1400, 400);
+
+        let was = editor.scroll;
+        let over = editor.restrict_pane_left() as i32 + 20;
+        editor.handle(Event::MouseMove {
+            x: over,
+            y: 300,
+            held: false,
+            modifiers: wp_shell::Modifiers::default(),
+        });
+        editor.handle(Event::Scroll { lines: -3.0, modifiers: wp_shell::Modifiers::default() });
+
+        assert!(editor.restrict_pane.overflows());
+        assert_eq!(editor.scroll, was, "the document moved instead of the pane");
+    }
+
+    #[test]
     fn the_list_of_people_is_everyone_then_whoever_the_document_names() {
         let mut editor = editor();
         let shown = editor.editors_shown(&me());

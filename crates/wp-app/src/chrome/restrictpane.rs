@@ -35,6 +35,7 @@ use wp_raster::{Canvas, Color};
 
 use crate::messages::t;
 
+use super::pane::{Pen, Scroll, HEADING, PADDING, TEXT};
 use super::theme::Theme;
 
 /// How wide the pane is drawn.
@@ -43,20 +44,11 @@ use super::theme::Theme;
 /// than a style's name.
 pub const WIDTH: f32 = 270.0;
 
-/// The room round everything.
-const PADDING: f32 = 10.0;
-
 /// How tall a row of the editor list is.
 const ROW: f32 = 22.0;
 
 /// And how tall a button is.
 const BUTTON: f32 = 26.0;
-
-/// The size the pane's words are drawn at.
-const TEXT: f32 = 8.5;
-
-/// A heading is drawn a little larger.
-const HEADING: f32 = 9.0;
 
 /// One person who may be let through a restriction.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,6 +121,8 @@ pub enum Hit {
 #[derive(Clone, Debug, Default)]
 pub struct RestrictPane {
     hovered: Option<Hit>,
+    /// How far down it has been scrolled, and how far it reaches.
+    scroll: Scroll,
     /// Where everything ended up when it was last drawn, so that a press can
     /// be told what it landed on without the drawing being done again.
     placed: Vec<(Hit, f32, f32, f32, f32)>,
@@ -180,13 +174,39 @@ impl RestrictPane {
         canvas.fill_rect(left as i32, top as i32, WIDTH as i32, (bottom - top) as i32, theme.pane);
         canvas.fill_rect(left as i32, top as i32, 1, (bottom - top) as i32, theme.pane_edge);
 
-        let mut pen = Pen { canvas, engine, renderer, theme, left, y: top + 8.0, bottom };
+        // Begun as far above the window as it has been scrolled: everything a
+        // pane draws is placed by running a number down the column, so moving
+        // where that number starts moves the whole column. The caption does
+        // not move with it — it is the pane's own name and the way out.
+        let started = top - self.scroll.offset;
+        let mut pen =
+            Pen { canvas, engine, renderer, theme, left, width: WIDTH, y: top + 8.0, bottom, top };
         self.caption(&mut pen, top);
+        let header = pen.y;
+        pen.y = started + (header - top);
+
         if shown.enforced {
             self.permissions(&mut pen, shown);
         } else {
             self.settings(&mut pen, shown);
         }
+
+        // How far it reached, measured from the top of the pane, which is
+        // what says how far it may be scrolled.
+        let reach = pen.y - started;
+        self.scroll.reached(reach, bottom - top);
+        self.scroll.draw_bar(canvas, left + WIDTH, header, bottom, theme);
+    }
+
+    /// Moves it, and says whether it moved.
+    pub fn scroll_by(&mut self, pixels: f32) -> bool {
+        self.scroll.by(pixels)
+    }
+
+    /// Whether there is more of it than there is room for.
+    #[must_use]
+    pub fn overflows(&self) -> bool {
+        self.scroll.overflows()
     }
 
     /// The name of the pane, and the cross that shuts it.
@@ -291,8 +311,14 @@ impl RestrictPane {
             );
         }
         // Wrapped, because these are sentences and the pane is narrow.
-        let used =
-            pen.wrapped(label, box_left + 20.0, box_top + 11.0, WIDTH - PADDING * 2.0 - 20.0);
+        let colour = pen.theme.text;
+        let used = pen.wrapped(
+            label,
+            box_left + 20.0,
+            box_top + 11.0,
+            WIDTH - PADDING * 2.0 - 20.0,
+            colour,
+        );
         let height = used.max(16.0);
         self.placed.push((hit, box_left, box_top, WIDTH - PADDING * 2.0, height));
         pen.y = box_top + height + 4.0;
@@ -406,111 +432,6 @@ impl RestrictPane {
 
         self.placed.push((hit, x, pen.y, width, BUTTON));
         pen.y += BUTTON + 8.0;
-    }
-}
-
-/// Where the next thing goes, and what draws it.
-///
-/// A pane is a column of things each of which knows its own height, so what
-/// every one of them needs is the same three tools and one number that moves
-/// down. Passing those separately to a dozen little methods is how a drawing
-/// function grows nine arguments.
-struct Pen<'a, 'e, 'r> {
-    canvas: &'a mut Canvas,
-    engine: &'a mut LayoutEngine<'e>,
-    renderer: &'a mut Renderer<'r>,
-    theme: &'a Theme,
-    left: f32,
-    y: f32,
-    bottom: f32,
-}
-
-impl Pen<'_, '_, '_> {
-    /// One line of words at the pen, returning how wide it came out.
-    fn words(&mut self, text: &str, x: f32, size: f32, colour: Color) -> f32 {
-        if self.y > self.bottom {
-            return 0.0;
-        }
-        let line = self.engine.simple_line(text, x, self.y + size, size, colour);
-        let width = line.width;
-        self.renderer.draw_onto(self.canvas, &line, 0.0, 0.0);
-        width
-    }
-
-    /// A sentence broken to fit a width, returning how tall it came out.
-    ///
-    /// Broken here rather than laid out: the pane's words are the program's
-    /// own and short, and a paragraph engine to set three of them would be a
-    /// second way of doing what the document already does.
-    fn wrapped(&mut self, text: &str, x: f32, baseline: f32, width: f32) -> f32 {
-        let mut y = baseline;
-        let mut line = String::new();
-        for word in text.split_whitespace() {
-            let wanted = if line.is_empty() { word.to_owned() } else { format!("{line} {word}") };
-            let measured = self.engine.simple_line(&wanted, 0.0, 0.0, TEXT, self.theme.text);
-            if measured.width > width && !line.is_empty() {
-                let drawn = self.engine.simple_line(&line, x, y, TEXT, self.theme.text);
-                self.renderer.draw_onto(self.canvas, &drawn, 0.0, 0.0);
-                y += 13.0;
-                line = word.to_owned();
-            } else {
-                line = wanted;
-            }
-        }
-        if !line.is_empty() {
-            let drawn = self.engine.simple_line(&line, x, y, TEXT, self.theme.text);
-            self.renderer.draw_onto(self.canvas, &drawn, 0.0, 0.0);
-        }
-        y - baseline + 15.0
-    }
-
-    /// The name of one of Word's numbered sections.
-    fn heading(&mut self, text: &str) {
-        self.words(text, self.left + PADDING, HEADING, self.theme.text);
-        self.y += 20.0;
-    }
-
-    /// A sentence that is read and not pressed.
-    fn note(&mut self, text: &str) {
-        let colour = self.theme.dim_text;
-        let x = self.left + PADDING;
-        let width = WIDTH - PADDING * 2.0;
-        let mut y = self.y + 10.0;
-        let mut line = String::new();
-        for word in text.split_whitespace() {
-            let wanted = if line.is_empty() { word.to_owned() } else { format!("{line} {word}") };
-            let measured = self.engine.simple_line(&wanted, 0.0, 0.0, TEXT, colour);
-            if measured.width > width && !line.is_empty() {
-                let drawn = self.engine.simple_line(&line, x, y, TEXT, colour);
-                self.renderer.draw_onto(self.canvas, &drawn, 0.0, 0.0);
-                y += 13.0;
-                line = word.to_owned();
-            } else {
-                line = wanted;
-            }
-        }
-        if !line.is_empty() {
-            let drawn = self.engine.simple_line(&line, x, y, TEXT, colour);
-            self.renderer.draw_onto(self.canvas, &drawn, 0.0, 0.0);
-        }
-        self.y = y + 6.0;
-    }
-
-    /// A line across the pane.
-    fn rule(&mut self) {
-        self.canvas.fill_rect(
-            (self.left + PADDING) as i32,
-            self.y as i32,
-            (WIDTH - PADDING * 2.0) as i32,
-            1,
-            self.theme.pane_edge,
-        );
-        self.y += 10.0;
-    }
-
-    /// The room between one section and the next.
-    fn gap(&mut self) {
-        self.y += 8.0;
     }
 }
 
