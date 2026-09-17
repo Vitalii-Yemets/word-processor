@@ -33,6 +33,8 @@ const ORIENTATION: usize = 10;
 /// Which question is being asked, so the answer can be acted on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Asking {
+    /// A list of people being typed from nothing.
+    NewList,
     /// What a content control is called, and what may be done to it.
     ControlProperties,
     /// The defaults a document starts from, and the styles carried between
@@ -203,6 +205,7 @@ impl Editor {
             Some(Asking::ReadOnlySettings) => self.apply_read_only_settings(&dialog),
             Some(Asking::Unprotect) => self.apply_unprotection(&dialog),
             Some(Asking::Recipients) => self.apply_recipient_list(&dialog),
+            Some(Asking::NewList) => self.finish_new_list(&dialog),
             Some(Asking::NewBlock) => self.apply_new_block(&dialog),
             Some(Asking::Organizer) => {
                 self.apply_organizer(&dialog, answer == Answer::Named(super::ownblocks::DELETE))
@@ -246,6 +249,24 @@ impl Editor {
                 Some(self.autocorrect_dialog_button(button))
             }
             (Some(Asking::Exceptions), ADD | DELETE) => Some(self.exceptions_dialog_button(button)),
+            // Word's four buttons under the list of recipients, each of
+            // which changes the list and leaves the dialog standing.
+            (Some(Asking::NewList), super::mailings::ADD_RECIPIENT) => {
+                let dialog = self.dialog.clone()?;
+                Some(self.add_typed_recipient(&dialog))
+            }
+            (Some(Asking::Recipients), button)
+                if matches!(
+                    button,
+                    super::mailings::SORT
+                        | super::mailings::FILTER
+                        | super::mailings::DUPLICATES
+                        | super::mailings::VALIDATE
+                ) =>
+            {
+                let dialog = self.dialog.clone()?;
+                Some(self.recipient_button(&dialog, button))
+            }
             // The Organizer's three: each changes one of the two lists and
             // puts the dialog up again showing what is there now.
             (Some(Asking::ManageStyles), button)

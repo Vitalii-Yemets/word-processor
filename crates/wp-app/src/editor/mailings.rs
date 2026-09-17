@@ -15,7 +15,7 @@ use wp_docx::merge::{merge_instruction, Kind, Recipients};
 use wp_shell::dialog::FileFilter;
 use wp_shell::Response;
 
-use crate::chrome::dialog::{Dialog, Field, TreeRow};
+use crate::chrome::dialog::{Answer, Button, Dialog, Field, TreeRow};
 use crate::chrome::{Choice, Command, Popup};
 
 use super::dialogs::Asking;
@@ -82,6 +82,21 @@ impl Editor {
                 let changed = self.document.set_merge_source(kind, &path);
                 self.edited(changed, &format!("Mail merge: {}", kind.label()))
             }
+        }
+    }
+
+    /// Word's Select Recipients: where the people come from.
+    pub(super) fn open_recipient_source(&mut self) -> Response {
+        self.open_ribbon_menu(Choice::RecipientSource)
+    }
+
+    /// Does whichever was chosen.
+    pub(super) fn choose_recipient_source(&mut self, index: usize) -> Response {
+        self.popup = None;
+        match index {
+            0 => self.type_a_new_list(),
+            1 => self.select_recipients(),
+            _ => Response::Ignored,
         }
     }
 
@@ -280,6 +295,141 @@ impl Editor {
             return format!("Recipient {}", index + 1);
         }
         shown.join(", ")
+    }
+}
+
+/// The columns a new list starts with, which are Word's own.
+///
+/// A list typed from nothing has to start somewhere, and somewhere is the
+/// shape of an address: who, where, and how else to reach them. A column
+/// nobody fills in costs nothing — the file simply has an empty one — and a
+/// column that is not here can be added by typing its name into the last box.
+pub(super) const NEW_LIST_COLUMNS: &[&str] = &[
+    "Title",
+    "First Name",
+    "Last Name",
+    "Company",
+    "Address Line 1",
+    "City",
+    "Postcode",
+    "Country",
+    "Email",
+];
+
+/// Where the list of what has been typed sits, and where the boxes begin.
+const FIRST_BOX: usize = 3;
+
+/// The button that puts the person in the boxes on to the list.
+pub(super) const ADD_RECIPIENT: &str = "Add";
+
+impl Editor {
+    /// Word's Type a New List: a list of people made without a file to start
+    /// from.
+    ///
+    /// What it writes at the end is the delimited file this program already
+    /// reads — Word writes a database of its own, which is a second format
+    /// for the same nine columns. See [`wp_docx::merge`], where the reason
+    /// for reading that one is set out.
+    pub(super) fn type_a_new_list(&mut self) -> Response {
+        self.typed_recipients = Recipients {
+            headers: NEW_LIST_COLUMNS.iter().map(|name| (*name).to_owned()).collect(),
+            rows: Vec::new(),
+        };
+        self.new_list_dialog()
+    }
+
+    /// The dialog, with what has been typed so far listed above the boxes.
+    fn new_list_dialog(&mut self) -> Response {
+        let rows: Vec<TreeRow> = (0..self.typed_recipients.len())
+            .map(|at| {
+                let record = self.typed_recipients.record(at);
+                let said: Vec<String> = record
+                    .iter()
+                    .filter(|(_, value)| !value.trim().is_empty())
+                    .map(|(_, value)| value.clone())
+                    .collect();
+                TreeRow::plain(&said.join(", "))
+            })
+            .collect();
+
+        let mut fields = vec![
+            Field::note("Type one person, press Add, and type the next."),
+            Field::Tree { label: "On the list".to_owned(), rows, current: 0, scroll: 0 },
+            Field::Heading("This person".to_owned()),
+        ];
+        for name in NEW_LIST_COLUMNS {
+            fields.push(Field::Text { label: (*name).to_owned(), value: String::new() });
+        }
+
+        let dialog = Dialog::with_buttons(
+            "New Address List",
+            fields,
+            vec![
+                Button { label: "OK".to_owned(), answer: Answer::Accept, default: true },
+                Button {
+                    label: ADD_RECIPIENT.to_owned(),
+                    answer: Answer::Named(ADD_RECIPIENT),
+                    default: false,
+                },
+                Button { label: "Cancel".to_owned(), answer: Answer::Cancel, default: false },
+            ],
+        )
+        .wide(520.0);
+        self.ask(Asking::NewList, dialog)
+    }
+
+    /// Puts whoever is in the boxes on to the list.
+    pub(super) fn add_typed_recipient(&mut self, dialog: &Dialog) -> Response {
+        let values: Vec<(String, String)> = NEW_LIST_COLUMNS
+            .iter()
+            .enumerate()
+            .map(|(at, name)| ((*name).to_owned(), dialog.said(FIRST_BOX + at)))
+            .collect();
+        if values.iter().all(|(_, value)| value.trim().is_empty()) {
+            return self.report("Type somebody first");
+        }
+        self.typed_recipients.add(&values);
+        let count = self.typed_recipients.len();
+        self.status = crate::messages::with("{0} on the list", &[&count.to_string()]);
+        self.new_list_dialog()
+    }
+
+    /// Saves the typed list and uses it for the merge.
+    pub(super) fn finish_new_list(&mut self, dialog: &Dialog) -> Response {
+        // Whoever is still in the boxes counts: a person who typed the last
+        // one and pressed OK meant to include them.
+        let values: Vec<(String, String)> = NEW_LIST_COLUMNS
+            .iter()
+            .enumerate()
+            .map(|(at, name)| ((*name).to_owned(), dialog.said(FIRST_BOX + at)))
+            .collect();
+        if values.iter().any(|(_, value)| !value.trim().is_empty()) {
+            self.typed_recipients.add(&values);
+        }
+        if self.typed_recipients.is_empty() {
+            return self.report("Nobody was typed, so no list was made");
+        }
+
+        let filters = [FileFilter { label: "Comma-separated files", pattern: "*.csv" }];
+        let Some(path) = wp_shell::dialog::save_file(t("Save Address List"), &filters, None) else {
+            return self.report("The list was not saved, so nothing is merged");
+        };
+        if let Err(error) = std::fs::write(&path, self.typed_recipients.to_delimited()) {
+            return self.report(&format!("Cannot write {}: {error}", path.display()));
+        }
+
+        self.recipients = core::mem::take(&mut self.typed_recipients);
+        self.left_out.clear();
+        self.recipient_file = Some(PathBuf::from(&path));
+        self.preview_record = None;
+        self.forget_matches();
+        // The document keeps being whatever sort of merge it already was:
+        // typing a list says who the letters are for, not what they are.
+        let kind = self.document.merge_source().map_or(Kind::Letters, |(kind, _)| kind);
+        self.document.set_merge_source(kind, &path.to_string_lossy());
+        let count = self.recipients.len();
+        self.needs_redraw = true;
+        self.edited(true, &crate::messages::with("{0} recipients typed", &[&count.to_string()]))
     }
 }
 
@@ -580,22 +730,174 @@ impl Editor {
         if self.recipients.is_empty() {
             return self.report("No recipients yet — use Select Recipients");
         }
-        let rows = (0..self.recipients.len())
+        self.recipient_dialog(self.preview_record.unwrap_or(0))
+    }
+
+    /// The dialog itself, with one row of the list chosen.
+    ///
+    /// Built again after every button rather than changed in place: sorting
+    /// moves every row, and a dialog showing the order from before the sort
+    /// would be a list nobody could work with.
+    fn recipient_dialog(&mut self, current: usize) -> Response {
+        let rows: Vec<TreeRow> = (0..self.recipients.len())
             .map(|at| TreeRow::ticked(0, &self.describe_recipient(at), self.is_included(at)))
             .collect();
-        let dialog = Dialog::new(
+        let mut columns = vec![crate::messages::t("Every column").to_owned()];
+        columns.extend(self.recipients.headers.iter().cloned());
+
+        let dialog = Dialog::with_buttons(
             "Mail Merge Recipients",
             vec![
                 Field::note("The letter goes to everybody ticked."),
                 Field::Tree {
                     label: "Recipients".to_owned(),
                     rows,
-                    current: self.preview_record.unwrap_or(0),
+                    current: current.min(self.recipients.len().saturating_sub(1)),
                     scroll: 0,
                 },
+                Field::Heading("Sort, filter and check".to_owned()),
+                Field::Choice { label: "Column".to_owned(), items: columns, current: 0 },
+                Field::Choice {
+                    label: "Order".to_owned(),
+                    items: vec![
+                        crate::messages::t("A to Z").to_owned(),
+                        crate::messages::t("Z to A").to_owned(),
+                    ],
+                    current: 0,
+                },
+                Field::Text { label: "Holding".to_owned(), value: String::new() },
             ],
-        );
+            vec![
+                Button { label: "OK".to_owned(), answer: Answer::Accept, default: true },
+                Button { label: SORT.to_owned(), answer: Answer::Named(SORT), default: false },
+                Button { label: FILTER.to_owned(), answer: Answer::Named(FILTER), default: false },
+                Button {
+                    label: DUPLICATES.to_owned(),
+                    answer: Answer::Named(DUPLICATES),
+                    default: false,
+                },
+                Button {
+                    label: VALIDATE.to_owned(),
+                    answer: Answer::Named(VALIDATE),
+                    default: false,
+                },
+                Button { label: "Cancel".to_owned(), answer: Answer::Cancel, default: false },
+            ],
+        )
+        .wide(640.0);
         self.ask(Asking::Recipients, dialog)
+    }
+
+    /// Which column one of the buttons is to work on, or none for all of
+    /// them.
+    fn chosen_column(&self, dialog: &Dialog) -> Option<String> {
+        let at = dialog.chose(RECIPIENT_COLUMN);
+        (at > 0).then(|| self.recipients.headers.get(at - 1).cloned()).flatten()
+    }
+
+    /// Sort, Filter, Find Duplicates and Validate.
+    ///
+    /// Each takes the ticks off the dialog first, because a person who
+    /// unticked three people and then sorted the list would otherwise find
+    /// them ticked again.
+    pub(super) fn recipient_button(&mut self, dialog: &Dialog, button: &str) -> Response {
+        self.take_recipient_ticks(dialog);
+        let column = self.chosen_column(dialog);
+        let wanted = dialog.said(RECIPIENT_WANTED);
+        let mut current = dialog.chose_row(RECIPIENT_ROWS);
+
+        let said = match button {
+            SORT => {
+                let Some(column) = column else {
+                    return self.report("Choose a column to sort by");
+                };
+                let order = self.recipients.sorted_by(&column, dialog.chose(RECIPIENT_ORDER) == 0);
+                // The ticks go with the rows they were against, or sorting a
+                // list would quietly change who gets a letter.
+                let left_out: std::collections::BTreeSet<usize> = order
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, was)| self.left_out.contains(was))
+                    .map(|(now, _)| now)
+                    .collect();
+                self.recipients.reorder(&order);
+                self.left_out = left_out;
+                current = 0;
+                crate::messages::with("Sorted by {0}", &[&column])
+            }
+            FILTER => {
+                if wanted.trim().is_empty() {
+                    return self.report("Type what a row has to hold");
+                }
+                let keep = self.recipients.matching(column.as_deref().unwrap_or(""), &wanted);
+                let before = self.left_out.len();
+                for at in 0..self.recipients.len() {
+                    if !keep.contains(&at) {
+                        self.left_out.insert(at);
+                    }
+                }
+                current = keep.first().copied().unwrap_or(0);
+                crate::messages::with(
+                    "{0} left in, {1} left out",
+                    &[
+                        &keep.len().to_string(),
+                        &(self.left_out.len().saturating_sub(before)).to_string(),
+                    ],
+                )
+            }
+            DUPLICATES => {
+                let copies = self.recipients.duplicates();
+                if copies.is_empty() {
+                    crate::messages::t("No two of them say the same thing").to_owned()
+                } else {
+                    current = copies[0];
+                    for at in &copies {
+                        self.left_out.insert(*at);
+                    }
+                    crate::messages::with(
+                        "{0} left out as copies of somebody already on the list",
+                        &[&copies.len().to_string()],
+                    )
+                }
+            }
+            VALIDATE => {
+                let bad: Vec<usize> = (0..self.recipients.len())
+                    .filter(|at| !self.recipients.missing_from(*at).is_empty())
+                    .collect();
+                match bad.first() {
+                    None => {
+                        crate::messages::t("Every one of them has a name and an address").to_owned()
+                    }
+                    Some(first) => {
+                        current = *first;
+                        let missing = self.recipients.missing_from(*first).join(" and ");
+                        crate::messages::with(
+                            "{0} of them are short of something: this one has no {1}",
+                            &[&bad.len().to_string(), &missing],
+                        )
+                    }
+                }
+            }
+            _ => return Response::Ignored,
+        };
+
+        self.status = said;
+        self.recipient_dialog(current)
+    }
+
+    /// Reads the ticks out of the dialog and into the list of who is left
+    /// out.
+    fn take_recipient_ticks(&mut self, dialog: &Dialog) {
+        let rows = dialog.tree_rows(RECIPIENT_ROWS);
+        if rows.len() != self.recipients.len() {
+            return;
+        }
+        self.left_out.clear();
+        for (at, row) in rows.iter().enumerate() {
+            if row.tick == Some(false) {
+                self.left_out.insert(at);
+            }
+        }
     }
 
     /// Takes the ticks back off the dialog.
@@ -630,6 +932,17 @@ impl Editor {
 
 /// Where the list of people sits in that dialog.
 const RECIPIENT_ROWS: usize = 1;
+/// And the rest of Word's dialog: which column to work on, which way round,
+/// and what to look for.
+const RECIPIENT_COLUMN: usize = 3;
+const RECIPIENT_ORDER: usize = 4;
+const RECIPIENT_WANTED: usize = 5;
+
+/// The buttons under the list, which are Word's four.
+pub(super) const SORT: &str = "Sort";
+pub(super) const FILTER: &str = "Filter";
+pub(super) const DUPLICATES: &str = "Find Duplicates";
+pub(super) const VALIDATE: &str = "Validate";
 
 #[cfg(test)]
 mod tests {
@@ -756,5 +1069,164 @@ mod tests {
         editor.merge_to_a_document();
         assert_eq!(editor.document.plain_text(), before, "the letter was thrown away");
         assert!(editor.status.contains("left out"), "{}", editor.status);
+    }
+    /// An editor with four people on its list, two of them the same.
+    fn with_recipients() -> Editor {
+        let mut editor = editor();
+        editor.recipients = Recipients::parse(
+            b"Last Name,City\nOgg,Lancre\nNitt,Ankh-Morpork\nogg,lancre\n,Genua\n",
+        );
+        editor
+    }
+
+    /// Opens the dialog and hands back what it holds.
+    fn recipients_dialog(editor: &mut Editor) -> Dialog {
+        editor.open_recipient_list();
+        editor.dialog.clone().expect("the dialog")
+    }
+
+    #[test]
+    fn the_dialog_offers_word_s_four_buttons_and_the_columns_to_use_them_on() {
+        let mut editor = with_recipients();
+        let dialog = recipients_dialog(&mut editor);
+
+        for label in [SORT, FILTER, DUPLICATES, VALIDATE] {
+            assert!(
+                dialog.buttons.iter().any(|button| button.label == label),
+                "no {label} button: {:?}",
+                dialog.buttons.iter().map(|button| button.label.clone()).collect::<Vec<_>>()
+            );
+        }
+        // Every column, and the one that means all of them.
+        let Some(Field::Choice { items, .. }) = dialog.fields.get(RECIPIENT_COLUMN) else {
+            panic!("no column to choose")
+        };
+        assert_eq!(items.len(), 3, "{items:?}");
+    }
+
+    #[test]
+    fn sorting_reorders_the_list_and_carries_the_ticks_with_it() {
+        let mut editor = with_recipients();
+        let mut dialog = recipients_dialog(&mut editor);
+        // Ogg, who is first, is left out; after sorting by city Ogg is last.
+        if let Some(Field::Tree { rows, .. }) = dialog.fields.get_mut(RECIPIENT_ROWS) {
+            rows[0].tick = Some(false);
+        }
+        if let Some(Field::Choice { current, .. }) = dialog.fields.get_mut(RECIPIENT_COLUMN) {
+            *current = 2;
+        }
+        editor.recipient_button(&dialog, SORT);
+
+        let order: Vec<String> = (0..editor.recipients.len())
+            .map(|at| editor.recipients.value(at, "City").unwrap_or_default())
+            .collect();
+        assert_eq!(order, vec!["Ankh-Morpork", "Genua", "Lancre", "lancre"], "{order:?}");
+        // Whoever was left out is still the same person, not the same row.
+        let left_out: Vec<String> = (0..editor.recipients.len())
+            .filter(|at| !editor.is_included(*at))
+            .map(|at| editor.recipients.value(at, "Last Name").unwrap_or_default())
+            .collect();
+        assert_eq!(left_out, vec!["Ogg".to_owned()], "the tick did not travel with the row");
+    }
+
+    #[test]
+    fn filtering_leaves_out_everybody_the_words_do_not_fit() {
+        let mut editor = with_recipients();
+        let mut dialog = recipients_dialog(&mut editor);
+        if let Some(Field::Text { value, .. }) = dialog.fields.get_mut(RECIPIENT_WANTED) {
+            *value = "lancre".to_owned();
+        }
+        editor.recipient_button(&dialog, FILTER);
+
+        assert!(editor.is_included(0), "Ogg of Lancre was left out");
+        assert!(!editor.is_included(1), "Nitt of Ankh-Morpork was left in");
+        assert!(editor.is_included(2), "the other Ogg of lancre was left out over its case");
+        assert!(editor.status.contains("left in"), "{}", editor.status);
+    }
+
+    #[test]
+    fn finding_duplicates_leaves_the_copies_out_and_the_first_in() {
+        let mut editor = with_recipients();
+        let dialog = recipients_dialog(&mut editor);
+        editor.recipient_button(&dialog, DUPLICATES);
+
+        assert!(editor.is_included(0), "the original was left out");
+        assert!(!editor.is_included(2), "the copy was left in");
+        assert!(editor.status.contains("copies"), "{}", editor.status);
+    }
+
+    #[test]
+    fn validating_says_which_of_them_is_short_of_something() {
+        let mut short = with_recipients();
+        let dialog = recipients_dialog(&mut short);
+        short.recipient_button(&dialog, VALIDATE);
+        assert!(short.status.contains("no a name"), "{}", short.status);
+
+        // A list where everybody has both says so.
+        let mut whole = editor();
+        whole.recipients = Recipients::parse(b"Last Name,City\nOgg,Lancre\n");
+        let dialog = recipients_dialog(&mut whole);
+        whole.recipient_button(&dialog, VALIDATE);
+        assert!(whole.status.contains("has a name and an address"), "{}", whole.status);
+    }
+
+    #[test]
+    fn a_sort_with_no_column_chosen_says_what_it_wants() {
+        let mut editor = with_recipients();
+        let dialog = recipients_dialog(&mut editor);
+        editor.recipient_button(&dialog, SORT);
+        assert!(editor.status.contains("column"), "{}", editor.status);
+    }
+
+    #[test]
+    fn a_list_typed_from_nothing_gathers_people_one_at_a_time() {
+        let mut editor = editor();
+        editor.type_a_new_list();
+        let mut dialog = editor.dialog.clone().expect("the dialog");
+        assert_eq!(dialog.title, "New Address List");
+
+        // The first person: a surname and a city, and the rest left empty.
+        if let Some(Field::Text { value, .. }) = dialog.fields.get_mut(FIRST_BOX + 2) {
+            *value = "Ogg".to_owned();
+        }
+        if let Some(Field::Text { value, .. }) = dialog.fields.get_mut(FIRST_BOX + 5) {
+            *value = "Lancre".to_owned();
+        }
+        editor.add_typed_recipient(&dialog);
+
+        assert_eq!(editor.typed_recipients.len(), 1);
+        assert_eq!(editor.typed_recipients.value(0, "Last Name").as_deref(), Some("Ogg"));
+        assert_eq!(editor.typed_recipients.value(0, "City").as_deref(), Some("Lancre"));
+        // And the dialog is up again with the boxes empty and the list above.
+        let dialog = editor.dialog.as_ref().expect("asked again");
+        assert!(dialog.said(FIRST_BOX + 2).is_empty(), "the boxes kept what was typed");
+        assert_eq!(dialog.tree_rows(1).len(), 1, "the list does not show who is on it");
+    }
+
+    #[test]
+    fn adding_nobody_says_so() {
+        let mut editor = editor();
+        editor.type_a_new_list();
+        let dialog = editor.dialog.clone().expect("the dialog");
+        editor.add_typed_recipient(&dialog);
+        assert!(editor.typed_recipients.is_empty());
+        assert!(editor.status.contains("Type somebody"), "{}", editor.status);
+    }
+
+    #[test]
+    fn typing_a_list_and_opening_one_are_the_two_ways_to_get_recipients() {
+        // Word's menu has three; the third reads another program's address
+        // book, which **J5** names as not read. What is here is that the two
+        // this program has are reachable and do different things.
+        let mut typing = editor();
+        typing.choose_recipient_source(0);
+        assert_eq!(
+            typing.dialog.as_ref().map(|dialog| dialog.title.clone()),
+            Some("New Address List".to_owned()),
+            "Type a New List opened nothing"
+        );
+
+        let mut other = editor();
+        assert_eq!(other.choose_recipient_source(9), wp_shell::Response::Ignored);
     }
 }

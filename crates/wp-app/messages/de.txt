@@ -38,6 +38,9 @@ language = Deutsch
 = A rule under every heading
 > Eine Linie unter jeder Überschrift
 
+= A to Z
+> A bis Z
+
 = AaBbCcDdEe
 > AaBbCcDdEe
 
@@ -46,6 +49,9 @@ language = Deutsch
 
 = A password that is lost cannot be recovered.
 > Ein verlorenes Kennwort kann nicht wiederhergestellt werden.
+
+= Address Line 1
+> Adresszeile 1
 
 = Allow AutoFormat to override formatting restrictions
 > AutoFormat darf Formatierungseinschränkungen überschreiben
@@ -353,14 +359,29 @@ language = Deutsch
 = Checked styles are currently allowed
 > Aktivierte Formatvorlagen sind zurzeit zulässig
 
+= Choose a column to sort by
+> Eine Spalte zum Sortieren wählen
+
 = Choose one to put it in, or to take it away.
 > Wählen Sie einen aus, um ihn einzufügen oder zu entfernen.
 
 = Chart
 > Diagramm
 
+= City
+> Ort
+
+= Column
+> Spalte
+
+= Comma-separated files
+> Kommagetrennte Dateien
+
 = Compact
 > Kompakt
+
+= Company
+> Firma
 
 = Compare Documents
 > Dokumente vergleichen
@@ -373,6 +394,9 @@ language = Deutsch
 
 = Contents cannot be edited
 > Inhalt kann nicht bearbeitet werden
+
+= Country
+> Land
 
 = Create New Building Block
 > Neuen Baustein erstellen
@@ -635,6 +659,9 @@ language = Deutsch
 = Effects
 > Effekte
 
+= Email
+> E-Mail
+
 = Encrypt Document
 > Dokument verschlüsseln
 
@@ -655,6 +682,12 @@ language = Deutsch
 
 = Eraser
 > Radierer
+
+= Every column
+> Jede Spalte
+
+= Every one of them has a name and an address
+> Alle haben einen Namen und eine Adresse
 
 = Everyone May Edit
 > Jeder darf bearbeiten
@@ -677,6 +710,12 @@ language = Deutsch
 = File types
 > Dateitypen
 
+= Filter
+> Filtern
+
+= Find Duplicates
+> Duplikate suchen
+
 = Finish & Merge
 > Fertig stellen und zusammenführen
 
@@ -691,6 +730,9 @@ language = Deutsch
 
 = First Letter
 > Erster Buchstabe
+
+= First Name
+> Vorname
 
 = Folder
 > Ordner
@@ -815,6 +857,9 @@ language = Deutsch
 = Highlight
 > Texthervorhebungsfarbe
 
+= Holding
+> Enthält
+
 = Home
 > Start
 
@@ -913,6 +958,9 @@ language = Deutsch
 
 = Last Column
 > Letzte Spalte
+
+= Last Name
+> Nachname
 
 = Layout
 > Layout
@@ -1058,6 +1106,9 @@ language = Deutsch
 = New
 > Neu
 
+= New Address List
+> Neue Adressliste
+
 = New documents based on this template
 > Neue Dokumente auf Basis dieser Vorlage
 
@@ -1076,6 +1127,12 @@ language = Deutsch
 = Next Footnote
 > Nächste Fußnote
 
+= No two of them say the same thing
+> Keine zwei sagen dasselbe
+
+= Nobody was typed, so no list was made
+> Niemand wurde eingegeben, also wurde keine Liste erstellt
+
 = None
 > Ohne
 
@@ -1093,6 +1150,9 @@ language = Deutsch
 
 = On
 > Ein
+
+= On the list
+> Auf der Liste
 
 = One Page
 > Eine Seite
@@ -1274,6 +1334,9 @@ language = Deutsch
 = Position
 > Position
 
+= Postcode
+> Postleitzahl
+
 = Preview
 > Vorschau
 
@@ -1448,6 +1511,9 @@ language = Deutsch
 = Save
 > Speichern
 
+= Save Address List
+> Adressliste speichern
+
 = Save As
 > Speichern unter
 
@@ -1582,6 +1648,12 @@ language = Deutsch
 
 = Sort
 > Sortieren
+
+= Sort, filter and check
+> Sortieren, filtern und prüfen
+
+= Sorted by {0}
+> Sortiert nach {0}
 
 = Space after
 > Abstand nach
@@ -1742,6 +1814,9 @@ language = Deutsch
 = The headings a new document starts with
 > Die Überschriften, mit denen ein neues Dokument beginnt
 
+= The list was not saved, so nothing is merged
+> Die Liste wurde nicht gespeichert, also wird nichts zusammengeführt
+
 = The same headings, closer together
 > Dieselben Überschriften, enger gesetzt
 
@@ -1817,6 +1892,9 @@ language = Deutsch
 = This machine's list of trusted issuers could not be read
 > Die Liste der vertrauenswürdigen Aussteller dieses Computers konnte nicht gelesen werden
 
+= This person
+> Diese Person
+
 = This program can open Word documents.
 > Dieses Programm kann Word-Dokumente öffnen.
 
@@ -1862,8 +1940,20 @@ language = Deutsch
 = Type
 > Typ
 
+= Type a New List...
+> Neue Liste eingeben...
+
+= Type one person, press Add, and type the next.
+> Eine Person eingeben, Hinzufügen drücken und die nächste eingeben.
+
+= Type somebody first
+> Zuerst jemanden eingeben
+
 = Type the new name first
 > Zuerst den neuen Namen eingeben
+
+= Type what a row has to hold
+> Eingeben, was eine Zeile enthalten muss
 
 = Unprotect Document
 > Dokumentschutz aufheben
@@ -1883,8 +1973,14 @@ language = Deutsch
 = Use a dark window
 > Dunkles Fenster verwenden
 
+= Use an Existing List...
+> Vorhandene Liste verwenden...
+
 = Use contextual alternates
 > Kontextbezogene Alternativen verwenden
+
+= Validate
+> Prüfen
 
 = Video
 > Video
@@ -1997,6 +2093,9 @@ language = Deutsch
 = Write & Insert Fields
 > Felder schreiben und einfügen
 
+= Z to A
+> Z bis A
+
 = Zoom
 > Zoom
 
@@ -2027,11 +2126,26 @@ language = Deutsch
 = {0} is reserved.
 > {0} ist reserviert.
 
+= {0} left in, {1} left out
+> {0} übernommen, {1} ausgelassen
+
+= {0} left out as copies of somebody already on the list
+> {0} als Kopien bereits vorhandener Personen ausgelassen
+
+= {0} of them are short of something: this one has no {1}
+> Bei {0} fehlt etwas: dieser Person fehlt {1}
+
 = {0} of {1}
 > {0} von {1}
 
+= {0} on the list
+> {0} auf der Liste
+
 = {0} point
 > {0} Punkt
+
+= {0} recipients typed
+> {0} Empfänger eingegeben
 
 = {0} recovered
 > {0} wiederhergestellt

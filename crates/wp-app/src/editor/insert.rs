@@ -2110,6 +2110,22 @@ Katherine Johnson,Hampton,katherine@example.com
             "generaloptions" => {
                 self.open_read_only_settings();
             }
+            // Word's Mail Merge Recipients, with the four buttons under it.
+            "recipientlist" => {
+                self.recipients = wp_docx::merge::Recipients::parse(
+                    b"Last Name,City
+Ogg,Lancre
+Nitt,Ankh-Morpork
+ogg,lancre
+,Genua
+",
+                );
+                self.open_recipient_list();
+            }
+            // And Type a New List, which makes one without a file.
+            "newlist" => {
+                self.type_a_new_list();
+            }
             "exception" => {
                 self.document.set_caret(wp_docx::TextPosition::new(4, 0));
                 let end = self.document.paragraph_text(4).unwrap_or_default().len();

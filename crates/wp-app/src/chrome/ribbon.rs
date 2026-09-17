@@ -262,6 +262,7 @@ static MENUS: &[Menu] = &[
     Menu { command: Command::QuickParts, choice: Choice::QuickPart, split: false },
     Menu { command: Command::LegacyFields, choice: Choice::LegacyField, split: false },
     Menu { command: Command::StyleSet, choice: Choice::StyleSet, split: false },
+    Menu { command: Command::SelectRecipients, choice: Choice::RecipientSource, split: false },
     Menu { command: Command::Compare, choice: Choice::Comparing, split: false },
     Menu { command: Command::FinishMerge, choice: Choice::Finishing, split: false },
     Menu { command: Command::AlignmentTab, choice: Choice::AlignmentTab, split: false },
@@ -1198,6 +1199,7 @@ impl Ribbon {
                     | Choice::QuickPart
                     | Choice::LegacyField
                     | Choice::StyleSet
+                    | Choice::RecipientSource
                     | Choice::FillIn
                     | Choice::WordArt
                     | Choice::Drawing

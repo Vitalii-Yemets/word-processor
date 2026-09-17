@@ -467,6 +467,10 @@ pub struct Editor {
     /// Whether the document open now carries macros written in Visual Basic,
     /// which this program keeps and does not run.
     carries_macros: bool,
+    /// A list of people being typed from nothing, which is Word's Type a New
+    /// List: it is not the merge's list until it has been saved. See
+    /// [`mailings`].
+    typed_recipients: wp_docx::merge::Recipients,
     /// The people the merge is not for: Word's Edit Recipient List with the
     /// tick taken off a row. Kept by number, because the list itself is read
     /// afresh from its file each time.
@@ -702,6 +706,7 @@ impl Editor {
             pending_targets: Vec::new(),
             pending_issue: None,
             recipients: wp_docx::merge::Recipients::default(),
+            typed_recipients: wp_docx::merge::Recipients::default(),
             recipient_file: None,
             preview_record: None,
             word_art_style: 0,

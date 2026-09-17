@@ -307,7 +307,7 @@ impl Editor {
 
             // --- Mailings -----------------------------------------------------
             Command::StartMailMerge => self.open_merge_kind(),
-            Command::SelectRecipients => self.select_recipients(),
+            Command::SelectRecipients => self.open_recipient_source(),
             Command::EditRecipientList => self.open_recipient_list(),
             Command::InsertMergeField => self.open_merge_fields(),
             Command::AddressBlock => self.insert_address_block(),

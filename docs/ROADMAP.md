@@ -5310,10 +5310,61 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   program has. Its General Options carries two more boxes — Remove personal
   information on save, and the macro security button — of which the first is
   on the File page here and the second belongs to **L6**.
-- [ ] **J18. The rest of the Mail Merge Recipients dialog.** Sorting,
-  filtering, finding duplicates, finding a recipient and validating
-  addresses; and Word's Type a New List, which makes a list of recipients
-  without a file to start from. Named in **J5**.
+- [x] **J18. The rest of the Mail Merge Recipients dialog.** Sorting,
+  filtering, finding duplicates, finding a recipient and checking addresses;
+  and Word's Type a New List.
+  *Done:* the four buttons under the list, and the list that can be made
+  without a file.
+  **Sorting** puts the rows in order on any column, either way round, and
+  takes the ticks with them — a list somebody had unticked three people in
+  and then sorted would otherwise quietly send three letters to the wrong
+  people. A column of numbers sorts as numbers, which is the whole difficulty
+  of sorting a list: as words, 10 comes before 9.
+  **Filtering** leaves out everybody the words do not fit, in one column or
+  in all of them, minding neither case nor where in the value the words fall
+  — which is what somebody typing "lancre" into a box means. It works by
+  ticking rather than by hiding, because the tick is what decides who gets a
+  letter and a person should be able to see who was dropped.
+  **Finding duplicates** leaves out the copies and keeps the first of each,
+  which is what a person wants from it; two rows count as the same when every
+  column says the same thing without regard to case or to the spaces round
+  it, because that is how two lists merged by hand differ and mean the same
+  person.
+  **Checking addresses.** Word calls an add-in and says so plainly when there
+  is none. What can be done here without one is the half that is arithmetic:
+  a letter needs somebody to send it to and somewhere to send it, so a row
+  with no name or nothing that can be addressed is named as such, and the
+  dialog goes to the first one. Whether a street exists is not a question a
+  program with no map can answer, and this does not pretend to.
+  **Type a New List**, under a Select Recipients menu that now offers both
+  ways of getting one. A person is typed into Word's own nine boxes, Add puts
+  them on the list, and the list is saved as the delimited file this program
+  already reads — Word writes a database of its own, which is a second format
+  for the same nine columns.
+  *Proven by:* eleven tests over the list — a column of words and a column of
+  numbers each sorted as what they are, a filter minding neither case nor
+  position, the copies found and the originals not, a row short of a name and
+  one short of an address named, an email counting as somewhere to send it, a
+  reorder, somebody typed from nothing bringing their own columns, and a list
+  written out reading back as itself with its commas and quotation marks
+  intact. Nine over the program: the dialog offering Word's four buttons and
+  every column, sorting carrying the ticks with the rows, filtering leaving
+  out what does not fit, duplicates left out and the original kept, the check
+  naming what is missing and saying so when nothing is, a sort with no column
+  saying what it wants, a list typed one person at a time with the boxes
+  cleared between, adding nobody saying so, and both ways of getting a list
+  reachable. Both dialogs photographed.
+  Along the way a row shorter than the list's columns read as *no such
+  column* rather than as an empty one, which is what it is: a list somebody
+  added a column to has rows that stop short.
+  *Not done, and named here:* Word's dialog is a table with a column of ticks
+  and a heading over each column that drops its own filter; this is a list of
+  people with the buttons under it. Its filter compares one value with one
+  operator — equals, is blank, is greater than — where this asks whether the
+  value holds the words. Its Find Recipient is a box that walks the list; the
+  filter does that job here. And **J5** names the three other places Word
+  gets a list from, of which Outlook's address book is the one this menu
+  leaves out.
 - [ ] **J19. The rest of the Building Blocks Organizer.** The columns it
   sorts by, and editing a block's name, gallery, category or description
   after it is saved. With it, Word's AutoText gallery, which is the same

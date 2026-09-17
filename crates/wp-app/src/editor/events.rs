@@ -1495,6 +1495,7 @@ impl Editor {
             Choice::Finishing => Command::FinishMerge,
             Choice::LegacyField => Command::LegacyFields,
             Choice::StyleSet => Command::StyleSet,
+            Choice::RecipientSource => Command::SelectRecipients,
             // Hangs where the caret is rather than under a button.
             Choice::FillIn => Command::LegacyFields,
             // The strip's own menu hangs where it was opened, not under a
@@ -1556,6 +1557,7 @@ impl Editor {
             | Choice::Finishing
             | Choice::LegacyField
             | Choice::StyleSet
+            | Choice::RecipientSource
             | Choice::FillIn
             | Choice::StatusBar
             | Choice::PageNumbering
@@ -1731,6 +1733,7 @@ impl Editor {
             Choice::Finishing => self.choose_finishing(index),
             Choice::LegacyField => self.choose_legacy_field(index),
             Choice::StyleSet => self.choose_style_set(index),
+            Choice::RecipientSource => self.choose_recipient_source(index),
             Choice::FillIn => self.choose_fill_in(index),
             Choice::StatusBar => self.choose_status_part(index),
             Choice::PageNumbering => self.choose_page_numbering(index),

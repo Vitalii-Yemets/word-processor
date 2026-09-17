@@ -54,10 +54,199 @@ impl Recipients {
     }
 
     /// The value of one column for one person.
+    ///
+    /// A row with fewer values than there are columns reads as empty for the
+    /// rest, which is the rule [`Recipients::record`] follows and has to be
+    /// the same rule here: a list somebody added a column to has rows that
+    /// stop short, and they are gaps rather than rows without the column.
     #[must_use]
     pub fn value(&self, index: usize, column: &str) -> Option<String> {
         let at = self.headers.iter().position(|header| header.eq_ignore_ascii_case(column))?;
-        self.rows.get(index)?.get(at).cloned()
+        let row = self.rows.get(index)?;
+        Some(row.get(at).cloned().unwrap_or_default())
+    }
+
+    /// The order the rows fall into when one column is sorted on.
+    ///
+    /// Given as the row numbers rather than as the rows themselves, so that
+    /// whoever asked can decide whether to reorder the list or merely look at
+    /// it in that order.
+    ///
+    /// Numbers sort as numbers where a whole column is numbers, and as words
+    /// otherwise: a list of postcodes is words and a list of order numbers is
+    /// not, and sorting the second as the first puts 10 before 9.
+    #[must_use]
+    pub fn sorted_by(&self, column: &str, ascending: bool) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..self.len()).collect();
+        let numeric = (0..self.len()).all(|at| {
+            self.value(at, column)
+                .is_some_and(|value| value.trim().is_empty() || value.trim().parse::<f64>().is_ok())
+        });
+
+        order.sort_by(|left, right| {
+            let (a, b) = (self.sorting_key(*left, column), self.sorting_key(*right, column));
+            let ordering = if numeric {
+                let (a, b) = (
+                    a.trim().parse::<f64>().unwrap_or(0.0),
+                    b.trim().parse::<f64>().unwrap_or(0.0),
+                );
+                a.partial_cmp(&b).unwrap_or(core::cmp::Ordering::Equal)
+            } else {
+                a.to_lowercase().cmp(&b.to_lowercase())
+            };
+            if ascending {
+                ordering
+            } else {
+                ordering.reverse()
+            }
+        });
+        order
+    }
+
+    /// What one row sorts by in one column.
+    fn sorting_key(&self, index: usize, column: &str) -> String {
+        self.value(index, column).unwrap_or_default()
+    }
+
+    /// The rows one column of which holds the words given.
+    ///
+    /// Compared without regard to case and by containing rather than by
+    /// equalling, which is what somebody typing "london" into a filter box
+    /// means. An empty column name looks in every column.
+    #[must_use]
+    pub fn matching(&self, column: &str, wanted: &str) -> Vec<usize> {
+        let wanted = wanted.trim().to_lowercase();
+        if wanted.is_empty() {
+            return (0..self.len()).collect();
+        }
+        (0..self.len())
+            .filter(|at| {
+                if column.trim().is_empty() {
+                    self.record(*at).iter().any(|(_, value)| value.to_lowercase().contains(&wanted))
+                } else {
+                    self.value(*at, column)
+                        .is_some_and(|value| value.to_lowercase().contains(&wanted))
+                }
+            })
+            .collect()
+    }
+
+    /// The rows that say the same thing as an earlier row.
+    ///
+    /// The first of each group is not in the answer: what a person wants from
+    /// Find Duplicates is the copies, not the originals. Compared on every
+    /// column, without regard to case or to the spaces round a value, because
+    /// two lists merged by hand differ that way and mean the same person.
+    #[must_use]
+    pub fn duplicates(&self) -> Vec<usize> {
+        let mut seen: Vec<String> = Vec::new();
+        let mut out = Vec::new();
+        for at in 0..self.len() {
+            let key: String = self
+                .record(at)
+                .iter()
+                .map(|(_, value)| value.trim().to_lowercase())
+                .collect::<Vec<String>>()
+                .join("\u{1}");
+            if seen.contains(&key) {
+                out.push(at);
+            } else {
+                seen.push(key);
+            }
+        }
+        out
+    }
+
+    /// What is missing from a row for it to be an address.
+    ///
+    /// Word calls out to an add-in for this and says so plainly when there is
+    /// none. What can be done here without one is the half that is arithmetic:
+    /// a letter needs somebody to send it to and somewhere to send it, so a
+    /// row with no name or no address is named as such. Whether the street
+    /// exists is not a question a program with no map can answer, and this
+    /// does not pretend to.
+    #[must_use]
+    pub fn missing_from(&self, index: usize) -> Vec<String> {
+        /// What each part of an address may be called, in the order the
+        /// answer names them.
+        const WANTED: &[(&str, &[&str])] = &[
+            ("a name", &["Last Name", "Surname", "Name", "First Name", "Company"]),
+            (
+                "an address",
+                &[
+                    "Address Line 1",
+                    "Address",
+                    "Street",
+                    "City",
+                    "Town",
+                    "Postcode",
+                    "Postal Code",
+                    "ZIP",
+                    "Email",
+                    "Email Address",
+                ],
+            ),
+        ];
+
+        let record = self.record(index);
+        let mut out = Vec::new();
+        for (what, columns) in WANTED {
+            let found = record.iter().any(|(header, value)| {
+                !value.trim().is_empty()
+                    && columns.iter().any(|name| header.eq_ignore_ascii_case(name))
+            });
+            if !found {
+                out.push((*what).to_owned());
+            }
+        }
+        out
+    }
+
+    /// Puts the rows in the order given, dropping any the order leaves out.
+    pub fn reorder(&mut self, order: &[usize]) {
+        let rows: Vec<Vec<String>> =
+            order.iter().filter_map(|at| self.rows.get(*at).cloned()).collect();
+        self.rows = rows;
+    }
+
+    /// Adds one person, by column name.
+    ///
+    /// A column the list has not got is added to it, because a list typed
+    /// from nothing has whatever columns the first person needed.
+    pub fn add(&mut self, values: &[(String, String)]) {
+        for (header, _) in values {
+            if !self.headers.iter().any(|found| found.eq_ignore_ascii_case(header)) {
+                self.headers.push(header.clone());
+            }
+        }
+        let row = self
+            .headers
+            .iter()
+            .map(|header| {
+                values
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case(header))
+                    .map(|(_, value)| value.clone())
+                    .unwrap_or_default()
+            })
+            .collect();
+        self.rows.push(row);
+    }
+
+    /// The whole list as the delimited file this program reads.
+    ///
+    /// Written so that a list typed from nothing is a file like any other:
+    /// it can be opened again, edited elsewhere, and used by a program that
+    /// never heard of this one.
+    #[must_use]
+    pub fn to_delimited(&self) -> String {
+        let mut out = String::new();
+        for row in core::iter::once(&self.headers).chain(self.rows.iter()) {
+            let line: Vec<String> = row.iter().map(|value| quoted(value)).collect();
+            out.push_str(&line.join(","));
+            out.push('\n');
+        }
+        out
     }
 
     /// Reads a list out of the bytes of a comma-separated file.
@@ -80,6 +269,17 @@ impl Recipients {
         rows.retain(|row| row.iter().any(|value| !value.trim().is_empty()));
         Self { headers, rows }
     }
+}
+
+/// One value as a delimited file writes it: in quotation marks where it holds
+/// a comma, a quotation mark or a line break, and with its own quotation marks
+/// doubled, which is the one convention every program that reads these agrees
+/// on.
+fn quoted(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        return format!("\"{}\"", value.replace('"', "\"\""));
+    }
+    value.to_owned()
 }
 
 /// Splits a comma-separated file into rows of values.

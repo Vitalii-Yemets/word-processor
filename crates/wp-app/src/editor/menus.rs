@@ -324,6 +324,19 @@ impl Editor {
                 let rows = items.iter().map(|_| Row::new(Kind::Choice, icon)).collect();
                 (items, rows, None, WIDTH)
             }
+            Choice::RecipientSource => {
+                // Word's three, less the one that reads another program's
+                // address book: **J5** names Outlook as not read.
+                let items = vec![
+                    crate::messages::t("Type a New List...").to_owned(),
+                    crate::messages::t("Use an Existing List...").to_owned(),
+                ];
+                let rows = vec![
+                    Row::new(Kind::Choice, Icon::EditRecipients),
+                    Row::new(Kind::Choice, Icon::Recipients),
+                ];
+                (items, rows, None, 280.0)
+            }
             Choice::StyleSet => {
                 // The name with what it does under it, because "Lines" and
                 // "Shaded" say nothing until somebody has tried them.

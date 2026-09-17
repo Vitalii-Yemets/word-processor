@@ -16,6 +16,7 @@
 = A new document
 = A password that is lost cannot be recovered.
 = A password to modify does not encrypt the file.
+= A to Z
 = AaBbCcDdEe
 = Above
 = Accept
@@ -137,9 +138,11 @@
 = Code
 = Color
 = Colors
+= Column
 = Columns
 = Combine Revisions from Two Authors
 = Combo Box
+= Comma-separated files
 = Comma-separated values
 = Comment
 = Comments
@@ -218,6 +221,8 @@
 = Envelopes
 = Equation
 = Eraser
+= Every column
+= Every one of them has a name and an address
 = Everyone May Edit
 = Exceptions...
 = Export
@@ -225,7 +230,9 @@
 = File
 = File sharing
 = File types
+= Filter
 = Find
+= Find Duplicates
 = Finish
 = Finish & Merge
 = First Column
@@ -269,6 +276,7 @@
 = Hide White Space
 = Hide spelling errors in this document only
 = Highlight
+= Holding
 = Home
 = Hyphenation
 = Hyphens (--) with dash (—)
@@ -349,18 +357,21 @@
 = Navigation Pane
 = Navigation pane
 = New
+= New Address List
 = New Window
 = New document from {0}
 = New documents based on this template
 = New name
 = Next
 = Next Footnote
+= No two of them say the same thing
 = None
 = Normal
 = Number format
 = OK
 = Office display language
 = On
+= On the list
 = One File for Each Letter
 = One Page
 = One or more margins are outside the printable area.
@@ -477,6 +488,7 @@
 = Rulers
 = Rules
 = Save
+= Save Address List
 = Save As
 = Save AutoRecover information
 = Save Selection to Quick Part Gallery
@@ -521,6 +533,8 @@
 = Small caps
 = SmartArt
 = Sort
+= Sort, filter and check
+= Sorted by {0}
 = Space after
 = Space between cells
 = Spacing
@@ -591,6 +605,7 @@
 = This document was opened read-only: save a copy
 = This document, before
 = This machine's list of trusted issuers could not be read
+= This person
 = This program can open Word documents.
 = This stretch is locked
 = This stretch may only be edited by {0}
@@ -606,6 +621,8 @@
 = Translate to
 = Translator Preferences
 = Type
+= Type a New List...
+= Type one person, press Add, and type the next.
 = Type the new name first
 = Underline
 = Undo
@@ -613,7 +630,9 @@
 = Update Index
 = Update Table
 = Use a dark window
+= Use an Existing List...
 = Use contextual alternates
+= Validate
 = Video
 = View
 = View Gridlines
@@ -650,6 +669,7 @@
 = WordArt
 = Wrap Text
 = Write & Insert Fields
+= Z to A
 = Zoom
 = unsaved changes
 = {0} characters
@@ -662,8 +682,13 @@
 = {0} is encrypted.
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 = {0} is reserved.
+= {0} left in, {1} left out
+= {0} left out as copies of somebody already on the list
+= {0} of them are short of something: this one has no {1}
 = {0} of {1}
+= {0} on the list
 = {0} point
+= {0} recipients typed
 = {0} recovered
 = {0} renamed
 = {0} selected

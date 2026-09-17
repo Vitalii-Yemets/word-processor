@@ -168,6 +168,8 @@ pub enum Choice {
     LegacyField,
     /// Which set of styles the whole document is formatted with.
     StyleSet,
+    /// Where the people a merge is for come from.
+    RecipientSource,
     /// Which of a control's entries is being filled in.
     FillIn,
     /// What the strip along the bottom shows.
