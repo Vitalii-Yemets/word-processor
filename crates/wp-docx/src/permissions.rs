@@ -135,6 +135,18 @@ impl Document {
         self.locked_regions().into_iter().find(|locked| locked.covers(position))
     }
 
+    /// Every stretch a position is in, innermost last.
+    ///
+    /// There can be more than one, because the format gives a marker a single
+    /// editor and Word writes a second pair round the same words when a
+    /// second person is let in. So "may this person edit here" is a question
+    /// about all of them and not about the first one found: one pair naming
+    /// somebody else does not shut a person out of a pair that names them.
+    #[must_use]
+    pub fn locked_all_at(&self, position: TextPosition) -> Vec<Locked> {
+        self.locked_regions().into_iter().filter(|locked| locked.covers(position)).collect()
+    }
+
     /// Locks the selection so that only `editor` may change it.
     ///
     /// Returns whether anything was locked. Nothing selected locks nothing:
@@ -182,10 +194,19 @@ impl Document {
     /// is.
     pub fn unblock_authors(&mut self) -> bool {
         let Some(locked) = self.locked_here() else { return false };
+        self.remove_locked(locked.id)
+    }
+
+    /// And takes off one particular pair, by the number they share.
+    ///
+    /// Wanted because several pairs can sit round the same words, one for each
+    /// person let in, and taking the person off a stretch means taking off
+    /// their pair rather than whichever pair happens to be found first.
+    pub fn remove_locked(&mut self, id: i32) -> bool {
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
 
-        let removed = remove_permission(&mut self.tree_mut().root, locked.id);
+        let removed = remove_permission(&mut self.tree_mut().root, id);
         if removed {
             self.mark_modified();
         }

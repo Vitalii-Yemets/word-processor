@@ -809,6 +809,9 @@ impl Editor {
 
         // The styles pane down the right, which is in front of the page and of
         // the bar beside it.
+        if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
+            return self.restrict_pane_press(x, y);
+        }
         if self.over_styles_pane(x) && (y as f32) > self.ribbon_bottom() {
             return self.styles_pane_press(x, y);
         }
@@ -1327,6 +1330,13 @@ impl Editor {
         }
 
         // And over the styles pane, only the styles pane.
+        if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
+            let changed = self.restrict_pane_hover(x, y);
+            if changed {
+                self.needs_redraw = true;
+            }
+            return Response::Redraw;
+        }
         if self.over_styles_pane(x) && (y as f32) > self.ribbon_bottom() {
             let changed = self.styles_pane_hover(x, y);
             self.needs_redraw |= changed;
@@ -1506,6 +1516,9 @@ impl Editor {
             Choice::PageNumberDesign => {
                 return self.open_page_number_designs(self.page_number_place)
             }
+            // The kinds of editing hang beside the Restrict Editing pane,
+            // which is not a button of the ribbon and places its own lists.
+            Choice::RestrictMode => return Response::Ignored,
             // Hangs where the caret is rather than under a button.
             Choice::FillIn => Command::LegacyFields,
             // The strip's own menu hangs where it was opened, not under a
@@ -1636,6 +1649,7 @@ impl Editor {
             | Choice::TextEffect
             | Choice::Envelope
             | Choice::PageNumberDesign
+            | Choice::RestrictMode
             | Choice::Label => (Vec::new(), None),
             Choice::Zoom => {
                 let index = chrome::ZOOMS.iter().position(|value| (value - self.zoom).abs() < 0.5);
@@ -1748,6 +1762,7 @@ impl Editor {
             Choice::RecipientSource => self.choose_recipient_source(index),
             Choice::AutoText => self.choose_auto_text(index),
             Choice::PageNumberDesign => self.choose_page_number_design(index),
+            Choice::RestrictMode => self.choose_restrict_mode(index),
             Choice::FillIn => self.choose_fill_in(index),
             Choice::StatusBar => self.choose_status_part(index),
             Choice::PageNumbering => self.choose_page_numbering(index),

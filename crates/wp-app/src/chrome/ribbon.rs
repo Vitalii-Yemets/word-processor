@@ -1179,6 +1179,7 @@ impl Ribbon {
                     | Choice::LetterCase
                     | Choice::PageNumberPlace
                     | Choice::PageNumberDesign
+                    | Choice::RestrictMode
                     | Choice::Selecting
                     | Choice::NoteJump
                     | Choice::Accepting

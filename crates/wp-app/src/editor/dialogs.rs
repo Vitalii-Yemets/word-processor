@@ -95,7 +95,9 @@ pub(super) enum Asking {
     Formula,
     /// What a reader of this document may do to it, and the password behind
     /// the answer.
-    Protect,
+    FormattingLimits,
+    Enforce,
+    MoreUsers,
     /// And the password back again, before the restriction is lifted.
     Unprotect,
     /// Who a mail merge is for.
@@ -196,7 +198,9 @@ impl Editor {
             Some(Asking::Layout) => self.apply_layout_dialog(&dialog),
             Some(Asking::Sort) => self.apply_sort(&dialog),
             Some(Asking::Formula) => self.apply_formula(&dialog),
-            Some(Asking::Protect) => self.apply_protection(&dialog),
+            Some(Asking::FormattingLimits) => self.apply_formatting_limits(&dialog),
+            Some(Asking::Enforce) => self.apply_enforcement(&dialog),
+            Some(Asking::MoreUsers) => self.apply_more_users(&dialog),
             Some(Asking::ControlProperties) => self.apply_control_properties(&dialog),
             Some(Asking::ManageStyles) => self.apply_manage_styles(&dialog),
             Some(Asking::Compare) => self.apply_comparison(&dialog),

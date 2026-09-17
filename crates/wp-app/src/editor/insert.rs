@@ -1969,51 +1969,38 @@ Katherine Johnson,Hampton,katherine@example.com
             "encrypt" => {
                 self.open_encryption();
             }
+            // Word's Restrict Editing pane, which stands beside the document
+            // rather than over it.
             "restrict" => {
                 self.open_protection();
             }
-            // The formatting half of the same dialog: the tick box, the
-            // styles it picks from, and the theme.
+            // The same pane once something is being enforced, which is a
+            // different pane: what this person may do, and where.
+            "restricting" => {
+                self.document.set_caret(wp_docx::TextPosition::new(0, 0));
+                self.document.move_caret(wp_docx::TextPosition::new(0, 9), true);
+                self.document.allow_everyone();
+                self.open_protection();
+                self.choose_restrict_mode(0);
+                self.start_enforcing();
+                self.finish_dialog(crate::chrome::dialog::Answer::Accept);
+                self.relayout();
+            }
+            // The formatting half, which Word keeps in a dialog of its own
+            // because it is a list of every style the document has.
             "limits" => {
                 self.open_protection();
-                if let Some(dialog) = self.dialog.as_mut() {
-                    if let Some(crate::chrome::dialog::Field::Check { on, .. }) =
-                        dialog.fields.get_mut(1)
-                    {
-                        *on = true;
-                    }
-                    if let Some(crate::chrome::dialog::Field::Tree { rows, .. }) =
-                        dialog.fields.get_mut(2)
-                    {
-                        for (at, row) in rows.iter_mut().enumerate() {
-                            row.tick = Some(at < 3);
-                        }
-                    }
-                }
+                self.open_formatting_limits();
+                self.limit_to_three_styles();
             }
             // And what a document under it looks like: the gallery with the
             // styles nobody allowed left out, and the refusal.
             "limited" => {
                 self.open_protection();
-                if let Some(dialog) = self.dialog.as_mut() {
-                    if let Some(crate::chrome::dialog::Field::Check { on, .. }) =
-                        dialog.fields.get_mut(1)
-                    {
-                        *on = true;
-                    }
-                    if let Some(crate::chrome::dialog::Field::Check { on, .. }) =
-                        dialog.fields.get_mut(5)
-                    {
-                        *on = false;
-                    }
-                    if let Some(crate::chrome::dialog::Field::Tree { rows, .. }) =
-                        dialog.fields.get_mut(2)
-                    {
-                        for (at, row) in rows.iter_mut().enumerate() {
-                            row.tick = Some(at < 3);
-                        }
-                    }
-                }
+                self.open_formatting_limits();
+                self.limit_to_three_styles();
+                self.finish_dialog(crate::chrome::dialog::Answer::Accept);
+                self.start_enforcing();
                 self.finish_dialog(crate::chrome::dialog::Answer::Accept);
                 self.run(crate::chrome::Command::Format(wp_docx::CharacterFormat::Bold));
             }
@@ -2165,7 +2152,10 @@ ogg,lancre
                 // The document already protected, so the strip along the
                 // bottom and the refusal can be seen rather than described.
                 self.open_protection();
+                self.choose_restrict_mode(0);
+                self.start_enforcing();
                 self.finish_dialog(crate::chrome::dialog::Answer::Accept);
+                self.open_protection();
                 self.run(crate::chrome::Command::Format(wp_docx::CharacterFormat::Bold));
             }
             "fontadvanced" => {

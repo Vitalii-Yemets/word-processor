@@ -5529,15 +5529,67 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   table — which is why `messages/de.txt` carried German for thirty-five
   messages `en.txt` does not list, and why the page-number designs had to be
   walked into it by hand: **J30**.
-- [ ] **J23. Word's Restrict Editing pane, and what stands in it.** The pane
-  itself, which in Word stays open beside the document where this program has
-  a dialog — **J16** named that difference and this is where it is closed.
-  In it: the brackets Word draws at the ends of a stretch with its own rule
-  about who may edit it, a colour for each editor rather than the one colour
-  **J11** shades them all in, the list of who those editors are, and the Find
-  Next Region I Can Edit and Show All Regions I Can Edit that walk them. The
-  list is what the rest waits on: there is nowhere to keep a list of people
-  and nothing to give a stretch to but the person at the keyboard.
+- [x] **J23. Word's Restrict Editing pane, and what stands in it.**
+  **A pane, because a dialog cannot be open while the selection is made.**
+  That is the whole of why Word puts this down the side of the window, and it
+  is what **J16** named: restricting a document is not one decision taken
+  once. A person ticks a box, selects a paragraph, says who may edit it,
+  selects another, looks at what they have done, and only then enforces any of
+  it. The pane is Word's four numbered sections before enforcement — what
+  formatting is allowed, what editing is allowed, who is let through anyway,
+  and the button that starts it — and a different pane after: Your
+  permissions, saying what this person may do and where. The two dialogs Word
+  keeps are kept: the list of every style the document has, which is three
+  hundred rows and would leave no window, and the box that takes a password.
+  **The list of people, which the rest waited on.** The answer turned out to
+  be that the document already knows. Every stretch with its own rule names
+  somebody in its own marker, so the names in a document are the people it has
+  been shared with; reading them back is how a document somebody else
+  restricted shows its editors here. To those go the person at the keyboard
+  and whoever has been typed into Word's More users…. There is no directory to
+  ask and there is not going to be one, which is exactly what Word's own Add
+  Users dialog assumes: it is a box that takes names separated by semicolons.
+  **Several people on the same words.** The format gives a marker a single
+  editor, so a stretch two people share is two pairs of markers round the same
+  words. The rule that decides whether somebody may type read the first pair
+  it found, which would have let one of them in and shut the other out; it
+  reads all of them now, and a person is admitted when any pair covering the
+  whole of what would change admits them. Unticking somebody takes off their
+  pair and leaves everybody else's.
+  **What the page shows.** Each stretch is washed over in the colour of
+  whoever may edit it — the same colour their tracked changes are drawn in,
+  because two places choosing a colour for one name would sooner or later
+  choose two — with a bracket at each end, which is what says where a stretch
+  begins and ends when two of them touch. The whole of it is behind Word's own
+  tick box, because shading is help while a person is looking for where they
+  may type and clutter once they have found it. Find Next Region I Can Edit
+  walks them and comes round again.
+  *Proven by:* twenty-one tests. The button opens a pane and not a dialog and
+  shuts it again; the list is the group, then the person at the keyboard, then
+  whoever the document names; a tick writes the markers round the selection
+  and a second tick takes them off; two people on the same words are two pairs
+  and both may edit; unticking takes off their pair and leaves somebody
+  else's; nothing selected says what it needs rather than marking nothing;
+  Find Next walks two stretches and comes round, says so when there is
+  nowhere to go, and does not count a stretch that names somebody else; Show
+  All turns the shading on and says how many; the tick box turns it off; More
+  users… keeps what was typed and the same name twice is one name; the pane
+  changes once something is being enforced; and a person's colour is the
+  colour their changes are drawn in. The pane's own typography is measured
+  rather than squinted at: a test draws it and checks the underline under a
+  link lands below the words and not through them, which is what told me the
+  strikethrough I thought I saw in a picture was a small font read at the
+  wrong size. Pictures of both faces of the pane, and of a marked stretch
+  washed and bracketed on the page.
+  *Not done, and named here:* Word's Show All Regions I Can Edit **selects**
+  every one of them at once. This program has one selection and no way to hold
+  several, so the button turns the shading on and goes to the first instead;
+  a selection of several stretches at once is **J31**, and it is wanted for
+  more than this. The pane does not scroll, so a document with twenty editors
+  runs off the bottom of it: **J32**. And Word's Formatting Restrictions
+  dialog has All, Recommended Minimum and None above its list of styles, which
+  is the difference between ticking three boxes and ticking three hundred:
+  **J33**.
 - [ ] **J24. Signing with a key the system holds.** Windows keeps a person's
   certificates and their private keys in a store of its own, and signs
   without ever handing the key to the program that asked:
@@ -5599,6 +5651,32 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   written there by hand as each was added. Done when every such table is
   walked, the two files hold the same messages, and a test says so — the
   point of the list being that nobody has to keep it by hand.
+- [ ] **J31. A selection of several stretches at once.** Word lets a person
+  hold more than one piece of a document selected — Ctrl and drag adds to the
+  selection rather than replacing it — and a good deal is built on that:
+  Show All Regions I Can Edit selects every stretch this person may edit,
+  Select All Text With Similar Formatting selects every run that matches, and
+  formatting applied to such a selection applies to all of it. This program
+  has one range and everything that wants several says so instead of doing it.
+  Done when a selection can be several ranges, the caret and the keyboard do
+  something sensible with one, formatting and typing treat it as Word does,
+  and the two commands above select rather than explain.
+- [ ] **J32. The panes that do not scroll.** The Restrict Editing pane draws
+  down the window and stops where the window does: a document with twenty
+  people on its exceptions list has the rest of them off the bottom, with no
+  way to reach them. The Styles pane scrolls and this does not, which is one
+  pane knowing something the other does not rather than a decision. Done when
+  a pane too tall for its window can be scrolled, with the wheel and with a
+  bar, and a test says what happens when there is more than there is room for.
+- [ ] **J33. All, Recommended Minimum and None.** The three buttons above
+  Word's list of styles in the Formatting Restrictions dialog, and the
+  difference between ticking three boxes and ticking three hundred. None and
+  All are a loop; Recommended Minimum is the interesting one — it is the set
+  Word considers enough to write a document with, and the format records which
+  styles a template recommends. Done when the three buttons are there, the
+  recommended set comes from what the document says rather than from a list
+  invented here, and a document made from a template gets that template's
+  answer.
 
 ## K — Proving it against Word rather than against ourselves
 

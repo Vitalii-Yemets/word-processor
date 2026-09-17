@@ -23,8 +23,20 @@ language = Deutsch
 = 1 word
 > 1 Wort
 
+= 1. Formatting restrictions
+> 1. Formatierungseinschränkungen
+
 = 100%
 > 100 %
+
+= 2. Editing restrictions
+> 2. Bearbeitungseinschränkungen
+
+= 3. Exceptions
+> 3. Ausnahmen
+
+= 4. Start enforcement
+> 4. Schutz anwenden
 
 = A block has to have a name
 > Ein Baustein braucht einen Namen
@@ -52,6 +64,9 @@ language = Deutsch
 
 = A password that is lost cannot be recovered.
 > Ein verlorenes Kennwort kann nicht wiederhergestellt werden.
+
+= Add Users
+> Benutzer hinzufügen
 
 = Address Line 1
 > Adresszeile 1
@@ -133,9 +148,6 @@ language = Deutsch
 
 = Allow character substitution
 > Zeichenersetzung zulassen
-
-= Allow only this kind of editing
-> Nur diese Art der Bearbeitung zulassen
 
 = Allow overlap
 > Überlappen zulassen
@@ -677,9 +689,6 @@ language = Deutsch
 = Edit List
 > Liste bearbeiten
 
-= Editing restrictions
-> Bearbeitungseinschränkungen
-
 = Editing
 > Bearbeiten
 
@@ -719,6 +728,12 @@ language = Deutsch
 = Every one of them has a name and an address
 > Alle haben einen Namen und eine Adresse
 
+= Every style may be used again
+> Alle Formatvorlagen sind wieder erlaubt
+
+= Everyone
+> Jeder
+
 = Everyone May Edit
 > Jeder darf bearbeiten
 
@@ -745,6 +760,9 @@ language = Deutsch
 
 = Find Duplicates
 > Duplikate suchen
+
+= Find Next Region I Can Edit
+> Nächsten bearbeitbaren Bereich suchen
 
 = Finish & Merge
 > Fertig stellen und zusammenführen
@@ -803,14 +821,20 @@ language = Deutsch
 = Formatting Marks
 > Formatierungszeichen
 
+= Formatting Restrictions
+> Formatierungseinschränkungen
+
 = Formatting exceptions
 > Ausnahmen bei der Formatierung
 
+= Formatting limited to this document's styles
+> Formatierung auf die Formatvorlagen dieses Dokuments beschränkt
+
+= Formatting limited to {0} styles
+> Formatierung auf {0} Formatvorlagen beschränkt
+
 = Formatting marks
 > Formatierungszeichen
-
-= Formatting restrictions
-> Formatierungseinschränkungen
 
 = Formula
 > Formel
@@ -895,6 +919,9 @@ language = Deutsch
 
 = Highlight
 > Texthervorhebungsfarbe
+
+= Highlight the regions I can edit
+> Bereiche hervorheben, die ich bearbeiten kann
 
 = Holding
 > Enthält
@@ -1049,8 +1076,26 @@ language = Deutsch
 = Lock aspect ratio
 > Seitenverhältnis sperren
 
+= More users…
+> Weitere Benutzer…
+
+= Names
+> Namen
+
+= Names separated by semicolons.
+> Namen durch Semikolon getrennt.
+
+= No names were typed
+> Es wurden keine Namen eingegeben
+
+= Nothing is restricted: tick one of the two boxes
+> Nichts ist eingeschränkt: eines der beiden Kästchen ankreuzen
+
 = On a grey band
 > Auf grauem Band
+
+= One stretch you may edit, shaded
+> Ein Bereich, den Sie bearbeiten dürfen, hervorgehoben
 
 = Page 1
 > Seite 1
@@ -1088,11 +1133,38 @@ language = Deutsch
 = Plain, to the right
 > Einfach, rechts
 
+= Restricted to: {0}
+> Eingeschränkt auf: {0}
+
+= Restricted to: {0}, formatting limited
+> Eingeschränkt auf: {0}, Formatierung beschränkt
+
 = Save Selection to Cover Page Gallery
 > Auswahl im Deckblatt-Katalog speichern
 
 = Save Selection to Page Number Gallery
 > Auswahl im Seitenzahlen-Katalog speichern
+
+= Select part of the document, then tick who may edit it.
+> Einen Teil des Dokuments auswählen und ankreuzen, wer ihn bearbeiten darf.
+
+= Select the part of the document they may edit first
+> Zuerst den Teil des Dokuments auswählen, den sie bearbeiten dürfen
+
+= Settings…
+> Einstellungen…
+
+= Show All Regions I Can Edit
+> Alle bearbeitbaren Bereiche anzeigen
+
+= Start Enforcing Protection
+> Schutz anwenden
+
+= Stop Protection
+> Schutz aufheben
+
+= Stopping it asks for the password.
+> Zum Aufheben wird das Kennwort verlangt.
 
 = Tables of Contents
 > Inhaltsverzeichnisse
@@ -1100,11 +1172,50 @@ language = Deutsch
 = Text Boxes
 > Textfelder
 
+= The next stretch you may edit
+> Der nächste Bereich, den Sie bearbeiten dürfen
+
 = The selection is saved to the {0} gallery.
 > Die Auswahl wird im Katalog {0} gespeichert.
 
+= The two passwords are not the same
+> Die beiden Kennwörter stimmen nicht überein
+
+= The words are open; the formatting is limited to this document's styles.
+> Der Text ist frei; die Formatierung ist auf die Formatvorlagen dieses Dokuments beschränkt.
+
+= There is no part of this document you may edit
+> Es gibt keinen Teil dieses Dokuments, den Sie bearbeiten dürfen
+
+= This document is protected from editing.
+> Dieses Dokument ist vor Bearbeitung geschützt.
+
+= This machine would not give the random bytes a password needs
+> Dieser Rechner liefert die Zufallsbytes nicht, die ein Kennwort braucht
+
 = Watermarks
 > Wasserzeichen
+
+= Yes, Start Enforcing Protection
+> Ja, Schutz jetzt anwenden
+
+= You may edit one stretch of this document.
+> Sie dürfen einen Bereich dieses Dokuments bearbeiten.
+
+= You may edit {0} stretches of this document.
+> Sie dürfen {0} Bereiche dieses Dokuments bearbeiten.
+
+= You may edit, and every change is recorded.
+> Sie dürfen bearbeiten, und jede Änderung wird aufgezeichnet.
+
+= You may fill in the form and change nothing else.
+> Sie dürfen das Formular ausfüllen und sonst nichts ändern.
+
+= You may leave comments and change nothing else.
+> Sie dürfen Kommentare einfügen und sonst nichts ändern.
+
+= Your permissions
+> Ihre Berechtigungen
 
 = locked
 > gesperrt
@@ -1781,9 +1892,6 @@ language = Deutsch
 = Split Cells
 > Zellen teilen
 
-= Start enforcing protection
-> Schutz anwenden
-
 = Start Mail Merge
 > Seriendruck starten
 
@@ -2207,6 +2315,9 @@ language = Deutsch
 = unsaved changes
 > nicht gespeicherte Änderungen
 
+= {0} added to the list
+> {0} zur Liste hinzugefügt
+
 = {0} characters
 > {0} Zeichen
 
@@ -2240,6 +2351,12 @@ language = Deutsch
 = {0} left out as copies of somebody already on the list
 > {0} als Kopien bereits vorhandener Personen ausgelassen
 
+= {0} may edit this
+> {0} darf dies bearbeiten
+
+= {0} may no longer edit this
+> {0} darf dies nicht mehr bearbeiten
+
 = {0} of them are short of something: this one has no {1}
 > Bei {0} fehlt etwas: dieser Person fehlt {1}
 
@@ -2272,6 +2389,12 @@ language = Deutsch
 
 = {0} set for this document only
 > {0} nur für dieses Dokument festgelegt
+
+= {0} stretches you may edit, shaded
+> {0} Bereiche, die Sie bearbeiten dürfen, hervorgehoben
+
+= {0} styles allowed
+> {0} Formatvorlagen erlaubt
 
 = {0} was not kept
 > {0} wurde nicht behalten

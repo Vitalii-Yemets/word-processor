@@ -72,6 +72,7 @@ mod properties;
 mod protection;
 mod readonly;
 mod references;
+mod restrict;
 mod review;
 mod ribbondialog;
 mod rotate;
@@ -479,6 +480,29 @@ pub struct Editor {
     /// is the same dialog every time, so which menu asked has to be kept or
     /// the block goes quietly to the wrong one. See [`ownblocks`].
     saving_to: &'static str,
+    /// Word's Restrict Editing pane, and whether it is open.
+    ///
+    /// The two boxes at the top of it are decisions a person is making rather
+    /// than facts about the document: nothing is written until the button at
+    /// the bottom is pressed, which is Word's order and the only one that lets
+    /// somebody change their mind. See [`restrict`].
+    show_restrict: bool,
+    restrict_pane: crate::chrome::restrictpane::RestrictPane,
+    restrict_limiting: bool,
+    restrict_restricting: bool,
+    restrict_mode: usize,
+    restrict_theme_locked: bool,
+    restrict_style_set_locked: bool,
+    restrict_auto_format: bool,
+    /// People typed into Word's More users… who have no stretch of the
+    /// document yet. Kept for as long as the program runs and no longer: a
+    /// name nobody has been given anything is not a fact about the document.
+    extra_editors: Vec<String>,
+    /// Whether the stretches this person may edit are shaded.
+    ///
+    /// Word's tick box, on to begin with because a person who has just opened
+    /// a restricted document wants to know where they may type.
+    highlight_regions: bool,
     /// Where the page number the gallery is about is going.
     ///
     /// Word's Page Number button asks where before it asks what, and the
@@ -723,6 +747,16 @@ impl Editor {
             typed_recipients: wp_docx::merge::Recipients::default(),
             saving_to: wp_docx::blocks::QUICK_PARTS,
             page_number_place: designs::Place::Bottom,
+            show_restrict: false,
+            restrict_pane: crate::chrome::restrictpane::RestrictPane::new(),
+            restrict_limiting: false,
+            restrict_restricting: false,
+            restrict_mode: 0,
+            restrict_theme_locked: false,
+            restrict_style_set_locked: false,
+            restrict_auto_format: false,
+            extra_editors: Vec::new(),
+            highlight_regions: true,
             recipient_file: None,
             preview_record: None,
             word_art_style: 0,
@@ -988,6 +1022,7 @@ impl Editor {
         (self.view_width as f32
             - self.content_left()
             - self.styles_pane_width()
+            - self.restrict_pane_width()
             - self.compare_pane_width()
             - crate::chrome::SCROLLBAR_THICKNESS)
             .max(1.0)

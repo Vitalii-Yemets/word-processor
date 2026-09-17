@@ -15,6 +15,12 @@ const NUMBERING: &[(&str, Option<Restart>)] = &[
     ("Restart Each Section", Some(Restart::NewSection)),
 ];
 
+/// How strongly a marked stretch is washed over with its editor's colour.
+const WASH: u8 = 0x30;
+
+/// And how far the lips of a bracket reach into the stretch, in pixels.
+const BRACKET_LIP: i32 = 3;
+
 impl Editor {
     /// Drops open the ways of numbering the lines.
     pub(super) fn open_line_numbers(&mut self) -> Response {
@@ -154,34 +160,61 @@ impl Editor {
     }
 
     /// Shades every stretch of the document that has its own rule about who
-    /// may edit it.
+    /// may edit it, and puts a bracket at each end of it.
     ///
     /// Word does this and it is not decoration: a restricted document with an
     /// exception in it looks exactly like a restricted document without one,
     /// and a person would have to try typing in every paragraph to find the
     /// one they are allowed in. The shading is the answer to "where may I
     /// write".
+    ///
+    /// Each stretch is drawn in the colour of whoever may edit it — the same
+    /// colour their tracked changes are drawn in, out of
+    /// [`wp_layout::author_color`] — because a document three people may edit
+    /// different parts of reads as three people that way and as one shaded
+    /// mess otherwise. The brackets are what say where a stretch begins and
+    /// ends when two of them touch, which shading alone cannot.
+    ///
+    /// The whole of it is behind Word's own tick box: shading is help while a
+    /// person is looking for where they may type and clutter once they have
+    /// found it.
     pub(super) fn draw_marked_regions(&mut self) {
+        if !self.regions_are_highlighted() {
+            return;
+        }
         let marked = self.document.locked_regions();
         if marked.is_empty() {
             return;
         }
 
-        let mut bands: Vec<(f32, f32, f32, f32)> = Vec::new();
+        let mut bands: Vec<(f32, f32, f32, f32, wp_raster::Color)> = Vec::new();
+        let mut brackets: Vec<(f32, f32, f32, bool, wp_raster::Color)> = Vec::new();
         for index in 0..self.pages.len() {
             let (origin_x, origin_y) = self.page_origin(index);
             let top = self.content_top() + origin_y - self.scroll_down();
             for stretch in &marked {
-                for (x, y, width, height) in
-                    self.pages[index].selection_rects(stretch.start, stretch.end)
-                {
-                    bands.push((origin_x + x, top + y, width, height));
+                let colour = Self::region_colour(stretch);
+                let rects = self.pages[index].selection_rects(stretch.start, stretch.end);
+                for (at, (x, y, width, height)) in rects.iter().copied().enumerate() {
+                    // The shading is the person's colour laid on thinly: at
+                    // full strength it would be a highlighter pen over the
+                    // words rather than a wash behind them.
+                    let wash = wp_raster::Color::rgba(colour.red, colour.green, colour.blue, WASH);
+                    bands.push((origin_x + x, top + y, width, height, wash));
+                    // A bracket at each end of the stretch, which on a
+                    // stretch running over several lines means the first
+                    // line's start and the last line's end.
+                    if at == 0 {
+                        brackets.push((origin_x + x, top + y, height, true, colour));
+                    }
+                    if at + 1 == rects.len() {
+                        brackets.push((origin_x + x + width, top + y, height, false, colour));
+                    }
                 }
             }
         }
 
-        let colour = self.theme.marked_region;
-        for (x, y, width, height) in bands {
+        for (x, y, width, height, colour) in bands {
             self.canvas.fill_rect(
                 x as i32,
                 y as i32,
@@ -190,6 +223,36 @@ impl Editor {
                 colour,
             );
         }
+        for (x, y, height, opening, colour) in brackets {
+            self.draw_region_bracket(x, y, height, opening, colour);
+        }
+    }
+
+    /// One of those brackets: an upright with a lip at each end of it, turned
+    /// the way the stretch runs.
+    ///
+    /// Drawn rather than written for the reason the submenu arrow is: the
+    /// characters for these are ordinary brackets, but a bracket set in the
+    /// document's font at the document's size would sit on the baseline and
+    /// be read as part of the words. This is a mark on the page, the height
+    /// of the line, and nothing in the text.
+    fn draw_region_bracket(
+        &mut self,
+        x: f32,
+        y: f32,
+        height: f32,
+        opening: bool,
+        colour: wp_raster::Color,
+    ) {
+        let height = height.max(2.0).ceil() as i32;
+        let x = x.round() as i32;
+        let y = y.round() as i32;
+        self.canvas.fill_rect(x, y, 1, height, colour);
+        // The lips point into the stretch, so an opening bracket's reach to
+        // the right and a closing one's to the left.
+        let lip = if opening { x } else { x - BRACKET_LIP + 1 };
+        self.canvas.fill_rect(lip, y, BRACKET_LIP, 1, colour);
+        self.canvas.fill_rect(lip, y + height - 1, BRACKET_LIP, 1, colour);
     }
 
     /// Locks the selection so that only this author may change it, or unlocks

@@ -47,8 +47,9 @@ mod tablefit;
 
 pub use device::{Device, Unprintable};
 pub use layout::{
-    Decoration, Drawing, Frame, GlyphEffect, LayoutEngine, Page, PageLine, PageMetrics, PlacedCell,
-    PlacedImage, PlacedPath, PlacedShape, PositionedGlyph, TextStyle, Turn,
+    author_color, Decoration, Drawing, Frame, GlyphEffect, LayoutEngine, Page, PageLine,
+    PageMetrics, PlacedCell, PlacedImage, PlacedPath, PlacedShape, PositionedGlyph, TextStyle,
+    Turn,
 };
 pub use library::{Face, FontLibrary};
 pub use render::Renderer;

@@ -954,6 +954,7 @@ impl Editor {
         // The styles pane goes over the rulers rather than under them: it is a
         // pane of its own, and Word's rulers stop at its edge.
         self.draw_styles_pane();
+        self.draw_restrict_pane();
         self.draw_compare_pane();
         self.draw_drop_mark();
 

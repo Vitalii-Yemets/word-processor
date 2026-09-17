@@ -181,6 +181,9 @@ pub enum Choice {
     StatusBar,
     /// How a section numbers its pages.
     PageNumbering,
+    /// Which kind of editing a restriction allows, dropped from the pane that
+    /// asks rather than from a button of the ribbon.
+    RestrictMode,
     /// The breaks that can be put in: of a page, of a column, and of a section.
     Break,
     /// The margins Word offers by name.

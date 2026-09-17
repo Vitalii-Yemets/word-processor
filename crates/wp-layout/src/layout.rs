@@ -7401,8 +7401,13 @@ fn merge_page(page: &mut Page, from: Page, offset: f32) {
 /// Word gives each reviewer a colour so two people's edits can be told apart at
 /// a glance, and keeps it the same for that name across sessions. Choosing by
 /// the name itself does the same without having to remember anything.
+///
+/// Public because a person's colour is theirs everywhere and not only in their
+/// tracked changes: the stretches of a restricted document they are allowed to
+/// edit are drawn in it as well, and two places choosing a colour for the same
+/// name by two routes would sooner or later choose two colours.
 #[must_use]
-fn author_color(author: &str) -> Color {
+pub fn author_color(author: &str) -> Color {
     const COLOURS: [Color; 8] = [
         Color::rgb(0xC0, 0x25, 0x4B),
         Color::rgb(0x1F, 0x6F, 0xB2),

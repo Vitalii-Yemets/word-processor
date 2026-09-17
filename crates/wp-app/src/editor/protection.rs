@@ -61,44 +61,20 @@ use crate::chrome::Command;
 use super::dialogs::Asking;
 use super::Editor;
 
-/// Where each answer sits in the Restrict Editing dialog.
+/// Where each answer sits in the Formatting Restrictions dialog.
 ///
 /// Named rather than counted twice, for the reason every other dialog in this
 /// program names its rows: the headings take places in the list too.
-const LIMIT: usize = 1;
-const STYLES: usize = 2;
-const THEME: usize = 3;
-const STYLE_SET: usize = 4;
-const AUTO_FORMAT: usize = 5;
-const RESTRICT: usize = 7;
-const MODE: usize = 8;
-const PASSWORD: usize = 12;
-const AGAIN: usize = 13;
+const LIMIT: usize = 0;
+const STYLES: usize = 1;
+const AUTO_FORMAT: usize = 3;
+const THEME: usize = 4;
+const STYLE_SET: usize = 5;
 
-/// And the one box of the dialog that asks for it back.
+/// And the one box of the dialog that asks a password back.
 const ANSWER: usize = 1;
 
-/// How many bytes of salt, asked of the format rather than decided here.
-const SALT: usize = wp_docx::protection::SALT_BYTES;
-
 impl Editor {
-    /// Word's Restrict Editing: the restriction, or the way out of one.
-    pub(super) fn open_protection(&mut self) -> Response {
-        match self.document.protection_rules() {
-            None => {
-                let dialog = self.protect_dialog();
-                self.ask(Asking::Protect, dialog)
-            }
-            // Nothing to ask. Word's Stop Protection button lifts a
-            // restriction with no password the moment it is pressed.
-            Some(rules) if rules.password.is_none() => self.stop_protecting(),
-            Some(rules) => {
-                let dialog = Self::unprotect_dialog(&rules);
-                self.ask(Asking::Unprotect, dialog)
-            }
-        }
-    }
-
     /// Every style the restriction can allow or forbid, as identifier and
     /// name.
     ///
@@ -135,9 +111,20 @@ impl Editor {
         self.document.styles().all().len()
     }
 
-    /// The dialog that puts a restriction on.
-    fn protect_dialog(&self) -> Dialog {
-        let modes = EditMode::ALL.iter().map(|mode| mode.label().to_owned()).collect();
+    /// Word's Formatting Restrictions: which styles may be used, and the three
+    /// boxes that go with the question.
+    ///
+    /// A dialog and not part of the pane because it is a list of every style
+    /// the document has — three hundred of them in a document made from a
+    /// template — and a list that long down the side of the window would leave
+    /// no window at all. Word makes the same split for the same reason.
+    pub(super) fn open_formatting_limits(&mut self) -> Response {
+        let dialog = self.formatting_dialog();
+        self.ask(Asking::FormattingLimits, dialog)
+    }
+
+    /// What that dialog is made of.
+    fn formatting_dialog(&self) -> Dialog {
         let defined = self.defined_style_count();
         let rows = self
             .lockable_styles()
@@ -153,12 +140,11 @@ impl Editor {
             })
             .collect();
         Dialog::new(
-            "Restrict Editing",
+            "Formatting Restrictions",
             vec![
-                Field::Heading("Formatting restrictions".to_owned()),
                 Field::Check {
                     label: "Limit formatting to a selection of styles".to_owned(),
-                    on: false,
+                    on: self.restrict_limiting,
                 },
                 Field::Tree {
                     label: "Checked styles are currently allowed".to_owned(),
@@ -166,46 +152,29 @@ impl Editor {
                     current: 0,
                     scroll: 0,
                 },
-                Field::Check { label: "Block Theme or Scheme switching".to_owned(), on: false },
-                Field::Check { label: "Block Quick Style Set switching".to_owned(), on: false },
+                Field::Heading("Formatting".to_owned()),
                 // The one box under this heading that lets something through
                 // rather than shutting it: a `*word*` turned bold as it is
                 // typed is a correction the person asked for by typing the
                 // marks, and Word offers to let it through.
                 Field::Check {
                     label: "Allow AutoFormat to override formatting restrictions".to_owned(),
-                    on: false,
+                    on: self.restrict_auto_format,
                 },
-                Field::Heading("Editing restrictions".to_owned()),
                 Field::Check {
-                    label: "Allow only this kind of editing in the document".to_owned(),
-                    on: true,
+                    label: "Block Theme or Scheme switching".to_owned(),
+                    on: self.restrict_theme_locked,
                 },
-                Field::Choice {
-                    label: "Allow only this kind of editing".to_owned(),
-                    items: modes,
-                    current: 0,
-                },
-                Field::Heading("Start enforcing protection".to_owned()),
-                // Word's dialog says this, and it is the truest sentence in
-                // it: a password on a document that is not encrypted stops a
-                // person, not a program.
-                Field::note("The document is not encrypted."),
-                Field::note("Anybody who can open the file can take this off."),
-                Field::Secret {
-                    label: "Enter new password (optional)".to_owned(),
-                    value: String::new(),
-                },
-                Field::Secret {
-                    label: "Reenter password to confirm".to_owned(),
-                    value: String::new(),
+                Field::Check {
+                    label: "Block Quick Style Set switching".to_owned(),
+                    on: self.restrict_style_set_locked,
                 },
             ],
         )
     }
 
     /// The dialog that asks for the password back.
-    fn unprotect_dialog(rules: &Protection) -> Dialog {
+    pub(super) fn unprotect_dialog(rules: &Protection) -> Dialog {
         let said = match rules.mode {
             Some(mode) => mode.label().to_owned(),
             // A restriction on the formatting alone leaves the words open,
@@ -222,61 +191,20 @@ impl Editor {
         )
     }
 
-    /// Asks the same dialog again, with what was typed into it kept and the
-    /// passwords cleared.
+    /// Writes down which formatting is allowed.
     ///
-    /// Kept rather than rebuilt: a person who mistyped one box of twelve
-    /// should not lose the other eleven, and the ticks against thirty styles
-    /// least of all.
-    fn ask_again(&mut self, dialog: &Dialog, why: &str) -> Response {
-        let mut again = dialog.clone();
-        for row in [PASSWORD, AGAIN] {
-            if let Some(Field::Secret { value, .. }) = again.fields.get_mut(row) {
-                value.clear();
-            }
-        }
-        self.status = why.to_owned();
-        self.ask(Asking::Protect, again)
-    }
-
-    /// Puts the restriction on, if the two passwords agree.
-    pub(super) fn apply_protection(&mut self, dialog: &Dialog) -> Response {
+    /// The styles go into the document then and there, because which styles a
+    /// document allows is written into the styles themselves and stands
+    /// whether or not anything is being enforced. The three boxes are about
+    /// the restriction rather than about the styles, so they wait in the pane
+    /// for the button that starts it.
+    pub(super) fn apply_formatting_limits(&mut self, dialog: &Dialog) -> Response {
         let limit = dialog.ticked(LIMIT);
-        let mode = dialog
-            .ticked(RESTRICT)
-            .then(|| EditMode::ALL.get(dialog.chose(MODE)).copied())
-            .flatten();
-        let word = dialog.said(PASSWORD);
+        self.restrict_limiting = limit;
+        self.restrict_auto_format = dialog.ticked(AUTO_FORMAT);
+        self.restrict_theme_locked = dialog.ticked(THEME);
+        self.restrict_style_set_locked = dialog.ticked(STYLE_SET);
 
-        if !limit && mode.is_none() {
-            // Both halves empty. Word greys its Start Enforcing button out
-            // until one of them is answered; this says why instead, because a
-            // dialog that will not close and will not say why is worse.
-            return self.ask_again(dialog, "Nothing is restricted: tick one of the two boxes");
-        }
-        if word != dialog.said(AGAIN) {
-            return self.ask_again(dialog, "The two passwords are not the same");
-        }
-
-        let mut wanted = Protection {
-            mode,
-            formatting: limit,
-            theme_locked: limit && dialog.ticked(THEME),
-            style_set_locked: limit && dialog.ticked(STYLE_SET),
-            auto_format_override: dialog.ticked(AUTO_FORMAT),
-            password: None,
-        };
-        if !word.is_empty() {
-            let Some(salt) = wp_shell::random::bytes::<SALT>() else {
-                return self
-                    .report("This machine would not give the random bytes a password needs");
-            };
-            wanted = wanted.behind(&word, &salt);
-        }
-
-        // Which styles are allowed is written into the styles themselves and
-        // stands whether or not anything is being enforced, so it is written
-        // whichever way the box was ticked.
         let allowed = self.allowed_by(dialog);
         if limit {
             let defined = self.defined_style_count();
@@ -293,16 +221,16 @@ impl Editor {
             self.document.allow_every_style();
         }
 
-        let changed = self.document.set_protection(Some(&wanted));
+        self.relayout();
         self.needs_redraw = true;
-        let said = match mode {
-            Some(mode) if limit => {
-                format!("Restricted to: {}, formatting limited", mode.label())
-            }
-            Some(mode) => format!("Restricted to: {}", mode.label()),
-            None => format!("Formatting limited to {} styles", allowed.len()),
-        };
-        self.edited(changed, &said)
+        if !limit {
+            return self.edited(true, "Every style may be used");
+        }
+        let said = crate::messages::with(
+            "Formatting limited to {0} styles",
+            &[&allowed.len().to_string()],
+        );
+        self.edited(true, &said)
     }
 
     /// Which styles the ticks in the dialog say are allowed.
@@ -338,7 +266,7 @@ impl Editor {
     }
 
     /// Takes the restriction off.
-    fn stop_protecting(&mut self) -> Response {
+    pub(super) fn stop_protecting(&mut self) -> Response {
         let changed = self.document.set_protection(None);
         self.needs_redraw = true;
         self.edited(changed, "Protection lifted")
@@ -373,13 +301,25 @@ impl Editor {
     fn inside_a_marked_stretch(&self) -> Option<bool> {
         let caret = self.document.caret();
         let (start, end) = self.document.selection().unwrap_or((caret, caret));
-        let marked = self.document.locked_at(start)?;
-        // Half in and half out is out: an edit that ran off the end of the
-        // stretch would be an edit to the part that is shut.
-        if !marked.covers(end) {
+        let covering = self.document.locked_all_at(start);
+        if covering.is_empty() {
+            return None;
+        }
+
+        // Half in and half out is out: an edit that ran off the end of a
+        // stretch would be an edit to the part that is shut. So the question
+        // is about the pairs that hold the whole of what would change.
+        let whole: Vec<_> = covering.into_iter().filter(|marked| marked.covers(end)).collect();
+        if whole.is_empty() {
             return Some(false);
         }
-        Some(marked.admits(&super::files::user_name()))
+        // One pair naming somebody else does not shut a person out of a pair
+        // that names them: the format gives a marker a single editor, so two
+        // people sharing a stretch is two pairs round the same words, and a
+        // rule that read only the first would let one of them in and not the
+        // other.
+        let me = super::files::user_name();
+        Some(whole.iter().any(|marked| marked.admits(&me)))
     }
 
     /// Whether everything that would change is inside one field of a form
@@ -541,15 +481,40 @@ mod tests {
         editor
     }
 
-    /// Fills in the Restrict Editing dialog and answers it.
+    /// Restricts the document the way a person does: the pane, the kind of
+    /// editing, the button, and the password under it.
     fn protect(editor: &mut Editor, mode: usize, word: &str) {
         editor.run(Command::RestrictEditing);
+        assert!(editor.show_restrict, "the pane did not open");
+        editor.choose_restrict_mode(mode);
+        editor.start_enforcing();
+        type_password(editor, word);
+    }
+
+    /// Ticks boxes of the Formatting Restrictions dialog and enforces it,
+    /// leaving the editing half alone.
+    fn formatting_boxes(editor: &mut Editor, boxes: &[(usize, bool)]) {
+        editor.run(Command::RestrictEditing);
+        editor.open_formatting_limits();
         let dialog = editor.dialog.as_mut().expect("the dialog");
-        if let Some(Field::Choice { current, .. }) = dialog.fields.get_mut(MODE) {
-            *current = mode;
+        for (row, on) in boxes.iter().copied() {
+            if let Some(Field::Check { on: value, .. }) = dialog.fields.get_mut(row) {
+                *value = on;
+            }
         }
-        for row in [PASSWORD, AGAIN] {
-            if let Some(Field::Secret { value, .. }) = dialog.fields.get_mut(row) {
+        editor.finish_dialog(Answer::Accept);
+        editor.start_enforcing();
+        type_password(editor, "");
+    }
+
+    /// Fills both boxes of whatever password dialog is open and answers it.
+    ///
+    /// Both by shape rather than by number, so that a box moving does not
+    /// quietly leave one of them empty and make the test about something else.
+    fn type_password(editor: &mut Editor, word: &str) {
+        let dialog = editor.dialog.as_mut().expect("the password dialog");
+        for field in &mut dialog.fields {
+            if let Field::Secret { value, .. } = field {
                 *value = word.to_owned();
             }
         }
@@ -563,7 +528,7 @@ mod tests {
         assert_eq!(editor.document.protection(), Some(EditMode::ReadOnly));
 
         // Stop Protection asks rather than stopping.
-        editor.run(Command::RestrictEditing);
+        editor.stop_enforcing();
         let dialog = editor.dialog.as_mut().expect("the dialog asking for the password");
         if let Some(Field::Secret { value, .. }) = dialog.fields.get_mut(ANSWER) {
             *value = "open sesame".to_owned();
@@ -589,24 +554,37 @@ mod tests {
     fn two_passwords_that_differ_protect_nothing_and_ask_again() {
         let mut editor = editor();
         editor.run(Command::RestrictEditing);
-        let dialog = editor.dialog.as_mut().expect("the dialog");
-        if let Some(Field::Secret { value, .. }) = dialog.fields.get_mut(PASSWORD) {
-            *value = "one".to_owned();
-        }
-        if let Some(Field::Secret { value, .. }) = dialog.fields.get_mut(AGAIN) {
-            *value = "another".to_owned();
-        }
+        editor.choose_restrict_mode(0);
+        editor.start_enforcing();
+
+        let dialog = editor.dialog.as_mut().expect("the password dialog");
+        let mut boxes = dialog.fields.iter_mut().filter_map(|field| match field {
+            Field::Secret { value, .. } => Some(value),
+            _ => None,
+        });
+        *boxes.next().expect("the first box") = "one".to_owned();
+        *boxes.next().expect("the second box") = "another".to_owned();
         editor.finish_dialog(Answer::Accept);
 
         assert_eq!(editor.document.protection(), None, "protected on a mistyped password");
         assert!(editor.status.contains("not the same"), "{}", editor.status);
-        assert!(editor.dialog.is_some(), "the dialog was not asked again");
+
+        // Asked again with both boxes empty, so that a person retypes rather
+        // than correcting one of two things they cannot read.
+        let dialog = editor.dialog.as_ref().expect("the dialog was not asked again");
+        for field in &dialog.fields {
+            if let Field::Secret { value, .. } = field {
+                assert!(value.is_empty(), "a password was left in the box");
+            }
+        }
     }
 
     #[test]
     fn a_password_is_not_shown_while_it_is_typed() {
         let mut editor = editor();
         editor.run(Command::RestrictEditing);
+        editor.choose_restrict_mode(0);
+        editor.start_enforcing();
         for character in "secret".chars() {
             editor.handle(Event::Char(character));
         }
@@ -648,6 +626,7 @@ mod tests {
     /// styles ticked and unticks every other, and answers the dialog.
     fn limit_formatting(editor: &mut Editor, allowed: &[&str], theme: bool) {
         editor.run(Command::RestrictEditing);
+        editor.open_formatting_limits();
         let styles = editor.lockable_styles();
         let dialog = editor.dialog.as_mut().expect("the dialog");
         if let Some(Field::Check { on, .. }) = dialog.fields.get_mut(LIMIT) {
@@ -656,17 +635,18 @@ mod tests {
         if let Some(Field::Check { on, .. }) = dialog.fields.get_mut(THEME) {
             *on = theme;
         }
-        // The editing half left alone, which is the case worth testing: a
-        // document anybody may type in and nobody may format.
-        if let Some(Field::Check { on, .. }) = dialog.fields.get_mut(RESTRICT) {
-            *on = false;
-        }
         if let Some(Field::Tree { rows, .. }) = dialog.fields.get_mut(STYLES) {
             for (row, (id, _)) in rows.iter_mut().zip(&styles) {
                 row.tick = Some(allowed.iter().any(|wanted| wanted.eq_ignore_ascii_case(id)));
             }
         }
         editor.finish_dialog(Answer::Accept);
+
+        // The editing half is left alone, which is the case worth testing: a
+        // document anybody may type in and nobody may format. Enforcing it is
+        // what writes the two boxes down.
+        editor.start_enforcing();
+        type_password(editor, "");
     }
 
     #[test]
@@ -756,50 +736,40 @@ mod tests {
     }
 
     #[test]
-    fn a_dialog_that_restricts_nothing_says_so_and_asks_again() {
+    fn enforcing_nothing_says_so_rather_than_asking_for_a_password() {
+        // Word greys its Start Enforcing button out until one of the two
+        // boxes is answered; this says why instead, because a button that
+        // does nothing and will not say why is worse.
         let mut editor = editor();
         editor.run(Command::RestrictEditing);
-        let dialog = editor.dialog.as_mut().expect("the dialog");
-        for row in [LIMIT, RESTRICT] {
-            if let Some(Field::Check { on, .. }) = dialog.fields.get_mut(row) {
-                *on = false;
-            }
-        }
-        editor.finish_dialog(Answer::Accept);
+        editor.start_enforcing();
 
+        assert!(editor.dialog.is_none(), "it asked for a password with nothing to protect");
         assert!(editor.document.protection_rules().is_none(), "nothing was asked and it was set");
         assert!(editor.status.contains("Nothing is restricted"), "{}", editor.status);
-        assert!(editor.dialog.is_some(), "the dialog was not asked again");
     }
 
     #[test]
-    fn the_ticks_are_kept_when_the_dialog_is_asked_again() {
+    fn the_ticks_against_the_styles_are_not_lost_to_a_mistyped_password() {
+        // They cannot be any more: which styles are allowed is written down
+        // when its own dialog is answered, and the password is asked for
+        // afterwards by a dialog that has no ticks in it to lose.
         let mut editor = editor();
-        editor.run(Command::RestrictEditing);
-        let dialog = editor.dialog.as_mut().expect("the dialog");
-        if let Some(Field::Tree { rows, .. }) = dialog.fields.get_mut(STYLES) {
-            for row in rows.iter_mut() {
-                row.tick = Some(false);
-            }
-        }
-        if let Some(Field::Check { on, .. }) = dialog.fields.get_mut(LIMIT) {
-            *on = true;
-        }
-        if let Some(Field::Secret { value, .. }) = dialog.fields.get_mut(PASSWORD) {
-            *value = "one".to_owned();
-        }
-        if let Some(Field::Secret { value, .. }) = dialog.fields.get_mut(AGAIN) {
-            *value = "another".to_owned();
-        }
+        limit_formatting(&mut editor, &["Title"], false);
+        assert!(editor.document.style_is_locked("Heading1"), "the ticks were not written");
+
+        editor.start_enforcing();
+        let dialog = editor.dialog.as_mut().expect("the password dialog");
+        let mut boxes = dialog.fields.iter_mut().filter_map(|field| match field {
+            Field::Secret { value, .. } => Some(value),
+            _ => None,
+        });
+        *boxes.next().expect("the first box") = "one".to_owned();
+        *boxes.next().expect("the second box") = "another".to_owned();
         editor.finish_dialog(Answer::Accept);
 
-        let dialog = editor.dialog.as_ref().expect("asked again");
-        assert!(dialog.ticked(LIMIT), "the tick was lost");
-        assert!(
-            dialog.tree_rows(STYLES).iter().all(|row| row.tick == Some(false)),
-            "thirty ticks were thrown away over a mistyped password"
-        );
-        assert!(dialog.said(PASSWORD).is_empty(), "the password was left in the box");
+        assert!(editor.status.contains("not the same"), "{}", editor.status);
+        assert!(editor.document.style_is_locked("Heading1"), "the ticks went with the password");
     }
     /// Restricts the document to nothing at all being changed, the short way.
     fn read_only(editor: &mut Editor) {
@@ -954,14 +924,7 @@ mod tests {
     #[test]
     fn the_box_that_lets_it_through_lets_it_through() {
         let mut editor = editor();
-        editor.run(Command::RestrictEditing);
-        let dialog = editor.dialog.as_mut().expect("the dialog");
-        for (row, on) in [(LIMIT, true), (AUTO_FORMAT, true), (RESTRICT, false)] {
-            if let Some(Field::Check { on: value, .. }) = dialog.fields.get_mut(row) {
-                *value = on;
-            }
-        }
-        editor.finish_dialog(Answer::Accept);
+        formatting_boxes(&mut editor, &[(LIMIT, true), (AUTO_FORMAT, true)]);
         assert!(editor.document.formatting_is_limited());
         assert!(editor.autoformat_may_override(), "the box was ticked and changed nothing");
 
@@ -979,14 +942,7 @@ mod tests {
     #[test]
     fn a_fixed_style_set_cannot_be_switched() {
         let mut editor = editor();
-        editor.run(Command::RestrictEditing);
-        let dialog = editor.dialog.as_mut().expect("the dialog");
-        for (row, on) in [(LIMIT, true), (STYLE_SET, true), (RESTRICT, false)] {
-            if let Some(Field::Check { on: value, .. }) = dialog.fields.get_mut(row) {
-                *value = on;
-            }
-        }
-        editor.finish_dialog(Answer::Accept);
+        formatting_boxes(&mut editor, &[(LIMIT, true), (STYLE_SET, true)]);
 
         let state = editor.toolbar_state();
         assert!(!crate::chrome::is_enabled(Command::StyleSet, &state), "the button is still lit");
