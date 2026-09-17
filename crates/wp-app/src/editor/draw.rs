@@ -404,8 +404,24 @@ impl Editor {
             self.navigation = navigation;
         }
 
-        if let Some(mut bar) = self.find_bar.take() {
+        if let Some(mut bar) = self.info_bar.take() {
             let top = self.ribbon_bottom();
+            let left = self.pane_width();
+            let width = self.view_width as f32 - left;
+            bar.draw(
+                &mut self.canvas,
+                &mut self.chrome_engine,
+                &mut self.renderer,
+                top,
+                left,
+                width,
+                &theme,
+            );
+            self.info_bar = Some(bar);
+        }
+
+        if let Some(mut bar) = self.find_bar.take() {
+            let top = self.ribbon_bottom() + self.info_bar_height();
             let left = self.pane_width();
             bar.draw(
                 &mut self.canvas,

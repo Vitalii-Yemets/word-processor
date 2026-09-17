@@ -755,10 +755,16 @@ impl Editor {
             return Response::Ignored;
         }
 
-        // The find strip sits between the ribbon and the page.
+        // The bar that says something about the document sits directly under
+        // the ribbon, above everything else that hangs there.
+        if self.over_info_bar(y) {
+            return self.press_info_bar(x, y);
+        }
+
+        // The find strip sits between that and the page.
         if self.find_bar.is_some()
-            && (y as f32) >= self.ribbon_bottom()
-            && (y as f32) < self.ribbon_bottom() + self.find_bar_height()
+            && (y as f32) >= self.ribbon_bottom() + self.info_bar_height()
+            && (y as f32) < self.ribbon_bottom() + self.info_bar_height() + self.find_bar_height()
         {
             return self.pressed_in_find(x, y);
         }

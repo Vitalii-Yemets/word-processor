@@ -71,8 +71,13 @@ impl Editor {
                 self.set_document(document, file);
                 // Recovered work is work that is not on disk. Saying so is
                 // what makes Save ask, and the title show that there is
-                // something to lose.
+                // something to lose - and the bar across the top says it for
+                // as long as the document is open, which is how long it is
+                // true. See [`crate::chrome::infobar`].
                 self.document.mark_modified();
+                self.info_bar = Some(crate::chrome::infobar::InfoBar::new(
+                    crate::chrome::infobar::Because::Recovered,
+                ));
                 self.status = crate::messages::with("{0} recovered", &[&entry.name]);
                 if let Some(pane) = &mut self.recovery {
                     pane.opened = Some(index);

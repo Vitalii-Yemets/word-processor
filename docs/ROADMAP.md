@@ -5271,13 +5271,45 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   what stands in it is **J23**, which is where the pane belongs. The five
   style sets are this program's own five; Word ships seventeen, and they are
   its content rather than a format.
-- [ ] **J17. The information bar, and General Options as one dialog.** Word
+- [x] **J17. The information bar, and General Options as one dialog.** Word
   puts a bar across the top of a document to say something about it and offer
-  one button — Edit Anyway on a read-only document, Enable Content on one
-  carrying macros (**L6**). This program has no such furniture and says those
-  things in the strip along the bottom and on the File page. With it: Word's
-  General Options holds the password to open and the password to modify in
-  one dialog, where this has two lines on the File page. Named in **J10**.
+  one button; and its General Options holds both of the passwords a document
+  can carry.
+  *Done:* **the bar.** A strip under the ribbon in a colour of its own, with
+  what is true of the document, one button, and a cross. It is furniture
+  rather than a message for the reason Word made it furniture: what it says
+  is true for as long as the document is open, and a message in the strip
+  along the bottom is gone by the next keystroke — a person who starts typing
+  into a read-only document and finds nothing arriving has to be told why
+  *then*. Three things put one up: a document opened read-only, with Edit
+  Anyway on it; one carrying Visual Basic, which says so and offers no
+  button, because nothing here runs a macro and a button saying Enable
+  Content would be a lie (**L6** is where that button arrives); and one just
+  recovered, with Save As. Shutting it changes nothing about the document,
+  which is Word's behaviour: the File page still says so.
+  **General Options.** Word's dialog holds the password to open and the
+  password to modify together, and they do different things — one makes the
+  file unreadable, the other decides whether it opens for writing. They are
+  in one dialog here now, each under a heading that says which it is, with
+  the two lines that have to be said about the second: it does not encrypt
+  anything, and anybody who can open the file can take it off. An empty box
+  takes a password off, which is how every password box in this program says
+  none. A mistyped password to open writes neither and asks again with what
+  was typed kept.
+  *Proven by:* seven tests over the program — the bar up on a read-only
+  document and still there after a keystroke, gone when the document is
+  opened for writing, shut by its cross without changing what is true, and
+  taking exactly its own height from the page; both passwords written from
+  one dialog and not mixed up; a mistyped password to open writing neither
+  and asking again; and an empty box taking the encryption off. Three over
+  the bar itself: every reason saying something, a reason with nothing to
+  offer offering no button, and a bar that has never been drawn having no
+  parts to press. The bar photographed, and the dialog.
+  *Not done, and named here:* Word's bar also appears for a document marked
+  as final and for one opened in Protected View, neither of which this
+  program has. Its General Options carries two more boxes — Remove personal
+  information on save, and the macro security button — of which the first is
+  on the File page here and the second belongs to **L6**.
 - [ ] **J18. The rest of the Mail Merge Recipients dialog.** Sorting,
   filtering, finding duplicates, finding a recipient and validating
   addresses; and Word's Type a New List, which makes a list of recipients

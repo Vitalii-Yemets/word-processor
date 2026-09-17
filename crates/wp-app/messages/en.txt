@@ -15,6 +15,7 @@
 = 100%
 = A new document
 = A password that is lost cannot be recovered.
+= A password to modify does not encrypt the file.
 = AaBbCcDdEe
 = Above
 = Accept
@@ -45,6 +46,7 @@
 = Always open read-only
 = Always show these on screen
 = An empty box takes the encryption off.
+= Anybody who can open it can take that one off.
 = Anybody who can open the file can take this off.
 = Appearance
 = Apply as you type
@@ -407,6 +409,7 @@
 = Password
 = Password to modify
 = Password to modify (optional)
+= Password to open
 = Paste
 = Paste as Picture
 = Paste function
@@ -577,7 +580,6 @@
 = The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
 = The letter goes to everybody ticked.
 = The selection is saved under this name.
-= The two passwords are not the same
 = The {0} theme
 = Themes
 = Thesaurus

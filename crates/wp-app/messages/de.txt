@@ -32,6 +32,9 @@ language = Deutsch
 = A new document
 > Ein neues Dokument
 
+= A password to modify does not encrypt the file.
+> Ein Kennwort zum Ändern verschlüsselt die Datei nicht.
+
 = A rule under every heading
 > Eine Linie unter jeder Überschrift
 
@@ -58,6 +61,9 @@ language = Deutsch
 
 = An empty box takes the encryption off.
 > Ein leeres Feld hebt die Verschlüsselung auf.
+
+= Anybody who can open it can take that one off.
+> Wer sie öffnen kann, kann dieses entfernen.
 
 = Anybody who can open the file can take this off.
 > Wer die Datei öffnen kann, kann dies aufheben.
@@ -608,6 +614,9 @@ language = Deutsch
 = Edges
 > Kanten
 
+= Edit Anyway
+> Trotzdem bearbeiten
+
 = Edit Individual Documents
 > Einzelne Dokumente bearbeiten
 
@@ -1153,6 +1162,9 @@ language = Deutsch
 
 = Password to modify (optional)
 > Kennwort zum Ändern (optional)
+
+= Password to open
+> Kennwort zum Öffnen
 
 = PDF Files (*.pdf)
 > PDF-Dateien (*.pdf)
@@ -1772,8 +1784,14 @@ language = Deutsch
 = Themes
 > Designs
 
+= This document carries macros. They are kept and not run.
+> Dieses Dokument enthält Makros. Sie bleiben erhalten und werden nicht ausgeführt.
+
 = This document fixes its style set — Review ▸ Restrict Editing lifts it
 > Dieses Dokument legt seinen Formatvorlagensatz fest — Überprüfen ▸ Bearbeitung einschränken hebt es auf
+
+= This document is encrypted. An empty box takes that off.
+> Dieses Dokument ist verschlüsselt. Ein leeres Feld hebt das auf.
 
 = This document is not signed.
 > Dieses Dokument ist nicht signiert.
@@ -1786,6 +1804,9 @@ language = Deutsch
 
 = This document was opened read-only: save a copy
 > Dieses Dokument wurde schreibgeschützt geöffnet: Kopie speichern
+
+= This document was recovered after the program stopped.
+> Dieses Dokument wurde wiederhergestellt, nachdem das Programm beendet wurde.
 
 = This document, before
 > Dieses Dokument, vorher
@@ -1924,6 +1945,9 @@ language = Deutsch
 
 = With
 > Durch
+
+= With one, the file itself cannot be read without it.
+> Mit einem kann die Datei selbst ohne dieses nicht gelesen werden.
 
 = Word 97-2003 Documents (*.doc)
 > Word 97-2003-Dokumente (*.doc)

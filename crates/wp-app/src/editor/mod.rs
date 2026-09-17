@@ -481,6 +481,9 @@ pub struct Editor {
     /// to be. A property of this window and not of the document: see
     /// [`readonly`].
     opened_read_only: bool,
+    /// The bar across the top of the document saying something about it that
+    /// is true for as long as it is open. See [`crate::chrome::infobar`].
+    info_bar: Option<crate::chrome::infobar::InfoBar>,
     /// Whether Word Count counts what is written round the edges of the body:
     /// notes and text boxes. Word remembers the tick between openings, so this
     /// lives here rather than in the dialog.
@@ -745,6 +748,7 @@ impl Editor {
             waiting_to_unseal: None,
             to_compare: None,
             opened_read_only: false,
+            info_bar: None,
             count_the_edges: false,
             under_caret: None,
             caret_only: false,
@@ -904,6 +908,7 @@ impl Editor {
     fn whole_content_band(&self) -> (f32, f32) {
         let top = self.ribbon_bottom()
             + self.find_bar_height()
+            + self.info_bar_height()
             + if self.show_rulers { HORIZONTAL_HEIGHT } else { 0.0 };
         let bottom = (self.view_height as f32 - STATUS_HEIGHT).max(top + 1.0);
         (top, bottom)
@@ -930,6 +935,17 @@ impl Editor {
     pub(super) fn find_bar_height(&self) -> f32 {
         if self.find_bar.is_some() {
             crate::chrome::findbar::HEIGHT
+        } else {
+            0.0
+        }
+    }
+
+    /// And the bar that says something about the document, which sits above
+    /// the find strip because it is about the document rather than about
+    /// what is being looked for in it.
+    pub(super) fn info_bar_height(&self) -> f32 {
+        if self.info_bar.is_some() {
+            crate::chrome::infobar::HEIGHT
         } else {
             0.0
         }

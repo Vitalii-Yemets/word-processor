@@ -373,7 +373,7 @@ impl Editor {
     /// The top of the horizontal ruler, which is where its hit-testing starts.
     #[must_use]
     pub(super) fn ruler_top(&self) -> f32 {
-        self.ribbon_bottom() + self.find_bar_height()
+        self.ribbon_bottom() + self.info_bar_height() + self.find_bar_height()
     }
 }
 

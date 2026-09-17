@@ -2097,6 +2097,19 @@ Katherine Johnson,Hampton,katherine@example.com
                 self.choose_style_set(1);
                 self.relayout();
             }
+            // The bar across the top of a document that asked to be opened
+            // read-only.
+            "infobar" => {
+                self.document
+                    .set_write_protection(Some(&wp_docx::readonly::WriteProtection::recommended()));
+                self.asked_at_the_door(std::path::Path::new("Contract.docx"));
+                self.finish_dialog(crate::chrome::dialog::Answer::Accept);
+                self.relayout();
+            }
+            // Word's General Options, which holds both passwords.
+            "generaloptions" => {
+                self.open_read_only_settings();
+            }
             "exception" => {
                 self.document.set_caret(wp_docx::TextPosition::new(4, 0));
                 let end = self.document.paragraph_text(4).unwrap_or_default().len();

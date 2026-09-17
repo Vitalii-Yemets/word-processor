@@ -564,6 +564,13 @@ impl Editor {
         // they are; both halves of that are worth saying before somebody
         // wonders why nothing happened.
         self.carries_macros = self.document.has_macros();
+        // A document carrying Visual Basic says so across the top for as
+        // long as it is open, because it is true for that long: this program
+        // keeps macros and does not run them, and a person opening somebody
+        // else's document is owed that plainly. See [`super::macros`].
+        self.info_bar = self
+            .carries_macros
+            .then(|| crate::chrome::infobar::InfoBar::new(crate::chrome::infobar::Because::Macros));
         // Whatever is opened is opened for writing until it asks not to be,
         // which is asked at the door and not here: see [`super::readonly`].
         self.opened_read_only = false;

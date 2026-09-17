@@ -19,6 +19,7 @@ pub mod findbar;
 pub mod grid;
 mod icon_catalogue;
 pub mod icons;
+pub mod infobar;
 pub mod keytips;
 pub mod minibar;
 pub mod mirror;
