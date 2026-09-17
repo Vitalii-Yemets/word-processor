@@ -16,6 +16,7 @@ wp-html = { path = "../wp-html" }
 wp-odt = { path = "../wp-odt" }
 wp-rtf = { path = "../wp-rtf" }
 wp-docx = { path = "../wp-docx" }
+wp-image = { path = "../wp-image" }
 wp-layout = { path = "../wp-layout" }
 wp-pdf = { path = "../wp-pdf" }
 wp-opc = { path = "../wp-opc" }

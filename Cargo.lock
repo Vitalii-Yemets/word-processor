@@ -54,6 +54,7 @@ dependencies = [
  "wp-doc",
  "wp-docx",
  "wp-html",
+ "wp-image",
  "wp-layout",
  "wp-odt",
  "wp-opc",

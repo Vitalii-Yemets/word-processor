@@ -6051,9 +6051,65 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   what this proves today is that the harness works and not that the documents
   do. Templates from before 2007 — `.dot` — are not in the list of kinds,
   because nothing here has been shown one.
-- [ ] **K2. Page images compared against Word's.** A fidelity score per
-  document rather than a pass or a fail, tracked over time so that it can be
-  seen to improve.
+- [x] **K2. Page images compared against Word's.**
+  **A score, not a pass.** Two renderings of the same page are never
+  identical: fonts are hinted, edges are softened, a letter lands a third of a
+  pixel to the left. A comparison that demanded equality would fail on every
+  document forever and tell nobody anything. So each page is reduced to ink —
+  how dark each pixel is, white being none — and two pages are scored by how
+  much of their ink falls in the same places: what they agree on over what
+  either of them has. Identical pages score one, a blank page against a
+  written one scores nothing, and everything real is in between.
+  **Two numbers, because one of them is a lie on its own.** The exact score
+  asks whether the ink lands on the same pixel, which a page drawn a pixel low
+  fails while being perfectly right. The tolerant score asks the same question
+  in squares four pixels across. It was a softened comparison first, and that
+  did not work: blurring both pages moves the disagreement onto the softened
+  edges and the ratio comes out where it started — 0.71 before and 0.71 after,
+  which is what sent me looking for a different question rather than a wider
+  brush. A coarser question forgives a letter a pixel out, because it is still
+  in the same square, and does not forgive one in the wrong place or missing.
+  **Pages are drawn at the reference's own resolution, rounded to a whole
+  number of dots to the inch.** Working it back from how wide the reference
+  image is gets within a fiftieth of a dot, and a fiftieth of a dot is enough
+  to move a word onto the next line and everything after it down the page: a
+  page held against a picture of itself scored 0.67 until the number was
+  rounded, and 1.00 after. That is worth knowing for its own sake — this
+  program's line breaking depends on the resolution it is drawn at, so a
+  document is not one layout but one per resolution. Which of them matches
+  Word is a question this harness can now be asked and has not been.
+  **A document nobody has exported pages for is not a zero.** It is left out
+  of the average and said so, because everybody's corpus will be mostly that,
+  and scoring the unmeasured at nothing would drag the number to
+  meaninglessness and hide the documents that really are drawn badly.
+  *Done:* `./x.sh fidelity` and `.\x.ps1 fidelity`. Word's pages go in
+  `corpus/reference/<document>/` as pictures named by page number, in any
+  format this program reads. Every run appends to `corpus/fidelity.log` —
+  when, which commit, how many documents and pages, both scores — and the
+  report says which way it has moved since the run before. The commit is read
+  out of `.git` by hand, through `HEAD`, the branch's own ref and
+  `packed-refs`, rather than shelling out to a program the container may not
+  have.
+  *Proven by:* twelve tests. A page against itself agrees completely and two
+  blank pages are not a disagreement about nothing; a blank page where there
+  should be writing scores zero; a page a pixel out is forgiven by the coarse
+  look and not by the exact one; the same page at two sizes scores the same,
+  so the exporter's resolution is not what is being measured; ink is read over
+  white however the picture was saved, so a page with an alpha channel and one
+  without are the same page; images are paired with pages by the number in
+  their names, so page ten comes after page nine; a page that was never laid
+  out costs exactly the ink it holds; a document with no reference is not
+  counted; the history line says when, what and how much, and the report says
+  which way it moved; the commit is found whether its ref is a file or packed
+  away, and a directory that is not a repository says so; and, end to end, a
+  document measured against pictures of its own pages comes back at 100%,
+  which exercises the walk, the pairing, the resolution and the rendering.
+  *Not done, and named here:* getting the pages out of Word is by hand —
+  export a PDF and turn its pages into images, or print to an image printer.
+  Nothing here automates it, and on a machine with no Word there is nothing to
+  automate. The comparison is of ink and not of colour, so a page whose text
+  is the right shape in the wrong colour scores nearly full marks; that is a
+  second measurement rather than a change to this one.
 - [ ] **K3. The Unicode conformance suites** run against the text engine.
   **E7** has replaced the hand-written tables, so there is now something worth
   holding to the standard's own answers. What is needed is the files:

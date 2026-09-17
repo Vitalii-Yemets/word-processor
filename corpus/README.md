@@ -27,3 +27,25 @@ A document that will not open or will not save is a bug and the command ends
 unhappily. A difference is a measurement, not a failure: the list at the end
 says which parts differ across how many documents, which is where the next
 piece of work is.
+
+## Word's own pages
+
+Put them in `reference/`, in a folder named after the document: the pages of
+`letters/report.docx` go in `reference/letters/report/`, as pictures named by
+page number — `page-1.png`, `page-2.png` and so on. Any picture format this
+program reads will do, and the pages are drawn at whatever resolution the
+first of them is.
+
+```powershell
+.\x.ps1 fidelity    # or ./x.sh fidelity
+```
+
+Each page is scored twice: how exactly the drawing lands, and whether the
+right things are in the right places at all. Every run appends a line to
+`fidelity.log` and says which way the score has moved since the run before.
+Documents nobody has exported pages for are left out of the average rather
+than counted as nothing.
+
+To get the pages out of Word: **File > Save as** a PDF and export its pages
+as images, or print to an image printer. Whatever produces them, they are
+yours and stay here.

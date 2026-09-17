@@ -23,6 +23,7 @@ switch ($Cmd) {
     'bench'    { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'bench') + $Rest) }
     'fixtures' { Invoke-InContainer @('bash', 'tools/make-fixtures.sh') }
     'corpus'   { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'corpus') + $Rest) }
+    'fidelity' { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'fidelity') + $Rest) }
     'shell'    { docker compose run --rm dev bash }
     'win' {
         # Cross-compile a Windows .exe and copy it to ./dist, which is bind-mounted.
@@ -45,6 +46,7 @@ Usage: .\x.ps1 <command>
   bench      time what a person waits for, on a document of N pages
   fixtures   regenerate the gzip interop fixtures
   corpus     open, save and compare every real document in .\corpus
+  fidelity   score the pages drawn for them against Word's own
   win        release build of the Windows .exe -> ./dist
   linux      release build for Linux -> ./dist
   shell      interactive bash inside the container

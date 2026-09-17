@@ -70,6 +70,7 @@ use wp_docx::model::{
 use wp_docx::Document;
 
 mod corpus;
+mod fidelity;
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -83,6 +84,8 @@ fn main() -> ExitCode {
         (Some("roundtrip"), 3) => roundtrip(&arguments[1], &arguments[2]),
         (Some("corpus"), 1) => corpus_command("corpus"),
         (Some("corpus"), 2) => corpus_command(&arguments[1]),
+        (Some("fidelity"), 1) => fidelity_command("corpus"),
+        (Some("fidelity"), 2) => fidelity_command(&arguments[1]),
         (Some("replace"), 5) => replace(&arguments[1], &arguments[2], &arguments[3], &arguments[4]),
         (Some("append"), 4) => append(&arguments[1], &arguments[2], &arguments[3]),
         (Some("render"), 3) => render(&arguments[1], &arguments[2], "96"),
@@ -131,6 +134,8 @@ Usage: wp <command>
   roundtrip <in> <out>         open and save, checking nothing changed
   corpus [directory]           open, save and compare every document in a
                                directory of real files (default: corpus/)
+  fidelity [directory]         draw every document in it and score the pages
+                               against Word's own, kept in reference/
 
   replace <in> <out> <from> <to>   replace text, across run boundaries
   append <in> <out> <text>         add a paragraph at the end
@@ -438,6 +443,48 @@ fn corpus_command(directory: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("{failed} document(s) could not be opened or saved"))
+    }
+}
+
+/// Draws every document in a corpus and scores its pages against Word's own.
+///
+/// The score is written to the corpus's own history file so that it can be
+/// seen to move, and the report says which way it went since the run before.
+/// Only a run that measured something is written down: a run that found no
+/// reference pages is not a point on the graph.
+fn fidelity_command(directory: &str) -> Result<(), String> {
+    let corpus = Path::new(directory);
+    let verdicts = fidelity::run(corpus);
+
+    let history = corpus.join(fidelity::HISTORY);
+    let before = std::fs::read_to_string(&history).unwrap_or_default();
+    let last = before.lines().last().map(str::to_owned);
+    for line in fidelity::lines(corpus, &verdicts, last.as_deref()) {
+        outln!("{line}");
+    }
+
+    let (_, _, documents, _) = fidelity::total(&verdicts);
+    if documents > 0 {
+        let line = fidelity::history_line(&verdicts, &now(), &fidelity::commit(Path::new(".")));
+        let mut text = before;
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&line);
+        text.push('\n');
+        write(&history.to_string_lossy(), text.as_bytes())?;
+        outln!();
+        outln!("{}", history.display());
+    }
+
+    let failed = verdicts
+        .iter()
+        .filter(|verdict| matches!(verdict.judgement, fidelity::Judgement::Failed(_)))
+        .count();
+    if failed == 0 {
+        Ok(())
+    } else {
+        Err(format!("{failed} document(s) could not be drawn"))
     }
 }
 

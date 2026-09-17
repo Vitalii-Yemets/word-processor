@@ -161,13 +161,20 @@ pub struct Summary {
 /// Opens, saves and compares every document under a directory.
 #[must_use]
 pub fn survey(directory: &Path) -> Vec<Report> {
+    documents(directory).iter().map(|path| examine(path)).collect()
+}
+
+/// Every document under a directory.
+///
+/// Sorted as a whole rather than folder by folder: a report read twice should
+/// be the same report, and one where the documents filed in a folder come
+/// before the ones beside it reads as an accident.
+#[must_use]
+pub fn documents(directory: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     walk(directory, 0, &mut found);
-    // Sorted as a whole rather than folder by folder: a report read twice
-    // should be the same report, and one where the documents filed in a
-    // folder come before the ones beside it reads as an accident.
     found.sort();
-    found.iter().map(|path| examine(path)).collect()
+    found
 }
 
 /// Every document under a directory, in a stable order.
@@ -186,6 +193,11 @@ fn walk(directory: &Path, depth: usize, found: &mut Vec<PathBuf>) {
         // lock file Word leaves behind while a document is open: a hundred
         // and sixty bytes saying who has it, which is not a document.
         if name.starts_with('.') || name.starts_with("~$") {
+            continue;
+        }
+        // Word's own pages of these documents live in the corpus too, and
+        // they are pictures rather than documents.
+        if depth == 0 && name == crate::fidelity::REFERENCE {
             continue;
         }
         if path.is_dir() {
