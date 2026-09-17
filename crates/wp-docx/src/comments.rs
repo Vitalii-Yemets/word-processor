@@ -234,6 +234,55 @@ impl Document {
     }
 
     /// Adds one comment to the part, making the part if there is not one.
+    /// What one comment says, as paragraphs rather than as one run of text.
+    ///
+    /// The text is enough to show a comment and not enough to compare one:
+    /// comparing means marking what changed inside it, and a mark lives on a
+    /// run.
+    #[must_use]
+    pub fn comment_body(&self, id: i32) -> Option<crate::model::Body> {
+        let root = self.comments_root();
+        let wanted = id.to_string();
+        let entry = root
+            .children_named(Some(read::W), "comment")
+            .find(|element| element.attribute(Some(read::W), "id") == Some(wanted.as_str()))?;
+        Some(read::read_part(entry))
+    }
+
+    /// Writes a comment's words back, whatever they have become.
+    ///
+    /// Who wrote it and when are left exactly as they were: comparing two
+    /// documents says what the comment came to say, not that somebody else
+    /// wrote it.
+    pub fn set_comment_body(&mut self, id: i32, body: &crate::model::Body) -> bool {
+        let mut root = self.comments_root();
+        let wanted = id.to_string();
+
+        let mut written = false;
+        for entry in root.child_elements_mut() {
+            if !entry.is(Some(read::W), "comment")
+                || entry.attribute(Some(read::W), "id") != Some(wanted.as_str())
+            {
+                continue;
+            }
+            entry.children.clear();
+            for block in &body.blocks {
+                entry.push_element(edit::block_element(block, Some("w")));
+            }
+            written = true;
+            break;
+        }
+
+        if !written {
+            return false;
+        }
+        let saved = self.save_comments_root(root).is_ok();
+        if saved {
+            self.mark_modified();
+        }
+        saved
+    }
+
     fn write_comment_part(
         &mut self,
         id: i32,

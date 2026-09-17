@@ -409,6 +409,64 @@ fn remove_marks(paragraph: &mut Element, kind: Kind, id: i32) -> bool {
 }
 
 impl Document {
+    /// Writes a note's words back, whatever they have become.
+    ///
+    /// The mark that raises the number stays where it is: it is the first run
+    /// of the first paragraph and it is not words, so a comparison that
+    /// replaced it would take the number off the note. Everything after it is
+    /// the note, and everything after it is what gets written.
+    pub fn set_note_body(&mut self, kind: Kind, id: i32, body: &crate::model::Body) -> bool {
+        let Some(mut root) = self.notes_root(kind) else { return false };
+        let wanted = id.to_string();
+
+        let mut written = false;
+        for entry in root.child_elements_mut() {
+            if !entry.is(Some(read::W), kind.entry())
+                || entry.attribute(Some(read::W), "id") != Some(wanted.as_str())
+            {
+                continue;
+            }
+            entry.children.clear();
+            for (number, block) in body.blocks.iter().enumerate() {
+                let mut block = block.clone();
+                // The reference mark goes back on the first paragraph, since
+                // clearing the entry took it off with everything else.
+                if number == 0 {
+                    if let crate::model::Block::Paragraph(paragraph) = &mut block {
+                        paragraph.runs.insert(
+                            0,
+                            Run {
+                                properties: RunProperties {
+                                    vertical_align: Some(VerticalAlignment::Superscript),
+                                    ..RunProperties::default()
+                                },
+                                content: vec![RunContent::NoteReference {
+                                    id,
+                                    endnote: kind.is_endnote(),
+                                }],
+                                field: None,
+                                revision: None,
+                                format_change: None,
+                            },
+                        );
+                    }
+                }
+                entry.push_element(edit::block_element(&block, Some("w")));
+            }
+            written = true;
+            break;
+        }
+
+        if !written {
+            return false;
+        }
+        let saved = self.save_notes_root(kind, root).is_ok();
+        if saved {
+            self.mark_modified();
+        }
+        saved
+    }
+
     /// The body of one note, for something that needs to lay it out.
     #[must_use]
     pub fn note_body(&self, kind: Kind, id: i32) -> Option<crate::model::Body> {

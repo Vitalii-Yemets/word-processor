@@ -752,6 +752,9 @@ language = Deutsch
 = Feedback
 > Feedback
 
+= Fields
+> Felder
+
 = File
 > Datei
 
@@ -811,6 +814,9 @@ language = Deutsch
 
 = Footnotes
 > Fußnoten
+
+= Footnotes and endnotes
+> Fußnoten und Endnoten
 
 = For the line of {0}
 > Für die Zeile von {0}
@@ -898,6 +904,9 @@ language = Deutsch
 
 = Headers
 > Kopfzeilen
+
+= Headers and footers
+> Kopf- und Fußzeilen
 
 = Headings
 > Überschriften
@@ -1200,6 +1209,9 @@ language = Deutsch
 > Inhaltsverzeichnisse
 
 = Text Boxes
+> Textfelder
+
+= Text boxes
 > Textfelder
 
 = That line is no longer in this document

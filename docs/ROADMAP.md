@@ -5705,14 +5705,57 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   to be one, so it is named rather than numbered: what would make it an item
   is a decision to let this program talk to a server, and that decision has
   not been asked for.
-- [ ] **J26. Comparing the rest of a document.** **J13** compares the
-  paragraphs of the body. Word's Compare dialog also offers headers and
-  footers, footnotes and endnotes, text boxes, fields and comments, and each
-  of those is a part or a stream of its own: a comparison that does not walk
-  them says two documents are the same when one of them has a different
-  footer on every page. Done when each can be compared and the differences
-  come out as tracked changes in the part they belong to, with a tick box
-  apiece in the dialog that already has four.
+- [x] **J26. Comparing the rest of a document.**
+  **One comparison, not six.** The thing to see was that marking a difference
+  is the same work wherever the words are, and that work is written once —
+  against a document. A header is not a document; a document with the header's
+  paragraphs in it is. So a part is compared by making a document of it,
+  comparing that, and taking the body back out: what comes out carries the
+  tracked changes in the model, and a header can take them. Any other way
+  would have meant a second copy of the comparison that only knew about
+  headers, and a third that only knew about footnotes.
+  **Headers and footers**, every kind a section can have — the ordinary one,
+  the first page's, the even pages' — and section by section. A document that
+  says something different on its first page says it whether or not anybody
+  compared it, and this was the case the item was written for: a comparison
+  that walked only the body called two documents the same when one of them had
+  a different footer on every page.
+  **Footnotes and endnotes**, paired by the identifier the format gives them
+  rather than by the order they appear in, since reading order changes the
+  moment somebody adds a paragraph above a mark. The mark that raises the
+  number stays where it is: it is the first run and it is not words.
+  **Comments**, paired the same way, and with who wrote them and when left
+  exactly as they were — a comparison says what the comment came to say, not
+  that somebody else wrote it.
+  **Text boxes**, which turned out not to be compared at all and not to be
+  obviously missing either: their paragraphs are in the body's own part, and
+  the walk that visits every paragraph stops before reaching them, because
+  what stands between a paragraph and a text box's paragraph is a run of
+  elements from the drawing namespaces. So they are walked on their own.
+  **Fields**, which is a different kind of difference: a field shows what it
+  last worked out, so two documents can show the same word where one counts
+  the pages and the other numbers them. Reading only what is on the page calls
+  those the same. The instruction is part of what a paragraph is compared as
+  now, and a paragraph that differs by nothing else has its field struck out
+  and the new one put in.
+  And a tick box apiece, which is nine in a dialog that had four.
+  *Proven by:* seven tests over the parts. A different footer is a difference
+  and the old words are struck out rather than thrown away; the footer is left
+  alone when that box is not ticked; all three kinds of running head are
+  compared and not only the ordinary one; a changed footnote is marked inside
+  the footnote and keeps the number the reader sees; a changed comment is
+  marked inside the comment and keeps its author; and two fields that read the
+  same but say different things are a difference, unless the box says
+  otherwise.
+  *Not done, and named here:* a text box has **no identifier** — nothing in
+  the format names one — so two documents' boxes are paired by the order they
+  stand in. That is right for a revised copy of a document, which is what a
+  comparison is of, and wrong for a copy with a box inserted in the middle,
+  which would pair the rest of them one out. There is nothing in the file to
+  do better with. And a paragraph whose **words and field both** changed has
+  its words compared and its field left behind, because the machinery that
+  puts changed words in takes text and not runs; the field-only case is the
+  one the tick box is about and is the one that is handled.
 - [ ] **J27. Page numbers in the margin.** Word's fourth place for one, and
   the one **J22** did not offer: a number standing in the margin beside the
   text rather than above or below it. It is not a header — it is a text box

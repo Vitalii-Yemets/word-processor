@@ -93,7 +93,14 @@ pub(super) const MOVES: usize = 3;
 pub(super) const FORMATTING: usize = 4;
 pub(super) const CASE: usize = 5;
 pub(super) const WHITE_SPACE: usize = 6;
-pub(super) const INTO: usize = 8;
+/// The parts of a document that are not the body, one box apiece, which is
+/// how Word's dialog has them.
+pub(super) const FURNITURE: usize = 7;
+pub(super) const NOTES: usize = 8;
+pub(super) const COMMENTS: usize = 9;
+pub(super) const TEXT_BOXES: usize = 10;
+pub(super) const FIELDS: usize = 11;
+pub(super) const INTO: usize = 13;
 
 /// What the dialog said to take notice of.
 #[must_use]
@@ -103,6 +110,11 @@ pub(super) fn options_from(dialog: &crate::chrome::dialog::Dialog) -> Options {
         formatting: dialog.ticked(FORMATTING),
         case: dialog.ticked(CASE),
         white_space: dialog.ticked(WHITE_SPACE),
+        furniture: dialog.ticked(FURNITURE),
+        notes: dialog.ticked(NOTES),
+        comments: dialog.ticked(COMMENTS),
+        text_boxes: dialog.ticked(TEXT_BOXES),
+        fields: dialog.ticked(FIELDS),
     }
 }
 
@@ -130,6 +142,11 @@ impl Editor {
                 Field::Check { label: "Formatting".to_owned(), on: defaults.formatting },
                 Field::Check { label: "Case changes".to_owned(), on: defaults.case },
                 Field::Check { label: "White space".to_owned(), on: defaults.white_space },
+                Field::Check { label: "Headers and footers".to_owned(), on: defaults.furniture },
+                Field::Check { label: "Footnotes and endnotes".to_owned(), on: defaults.notes },
+                Field::Check { label: "Comments".to_owned(), on: defaults.comments },
+                Field::Check { label: "Text boxes".to_owned(), on: defaults.text_boxes },
+                Field::Check { label: "Fields".to_owned(), on: defaults.fields },
                 Field::Heading("Show changes in".to_owned()),
                 Field::Choice {
                     label: "Where the comparison goes".to_owned(),

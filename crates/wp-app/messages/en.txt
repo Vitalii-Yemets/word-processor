@@ -243,6 +243,7 @@
 = Exceptions...
 = Export
 = Feedback
+= Fields
 = File
 = File sharing
 = File types
@@ -262,6 +263,7 @@
 = Footers
 = Footnote
 = Footnotes
+= Footnotes and endnotes
 = For the line of {0}
 = Format Page Numbers
 = Format Painter
@@ -291,6 +293,7 @@
 = Header Row
 = Header from Top:
 = Headers
+= Headers and footers
 = Headings
 = Height:
 = Help
@@ -644,6 +647,7 @@
 = Text Direction
 = Text Files (*.txt)
 = Text Wrapping
+= Text boxes
 = Text encoding
 = Text files
 = Text formatting
