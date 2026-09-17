@@ -16,7 +16,11 @@ wp-html = { path = "../wp-html" }
 wp-odt = { path = "../wp-odt" }
 wp-rtf = { path = "../wp-rtf" }
 wp-docx = { path = "../wp-docx" }
+wp-bidi = { path = "../wp-bidi" }
+wp-break = { path = "../wp-break" }
 wp-image = { path = "../wp-image" }
+wp-normal = { path = "../wp-normal" }
+wp-segment = { path = "../wp-segment" }
 wp-layout = { path = "../wp-layout" }
 wp-pdf = { path = "../wp-pdf" }
 wp-opc = { path = "../wp-opc" }

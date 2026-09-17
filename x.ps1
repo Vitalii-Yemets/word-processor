@@ -24,6 +24,7 @@ switch ($Cmd) {
     'fixtures' { Invoke-InContainer @('bash', 'tools/make-fixtures.sh') }
     'corpus'   { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'corpus') + $Rest) }
     'fidelity' { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'fidelity') + $Rest) }
+    'conformance' { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'conformance') + $Rest) }
     'shell'    { docker compose run --rm dev bash }
     'win' {
         # Cross-compile a Windows .exe and copy it to ./dist, which is bind-mounted.
@@ -47,6 +48,7 @@ Usage: .\x.ps1 <command>
   fixtures   regenerate the gzip interop fixtures
   corpus     open, save and compare every real document in .\corpus
   fidelity   score the pages drawn for them against Word's own
+  conformance  run the Unicode test suites in .\unicode against the engine
   win        release build of the Windows .exe -> ./dist
   linux      release build for Linux -> ./dist
   shell      interactive bash inside the container

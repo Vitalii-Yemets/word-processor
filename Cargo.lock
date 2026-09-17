@@ -51,17 +51,21 @@ name = "wp-cli"
 version = "0.0.1"
 dependencies = [
  "wp-asn1",
+ "wp-bidi",
+ "wp-break",
  "wp-doc",
  "wp-docx",
  "wp-html",
  "wp-image",
  "wp-layout",
+ "wp-normal",
  "wp-odt",
  "wp-opc",
  "wp-pdf",
  "wp-raster",
  "wp-rsa",
  "wp-rtf",
+ "wp-segment",
  "wp-sign",
 ]
 

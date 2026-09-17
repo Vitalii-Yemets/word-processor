@@ -14,6 +14,7 @@ case "${1:-help}" in
   fixtures) run bash tools/make-fixtures.sh ;;
   corpus)   shift; run cargo run -q --release -p wp-cli -- corpus "${1:-corpus}" ;;
   fidelity) shift; run cargo run -q --release -p wp-cli -- fidelity "${1:-corpus}" ;;
+  conformance) shift; run cargo run -q --release -p wp-cli -- conformance "${1:-unicode}" ;;
   bench)    shift; run cargo run -q --release -p wp-cli -- bench "${1:-100}" ;;
   shell)    run bash ;;
   win)
@@ -37,6 +38,7 @@ Usage: ./x.sh <command>
   fixtures   regenerate the gzip interop fixtures
   corpus     open, save and compare every real document in ./corpus
   fidelity   score the pages drawn for them against Word's own
+  conformance  run the Unicode test suites in ./unicode against the engine
   win        release build of the Windows .exe -> ./dist
   linux      release build for Linux -> ./dist
   shell      interactive bash inside the container

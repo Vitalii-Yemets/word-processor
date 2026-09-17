@@ -69,6 +69,7 @@ use wp_docx::model::{
 };
 use wp_docx::Document;
 
+mod conformance;
 mod corpus;
 mod fidelity;
 
@@ -86,6 +87,8 @@ fn main() -> ExitCode {
         (Some("corpus"), 2) => corpus_command(&arguments[1]),
         (Some("fidelity"), 1) => fidelity_command("corpus"),
         (Some("fidelity"), 2) => fidelity_command(&arguments[1]),
+        (Some("conformance"), 1) => conformance_command("unicode"),
+        (Some("conformance"), 2) => conformance_command(&arguments[1]),
         (Some("replace"), 5) => replace(&arguments[1], &arguments[2], &arguments[3], &arguments[4]),
         (Some("append"), 4) => append(&arguments[1], &arguments[2], &arguments[3]),
         (Some("render"), 3) => render(&arguments[1], &arguments[2], "96"),
@@ -136,6 +139,8 @@ Usage: wp <command>
                                directory of real files (default: corpus/)
   fidelity [directory]         draw every document in it and score the pages
                                against Word's own, kept in reference/
+  conformance [directory]      run the Unicode test suites kept in it against
+                               the text engine (default: unicode/)
 
   replace <in> <out> <from> <to>   replace text, across run boundaries
   append <in> <out> <text>         add a paragraph at the end
@@ -485,6 +490,47 @@ fn fidelity_command(directory: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("{failed} document(s) could not be drawn"))
+    }
+}
+
+/// Runs whichever of the Unicode conformance suites are in a directory.
+///
+/// Reports rather than gates: a failing case is a gap that is written down in
+/// the roadmap, and the number is what this exists to produce. It ends
+/// unhappily only when a file is there and cannot be read at all.
+fn conformance_command(directory: &str) -> Result<(), String> {
+    let where_they_are = Path::new(directory);
+    let reports = conformance::run(where_they_are);
+
+    let history = where_they_are.join(conformance::HISTORY);
+    let before = std::fs::read_to_string(&history).unwrap_or_default();
+    let last = before.lines().last().map(str::to_owned);
+    for line in conformance::lines(where_they_are, &reports, last.as_deref()) {
+        outln!("{line}");
+    }
+
+    let (suites, _, _) = conformance::total(&reports);
+    if suites > 0 {
+        let line = conformance::history_line(&reports, &now(), &fidelity::commit(Path::new(".")));
+        let mut text = before;
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&line);
+        text.push('\n');
+        write(&history.to_string_lossy(), text.as_bytes())?;
+        outln!();
+        outln!("{}", history.display());
+    }
+
+    let unreadable = reports
+        .iter()
+        .filter(|(_, report)| matches!(report, conformance::Report::Unreadable(_)))
+        .count();
+    if unreadable == 0 {
+        Ok(())
+    } else {
+        Err(format!("{unreadable} of the suites could not be read"))
     }
 }
 

@@ -17,6 +17,13 @@
 *.odt
 *.pdf
 
+# The Unicode conformance suites are test data the Consortium publishes, not
+# character data, so nothing in the build image carries them and nothing here
+# downloads them. Whoever runs them puts them in place; only the README saying
+# which files and where from is tracked.
+/unicode/*
+!/unicode/README.md
+
 # Drop real Word files here to compare rendering against; the contents are
 # ignored, so nothing leaves the machine. Only the explanatory README is tracked.
 /corpus/*

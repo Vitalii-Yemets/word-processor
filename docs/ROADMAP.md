@@ -6110,15 +6110,61 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   automate. The comparison is of ink and not of colour, so a page whose text
   is the right shape in the wrong colour scores nearly full marks; that is a
   second measurement rather than a change to this one.
-- [ ] **K3. The Unicode conformance suites** run against the text engine.
-  **E7** has replaced the hand-written tables, so there is now something worth
-  holding to the standard's own answers. What is needed is the files:
-  `BidiTest.txt` and `BidiCharacterTest.txt`, `LineBreakTest.txt`,
-  `GraphemeBreakTest.txt` and `WordBreakTest.txt`, and `NormalizationTest.txt`.
-  The character database in the build image is Perl's, and Perl does not carry
-  those — they are test data rather than character data. So this is the same
-  decision as **E2**, **E6** and **E14**: where data of that kind comes from
-  and where it lives.
+- [x] **K3. The Unicode conformance suites.**
+  **The decision this was waiting on, made: data of that kind comes from
+  whoever wants it, and lives in a directory git ignores.** The six files are
+  test data rather than character data, so Perl's database in the build image
+  does not carry them, and the build downloads nothing and installs nothing —
+  which is the rule the whole project is built under and not a thing to bend
+  for a test. So `unicode/` holds them, ignored but for a README saying which
+  files and where from, exactly as `corpus/` holds real documents in **K1**.
+  What the repository carries is everything else: the parsers, the runners,
+  and tests of both written against fixtures of a few lines that the tests
+  type out themselves. The harness is proven without the data; the data proves
+  the engine.
+  **A suite whose file is not there is missing — not passed, and not failed.**
+  A fresh clone has six missing files, and a command that called that nought
+  per cent would be lying about the engine. Nor is a line the parser cannot
+  read counted as a failing case: that is a hole in this program's reading of
+  the file rather than in the engine, and rolling the two together would hide
+  whichever of them is smaller.
+  **A number, not a gate.** `LineBreakTest.txt` will fail by the thousand,
+  because line breaking here keeps seventeen classes where the standard has
+  about forty and folds the rest — which is **E16**, written down, and a red
+  build every morning would only say it again. What is wanted is the count,
+  the first few lines that produce it, and the direction it moves in.
+  `BidiTest.txt` is written in classes rather than characters, so each class
+  is given a character to stand for it — `L` an A, `R` an aleph, `AN` an
+  Arabic-Indic zero — which is how an engine that works on text runs a suite
+  written about classes.
+  *Done:* `./x.sh conformance` and `.\x.ps1 conformance`. Every run appends to
+  `unicode/conformance.log` and the report says which way the number went
+  since the run before, as **K2**'s does.
+  *Proven by:* ten tests. Six missing files are reported missing and said
+  where to get them; the three break suites are read and run, with the
+  outermost marks dropped for line breaking because a break at either end of a
+  line moves nothing; a case the engine gets wrong is counted and shown with
+  its line number, so that a hundred per cent means something; a line the
+  parser cannot read is counted apart; NFC and NFD are run six ways a row, as
+  the file's own rule says; the bidirectional algorithm is run over real text
+  and over classes; a class with no character to stand for it is not silently
+  passed; and the history line says when, what and how much.
+  *Found along the way:* seven grapheme cases typed out by hand to try the
+  command with, and the engine matched all seven — the one that appeared to
+  fail was my own expectation, since in Unicode 14 a virama is `Extend`, so
+  `KA` and the virama are one cluster and the `TA` after it begins the next.
+  Which is the argument for the whole item: a fixture typed by somebody who
+  believes he knows the answer is worth less than the file the Consortium
+  publishes.
+  *Not done, and named here:* the files are not here, so the numbers are not
+  either — what this proves today is the harness, the same as **K1** and
+  **K2**. The version taken has to be the one the tables were generated from,
+  Unicode 14.0.0; holding tables built from one version to another version's
+  answers measures the gap between versions and calls it a bug, and the README
+  says so. The `NFKC` and `NFKD` columns are read past, because compatibility
+  normalization changes what the text says and nothing here asks for it.
+  **E14** wants pattern data and is still open, but it is now the only one of
+  these left without an answer to where data comes from: this is the shape.
 
 ## L — Visual Basic for Applications
 
