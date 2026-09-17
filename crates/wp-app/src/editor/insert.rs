@@ -2034,6 +2034,18 @@ Katherine Johnson,Hampton,katherine@example.com
             "signatures" => {
                 self.open_signatures();
             }
+            // The same pane with a line somebody has been asked to sign on,
+            // which is the half of it that says what is left to do.
+            "signaturerequest" => {
+                self.document.set_caret(wp_docx::TextPosition::new(0, 0));
+                self.document.insert_signature_line(&wp_docx::signature::Signer {
+                    name: String::from("Ada Lovelace"),
+                    title: String::from("Director"),
+                    id: String::from("9a3f"),
+                });
+                self.relayout();
+                self.open_signatures();
+            }
             // Word's Compare dialog: what counts as a difference, and where
             // the answer goes.
             "comparedialog" => {

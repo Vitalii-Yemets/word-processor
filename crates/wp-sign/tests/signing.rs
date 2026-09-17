@@ -89,6 +89,7 @@ fn signer(keys: &Keys) -> wp_sign::Signer {
         key: Box::new(wp_rsa::PrivateKey::new(&private.modulus, &private.exponent)),
         reason: String::from("Because it is mine"),
         at: String::from("2026-09-16T12:00:00Z"),
+        line: String::new(),
     }
 }
 
@@ -284,4 +285,129 @@ fn a_relationship_part_is_signed_for_what_it_says_and_not_how_it_was_written() {
         wp_sign::package::relationships_as_signed("_rels/.rels", one, &[String::from("rId1")])
             .expect("fewer");
     assert_ne!(signed_one, fewer);
+}
+
+/// Signing, then somebody else signing that signature.
+#[test]
+fn a_signature_can_be_signed_by_somebody_else() {
+    let mine = keys("countersigned");
+    let mut sealed = package();
+    let part = wp_sign::sign(&mut sealed, &signer(&mine)).expect("signing");
+
+    // The same key stands in for the second person: what is being tested is
+    // that a countersignature covers the first signature's value and holds,
+    // not that two certificates differ.
+    let theirs = keys("countersigner");
+    let mut second = signer(&theirs);
+    second.reason = String::from("Witnessed");
+    second.at = String::from("2026-09-17T09:00:00Z");
+    wp_sign::countersign(&mut sealed, &part, &second).expect("countersigning");
+
+    let signatures = wp_sign::signatures(&sealed);
+    assert_eq!(signatures.len(), 1, "countersigning made a second signature");
+    let signature = &signatures[0];
+    assert_eq!(signature.standing, wp_sign::Standing::Good, "the first signature stopped holding");
+
+    assert_eq!(signature.counters.len(), 1, "the countersignature was not read back");
+    let counter = &signature.counters[0];
+    assert_eq!(counter.standing, wp_sign::Standing::Good, "{:?}", counter.standing);
+    assert_eq!(counter.role, "Witnessed");
+    assert_eq!(counter.signed_at, "2026-09-17T09:00:00Z");
+}
+
+#[test]
+fn a_second_countersignature_goes_beside_the_first() {
+    let mine = keys("countersigned-twice");
+    let mut sealed = package();
+    let part = wp_sign::sign(&mut sealed, &signer(&mine)).expect("signing");
+
+    for (why, when) in [("Witnessed", "2026-09-17T09:00:00Z"), ("Approved", "2026-09-18T09:00:00Z")]
+    {
+        let mut witness = signer(&mine);
+        witness.reason = String::from(why);
+        witness.at = String::from(when);
+        wp_sign::countersign(&mut sealed, &part, &witness).expect("countersigning");
+    }
+
+    let signatures = wp_sign::signatures(&sealed);
+    let counters = &signatures[0].counters;
+    assert_eq!(counters.len(), 2, "one of them replaced the other");
+    assert!(counters.iter().all(|counter| counter.standing == wp_sign::Standing::Good));
+    // Each says what it was signed as, which is the whole of why there are two.
+    let roles: Vec<&str> = counters.iter().map(|counter| counter.role.as_str()).collect();
+    assert_eq!(roles, vec!["Witnessed", "Approved"]);
+}
+
+#[test]
+fn a_countersignature_does_not_hold_over_a_signature_that_was_changed() {
+    // What it covers is the first signature's value. A document where that
+    // value has been swapped for another is one where the countersignature
+    // was made over something that is no longer there, and saying it still
+    // holds would be the whole point thrown away.
+    let mine = keys("countersign-changed");
+    let mut sealed = package();
+    let part = wp_sign::sign(&mut sealed, &signer(&mine)).expect("signing");
+    let mut witness = signer(&mine);
+    witness.reason = String::from("Witnessed");
+    wp_sign::countersign(&mut sealed, &part, &witness).expect("countersigning");
+
+    // One letter of the signed value, changed.
+    let text = sealed.xml_part(&part).expect("the part").expect("text");
+    let at = text.find("<SignatureValue").expect("a value");
+    let end = text[at..].find("</SignatureValue>").expect("the end of it") + at;
+    let middle = at + (end - at) / 2;
+    let swapped = if text.as_bytes()[middle] == b'A' { 'B' } else { 'A' };
+    let mut changed = text.clone();
+    changed.replace_range(middle..middle + 1, &swapped.to_string());
+    sealed.add_part(&part, wp_sign::package::SIGNATURE_TYPE, changed.into_bytes());
+
+    let signatures = wp_sign::signatures(&sealed);
+    let counter = &signatures[0].counters[0];
+    assert_ne!(counter.standing, wp_sign::Standing::Good, "it held over a changed value");
+}
+
+#[test]
+fn a_signature_made_for_a_line_says_which_one() {
+    let mine = keys("for-a-line");
+    let mut sealed = package();
+    let mut named = signer(&mine);
+    named.line = String::from("5f2c1a9e");
+    wp_sign::sign(&mut sealed, &named).expect("signing");
+
+    let signatures = wp_sign::signatures(&sealed);
+    assert_eq!(signatures[0].line, "5f2c1a9e");
+    assert_eq!(signatures[0].standing, wp_sign::Standing::Good);
+
+    // And one about the document at large names nothing, which is the
+    // difference a reader pairs signatures with lines by.
+    let mut plain = package();
+    wp_sign::sign(&mut plain, &signer(&mine)).expect("signing");
+    assert_eq!(wp_sign::signatures(&plain)[0].line, "");
+}
+
+#[test]
+fn what_a_signature_says_about_itself_is_signed_with_everything_else() {
+    // The signing time and the signer's own certificate are written into the
+    // signature as XAdES properties, and those properties are referenced from
+    // the signed information. Changing either has to break the signature, or
+    // they are decoration.
+    let mine = keys("xades");
+    let mut sealed = package();
+    let part = wp_sign::sign(&mut sealed, &signer(&mine)).expect("signing");
+
+    let text = sealed.xml_part(&part).expect("the part").expect("text");
+    assert!(text.contains("SigningTime"), "no signing time was written");
+    assert!(text.contains("SigningCertificate"), "no signing certificate was written");
+    assert!(text.contains("idSignedProperties"), "the properties are not named");
+
+    let changed = text.replace("2026-09-16T12:00:00Z", "2020-01-01T00:00:00Z");
+    assert_ne!(changed, text, "the time was not there to change");
+    sealed.add_part(&part, wp_sign::package::SIGNATURE_TYPE, changed.into_bytes());
+
+    let signatures = wp_sign::signatures(&sealed);
+    assert_ne!(
+        signatures[0].standing,
+        wp_sign::Standing::Good,
+        "the signing time could be changed without the signature noticing"
+    );
 }

@@ -889,6 +889,10 @@ fn sign(path: &str, out: &str, certificate: &str, key: &str, why: &str) -> Resul
         key: Box::new(wp_rsa::PrivateKey::new(&private.modulus, &private.exponent)),
         reason: why.to_owned(),
         at: now(),
+        // Signed about the document rather than about one of its signature
+        // lines: the command line has no way to pick a line and no person
+        // in front of it to pick one.
+        line: String::new(),
     };
     let bytes = document.save_signed(&signer).map_err(|error| error.to_string())?;
     std::fs::write(out, bytes).map_err(|error| format!("cannot write {out}: {error}"))?;

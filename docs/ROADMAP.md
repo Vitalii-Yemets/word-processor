@@ -5644,14 +5644,67 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   where this project's "against Word rather than against ourselves" lives. No
   amount of care here substitutes for it, and the entry says so rather than
   implying the calls have been seen to work.
-- [ ] **J25. The rest of what Word does with signatures.** Its Signatures
-  **pane**, which stands open beside the document listing what it carries and
-  what it wants — where **J12** has a dialog. The digital half of the
-  Signature Line: double-clicking one to sign it, and the signature knowing
-  which line it belongs to. **Countersignatures**, which is one signature
-  over another. And **XAdES**, the standard that puts a timestamp from
-  somebody else into a signature so that it outlives the certificate that
-  made it — which needs a timestamp authority, and therefore a network.
+- [x] **J25. The rest of what Word does with signatures.**
+  **The pane, and why this one especially.** A person reading a list of
+  signatures is reading the document at the same time — checking that the
+  thing signed is the thing in front of them — and a dialog covers the
+  document in order to tell you about it. The other reason is that the list
+  has two halves that answer each other: what the document carries, and what
+  it is still waiting for. A signature line somebody put in is a request; a
+  signature made for that line is the answer to it; a request with nothing
+  against it is what is left to do. The pane shows the two together and pairs
+  them, which is the whole reason a signature line is worth having.
+  **A line that can be named.** That pairing needed the line to have an
+  identity, and it had none: it was four paragraphs and a border. Word marks
+  its own with a picture carrying an `o:signatureline` element, which a reader
+  that does not know the element sees as a picture with no selectable name.
+  So each line is wrapped in a bookmark carrying an identifier — it prints the
+  same, the name is still text, it survives a round trip through Word — and a
+  signature made for that line writes the identifier into its `SetupID` and
+  calls itself the kind of signature that is about a line. Double-clicking a
+  line asks to sign it, which is Word's own shortcut.
+  Bookmarks would not span paragraphs, as it turned out: the end mark was put
+  at the end of the *first* paragraph whatever had been selected. Word's span
+  anything, and so do these now — it was three lines, and it is why a mark
+  round a four-paragraph signature line works at all.
+  **What a signature says about itself.** A signature proves that whoever held
+  a key signed some bytes. It does not say when, and it does not say which
+  certificate — the certificate travels beside the signature and could be
+  swapped for another with the same key. XAdES is the standard answer to both,
+  and it is written now: the signing time and a digest of the signer's own
+  certificate, inside `SignedProperties`, referenced from the signed
+  information so that neither can be changed by anybody without the key.
+  **One signature over another.** A second signature over a document says two
+  people signed the same thing. A countersignature says something stronger:
+  that this person saw *that signature* and signed it — a witness, an
+  approval. What it covers is the first signature's value, so it cannot be
+  lifted off and put on another signature or another document. It goes among
+  the first signature's *unsigned* properties, which sounds alarming and is
+  not: a signature never covers its own value, so writing beside that value
+  takes nothing away from it, and the first signature holds exactly as well
+  afterwards. What a countersigner gives is the capacity they signed in — a
+  witness, an approver — which is what XAdES has a place for and what tells
+  two countersignatures on one signature apart.
+  *Proven by:* thirteen tests over the signature itself and seven over the
+  pane. A countersignature is read back and holds; two of them sit beside each
+  other and each says what it was signed as; one does not hold over a
+  signature whose value was changed, which is the whole point of it. A
+  signature made for a line says which line and one about the document says
+  none; the signing time cannot be edited without the signature noticing. A
+  line comes back by the name it was given, survives being written out and
+  read back, and its mark does not show among a person's own bookmarks. The
+  pane pairs a signature with the line it answered and stops that line being
+  asked for, does not pair one that answered nothing, and refuses to sign an
+  unsaved document rather than offering a button that cannot work. And the
+  two independent checks that matter most still pass: what this program signs,
+  `xmlsec1` accepts — XAdES reference, canonicalisation and all.
+  *Not done, and named here:* **XAdES-T**, the timestamp. Everything above is
+  the signer's own claim, including the time; making the time worth more than
+  a claim means a timestamp from somebody else, which means asking a timestamp
+  authority, which means a network. There is none here and there is not going
+  to be one, so it is named rather than numbered: what would make it an item
+  is a decision to let this program talk to a server, and that decision has
+  not been asked for.
 - [ ] **J26. Comparing the rest of a document.** **J13** compares the
   paragraphs of the body. Word's Compare dialog also offers headers and
   footers, footnotes and endnotes, text boxes, fields and comments, and each

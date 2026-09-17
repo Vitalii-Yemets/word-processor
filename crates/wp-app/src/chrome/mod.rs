@@ -33,6 +33,7 @@ pub mod restrictpane;
 pub mod ribbon;
 pub mod rulers;
 pub mod scrollbar;
+pub mod signaturepane;
 pub mod status;
 pub mod stylespane;
 pub mod theme;

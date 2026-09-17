@@ -171,6 +171,8 @@
 = Copy
 = Correct TWo INitial CApitals
 = Correct accidental use of cAPS LOCK key
+= Countersign
+= Countersigned by {0}
 = Cover Page
 = Cover Pages
 = Create
@@ -252,7 +254,6 @@
 = Finish & Merge
 = First Column
 = First Letter
-= Folder
 = Font
 = Fonts
 = Font…
@@ -261,6 +262,7 @@
 = Footers
 = Footnote
 = Footnotes
+= For the line of {0}
 = Format Page Numbers
 = Format Painter
 = Formatting
@@ -391,6 +393,7 @@
 = Next Footnote
 = No names were typed
 = No two of them say the same thing
+= Nobody has been asked to sign.
 = None
 = Normal
 = Nothing is restricted: tick one of the two boxes
@@ -488,6 +491,7 @@
 = Properties
 = Protect
 = Purpose
+= Put one and its key in this folder, or use one the machine holds:
 = Quick Access Toolbar
 = Quick Parts
 = Read Mode
@@ -511,6 +515,7 @@
 = Replace as you type
 = Replace text as you type
 = Replaced one of "{0}"
+= Requested signatures
 = Reset
 = Restrict Editing
 = Restricted to
@@ -541,6 +546,7 @@
 = Save as
 = Save as PDF
 = Save documents
+= Save the document before signing it.
 = Saved {0}
 = Saved {0} as OpenDocument Text
 = Saved {0} as Rich Text Format
@@ -574,9 +580,12 @@
 = Show measurements in
 = Show/Hide Formatting Marks
 = Side to Side
-= Sign this document
+= Sign
+= Sign the document
+= Sign this line
 = Signature Line
 = Signatures
+= Signed as
 = Signed by {0}
 = Single File Web Page (*.mht;*.mhtml)
 = Size
@@ -639,6 +648,7 @@
 = Text files
 = Text formatting
 = Text from File
+= That line is no longer in this document
 = That style could not be changed
 = The author asked for it to be opened read-only.
 = The document is not encrypted.
@@ -654,6 +664,7 @@
 = The words are open; the formatting is limited to this document's styles.
 = The {0} theme
 = Themes
+= There is no certificate on this machine to sign with.
 = There is no part of this document you may edit
 = Thesaurus
 = This document
@@ -670,10 +681,12 @@
 = This one
 = This person
 = This program can open Word documents.
+= This signs the line of {0}.
+= This signs the signature of {0}.
+= This signs the whole document.
 = This stretch is locked
 = This stretch may only be edited by {0}
 = Title
-= To sign, use a certificate from this machine's own store, or put one and its key in this folder:
 = Top
 = Total Row
 = Track Changes
@@ -695,6 +708,7 @@
 = Use a dark window
 = Use an Existing List...
 = Use contextual alternates
+= Valid signatures
 = Validate
 = Video
 = View

@@ -21,5 +21,7 @@ pub mod c14n;
 pub mod package;
 pub mod trust;
 
-pub use package::{is_signed, sign, signatures, unsign, Signature, Signer, Signs, Standing};
+pub use package::{
+    countersign, is_signed, sign, signatures, unsign, Counter, Signature, Signer, Signs, Standing,
+};
 pub use trust::{chain, Trust};

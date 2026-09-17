@@ -418,6 +418,11 @@ impl App for Editor {
             }
 
             Event::DoubleClick { x, y } => {
+                // Two clicks on a signature line ask to sign it, which is
+                // Word's own shortcut and the thing a person tries first.
+                if let Some(response) = self.sign_line_at(x, y) {
+                    return response;
+                }
                 // On the line at the right of a column, two clicks fit that
                 // column to what is in it, which is Word's quickest way to
                 // tidy a table up.
@@ -809,6 +814,9 @@ impl Editor {
 
         // The styles pane down the right, which is in front of the page and of
         // the bar beside it.
+        if self.over_signature_pane(x) && (y as f32) > self.ribbon_bottom() {
+            return self.signature_pane_press(x, y);
+        }
         if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
             return self.restrict_pane_press(x, y);
         }
@@ -1330,6 +1338,13 @@ impl Editor {
         }
 
         // And over the styles pane, only the styles pane.
+        if self.over_signature_pane(x) && (y as f32) > self.ribbon_bottom() {
+            let changed = self.signature_pane_hover(x, y);
+            if changed {
+                self.needs_redraw = true;
+            }
+            return Response::Redraw;
+        }
         if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
             let changed = self.restrict_pane_hover(x, y);
             if changed {

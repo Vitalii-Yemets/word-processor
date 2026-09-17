@@ -85,6 +85,7 @@ mod search;
 mod selecting;
 mod shapes;
 mod signature;
+mod signatures;
 mod sortdialog;
 mod split;
 mod stationery;
@@ -480,6 +481,15 @@ pub struct Editor {
     /// is the same dialog every time, so which menu asked has to be kept or
     /// the block goes quietly to the wrong one. See [`ownblocks`].
     saving_to: &'static str,
+    /// Word's Signatures pane, and whether it is open.
+    ///
+    /// What the document carries and what it is still waiting for, which are
+    /// two halves of one question. See [`signatures`].
+    show_signatures: bool,
+    signature_pane: crate::chrome::signaturepane::SignaturePane,
+    /// What the signature about to be made is about: the document, one of its
+    /// signature lines, or somebody else's signature.
+    signing_for: signatures::SignFor,
     /// Word's Restrict Editing pane, and whether it is open.
     ///
     /// The two boxes at the top of it are decisions a person is making rather
@@ -747,6 +757,9 @@ impl Editor {
             typed_recipients: wp_docx::merge::Recipients::default(),
             saving_to: wp_docx::blocks::QUICK_PARTS,
             page_number_place: designs::Place::Bottom,
+            show_signatures: false,
+            signature_pane: crate::chrome::signaturepane::SignaturePane::new(),
+            signing_for: signatures::SignFor::Document,
             show_restrict: false,
             restrict_pane: crate::chrome::restrictpane::RestrictPane::new(),
             restrict_limiting: false,
@@ -1023,6 +1036,7 @@ impl Editor {
             - self.content_left()
             - self.styles_pane_width()
             - self.restrict_pane_width()
+            - self.signature_pane_width()
             - self.compare_pane_width()
             - crate::chrome::SCROLLBAR_THICKNESS)
             .max(1.0)

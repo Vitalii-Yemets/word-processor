@@ -112,13 +112,13 @@ impl Document {
         let prefix = self.prefix();
 
         // The end goes in first: putting the start in first would shift it.
-        if start.paragraph == end.paragraph {
-            self.insert_bookmark_anchor(start.paragraph, end.offset, id, None, prefix.as_deref());
-        } else {
-            let length =
-                self.paragraph_text(start.paragraph).map_or(start.offset, |text| text.len());
-            self.insert_bookmark_anchor(start.paragraph, length, id, None, prefix.as_deref());
-        }
+        //
+        // Where the two are in different paragraphs the end goes where it
+        // actually is, which is what makes a bookmark able to name more than
+        // one paragraph — a whole signature line, a section, anything a person
+        // selected across a paragraph mark. Word's do, and one that stopped at
+        // the end of the first paragraph would name a stretch nobody chose.
+        self.insert_bookmark_anchor(end.paragraph, end.offset, id, None, prefix.as_deref());
         self.insert_bookmark_anchor(
             start.paragraph,
             start.offset,

@@ -36,12 +36,6 @@
 
 use std::path::PathBuf;
 
-use wp_shell::Response;
-
-use crate::chrome::dialog::{Dialog, Field};
-
-use super::dialogs::Asking;
-
 use wp_asn1::Certificate;
 use wp_sign::trust::Trust;
 
@@ -86,6 +80,16 @@ impl Own {
                 crate::messages::t("in this machine's store")
             ),
         }
+    }
+
+    /// Whether the system will be doing the signing rather than this program.
+    ///
+    /// Worth telling apart when one fails: a key in a folder that will not
+    /// sign is this program's fault, and a store that will not is something
+    /// the person can do something about.
+    #[must_use]
+    pub fn from_the_system(&self) -> bool {
+        matches!(self.from, From::System)
     }
 
     /// Whatever will sign with it.
@@ -233,124 +237,12 @@ pub(super) fn trusted_roots() -> Vec<Certificate> {
         .collect()
 }
 
-/// Where each answer sits in the dialog that signs.
-///
-/// The rows before them are what the document already carries, and there may
-/// be any number of those, so the two that are asked for are counted from the
-/// end rather than from the start.
-pub(super) const FROM_THE_END: usize = 2;
-
-impl Editor {
-    /// Word's Signatures: what the document carries, and the offer to add
-    /// one.
-    pub(super) fn open_signatures(&mut self) -> Response {
-        let mut fields = Vec::new();
-        let signatures = self.document.signatures();
-        if signatures.is_empty() {
-            fields.push(Field::note("This document is not signed."));
-        } else {
-            for signature in &signatures {
-                fields.push(Field::Said {
-                    label: signature.certificate.subject.clone(),
-                    value: self.said_of(signature),
-                });
-            }
-        }
-
-        fields.push(Field::Heading("Sign this document".to_owned()));
-        let mine = own_certificates();
-        if mine.is_empty() {
-            let folder = own_folder()
-                .map(|path| path.display().to_string())
-                .unwrap_or_else(|| String::from("the certificates folder"));
-            // Two rows either way, so that the dialog is the same shape
-            // whether or not there is anything to sign with. The folder is a
-            // row of its own because a path and a sentence on one line is a
-            // path with its end cut off.
-            fields.push(Field::note(
-                "To sign, use a certificate from this machine's own store, or put one and its key in this folder:",
-            ));
-            fields.push(Field::Said { label: "Folder".to_owned(), value: folder });
-        } else {
-            fields.push(Field::Choice {
-                label: "Certificate".to_owned(),
-                items: mine.iter().map(Own::label).collect(),
-                current: 0,
-            });
-            fields.push(Field::Text { label: "Purpose".to_owned(), value: String::new() });
-        }
-
-        // Wider than most: what it shows is a certificate's subject and a
-        // folder's path, both of which are long, and a path with its end cut
-        // off is a path nobody can follow.
-        self.ask(Asking::Signatures, Dialog::new("Signatures", fields).wide(620.0))
-    }
-
-    /// Signs with whichever certificate was chosen.
-    pub(super) fn apply_signature(&mut self, dialog: &Dialog) -> Response {
-        let mine = own_certificates();
-        if mine.is_empty() {
-            return Response::Redraw;
-        }
-        let rows = dialog.fields.len();
-        let chosen = dialog.chose(rows - FROM_THE_END);
-        let why = dialog.said(rows - FROM_THE_END + 1);
-        let Some(own) = mine.get(chosen) else { return Response::Ignored };
-
-        // A document with unsaved changes signed as it stands would be a
-        // signature over something nobody has seen. Word saves first, and so
-        // does this.
-        let Some(path) = self.file.clone() else {
-            return self.report("Save the document before signing it");
-        };
-
-        let signer = wp_sign::Signer {
-            certificate: own.certificate.der.clone(),
-            chain: chain_for(&own.certificate, &mine),
-            key: own.signs(),
-            reason: why,
-            at: super::files::timestamp(),
-        };
-        let through_the_system = matches!(own.from, From::System);
-        let bytes = match self.document.save_signed(&signer) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                if through_the_system {
-                    // The store would not sign. What this program knows is
-                    // that it asked and was refused; why is the system's to
-                    // say, and the usual reasons are a card that is not in
-                    // the reader and a key the store will not use without
-                    // being asked on screen.
-                    return self.report(crate::messages::t(
-                        "This machine would not sign with that certificate",
-                    ));
-                }
-                return self.report(&format!("Cannot sign: {error}"));
-            }
-        };
-        if let Err(error) = std::fs::write(&path, bytes) {
-            return self.report(&format!("Cannot write {}: {error}", path.display()));
-        }
-
-        // What is on disk is signed; what is open has to be the same thing,
-        // or the next save would take the signature off something the person
-        // never edited.
-        if let Ok(written) = std::fs::read(&path) {
-            if let Ok(document) = wp_docx::Document::open(&written) {
-                self.set_document(document, Some(path.clone()));
-            }
-        }
-        self.needs_redraw = true;
-        self.report(&crate::messages::with("Signed by {0}", &[&own.certificate.subject]))
-    }
-}
-
 /// The certificates between one of the person's own and a root.
 ///
 /// What is put into the signature so that whoever opens the document can
 /// follow the chain: they have the leaf, and the roots their own machine
 /// trusts, and everything in between has to travel with the document.
-fn chain_for(leaf: &Certificate, mine: &[Own]) -> Vec<Vec<u8>> {
+pub(super) fn chain_for(leaf: &Certificate, mine: &[Own]) -> Vec<Vec<u8>> {
     let roots = trusted_roots();
     let mut out = Vec::new();
     let mut current = leaf.clone();
@@ -409,7 +301,7 @@ impl Editor {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::process::Command;
     use wp_docx::model::{Block, Body, Paragraph};
@@ -442,7 +334,7 @@ mod tests {
 
     /// A folder with a certificate and its key in it, made by OpenSSL, which
     /// goes when the test does.
-    struct Folder(PathBuf);
+    pub(crate) struct Folder(pub PathBuf);
 
     impl Drop for Folder {
         fn drop(&mut self) {
@@ -451,8 +343,14 @@ mod tests {
     }
 
     /// Makes one certificate and key pair, in whichever form is asked for.
-    fn folder(name: &str, form: &str) -> Folder {
-        let path = std::env::temp_dir().join(format!("wp-certs-{}-{name}", std::process::id()));
+    pub(crate) fn folder(name: &str, form: &str) -> Folder {
+        // Inside the project rather than in the machine's temp: a test
+        // that scatters files outside the tree it was run from is one
+        // nobody can clean up by deleting the tree.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("certificates")
+            .join(format!("{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).expect("a folder");
         let at = |file: &str| path.join(file).to_str().expect("a path").to_owned();
@@ -580,14 +478,14 @@ mod tests {
     fn the_dialog_says_what_the_document_carries_and_what_it_can_be_signed_with() {
         let mut editor = editor();
         editor.open_signatures();
-        let dialog = editor.dialog.as_ref().expect("the dialog");
-        assert_eq!(dialog.title, "Signatures");
-        // Nothing signed, and the last two rows are the offer: either a list
-        // to pick from or the note saying where to put a certificate.
-        let rows = dialog.fields.len();
-        assert!(rows >= 4, "{:?}", dialog.fields);
-        assert!(matches!(dialog.fields.first(), Some(Field::Said { .. } | Field::Text { .. })));
-        assert_eq!(rows - FROM_THE_END + 1, rows - 1, "the two asked-for rows are at the end");
+        assert!(editor.show_signatures, "the pane did not open");
+        assert!(editor.dialog.is_none(), "it opened a dialog over the document");
+
+        // Nothing signed and nobody asked, which is what an ordinary document
+        // is, and the pane says both rather than either.
+        let shown = editor.signature_pane_shown();
+        assert!(shown.made.is_empty());
+        assert!(shown.wanted.is_empty());
     }
 
     #[test]
@@ -611,6 +509,7 @@ mod tests {
             // from the minute it runs, and a moment earlier the same day is
             // outside it.
             at: String::from("2027-01-01T00:00:00Z"),
+            line: String::new(),
         };
         let bytes = document.save_signed(&signer).expect("signing");
         let signed = Document::open(&bytes).expect("reopening");

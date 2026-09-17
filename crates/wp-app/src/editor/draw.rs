@@ -955,6 +955,7 @@ impl Editor {
         // pane of its own, and Word's rulers stop at its edge.
         self.draw_styles_pane();
         self.draw_restrict_pane();
+        self.draw_signature_pane();
         self.draw_compare_pane();
         self.draw_drop_mark();
 

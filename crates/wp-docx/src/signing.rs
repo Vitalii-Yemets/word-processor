@@ -41,4 +41,22 @@ impl Document {
         wp_sign::sign(&mut package, signer).map_err(Error::Signing)?;
         Ok(package.save()?)
     }
+
+    /// Saves it and signs one of the signatures it already carries.
+    ///
+    /// The document is written out first for the same reason signing it is:
+    /// what a countersignature is about is a signature in a file, and the file
+    /// has to be the one on the disk. Nothing else about the document changes
+    /// — a countersignature goes among a signature's unsigned properties, and
+    /// every signature already there holds exactly as well afterwards.
+    pub fn countersign_saved(
+        &self,
+        part: &str,
+        signer: &wp_sign::Signer,
+    ) -> Result<Vec<u8>, String> {
+        let bytes = self.save().map_err(|error| error.to_string())?;
+        let mut package = wp_opc::Package::open(&bytes).map_err(|error| error.to_string())?;
+        wp_sign::countersign(&mut package, part, signer)?;
+        package.save().map_err(|error| error.to_string())
+    }
 }

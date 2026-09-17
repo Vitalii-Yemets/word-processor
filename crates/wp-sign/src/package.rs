@@ -40,6 +40,29 @@ use crate::c14n;
 const DSIG: &str = "http://www.w3.org/2000/09/xmldsig#";
 const MDSSI: &str = "http://schemas.openxmlformats.org/package/2006/digital-signature";
 const OFFICE: &str = "http://schemas.microsoft.com/office/2006/digsig";
+/// And the one the signature's own properties are written in: XAdES, the
+/// standard that says what a signature claims about itself beyond the
+/// arithmetic — when it was made, and by which certificate.
+const XADES: &str = "http://uri.etsi.org/01903/v1.3.2#";
+
+/// What a reference to those properties is called, which is how a reader
+/// tells them from a reference to a part of the document.
+const XADES_SIGNED_PROPERTIES: &str = "http://uri.etsi.org/01903#SignedProperties";
+
+/// And what a reference to the signature being countersigned is called.
+const XADES_COUNTERSIGNED: &str = "http://uri.etsi.org/01903#CountersignedSignature";
+
+/// The name a signature gives its own value, so that another signature can
+/// point at it.
+///
+/// A signature does not cover its own value — what it covers is the signed
+/// information — so naming the value afterwards takes nothing away from a
+/// signature already made. That is what makes countersigning an old signature
+/// possible at all.
+const SIGNATURE_VALUE_ID: &str = "idSignatureValue";
+
+/// What a signature calls the properties it makes about itself.
+const SIGNED_PROPERTIES_ID: &str = "idSignedProperties";
 
 /// The transform that turns a relationship part into what it says.
 const RELATIONSHIP_TRANSFORM: &str =
@@ -48,7 +71,8 @@ const RELATIONSHIP_TRANSFORM: &str =
 /// Where the signatures live.
 pub const ORIGIN: &str = "_xmlsignatures/origin.sigs";
 const ORIGIN_TYPE: &str = "application/vnd.openxmlformats-package.digital-signature-origin";
-const SIGNATURE_TYPE: &str =
+/// What kind of part a signature is, which a test putting one back needs.
+pub const SIGNATURE_TYPE: &str =
     "application/vnd.openxmlformats-package.digital-signature-xmlsignature+xml";
 const ORIGIN_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin";
@@ -75,6 +99,11 @@ pub struct Signature {
     pub reason: String,
     /// The parts the signature covers, in the order the manifest lists them.
     pub parts: Vec<String>,
+    /// The signature line it was made for, or empty where it is about the
+    /// document at large.
+    pub line: String,
+    /// The signatures somebody else made over this one.
+    pub counters: Vec<Counter>,
     /// Whether it holds, and what is wrong with it if it does not.
     pub standing: Standing,
 }
@@ -182,6 +211,14 @@ fn read(package: &Package, part: &str) -> Option<Signature> {
         }
     }
 
+    // Which line it was made for. Word writes this as the setup identifier of
+    // the signature line, and a signature about the document at large leaves
+    // it empty — which is what an absent element amounts to as well.
+    let line = find(root, "SetupID").map(|value| value.text_content()).unwrap_or_default();
+
+    let mut counters = Vec::new();
+    collect_counters(root, root, &mut counters);
+
     let standing = check(package, root, signed_info, &certificate);
     Some(Signature {
         part: part.to_owned(),
@@ -190,8 +227,90 @@ fn read(package: &Package, part: &str) -> Option<Signature> {
         signed_at,
         reason,
         parts,
+        line,
+        counters,
         standing,
     })
+}
+
+/// Every signature made over this one, wherever it sits.
+fn collect_counters(outer: &Element, element: &Element, out: &mut Vec<Counter>) {
+    if element.local_name() == "CounterSignature" {
+        for signature in element.child_elements() {
+            if signature.local_name() != "Signature" {
+                continue;
+            }
+            let mut carried = Vec::new();
+            collect_certificates(signature, &mut carried);
+            let Some(certificate) = carried.into_iter().next() else { continue };
+            let signed_at =
+                find(signature, "SigningTime").map(|at| at.text_content()).unwrap_or_default();
+            let role =
+                find(signature, "ClaimedRole").map(|what| what.text_content()).unwrap_or_default();
+            let standing = check_counter(outer, signature, &certificate);
+            out.push(Counter { certificate, signed_at, role, standing });
+        }
+        return;
+    }
+    for child in element.child_elements() {
+        collect_counters(outer, child, out);
+    }
+}
+
+/// Whether one of them holds.
+///
+/// The same arithmetic as a signature over a document, over less: there is no
+/// manifest, because what a countersignature covers is one element of one
+/// file and not a package. What it points at is resolved in the document it
+/// sits in — which is the signature it is about — because that is where the
+/// value it signed is.
+fn check_counter(
+    outer: &Element,
+    counter: &Element,
+    certificate: &wp_asn1::Certificate,
+) -> Standing {
+    let Some(signed_info) = child(counter, "SignedInfo") else { return Standing::Broken };
+    let named = child(signed_info, "CanonicalizationMethod")
+        .and_then(|element| element.attribute(None, "Algorithm"))
+        .unwrap_or(c14n::NAME);
+    if named != c14n::NAME {
+        return Standing::Unsupported(named.to_owned());
+    }
+    let Some(algorithm) = child(signed_info, "SignatureMethod")
+        .and_then(|element| element.attribute(None, "Algorithm"))
+        .and_then(Algorithm::named)
+    else {
+        return Standing::Unsupported(String::from("an algorithm this program has not"));
+    };
+
+    let scope = c14n::context(&[outer]);
+    for reference in signed_info.child_elements().filter(|child| child.local_name() == "Reference")
+    {
+        let uri = reference.attribute(None, "URI").unwrap_or_default();
+        let Some(id) = uri.strip_prefix('#') else {
+            return Standing::Unsupported(format!("a reference to {uri}"));
+        };
+        let Some(target) = by_id(outer, id) else {
+            return Standing::Changed(uri.to_owned());
+        };
+        let Some(wanted) = digest_of(reference) else {
+            return Standing::Unsupported(String::from("a digest this program has not"));
+        };
+        let bytes = c14n::canonical(target, &scope);
+        if wanted.0.of(bytes.as_bytes()) != wanted.1 {
+            return Standing::Changed(format!("the signature's own {id}"));
+        }
+    }
+
+    let signed = c14n::canonical(signed_info, &scope);
+    let Some(value) = child(counter, "SignatureValue") else { return Standing::Broken };
+    let signature = wp_text::base64::decode(value.text_content().trim().as_bytes());
+    let key = PublicKey::new(&certificate.key.modulus, &certificate.key.exponent);
+    if key.verifies(algorithm, signed.as_bytes(), &signature) {
+        Standing::Good
+    } else {
+        Standing::Broken
+    }
 }
 
 /// Does the arithmetic.
@@ -434,12 +553,289 @@ pub struct Signer {
     pub reason: String,
     /// When, as `YYYY-MM-DDThh:mm:ssZ`.
     pub at: String,
+    /// The signature line this signature is for, where it is for one.
+    ///
+    /// Empty is a signature about the document at large, which is what Word's
+    /// Add a Digital Signature makes. A name here is a signature about a
+    /// particular place in the document, and it is the identifier the line
+    /// carries — see [`wp_docx::signature`]. The format calls it the setup
+    /// identifier, and a reader that knows the line can pair the two.
+    pub line: String,
 }
 
 impl core::fmt::Debug for Signer {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(formatter, "A signer with a certificate of {} bytes", self.certificate.len())
     }
+}
+
+/// What a signature says about itself, in the shape XAdES gives it.
+///
+/// # Why this is worth writing
+///
+/// A signature on its own proves that whoever held a key signed some bytes.
+/// It does not say *when*, and it does not say *which certificate* — the
+/// certificate travels beside the signature and could be swapped for another
+/// with the same key. XAdES is the standard answer to both: the signing time
+/// and a digest of the signer's own certificate, written down and signed
+/// along with everything else, so that neither can be changed by anybody who
+/// has not got the key.
+///
+/// The time is the signer's own claim and nothing more. Making it worth more
+/// than a claim means a timestamp from somebody else, which means a
+/// timestamp authority, which means a network — and that is not here.
+fn signed_properties(
+    signer: &Signer,
+    algorithm: Algorithm,
+    id: &str,
+    role: Option<&str>,
+) -> String {
+    let digest = algorithm.of(&signer.certificate);
+    // The issuer and the number they know the certificate by, which is how
+    // the standard names a certificate without carrying it.
+    let (issuer, serial) = match wp_asn1::Certificate::read(&signer.certificate) {
+        Some(certificate) => (certificate.issuer.clone(), decimal_of_hex(&certificate.serial)),
+        // A certificate this program cannot read is still a certificate a key
+        // signed with. Saying nothing about its issuer is worse than the
+        // alternative only if the alternative is inventing one.
+        None => (String::new(), String::from("0")),
+    };
+
+    format!(
+        concat!(
+            r#"<xd:SignedProperties xmlns="{dsig}" xmlns:xd="{xades}""#,
+            r#" Id="{id}"><xd:SignedSignatureProperties>"#,
+            r#"<xd:SigningTime>{at}</xd:SigningTime>"#,
+            r#"<xd:SigningCertificate><xd:Cert><xd:CertDigest>"#,
+            r#"<DigestMethod Algorithm="{hash}"></DigestMethod>"#,
+            r#"<DigestValue>{digest}</DigestValue></xd:CertDigest>"#,
+            r#"<xd:IssuerSerial><X509IssuerName>{issuer}</X509IssuerName>"#,
+            r#"<X509SerialNumber>{serial}</X509SerialNumber></xd:IssuerSerial>"#,
+            r#"</xd:Cert></xd:SigningCertificate>"#,
+            // No policy: a signature made by a person about their own document
+            // is not made under anybody's rules, and saying it was would be
+            // saying something untrue.
+            r#"<xd:SignaturePolicyIdentifier><xd:SignaturePolicyImplied>"#,
+            r#"</xd:SignaturePolicyImplied></xd:SignaturePolicyIdentifier>{role}"#,
+            r#"</xd:SignedSignatureProperties></xd:SignedProperties>"#,
+        ),
+        dsig = DSIG,
+        xades = XADES,
+        id = id,
+        at = escaped(&signer.at),
+        hash = algorithm.uri(),
+        digest = wp_text::base64::encode(&digest),
+        issuer = escaped(&issuer),
+        serial = serial,
+        role = match role.map(str::trim).filter(|said| !said.is_empty()) {
+            Some(said) => format!(
+                concat!(
+                    r#"<xd:SignerRole><xd:ClaimedRoles>"#,
+                    r#"<xd:ClaimedRole>{said}</xd:ClaimedRole>"#,
+                    r#"</xd:ClaimedRoles></xd:SignerRole>"#,
+                ),
+                said = escaped(said),
+            ),
+            None => String::new(),
+        },
+    )
+}
+
+/// A number written in hex, written out in decimal.
+///
+/// A certificate's serial is read as hex because that is how everything shows
+/// one, and XAdES writes it as a decimal integer. It can be longer than any
+/// number this machine has, so it is done a digit at a time: multiply what is
+/// there by sixteen, add the next, carry.
+#[must_use]
+fn decimal_of_hex(hex: &str) -> String {
+    // Least significant first, which is the end carrying is done from.
+    let mut digits: Vec<u8> = vec![0];
+    for character in hex.chars() {
+        let Some(value) = character.to_digit(16) else { continue };
+        let mut carry = value;
+        for digit in &mut digits {
+            let next = u32::from(*digit) * 16 + carry;
+            *digit = (next % 10) as u8;
+            carry = next / 10;
+        }
+        while carry > 0 {
+            digits.push((carry % 10) as u8);
+            carry /= 10;
+        }
+    }
+    while digits.len() > 1 && digits.last() == Some(&0) {
+        digits.pop();
+    }
+    digits.iter().rev().map(|digit| char::from(b'0' + digit)).collect()
+}
+
+/// One signature made over another.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Counter {
+    /// Who made it.
+    pub certificate: wp_asn1::Certificate,
+    /// When they say they did.
+    pub signed_at: String,
+    /// What they say they signed as — a witness, an approver — where they
+    /// said anything.
+    ///
+    /// Not a reason: the signature above carries a reason, and what a person
+    /// countersigning gives is the capacity they did it in, which is what the
+    /// standard has a place for and what makes two countersignatures on one
+    /// signature tell apart.
+    pub role: String,
+    /// Whether it holds.
+    pub standing: Standing,
+}
+
+/// Signs somebody else's signature.
+///
+/// # What a countersignature is for
+///
+/// A second signature over the document says two people signed the same
+/// thing. A countersignature says something stronger and different: that this
+/// person saw *that signature* and signed it — a witness, an approval, a
+/// second pair of eyes. What it covers is the first signature's value, so it
+/// cannot be moved to another document or another signature without coming
+/// apart.
+///
+/// # Where it goes
+///
+/// Inside the signature it is about, among that signature's *unsigned*
+/// properties. That sounds alarming and is not: a signature never covers its
+/// own value, so adding something beside that value takes nothing away from
+/// it. The first signature holds exactly as well afterwards as before, and a
+/// reader that knows nothing of countersignatures reads the first signature
+/// and ignores the rest.
+pub fn countersign(package: &mut Package, part: &str, signer: &Signer) -> Result<(), String> {
+    let algorithm = Algorithm::Sha256;
+    let text = package
+        .xml_part(part)
+        .ok_or_else(|| format!("{part} is not in this document"))?
+        .map_err(|error| error.to_string())?;
+    let tree = XmlTree::parse(&text).map_err(|_| format!("{part} is not a signature"))?;
+    let root = &tree.root;
+
+    let value = find(root, "SignatureValue")
+        .ok_or_else(|| String::from("that signature has no value to sign"))?;
+    // What is signed is the value as it stands in that signature, which means
+    // canonicalised where it stands and not as this program would write it.
+    let scope = c14n::context(&[root]);
+    let canonical_value = c14n::canonical(value, &scope);
+    let digest = algorithm.of(canonical_value.as_bytes());
+
+    let properties_id = format!("idCounterSignedProperties{}", counters_in(root) + 1);
+    let properties = signed_properties(signer, algorithm, &properties_id, Some(&signer.reason));
+    let properties_digest = digest_of_xml(&properties, algorithm)?;
+
+    let signed_info = format!(
+        concat!(
+            r#"<SignedInfo xmlns="{dsig}"><CanonicalizationMethod Algorithm="{c14n}">"#,
+            r#"</CanonicalizationMethod><SignatureMethod Algorithm="{method}">"#,
+            r#"</SignatureMethod>"#,
+            r##"<Reference Type="{countersigned}" URI="#{value_id}">"##,
+            r#"<DigestMethod Algorithm="{hash}"></DigestMethod>"#,
+            r#"<DigestValue>{value}</DigestValue></Reference>"#,
+            r##"<Reference Type="{xades}" URI="#{properties_id}">"##,
+            r#"<DigestMethod Algorithm="{hash}"></DigestMethod>"#,
+            r#"<DigestValue>{properties}</DigestValue></Reference></SignedInfo>"#,
+        ),
+        dsig = DSIG,
+        c14n = c14n::NAME,
+        method = algorithm.signature_uri(),
+        countersigned = XADES_COUNTERSIGNED,
+        xades = XADES_SIGNED_PROPERTIES,
+        value_id = SIGNATURE_VALUE_ID,
+        properties_id = properties_id,
+        hash = algorithm.uri(),
+        value = wp_text::base64::encode(&digest),
+        properties = wp_text::base64::encode(&properties_digest),
+    );
+    let canonical_signed_info = canonical_of(&signed_info)?;
+    let made = signer
+        .key
+        .sign(algorithm, canonical_signed_info.as_bytes())
+        .ok_or_else(|| String::from("the key is too short to sign with"))?;
+
+    // Its namespaces are written on it rather than inherited, for the reason
+    // the signed properties are: what a canonical form renders is what the
+    // element itself says, and this one is going to sit two wrappers deep.
+    let countersignature = format!(
+        concat!(
+            r#"<Signature xmlns="{dsig}">{signed_info}"#,
+            r#"<SignatureValue>{made}</SignatureValue>"#,
+            r#"<KeyInfo><X509Data><X509Certificate>{certificate}</X509Certificate>"#,
+            r#"{chain}</X509Data></KeyInfo><Object>"#,
+            r##"<xd:QualifyingProperties xmlns:xd="{xades}" Target="">{properties}"##,
+            r#"</xd:QualifyingProperties></Object></Signature>"#,
+        ),
+        dsig = DSIG,
+        signed_info = signed_info.replacen(&format!(r#" xmlns="{DSIG}""#), "", 1),
+        made = wp_text::base64::encode(&made),
+        certificate = wp_text::base64::encode(&signer.certificate),
+        chain = signer
+            .chain
+            .iter()
+            .map(|der| {
+                format!("<X509Certificate>{}</X509Certificate>", wp_text::base64::encode(der))
+            })
+            .collect::<String>(),
+        xades = XADES,
+        properties = properties.replacen(&format!(r#" xmlns="{DSIG}""#), "", 1),
+    );
+
+    let written = put_countersignature(&text, &countersignature)?;
+    package.add_part(part, SIGNATURE_TYPE, written.into_bytes());
+    Ok(())
+}
+
+/// How many countersignatures a signature already carries.
+fn counters_in(root: &Element) -> usize {
+    let mut found = 0;
+    count_counters(root, &mut found);
+    found
+}
+
+fn count_counters(element: &Element, found: &mut usize) {
+    if element.local_name() == "CounterSignature" {
+        *found += 1;
+    }
+    for child in element.child_elements() {
+        count_counters(child, found);
+    }
+}
+
+/// Puts one into the signature's unsigned properties.
+///
+/// Done to the text rather than to the parsed tree, because what goes back
+/// into the package has to be the signature that was there with one thing
+/// added: a tree written out afresh would be a different run of bytes, and
+/// while the signature would still hold, nobody could see at a glance that
+/// nothing else had moved.
+fn put_countersignature(text: &str, countersignature: &str) -> Result<String, String> {
+    let wrapped = format!("<xd:CounterSignature>{countersignature}</xd:CounterSignature>");
+
+    // A second countersignature goes beside the first.
+    if let Some(at) = text.rfind("</xd:UnsignedSignatureProperties>") {
+        let mut out = String::with_capacity(text.len() + wrapped.len());
+        out.push_str(&text[..at]);
+        out.push_str(&wrapped);
+        out.push_str(&text[at..]);
+        return Ok(out);
+    }
+
+    // And the first makes the place they go.
+    let at = text
+        .rfind("</xd:QualifyingProperties>")
+        .ok_or_else(|| String::from("that signature says nothing about itself to add to"))?;
+    let mut out = String::with_capacity(text.len() + wrapped.len() + 64);
+    out.push_str(&text[..at]);
+    out.push_str("<xd:UnsignedProperties><xd:UnsignedSignatureProperties>");
+    out.push_str(&wrapped);
+    out.push_str("</xd:UnsignedSignatureProperties></xd:UnsignedProperties>");
+    out.push_str(&text[at..]);
+    Ok(out)
 }
 
 /// Signs a package, putting the signature into it.
@@ -472,7 +868,7 @@ pub fn sign(package: &mut Package, signer: &Signer) -> Result<String, String> {
         concat!(
             r#"<Object xmlns="{dsig}" Id="idOfficeObject"><SignatureProperties>"#,
             r##"<SignatureProperty Id="idOfficeV1Details" Target="#idPackageSignature">"##,
-            r#"<SignatureInfoV1 xmlns="{office}"><SetupID></SetupID>"#,
+            r#"<SignatureInfoV1 xmlns="{office}"><SetupID>{line}</SetupID>"#,
             r#"<SignatureText></SignatureText><SignatureImage></SignatureImage>"#,
             r#"<SignatureComments>{reason}</SignatureComments>"#,
             r#"<WindowsVersion>0.0</WindowsVersion><OfficeVersion>0.0</OfficeVersion>"#,
@@ -483,20 +879,30 @@ pub fn sign(package: &mut Package, signer: &Signer) -> Result<String, String> {
             r#"<SignatureProviderUrl></SignatureProviderUrl>"#,
             r#"<SignatureProviderDetails>0</SignatureProviderDetails>"#,
             r#"<ManifestHashAlgorithm>{hash}</ManifestHashAlgorithm>"#,
-            r#"<SignatureType>1</SignatureType></SignatureInfoV1>"#,
+            // One is a signature about the document, two is one about a
+            // signature line. A signature that named a line and called itself
+            // the first kind would be telling a reader to ignore the name.
+            r#"<SignatureType>{kind}</SignatureType></SignatureInfoV1>"#,
             r#"</SignatureProperty></SignatureProperties></Object>"#,
         ),
         dsig = DSIG,
         office = OFFICE,
         reason = escaped(&signer.reason),
         hash = algorithm.uri(),
+        line = escaped(&signer.line),
+        kind = if signer.line.trim().is_empty() { 1 } else { 2 },
     );
 
     // Each object is hashed as it will stand inside the signature, which
+    // No role: a person signing their own document signs as themselves, and
+    // what they say about it is the reason, which the signature carries above.
+    let signed_properties = signed_properties(signer, algorithm, SIGNED_PROPERTIES_ID, None);
+
     // means with the signature's own namespace on it — so they are written
     // with it and canonicalised on their own.
     let package_digest = digest_of_xml(&package_object, algorithm)?;
     let office_digest = digest_of_xml(&office_object, algorithm)?;
+    let properties_digest = digest_of_xml(&signed_properties, algorithm)?;
 
     let signed_info = format!(
         concat!(
@@ -508,14 +914,23 @@ pub fn sign(package: &mut Package, signer: &Signer) -> Result<String, String> {
             r#"<DigestValue>{package}</DigestValue></Reference>"#,
             r##"<Reference Type="{dsig}Object" URI="#idOfficeObject">"##,
             r#"<DigestMethod Algorithm="{hash}"></DigestMethod>"#,
-            r#"<DigestValue>{office}</DigestValue></Reference></SignedInfo>"#,
+            r#"<DigestValue>{office}</DigestValue></Reference>"#,
+            // What the signature says about itself, which is signed like
+            // everything else it says: a signing time a reader has to take on
+            // trust is worth as much as no signing time at all.
+            r##"<Reference Type="{xades}" URI="#{properties_id}">"##,
+            r#"<DigestMethod Algorithm="{hash}"></DigestMethod>"#,
+            r#"<DigestValue>{properties}</DigestValue></Reference></SignedInfo>"#,
         ),
         dsig = DSIG,
         c14n = c14n::NAME,
         method = algorithm.signature_uri(),
         hash = algorithm.uri(),
+        xades = XADES_SIGNED_PROPERTIES,
+        properties_id = SIGNED_PROPERTIES_ID,
         package = wp_text::base64::encode(&package_digest),
         office = wp_text::base64::encode(&office_digest),
+        properties = wp_text::base64::encode(&properties_digest),
     );
     let canonical_signed_info = canonical_of(&signed_info)?;
     let value = signer
@@ -527,14 +942,18 @@ pub fn sign(package: &mut Package, signer: &Signer) -> Result<String, String> {
         concat!(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
             r#"<Signature xmlns="{dsig}" Id="idPackageSignature">{signed_info}"#,
-            r#"<SignatureValue>{value}</SignatureValue>"#,
+            r#"<SignatureValue Id="{value_id}">{value}</SignatureValue>"#,
             r#"<KeyInfo><X509Data><X509Certificate>{certificate}</X509Certificate>"#,
-            r#"{chain}</X509Data></KeyInfo>{package_object}{office_object}</Signature>"#,
+            r#"{chain}</X509Data></KeyInfo>{package_object}{office_object}"#,
+            r##"<Object><xd:QualifyingProperties xmlns:xd="{xades}""##,
+            r##" Target="#idPackageSignature">{properties}"##,
+            r#"</xd:QualifyingProperties></Object></Signature>"#,
         ),
         dsig = DSIG,
         // Written without its own namespace, since the Signature carries it.
         signed_info = signed_info.replacen(&format!(r#" xmlns="{DSIG}""#), "", 1),
         value = wp_text::base64::encode(&value),
+        value_id = SIGNATURE_VALUE_ID,
         certificate = wp_text::base64::encode(&signer.certificate),
         chain = signer
             .chain
@@ -545,6 +964,13 @@ pub fn sign(package: &mut Package, signer: &Signer) -> Result<String, String> {
             .collect::<String>(),
         package_object = package_object.replacen(&format!(r#" xmlns="{DSIG}""#), "", 1),
         office_object = office_object.replacen(&format!(r#" xmlns="{DSIG}""#), "", 1),
+        xades = XADES,
+        // The signature's own namespace comes off, because the Signature
+        // above declares it and canonicalising this element renders it from
+        // there. The XAdES one stays: it is declared on the wrapper as well,
+        // but a canonical form is worked out from what is in scope, and what
+        // is reliably in scope is what the element itself says.
+        properties = signed_properties.replacen(&format!(r#" xmlns="{DSIG}""#), "", 1),
     );
 
     let name = next_signature_part(package);

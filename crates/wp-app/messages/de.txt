@@ -431,6 +431,12 @@ language = Deutsch
 = Contents cannot be edited
 > Inhalt kann nicht bearbeitet werden
 
+= Countersign
+> Gegenzeichnen
+
+= Countersigned by {0}
+> Gegengezeichnet von {0}
+
 = Country
 > Land
 
@@ -782,9 +788,6 @@ language = Deutsch
 = First Name
 > Vorname
 
-= Folder
-> Ordner
-
 = Font
 > Schriftart
 
@@ -808,6 +811,9 @@ language = Deutsch
 
 = Footnotes
 > Fußnoten
+
+= For the line of {0}
+> Für die Zeile von {0}
 
 = Format Page Numbers
 > Seitenzahlen formatieren
@@ -1088,6 +1094,9 @@ language = Deutsch
 = No names were typed
 > Es wurden keine Namen eingegeben
 
+= Nobody has been asked to sign.
+> Es wurde niemand um eine Signatur gebeten.
+
 = Nothing is restricted: tick one of the two boxes
 > Nichts ist eingeschränkt: eines der beiden Kästchen ankreuzen
 
@@ -1133,6 +1142,12 @@ language = Deutsch
 = Plain, to the right
 > Einfach, rechts
 
+= Put one and its key in this folder, or use one the machine holds:
+> Eines mit seinem Schlüssel in diesen Ordner legen oder eines aus dem Speicher des Rechners verwenden:
+
+= Requested signatures
+> Angeforderte Signaturen
+
 = Restricted to: {0}
 > Eingeschränkt auf: {0}
 
@@ -1145,6 +1160,9 @@ language = Deutsch
 = Save Selection to Page Number Gallery
 > Auswahl im Seitenzahlen-Katalog speichern
 
+= Save the document before signing it.
+> Das Dokument vor dem Signieren speichern.
+
 = Select part of the document, then tick who may edit it.
 > Einen Teil des Dokuments auswählen und ankreuzen, wer ihn bearbeiten darf.
 
@@ -1156,6 +1174,18 @@ language = Deutsch
 
 = Show All Regions I Can Edit
 > Alle bearbeitbaren Bereiche anzeigen
+
+= Sign
+> Signieren
+
+= Sign the document
+> Dokument signieren
+
+= Sign this line
+> Diese Zeile signieren
+
+= Signed as
+> Signiert als
 
 = Start Enforcing Protection
 > Schutz anwenden
@@ -1172,6 +1202,9 @@ language = Deutsch
 = Text Boxes
 > Textfelder
 
+= That line is no longer in this document
+> Diese Zeile ist nicht mehr in diesem Dokument
+
 = The next stretch you may edit
 > Der nächste Bereich, den Sie bearbeiten dürfen
 
@@ -1183,6 +1216,9 @@ language = Deutsch
 
 = The words are open; the formatting is limited to this document's styles.
 > Der Text ist frei; die Formatierung ist auf die Formatvorlagen dieses Dokuments beschränkt.
+
+= There is no certificate on this machine to sign with.
+> Auf diesem Rechner gibt es kein Zertifikat zum Signieren.
 
 = There is no part of this document you may edit
 > Es gibt keinen Teil dieses Dokuments, den Sie bearbeiten dürfen
@@ -1196,8 +1232,17 @@ language = Deutsch
 = This machine would not sign with that certificate
 > Dieser Rechner hat mit diesem Zertifikat nicht signiert
 
-= To sign, use a certificate from this machine's own store, or put one and its key in this folder:
-> Zum Signieren ein Zertifikat aus dem Speicher dieses Rechners verwenden oder eines mit seinem Schlüssel in diesen Ordner legen:
+= This signs the line of {0}.
+> Dies signiert die Zeile von {0}.
+
+= This signs the signature of {0}.
+> Dies signiert die Signatur von {0}.
+
+= This signs the whole document.
+> Dies signiert das gesamte Dokument.
+
+= Valid signatures
+> Gültige Signaturen
 
 = Watermarks
 > Wasserzeichen
@@ -1843,9 +1888,6 @@ language = Deutsch
 
 = Side to Side
 > Nebeneinander
-
-= Sign this document
-> Dieses Dokument signieren
 
 = Signature Line
 > Signaturzeile
