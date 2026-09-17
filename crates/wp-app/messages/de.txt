@@ -446,6 +446,9 @@ language = Deutsch
 = Cover Pages
 > Deckblätter
 
+= Cover page taken off
+> Deckblatt entfernt
+
 = Create New Building Block
 > Neuen Baustein erstellen
 
@@ -1171,6 +1174,9 @@ language = Deutsch
 
 = Put one and its key in this folder, or use one the machine holds:
 > Eines mit seinem Schlüssel in diesen Ordner legen oder eines aus dem Speicher des Rechners verwenden:
+
+= Remove Current Cover Page
+> Aktuelles Deckblatt entfernen
 
 = Requested signatures
 > Angeforderte Signaturen

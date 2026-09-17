@@ -5805,13 +5805,29 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   pages of one printed on both, and wrong for the even pages. Mirroring them
   is a question about the page rather than about the drawing, and belongs with
   the mirrored margins themselves.
-- [ ] **J28. Taking a cover page off again.** Word's Remove Current Cover
-  Page, the line at the foot of that gallery. It cannot be written until
-  something marks which blocks of the document are the cover page: Word wraps
-  one in a `w:sdt` of the building-block kind, which is what lets it find the
-  page it put in and take away exactly that. Done when a cover page put in
-  here carries that mark, the line is on the menu, and taking one away leaves
-  the document as it was before — including the page break that came with it.
+- [x] **J28. Taking a cover page off again.**
+  **Nothing could be taken off because nothing said what to take.** A cover
+  page is a stretch of perfectly ordinary paragraphs — some empty ones, a
+  title, a name, a date, and a page break — and once it is in the document
+  there is nothing about it that says where it begins or ends. A program that
+  guessed by looking at the words would take away the first page of every
+  document that happens to start with a title.
+  So one is wrapped in the mark Word wraps its own in: a `w:sdt` whose
+  properties carry a `w:docPartObj` naming the gallery it came from. The block
+  reader already sees through those marks, so the paragraphs are read, laid
+  out, edited and saved exactly as before — the mark changes nothing about
+  what the document is, and says what part of it the cover page is.
+  Taking it off takes away that whole mark: the words, the room above them,
+  and the page break that made the document proper start on a sheet of its
+  own. Word's line stands at the foot of the gallery, and only when there is
+  one to take off.
+  *Proven by:* six tests. A document with no cover page says so and taking one
+  off does nothing; one put in here carries the mark; the mark survives being
+  written out and read back, which is what makes a cover page put in today one
+  that can be taken off next week; taking it off leaves the document with the
+  words it had and the paragraphs it had, to the one; it can be undone, since
+  one act to a person is one thing to undo; and a document that merely begins
+  with a title is not a cover page.
 - [ ] **J29. The watermark gallery's other half.** Word's watermarks are
   building blocks: a shape holding the word, placed in the header, saved in
   a gallery a person can add to. This program's is a `Watermark` — a word, an

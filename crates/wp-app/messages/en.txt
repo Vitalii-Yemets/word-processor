@@ -176,6 +176,7 @@
 = Countersigned by {0}
 = Cover Page
 = Cover Pages
+= Cover page taken off
 = Create
 = Create New Building Block
 = Create a PDF
@@ -515,6 +516,7 @@
 = Reject All
 = Relative to the page or the text
 = Remove
+= Remove Current Cover Page
 = Remove Link
 = Remove Table
 = Rename

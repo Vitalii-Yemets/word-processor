@@ -169,6 +169,13 @@ impl Editor {
 
         items.push(String::new());
         rows.push(Row::separator());
+        // Word's line at the foot of the gallery, and it is there only when
+        // there is one to take off: a line that does nothing is the same lie
+        // as a button that does nothing.
+        if self.document.has_cover_page() {
+            items.push(crate::messages::t("Remove Current Cover Page").to_owned());
+            rows.push(Row::new(Kind::Choice, Icon::LetterClear));
+        }
         items.push(crate::messages::t("Save Selection to Cover Page Gallery").to_owned());
         rows.push(Row::new(Kind::Choice, Icon::Save));
         (items, rows)
@@ -185,11 +192,23 @@ impl Editor {
                 self.document.move_caret(wp_docx::TextPosition::default(), false);
                 return self.insert_own_block(&name);
             }
-            // The separator, which cannot be pressed, then the line that saves.
-            if past == saved.len() + 1 {
-                return self.save_selection_to(wp_docx::blocks::COVER_PAGES);
-            }
-            return Response::Ignored;
+            // The separator, which cannot be pressed, then the line that takes
+            // one off where there is one, then the line that saves.
+            let after_separator = past.checked_sub(saved.len() + 1);
+            let removing = self.document.has_cover_page();
+            return match (after_separator, removing) {
+                (Some(0), true) => {
+                    let taken = self.document.remove_cover_page();
+                    self.relayout();
+                    self.scroll = 0.0;
+                    self.reveal_caret();
+                    self.edited(taken, crate::messages::t("Cover page taken off"))
+                }
+                (Some(0), false) | (Some(1), true) => {
+                    self.save_selection_to(wp_docx::blocks::COVER_PAGES)
+                }
+                _ => Response::Ignored,
+            };
         };
 
         // What goes on it comes from the document's own properties. With none

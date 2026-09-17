@@ -16,7 +16,9 @@
 
 use crate::history::EditKind;
 use crate::model::{Alignment, Block, Paragraph, ParagraphProperties, Run, RunProperties};
-use crate::{edit, position, Document, TextPosition};
+use wp_xml::tree::Element;
+
+use crate::{edit, position, read, Document, TextPosition};
 
 /// How a cover page is arranged.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -103,9 +105,10 @@ impl Document {
             return false;
         };
 
-        for (offset, block) in blocks.iter().enumerate() {
-            parent.insert_element(position + offset, edit::block_element(block, prefix.as_deref()));
-        }
+        // Wrapped in a mark that says what these paragraphs are, so that
+        // taking the cover page off again means taking off exactly what was
+        // put in — see [`Document::remove_cover_page`].
+        parent.insert_element(position, wrapped(&blocks, prefix.as_deref()));
 
         // The caret goes to the start of what used to be the first paragraph,
         // which is where the document proper now begins.
@@ -113,6 +116,94 @@ impl Document {
         self.mark_modified();
         true
     }
+
+    /// Where the cover page is among the body's children, if there is one.
+    ///
+    /// By the mark it carries and not by looking at the words: a document can
+    /// begin with a title and a page break without that being a cover page,
+    /// and a program that guessed would take away somebody's first page.
+    #[must_use]
+    fn cover_page_index(&self) -> Option<usize> {
+        let body = read::find_body(&self.tree().root)?;
+        body.children.iter().position(|node| match node {
+            wp_xml::tree::Node::Element(element) => is_a_cover_page(element),
+            _ => false,
+        })
+    }
+
+    /// Whether the document has one.
+    #[must_use]
+    pub fn has_cover_page(&self) -> bool {
+        self.cover_page_index().is_some()
+    }
+
+    /// Word's Remove Current Cover Page.
+    ///
+    /// Takes away the whole of what was put in — the paragraphs, the room
+    /// above them and the page break that made the document proper start on a
+    /// sheet of its own — and nothing else. That is what the mark is for: a
+    /// cover page is a stretch of ordinary paragraphs, and without something
+    /// saying where it begins and ends there is no way to tell it from the
+    /// first page of the document.
+    pub fn remove_cover_page(&mut self) -> bool {
+        let Some(index) = self.cover_page_index() else { return false };
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+
+        let Some(body) = read::find_body_mut(&mut self.tree_mut().root) else { return false };
+        body.children.remove(index);
+
+        self.set_caret(TextPosition::default());
+        self.mark_modified();
+        true
+    }
+}
+
+/// What the format calls the gallery a cover page comes from.
+///
+/// Word writes this on the mark round one, and reads it back to know what it
+/// is looking at. The same words it uses, because a document whose cover page
+/// was put in here should be one Word can take off again.
+const COVER_GALLERY: &str = "Cover Pages";
+
+/// Whether an element is the mark round a cover page.
+fn is_a_cover_page(element: &Element) -> bool {
+    if !element.is(Some(read::W), "sdt") {
+        return false;
+    }
+    element
+        .child(Some(read::W), "sdtPr")
+        .and_then(|properties| properties.child(Some(read::W), "docPartObj"))
+        .and_then(|part| part.child(Some(read::W), "docPartGallery"))
+        .and_then(|gallery| gallery.attribute(Some(read::W), "val"))
+        .is_some_and(|gallery| gallery == COVER_GALLERY)
+}
+
+/// The blocks of a cover page, inside the mark that says what they are.
+fn wrapped(blocks: &[Block], prefix: Option<&str>) -> Element {
+    let name = |local: &str| edit::name_with(prefix, local);
+
+    let mut gallery = Element::new(&name("docPartGallery"), Some(read::W));
+    gallery.set_namespaced_attribute(&name("val"), read::W, COVER_GALLERY);
+
+    let mut part = Element::new(&name("docPartObj"), Some(read::W));
+    part.push_element(gallery);
+    // Word writes this beside the gallery to say the mark is one of a kind
+    // rather than one of a repeating set.
+    part.push_element(Element::new(&name("docPartUnique"), Some(read::W)));
+
+    let mut properties = Element::new(&name("sdtPr"), Some(read::W));
+    properties.push_element(part);
+
+    let mut content = Element::new(&name("sdtContent"), Some(read::W));
+    for block in blocks {
+        content.push_element(edit::block_element(block, prefix));
+    }
+
+    let mut mark = Element::new(&name("sdt"), Some(read::W));
+    mark.push_element(properties);
+    mark.push_element(content);
+    mark
 }
 
 /// The paragraphs a cover page is made of.
@@ -323,5 +414,97 @@ mod tests {
             .collect();
         let largest = sizes.iter().copied().max().expect("something is sized");
         assert_eq!(sizes.first().copied(), Some(largest), "the title is not the largest");
+    }
+}
+
+#[cfg(test)]
+mod taking_one_off {
+    use super::*;
+    use crate::model::{Block, Body, Paragraph};
+
+    fn document(lines: &[&str]) -> Document {
+        let mut body = Body::default();
+        for line in lines {
+            body.blocks.push(Block::Paragraph(Paragraph::text(line)));
+        }
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        Document::open(&bytes).expect("reopening")
+    }
+
+    fn cover() -> Cover {
+        Cover {
+            title: String::from("The Title"),
+            subtitle: String::new(),
+            author: String::from("Ada Lovelace"),
+            date: String::from("2027-01-01"),
+        }
+    }
+
+    #[test]
+    fn a_document_with_no_cover_page_says_so() {
+        let document = document(&["The body of it"]);
+        assert!(!document.has_cover_page());
+        // And there is nothing to take off, so nothing happens.
+        let mut document = document;
+        assert!(!document.remove_cover_page());
+        assert_eq!(document.plain_text().trim(), "The body of it");
+    }
+
+    #[test]
+    fn one_put_in_here_is_marked_as_one() {
+        let mut document = document(&["The body of it"]);
+        assert!(document.insert_cover_page(Layout::Centred, &cover()));
+        assert!(document.has_cover_page(), "it went in without its mark");
+        assert!(document.plain_text().contains("The Title"));
+    }
+
+    #[test]
+    fn the_mark_survives_being_written_out_and_read_back() {
+        // A cover page put in today has to be one that can be taken off next
+        // week, which means the mark lives in the file.
+        let mut document = document(&["The body of it"]);
+        document.insert_cover_page(Layout::Banded, &cover());
+        let bytes = document.save().expect("saving");
+        let reopened = Document::open(&bytes).expect("reopening");
+        assert!(reopened.has_cover_page(), "the mark did not survive a round trip");
+    }
+
+    #[test]
+    fn taking_it_off_leaves_the_document_as_it_was() {
+        // The whole of what was put in — the words, the room above them and
+        // the page break that made the document start on a sheet of its own —
+        // and nothing else.
+        let before = document(&["The body of it", "And the rest"]);
+        let was = before.plain_text();
+        let paragraphs = before.paragraph_count();
+
+        let mut document = before;
+        document.insert_cover_page(Layout::Footed, &cover());
+        assert!(document.paragraph_count() > paragraphs, "nothing was put in");
+
+        assert!(document.remove_cover_page(), "it would not come off");
+        assert_eq!(document.plain_text(), was, "the document is not as it was");
+        assert_eq!(document.paragraph_count(), paragraphs, "something was left behind");
+        assert!(!document.has_cover_page());
+    }
+
+    #[test]
+    fn taking_it_off_can_be_taken_back() {
+        // One act to a person is one thing to undo.
+        let mut document = document(&["The body of it"]);
+        document.insert_cover_page(Layout::Centred, &cover());
+        document.remove_cover_page();
+        assert!(!document.has_cover_page());
+
+        assert!(document.undo());
+        assert!(document.has_cover_page(), "undoing did not put it back");
+    }
+
+    #[test]
+    fn a_document_that_merely_begins_with_a_title_is_not_a_cover_page() {
+        // The mark and not the words: a program that guessed would take away
+        // somebody's first page.
+        let document = document(&["The Title", "The body of it"]);
+        assert!(!document.has_cover_page());
     }
 }
