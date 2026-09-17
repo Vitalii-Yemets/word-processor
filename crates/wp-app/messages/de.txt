@@ -287,6 +287,9 @@ language = Deutsch
 = Bottom
 > Unten
 
+= Bottom of Page
+> Seitenende
+
 = Breaks
 > Umbrüche
 
@@ -553,6 +556,9 @@ language = Deutsch
 
 = Cross-reference
 > Querverweis
+
+= Current Position
+> Aktuelle Position
 
 = Custom Margins…
 > Benutzerdefinierte Seitenränder…
@@ -953,6 +959,12 @@ language = Deutsch
 = In brackets
 > In Klammern
 
+= In the left margin
+> Am linken Seitenrand
+
+= In the right margin
+> Am rechten Seitenrand
+
 = In this document
 > In diesem Dokument
 
@@ -1121,6 +1133,9 @@ language = Deutsch
 = Page 1 of 4
 > Seite 1 von 4
 
+= Page Margins
+> Seitenränder
+
 = Page Numbers
 > Seitenzahlen
 
@@ -1138,6 +1153,9 @@ language = Deutsch
 
 = Page number at the top: {0}
 > Seitenzahl oben: {0}
+
+= Page number in the margin: {0}
+> Seitenzahl am Seitenrand: {0}
 
 = Page number: {0}
 > Seitenzahl: {0}
@@ -1252,6 +1270,9 @@ language = Deutsch
 
 = This signs the whole document.
 > Dies signiert das gesamte Dokument.
+
+= Top of Page
+> Seitenanfang
 
 = Valid signatures
 > Gültige Signaturen

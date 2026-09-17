@@ -254,22 +254,17 @@ impl Editor {
             // like, so the first three rows open a second menu rather than
             // putting anything in. See [`super::designs`].
             Choice::PageNumberPlace => {
-                let items = vec![
-                    "Top of Page".to_owned(),
-                    "Bottom of Page".to_owned(),
-                    "Current Position".to_owned(),
-                    String::new(),
-                    "Format Page Numbers…".to_owned(),
-                    "Remove Page Numbers".to_owned(),
-                ];
-                let rows = vec![
-                    Row::submenu(Icon::Header),
-                    Row::submenu(Icon::Footer),
-                    Row::submenu(Icon::PageNumber),
-                    Row::separator(),
-                    Row::new(Kind::Choice, Icon::PageNumber),
-                    Row::new(Kind::Choice, Icon::LetterClear),
-                ];
+                use super::designs::Place;
+                let mut items: Vec<String> =
+                    Place::ALL.iter().map(|place| place.label().to_owned()).collect();
+                let mut rows: Vec<Row> =
+                    Place::ALL.iter().map(|place| Row::submenu(place.icon())).collect();
+                items.push(String::new());
+                rows.push(Row::separator());
+                items.push("Format Page Numbers…".to_owned());
+                rows.push(Row::new(Kind::Choice, Icon::PageNumber));
+                items.push("Remove Page Numbers".to_owned());
+                rows.push(Row::new(Kind::Choice, Icon::LetterClear));
                 (items, rows, None, WIDTH)
             }
             Choice::Selecting => {
@@ -642,16 +637,15 @@ impl Editor {
 
     fn choose_page_number(&mut self, index: usize) -> Response {
         use super::designs::Place;
-        match index {
-            // The three places, each of which opens the gallery of designs
-            // that can go there. Word's Current Position drops the number
-            // where the caret is, as a field, so it counts like any other
-            // page number.
-            0 => self.open_page_number_designs(Place::Top),
-            1 => self.open_page_number_designs(Place::Bottom),
-            2 => self.open_page_number_designs(Place::Here),
-            4 => self.open_page_numbering(),
-            5 => {
+        // Each place opens the gallery of designs that can go there. Word's
+        // Current Position drops the number where the caret is, as a field,
+        // so it counts like any other page number.
+        if let Some(place) = Place::ALL.get(index).copied() {
+            return self.open_page_number_designs(place);
+        }
+        match index - Place::ALL.len() {
+            1 => self.open_page_numbering(),
+            2 => {
                 let header = self.document.set_furniture(
                     Furniture::Header,
                     Preset::None,

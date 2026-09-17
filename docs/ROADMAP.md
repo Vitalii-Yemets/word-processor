@@ -5756,15 +5756,55 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   its words compared and its field left behind, because the machinery that
   puts changed words in takes text and not runs; the field-only case is the
   one the tick box is about and is the one that is handled.
-- [ ] **J27. Page numbers in the margin.** Word's fourth place for one, and
-  the one **J22** did not offer: a number standing in the margin beside the
-  text rather than above or below it. It is not a header — it is a text box
-  anchored to the page's margin, floating, with the field inside it — so it
-  needs the anchored drawing machinery rather than the furniture machinery,
-  and a gallery of its own designs to go with it. Done when Page Margins
-  stands on the place menu with designs behind it, the box lands in the
-  margin on every page, and `pgNumMargins` is a gallery a person can save
-  into like the other three.
+- [x] **J27. Page numbers in the margin.**
+  **Three things had to be true and two of them were not.**
+  *The margin had to be somewhere.* The format names six frames a drawing can
+  be measured from that are not the text area — the left margin, the right,
+  the top, the bottom, the binding side and the other one — and this program
+  read every one of them as "the margin", meaning the text area. That is the
+  difference between a number standing *in* the margin and one against the
+  edge of the text, and it was being thrown away on the way in. The six are
+  read, written and laid out now, each as the band it is.
+  *A running head had to be able to carry a drawing.* It could not. A head is
+  laid out on a page of its own and slid into place once its height is known,
+  and what slid into place was its words, its underlines and its pictures —
+  the drawings were laid out and then dropped on the floor. They are carried
+  over now.
+  *And the drawing had to land where the paper is.* A head's words flow from
+  nought downwards and are moved afterwards; a drawing it carries is anchored
+  to the paper and must not be moved with them. So what the move will add is
+  taken off while the drawing is placed, and the two cancel. A head's offset
+  is known before anything is laid out; a foot's is not, since it depends on
+  how tall the foot turns out, so a foot is laid out twice — once to learn
+  that and once to place what it carries. Twice over a few lines is cheaper
+  than a drawing in the wrong place.
+  **What it comes to.** Page Margins stands on the place menu as Word's fourth
+  place, with two designs behind it — the left margin and the right — because
+  a margin has two sides and there is nothing else to decide about a number.
+  The design is a text box holding the `PAGE` field, with no line round it and
+  nothing behind it, anchored to the margin band across and to the middle of
+  the paper down. It goes into the header, because a header is what every page
+  has a copy of: the number is not in the header, the box is. And
+  `pgNumMargins` is a gallery a person saves into like the other three.
+  The rows of that menu were not translatable either — none of the four places
+  was in the catalogue — so a place knows its own name now and the catalogue
+  is gathered from the same table the menu is built from.
+  *Proven by:* four tests over the place and its designs — the margin has
+  designs of its own and saves into `pgNumMargins`, the box is anchored to the
+  left or the right margin band and holds a `PAGE` field, choosing one writes
+  a header carrying the box and leaves the foot alone, and all four places
+  have a name and a gallery. Six more over the frames: each margin comes back
+  as itself and not as the text area. And a picture of the page with the
+  number standing in the right margin, which is the whole of what the item
+  asked for and what no test would have caught if the drawing had been
+  dropped on the floor again.
+  *Not done, and named here:* **inside and outside** are read, written and
+  laid out as left and right. They are the binding side and the other one, and
+  which is which changes with the page in a document printed on both sides —
+  so what is drawn is right for a document printed on one side and for the odd
+  pages of one printed on both, and wrong for the even pages. Mirroring them
+  is a question about the page rather than about the drawing, and belongs with
+  the mirrored margins themselves.
 - [ ] **J28. Taking a cover page off again.** Word's Remove Current Cover
   Page, the line at the foot of that gallery. It cannot be written until
   something marks which blocks of the document are the cover page: Word wraps

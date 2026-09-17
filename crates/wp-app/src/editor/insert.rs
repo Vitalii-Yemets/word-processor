@@ -2205,6 +2205,13 @@ ogg,lancre
                 self.paint(self.view_width, self.view_height);
                 self.open_page_number_designs(super::designs::Place::Bottom);
             }
+            // A number standing in the margin beside the text, which is not a
+            // running head at all but a box the header carries.
+            "pagenumbermargin" => {
+                self.page_number_place = super::designs::Place::Margins;
+                self.choose_page_number_design(1);
+                self.relayout();
+            }
             "pagenumberdrawn" => {
                 // Two of the designs on the page itself: the band behind the
                 // number at the foot, and the rule under the one at the head.

@@ -175,6 +175,23 @@ pub enum Relative {
     Line,
     /// The character it is beside — only meaningful across.
     Character,
+    /// One of the four margins, as a band of its own.
+    ///
+    /// Not the same thing as [`Relative::Margin`], which means the text area
+    /// the margins surround. These are the empty bands themselves, and they
+    /// are the only way to put something *in* a margin rather than against
+    /// the edge of the text — which is what a page number down the side of a
+    /// page is.
+    LeftMargin,
+    RightMargin,
+    TopMargin,
+    BottomMargin,
+    /// The margin nearer the binding, and the one further from it.
+    ///
+    /// Which side either lands on changes with the page in a document printed
+    /// on both sides. See [`crate::page`] for the switch that mirrors them.
+    InsideMargin,
+    OutsideMargin,
 }
 
 impl Relative {
@@ -187,6 +204,12 @@ impl Relative {
             Self::Paragraph => "paragraph",
             Self::Line => "line",
             Self::Character => "character",
+            Self::LeftMargin => "leftMargin",
+            Self::RightMargin => "rightMargin",
+            Self::TopMargin => "topMargin",
+            Self::BottomMargin => "bottomMargin",
+            Self::InsideMargin => "insideMargin",
+            Self::OutsideMargin => "outsideMargin",
         }
     }
 
@@ -198,9 +221,14 @@ impl Relative {
             "paragraph" => Self::Paragraph,
             "line" => Self::Line,
             "character" => Self::Character,
-            // The many others — the inside margin, the outside margin, the top
-            // margin — all measure from an edge of the page or of the text, and
-            // the margin is the nearer of the two.
+            "leftMargin" => Self::LeftMargin,
+            "rightMargin" => Self::RightMargin,
+            "topMargin" => Self::TopMargin,
+            "bottomMargin" => Self::BottomMargin,
+            "insideMargin" => Self::InsideMargin,
+            "outsideMargin" => Self::OutsideMargin,
+            // Anything else measures from the text area, which is what the
+            // format falls back on and what nearly every drawing uses.
             _ => Self::Margin,
         }
     }
@@ -575,8 +603,27 @@ mod tests {
 
     #[test]
     fn a_relative_nobody_here_names_becomes_the_margin() {
-        assert_eq!(Relative::from_word("outsideMargin"), Relative::Margin);
+        assert_eq!(Relative::from_word("somethingNobodyWrote"), Relative::Margin);
         assert_eq!(Relative::from_word(""), Relative::Margin);
+    }
+
+    #[test]
+    fn each_margin_is_a_band_of_its_own_and_comes_back_as_itself() {
+        // The text area and the four bands round it are different frames, and
+        // reading one as the other is the difference between a page number in
+        // the margin and one against the edge of the text.
+        for word in [
+            "leftMargin",
+            "rightMargin",
+            "topMargin",
+            "bottomMargin",
+            "insideMargin",
+            "outsideMargin",
+        ] {
+            let read = Relative::from_word(word);
+            assert_ne!(read, Relative::Margin, "{word} was read as the text area");
+            assert_eq!(read.word(), word, "{word} did not come back as itself");
+        }
     }
 
     #[test]

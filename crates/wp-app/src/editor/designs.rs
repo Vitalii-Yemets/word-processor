@@ -69,13 +69,22 @@ pub(crate) enum Place {
     /// Where the caret is, as a field in the text: Word's Current Position,
     /// and the one that is part of a sentence rather than part of the page.
     Here,
+    /// In the margin beside the text, which is Word's Page Margins.
+    ///
+    /// Not a running head at all: a number in the margin is a text box
+    /// standing in the empty band at the side of the paper. It goes into the
+    /// header anyway, because that is what makes something appear on every
+    /// page — but what the header holds is the box and not the number.
+    Margins,
 }
 
 impl Place {
     /// Which header or footer this place is, when it is one at all.
     fn furniture(self) -> Option<Furniture> {
         match self {
-            Self::Top => Some(Furniture::Header),
+            // The margin's box is carried by the header, since the header is
+            // what every page has a copy of.
+            Self::Top | Self::Margins => Some(Furniture::Header),
             Self::Bottom => Some(Furniture::Footer),
             Self::Here => None,
         }
@@ -90,18 +99,46 @@ impl Place {
         match self {
             Self::Top => PAGE_NUMBERS_TOP,
             Self::Bottom => PAGE_NUMBERS_BOTTOM,
+            Self::Margins => wp_docx::blocks::PAGE_NUMBERS_MARGINS,
             Self::Here => PAGE_NUMBERS,
         }
     }
 
     /// All three, for the catalogue of everything the program can say.
-    pub(crate) const ALL: &'static [Self] = &[Self::Top, Self::Bottom, Self::Here];
+    pub(crate) const ALL: &'static [Self] = &[Self::Top, Self::Bottom, Self::Margins, Self::Here];
+
+    /// What the menu calls it.
+    ///
+    /// Word's own words. Here rather than in the menu because the catalogue
+    /// of everything the program can say is gathered by walking tables like
+    /// this one, and a label written where the menu is built is a label no
+    /// translator ever sees.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Top => "Top of Page",
+            Self::Bottom => "Bottom of Page",
+            Self::Margins => "Page Margins",
+            Self::Here => "Current Position",
+        }
+    }
+
+    /// Which drawing goes beside it.
+    pub(crate) fn icon(self) -> crate::chrome::icons::Icon {
+        use crate::chrome::icons::Icon;
+        match self {
+            Self::Top => Icon::Header,
+            Self::Bottom => Icon::Footer,
+            Self::Margins => Icon::Margins,
+            Self::Here => Icon::PageNumber,
+        }
+    }
 
     /// What to say when one has gone in.
     pub(crate) fn said(self) -> &'static str {
         match self {
             Self::Top => "Page number at the top: {0}",
             Self::Bottom => "Page number at the foot: {0}",
+            Self::Margins => "Page number in the margin: {0}",
             Self::Here => "Page number: {0}",
         }
     }
@@ -207,6 +244,89 @@ pub(crate) const DESIGNS: &[Design] = &[
     },
 ];
 
+/// How wide a box in the margin is, in points.
+///
+/// Narrow: what stands in it is a number of one or two digits, and a box wider
+/// than the margin would hang over the text it is meant to stand beside.
+const MARGIN_BOX_WIDTH: f64 = 36.0;
+
+/// And how tall.
+const MARGIN_BOX_HEIGHT: f64 = 18.0;
+
+/// The designs that stand in a margin.
+///
+/// Two, because a margin has two sides and there is nothing else to decide:
+/// the number is the number. Word offers the same two with its own decoration
+/// round them, and the decoration is Word's content rather than an
+/// arrangement — the same reason **J22** drew its own.
+pub(crate) const IN_THE_MARGIN: &[Design] = &[
+    Design {
+        name: "In the left margin",
+        alignment: Alignment::Center,
+        reads: Reads::Bare,
+        trim: Trim::Nothing,
+    },
+    Design {
+        name: "In the right margin",
+        alignment: Alignment::Center,
+        reads: Reads::Bare,
+        trim: Trim::Nothing,
+    },
+];
+
+/// A header holding nothing but a box standing in one of the margins.
+///
+/// # Why the header
+///
+/// Because a header is what every page has a copy of. The number itself is
+/// not in the header — it is inside a box the header carries, and the box is
+/// anchored to the margin rather than to the header's own line, so it stands
+/// beside the text rather than above it.
+fn margin_body(right: bool) -> Body {
+    use wp_docx::anchor::{Anchor, Placement, Relative, Wrap};
+
+    let mut box_of = wp_docx::shapes::Shape::text_box(MARGIN_BOX_WIDTH, MARGIN_BOX_HEIGHT, "");
+    // No line round it and nothing behind it: what is wanted is a number in
+    // the margin, not a number in a box in the margin.
+    box_of.outline = None;
+    box_of.text = vec![Paragraph {
+        properties: ParagraphProperties {
+            alignment: Some(Alignment::Center),
+            ..ParagraphProperties::default()
+        },
+        runs: vec![Run::field("PAGE", "1")],
+    }];
+    box_of.anchor = Some(Anchor {
+        // In the band itself rather than against the edge of the text, which
+        // is the whole difference between a margin number and a plain one.
+        horizontal_from: if right { Relative::RightMargin } else { Relative::LeftMargin },
+        horizontal: Placement::Aligned("center".to_owned()),
+        // Halfway down the paper, which is where Word puts one. Measured
+        // from the page and not from the text area: the head this box is
+        // carried by is laid out on a page of its own, where the text area
+        // has no foot to measure from.
+        vertical_from: Relative::Page,
+        vertical: Placement::Aligned("center".to_owned()),
+        // Nothing wraps round it: it is in the margin, where there is no text
+        // to push out of the way.
+        wrap: Wrap::None,
+        ..Anchor::default()
+    });
+
+    let mut body = Body::default();
+    body.blocks.push(Block::Paragraph(Paragraph {
+        properties: ParagraphProperties::default(),
+        runs: vec![Run {
+            properties: wp_docx::model::RunProperties::default(),
+            content: vec![wp_docx::model::RunContent::Shape(Box::new(box_of))],
+            field: None,
+            revision: None,
+            format_change: None,
+        }],
+    }));
+    body
+}
+
 /// Which of them a place can offer.
 ///
 /// All of them where there is a whole paragraph to arrange. Where the number
@@ -215,6 +335,9 @@ pub(crate) const DESIGNS: &[Design] = &[
 /// because three designs that differ by an alignment nothing will apply would
 /// be three lines doing the same thing.
 pub(super) fn designs_for(place: Place) -> Vec<usize> {
+    if place == Place::Margins {
+        return (0..IN_THE_MARGIN.len()).collect();
+    }
     if place != Place::Here {
         return (0..DESIGNS.len()).collect();
     }
@@ -227,6 +350,19 @@ pub(super) fn designs_for(place: Place) -> Vec<usize> {
         }
     }
     chosen
+}
+
+/// Which set of designs a place draws from.
+///
+/// The margin's are their own: what stands in a margin is a box, and what
+/// stands in a running head is a paragraph, so there is no arrangement the
+/// two could share.
+pub(crate) fn designs_of(place: Place) -> &'static [Design] {
+    if place == Place::Margins {
+        IN_THE_MARGIN
+    } else {
+        DESIGNS
+    }
 }
 
 /// The runs a design is made of.
@@ -301,7 +437,7 @@ impl Editor {
     pub(super) fn page_number_gallery(&self, place: Place) -> (Vec<String>, Vec<Row>) {
         let mut items: Vec<String> = designs_for(place)
             .into_iter()
-            .map(|at| crate::messages::t(DESIGNS[at].name).to_owned())
+            .map(|at| crate::messages::t(designs_of(place)[at].name).to_owned())
             .collect();
         let mut rows: Vec<Row> =
             items.iter().map(|_| Row::new(Kind::Choice, Icon::PageNumber)).collect();
@@ -333,7 +469,7 @@ impl Editor {
         let place = self.page_number_place;
         let offered = designs_for(place);
 
-        if let Some(design) = offered.get(index).map(|at| &DESIGNS[*at]) {
+        if let Some(design) = offered.get(index).map(|at| &designs_of(place)[*at]) {
             return self.put_page_number(place, design);
         }
 
@@ -352,6 +488,19 @@ impl Editor {
     /// One design, where it was asked for.
     fn put_page_number(&mut self, place: Place, design: &Design) -> Response {
         let note = crate::messages::with(place.said(), &[crate::messages::t(design.name)]);
+        if place == Place::Margins {
+            // The second of the two is the right-hand margin, and the design
+            // is the whole of what the header holds.
+            let right = design.name.contains("right");
+            let body = margin_body(right);
+            let done = self
+                .document
+                .set_furniture_body(Furniture::Header, Which::Default, &body)
+                .unwrap_or(false);
+            self.relayout();
+            return self.edited(done, &note);
+        }
+
         let Some(kind) = place.furniture() else {
             // Current Position: the runs go into the text at the caret, and
             // nothing about the page is changed. A number in a sentence is
@@ -588,6 +737,73 @@ mod tests {
         let separator = designs_for(Place::Bottom).len();
         assert!(matches!(editor.choose_page_number_design(separator), Response::Ignored));
         assert!(editor.document.furniture(Furniture::Footer).is_none());
+    }
+
+    #[test]
+    fn the_margin_is_a_place_of_its_own_with_designs_of_its_own() {
+        // What stands in a margin is a box and what stands in a running head
+        // is a paragraph, so there is no arrangement the two could share.
+        assert_eq!(designs_of(Place::Margins).len(), IN_THE_MARGIN.len());
+        assert_eq!(designs_of(Place::Top).len(), DESIGNS.len());
+        assert_eq!(designs_for(Place::Margins).len(), 2, "a margin has two sides");
+        assert_eq!(Place::Margins.gallery(), "pgNumMargins");
+    }
+
+    #[test]
+    fn a_number_in_the_margin_is_a_box_anchored_to_that_margin() {
+        use wp_docx::anchor::Relative;
+        use wp_docx::model::RunContent;
+
+        for (right, wanted) in [(false, Relative::LeftMargin), (true, Relative::RightMargin)] {
+            let body = margin_body(right);
+            let Block::Paragraph(paragraph) = &body.blocks[0] else { panic!("a paragraph") };
+            let Some(RunContent::Shape(shape)) = paragraph.runs[0].content.first() else {
+                panic!("the margin's number is not a box");
+            };
+            let anchor = shape.anchor.as_ref().expect("a floating box");
+            assert_eq!(anchor.horizontal_from, wanted);
+            // In the band itself, not against the edge of the text, which is
+            // the whole difference between a margin number and a plain one.
+            assert!(matches!(
+                anchor.horizontal,
+                wp_docx::anchor::Placement::Aligned(ref edge) if edge == "center"
+            ));
+            // And it numbers the page, or it is a box with nothing in it.
+            assert!(
+                shape.text[0].runs.iter().any(|run| run.field.as_deref() == Some("PAGE")),
+                "no page field in the box"
+            );
+        }
+    }
+
+    #[test]
+    fn choosing_one_writes_a_header_carrying_the_box() {
+        // The header, because a header is what every page has a copy of. The
+        // number is not in the header: the box is, and the box stands in the
+        // margin.
+        let mut editor = editor();
+        editor.page_number_place = Place::Margins;
+        editor.choose_page_number_design(1);
+
+        let header = editor.document.furniture(Furniture::Header).expect("a header");
+        let Block::Paragraph(paragraph) = &header.blocks[0] else { panic!("a paragraph") };
+        assert!(
+            matches!(paragraph.runs[0].content.first(), Some(wp_docx::model::RunContent::Shape(_))),
+            "the header holds no box"
+        );
+        assert!(editor.document.furniture(Furniture::Footer).is_none(), "the foot was touched");
+    }
+
+    #[test]
+    fn the_place_menu_offers_all_four_and_each_says_what_it_is() {
+        // Word's four, and each opens a gallery rather than acting: a row
+        // that looks like it will act and instead opens a list has misled
+        // whoever pressed it.
+        assert_eq!(Place::ALL.len(), 4);
+        for place in Place::ALL.iter().copied() {
+            assert!(!place.label().trim().is_empty(), "{place:?} has no name");
+            assert!(!place.gallery().trim().is_empty(), "{place:?} saves nowhere");
+        }
     }
 
     #[test]

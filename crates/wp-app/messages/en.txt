@@ -97,6 +97,7 @@
 = Borders and Shading
 = Borders…
 = Bottom
+= Bottom of Page
 = Breaks
 = Bring Forward
 = Browse
@@ -179,6 +180,7 @@
 = Create New Building Block
 = Create a PDF
 = Cross-reference
+= Current Position
 = Custom Margins…
 = Custom Print
 = Customize Quick Access Toolbar
@@ -310,6 +312,8 @@
 = Illustrations
 = In Normal.dotm
 = In brackets
+= In the left margin
+= In the right margin
 = In this document
 = In use
 = Inches
@@ -436,6 +440,7 @@
 = Page Borders
 = Page Break
 = Page Color
+= Page Margins
 = Page Movement
 = Page Number
 = Page Numbers
@@ -449,6 +454,7 @@
 = Page display
 = Page number at the foot: {0}
 = Page number at the top: {0}
+= Page number in the margin: {0}
 = Page number: {0}
 = Page {0} of {1}
 = Pages
@@ -692,6 +698,7 @@
 = This stretch may only be edited by {0}
 = Title
 = Top
+= Top of Page
 = Total Row
 = Track Changes
 = Tracking

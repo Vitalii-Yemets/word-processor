@@ -96,10 +96,13 @@ fn from_the_tables() -> BTreeSet<String> {
     }
     // The page-number gallery: the name of every design in it, and what the
     // program says once one has gone in.
-    for design in crate::editor::designs::DESIGNS {
+    for design in
+        crate::editor::designs::DESIGNS.iter().chain(crate::editor::designs::IN_THE_MARGIN)
+    {
         out.insert(design.name.to_owned());
     }
     for place in crate::editor::designs::Place::ALL {
+        out.insert(place.label().to_owned());
         out.insert(place.said().to_owned());
     }
     // And the name of every gallery a building block can be filed under,

@@ -1492,6 +1492,14 @@ pub struct LayoutEngine<'a> {
     /// only known once the body has been laid out and the pages counted — so
     /// the footer is laid out afterwards, once per page, with this set.
     field_page: Option<(usize, usize, NumberFormat)>,
+    /// How far a floating drawing being laid out now will be moved afterwards.
+    ///
+    /// Nought everywhere but in a running head. A head is laid out on a page
+    /// of its own and slid into place when its height is known, and a drawing
+    /// it carries is not in that flow — it is anchored to the paper. So what
+    /// the slide will add is taken off while the drawing is placed, and the
+    /// two cancel. See [`merge_page`].
+    drawing_shift: f32,
     /// Whether insertions and deletions are shown as changes rather than as
     /// the text they would leave behind.
     show_markup: bool,
@@ -1589,6 +1597,7 @@ impl<'a> LayoutEngine<'a> {
             automatic_line: Color::rgb(0x40, 0x40, 0x40),
             counters: ListCounters::new(),
             field_page: None,
+            drawing_shift: 0.0,
             show_markup: true,
             show_formatting: true,
             table_gridlines: false,
@@ -4394,8 +4403,23 @@ impl<'a> LayoutEngine<'a> {
         // Across the page. The text area is what "margin" and "column" both
         // mean here: a document of one column has them in the same place, and
         // one of several has the column as the nearer answer.
+        //
+        // The margins themselves are bands of their own, and the only way to
+        // put something *in* a margin rather than against the edge of the
+        // text — which is what a page number down the side of a page is.
+        let text_right = area.left + area.text_width;
         let (band_left, band_width) = match anchor.horizontal_from {
             Relative::Page => (0.0, area.page_width),
+            // Inside and outside are the binding side and the other one, and
+            // which is which changes with the page in a document printed on
+            // both sides. Read as left and right, which is right for a
+            // document printed on one side and for the odd pages of one
+            // printed on both.
+            Relative::LeftMargin | Relative::InsideMargin => (0.0, area.left),
+            Relative::RightMargin | Relative::OutsideMargin => {
+                (text_right, (area.page_width - text_right).max(0.0))
+            }
+            Relative::TopMargin | Relative::BottomMargin => (area.left, area.text_width),
             _ => (area.left, area.text_width),
         };
         let x = match &anchor.horizontal {
@@ -4413,16 +4437,23 @@ impl<'a> LayoutEngine<'a> {
 
         // Down the page.
         let y = match anchor.vertical_from {
-            Relative::Page => match &anchor.vertical {
-                Where::Aligned(edge) => match edge.as_str() {
-                    "center" => (area.page_height - height) / 2.0,
-                    "bottom" => area.page_height - height,
-                    _ => 0.0,
-                },
-                Where::Offset(distance) => emu(*distance),
-                Where::Percent(thousandths) => area.page_height * share(*thousandths),
-            },
-            Relative::Margin => match &anchor.vertical {
+            Relative::Page => {
+                self.drawing_shift
+                    + match &anchor.vertical {
+                        Where::Aligned(edge) => match edge.as_str() {
+                            "center" => (area.page_height - height) / 2.0,
+                            "bottom" => area.page_height - height,
+                            _ => 0.0,
+                        },
+                        Where::Offset(distance) => emu(*distance),
+                        Where::Percent(thousandths) => area.page_height * share(*thousandths),
+                    }
+            }
+            Relative::Margin
+            | Relative::LeftMargin
+            | Relative::RightMargin
+            | Relative::InsideMargin
+            | Relative::OutsideMargin => match &anchor.vertical {
                 Where::Aligned(edge) => match edge.as_str() {
                     "center" => area.top + (area.bottom_limit - area.top - height) / 2.0,
                     "bottom" => area.bottom_limit - height,
@@ -4431,6 +4462,30 @@ impl<'a> LayoutEngine<'a> {
                 Where::Offset(distance) => area.top + emu(*distance),
                 Where::Percent(thousandths) => {
                     area.top + (area.bottom_limit - area.top) * share(*thousandths)
+                }
+            },
+            // The bands above and below the text, measured from the top of the
+            // page and from the foot of the text respectively.
+            Relative::TopMargin => match &anchor.vertical {
+                Where::Aligned(edge) => match edge.as_str() {
+                    "center" => (area.top - height) / 2.0,
+                    "bottom" => area.top - height,
+                    _ => 0.0,
+                },
+                Where::Offset(distance) => emu(*distance),
+                Where::Percent(thousandths) => area.top * share(*thousandths),
+            },
+            Relative::BottomMargin => match &anchor.vertical {
+                Where::Aligned(edge) => match edge.as_str() {
+                    "center" => {
+                        area.bottom_limit + (area.page_height - area.bottom_limit - height) / 2.0
+                    }
+                    "bottom" => area.page_height - height,
+                    _ => area.bottom_limit,
+                },
+                Where::Offset(distance) => area.bottom_limit + emu(*distance),
+                Where::Percent(thousandths) => {
+                    area.bottom_limit + (area.page_height - area.bottom_limit) * share(*thousandths)
                 }
             },
             // Paragraph and line both mean "from where the text is now", which
@@ -7342,34 +7397,52 @@ impl LayoutEngine<'_> {
                 keeping: false,
             };
 
-            let mut scratch =
-                vec![Page { width: page.width, height: page.height, ..Page::default() }];
-            let mut y = 0.0f32;
-            let mut column = 0usize;
-            let mut counted = 0usize;
             // Counting starts afresh so a numbered list in the body is not
             // advanced by anything in the furniture.
             let saved = core::mem::replace(&mut self.counters, ListCounters::new());
-            self.place_blocks(
-                &body.blocks,
-                &mut counted,
-                document,
-                &mut scratch,
-                &mut y,
-                &mut column,
-                area,
-            );
-            self.counters = saved;
 
-            let offset = if footer {
-                // The footer's bottom edge sits the footer distance up from the
-                // bottom of the page, which is what `w:footer` measures.
-                page.height - footer_distance as f32 / TWIPS_PER_POINT * scale - y
-            } else {
-                header_distance as f32 / TWIPS_PER_POINT * scale
+            let mut lay_out = |engine: &mut Self| {
+                let mut scratch =
+                    vec![Page { width: page.width, height: page.height, ..Page::default() }];
+                let mut y = 0.0f32;
+                let mut column = 0usize;
+                let mut counted = 0usize;
+                engine.place_blocks(
+                    &body.blocks,
+                    &mut counted,
+                    document,
+                    &mut scratch,
+                    &mut y,
+                    &mut column,
+                    area,
+                );
+                (scratch.remove(0), y)
             };
 
-            merge_page(page, scratch.remove(0), offset);
+            // A head's offset is known before anything is laid out. A foot's
+            // is not — it depends on how tall the foot turns out — so the foot
+            // is laid out once to learn that and again to place whatever it
+            // carries against the paper. Twice over a few lines is cheaper
+            // than a drawing in the wrong place.
+            let (laid, offset) = if footer {
+                let (_, height) = lay_out(self);
+                // The footer's bottom edge sits the footer distance up from the
+                // bottom of the page, which is what `w:footer` measures.
+                let offset =
+                    page.height - footer_distance as f32 / TWIPS_PER_POINT * scale - height;
+                self.drawing_shift = -offset;
+                let (laid, _) = lay_out(self);
+                (laid, offset)
+            } else {
+                let offset = header_distance as f32 / TWIPS_PER_POINT * scale;
+                self.drawing_shift = -offset;
+                let (laid, _) = lay_out(self);
+                (laid, offset)
+            };
+            self.drawing_shift = 0.0;
+            self.counters = saved;
+
+            merge_page(page, laid, offset);
         }
 
         self.field_page = None;
@@ -7394,6 +7467,17 @@ fn merge_page(page: &mut Page, from: Page, offset: f32) {
         image.y += offset;
         page.images.push(image);
     }
+    // A running head can carry a floating drawing — a page number standing in
+    // the margin is one — and until now it was laid out and then thrown away
+    // here. It moves by the same offset as the words, because it was placed
+    // with that offset already taken off: see [`LayoutEngine::drawing_shift`].
+    for mut shape in from.shapes {
+        shape.y += offset;
+        page.shapes.push(shape);
+    }
+    // A path is already in page coordinates and carries no origin to move,
+    // so it comes over as it is.
+    page.paths.extend(from.paths);
 }
 
 /// The colour one author's changes are drawn in.
