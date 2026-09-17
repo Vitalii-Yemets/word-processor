@@ -1202,6 +1202,23 @@ impl Editor {
         self.caret_line().map_or(0, |(page, _)| page) + 1
     }
 
+    /// Which page is showing at the top of the window, counted from nought.
+    ///
+    /// What the comparison column follows: a person scrolling through a
+    /// comparison is reading the page in front of them, which need not be the
+    /// one the caret was left on.
+    pub(super) fn page_in_view(&self) -> usize {
+        let top = self.scroll_down();
+        let mut best = 0usize;
+        for index in 0..self.pages.len() {
+            let (_, origin) = self.page_origin(index);
+            if origin <= top + 1.0 {
+                best = index;
+            }
+        }
+        best
+    }
+
     /// Where in the document a point in the window falls, if anywhere.
     fn position_at(&self, x: i32, y: i32) -> Option<TextPosition> {
         // Nearest page first, so a drag that runs off the top or the bottom of

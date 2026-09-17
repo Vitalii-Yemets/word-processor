@@ -422,19 +422,38 @@ impl Editor {
 
     /// Carries the comparison out, with what the dialog said.
     pub(super) fn apply_comparison(&mut self, dialog: &Dialog) -> Response {
-        let Some((path, revised)) = self.to_compare.take() else { return Response::Ignored };
+        let Some((path, picked)) = self.to_compare.take() else { return Response::Ignored };
         let options = super::comparing::options_from(dialog);
         let into_a_new_one = dialog.chose(super::comparing::INTO) == 0;
 
+        // Whichever two the drop-downs name, which need not be this document
+        // and the file that was picked: Word's dialog compares any two, and
+        // so does this.
+        let first = dialog.chose(super::comparing::ORIGINAL);
+        let second = dialog.chose(super::comparing::REVISED);
+        let Some(original) = self.comparable_document(first, &path, &picked) else {
+            return Response::Redraw;
+        };
+        let Some(revised) = self.comparable_document(second, &path, &picked) else {
+            return Response::Redraw;
+        };
+
         // Named after what it is rather than after a person: nobody wrote these
         // changes, they were worked out.
-        let before = self.document.clone();
-        if into_a_new_one {
+        let before = original.clone();
+        if into_a_new_one || first != 0 {
             // Word's default: the result is a document of its own, and
             // neither of the two it came from is touched. One window, so what
             // that means here is that the result loses the file it came from
             // and has to be saved somewhere before it can overwrite anything.
+            // A comparison whose original is not this document is always a
+            // new one, for the same reason: this document was not in it.
             self.file = None;
+        }
+        // The result begins as the original, which is what a comparison is:
+        // the first document with what the second did to it marked on it.
+        if first != 0 {
+            self.document = original;
         }
         let marked = self.document.compare_with_options(&revised, "Compare", options);
         // The two it came from, beside the result, which is what makes a

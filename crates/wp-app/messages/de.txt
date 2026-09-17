@@ -2138,6 +2138,9 @@ language = Deutsch
 = {0} copied
 > {0} kopiert
 
+= {0} could not be opened
+> {0} konnte nicht geöffnet werden
+
 = {0} could not be opened: {1}
 > {0} konnte nicht geöffnet werden: {1}
 

@@ -87,6 +87,8 @@ pub(super) struct Comparing {
 ///
 /// Named rather than counted twice, for the reason every other dialog in this
 /// program names its rows.
+pub(super) const ORIGINAL: usize = 0;
+pub(super) const REVISED: usize = 1;
 pub(super) const MOVES: usize = 3;
 pub(super) const FORMATTING: usize = 4;
 pub(super) const CASE: usize = 5;
@@ -108,17 +110,21 @@ impl Editor {
     /// Word's Compare dialog: what the two documents are, what counts as a
     /// difference, and where the answer goes.
     pub(super) fn open_compare_dialog(&mut self) -> Response {
-        let (original, revised) = match &self.to_compare {
-            Some((path, _)) => (self.document_name(), name_of(path)),
-            None => return Response::Ignored,
-        };
+        let Some((picked, _)) = &self.to_compare else { return Response::Ignored };
+        let picked = picked.clone();
         let defaults = Options::default();
+
+        // Word's two drop-downs list the documents lately open, so that two
+        // files neither of which is showing can be compared. The one just
+        // picked is on both lists and chosen on the second.
+        let (originals, first) = self.comparable(None);
+        let (reviseds, second) = self.comparable(Some(&picked));
 
         let dialog = Dialog::new(
             "Compare Documents",
             vec![
-                Field::Said { label: "Original".to_owned(), value: original },
-                Field::Said { label: "Revised".to_owned(), value: revised },
+                Field::Choice { label: "Original".to_owned(), items: originals, current: first },
+                Field::Choice { label: "Revised".to_owned(), items: reviseds, current: second },
                 Field::Heading("Show changes".to_owned()),
                 Field::Check { label: "Moves".to_owned(), on: defaults.moves },
                 Field::Check { label: "Formatting".to_owned(), on: defaults.formatting },
@@ -137,6 +143,68 @@ impl Editor {
         )
         .wide(460.0);
         self.ask(Asking::Compare, dialog)
+    }
+
+    /// What the two drop-downs offer: this document, and the ones lately
+    /// opened.
+    ///
+    /// Says which of them to start on — the one just picked where there is
+    /// one, and this document otherwise.
+    fn comparable(&self, picked: Option<&std::path::Path>) -> (Vec<String>, usize) {
+        let mut items = vec![crate::messages::t("This document").to_owned()];
+        let mut at = 0usize;
+        for (index, path) in self.settings.recent.iter().enumerate() {
+            items.push(name_of(std::path::Path::new(path)));
+            if picked.is_some_and(|wanted| wanted == std::path::Path::new(path)) {
+                at = index + 1;
+            }
+        }
+        // A file picked through the system's dialog need not be on the list
+        // of the lately opened, and it is what the person just chose.
+        if let Some(picked) = picked.filter(|_| at == 0) {
+            items.push(name_of(picked));
+            at = items.len() - 1;
+        }
+        (items, at)
+    }
+
+    /// Which document one of those rows names, read back.
+    ///
+    /// `None` means this one, which is the first row and the only one that is
+    /// not a file.
+    fn comparable_path(&self, row: usize, picked: &std::path::Path) -> Option<std::path::PathBuf> {
+        if row == 0 {
+            return None;
+        }
+        match self.settings.recent.get(row - 1) {
+            Some(path) => Some(std::path::PathBuf::from(path)),
+            // Past the end of the lately opened is the one just picked,
+            // which was added to the list for that reason.
+            None => Some(picked.to_path_buf()),
+        }
+    }
+
+    /// Opens whichever of them a row names, or takes this document.
+    pub(super) fn comparable_document(
+        &mut self,
+        row: usize,
+        picked: &std::path::Path,
+        opened: &Document,
+    ) -> Option<Document> {
+        let Some(path) = self.comparable_path(row, picked) else {
+            return Some(self.document.clone());
+        };
+        // The one already opened for this comparison is not read twice.
+        if path == picked {
+            return Some(opened.clone());
+        }
+        match std::fs::read(&path).ok().and_then(|bytes| Document::open(&bytes).ok()) {
+            Some(document) => Some(document),
+            None => {
+                self.status = crate::messages::with("{0} could not be opened", &[&name_of(&path)]);
+                None
+            }
+        }
     }
 
     /// Gives up on a comparison that was asked about and not answered.
@@ -280,7 +348,11 @@ impl Editor {
         self.canvas.fill_rect(left as i32, top as i32, 1, height as i32, theme.field_edge);
 
         let half = height / 2.0;
-        let showing = self.caret_page().saturating_sub(1);
+        // The page the result is scrolled to rather than the one the caret
+        // is on: the column is there to be read beside the document, and a
+        // person scrolling through a comparison wants the same place in all
+        // three.
+        let showing = self.page_in_view();
         let (original, revised) = match &self.comparing {
             Some(comparing) => (comparing.original.clone(), comparing.revised.clone()),
             None => return,
@@ -476,11 +548,13 @@ mod tests {
         let dialog = editor.dialog.as_ref().expect("the dialog");
 
         assert_eq!(dialog.title, "Compare Documents");
-        // A row the dialog says rather than asks, so it is read as one.
-        let Some(Field::Said { value, .. }) = dialog.fields.get(1) else {
-            panic!("the revised document is not named: {:?}", dialog.fields.get(1))
+        // Two drop-downs, as Word's dialog has: this document and whatever
+        // has lately been open, with the one just picked already chosen.
+        let Some(Field::Choice { items, current, .. }) = dialog.fields.get(REVISED) else {
+            panic!("the revised document is not a list: {:?}", dialog.fields.get(REVISED))
         };
-        assert!(value.contains("Revised"), "{value}");
+        assert!(items[*current].contains("Revised"), "{items:?} at {current}");
+        assert_eq!(dialog.chose(ORIGINAL), 0, "the original starts as this document");
         for row in [MOVES, FORMATTING, CASE, WHITE_SPACE] {
             assert!(dialog.ticked(row), "row {row} is not ticked to begin with");
         }
@@ -546,5 +620,56 @@ mod tests {
         editor.finish_dialog(Answer::Cancel);
         assert!(editor.to_compare.is_none(), "the document it was going to compare is still there");
         assert!(editor.document.changes().is_empty());
+    }
+    #[test]
+    fn the_drop_downs_offer_this_document_and_the_ones_lately_open() {
+        let mut editor = editor();
+        editor.settings.recent = vec!["/somewhere/Draft.docx".to_owned()];
+        about_to_compare(&mut editor, revised());
+
+        let dialog = editor.dialog.as_ref().expect("the dialog");
+        let Some(Field::Choice { items, .. }) = dialog.fields.get(ORIGINAL) else {
+            panic!("the original is not a list")
+        };
+        assert_eq!(items[0], "This document");
+        assert!(items.iter().any(|item| item.contains("Draft")), "{items:?}");
+        // The one just picked is on the list too, at the end, and chosen.
+        let Some(Field::Choice { items, current, .. }) = dialog.fields.get(REVISED) else {
+            panic!("the revised is not a list")
+        };
+        assert!(items[*current].contains("Revised"), "{items:?}");
+    }
+
+    #[test]
+    fn two_documents_neither_of_which_is_open_can_be_compared() {
+        // Word's dialog compares any two; this is the half of that which can
+        // be tested without a file dialog: what the rows name is read back
+        // and the right pair is compared.
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        let before = editor.document.plain_text();
+        about_to_compare(&mut editor, revised());
+        if let Some(Field::Choice { current, .. }) =
+            editor.dialog.as_mut().expect("the dialog").fields.get_mut(REVISED)
+        {
+            // Compared with itself: the same document on both sides.
+            *current = 0;
+        }
+        editor.finish_dialog(Answer::Accept);
+
+        assert!(editor.document.changes().is_empty(), "a document differed from itself");
+        assert_eq!(editor.document.plain_text(), before);
+    }
+
+    #[test]
+    fn the_column_follows_what_is_being_read_rather_than_the_caret() {
+        let mut editor = editor();
+        about_to_compare(&mut editor, revised());
+        editor.finish_dialog(Answer::Accept);
+        assert!(editor.comparing.is_some(), "the column did not open");
+
+        // At the top, the first page. The caret is wherever the comparison
+        // left it; what the column shows is what is in front of the person.
+        assert_eq!(editor.page_in_view(), 0);
     }
 }

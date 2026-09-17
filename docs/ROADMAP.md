@@ -5404,11 +5404,34 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   and no other file to copy to. Word's AutoText also completes as a person
   types the first few letters of a block's name, which is a different feature
   and is not here.
-- [ ] **J20. Word's Compare dialog, and the pages that follow the result.**
-  The dialog with its two drop-downs and its options, where the two commands
-  ask through the system's own file dialog today; and the two documents in
-  the column scrolling with the result rather than showing the page the caret
-  is on. Named in **J4**.
+- [x] **J20. Word's Compare dialog, and the pages that follow the result.**
+  The two drop-downs, and the column beside the result showing the place a
+  person is reading.
+  *Done:* **the two drop-downs.** Word's dialog names both documents and lets
+  either be something that is not open, which is the whole reason it has two:
+  a person comparing last week's draft with this week's wants neither of them
+  on the screen. Both lists hold this document and everything lately opened,
+  with the file just picked at the end of the second and already chosen. The
+  original is opened and becomes the result, because that is what a
+  comparison is — the first document with what the second did to it marked on
+  it — and a comparison whose original is not this document always goes into
+  a new one, since this document was not in it.
+  **The column follows what is being read.** It showed the page the caret was
+  left on, which after a comparison is wherever the marking finished. It
+  shows the page at the top of the window now, so that a person scrolling
+  through a comparison sees the same place in all three.
+  *Proven by:* three tests — the drop-downs offering this document and the
+  ones lately open with the picked file chosen, a document compared with
+  itself coming out unchanged (which is the pair being read back rather than
+  assumed), and the column following the view rather than the caret. The
+  dialog photographed.
+  *Not done, and named here:* Word's drop-downs carry a Browse button apiece,
+  so a file that is not on either list can be picked from inside the dialog;
+  here the file is picked before the dialog opens, which is one step in a
+  different order. Its Label changes with box names the author whose changes
+  these are, where this signs them "Compare". And the two halves of the
+  column show whole pages rather than scrolling within one, which is right
+  while a page is small enough to read and would not be on a longer one.
 - [ ] **J21. The `\006DataSpaces` storage, and the encryptions before 2007.**
   Office writes a `\006DataSpaces` storage beside the two streams of an
   encrypted file; this program does not, on the reading that it belongs to

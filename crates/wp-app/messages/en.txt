@@ -683,6 +683,7 @@
 = unsaved changes
 = {0} characters
 = {0} copied
+= {0} could not be opened
 = {0} could not be opened: {1}
 = {0} could not be read
 = {0} deleted
