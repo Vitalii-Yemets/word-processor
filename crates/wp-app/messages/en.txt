@@ -13,6 +13,7 @@
 = *Bold* and _italic_ with real formatting
 = 1 word
 = 100%
+= A block has to have a name
 = A new document
 = A password that is lost cannot be recovered.
 = A password to modify does not encrypt the file.
@@ -47,6 +48,7 @@
 = Always open read-only
 = Always show these on screen
 = An empty box takes the encryption off.
+= Another block is called that already
 = Anybody who can open it can take that one off.
 = Anybody who can open the file can take this off.
 = Appearance
@@ -64,6 +66,7 @@
 = AutoFit
 = AutoFormat As You Type
 = AutoRecover file location
+= AutoText
 = Automatic bulleted and numbered lists
 = Automatically add words to list
 = Autosaved {0}
@@ -108,6 +111,7 @@
 = Captions
 = Case changes
 = Catalogues can be added in
+= Category
 = Cell
 = Cell Size
 = Cell margins
@@ -125,7 +129,7 @@
 = Check for Errors
 = Checked styles are currently allowed
 = Choose commands from
-= Choose one to put it in, or to take it away.
+= Choose one to put it in, to refile it, or to take it away.
 = Citation
 = Citations & Bibliography
 = Clear
@@ -256,6 +260,7 @@
 = Fractions (1/2) with fraction character
 = From the template to this document
 = From this document to the template
+= Gallery
 = General
 = General Options
 = Glossaries
@@ -491,6 +496,7 @@
 = Save Address List
 = Save As
 = Save AutoRecover information
+= Save Selection to AutoText Gallery
 = Save Selection to Quick Part Gallery
 = Save as
 = Save as PDF
@@ -533,6 +539,7 @@
 = Small caps
 = SmartArt
 = Sort
+= Sort by
 = Sort, filter and check
 = Sorted by {0}
 = Space after
@@ -593,6 +600,7 @@
 = The files below were recovered.
 = The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
 = The letter goes to everybody ticked.
+= The selection is saved to the AutoText gallery.
 = The selection is saved under this name.
 = The {0} theme
 = Themes
@@ -605,6 +613,7 @@
 = This document was opened read-only: save a copy
 = This document, before
 = This machine's list of trusted issuers could not be read
+= This one
 = This person
 = This program can open Word documents.
 = This stretch is locked
@@ -690,6 +699,7 @@
 = {0} point
 = {0} recipients typed
 = {0} recovered
+= {0} refiled
 = {0} renamed
 = {0} selected
 = {0} set for this and every new document

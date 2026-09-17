@@ -5365,11 +5365,45 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   filter does that job here. And **J5** names the three other places Word
   gets a list from, of which Outlook's address book is the one this menu
   leaves out.
-- [ ] **J19. The rest of the Building Blocks Organizer.** The columns it
-  sorts by, and editing a block's name, gallery, category or description
-  after it is saved. With it, Word's AutoText gallery, which is the same
-  machinery under a second name and is read and written by `wp-docx` with no
-  menu of its own. Named in **J6**.
+- [x] **J19. The rest of the Building Blocks Organizer.** The columns it
+  sorts by, editing a block after it is saved, and Word's AutoText gallery.
+  *Done:* **refiling one.** A piece saved in a hurry under "Block 1" in the
+  wrong gallery is a piece nobody will find again, and saving it afresh means
+  having the document it came from still open. The organiser has the four
+  boxes now — name, gallery, category, description — and a Modify button that
+  writes them back on to the block without touching what is inside it. It is
+  the same block, filed differently. A name another block already has is
+  refused, because two blocks of one name is a menu where one can never be
+  picked.
+  **The columns.** Word's organiser is a table whose headings sort it; this
+  is a list with a box that says what to sort by — name, gallery or category
+  — which is the same answer in the shape this program's dialogs have. Each
+  row says all three, so the list can be read without picking anything. And
+  it lists every gallery rather than only the one the Quick Parts menu shows,
+  which is what makes it the place to find a piece filed in the wrong one.
+  **AutoText.** Word's other gallery, the same machinery under an older name,
+  and what a person puts in it is the thing they type every day — a sign-off,
+  an address, a paragraph of terms. It has a menu of its own now, under the
+  Quick Parts button where Word's is, listing what is in it and offering Save
+  Selection to AutoText Gallery. Which gallery a saved piece goes to is
+  whichever menu asked, so saving to one does not quietly file it under the
+  other.
+  *Proven by:* four tests over the document — a block refiled with its
+  content intact and its old name no longer answering, a refiling onto
+  another block's name refused while keeping its own name is not, a block
+  that is not there and a nameless one both refused, and the gallery deciding
+  which menu a block is on. Three over the program: the Quick Parts menu in
+  Word's order with AutoText on it, the AutoText menu being what is in that
+  gallery and the way to add to it, and a gallery shown by the name a person
+  reads rather than the one the file uses. The organiser photographed with
+  both galleries in it.
+  *Not done, and named here:* Word's organiser also shows which template each
+  block came from and what it does when it is inserted — its own paragraph,
+  its own page — and can copy a block from one template to another. This
+  program has one template, so there is one column's worth of that question
+  and no other file to copy to. Word's AutoText also completes as a person
+  types the first few letters of a block's name, which is a different feature
+  and is not here.
 - [ ] **J20. Word's Compare dialog, and the pages that follow the result.**
   The dialog with its two drop-downs and its options, where the two commands
   ask through the system's own file dialog today; and the two documents in

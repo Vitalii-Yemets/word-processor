@@ -170,6 +170,8 @@ pub enum Choice {
     StyleSet,
     /// Where the people a merge is for come from.
     RecipientSource,
+    /// What is in the AutoText gallery.
+    AutoText,
     /// Which of a control's entries is being filled in.
     FillIn,
     /// What the strip along the bottom shows.

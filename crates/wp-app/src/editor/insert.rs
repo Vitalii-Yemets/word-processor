@@ -2126,6 +2126,29 @@ ogg,lancre
             "newlist" => {
                 self.type_a_new_list();
             }
+            // Word's Building Blocks Organizer, with something saved in it.
+            "blockorganizer" => {
+                if let Some(mut template) = self.own_template() {
+                    for (name, gallery, category) in [
+                        ("Yours faithfully", wp_docx::blocks::QUICK_PARTS, "Letters"),
+                        ("Our address", wp_docx::blocks::AUTO_TEXT, "General"),
+                    ] {
+                        let block = wp_docx::blocks::BuildingBlock {
+                            name: name.to_owned(),
+                            gallery: gallery.to_owned(),
+                            category: category.to_owned(),
+                            description: String::new(),
+                        };
+                        let mut body = wp_docx::model::Body::default();
+                        body.blocks.push(wp_docx::model::Block::Paragraph(
+                            wp_docx::model::Paragraph::text(name),
+                        ));
+                        template.add_building_block(&block, &body);
+                    }
+                    self.save_own_template(&template);
+                }
+                self.open_organizer();
+            }
             "exception" => {
                 self.document.set_caret(wp_docx::TextPosition::new(4, 0));
                 let end = self.document.paragraph_text(4).unwrap_or_default().len();

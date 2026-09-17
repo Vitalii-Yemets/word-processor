@@ -1200,6 +1200,7 @@ impl Ribbon {
                     | Choice::LegacyField
                     | Choice::StyleSet
                     | Choice::RecipientSource
+                    | Choice::AutoText
                     | Choice::FillIn
                     | Choice::WordArt
                     | Choice::Drawing

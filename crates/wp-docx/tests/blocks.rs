@@ -162,3 +162,68 @@ fn the_part_is_written_where_the_format_says_and_named_as_what_it_is() {
         "nothing points at the glossary"
     );
 }
+
+#[test]
+fn a_block_can_be_refiled_without_being_saved_again() {
+    let mut template = document(&["unused"]);
+    let saved = BuildingBlock::named("Block 1");
+    assert!(template.add_building_block(&saved, &body(["Yours faithfully,"].as_ref())));
+
+    let wanted = BuildingBlock {
+        name: "Sign-off".to_owned(),
+        gallery: AUTO_TEXT.to_owned(),
+        category: "Letters".to_owned(),
+        description: "The end of a letter".to_owned(),
+    };
+    assert!(template.edit_building_block("Block 1", &wanted));
+
+    let template = round_trip(&template);
+    let blocks = template.building_blocks();
+    assert_eq!(blocks.len(), 1, "{blocks:?}");
+    assert_eq!(blocks[0].name, "Sign-off");
+    assert_eq!(blocks[0].gallery, AUTO_TEXT);
+    assert_eq!(blocks[0].category, "Letters");
+    assert_eq!(blocks[0].description, "The end of a letter");
+
+    // And what is in it is what was in it, which is the whole point of
+    // refiling rather than saving again.
+    let inside = template.building_block_body("Sign-off").expect("its content");
+    assert_eq!(inside.blocks.len(), 1);
+    assert!(template.building_block_body("Block 1").is_none(), "the old name still answers");
+}
+
+#[test]
+fn refiling_one_onto_another_s_name_is_refused() {
+    let mut template = document(&["unused"]);
+    template.add_building_block(&BuildingBlock::named("First"), &body(["one"].as_ref()));
+    template.add_building_block(&BuildingBlock::named("Second"), &body(["two"].as_ref()));
+
+    let wanted = BuildingBlock::named("First");
+    assert!(!template.edit_building_block("Second", &wanted), "two blocks of one name");
+    assert_eq!(template.building_blocks().len(), 2);
+    // Keeping its own name is not taking another's.
+    assert!(template.edit_building_block("Second", &BuildingBlock::named("Second")));
+}
+
+#[test]
+fn a_block_that_is_not_there_cannot_be_refiled_and_a_nameless_one_is_refused() {
+    let mut template = document(&["unused"]);
+    template.add_building_block(&BuildingBlock::named("First"), &body(["one"].as_ref()));
+    assert!(!template.edit_building_block("Nothing", &BuildingBlock::named("Something")));
+    assert!(!template.edit_building_block("First", &BuildingBlock::named("   ")));
+}
+
+#[test]
+fn the_gallery_a_block_is_in_decides_which_menu_it_is_on() {
+    let mut template = document(&["unused"]);
+    template.add_building_block(&BuildingBlock::named("A quick part"), &body(["one"].as_ref()));
+    template.add_building_block(
+        &BuildingBlock::named("Some text").in_gallery(AUTO_TEXT),
+        &body(["two"].as_ref()),
+    );
+
+    let template = round_trip(&template);
+    assert_eq!(template.blocks_in(QUICK_PARTS).len(), 1);
+    assert_eq!(template.blocks_in(AUTO_TEXT).len(), 1);
+    assert_eq!(template.blocks_in(AUTO_TEXT)[0].name, "Some text");
+}

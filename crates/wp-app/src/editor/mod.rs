@@ -471,6 +471,9 @@ pub struct Editor {
     /// List: it is not the merge's list until it has been saved. See
     /// [`mailings`].
     typed_recipients: wp_docx::merge::Recipients,
+    /// Whether the block being named is going to the AutoText gallery rather
+    /// than to Quick Parts. See [`ownblocks`].
+    saving_to_auto_text: bool,
     /// The people the merge is not for: Word's Edit Recipient List with the
     /// tick taken off a row. Kept by number, because the list itself is read
     /// afresh from its file each time.
@@ -707,6 +710,7 @@ impl Editor {
             pending_issue: None,
             recipients: wp_docx::merge::Recipients::default(),
             typed_recipients: wp_docx::merge::Recipients::default(),
+            saving_to_auto_text: false,
             recipient_file: None,
             preview_record: None,
             word_art_style: 0,

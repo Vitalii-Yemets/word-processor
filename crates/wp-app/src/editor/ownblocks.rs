@@ -21,7 +21,7 @@
 
 use std::path::PathBuf;
 
-use wp_docx::blocks::{BuildingBlock, QUICK_PARTS};
+use wp_docx::blocks::{BuildingBlock, AUTO_TEXT, QUICK_PARTS};
 use wp_docx::Document;
 use wp_shell::Response;
 
@@ -38,6 +38,18 @@ pub(super) const NORMAL: &str = "Normal.dotm";
 
 /// Where each answer sits in the organiser.
 const BLOCK_ROWS: usize = 1;
+const SORT_BY: usize = 3;
+/// And in the part of it that refiles one.
+const BLOCK_NAME: usize = 5;
+const BLOCK_GALLERY: usize = 6;
+const BLOCK_CATEGORY: usize = 7;
+const BLOCK_DESCRIPTION: usize = 8;
+
+/// The button that writes the boxes back on to the block that is chosen.
+pub(super) const MODIFY: &str = "Modify";
+
+/// What the organiser can be sorted by, which are the columns Word's has.
+const COLUMNS: &[&str] = &["Name", "Gallery", "Category"];
 
 /// The button that takes a block away rather than putting one in.
 pub(super) const DELETE: &str = "Delete";
@@ -79,11 +91,97 @@ impl Editor {
         self.own_template().map(|template| template.blocks_in(QUICK_PARTS)).unwrap_or_default()
     }
 
+    /// The blocks a person has saved to the AutoText gallery.
+    ///
+    /// Word's second gallery, which is the same machinery under another name
+    /// and older than the first: what a person puts in it is the thing they
+    /// type every day — a sign-off, an address, a paragraph of terms.
+    pub(super) fn auto_text_blocks(&self) -> Vec<BuildingBlock> {
+        self.own_template().map(|template| template.blocks_in(AUTO_TEXT)).unwrap_or_default()
+    }
+
+    /// Its menu: what is in it, and the way to put something in it.
+    pub(super) fn auto_text_menu(&self) -> Vec<String> {
+        let mut items: Vec<String> =
+            self.auto_text_blocks().into_iter().map(|block| block.name).collect();
+        items.push(crate::messages::t("Save Selection to AutoText Gallery").to_owned());
+        items
+    }
+
+    /// Drops that menu open, under the button whose menu it came from.
+    ///
+    /// Word's AutoText is a submenu of Quick Parts, and this is that: the
+    /// line on the first menu opens the second in the same place. It places
+    /// itself because the button it hangs under already carries a menu, and
+    /// one button cannot be looked up for two.
+    pub(super) fn open_auto_text(&mut self) -> Response {
+        if self.close_popup_if(crate::chrome::Choice::AutoText) {
+            return Response::Redraw;
+        }
+        let Some((left, top, _)) = self.ribbon.command_rect(crate::chrome::Command::QuickParts)
+        else {
+            return Response::Ignored;
+        };
+        let items = self.auto_text_menu();
+        let saved = self.auto_text_blocks().len();
+        let rows: Vec<crate::chrome::popup::Row> = items
+            .iter()
+            .enumerate()
+            .map(|(at, _)| {
+                let icon = if at < saved {
+                    crate::chrome::icons::Icon::QuickParts
+                } else {
+                    crate::chrome::icons::Icon::Save
+                };
+                crate::chrome::popup::Row::new(crate::chrome::popup::Kind::Choice, icon)
+            })
+            .collect();
+        self.popup = Some(
+            crate::chrome::Popup::new(
+                crate::chrome::Choice::AutoText,
+                items,
+                None,
+                left,
+                top,
+                300.0,
+            )
+            .with_rows(rows),
+        );
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// Puts in whichever was chosen, or saves the selection into the gallery.
+    pub(super) fn choose_auto_text(&mut self, index: usize) -> Response {
+        self.popup = None;
+        let saved = self.auto_text_blocks();
+        if let Some(block) = saved.get(index) {
+            let name = block.name.clone();
+            return self.insert_own_block(&name);
+        }
+        if index != saved.len() {
+            return Response::Ignored;
+        }
+        if self.document.selection().is_none() {
+            return self.report("Select what to save first");
+        }
+        self.saving_to_auto_text = true;
+        let dialog = Dialog::new(
+            "Create New Building Block",
+            vec![
+                Field::note("The selection is saved to the AutoText gallery."),
+                Field::Text { label: "Name".to_owned(), value: String::new() },
+            ],
+        );
+        self.ask(Asking::NewBlock, dialog)
+    }
+
     /// Word's Save Selection to Quick Part Gallery: asks what to call it.
     pub(super) fn save_selection_as_block(&mut self) -> Response {
         if self.document.selection().is_none() {
             return self.report("Select what to save first");
         }
+        self.saving_to_auto_text = false;
         let dialog = Dialog::new(
             "Create New Building Block",
             vec![
@@ -110,7 +208,15 @@ impl Editor {
             return self.report("There is nowhere to keep a building block on this machine");
         };
         let body = wp_docx::model::Body { blocks };
-        if !template.add_building_block(&BuildingBlock::named(name), &body) {
+        // Which gallery it goes to is whichever menu asked, so that Save
+        // Selection to AutoText Gallery does not quietly put it under Quick
+        // Parts.
+        let block = if self.saving_to_auto_text {
+            BuildingBlock::named(name).in_gallery(AUTO_TEXT)
+        } else {
+            BuildingBlock::named(name)
+        };
+        if !template.add_building_block(&block, &body) {
             return self.report("It could not be saved");
         }
         if !self.save_own_template(&template) {
@@ -133,26 +239,82 @@ impl Editor {
     /// Word's Building Blocks Organizer: everything saved, and a way to take
     /// one away.
     pub(super) fn open_organizer(&mut self) -> Response {
-        let blocks = self.own_blocks();
+        self.organizer_dialog(0, 0)
+    }
+
+    /// Every block a person has saved, in whichever order was asked for.
+    ///
+    /// Word's organiser is a table whose headings sort it; this is a list
+    /// with a box that says what to sort by, which is the same answer in the
+    /// shape this program's dialogs have.
+    fn sorted_blocks(&self, by: usize) -> Vec<BuildingBlock> {
+        // Every gallery, not only the one the Quick Parts menu shows: the
+        // organiser is where a person finds the piece they filed under the
+        // wrong gallery, and one that hid those would be no use for that.
+        let mut blocks =
+            self.own_template().map(|template| template.building_blocks()).unwrap_or_default();
+        blocks.sort_by_key(|block| {
+            let key = match by {
+                1 => &block.gallery,
+                2 => &block.category,
+                _ => &block.name,
+            };
+            key.to_lowercase()
+        });
+        blocks
+    }
+
+    /// The organiser, with one of the blocks chosen and one column sorted on.
+    fn organizer_dialog(&mut self, by: usize, current: usize) -> Response {
+        let blocks = self.sorted_blocks(by);
         if blocks.is_empty() {
             return self.report("Nothing has been saved as a building block yet");
         }
+        let current = current.min(blocks.len() - 1);
+        let chosen = blocks[current].clone();
         let rows = blocks
             .iter()
-            .map(|block| TreeRow::plain(&format!("{}  ({})", block.name, block.category)))
+            .map(|block| {
+                TreeRow::plain(&format!(
+                    "{}  ({}, {})",
+                    block.name,
+                    gallery_name(&block.gallery),
+                    block.category
+                ))
+            })
             .collect();
+
         let dialog = Dialog::with_buttons(
             "Building Blocks Organizer",
             vec![
-                Field::note("Choose one to put it in, or to take it away."),
-                Field::Tree { label: "Building blocks".to_owned(), rows, current: 0, scroll: 0 },
+                Field::note("Choose one to put it in, to refile it, or to take it away."),
+                Field::Tree { label: "Building blocks".to_owned(), rows, current, scroll: 0 },
+                Field::Heading("This one".to_owned()),
+                Field::Choice {
+                    label: "Sort by".to_owned(),
+                    items: COLUMNS.iter().map(|name| crate::messages::t(name).to_owned()).collect(),
+                    current: by,
+                },
+                Field::Text { label: "Name".to_owned(), value: chosen.name.clone() },
+                Field::Choice {
+                    label: "Gallery".to_owned(),
+                    items: vec![
+                        crate::messages::t("Quick Parts").to_owned(),
+                        crate::messages::t("AutoText").to_owned(),
+                    ],
+                    current: usize::from(chosen.gallery == AUTO_TEXT),
+                },
+                Field::Text { label: "Category".to_owned(), value: chosen.category.clone() },
+                Field::Text { label: "Description".to_owned(), value: chosen.description.clone() },
             ],
             vec![
                 Button { label: "Insert".to_owned(), answer: Answer::Accept, default: true },
+                Button { label: MODIFY.to_owned(), answer: Answer::Named(MODIFY), default: false },
                 Button { label: DELETE.to_owned(), answer: Answer::Named(DELETE), default: false },
                 Button { label: "Cancel".to_owned(), answer: Answer::Cancel, default: false },
             ],
-        );
+        )
+        .wide(560.0);
         self.ask(Asking::Organizer, dialog)
     }
 
@@ -161,7 +323,7 @@ impl Editor {
         let Some(Field::Tree { current, .. }) = dialog.fields.get(BLOCK_ROWS) else {
             return Response::Ignored;
         };
-        let blocks = self.own_blocks();
+        let blocks = self.sorted_blocks(dialog.chose(SORT_BY));
         let Some(block) = blocks.get(*current) else { return Response::Ignored };
         let name = block.name.clone();
 
@@ -176,6 +338,64 @@ impl Editor {
             return self.report("The template could not be written");
         }
         self.report(&format!("{name} taken away"))
+    }
+
+    /// The organiser's Modify and its Sort by, each of which changes the list
+    /// and leaves the dialog standing.
+    pub(super) fn organizer_button(&mut self, dialog: &Dialog, button: &str) -> Response {
+        let by = dialog.chose(SORT_BY);
+        let current = dialog.chose_row(BLOCK_ROWS);
+        if button != MODIFY {
+            return Response::Ignored;
+        }
+
+        let blocks = self.sorted_blocks(by);
+        let Some(block) = blocks.get(current).cloned() else { return Response::Ignored };
+        let wanted = BuildingBlock {
+            name: dialog.said(BLOCK_NAME).trim().to_owned(),
+            gallery: if dialog.chose(BLOCK_GALLERY) == 1 {
+                AUTO_TEXT.to_owned()
+            } else {
+                QUICK_PARTS.to_owned()
+            },
+            category: {
+                let said = dialog.said(BLOCK_CATEGORY);
+                let said = said.trim();
+                if said.is_empty() {
+                    wp_docx::blocks::GENERAL.to_owned()
+                } else {
+                    said.to_owned()
+                }
+            },
+            description: dialog.said(BLOCK_DESCRIPTION).trim().to_owned(),
+        };
+
+        if wanted.name.is_empty() {
+            self.status = crate::messages::t("A block has to have a name").to_owned();
+            return self.organizer_dialog(by, current);
+        }
+        let named = block.name.clone();
+        let done =
+            self.change_own_template(move |template| template.edit_building_block(&named, &wanted));
+        self.status = if done {
+            crate::messages::with("{0} refiled", &[&block.name])
+        } else {
+            crate::messages::t("Another block is called that already").to_owned()
+        };
+        self.organizer_dialog(by, current)
+    }
+}
+
+/// What a gallery is called where a person reads it.
+///
+/// The file says `quickParts` and `autoText`, which are names for a program;
+/// Word shows Quick Parts and AutoText, and so does this.
+fn gallery_name(gallery: &str) -> String {
+    use crate::messages::t;
+    match gallery {
+        AUTO_TEXT => t("AutoText").to_owned(),
+        QUICK_PARTS => t("Quick Parts").to_owned(),
+        other => other.to_owned(),
     }
 }
 
@@ -196,10 +416,37 @@ mod tests {
 
         let items = editor.quick_part_menu();
         let saved = editor.own_blocks().len();
-        assert_eq!(items[saved], "Save Selection to Quick Part Gallery");
-        assert_eq!(items[saved + 1], "Building Blocks Organizer");
-        assert_eq!(items[saved + 2], "Author", "the fields come after the commands");
-        assert_eq!(items.len(), saved + 2 + 7, "seven document properties");
+        // Word's order: what is saved, the other gallery, the two commands,
+        // then the document's own properties.
+        assert_eq!(items[saved], "AutoText");
+        assert_eq!(items[saved + 1], "Save Selection to Quick Part Gallery");
+        assert_eq!(items[saved + 2], "Building Blocks Organizer");
+        assert_eq!(items[saved + 3], "Author", "the fields come after the commands");
+        assert_eq!(items.len(), saved + 3 + 7, "seven document properties");
+    }
+
+    #[test]
+    fn the_autotext_menu_is_what_is_in_that_gallery_and_the_way_to_add_to_it() {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("one")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let library: &'static wp_layout::FontLibrary =
+            Box::leak(Box::new(wp_layout::FontLibrary::scan_system()));
+        let editor = crate::editor::Editor::new(library, document, None);
+
+        let items = editor.auto_text_menu();
+        let saved = editor.auto_text_blocks().len();
+        assert_eq!(items.len(), saved + 1, "{items:?}");
+        assert_eq!(items[saved], "Save Selection to AutoText Gallery");
+    }
+
+    #[test]
+    fn a_gallery_is_shown_by_the_name_a_person_reads() {
+        // The file says `quickParts`; Word says Quick Parts, and so does this.
+        assert_eq!(gallery_name(QUICK_PARTS), "Quick Parts");
+        assert_eq!(gallery_name(AUTO_TEXT), "AutoText");
+        assert_eq!(gallery_name("somethingElse"), "somethingElse", "one Word does not name");
     }
 
     #[test]

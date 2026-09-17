@@ -62,6 +62,7 @@ impl Editor {
         use crate::messages::t;
         let mut items: Vec<String> =
             self.own_blocks().into_iter().map(|block| block.name).collect();
+        items.push(t("AutoText").to_owned());
         items.push(t("Save Selection to Quick Part Gallery").to_owned());
         items.push(t("Building Blocks Organizer").to_owned());
         items.extend(PARTS.iter().map(|(label, _)| (*label).to_owned()));
@@ -80,12 +81,15 @@ impl Editor {
         }
         let past = index - saved.len();
         if past == 0 {
-            return self.save_selection_as_block();
+            return self.open_auto_text();
         }
         if past == 1 {
+            return self.save_selection_as_block();
+        }
+        if past == 2 {
             return self.open_organizer();
         }
-        let Some((label, instruction)) = PARTS.get(past - 2).copied() else {
+        let Some((label, instruction)) = PARTS.get(past - 3).copied() else {
             return Response::Ignored;
         };
 

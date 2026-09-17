@@ -26,6 +26,9 @@ language = Deutsch
 = 100%
 > 100 %
 
+= A block has to have a name
+> Ein Baustein braucht einen Namen
+
 = A certificate is a file; its key is the file beside it.
 > Ein Zertifikat ist eine Datei; sein Schlüssel ist die Datei daneben.
 
@@ -67,6 +70,9 @@ language = Deutsch
 
 = An empty box takes the encryption off.
 > Ein leeres Feld hebt die Verschlüsselung auf.
+
+= Another block is called that already
+> Ein anderer Baustein heißt bereits so
 
 = Anybody who can open it can take that one off.
 > Wer sie öffnen kann, kann dieses entfernen.
@@ -197,6 +203,9 @@ language = Deutsch
 = Autosaved {0}
 > Automatisch gespeichert {0}
 
+= AutoText
+> AutoText
+
 = Banded Columns
 > Verbundene Spalten
 
@@ -314,6 +323,9 @@ language = Deutsch
 = Catalogues can be added in
 > Kataloge können abgelegt werden in
 
+= Category
+> Kategorie
+
 = Cell
 > Zelle
 
@@ -367,6 +379,9 @@ language = Deutsch
 
 = Chart
 > Diagramm
+
+= Choose one to put it in, to refile it, or to take it away.
+> Einen wählen, um ihn einzufügen, neu abzulegen oder zu entfernen.
 
 = City
 > Ort
@@ -790,6 +805,9 @@ language = Deutsch
 
 = From this document to the template
 > Von diesem Dokument in die Vorlage
+
+= Gallery
+> Katalog
 
 = General
 > Allgemein
@@ -1529,6 +1547,9 @@ language = Deutsch
 = Save documents
 > Dokumente speichern
 
+= Save Selection to AutoText Gallery
+> Auswahl im AutoText-Katalog speichern
+
 = Saved {0}
 > {0} gespeichert
 
@@ -1648,6 +1669,9 @@ language = Deutsch
 
 = Sort
 > Sortieren
+
+= Sort by
+> Sortieren nach
 
 = Sort, filter and check
 > Sortieren, filtern und prüfen
@@ -1820,6 +1844,9 @@ language = Deutsch
 = The same headings, closer together
 > Dieselben Überschriften, enger gesetzt
 
+= The selection is saved to the AutoText gallery.
+> Die Auswahl wird im AutoText-Katalog gespeichert.
+
 = The selection is saved under this name.
 > Die Auswahl wird unter diesem Namen gespeichert.
 
@@ -1891,6 +1918,9 @@ language = Deutsch
 
 = This machine's list of trusted issuers could not be read
 > Die Liste der vertrauenswürdigen Aussteller dieses Computers konnte nicht gelesen werden
+
+= This one
+> Dieser
 
 = This person
 > Diese Person
@@ -2149,6 +2179,9 @@ language = Deutsch
 
 = {0} recovered
 > {0} wiederhergestellt
+
+= {0} refiled
+> {0} neu abgelegt
 
 = {0} renamed
 > {0} umbenannt

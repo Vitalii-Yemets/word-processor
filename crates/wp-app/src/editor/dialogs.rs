@@ -255,6 +255,10 @@ impl Editor {
                 let dialog = self.dialog.clone()?;
                 Some(self.add_typed_recipient(&dialog))
             }
+            (Some(Asking::Organizer), super::ownblocks::MODIFY) => {
+                let dialog = self.dialog.clone()?;
+                Some(self.organizer_button(&dialog, super::ownblocks::MODIFY))
+            }
             (Some(Asking::Recipients), button)
                 if matches!(
                     button,

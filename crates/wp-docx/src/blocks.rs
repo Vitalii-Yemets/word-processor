@@ -163,6 +163,46 @@ impl Document {
         self.save_glossary_root(root)
     }
 
+    /// Changes what a block is called and where it is filed, leaving what is
+    /// in it alone.
+    ///
+    /// Word's organiser has a Modify button for exactly this: a piece saved
+    /// in a hurry under "Block 1" in the wrong gallery is a piece nobody will
+    /// find again, and having to save it afresh means having the document it
+    /// came from still open.
+    ///
+    /// The content is not touched, which is the point: it is the same block,
+    /// filed differently.
+    pub fn edit_building_block(&mut self, name: &str, wanted: &BuildingBlock) -> bool {
+        if wanted.name.trim().is_empty() {
+            return false;
+        }
+        let prefix = self.prefix();
+        let Some(mut root) = self.glossary_root() else { return false };
+        let Some(parts) = root.child_mut(Some(read::W), "docParts") else { return false };
+
+        // A block already called what this one is to be called would be two
+        // of one name, which is a menu where one can never be picked.
+        if !wanted.name.eq_ignore_ascii_case(name)
+            && parts.child_elements().any(|child| {
+                child.is(Some(read::W), "docPart") && read_block(child).name == wanted.name
+            })
+        {
+            return false;
+        }
+
+        let Some(part) = parts
+            .child_elements_mut()
+            .find(|child| child.is(Some(read::W), "docPart") && read_block(child).name == name)
+        else {
+            return false;
+        };
+        let Some(properties) = part.child_mut(Some(read::W), "docPartPr") else { return false };
+        write_block_properties(properties, wanted, prefix.as_deref());
+
+        self.save_glossary_root(root)
+    }
+
     /// Takes one away. Says whether there was one.
     pub fn remove_building_block(&mut self, name: &str) -> bool {
         let Some(mut root) = self.glossary_root() else { return false };
@@ -260,18 +300,44 @@ fn read_block(element: &Element) -> BuildingBlock {
 /// Writes one.
 fn write_block(block: &BuildingBlock, body: &Body, prefix: Option<&str>) -> Element {
     let name = |local: &str| edit::name_with(prefix, local);
+    let mut properties = Element::new(&name("docPartPr"), Some(read::W));
+    write_block_properties(&mut properties, block, prefix);
+
+    let mut content = Element::new(&name("docPartBody"), Some(read::W));
+    for block in &body.blocks {
+        content.push_element(edit::block_element(block, prefix));
+    }
+
+    let mut part = Element::new(&name("docPart"), Some(read::W));
+    part.push_element(properties);
+    part.push_element(content);
+    part
+}
+
+/// What a block's properties say: its name, where it is filed, what sort of
+/// thing it is and what it is for.
+///
+/// Written into properties that may already have some — which is what
+/// changing a block's name means — so everything this writes is taken out
+/// first. What is left is whatever the properties said that this program does
+/// not model, which stays where it was.
+fn write_block_properties(properties: &mut Element, block: &BuildingBlock, prefix: Option<&str>) {
+    let name = |local: &str| edit::name_with(prefix, local);
     let valued = |local: &str, value: &str| {
         let mut element = Element::new(&name(local), Some(read::W));
         element.set_namespaced_attribute(&name("val"), read::W, value);
         element
     };
 
+    for local in ["name", "category", "types", "behaviors", "description"] {
+        properties.remove_children_named(Some(read::W), local);
+    }
+
     let mut category = Element::new(&name("category"), Some(read::W));
     category.push_element(valued("name", &block.category));
     category.push_element(valued("gallery", &block.gallery));
 
-    let mut properties = Element::new(&name("docPartPr"), Some(read::W));
-    properties.push_element(valued("name", &block.name));
+    properties.insert_element(0, valued("name", &block.name));
     properties.push_element(category);
     // What sort of thing it is: a piece of content that goes where the caret
     // is, which is what every block a person saves is.
@@ -284,16 +350,6 @@ fn write_block(block: &BuildingBlock, body: &Body, prefix: Option<&str>) -> Elem
     if !block.description.is_empty() {
         properties.push_element(valued("description", &block.description));
     }
-
-    let mut content = Element::new(&name("docPartBody"), Some(read::W));
-    for block in &body.blocks {
-        content.push_element(edit::block_element(block, prefix));
-    }
-
-    let mut part = Element::new(&name("docPart"), Some(read::W));
-    part.push_element(properties);
-    part.push_element(content);
-    part
 }
 
 /// Makes a template with nothing in it but a place for blocks to live.
