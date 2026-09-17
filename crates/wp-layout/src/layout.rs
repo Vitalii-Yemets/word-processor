@@ -7406,7 +7406,7 @@ impl LayoutEngine<'_> {
             // advanced by anything in the furniture.
             let saved = core::mem::replace(&mut self.counters, ListCounters::new());
 
-            let mut lay_out = |engine: &mut Self| {
+            let lay_out = |engine: &mut Self| {
                 let mut scratch =
                     vec![Page { width: page.width, height: page.height, ..Page::default() }];
                 let mut y = 0.0f32;

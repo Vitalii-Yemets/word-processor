@@ -5999,11 +5999,58 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
 ## K — Proving it against Word rather than against ourselves
 
-- [ ] **K1. A corpus of real documents.** Files Word itself wrote, kept outside
-  the repository, and a harness that opens, saves and compares every one of
-  them.
-  *Done when:* `./x.sh corpus` reports how many round-trip byte for byte and
-  what differs in the rest.
+- [x] **K1. A corpus of real documents.**
+  **The files cannot be committed, so the harness is a command and not a
+  test.** A Word file carries personal data inside itself — the author's name,
+  how long it was edited for, comments, tracked changes somebody accepted
+  without removing — and a public repository is the wrong place for any of it.
+  So the corpus lives in a directory git ignores and every machine has its
+  own, and `cargo test` on a fresh clone would have nothing to run. A suite
+  that passes because it found no files is a suite that says nothing. What the
+  suite tests instead is the harness: that it finds documents and not
+  everything else in the directory, that a file it cannot open is reported
+  rather than skipped, and that it can tell the answers below apart.
+  **"Byte for byte" is two questions wearing one coat.** A document can come
+  back with every part identical and still not be the same file, because the
+  zip around the parts has an order, a compression choice and a timestamp for
+  each entry, and reproducing those is a different job from reproducing the
+  XML. So there are three answers and not two — **identical**, every byte;
+  **repackaged**, every part but not the wrapping; **differs**, and which
+  parts — and a fourth for the formats that are converted on the way in. An
+  old `.doc` or a `.rtf` saves as a package, which is not what it was, so the
+  byte question cannot be asked of it at all; that it opened and could be
+  written back is all that is reported, and nothing more is claimed.
+  **A failure is a bug; a difference is a measurement.** A document that will
+  not open, or opens and will not save, ends the command unhappily. A
+  difference does not, because a harness that failed on those would be one
+  nobody could run. The report ends with which parts differ across how many
+  documents, most first, which is the number that says where the next piece of
+  work is.
+  *Done:* `./x.sh corpus` and `.\x.ps1 corpus`, over `./corpus` or a directory
+  named after it. Also, quietly: the lock file Word leaves beside an open
+  document — `~$name.docx`, a hundred and sixty bytes saying who has it —
+  looks exactly like a document and is skipped, as are hidden files; documents
+  filed in folders are found; and opening bytes is now a separate thing from
+  reading a file, because the harness needs to keep the original to compare
+  against.
+  *Proven by:* eight tests. A document this program wrote comes back
+  identical; a README, a note, a hidden file and a lock file are left alone
+  while a document in a folder is found; a file that is not a document at all
+  is reported as failed and says why; a Rich Text file is opened and not asked
+  the byte question; the same parts in a different order are repackaged and
+  not differing; a changed part is named while the rest are counted; an empty
+  corpus says what to put in it rather than printing a zero; and the counts
+  add up to the number of documents with the parts rolled up across them.
+  *Found along the way:* a needless `mut` in the layout engine, dating from
+  **J27**, which clippy rejects in either profile when it is asked afresh. It
+  came out only because this item wanted a release build. Why the checks
+  between J27 and here did not show it I do not know, and would rather write
+  that down than invent a mechanism: a clean check is worth what it was
+  actually run on.
+  *Not done, and named here:* the corpus is empty until somebody fills it, so
+  what this proves today is that the harness works and not that the documents
+  do. Templates from before 2007 — `.dot` — are not in the list of kinds,
+  because nothing here has been shown one.
 - [ ] **K2. Page images compared against Word's.** A fidelity score per
   document rather than a pass or a fail, tracked over time so that it can be
   seen to improve.

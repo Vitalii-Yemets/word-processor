@@ -69,6 +69,8 @@ use wp_docx::model::{
 };
 use wp_docx::Document;
 
+mod corpus;
+
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let command = arguments.first().map(String::as_str);
@@ -79,6 +81,8 @@ fn main() -> ExitCode {
         (Some("text"), 2) => text(&arguments[1]),
         (Some("outline"), 2) => outline(&arguments[1]),
         (Some("roundtrip"), 3) => roundtrip(&arguments[1], &arguments[2]),
+        (Some("corpus"), 1) => corpus_command("corpus"),
+        (Some("corpus"), 2) => corpus_command(&arguments[1]),
         (Some("replace"), 5) => replace(&arguments[1], &arguments[2], &arguments[3], &arguments[4]),
         (Some("append"), 4) => append(&arguments[1], &arguments[2], &arguments[3]),
         (Some("render"), 3) => render(&arguments[1], &arguments[2], "96"),
@@ -125,6 +129,8 @@ Usage: wp <command>
   text <file.docx>             print the document text
   outline <file.docx>          print the structure with formatting
   roundtrip <in> <out>         open and save, checking nothing changed
+  corpus [directory]           open, save and compare every document in a
+                               directory of real files (default: corpus/)
 
   replace <in> <out> <from> <to>   replace text, across run boundaries
   append <in> <out> <text>         add a paragraph at the end
@@ -168,30 +174,35 @@ fn write(path: &str, bytes: &[u8]) -> Result<(), String> {
 
 fn open(path: &str) -> Result<Document, String> {
     let bytes = read(path)?;
+    open_bytes(Path::new(path), &bytes).map_err(|why| format!("cannot open {path}: {why}"))
+}
+
+/// Opens bytes as whatever the file name says they are.
+///
+/// Separate from reading the file because the corpus harness reads its own —
+/// it needs the bytes afterwards to compare against — and because what went
+/// wrong is more useful than a sentence with the path already glued onto it.
+fn open_bytes(path: &Path, bytes: &[u8]) -> Result<Document, String> {
     // A Rich Text file, a web page, an old Word document, an OpenDocument
     // package and a PDF are read as what they are; everything else is a
     // Word package.
-    let extension = Path::new(path)
+    let extension = path
         .extension()
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
         .unwrap_or_default();
-    let opened = match extension.as_str() {
-        "doc" => {
-            return wp_doc::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))
-        }
-        "odt" => {
-            return wp_odt::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))
-        }
-        "pdf" => {
-            return wp_pdf::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))
-        }
-        "rtf" => wp_rtf::open(&bytes),
-        "htm" | "html" => wp_html::open_html(&bytes, Some(Path::new(path))),
-        "mht" | "mhtml" => wp_html::open_mht(&bytes),
-        _ => Document::open(&bytes),
-    };
-    opened.map_err(|error| format!("cannot open {path}: {error}"))
+    // Each reader has its own kind of complaint, and what a caller wants is
+    // the sentence rather than the type.
+    let said = |error: &dyn std::fmt::Display| error.to_string();
+    match extension.as_str() {
+        "doc" => wp_doc::open(bytes).map_err(|error| said(&error)),
+        "odt" => wp_odt::open(bytes).map_err(|error| said(&error)),
+        "pdf" => wp_pdf::open(bytes).map_err(|error| said(&error)),
+        "rtf" => wp_rtf::open(bytes).map_err(|error| said(&error)),
+        "htm" | "html" => wp_html::open_html(bytes, Some(path)).map_err(|error| said(&error)),
+        "mht" | "mhtml" => wp_html::open_mht(bytes).map_err(|error| said(&error)),
+        _ => Document::open(bytes).map_err(|error| said(&error)),
+    }
 }
 
 // --- Commands ---------------------------------------------------------------
@@ -407,6 +418,26 @@ fn roundtrip(input: &str, output: &str) -> Result<(), String> {
         outln!("DIFFERENT: {} bytes in, {} bytes out", original.len(), saved.len());
         report_differences(&original, &saved);
         Err("the document changed on save".to_owned())
+    }
+}
+
+/// Opens, saves and compares every document in a directory of real files.
+///
+/// Ends unhappily only when a document would not open or would not save,
+/// which is a bug. A document that comes back changed is a measurement, and a
+/// harness that failed on those would be one nobody could run.
+fn corpus_command(directory: &str) -> Result<(), String> {
+    let directory = Path::new(directory);
+    let reports = corpus::survey(directory);
+    for line in corpus::lines(directory, &reports) {
+        outln!("{line}");
+    }
+
+    let failed = corpus::summarise(&reports).failed;
+    if failed == 0 {
+        Ok(())
+    } else {
+        Err(format!("{failed} document(s) could not be opened or saved"))
     }
 }
 
