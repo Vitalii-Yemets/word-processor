@@ -506,6 +506,11 @@ impl Editor {
     }
 
     /// Word's Show All Regions I Can Edit.
+    ///
+    /// Selects every one of them at once, which is what the words say and
+    /// what Word does. With them all selected a person can see how much of
+    /// the document is theirs, and whatever they do next is done to all of
+    /// it — which is what a selection of several stretches is for.
     pub(super) fn show_all_regions(&mut self) -> Response {
         let regions = self.regions_i_may_edit();
         if regions.is_empty() {
@@ -513,18 +518,18 @@ impl Editor {
                 .report(crate::messages::t("There is no part of this document you may edit"));
         }
         self.highlight_regions = true;
-        // The view goes to the first of them, so that "show all" shows
-        // something even when the caret was pages away from any of them.
-        if let Some(first) = regions.first() {
-            self.document.move_caret(first.start, false);
-            self.reveal_caret();
-        }
+
+        let stretches: Vec<(wp_docx::TextPosition, wp_docx::TextPosition)> =
+            regions.iter().map(|region| (region.start, region.end)).collect();
+        self.document.set_selections(&stretches);
+        self.reveal_caret();
         self.needs_redraw = true;
+
         if regions.len() == 1 {
-            return self.report(crate::messages::t("One stretch you may edit, shaded"));
+            return self.report(crate::messages::t("One stretch you may edit, selected"));
         }
         self.report(&crate::messages::with(
-            "{0} stretches you may edit, shaded",
+            "{0} stretches you may edit, selected",
             &[&regions.len().to_string()],
         ))
     }
@@ -791,6 +796,49 @@ mod tests {
         // One rather than "1 stretches", which is what the strip along the
         // bottom says everywhere else in the program.
         assert!(editor.status.contains("One stretch"), "{}", editor.status);
+        assert_eq!(editor.document.selections().len(), 1, "it did not select it");
+    }
+
+    #[test]
+    fn show_all_selects_every_stretch_and_not_only_the_first() {
+        // What the words say. With them all selected a person can see how
+        // much of the document is theirs, and what they do next is done to
+        // all of it.
+        let mut editor = editor();
+        select(&mut editor, 0, 0, 3);
+        editor.document.allow_everyone();
+        select(&mut editor, 1, 0, 4);
+        editor.document.allow_everyone();
+
+        editor.document.set_caret(TextPosition::new(0, 0));
+        editor.show_all_regions();
+
+        let selected = editor.document.selections();
+        assert_eq!(selected.len(), 2, "{selected:?}");
+        assert_eq!(selected[0].0.paragraph, 0);
+        assert_eq!(selected[1].0.paragraph, 1);
+        assert!(editor.status.contains('2'), "{}", editor.status);
+    }
+
+    #[test]
+    fn what_is_done_next_is_done_to_all_of_them() {
+        // The whole point of selecting several stretches: one command, every
+        // stretch. A selection that only looked selected would be a lie.
+        let mut editor = editor();
+        select(&mut editor, 0, 0, 3);
+        editor.document.allow_everyone();
+        select(&mut editor, 1, 0, 4);
+        editor.document.allow_everyone();
+        editor.show_all_regions();
+
+        assert!(editor.document.set_format(wp_docx::CharacterFormat::Bold, true));
+        for (start, _) in editor.document.selections() {
+            editor.document.set_caret(start);
+            assert!(
+                editor.document.format_is_on(wp_docx::CharacterFormat::Bold),
+                "the stretch at {start:?} was not touched"
+            );
+        }
     }
 
     #[test]

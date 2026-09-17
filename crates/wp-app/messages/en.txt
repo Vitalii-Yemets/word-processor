@@ -431,7 +431,7 @@
 = One File for Each Letter
 = One Page
 = One or more margins are outside the printable area.
-= One stretch you may edit, shaded
+= One stretch you may edit, selected
 = Open
 = Open a dictionary
 = Open documents at
@@ -840,7 +840,7 @@
 = {0} selected
 = {0} set for this and every new document
 = {0} set for this document only
-= {0} stretches you may edit, shaded
+= {0} stretches you may edit, selected
 = {0} styles allowed
 = {0} was not kept
 = {0} words

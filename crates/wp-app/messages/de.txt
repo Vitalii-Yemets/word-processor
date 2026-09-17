@@ -1127,8 +1127,8 @@ language = Deutsch
 = On a grey band
 > Auf grauem Band
 
-= One stretch you may edit, shaded
-> Ein Bereich, den Sie bearbeiten dürfen, hervorgehoben
+= One stretch you may edit, selected
+> Ein Bereich, den Sie bearbeiten dürfen, ausgewählt
 
 = Page 1
 > Seite 1
@@ -2510,8 +2510,8 @@ language = Deutsch
 = {0} set for this document only
 > {0} nur für dieses Dokument festgelegt
 
-= {0} stretches you may edit, shaded
-> {0} Bereiche, die Sie bearbeiten dürfen, hervorgehoben
+= {0} stretches you may edit, selected
+> {0} Bereiche, die Sie bearbeiten dürfen, ausgewählt
 
 = {0} styles allowed
 > {0} Formatvorlagen erlaubt

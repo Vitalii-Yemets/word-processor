@@ -5898,16 +5898,36 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Proven by:* the test above, and the two catalogues agreeing exactly: nought
   in one that is not in the other, nought listed without being said. The three
   messages that had never been translated at all are translated.
-- [ ] **J31. A selection of several stretches at once.** Word lets a person
-  hold more than one piece of a document selected — Ctrl and drag adds to the
-  selection rather than replacing it — and a good deal is built on that:
-  Show All Regions I Can Edit selects every stretch this person may edit,
-  Select All Text With Similar Formatting selects every run that matches, and
-  formatting applied to such a selection applies to all of it. This program
-  has one range and everything that wants several says so instead of doing it.
-  Done when a selection can be several ranges, the caret and the keyboard do
-  something sensible with one, formatting and typing treat it as Word does,
-  and the two commands above select rather than explain.
+- [x] **J31. A selection of several stretches at once.**
+  **Written against a wrong belief of mine again**, and this is the second
+  time in four items. I wrote "this program has one range and everything that
+  wants several says so instead of doing it" while closing **J23**, and it has
+  had several since long before that: Ctrl and a drag adds a stretch, Alt and
+  a drag takes a rectangle as three, Select All Text With Similar Formatting
+  selects every run that matches, typing over several empties all of them and
+  types where the first was, formatting applies to each, copying joins them
+  with a line break, and the drawing shades every one. The belief came from
+  the one place it was true — the command I had just written and not finished.
+  What was actually missing was that one command. **Show All Regions I Can
+  Edit** turned the shading on and moved to the first, which is not what the
+  words say and not what Word does. It selects every one of them now, so that
+  a person can see how much of the document is theirs and whatever they do
+  next is done to all of it — which is the whole of what a selection of
+  several stretches is for. The line it says changed from "shaded" to
+  "selected", because that is now what happened.
+  *Proven by:* three tests, two of them new. It selects every stretch and not
+  only the first; what is done next — bold, in the test — is done to all of
+  them, since a selection that only looked selected would be a lie; and with
+  one stretch it still says one and selects it. The rest of the item was
+  already proven by the tests that were there: a Ctrl drag keeps the stretch
+  before it, a Ctrl click still takes the sentence, an Alt drag over three
+  lines is three stretches.
+  *Not done, and named here:* nothing new. What this item taught is about me
+  rather than about the program: **J29** and this one were both written from
+  what I assumed the code did rather than from what it does, and both times
+  the assumption was a fortnight stale. The roadmap is written as work is
+  closed, and a sentence about another part of the program put into it at that
+  moment is a sentence nobody checked.
 - [ ] **J32. The panes that do not scroll.** The Restrict Editing pane draws
   down the window and stops where the window does: a document with twenty
   people on its exceptions list has the rest of them off the bottom, with no
