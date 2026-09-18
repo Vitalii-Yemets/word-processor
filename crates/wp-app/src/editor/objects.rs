@@ -69,9 +69,13 @@ mod kind {
     pub const FIND: &str = "Find";
 }
 
-/// The document as a macro sees it.
-pub struct Model<'a> {
-    editor: &'a mut Editor,
+/// What a macro is holding on to, and what it has said.
+///
+/// Kept apart from the document itself so that it outlives one question: a
+/// macro being stepped through asks one thing, waits, and asks another, and
+/// the ranges it took hold of have to still be there when it comes back.
+#[derive(Clone, Debug, Default)]
+pub struct Model {
     /// The stretches the macro is holding, by the number in their handle.
     ranges: Vec<(TextPosition, TextPosition)>,
     /// What the macro asked to show, and what it printed.
@@ -81,24 +85,7 @@ pub struct Model<'a> {
     finding: Vec<(u64, String, String)>,
 }
 
-impl core::fmt::Debug for Model<'_> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Model").field("ranges", &self.ranges.len()).finish_non_exhaustive()
-    }
-}
-
-impl<'a> Model<'a> {
-    /// The model of one editor's document.
-    pub fn new(editor: &'a mut Editor) -> Self {
-        Self {
-            editor,
-            ranges: Vec::new(),
-            shown: Vec::new(),
-            printed: Vec::new(),
-            finding: Vec::new(),
-        }
-    }
-
+impl Model {
     /// Everything the macro said while it ran.
     #[must_use]
     pub fn said(&self) -> Vec<String> {
@@ -107,6 +94,25 @@ impl<'a> Model<'a> {
         out
     }
 
+    /// The model against a document, which is what answers a macro.
+    pub fn on<'a>(&'a mut self, editor: &'a mut Editor) -> Bound<'a> {
+        Bound { model: self, editor }
+    }
+}
+
+/// The document as a macro sees it, for as long as one question takes.
+pub struct Bound<'a> {
+    model: &'a mut Model,
+    editor: &'a mut Editor,
+}
+
+impl core::fmt::Debug for Bound<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Bound").field("ranges", &self.model.ranges.len()).finish_non_exhaustive()
+    }
+}
+
+impl Bound<'_> {
     // --- Where things are ------------------------------------------------
 
     /// How many characters there are before a position.
@@ -151,9 +157,9 @@ impl<'a> Model<'a> {
 
     /// A handle for a stretch of the document.
     fn range(&mut self, stretch: (TextPosition, TextPosition)) -> Value {
-        self.ranges.push(stretch);
+        self.model.ranges.push(stretch);
         #[allow(clippy::cast_possible_truncation)]
-        Value::Object(Handle::of(kind::RANGE, self.ranges.len() as u64 - 1))
+        Value::Object(Handle::of(kind::RANGE, self.model.ranges.len() as u64 - 1))
     }
 
     /// What a handle stands for: a held range, or the selection as it is now.
@@ -171,6 +177,7 @@ impl<'a> Model<'a> {
                 Ok((TextPosition::new(index, 0), TextPosition::new(index, length)))
             }
             kind::RANGE | kind::FIND | kind::FONT => self
+                .model
                 .ranges
                 .get(object.id as usize)
                 .copied()
@@ -254,9 +261,9 @@ impl<'a> Model<'a> {
     }
 }
 
-impl Host for Model<'_> {
+impl Host for Bound<'_> {
     fn message(&mut self, text: &str, _buttons: i64, _title: &str) -> i64 {
-        self.shown.push(text.to_owned());
+        self.model.shown.push(text.to_owned());
         1
     }
 
@@ -265,7 +272,7 @@ impl Host for Model<'_> {
     }
 
     fn note(&mut self, text: &str) {
-        self.printed.push(text.to_owned());
+        self.model.printed.push(text.to_owned());
     }
 
     fn root(&mut self, name: &str) -> Option<Value> {
@@ -399,10 +406,10 @@ impl Host for Model<'_> {
             // --- Collections that hang off a document or a range -------
             (kind::DOCUMENT | kind::RANGE | kind::SELECTION | kind::PARAGRAPH, "paragraphs") => {
                 let stretch = self.stretch(object)?;
-                self.ranges.push(stretch);
+                self.model.ranges.push(stretch);
                 #[allow(clippy::cast_possible_truncation)]
                 let collection =
-                    Value::Object(Handle::of(kind::PARAGRAPHS, self.ranges.len() as u64 - 1));
+                    Value::Object(Handle::of(kind::PARAGRAPHS, self.model.ranges.len() as u64 - 1));
                 self.one_of(collection, given)
             }
             (kind::DOCUMENT, "bookmarks") => {
@@ -479,17 +486,17 @@ impl Host for Model<'_> {
             }
             (kind::RANGE | kind::SELECTION, "font") => {
                 let stretch = self.stretch(object)?;
-                self.ranges.push(stretch);
+                self.model.ranges.push(stretch);
                 #[allow(clippy::cast_possible_truncation)]
-                Ok(Value::Object(Handle::of(kind::FONT, self.ranges.len() as u64 - 1)))
+                Ok(Value::Object(Handle::of(kind::FONT, self.model.ranges.len() as u64 - 1)))
             }
             (kind::RANGE | kind::SELECTION, "find") => {
                 let stretch = self.stretch(object)?;
-                self.ranges.push(stretch);
+                self.model.ranges.push(stretch);
                 #[allow(clippy::cast_possible_truncation)]
-                Ok(Value::Object(Handle::of(kind::FIND, self.ranges.len() as u64 - 1)))
+                Ok(Value::Object(Handle::of(kind::FIND, self.model.ranges.len() as u64 - 1)))
             }
-            (kind::RANGE | kind::SELECTION | kind::PARAGRAPH, "style") => {
+            (kind::RANGE | kind::SELECTION, "style") => {
                 let stretch = self.stretch(object)?;
                 let style = self.at(stretch, |editor| editor.document.style_here());
                 Ok(Value::Text(style.unwrap_or_else(|| "Normal".to_owned())))
@@ -536,7 +543,7 @@ impl Host for Model<'_> {
                 if object.kind == kind::SELECTION {
                     self.editor.document.set_caret(at);
                 } else {
-                    self.ranges[object.id as usize] = (at, at);
+                    self.model.ranges[object.id as usize] = (at, at);
                 }
                 Ok(Value::Empty)
             }
@@ -714,7 +721,7 @@ impl Host for Model<'_> {
 
             // --- Find ---------------------------------------------------------
             (kind::FIND, "text") => {
-                let held = self.finding.iter().find(|(id, _, _)| *id == object.id);
+                let held = self.model.finding.iter().find(|(id, _, _)| *id == object.id);
                 Ok(Value::Text(held.map(|(_, text, _)| text.clone()).unwrap_or_default()))
             }
             (kind::FIND, "execute") => self.execute_find(object, given),
@@ -811,7 +818,7 @@ impl Host for Model<'_> {
             (kind::RANGE, "start" | "end") => {
                 let at = self.position_at(value.whole()?);
                 let (start, end) = self.stretch(object)?;
-                self.ranges[object.id as usize] =
+                self.model.ranges[object.id as usize] =
                     if asked == "start" { (at, end.max(at)) } else { (start.min(at), at) };
                 Ok(())
             }
@@ -832,7 +839,7 @@ impl Host for Model<'_> {
     }
 }
 
-impl Model<'_> {
+impl Bound<'_> {
     /// Which paragraphs begin a table.
     fn tables(&self) -> Vec<usize> {
         let mut out: Vec<usize> = Vec::new();
@@ -850,7 +857,7 @@ impl Model<'_> {
 
     /// What a `Find` has been told, kept by the range it belongs to.
     fn remember_find(&mut self, id: u64, text: Option<String>, replacement: Option<String>) {
-        if let Some(held) = self.finding.iter_mut().find(|(had, _, _)| *had == id) {
+        if let Some(held) = self.model.finding.iter_mut().find(|(had, _, _)| *had == id) {
             if let Some(text) = text {
                 held.1 = text;
             }
@@ -859,7 +866,7 @@ impl Model<'_> {
             }
             return;
         }
-        self.finding.push((id, text.unwrap_or_default(), replacement.unwrap_or_default()));
+        self.model.finding.push((id, text.unwrap_or_default(), replacement.unwrap_or_default()));
     }
 
     /// `Find.Execute`, which both finds and replaces depending on what it is
@@ -868,6 +875,7 @@ impl Model<'_> {
         let wanted = match Given::find(given, "FindText", 0) {
             Some(value) => value.text()?,
             None => self
+                .model
                 .finding
                 .iter()
                 .find(|(id, _, _)| *id == object.id)

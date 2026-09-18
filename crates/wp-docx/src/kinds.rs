@@ -296,6 +296,44 @@ fn from_file_address(address: &str) -> String {
     path.replace("%20", " ").replace("%25", "%")
 }
 
+impl Document {
+    /// Puts a Visual Basic project into the document, or replaces the one it
+    /// has.
+    ///
+    /// A document that had none becomes macro-enabled by it: the part goes
+    /// in, the relationship that reaches it goes in, and the kind changes,
+    /// because a `.docx` that carries macros is a file Word refuses to open
+    /// and this program must not write one.
+    ///
+    /// Nothing is looked at inside the bytes. What a project is made of is
+    /// [`wp_vba`]'s business, and a document that carries one somebody else
+    /// wrote should carry it back out untouched.
+    pub fn set_macro_project(&mut self, bytes: Vec<u8>) -> bool {
+        if !self.kind().allows_macros() {
+            self.set_kind(match self.kind() {
+                Kind::Template => Kind::MacroEnabledTemplate,
+                _ => Kind::MacroEnabledDocument,
+            });
+        }
+
+        let main = self.document_part.clone();
+        let Ok(mut relationships) = self.package().relationships(&main) else { return false };
+        if relationships.single_by_type(VBA_PROJECT).is_none() {
+            relationships.add(VBA_PROJECT, "vbaProject.bin", TargetMode::Internal);
+            if self.package_mut().set_relationships(&relationships).is_err() {
+                return false;
+            }
+        }
+        self.package_mut().add_part(
+            "word/vbaProject.bin",
+            "application/vnd.ms-office.vbaProject",
+            bytes,
+        );
+        self.mark_modified();
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

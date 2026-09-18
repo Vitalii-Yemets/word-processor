@@ -8,6 +8,7 @@ mod autocorrectdialog;
 pub(crate) mod autorecover;
 mod autoscroll;
 mod backstage;
+mod basic;
 mod borderpainter;
 mod boxes;
 mod certificates;
@@ -20,6 +21,7 @@ mod composing;
 mod context;
 mod controls;
 mod correcting;
+mod debugger;
 mod defaults;
 pub(crate) mod designs;
 mod diagram;
@@ -486,6 +488,10 @@ pub struct Editor {
     /// And the one whose source is on the screen, which is the one the Run
     /// button on that dialog would run.
     showing_macro: Option<wp_vba::Macro>,
+    /// Word's Visual Basic Editor, while it is what the window is showing.
+    basic: Option<crate::chrome::basicpane::BasicPane>,
+    /// A macro running, which may be stopped in the middle of itself.
+    debugger: Option<debugger::Debugger>,
     /// A list of people being typed from nothing, which is Word's Type a New
     /// List: it is not the merge's list until it has been saved. See
     /// [`mailings`].
@@ -831,6 +837,8 @@ impl Editor {
             vba,
             document_macros: Vec::new(),
             showing_macro: None,
+            basic: None,
+            debugger: None,
             filling_in: None,
             left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,

@@ -15,6 +15,7 @@ dependencies = [
  "wp-image",
  "wp-layout",
  "wp-odt",
+ "wp-ole",
  "wp-opc",
  "wp-pdf",
  "wp-raster",

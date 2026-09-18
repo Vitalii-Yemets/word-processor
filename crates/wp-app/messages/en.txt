@@ -229,6 +229,7 @@
 = Don't capitalize after
 = Don't correct
 = Don't hyphenate
+= Done
 = Double strikethrough
 = Draft
 = Draw
@@ -326,6 +327,7 @@
 = Hyphens (--) with dash (—)
 = INitial CAps
 = Illustrations
+= Immediate
 = In
 = In Normal.dotm
 = In brackets
@@ -520,6 +522,7 @@
 = Print Selection
 = Print on Both Sides
 = Printing stopped after {0} sheets
+= Project
 = Proofing
 = Properties
 = Protect
@@ -773,6 +776,8 @@
 = View
 = View Gridlines
 = Views
+= Visual Basic Editor
+= Watch
 = Watermark
 = Watermarks
 = Web Layout

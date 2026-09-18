@@ -13,6 +13,7 @@
 //! matters for a program meant to be used in every language Word supports.
 
 pub mod backstage;
+pub mod basicpane;
 pub mod customise;
 pub mod dialog;
 pub mod findbar;

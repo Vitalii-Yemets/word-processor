@@ -42,7 +42,7 @@ use crate::lex::{Kind as Word, Token};
 use crate::library::{self, Host};
 use crate::parse;
 use crate::tree::{Complaint, Node, Part};
-use crate::value::{self, Array, Fault, Given, Handle, Value};
+use crate::value::{self, Array, Fault, Given, Value};
 
 /// How many statements one call may run before it is stopped.
 const BUDGET: usize = 20_000_000;
@@ -273,6 +273,22 @@ impl<'a> Machine<'a> {
         machine
     }
 
+    /// What the procedure being run can see, for a debugger to show.
+    ///
+    /// Its own variables first and the module's underneath, because a local
+    /// of the same name is the one the line being looked at is about.
+    fn watched(&self, frame: &Frame) -> Vec<(String, Value)> {
+        let mut out: Vec<(String, Value)> =
+            frame.locals.iter().map(|(name, value)| (name.clone(), value.clone())).collect();
+        for (name, value) in &self.globals {
+            if !frame.locals.contains_key(name) {
+                out.push((name.clone(), value.clone()));
+            }
+        }
+        out.sort_by(|one, other| one.0.cmp(&other.0));
+        out
+    }
+
     /// Spends one of the statements this run is allowed.
     ///
     /// Counted at every statement and at every turn of every loop, because a
@@ -436,6 +452,16 @@ impl<'a> Machine<'a> {
         let mut at = 0usize;
         while at < statements.len() {
             self.spend()?;
+            // Before every statement, whoever is running this may look at it
+            // and may stop it. A program with no debugger says yes.
+            let line = statements[at].line();
+            if line > 0 {
+                let watched = self.watched(frame);
+                self.host.watching(&watched);
+                if !self.host.step(line) {
+                    return Err(Fault::saying(18, "This macro was stopped before it had finished"));
+                }
+            }
             let outcome = self.run_statement(statements[at], frame);
             let flow = match outcome {
                 Ok(flow) => flow,

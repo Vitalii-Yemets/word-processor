@@ -6512,11 +6512,74 @@ interpreter is reachable only from the macro list a person opened themselves.
   answer takes the other branch. That is a decision and not an oversight —
   the alternative is a program that lies about what it is, and every later
   difference then looks like a bug in Word.
-- [ ] **L5. The editor and the debugger.** Word's Visual Basic Editor: the
-  project tree, a window per module with the source in it, `F5` to run, `F8`
-  to step, breakpoints, the immediate window and the watch. Done when a macro
-  can be written, run, stopped in the middle and looked at, and when what is
-  edited is written back into the document's project.
+- [x] **L5. The editor and the debugger.**
+  **Stopping a macro in the middle is the whole of this item**, and an
+  interpreter that walks a tree with ordinary function calls cannot be
+  stopped in the middle — not without rewriting it as a machine with a stack
+  of its own, or putting it somewhere it can wait. It is put somewhere it can
+  wait: its own thread. The macro runs there, the document stays here, and
+  every time the macro wants something of the document it asks down a channel
+  and waits for the answer. Stopping is then not a mechanism at all — it is
+  *the window not answering yet*. Press F5 and the answer goes back and the
+  macro carries on from the statement it was about to run.
+  That is also why it is safe. The macro's thread never touches the document:
+  it holds the program and its own variables, and everything else is a
+  question. What crosses the channel is values and handles — numbers, strings
+  and which object — and the window is the only thing that ever holds the
+  document. There is no lock to forget and nothing shared to race over. The
+  language's whole side of it is one method: *before this statement, on this
+  line, may I go on?*
+  **The editor is a page and not a window.** Word opens a second application
+  window with its own taskbar button; this program draws one window and
+  everything in it, so the editor fills it, the way the Print page does and
+  for the same reason. The project is down the left, a module at a time in
+  the middle, and along the bottom the two things a debugger is for: the
+  Immediate window, where a line is typed and answered, and the Watch, where
+  what the stopped procedure can see is listed. A red dot in the margin is a
+  breakpoint and the line it stopped on is shaded.
+  **A breakpoint goes on a line the macro can reach.** Put one on a blank
+  line or on a comment and it moves down to the next statement, because a
+  breakpoint the macro would never reach is a breakpoint that does nothing,
+  and Word moves it for the same reason.
+  **What is typed is written back into the document's own project.** A module
+  is a stream inside a compound file inside the document: a cache Word keeps
+  for its own editor, and then the text, compressed. Writing an edited module
+  back keeps every other byte exactly where it was — the cache, the `dir`
+  stream that says where the text begins, the other modules, the project's
+  own settings — and puts newly compressed text after the cache. A document
+  that had no project at all becomes macro-enabled by it, because a `.docx`
+  carrying macros is a file Word refuses to open and this program must not
+  write one.
+  *Done:* Alt+F11 opens it, and so does the last line of the Macros list. F5
+  runs the procedure the caret is in; F5 again while it is stopped carries on;
+  F8 runs a statement and stops again; F9 marks a line; Shift+F5 stops a
+  macro where it stands; Escape and the cross shut the editor; Ctrl+S writes
+  the project back without shutting it. The Immediate window answers `?1 + 1`
+  with 2 and runs `Selection.TypeText "x"` on the document itself.
+  *Proven by:* eleven tests. It opens on the project the document carries;
+  what is typed goes in where the caret is, and Backspace joins two lines
+  again; what was typed is written back, with the module nobody touched
+  unchanged and the document marked as changed; F5 runs the procedure the
+  caret is in and its message comes back; a breakpoint stops it on the right
+  line with the variables listed, and F5 carries on to the end; F8 goes one
+  statement at a time and the line it stops on moves; a breakpoint asked for
+  on a blank line lands on the next statement; the Immediate window answers a
+  question and runs a line; a line that will not read says so rather than
+  running something else; the cross and Escape both shut it; and the line
+  numbers of a procedure are what say which one F5 would run. A picture of
+  the editor stopped on a breakpoint, with the watch beside it.
+  *Not done, and named here:* the code is drawn in the window's own font
+  rather than a monospaced one, because the chrome has one font and picking
+  another is a change to the layout engine rather than to this. There is no
+  selection in the code window: typing, the arrows, Home, End, Page and the
+  mouse put the caret where it belongs, and Word's copy and paste inside the
+  editor is not there. A module can be edited and one cannot yet be added,
+  renamed or removed, and the project tree shows modules and not the classes,
+  forms and references beside them. The Watch shows what the stopped
+  procedure can see rather than what somebody asked to watch, and names in it
+  are lower case, because that is how the interpreter keeps them. And `Stop`
+  in a macro ends it rather than dropping into the debugger, which is what it
+  does in Word; the breakpoint is the way in here.
 - [ ] **L6. The trust that gates all of it.** Word's answer to the fact that
   a document can carry a program: nothing runs on opening; a bar across the
   top says the document carries macros and offers to enable them for this

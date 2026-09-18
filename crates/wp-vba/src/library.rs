@@ -86,6 +86,27 @@ pub trait Host {
         ))
     }
 
+    /// Asked before every statement: which line, and whether to go on.
+    ///
+    /// This is the whole of what a debugger needs from the language. A
+    /// program with no debugger says yes and never looks; one with a
+    /// debugger stops here, shows the line, lets somebody look at what the
+    /// variables hold, and answers when they are ready. Saying no stops the
+    /// macro where it stands, which is what pressing Reset does.
+    fn step(&mut self, line: usize) -> bool {
+        let _ = line;
+        true
+    }
+
+    /// What the variables hold, offered while a macro is stopped.
+    ///
+    /// Called with the names and values of the procedure that is running, so
+    /// that a debugger can show them without knowing anything about how the
+    /// interpreter keeps them.
+    fn watching(&mut self, values: &[(String, Value)]) {
+        let _ = values;
+    }
+
     /// What `.Text` would say, for an object joined into a string.
     ///
     /// Word gives a range's text when one is used where a string is wanted,

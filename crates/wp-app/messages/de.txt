@@ -674,6 +674,9 @@ language = Deutsch
 = Don't hyphenate
 > Keine Silbentrennung
 
+= Done
+> Fertig
+
 = Double strikethrough
 > Doppelt durchgestrichen
 
@@ -959,6 +962,9 @@ language = Deutsch
 = Hyphens (--) with dash (—)
 > Bindestriche (--) durch Geviertstrich (—)
 
+= Immediate
+> Direktbereich
+
 = In
 > In
 
@@ -1184,6 +1190,9 @@ language = Deutsch
 = Plain, to the right
 > Einfach, rechts
 
+= Project
+> Projekt
+
 = Put one and its key in this folder, or use one the machine holds:
 > Eines mit seinem Schlüssel in diesen Ordner legen oder eines aus dem Speicher des Rechners verwenden:
 
@@ -1327,6 +1336,12 @@ language = Deutsch
 
 = Valid signatures
 > Gültige Signaturen
+
+= Visual Basic Editor
+> Visual Basic-Editor
+
+= Watch
+> Überwachung
 
 = Watermarks
 > Wasserzeichen

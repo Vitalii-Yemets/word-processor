@@ -371,6 +371,40 @@ impl Editor {
                     .unwrap_or_default();
                 self.choose_macro(at.saturating_sub(1));
             }
+            // Word's Visual Basic editor, on a document that carries a macro,
+            // with a breakpoint in the margin and the macro stopped on it.
+            "basic" => {
+                self.vba = wp_vba::Project::open(&wp_vba::example(&[(
+                    "Module1",
+                    "Attribute VB_Name = \"Module1\"\r\n\
+                     Option Explicit\r\n\
+                     \r\n\
+                     ' Stamps today's date at the end of the document.\r\n\
+                     Public Sub StampToday()\r\n    \
+                         Dim where As Object\r\n    \
+                         Set where = ActiveDocument.Content\r\n    \
+                         where.InsertAfter vbCrLf & Format(Date, \"d MMMM yyyy\")\r\n    \
+                         MsgBox \"Stamped \" & ActiveDocument.Paragraphs.Count & \" paragraphs\"\r\n\
+                     End Sub\r\n",
+                )]))
+                .ok();
+                self.carries_macros = self.vba.is_some();
+                self.open_basic();
+                if let Some(pane) = &mut self.basic {
+                    pane.breakpoints.insert(8);
+                    pane.caret = (7, 4);
+                }
+                self.handle(wp_shell::Event::KeyDown {
+                    key: wp_shell::Key::Function(5),
+                    modifiers: wp_shell::Modifiers::default(),
+                });
+                for _ in 0..50 {
+                    self.handle(wp_shell::Event::Tick);
+                    if self.basic.as_ref().and_then(|pane| pane.stopped).is_some() {
+                        break;
+                    }
+                }
+            }
             "recovery" => {
                 let entries = vec![
                     super::autorecover::Recovered {

@@ -140,6 +140,9 @@ impl Editor {
                 self.document_macros.iter().map(|one| format!("Show: {}", one.qualified())),
             );
         }
+        // Word's own list has Edit on it, which opens the editor. Alt+F11
+        // opens it as well, as it does there.
+        items.push(t("Visual Basic Editor").to_owned());
 
         self.popup = Some(Popup::new(Choice::Macro, items, None, left, top, 300.0));
         self.needs_redraw = true;
@@ -151,6 +154,11 @@ impl Editor {
         self.popup = None;
 
         let heading = if self.recording.is_some() { 2 } else { 1 };
+        // The editor is the last line of the list, whatever is above it.
+        let carried = if self.carries_macros { 1 + self.document_macros.len() } else { 0 };
+        if index == heading + self.macro_names.len() + carried {
+            return self.open_basic();
+        }
         if index >= heading {
             let at = index - heading;
             if let Some(name) = self.macro_names.get(at).cloned() {
@@ -289,8 +297,11 @@ impl Editor {
 
         // The document as the macro sees it, which is what it runs against.
         let (answer, mut said) = {
-            let mut model = super::objects::Model::new(self);
-            let answer = program.run(&wanted.name, Vec::new(), &mut model);
+            let mut model = super::objects::Model::default();
+            let answer = {
+                let mut bound = model.on(self);
+                program.run(&wanted.name, Vec::new(), &mut bound)
+            };
             // What the macro showed is shown afterwards rather than in the
             // middle of it: a message box put up while a macro is running
             // would have to stop the macro to wait for an answer, and
@@ -485,7 +496,7 @@ mod document_macros {
         let lines: Vec<String> =
             (0..8).filter_map(|at| popup.item(at).map(str::to_owned)).collect();
         assert!(
-            lines.iter().any(|line| line.contains("Visual Basic")),
+            lines.iter().any(|line| line.contains("also carries")),
             "the list says nothing about the document's own macros: {lines:?}"
         );
     }
@@ -504,7 +515,7 @@ mod document_macros {
         let lines: Vec<String> =
             (0..8).filter_map(|at| popup.item(at).map(str::to_owned)).collect();
         assert!(
-            !lines.iter().any(|line| line.contains("Visual Basic")),
+            !lines.iter().any(|line| line.contains("also carries")),
             "it says a document has macros when it has none: {lines:?}"
         );
     }
@@ -888,10 +899,11 @@ mod document_macros {
         editor.set_view_option("tab=view").expect("the View tab");
         editor.draw(1400, 900);
         editor.run(Command::Macros);
-        // The line about the document's own macros is the last one.
         let popup = editor.popup.as_ref().expect("the list");
-        let last = (0..8).filter(|at| popup.item(*at).is_some()).count() - 1;
-        editor.choose_macro(last);
+        let at = (0..8)
+            .find(|at| popup.item(*at).is_some_and(|line| line.contains("also carries")))
+            .expect("the line about the document's own macros");
+        editor.choose_macro(at);
 
         assert!(editor.status.contains("not run"), "{}", editor.status);
         assert!(editor.status.contains("kept"), "{}", editor.status);

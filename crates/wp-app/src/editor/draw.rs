@@ -913,6 +913,16 @@ impl Editor {
             return;
         }
 
+        // Word's Visual Basic Editor is a window of its own there and a page
+        // of its own here, for the same reason the Print page is one: what is
+        // being done has nothing to do with the document's own page.
+        if self.editing_basic() {
+            self.draw_title_bar();
+            self.draw_basic_page();
+            self.draw_open_popup();
+            return;
+        }
+
         // The Print page is not a thing over the document: it is what the
         // window shows instead of it, as Word's is.
         if self.printing() {

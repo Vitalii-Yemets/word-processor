@@ -123,6 +123,11 @@ pub struct Module {
     pub source: String,
     pub read_only: bool,
     pub private: bool,
+    /// How far into its stream the text begins: in front of it is a cache
+    /// Word keeps for its own editor, which is none of this program's
+    /// business and must be carried through untouched when the text is
+    /// written back.
+    pub offset: usize,
 }
 
 impl Module {
@@ -210,6 +215,7 @@ impl Project {
                 source,
                 read_only: held.read_only,
                 private: held.private,
+                offset: held.offset,
             });
         }
 
@@ -624,6 +630,7 @@ mod tests {
             source: source.to_owned(),
             read_only: false,
             private: false,
+            offset: 0,
         }
     }
 

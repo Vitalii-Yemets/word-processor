@@ -208,6 +208,51 @@ impl App for Editor {
     }
 
     fn handle(&mut self, event: Event) -> Response {
+        // Word's Visual Basic editor is a window of its own there and has the
+        // window here, the way the Print page does: while it is up, the
+        // document behind it is not being typed into.
+        if self.editing_basic() {
+            match event {
+                Event::KeyDown { key, modifiers } => {
+                    // Alt+F11 shuts it again, as it opens it.
+                    if key == Key::Function(11) && modifiers.alt {
+                        return self.close_basic();
+                    }
+                    return self.basic_key(key, modifiers.shift, modifiers.control);
+                }
+                Event::Char(character) => return self.basic_character(character),
+                Event::Commit(text) => {
+                    let mut response = Response::Ignored;
+                    for character in text.chars() {
+                        response = self.basic_character(character);
+                    }
+                    return response;
+                }
+                Event::MouseDown { x, y, .. } | Event::DoubleClick { x, y } => {
+                    let (width, height) = (self.view_width, self.view_height);
+                    return self.basic_press(x, y, width, height);
+                }
+                Event::Scroll { lines, .. } => return self.basic_scroll(lines),
+                // A macro that is running is answered here, and a macro that
+                // is stopped is why the window is still drawing.
+                Event::Tick => {
+                    return if self.pump_macro() { Response::Redraw } else { Response::Ignored };
+                }
+                // The window changing size, and everything else about the
+                // window rather than about what is on it, goes on as usual.
+                Event::Resized { .. } | Event::ScaleChanged { .. } | Event::Closing => {}
+                _ => return Response::Ignored,
+            }
+        }
+
+        // Alt+F11 opens it from anywhere, which is how everybody who uses it
+        // opens it.
+        if let Event::KeyDown { key, modifiers } = event {
+            if key == Key::Function(11) && modifiers.alt && !self.editing_basic() {
+                return self.open_basic();
+            }
+        }
+
         // A dialog is modal, as every dialog in Word is: while one is up it has
         // the mouse and the keyboard, and the document behind it neither
         // scrolls nor takes a click. Everything else — the window changing size,
