@@ -167,6 +167,17 @@ fn source_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
         if path.is_dir() {
             out.extend(source_files(&path));
         } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+            // What a macro is written against is not the interface. The
+            // names of Word's own objects — `Selection`, `Range`,
+            // `Paragraphs` — are part of the language a macro is written in,
+            // the same in every country, and a catalogue offering them for
+            // translation would be offering to break every macro there is.
+            // What that module says when it refuses something goes to
+            // whoever wrote the macro, in the same English as the rest of the
+            // language's own errors. See [`crate::editor::objects`].
+            if path.file_name().and_then(|name| name.to_str()) == Some("objects.rs") {
+                continue;
+            }
             out.push(path);
         }
     }

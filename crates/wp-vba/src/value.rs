@@ -95,8 +95,64 @@ pub enum Value {
     Text(String),
     /// An object reference that points at nothing.
     Nothing,
+    /// Something the program running the macro owns: a document, a range, a
+    /// paragraph. What it can do is that program's business; all the language
+    /// knows is that it is one and which one.
+    Object(Handle),
     /// An array, with the bounds it was made with.
     Array(Box<Array>),
+}
+
+/// Which thing, of what kind.
+///
+/// The kind is what `TypeName` answers and what a message names when
+/// something asks for a member nothing has; the number is whatever the
+/// program that made it uses to find it again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Handle {
+    pub kind: String,
+    pub id: u64,
+}
+
+impl Handle {
+    /// One of a kind, by number.
+    #[must_use]
+    pub fn of(kind: &str, id: u64) -> Self {
+        Self { kind: kind.to_owned(), id }
+    }
+}
+
+/// An argument as the macro wrote it: `Replace:=True` carries its name.
+///
+/// Named arguments are how nearly every line of a real Word macro is
+/// written, and a program that dropped the names would have to guess what
+/// went where.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Given {
+    pub name: Option<String>,
+    pub value: Value,
+}
+
+impl Given {
+    /// One with no name on it.
+    #[must_use]
+    pub fn just(value: Value) -> Self {
+        Self { name: None, value }
+    }
+
+    /// The value of the argument called this, or the one in this place.
+    #[must_use]
+    pub fn find<'a>(given: &'a [Self], name: &str, at: usize) -> Option<&'a Value> {
+        given
+            .iter()
+            .find(|one| one.name.as_deref().is_some_and(|had| had.eq_ignore_ascii_case(name)))
+            .map(|one| &one.value)
+            .or_else(|| {
+                // A place only counts where nothing before it was named,
+                // which is the rule Visual Basic itself uses.
+                given.get(at).filter(|one| one.name.is_none()).map(|one| &one.value)
+            })
+    }
 }
 
 /// An array and the bounds of each of its dimensions.
@@ -173,6 +229,10 @@ impl Value {
             Self::Date(_) => "Date",
             Self::Text(_) => "String",
             Self::Nothing => "Nothing",
+            Self::Object(handle) => match handle.kind.as_str() {
+                "" => "Object",
+                _ => "Object",
+            },
             Self::Array(_) => "Variant()",
         }
     }
@@ -187,7 +247,7 @@ impl Value {
             Self::Currency(_) => 6,
             Self::Date(_) => 7,
             Self::Text(_) => 8,
-            Self::Nothing => 9,
+            Self::Nothing | Self::Object(_) => 9,
             Self::Boolean(_) => 11,
             Self::Long(_) => 3,
             Self::Array(_) => 8204,
@@ -210,7 +270,7 @@ impl Value {
             #[allow(clippy::cast_precision_loss)]
             Self::Currency(number) => Ok(*number as f64 / 10_000.0),
             Self::Text(text) => number_in(text).ok_or_else(|| Fault::of(13)),
-            Self::Nothing | Self::Array(_) => Err(Fault::of(13)),
+            Self::Nothing | Self::Object(_) | Self::Array(_) => Err(Fault::of(13)),
         }
     }
 
@@ -245,7 +305,9 @@ impl Value {
             Self::Date(number) => crate::dates::written(*number),
             Self::Text(text) => text.clone(),
             Self::Nothing => "Nothing".to_owned(),
-            Self::Array(_) => return Err(Fault::of(13)),
+            // An object asked for its text is asked through the program that
+            // owns it, which the interpreter does before it gets here.
+            Self::Object(_) | Self::Array(_) => return Err(Fault::of(13)),
         })
     }
 

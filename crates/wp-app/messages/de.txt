@@ -1205,9 +1205,6 @@ language = Deutsch
 = Run
 > Ausführen
 
-= Run reaches the language and not the document yet
-> Ausführen erreicht bisher die Sprache und nicht das Dokument
-
 = Said
 > Ausgaben
 

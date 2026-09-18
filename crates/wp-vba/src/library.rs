@@ -16,7 +16,7 @@
 //! more letters than there are is the whole string rather than an error.
 
 use crate::dates;
-use crate::value::{self, Fault, Value};
+use crate::value::{self, Fault, Given, Handle, Value};
 
 /// Whatever the program running a macro is willing to do for it.
 ///
@@ -40,6 +40,58 @@ pub trait Host {
     /// `Debug.Print`.
     fn note(&mut self, text: &str) {
         let _ = text;
+    }
+
+    /// The names a macro starts from: `ActiveDocument`, `Selection`,
+    /// `Application`, `Documents`, `ThisDocument`.
+    ///
+    /// Nothing at all when the program running the macro has no such thing,
+    /// and then the name is looked for everywhere else a name is looked for.
+    fn root(&mut self, name: &str) -> Option<Value> {
+        let _ = name;
+        None
+    }
+
+    /// A member of an object: read one, or call one.
+    ///
+    /// The two are one question, because Visual Basic writes them the same
+    /// way: `.Text` may be a property to read or a method taking nothing, and
+    /// which it is, is the program's business and not the language's.
+    ///
+    /// The default is to refuse, saying what was asked for, because a
+    /// property this program cannot answer must say so and stop rather than
+    /// answer something plausible.
+    fn member(&mut self, object: &Handle, member: &str, given: &[Given]) -> Result<Value, Fault> {
+        let _ = given;
+        Err(Fault::saying(
+            438,
+            &format!("{}.{member} is not something this program does", object.kind),
+        ))
+    }
+
+    /// Putting something into a member: `.Text = "x"`, `Set .Range = r`.
+    fn set_member(&mut self, object: &Handle, member: &str, value: Value) -> Result<(), Fault> {
+        let _ = value;
+        Err(Fault::saying(
+            438,
+            &format!("{}.{member} is not something this program sets", object.kind),
+        ))
+    }
+
+    /// What a collection holds, for `For Each`.
+    fn items(&mut self, object: &Handle) -> Result<Vec<Value>, Fault> {
+        Err(Fault::saying(
+            438,
+            &format!("{} is not something this program can walk through", object.kind),
+        ))
+    }
+
+    /// What `.Text` would say, for an object joined into a string.
+    ///
+    /// Word gives a range's text when one is used where a string is wanted,
+    /// and a macro writing `MsgBox Selection` depends on it.
+    fn as_text(&mut self, object: &Handle) -> Result<String, Fault> {
+        self.member(object, "Text", &[])?.text()
     }
 }
 
@@ -125,6 +177,32 @@ pub fn constant(name: &str) -> Option<Value> {
         "vbboolean" => Value::Long(11),
         "vbvariant" => Value::Long(12),
         "vbarray" => Value::Long(8192),
+        // Word's own numbers, which a macro writes by name and never as the
+        // number. A macro saying `Replace:=wdReplaceAll` and getting nothing
+        // would replace one thing instead of all of them and look as though
+        // it had half worked.
+        "wdreplacenone" => Value::Long(0),
+        "wdreplaceone" => Value::Long(1),
+        "wdreplaceall" => Value::Long(2),
+        "wdcollapseend" => Value::Long(0),
+        "wdcollapsestart" => Value::Long(1),
+        "wdalignparagraphleft" => Value::Long(0),
+        "wdalignparagraphcenter" => Value::Long(1),
+        "wdalignparagraphright" => Value::Long(2),
+        "wdalignparagraphjustify" => Value::Long(3),
+        "wdcharacter" => Value::Long(1),
+        "wdword" => Value::Long(2),
+        "wdsentence" => Value::Long(3),
+        "wdparagraph" => Value::Long(4),
+        "wdline" => Value::Long(5),
+        "wdstory" => Value::Long(6),
+        "wdmove" => Value::Long(0),
+        "wdextend" => Value::Long(1),
+        "wdfindstop" => Value::Long(0),
+        "wdfindcontinue" => Value::Long(1),
+        "wdfindask" => Value::Long(2),
+        "wdforward" => Value::Long(0),
+        "wdbackward" => Value::Long(1),
         // The days and the parts of a date, for `DateAdd` and `Weekday`.
         "vbsunday" => Value::Long(1),
         "vbmonday" => Value::Long(2),
@@ -246,9 +324,14 @@ fn called(lowered: &str, arguments: &[Value], host: &mut dyn Host) -> Result<Val
             _ => false,
         })),
         "isarray" => Ok(Value::Boolean(matches!(argument(arguments, 0), Value::Array(_)))),
-        "isobject" => Ok(Value::Boolean(matches!(argument(arguments, 0), Value::Nothing))),
+        "isobject" => {
+            Ok(Value::Boolean(matches!(argument(arguments, 0), Value::Nothing | Value::Object(_))))
+        }
         "iserror" => Ok(Value::Boolean(false)),
-        "typename" => Ok(Value::Text(argument(arguments, 0).type_name().to_owned())),
+        "typename" => Ok(Value::Text(match argument(arguments, 0) {
+            Value::Object(handle) => handle.kind,
+            other => other.type_name().to_owned(),
+        })),
         "vartype" => Ok(Value::Long(argument(arguments, 0).var_type())),
 
         "lbound" => bound(arguments, true),
@@ -1061,6 +1144,16 @@ mod tests {
             .expect("an answer");
         assert_eq!(answer, Value::Long(1));
         assert_eq!(host.messages, vec!["Saved".to_owned()]);
+    }
+
+    #[test]
+    fn the_numbers_word_gives_names_to_are_named() {
+        // A macro writes `wdReplaceAll` and never `2`, and one that was
+        // given nothing for it would quietly do something else.
+        assert_eq!(constant("wdReplaceAll"), Some(Value::Long(2)));
+        assert_eq!(constant("wdCollapseEnd"), Some(Value::Long(0)));
+        assert_eq!(constant("vbCrLf"), Some(text("\r\n")));
+        assert_eq!(constant("wdSomethingNobodyHas"), None);
     }
 
     #[test]

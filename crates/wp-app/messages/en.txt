@@ -572,7 +572,6 @@
 = Rulers
 = Rules
 = Run
-= Run reaches the language and not the document yet
 = Said
 = Save
 = Save Address List

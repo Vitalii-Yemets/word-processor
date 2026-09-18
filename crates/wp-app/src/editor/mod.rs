@@ -57,6 +57,7 @@ mod menus;
 mod minibar;
 mod notes;
 mod numbering;
+mod objects;
 mod optionsdialog;
 mod outline;
 pub(crate) mod ownblocks;

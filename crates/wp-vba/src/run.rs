@@ -42,7 +42,7 @@ use crate::lex::{Kind as Word, Token};
 use crate::library::{self, Host};
 use crate::parse;
 use crate::tree::{Complaint, Node, Part};
-use crate::value::{self, Array, Fault, Value};
+use crate::value::{self, Array, Fault, Given, Handle, Value};
 
 /// How many statements one call may run before it is stopped.
 const BUDGET: usize = 20_000_000;
@@ -316,7 +316,8 @@ impl<'a> Machine<'a> {
             return Err(Fault::saying(5, &format!("Sub or Function not defined: {name}")));
         };
         let mut outside = Frame::new("");
-        self.enter(node, arguments, &[], &mut outside)
+        let given: Vec<Given> = arguments.into_iter().map(Given::just).collect();
+        self.enter(node, given, &[], &mut outside)
     }
 
     /// Reads the module's own lines — its options, its constants and its
@@ -367,7 +368,7 @@ impl<'a> Machine<'a> {
     fn enter(
         &mut self,
         node: &'a Node,
-        arguments: Vec<Value>,
+        arguments: Vec<Given>,
         places: &[Option<&'a Node>],
         caller: &mut Frame,
     ) -> Result<Value, Fault> {
@@ -379,7 +380,9 @@ impl<'a> Machine<'a> {
         }
 
         for (at, parameter) in wanted.iter().enumerate() {
-            let value = match arguments.get(at) {
+            // By its name where the caller wrote one, and by its place
+            // otherwise: `Foo Colour:="red"` puts it where it says.
+            let value = match Given::find(&arguments, &parameter.name, at) {
                 Some(value) => parameter.kind.hold(value.clone())?,
                 None if parameter.optional || parameter.rest => match &parameter.default {
                     Some(default) => self.value_of(default, caller)?,
@@ -669,13 +672,13 @@ impl<'a> Machine<'a> {
     ) -> Result<(), Fault> {
         match target.part() {
             Some(Part::Name) => {
-                let name = first_name(target).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
+                let name = name_of(target).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
                 self.set(&name, value, frame)
             }
             Some(Part::Index) => {
                 let inside = parts(target);
                 let base = inside.first().copied().ok_or_else(|| Fault::of(13))?;
-                let name = first_name(base).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
+                let name = name_of(base).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
                 let subscripts = self.subscripts(target, frame)?;
                 let mut held = self.get(&name, frame)?;
                 let Value::Array(array) = &mut held else { return Err(Fault::of(13)) };
@@ -684,8 +687,14 @@ impl<'a> Machine<'a> {
                 self.set_exactly(&name, held, frame)
             }
             Some(Part::Dotted) => {
-                let (head, member) = dotted(target);
-                if head.eq_ignore_ascii_case("err") {
+                let inside = parts(target);
+                let member = last_word(&inside).unwrap_or_default();
+                let head = inside.first().copied().filter(|child| child.part().is_some());
+
+                if head.is_some_and(|head| {
+                    head.part() == Some(Part::Name)
+                        && first_name(head).is_some_and(|name| name.eq_ignore_ascii_case("err"))
+                }) {
                     let mut fault = self.fault.clone().unwrap_or(Fault::saying(0, ""));
                     match member.to_ascii_lowercase().as_str() {
                         "number" => fault.number = i32::try_from(value.whole()?).unwrap_or(0),
@@ -695,7 +704,16 @@ impl<'a> Machine<'a> {
                     self.fault = Some(fault);
                     return Ok(());
                 }
-                Err(Fault::of(424))
+
+                let object = match head {
+                    Some(head) => self.value_of(head, frame)?,
+                    None => frame.with.last().cloned().unwrap_or(Value::Nothing),
+                };
+                match object {
+                    Value::Object(handle) => self.host.set_member(&handle, &member, value),
+                    Value::Nothing => Err(Fault::of(91)),
+                    _ => Err(Fault::of(424)),
+                }
             }
             _ => Err(Fault::of(13)),
         }
@@ -755,6 +773,11 @@ impl<'a> Machine<'a> {
         }
         if let Some(answer) = self.builtin(name, &[])? {
             return Ok(answer);
+        }
+        // A name the program running the macro answers to: `ActiveDocument`,
+        // `Selection`, and the rest of what a macro starts from.
+        if let Some(value) = self.host.root(name) {
+            return Ok(value);
         }
         if self.explicit {
             return Err(Fault::saying(5, &format!("Variable not defined: {name}")));
@@ -882,10 +905,14 @@ impl<'a> Machine<'a> {
         let [item, over, rest @ ..] = pieces.as_slice() else { return Err(Fault::of(13)) };
         let body = rest.iter().copied().find(|node| node.part() == Some(Part::Body));
 
-        let Value::Array(array) = self.value_of(over, frame)? else {
-            return Err(Fault::of(424));
+        // A collection is walked by asking the program that owns it what it
+        // holds, which is the one question `For Each` needs of an object.
+        let items = match self.value_of(over, frame)? {
+            Value::Array(array) => array.values,
+            Value::Object(handle) => self.host.items(&handle)?,
+            _ => return Err(Fault::of(424)),
         };
-        for value in array.values {
+        for value in items {
             self.spend()?;
             self.assign_to(item, value, frame)?;
             if let Some(body) = body {
@@ -1152,7 +1179,7 @@ impl<'a> Machine<'a> {
         match node.part() {
             Some(Part::Literal) => literal(node),
             Some(Part::Name) => {
-                let name = first_name(node).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
+                let name = name_of(node).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
                 self.get(&name, frame)
             }
             Some(Part::Parenthesised) => {
@@ -1197,6 +1224,16 @@ impl<'a> Machine<'a> {
             return Ok(Value::Boolean(true));
         }
         let right_value = self.value_of(right, frame)?;
+
+        // `Is` is the one operator that is about the objects themselves.
+        // Everywhere else an object stands for what it says: Word gives a
+        // range's text where a string is wanted, and a macro writing
+        // `MsgBox Selection` depends on it.
+        let (left_value, right_value) = if operator == "is" {
+            (left_value, right_value)
+        } else {
+            (self.plain(left_value)?, self.plain(right_value)?)
+        };
 
         Ok(match operator.as_str() {
             "+" => value::add(&left_value, &right_value)?,
@@ -1252,7 +1289,7 @@ impl<'a> Machine<'a> {
         let inside = parts(node);
         let base = inside.first().copied().ok_or_else(|| Fault::of(13))?;
         if base.part() == Some(Part::Name) {
-            let name = first_name(base).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
+            let name = name_of(base).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
             let held = frame
                 .locals
                 .get(&name)
@@ -1264,10 +1301,32 @@ impl<'a> Machine<'a> {
                 let at = array.at(&subscripts)?;
                 return Ok(array.values[at].clone());
             }
+            // A collection in brackets is the one it holds: `Documents(1)`
+            // is `Documents.Item(1)`, which is what Word means by it.
+            if let Some(Value::Object(handle)) = held {
+                let given = self.arguments_of(node, frame)?;
+                return self.host.member(&handle, "Item", &given);
+            }
             return self.call_named(&name, node, frame);
         }
-        // Something else with brackets after it, which needs an object.
+        // `a.b(1)`: the brackets belong to the member, which may be a method
+        // taking arguments or a collection being asked for one of its own.
+        if base.part() == Some(Part::Dotted) {
+            let given = self.arguments_of(node, frame)?;
+            return self.member_of(base, &given, frame);
+        }
         Err(Fault::of(424))
+    }
+
+    /// The arguments in the brackets of an index, with their names.
+    fn arguments_of(&mut self, node: &'a Node, frame: &mut Frame) -> Result<Vec<Given>, Fault> {
+        let arguments: Vec<&Node> = parts(node)
+            .into_iter()
+            .filter(|child| child.part() == Some(Part::Arguments))
+            .flat_map(|child| parts(child))
+            .filter(|child| child.part() == Some(Part::Argument))
+            .collect();
+        self.given(&arguments, frame)
     }
 
     /// The numbers inside the brackets of an index.
@@ -1287,18 +1346,40 @@ impl<'a> Machine<'a> {
         Ok(out)
     }
 
-    /// `Err.Number`, `Debug.Print`, and anything else needing an object.
+    /// `a.b`, whatever `a` turns out to be.
     fn dotted(&mut self, node: &'a Node, frame: &mut Frame) -> Result<Value, Fault> {
-        let (head, member) = dotted(node);
-        if head.is_empty() {
-            // A full stop with nothing in front of it, inside a `With`.
-            let _ = frame.with.last();
-            return Err(Fault::saying(
-                424,
-                "A With block needs an object, and objects are a later item",
-            ));
-        }
-        if head.eq_ignore_ascii_case("err") {
+        self.member_of(node, &[], frame)
+    }
+
+    /// `a.b` and `a.b(1, 2)`, which are one question asked with and without
+    /// arguments: whether a member is a property or a method is the business
+    /// of the program that owns the object, not of the language.
+    fn member_of(
+        &mut self,
+        node: &'a Node,
+        given: &[Given],
+        frame: &mut Frame,
+    ) -> Result<Value, Fault> {
+        let inside = parts(node);
+        let member = last_word(&inside).unwrap_or_default();
+        let head = inside.first().copied().filter(|child| child.part().is_some());
+
+        // A full stop with nothing in front of it belongs to the `With` block
+        // it is written inside.
+        let Some(head) = head else {
+            let Some(Value::Object(handle)) = frame.with.last().cloned() else {
+                return Err(Fault::saying(
+                    91,
+                    "This full stop is not inside a With block that has an object",
+                ));
+            };
+            return self.host.member(&handle, &member, given);
+        };
+
+        // `Err` is the language's own and not the program's.
+        if head.part() == Some(Part::Name)
+            && first_name(head).is_some_and(|name| name.eq_ignore_ascii_case("err"))
+        {
             let fault = self.fault.clone().unwrap_or(Fault::saying(0, ""));
             return Ok(match member.to_ascii_lowercase().as_str() {
                 "number" => Value::Long(i64::from(fault.number)),
@@ -1307,7 +1388,15 @@ impl<'a> Machine<'a> {
                 _ => return Err(Fault::of(424)),
             });
         }
-        Err(Fault::saying(424, &format!("{head} is an object, and objects are a later item")))
+
+        match self.value_of(head, frame)? {
+            Value::Object(handle) => self.host.member(&handle, &member, given),
+            Value::Nothing => Err(Fault::of(91)),
+            _ => Err(Fault::saying(
+                424,
+                &format!("{} is not an object, so it has no {member}", head.written().trim()),
+            )),
+        }
     }
 
     /// A statement that is a call: `MsgBox "Hello"`, `Foo 1, 2`, `Call Foo`.
@@ -1322,20 +1411,38 @@ impl<'a> Machine<'a> {
             if head.eq_ignore_ascii_case("debug") && member.eq_ignore_ascii_case("print") {
                 let mut said = Vec::new();
                 for argument in inside.iter().skip(1).flat_map(|node| node.every(Part::Argument)) {
-                    said.push(self.value_of(argument, frame)?.text()?);
+                    let value = self.value_of(argument, frame)?;
+                    said.push(self.plain(value)?.text()?);
                 }
                 self.host.note(&said.join(" "));
                 return Ok(Value::Empty);
             }
-            if head.eq_ignore_ascii_case("err") {
+            if head.eq_ignore_ascii_case("err") && !head.is_empty() {
                 return self.err_member(&member, &inside, frame);
             }
+
+            // A member called as a statement, with its arguments beside it
+            // rather than in brackets: `Selection.TypeText "Hello"`.
+            let arguments: Vec<&Node> = inside
+                .iter()
+                .skip(1)
+                .filter(|node| node.part() == Some(Part::Arguments))
+                .flat_map(|node| parts(node))
+                .filter(|node| node.part() == Some(Part::Argument))
+                .collect();
+            let given = self.given(&arguments, frame)?;
+            return self.member_of(first, &given, frame);
+        }
+        // `a.b(1)` as a statement, which is a method with its arguments in
+        // brackets and whose answer nobody wants.
+        if first.part() == Some(Part::Index) {
+            return self.value_of(first, frame);
         }
 
         // `Foo 1, 2`: the arguments are beside the name rather than in
         // brackets, and are a branch of their own.
         if first.part() == Some(Part::Name) {
-            let name = first_name(first).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
+            let name = name_of(first).ok_or_else(|| Fault::of(13))?.to_ascii_lowercase();
             let arguments: Vec<&Node> = inside
                 .iter()
                 .skip(1)
@@ -1400,10 +1507,7 @@ impl<'a> Machine<'a> {
         arguments: &[&'a Node],
         frame: &mut Frame,
     ) -> Result<Value, Fault> {
-        let mut values = Vec::with_capacity(arguments.len());
-        for argument in arguments {
-            values.push(self.value_of(argument, frame)?);
-        }
+        let values = self.given(arguments, frame)?;
 
         if let Some(node) = self.procedures.get(name).copied() {
             // Where each argument came from, so that what a procedure changes
@@ -1418,13 +1522,57 @@ impl<'a> Machine<'a> {
                 .collect();
             return self.enter(node, values, &places, frame);
         }
-        if let Some(answer) = self.builtin(name, &values)? {
+        let plain = self.plainly(&values)?;
+        if let Some(answer) = self.builtin(name, &plain)? {
             return Ok(answer);
         }
-        if let Some(answer) = library::call(name, &values, self.host) {
+        if let Some(answer) = library::call(name, &plain, self.host) {
             return answer;
         }
+        // A name the macro does not define and the library does not know may
+        // still be one the program running it answers to.
+        if let Some(Value::Object(handle)) = self.host.root(name) {
+            return self.host.member(&handle, "Item", &values);
+        }
         Err(Fault::saying(5, &format!("Sub or Function not defined: {name}")))
+    }
+
+    /// The arguments of a call, with the names the macro wrote on them.
+    fn given(&mut self, arguments: &[&'a Node], frame: &mut Frame) -> Result<Vec<Given>, Fault> {
+        let mut out = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            let inside = parts(argument);
+            // `Name:=value` is a word, a colon, an equals and the value.
+            let named = inside.len() >= 4
+                && inside[1].token().is_some_and(|token| token.symbol(":"))
+                && inside[2].token().is_some_and(|token| token.symbol("="));
+            if named {
+                let name = inside[0].token().map(|token| token.text.clone());
+                let value = self.value_of(inside[3], frame)?;
+                out.push(Given { name, value });
+                continue;
+            }
+            out.push(Given::just(self.value_of(argument, frame)?));
+        }
+        Ok(out)
+    }
+
+    /// The same values with every object turned into what it says, for the
+    /// library, which knows nothing about objects.
+    fn plainly(&mut self, given: &[Given]) -> Result<Vec<Value>, Fault> {
+        let mut out = Vec::with_capacity(given.len());
+        for one in given {
+            out.push(self.plain(one.value.clone())?);
+        }
+        Ok(out)
+    }
+
+    /// And one of them.
+    fn plain(&mut self, value: Value) -> Result<Value, Fault> {
+        match value {
+            Value::Object(handle) => Ok(Value::Text(self.host.as_text(&handle)?)),
+            other => Ok(other),
+        }
     }
 
     /// The few the machine answers rather than the library: the ones that
@@ -1692,6 +1840,21 @@ fn ptr_holds(branch: &Node, wanted: &Node) -> bool {
     branch.children().iter().any(|child| ptr_holds(child, wanted))
 }
 
+/// The word a `Name` branch holds.
+///
+/// Not the same question as the one below: a declaration's name is the first
+/// word that is *not* one of the language's own, because the keywords come
+/// first — `Dim`, `Public`, `As`. A name being read is simply the word,
+/// keyword or not, because `Nothing` and `Me` are names where they stand and
+/// looking past them finds nothing at all.
+fn name_of(node: &Node) -> Option<&str> {
+    node.children()
+        .iter()
+        .find_map(|child| child.token())
+        .filter(|token| token.kind == Word::Word)
+        .map(|token| token.text.as_str())
+}
+
 /// The first word of a branch that is a name rather than a keyword.
 fn first_name(node: &Node) -> Option<&str> {
     node.children().iter().find_map(|child| match child.token() {
@@ -1775,6 +1938,16 @@ fn parameters(node: &Node) -> Vec<Parameter<'_>> {
             })
         })
         .collect()
+}
+
+/// The last word of a list of nodes, which for `a.b` is the member.
+fn last_word(inside: &[&Node]) -> Option<String> {
+    inside
+        .iter()
+        .rev()
+        .find_map(|child| child.token())
+        .filter(|token| token.kind == Word::Word)
+        .map(|token| token.text.clone())
 }
 
 /// The two halves of `a.b`, and an empty head for a `.b` inside a `With`.
@@ -1880,7 +2053,11 @@ fn compares(left: &Value, operator: &str, right: &Value) -> Result<bool, Fault> 
     // `Is` compares two object references, and `Nothing` is the only one
     // there is so far.
     if operator == "is" {
-        return Ok(matches!((left, right), (Value::Nothing, Value::Nothing)));
+        return Ok(match (left, right) {
+            (Value::Nothing, Value::Nothing) => true,
+            (Value::Object(one), Value::Object(other)) => one == other,
+            _ => false,
+        });
     }
     let Some(order) = value::compare(left, right)? else {
         return Ok(false);
@@ -2391,5 +2568,232 @@ mod tests {
         let mut host = Quiet::default();
         let fault = program.run("Test", Vec::new(), &mut host).expect_err("it should not run");
         assert!(fault.description.contains("never read"), "{fault}");
+    }
+}
+
+#[cfg(test)]
+mod objects {
+    use super::*;
+    use crate::library::Host;
+    use crate::value::{Given, Handle};
+
+    /// A program with three things in it, as small as an object model can be
+    /// and still be one: a box holding a word, a list of boxes, and a name
+    /// for each.
+    ///
+    /// Here so that the language's side of objects can be proved without the
+    /// document's side, which is a great deal larger and lives in the program
+    /// that has a document.
+    #[derive(Default)]
+    struct Toy {
+        words: Vec<String>,
+        shown: Vec<String>,
+    }
+
+    impl Host for Toy {
+        fn message(&mut self, text: &str, _buttons: i64, _title: &str) -> i64 {
+            self.shown.push(text.to_owned());
+            1
+        }
+
+        fn root(&mut self, name: &str) -> Option<Value> {
+            match name.to_ascii_lowercase().as_str() {
+                "boxes" => Some(Value::Object(Handle::of("Boxes", 0))),
+                _ => None,
+            }
+        }
+
+        fn member(
+            &mut self,
+            object: &Handle,
+            member: &str,
+            given: &[Given],
+        ) -> Result<Value, Fault> {
+            match (object.kind.as_str(), member.to_ascii_lowercase().as_str()) {
+                ("Boxes", "count") => Ok(Value::Long(self.words.len() as i64)),
+                ("Boxes", "item") => {
+                    let which = Given::find(given, "Index", 0)
+                        .cloned()
+                        .unwrap_or(Value::Long(1))
+                        .whole()?;
+                    if which < 1 || which as usize > self.words.len() {
+                        return Err(Fault::of(9));
+                    }
+                    Ok(Value::Object(Handle::of("Box", which as u64)))
+                }
+                ("Boxes", "add") => {
+                    let word =
+                        Given::find(given, "Word", 0).cloned().unwrap_or(Value::Empty).text()?;
+                    self.words.push(word);
+                    Ok(Value::Object(Handle::of("Box", self.words.len() as u64)))
+                }
+                ("Box", "text") => Ok(Value::Text(
+                    self.words.get(object.id as usize - 1).cloned().unwrap_or_default(),
+                )),
+                ("Box", "number") => Ok(Value::Long(object.id as i64)),
+                _ => Err(Fault::saying(438, &format!("{}.{member} is not here", object.kind))),
+            }
+        }
+
+        fn set_member(&mut self, object: &Handle, member: &str, value: Value) -> Result<(), Fault> {
+            match (object.kind.as_str(), member.to_ascii_lowercase().as_str()) {
+                ("Box", "text") => {
+                    let at = object.id as usize - 1;
+                    if at < self.words.len() {
+                        self.words[at] = value.text()?;
+                    }
+                    Ok(())
+                }
+                _ => Err(Fault::saying(438, &format!("{}.{member} is not set here", object.kind))),
+            }
+        }
+
+        fn items(&mut self, object: &Handle) -> Result<Vec<Value>, Fault> {
+            match object.kind.as_str() {
+                "Boxes" => Ok((1..=self.words.len())
+                    .map(|at| Value::Object(Handle::of("Box", at as u64)))
+                    .collect()),
+                _ => Err(Fault::saying(438, &format!("{} is not a list", object.kind))),
+            }
+        }
+
+        fn as_text(&mut self, object: &Handle) -> Result<String, Fault> {
+            self.member(object, "Text", &[])?.text()
+        }
+    }
+
+    fn with_toy(source: &str) -> (Value, Toy) {
+        let (program, complaints) = Program::read(source);
+        assert!(complaints.is_empty(), "it did not parse: {complaints:?}");
+        let mut toy = Toy::default();
+        let value = program.run("Test", Vec::new(), &mut toy).expect("it ran");
+        (value, toy)
+    }
+
+    #[test]
+    fn a_name_the_program_answers_to_is_an_object() {
+        let (value, _) = with_toy(
+            "Function Test() As Long\r\n    Boxes.Add \"one\"\r\n    Test = Boxes.Count\r\nEnd Function\r\n",
+        );
+        assert_eq!(value, Value::Long(1));
+    }
+
+    #[test]
+    fn a_collection_in_brackets_is_the_one_it_holds() {
+        // `Boxes(2)` is `Boxes.Item(2)`, which is what Word means by it.
+        let (value, _) = with_toy(
+            "Function Test() As String\r\n\
+             \x20   Boxes.Add \"one\"\r\n\
+             \x20   Boxes.Add \"two\"\r\n\
+             \x20   Test = Boxes(2).Text & \"/\" & Boxes.Item(1).Text\r\n\
+             End Function\r\n",
+        );
+        assert_eq!(value, Value::Text("two/one".to_owned()));
+    }
+
+    #[test]
+    fn a_member_can_be_written_to_as_well_as_read() {
+        let (value, toy) = with_toy(
+            "Function Test() As String\r\n\
+             \x20   Boxes.Add \"one\"\r\n\
+             \x20   Boxes(1).Text = \"changed\"\r\n\
+             \x20   Test = Boxes(1).Text\r\n\
+             End Function\r\n",
+        );
+        assert_eq!(value, Value::Text("changed".to_owned()));
+        assert_eq!(toy.words, vec!["changed".to_owned()]);
+    }
+
+    #[test]
+    fn with_holds_an_object_and_a_full_stop_means_it() {
+        let (value, _) = with_toy(
+            "Function Test() As String\r\n\
+             \x20   Boxes.Add \"one\"\r\n\
+             \x20   With Boxes(1)\r\n\
+             \x20       .Text = \"inside\"\r\n\
+             \x20       Test = .Text & \" \" & .Number\r\n\
+             \x20   End With\r\n\
+             End Function\r\n",
+        );
+        assert_eq!(value, Value::Text("inside 1".to_owned()));
+    }
+
+    #[test]
+    fn for_each_walks_a_collection_the_program_owns() {
+        let (value, _) = with_toy(
+            "Function Test() As String\r\n\
+             \x20   Dim one As Object, out As String\r\n\
+             \x20   Boxes.Add \"a\"\r\n\
+             \x20   Boxes.Add \"b\"\r\n\
+             \x20   For Each one In Boxes\r\n\
+             \x20       out = out & one.Text\r\n\
+             \x20   Next one\r\n\
+             \x20   Test = out\r\n\
+             End Function\r\n",
+        );
+        assert_eq!(value, Value::Text("ab".to_owned()));
+    }
+
+    #[test]
+    fn an_argument_may_be_named_the_way_word_macros_name_them() {
+        let (_, toy) = with_toy("Sub Test()\r\n    Boxes.Add Word:=\"named\"\r\nEnd Sub\r\n");
+        assert_eq!(toy.words, vec!["named".to_owned()]);
+    }
+
+    #[test]
+    fn an_object_stands_for_what_it_says_where_a_string_is_wanted() {
+        // Word gives a range's text when one is used as a string, and a
+        // macro that shows a selection depends on it.
+        let (_, toy) = with_toy(
+            "Sub Test()\r\n\
+             \x20   Boxes.Add \"shown\"\r\n\
+             \x20   MsgBox Boxes(1)\r\n\
+             End Sub\r\n",
+        );
+        assert_eq!(toy.shown, vec!["shown".to_owned()]);
+    }
+
+    #[test]
+    fn set_keeps_an_object_and_is_compares_two_of_them() {
+        let (value, _) = with_toy(
+            "Function Test() As String\r\n\
+             \x20   Dim one As Object, other As Object\r\n\
+             \x20   Boxes.Add \"a\"\r\n\
+             \x20   Boxes.Add \"b\"\r\n\
+             \x20   Set one = Boxes(1)\r\n\
+             \x20   Set other = Boxes(1)\r\n\
+             \x20   Test = (one Is other) & \",\" & (one Is Boxes(2)) & \",\" & (one Is Nothing)\r\n\
+             End Function\r\n",
+        );
+        assert_eq!(value, Value::Text("True,False,False".to_owned()));
+    }
+
+    #[test]
+    fn a_member_nothing_has_says_which_one_rather_than_guessing() {
+        // The rule this whole item is written under: a property this program
+        // cannot answer must say so and stop.
+        let (program, _) = Program::read(
+            "Sub Test()\r\n    Boxes.Add \"a\"\r\n    Boxes(1).Colour = 3\r\nEnd Sub\r\n",
+        );
+        let mut toy = Toy::default();
+        let fault = program.run("Test", Vec::new(), &mut toy).expect_err("it should have stopped");
+        assert_eq!(fault.number, 438);
+        assert!(fault.description.contains("Colour"), "{fault}");
+    }
+
+    #[test]
+    fn a_full_stop_outside_a_with_block_says_so() {
+        let (program, _) = Program::read("Sub Test()\r\n    .Text = \"x\"\r\nEnd Sub\r\n");
+        let mut toy = Toy::default();
+        let fault = program.run("Test", Vec::new(), &mut toy).expect_err("it should have stopped");
+        assert_eq!(fault.number, 91, "{fault}");
+    }
+
+    #[test]
+    fn a_name_the_program_does_not_answer_to_is_still_not_an_object() {
+        let (program, _) = Program::read("Sub Test()\r\n    Crates.Add 1\r\nEnd Sub\r\n");
+        let mut toy = Toy::default();
+        let fault = program.run("Test", Vec::new(), &mut toy).expect_err("it should have stopped");
+        assert!(fault.description.contains("Crates") || fault.number == 424, "{fault}");
     }
 }

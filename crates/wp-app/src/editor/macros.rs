@@ -232,11 +232,7 @@ impl Editor {
                 label: "In".to_owned(),
                 value: format!("{} ({})", module.name, module.kind.label()),
             },
-            Field::Heading(t("Run reaches the language and not the document yet").to_owned()),
         ];
-        // What running one does and does not reach, said before it is run
-        // rather than after: a macro that touches the document stops on the
-        // first thing it touches, and that is this program's own doing.
         // A line this program could not read is worth saying out loud, where
         // Word's own editor would say it: the line number is what a person
         // needs to find it, and a module shown without the warning would look
@@ -270,10 +266,10 @@ impl Editor {
     /// item; this is the one a person asked for by opening the list, finding
     /// the macro and pressing the button.
     ///
-    /// What it can do is the language: arithmetic, strings, dates, arrays,
-    /// files and a message box. What it cannot do yet is the document — the
-    /// object model is a later item — and a macro that touches one stops on
-    /// the first thing it touches and says so.
+    /// What it can do is the language and the document: the text, the
+    /// paragraphs, the styles, the formatting, find and replace. What it
+    /// cannot do it says by name and stops, because a macro told `Empty` for
+    /// a property nobody modelled will carry on and write the wrong thing.
     pub(super) fn run_macro(&mut self, wanted: &wp_vba::Macro) -> Response {
         let Some(module) = self.vba.as_ref().and_then(|vba| vba.module(&wanted.module)).cloned()
         else {
@@ -291,14 +287,19 @@ impl Editor {
             ));
         }
 
-        let mut host = wp_vba::library::Quiet::default();
-        let answer = program.run(&wanted.name, Vec::new(), &mut host);
-        // What the macro showed is shown afterwards rather than in the middle
-        // of it: a message box put up while a macro is running would have to
-        // stop the macro to wait for an answer, and stopping in the middle is
-        // what the debugger is for, which is a later item.
-        let mut said: Vec<String> = host.messages;
-        said.extend(host.notes);
+        // The document as the macro sees it, which is what it runs against.
+        let (answer, mut said) = {
+            let mut model = super::objects::Model::new(self);
+            let answer = program.run(&wanted.name, Vec::new(), &mut model);
+            // What the macro showed is shown afterwards rather than in the
+            // middle of it: a message box put up while a macro is running
+            // would have to stop the macro to wait for an answer, and
+            // stopping in the middle is what the debugger is for, which is a
+            // later item.
+            (answer, model.said())
+        };
+        self.relayout();
+        self.reveal_caret();
         if let Err(fault) = answer {
             said.push(fault.to_string());
             if !said.is_empty() {
@@ -684,25 +685,166 @@ mod document_macros {
         assert!(said.iter().any(|line| line == "Ran 42"), "{said:?}");
     }
 
+    /// An editor holding a document of three paragraphs and a macro that is
+    /// whatever the test needs.
+    fn with_macro(source: &str) -> Editor {
+        let mut body = Body::default();
+        for line in ["one", "two", "three"] {
+            body.blocks.push(Block::Paragraph(Paragraph::text(line)));
+        }
+        let mut document = Document::create(&body).expect("a document");
+        document.set_kind(Kind::MacroEnabledDocument);
+        let bytes = document.save().expect("saving");
+        let mut package = wp_opc::Package::open(&bytes).expect("a package");
+        package.add_part(
+            "word/vbaProject.bin",
+            "application/vnd.ms-office.vbaProject",
+            wp_vba::example(&[("Module1", source)]),
+        );
+        let mut relationships = package.relationships("word/document.xml").expect("relationships");
+        relationships.add(
+            "http://schemas.microsoft.com/office/2006/relationships/vbaProject",
+            "vbaProject.bin",
+            wp_opc::TargetMode::Internal,
+        );
+        package.set_relationships(&relationships).expect("writing them");
+        let bytes = package.save().expect("saving the package");
+        editor(Document::open(&bytes).expect("reopening"))
+    }
+
+    /// Runs the macro called `Hello` and gives back what it showed.
+    fn ran(editor: &mut Editor) -> Vec<String> {
+        showing(editor, "Module1.Hello");
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
+        let said = editor.dialog.as_ref().map(|_| lines_of(editor).0).unwrap_or_default();
+        assert!(!editor.status.contains("stopped"), "{}", editor.status);
+        said
+    }
+
     #[test]
-    fn a_macro_that_stops_says_why_and_leaves_the_document_alone() {
-        let mut editor = editor(with_a_project());
-        let before = editor.document.plain_text();
-        editor.vba = wp_vba::Project::open(&wp_vba::example(&[(
-            "Module1",
-            "Public Sub Hello()\r\n    Selection.TypeText \"oh no\"\r\nEnd Sub\r\n",
-        )]))
-        .ok();
+    fn a_macro_types_into_the_document_the_way_a_person_would() {
+        let mut editor =
+            with_macro("Public Sub Hello()\r\n    Selection.TypeText \"typed \"\r\nEnd Sub\r\n");
+        ran(&mut editor);
+        assert!(
+            editor.document.plain_text().starts_with("typed one"),
+            "{}",
+            editor.document.plain_text()
+        );
+    }
+
+    #[test]
+    fn a_macro_reads_the_document_it_is_in() {
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n\
+             \x20   MsgBox ActiveDocument.Paragraphs.Count & \":\" & _\r\n\
+             \x20       ActiveDocument.Paragraphs(2).Range.Text\r\n\
+             End Sub\r\n",
+        );
+        let said = ran(&mut editor);
+        assert!(said.iter().any(|line| line == "3:two"), "{said:?}");
+    }
+
+    #[test]
+    fn a_macro_walks_the_paragraphs_and_changes_one() {
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n\
+             \x20   Dim p As Object, count As Long\r\n\
+             \x20   For Each p In ActiveDocument.Paragraphs\r\n\
+             \x20       count = count + 1\r\n\
+             \x20   Next p\r\n\
+             \x20   ActiveDocument.Paragraphs(1).Range.Text = \"first\"\r\n\
+             \x20   MsgBox count\r\n\
+             End Sub\r\n",
+        );
+        let said = ran(&mut editor);
+        assert!(said.iter().any(|line| line == "3"), "{said:?}");
+        assert!(
+            editor.document.plain_text().starts_with("first"),
+            "{}",
+            editor.document.plain_text()
+        );
+    }
+
+    #[test]
+    fn a_macro_sets_a_style_and_the_document_keeps_it() {
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n    ActiveDocument.Paragraphs(1).Style = \"Heading1\"\r\nEnd Sub\r\n",
+        );
+        ran(&mut editor);
+        assert_eq!(editor.document.style_of(0).as_deref(), Some("Heading1"));
+    }
+
+    #[test]
+    fn a_macro_finds_and_replaces_as_word_writes_it() {
+        // Named arguments, which is how every real macro writes this line.
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n\
+             \x20   Selection.Find.Execute FindText:=\"two\", ReplaceWith:=\"deux\", _\r\n\
+             \x20       Replace:=wdReplaceAll\r\n\
+             End Sub\r\n",
+        );
+        ran(&mut editor);
+        assert!(editor.document.plain_text().contains("deux"), "{}", editor.document.plain_text());
+        assert!(!editor.document.plain_text().contains("two"), "{}", editor.document.plain_text());
+    }
+
+    #[test]
+    fn a_macro_turns_bold_on_through_the_font() {
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n\
+             \x20   ActiveDocument.Paragraphs(1).Range.Select\r\n\
+             \x20   Selection.Font.Bold = True\r\n\
+             \x20   MsgBox Selection.Font.Bold\r\n\
+             End Sub\r\n",
+        );
+        let said = ran(&mut editor);
+        assert!(said.iter().any(|line| line == "True"), "{said:?}");
+    }
+
+    #[test]
+    fn a_range_counts_characters_the_way_word_counts_them() {
+        // Each paragraph mark is one character, so the second paragraph
+        // starts four along from the first in a document that begins "one".
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n\
+             \x20   MsgBox ActiveDocument.Paragraphs(2).Range.Start & \",\" & _\r\n\
+             \x20       ActiveDocument.Content.End\r\n\
+             End Sub\r\n",
+        );
+        let said = ran(&mut editor);
+        assert!(said.iter().any(|line| line == "4,13"), "{said:?}");
+    }
+
+    #[test]
+    fn a_property_nobody_modelled_stops_the_macro_and_names_itself() {
+        // The rule the whole object model is written under.
+        let mut editor =
+            with_macro("Public Sub Hello()\r\n    Selection.Shading.Texture = 1\r\nEnd Sub\r\n");
+        showing(&mut editor, "Module1.Hello");
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
+        assert!(editor.status.contains("stopped"), "{}", editor.status);
+        assert!(editor.status.contains("Shading"), "it did not say which: {}", editor.status);
+    }
+
+    #[test]
+    fn a_macro_that_stops_leaves_what_it_had_not_reached_alone() {
+        // Half a macro is half a macro: what it did before it stopped stays
+        // done, as it does in Word, and what came after it does not happen.
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n\
+             \x20   Selection.TypeText \"done \"\r\n\
+             \x20   Selection.Shading.Texture = 1\r\n\
+             \x20   Selection.TypeText \"never\"\r\n\
+             End Sub\r\n",
+        );
         showing(&mut editor, "Module1.Hello");
         editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
 
         assert!(editor.status.contains("stopped"), "{}", editor.status);
-        assert!(
-            editor.status.contains("later item") || editor.status.contains("object"),
-            "it did not say what it could not do: {}",
-            editor.status
-        );
-        assert_eq!(editor.document.plain_text(), before, "the document was changed");
+        let text = editor.document.plain_text();
+        assert!(text.starts_with("done one"), "{text}");
+        assert!(!text.contains("never"), "{text}");
     }
 
     #[test]

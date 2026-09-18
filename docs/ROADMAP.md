@@ -6431,16 +6431,87 @@ interpreter is reachable only from the macro list a person opened themselves.
   asserting a number nobody can check. Holding these against Word's own
   answers is what the corpus is for, and it is **K1**'s shape again: the
   macros that would settle it cannot be committed.
-- [ ] **L4. The object model: the document.** `Application`,
-  `ActiveDocument`, `Documents`, `Selection`, `Range` and everything
-  reachable from them that this program already models — paragraphs, runs,
-  styles, tables, sections, headers, footnotes, comments, bookmarks, fields,
-  content controls, find and replace. This is the part a macro is actually
-  written against, and the part that has to be right rather than merely
-  present: a property this program cannot answer must say so and stop, not
-  guess. Done when the macros in the corpus that only touch the document run
-  and leave the document as Word leaves it, byte for byte where that is
-  possible and paragraph for paragraph where it is not.
+- [x] **L4. The object model: the document.**
+  **This is the part a macro is actually written against.** Nobody writes
+  `Left(s, 5)` in a Word macro for its own sake; they write
+  `Selection.TypeText`, `ActiveDocument.Paragraphs(1).Range.Text`,
+  `.Font.Bold = True`. **L3** was the floor and this is the building.
+  **A property this program cannot answer says so and stops.** That is the
+  rule the whole thing is written under and the difference between a program
+  a macro can be trusted with and one it cannot. Word has some thousands of
+  properties; this has the ones below. Every other one is refused *by name* —
+  "Selection.Shading is not something this program does yet" — because a
+  macro that reads a property and is quietly handed `Empty` carries on and
+  writes the wrong thing into the document, and nobody afterwards can tell
+  which property it was.
+  **What is modelled:** `Application` (its name, its version, and the way
+  through to the rest), `Documents`, the document itself (name, full name,
+  path, saved, `Content`, `Range(a, b)`, `Save`), `Selection` and `Range`
+  (text read and written, start and end, bold, italic, underline, style,
+  `Font` with its name and size, `InsertBefore`, `InsertAfter`, `Delete`,
+  `Select`, `Collapse`, `TypeText`, `TypeParagraph`, `Find`), `Paragraphs`
+  and a paragraph (count, one of them, adding one, its range, its style, its
+  alignment), `Styles`, `Bookmarks` (count, one by name or number, `Exists`,
+  `Add`), `Comments`, `Tables` (how many, and how many rows and columns each
+  has), and `Find.Execute` with the names Word writes it with.
+  **Where a range is.** Word counts characters from the start of the
+  document with every paragraph mark counting as one; this program counts
+  paragraphs and offsets inside them. The two are translated at the edge, so
+  a macro doing arithmetic on `.Start` and `.End` gets the numbers it expects
+  — the second paragraph of a document beginning "one" starts at four.
+  **Editing goes through the document's own editing**, with the selection
+  moved to where the macro is working and put back afterwards. That is worth
+  saying out loud rather than hiding: it means everything a macro does is
+  something a person could have done by hand, and that a macro's changes go
+  onto the same undo stack as anybody else's.
+  **Two brackets, two meanings.** `ActiveDocument.Paragraphs(2)` is the
+  second paragraph and `ActiveDocument.Range(0, 5)` is a method with two
+  arguments — the same syntax for a collection being indexed and a method
+  being called. Word tells them apart by its type library; here a member that
+  hands back a collection hands the brackets on to it, which is the same
+  answer without the library.
+  **Named arguments, because that is how the lines are written.**
+  `Selection.Find.Execute FindText:="a", ReplaceWith:="b",
+  Replace:=wdReplaceAll` is how every real macro writes that line, so an
+  argument now carries the name the macro gave it from the parser through the
+  interpreter to the model — and to a macro's own procedures, which take
+  theirs by name too. Word's own named numbers came with it: `wdReplaceAll`
+  and its two dozen companions, because a macro that wrote one and was handed
+  nothing would replace one thing instead of all of them and look as though
+  it had half worked.
+  **Nothing in the model is translated.** The names are the language's: a
+  macro says `Selection` in every country, and a catalogue offering those
+  words for translation would be offering to break every macro there is. The
+  message list leaves that module alone, and the reason is written where the
+  skipping happens.
+  *Proven by:* nineteen tests. Eleven of the language's side, against a toy
+  object model of three things — so that objects can be proved without a
+  document, and the document's side without the language's: a name the
+  program answers to; a collection in brackets; a member written to as well
+  as read; `With` holding an object and a full stop meaning it; `For Each`
+  over a collection the program owns; a named argument; an object standing
+  for what it says where a string is wanted; `Set` and `Is`; a member nothing
+  has, named rather than guessed at; a full stop outside any `With`; and a
+  name the program does not answer to. Eight against a real document: a
+  macro types into it the way a person would; reads its paragraphs and their
+  text; walks them with `For Each` and changes one; sets a style that sticks;
+  finds and replaces with named arguments and `wdReplaceAll`; turns bold on
+  through `Font` and reads it back; counts characters the way Word counts
+  them; and a property nobody modelled stops the macro and names itself,
+  leaving what the macro had already done done and what came after it undone.
+  *Not done, and named here:* **the corpus half of the "done when"**. Running
+  other people's macros over a directory of their documents is exactly what
+  **L6** is the gate for, and building it before the gate would be building
+  the thing the gate exists to prevent. What works today is the one way in
+  the block's own words allow: a person opens the macro list, finds the
+  macro, presses Run. Sections, headers, footers, footnotes, fields and
+  content controls are named in this item and are not reachable yet; tables
+  answer how many rows and columns they have and not what is in a cell. And
+  `Application.Name` says this program's own name rather than "Microsoft
+  Word": a macro that asks is told the truth, and one that branches on the
+  answer takes the other branch. That is a decision and not an oversight —
+  the alternative is a program that lies about what it is, and every later
+  difference then looks like a bug in Word.
 - [ ] **L5. The editor and the debugger.** Word's Visual Basic Editor: the
   project tree, a window per module with the source in it, `F5` to run, `F8`
   to step, breakpoints, the immediate window and the watch. Done when a macro
