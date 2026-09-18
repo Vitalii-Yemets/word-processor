@@ -72,6 +72,7 @@ use wp_docx::Document;
 mod conformance;
 mod corpus;
 mod fidelity;
+mod vba;
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -89,6 +90,8 @@ fn main() -> ExitCode {
         (Some("fidelity"), 2) => fidelity_command(&arguments[1]),
         (Some("conformance"), 1) => conformance_command("unicode"),
         (Some("conformance"), 2) => conformance_command(&arguments[1]),
+        (Some("vba"), 1) => vba_command("corpus"),
+        (Some("vba"), 2) => vba_command(&arguments[1]),
         (Some("replace"), 5) => replace(&arguments[1], &arguments[2], &arguments[3], &arguments[4]),
         (Some("append"), 4) => append(&arguments[1], &arguments[2], &arguments[3]),
         (Some("render"), 3) => render(&arguments[1], &arguments[2], "96"),
@@ -141,6 +144,8 @@ Usage: wp <command>
                                against Word's own, kept in reference/
   conformance [directory]      run the Unicode test suites kept in it against
                                the text engine (default: unicode/)
+  vba [directory]              read every macro of every document in it, and
+                               write each module back out to check it survived
 
   replace <in> <out> <from> <to>   replace text, across run boundaries
   append <in> <out> <text>         add a paragraph at the end
@@ -491,6 +496,29 @@ fn fidelity_command(directory: &str) -> Result<(), String> {
     } else {
         Err(format!("{failed} document(s) could not be drawn"))
     }
+}
+
+/// Reads every macro of every document in a corpus.
+///
+/// Ends unhappily when a module would not parse or did not come back as it
+/// went in: both of those are this program's fault and not the document's,
+/// which is the difference between this and the corpus round trip.
+fn vba_command(directory: &str) -> Result<(), String> {
+    let corpus = Path::new(directory);
+    let reports = vba::run(corpus);
+    for line in vba::lines(corpus, &reports) {
+        outln!("{line}");
+    }
+
+    let (modules, understood, whole) = vba::total(&reports);
+    if understood == modules && whole == modules {
+        return Ok(());
+    }
+    Err(format!(
+        "of {modules} module(s), {} were not read and {} did not come back as they went in",
+        modules - understood,
+        modules - whole
+    ))
 }
 
 /// Runs whichever of the Unicode conformance suites are in a directory.

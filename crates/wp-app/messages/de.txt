@@ -422,6 +422,9 @@ language = Deutsch
 = Compare Documents
 > Dokumente vergleichen
 
+= Compile error
+> Kompilierungsfehler
+
 = Content control cannot be deleted
 > Inhaltssteuerelement kann nicht gelöscht werden
 

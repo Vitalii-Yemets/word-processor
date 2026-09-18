@@ -170,6 +170,7 @@
 = Compare Documents
 = Compare Two Documents
 = Compare with
+= Compile error
 = Content Control Properties
 = Content control cannot be deleted
 = Contents

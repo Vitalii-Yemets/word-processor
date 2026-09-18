@@ -68,6 +68,7 @@ dependencies = [
  "wp-rtf",
  "wp-segment",
  "wp-sign",
+ "wp-vba",
 ]
 
 [[package]]

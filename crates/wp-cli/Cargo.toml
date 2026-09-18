@@ -21,6 +21,7 @@ wp-break = { path = "../wp-break" }
 wp-image = { path = "../wp-image" }
 wp-normal = { path = "../wp-normal" }
 wp-segment = { path = "../wp-segment" }
+wp-vba = { path = "../wp-vba" }
 wp-layout = { path = "../wp-layout" }
 wp-pdf = { path = "../wp-pdf" }
 wp-opc = { path = "../wp-opc" }

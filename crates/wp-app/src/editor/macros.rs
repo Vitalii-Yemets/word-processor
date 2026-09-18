@@ -75,8 +75,11 @@ pub(super) fn read_steps(line: &str) -> Vec<Step> {
     line.split(BETWEEN).filter_map(Step::parse).collect()
 }
 
-/// Which field of the macro dialog holds the module's text.
-const SOURCE: usize = 3;
+/// Which field of the macro dialog holds the module's text, which is the last
+/// of them however many there are in front of it.
+fn source_field(dialog: &Dialog) -> usize {
+    dialog.fields.len().saturating_sub(1)
+}
 
 /// How many steps one macro may hold.
 ///
@@ -215,20 +218,29 @@ impl Editor {
             .map_or(1, |one| one.line)
             - 1;
 
-        let dialog = Dialog::message(
-            "Macro",
-            vec![
-                Field::Said { label: "Macro name".to_owned(), value: wanted.qualified() },
-                Field::Said {
-                    label: "In".to_owned(),
-                    value: format!("{} ({})", module.name, module.kind.label()),
-                },
-                Field::Heading(t("Kept as it is and not run").to_owned()),
-                Field::Lines { label: "Source".to_owned(), lines, scroll: 0 },
-            ],
-        );
+        let mut fields = vec![
+            Field::Said { label: "Macro name".to_owned(), value: wanted.qualified() },
+            Field::Said {
+                label: "In".to_owned(),
+                value: format!("{} ({})", module.name, module.kind.label()),
+            },
+            Field::Heading(t("Kept as it is and not run").to_owned()),
+        ];
+        // A line this program could not read is worth saying out loud, where
+        // Word's own editor would say it: the line number is what a person
+        // needs to find it, and a module shown without the warning would look
+        // like one that was understood.
+        if let Some(complaint) = module.read().1.first() {
+            fields.push(Field::Said {
+                label: "Compile error".to_owned(),
+                value: complaint.to_string(),
+            });
+        }
+        fields.push(Field::Lines { label: "Source".to_owned(), lines, scroll: 0 });
+        let dialog = Dialog::message("Macro", fields);
         let mut dialog = dialog;
-        dialog.show_line(SOURCE, at);
+        let source = source_field(&dialog);
+        dialog.show_line(source, at);
         self.ask(Asking::Macro, dialog)
     }
 
@@ -549,6 +561,41 @@ mod document_macros {
         editor.handle(Event::KeyDown { key: Key::Up, modifiers: Modifiers::default() });
         let (_, up) = lines_of(&editor);
         assert_eq!(up, end - 1, "the arrows do not move it a line at a time");
+    }
+
+    #[test]
+    fn a_line_the_parser_could_not_read_is_said_where_word_would_say_it() {
+        // Word's editor points at the line and says what it wanted. A module
+        // shown without that warning would look like one that was read.
+        let mut editor = editor(with_a_project());
+        editor.set_view_option("tab=view").expect("the View tab");
+        editor.draw(1400, 900);
+        editor.vba = wp_vba::Project::open(&wp_vba::example(&[(
+            "Module1",
+            "Public Sub Hello()\r\n    ]] nonsense\r\nEnd Sub\r\n",
+        )]))
+        .ok();
+        editor.run(Command::Macros);
+
+        let popup = editor.popup.as_ref().expect("the list");
+        let at = (0..8)
+            .find(|at| popup.item(*at).is_some_and(|line| line.contains("Module1.Hello")))
+            .expect("the line");
+        editor.choose_macro(at);
+
+        let dialog = editor.dialog.as_ref().expect("the dialog");
+        let said: Vec<String> = dialog
+            .fields
+            .iter()
+            .filter_map(|field| match field {
+                Field::Said { value, .. } => Some(value.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            said.iter().any(|value| value.contains("line 2")),
+            "nothing said which line could not be read: {said:?}"
+        );
     }
 
     #[test]

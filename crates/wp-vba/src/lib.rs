@@ -25,8 +25,13 @@
 #![forbid(unsafe_code)]
 
 pub mod compress;
+pub mod lex;
+pub mod parse;
+pub mod tree;
 
 use wp_ole::CompoundFile;
+
+use crate::tree::{Complaint, Node, Part};
 
 /// Why a project could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -120,7 +125,19 @@ impl Module {
     /// Every procedure the module declares, in the order they are written.
     #[must_use]
     pub fn procedures(&self) -> Vec<Procedure> {
-        self.source.lines().enumerate().filter_map(|(at, line)| declared(line, at + 1)).collect()
+        self.read().0.every(Part::Procedure).into_iter().filter_map(declared).collect()
+    }
+
+    /// The module read into a tree, and whatever could not be read.
+    ///
+    /// One way of reading a module, used by everything that asks anything
+    /// about one: what its procedures are called, whether it is understood,
+    /// and — when there is an editor to do it with — what to change in it.
+    /// A second way, scanning the lines for what looks like a declaration,
+    /// is how this began and is what two answers that disagree are made of.
+    #[must_use]
+    pub fn read(&self) -> (Node, Vec<Complaint>) {
+        parse::parse(&self.source)
     }
 }
 
@@ -404,58 +421,41 @@ fn document_modules(file: &CompoundFile, encoding: wp_text::Encoding) -> Vec<Str
         .collect()
 }
 
-/// The procedure a line declares, if it declares one.
+/// What a procedure in the tree declares.
 ///
-/// Read the way somebody scanning a listing reads it: the modifiers a
-/// declaration may carry, then the word that says what it is, then the name.
-/// A line inside a string or a comment is not a declaration, and a comment is
-/// the only one of those two that begins a line.
-fn declared(line: &str, number: usize) -> Option<Procedure> {
-    let mut words = line.trim().split_whitespace().peekable();
-    let mut public = true;
-
-    loop {
-        let word = *words.peek()?;
-        match word.to_ascii_lowercase().as_str() {
-            "'" => return None,
-            "public" | "friend" | "static" => public = true,
-            "private" => public = false,
-            _ => break,
-        }
-        words.next();
-    }
-    if line.trim_start().starts_with('\'') {
-        return None;
-    }
-
-    let word = words.next()?;
-    let sort = match word.to_ascii_lowercase().as_str() {
-        "sub" => Sort::Sub,
-        "function" => Sort::Function,
-        "property" => {
-            // `Property Get`, `Property Let`, `Property Set`: the second word
-            // says which, and the name is the third.
-            let which = words.next()?.to_ascii_lowercase();
-            if !matches!(which.as_str(), "get" | "let" | "set") {
-                return None;
+/// Every word of the line is there to be read off: the modifiers in front,
+/// the word that says what it is, and the name after it. A `Property` says
+/// `Get`, `Let` or `Set` before its name, which is the one place two words
+/// come between the keyword and what is being declared.
+fn declared(node: &Node) -> Option<Procedure> {
+    let (mut sort, mut public, mut name, mut line, mut takes_arguments) =
+        (None, true, None, 0, false);
+    for child in node.children() {
+        match child {
+            Node::Word(token) if token.kind == lex::Kind::Word => {
+                if sort.is_none() {
+                    if token.is("private") {
+                        public = false;
+                    } else if token.is("sub") {
+                        sort = Some(Sort::Sub);
+                    } else if token.is("function") {
+                        sort = Some(Sort::Function);
+                    } else if token.is("property") {
+                        sort = Some(Sort::Property);
+                    }
+                } else if name.is_none() && !(token.is("get") || token.is("let") || token.is("set"))
+                {
+                    name = Some(token.text.clone());
+                    line = token.line;
+                }
             }
-            Sort::Property
+            Node::Branch { part: Part::Parameters, .. } => {
+                takes_arguments = !child.every(Part::Parameter).is_empty();
+            }
+            _ => {}
         }
-        _ => return None,
-    };
-
-    let rest: String = words.collect::<Vec<_>>().join(" ");
-    let (name, arguments) = match rest.split_once('(') {
-        Some((name, arguments)) => (name.trim(), arguments),
-        None => (rest.trim(), ""),
-    };
-    if name.is_empty() || !name.chars().all(|letter| letter.is_alphanumeric() || letter == '_') {
-        return None;
     }
-
-    let takes_arguments =
-        !arguments.trim_start().starts_with(')') && arguments.trim_end_matches(')').trim() != "";
-    Some(Procedure { name: name.to_owned(), sort, line: number, public, takes_arguments })
+    Some(Procedure { name: name?, sort: sort?, line, public, takes_arguments })
 }
 
 /// A record of the `dir` stream: an identifier, a length, and the bytes.
@@ -611,19 +611,39 @@ mod tests {
         assert_eq!(macros[0].qualified(), "Module1.Hello");
     }
 
+    /// A module of nothing but the text given.
+    fn module_of(source: &str) -> Module {
+        Module {
+            name: "Module1".to_owned(),
+            stream: "Module1".to_owned(),
+            kind: Kind::Standard,
+            source: source.to_owned(),
+            read_only: false,
+            private: false,
+        }
+    }
+
     #[test]
     fn a_comment_that_looks_like_a_declaration_is_not_one() {
-        assert!(declared("' Public Sub Hello()", 1).is_none());
-        assert!(declared("    ' Sub Hello()", 1).is_none());
-        assert!(declared("Dim Sub As Long", 1).is_none());
-        assert!(declared("End Sub", 1).is_none());
+        assert!(module_of("' Public Sub Hello()\r\n").procedures().is_empty());
+        assert!(module_of("    ' Sub Hello()\r\n").procedures().is_empty());
+        assert!(module_of("Dim Total As Long\r\n").procedures().is_empty());
     }
 
     #[test]
     fn a_property_is_declared_by_three_words_and_not_two() {
-        let got = declared("Public Property Get Width() As Long", 3).expect("a property");
-        assert_eq!((got.name.as_str(), got.sort, got.line), ("Width", Sort::Property, 3));
-        assert!(declared("Property Something Width()", 1).is_none());
+        let found = module_of("\r\n\r\nPublic Property Get Width() As Long\r\nEnd Property\r\n")
+            .procedures();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(
+            (found[0].name.as_str(), found[0].sort, found[0].line),
+            ("Width", Sort::Property, 3)
+        );
+
+        // And one that says neither Get nor Let nor Set is said to be wrong
+        // rather than read as something else.
+        let (_, complaints) = module_of("Property Something()\r\nEnd Property\r\n").read();
+        assert!(!complaints.is_empty(), "a property with no Get, Let or Set was accepted");
     }
 
     #[test]

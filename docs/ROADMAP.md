@@ -6263,13 +6263,87 @@ interpreter is reachable only from the macro list a person opened themselves.
   cannot be changed, which is **L5**. And a module written in a code page
   this program has no table for is read as Windows-1252, which is a guess and
   is made only where there is nothing better to use.
-- [ ] **L2. The language: reading it.** A lexer and a parser for VBA — the
-  statement forms, the expression grammar with its precedence, `If`, `For`,
-  `For Each`, `Do`, `While`, `Select Case`, `With`, procedures and functions
-  with `ByRef` and `ByVal`, `Option Explicit`, types, arrays, `Const`, `Enum`
-  and the line continuation. Done when every module of a corpus of real
-  macros parses to a tree and back to the same source, and when a syntax
-  error names its line the way Word's editor does.
+- [x] **L2. The language: reading it.**
+  **A tree of the words themselves, not of named fields.** Every leaf is a
+  token exactly as it was written, and every branch says what the words under
+  it are, so writing the tree back out is walking it and putting each token
+  down again with the spaces that came before it. That is the shape this
+  needed and not the shape an interpreter will want, because the first thing
+  that has to be provable is that nothing was lost: a tree of named fields
+  can be built from this one, and a file cannot be built back from that one.
+  **The spaces are kept, and one of them decides a meaning.** A type suffix
+  and an operator are the same characters — `a&` is a Long and `a & b` joins
+  two strings — and what tells them apart is that a suffix is written against
+  its name and an operator beside it. The first version read `a & b` as a
+  Long called `a` followed by a stray `b`, and the test that caught it is the
+  reason the rule is now written down where the suffix is read. Three other
+  things need looking ahead at: the underscore that continues a line, which
+  belongs to the *next* token because the statement carries on; a `#`, which
+  opens a date only when another one closes it on the same line, and is
+  otherwise `#If` or a file number; and `&`, which begins a hexadecimal
+  number when `H` or `O` follows it.
+  **The left of an assignment is not an expression.** In Visual Basic `=` is
+  the comparison as well, so reading a whole expression first swallows the
+  assignment and leaves a line that compares two things and throws the answer
+  away — which is exactly what the first version did, to every assignment in
+  the test module. What may stand on the left is a name and whatever follows
+  it: brackets, full stops, a bang.
+  **A one-line `If` is three statements on one line.** `If a Then b = 1 Else
+  b = 2` ends its first statement at the `Else`, which nothing else in the
+  language does, so the reader carries a flag saying that an `Else` would end
+  the statement being read — and it is a flag rather than a rule, because
+  everywhere else `Else` begins a line of its own.
+  **Fourteen levels of precedence, one function apiece, in the order they
+  bind.** Written out rather than driven from a table of numbers, so that the
+  precedence can be read off the file: `Imp`, `Eqv`, `Xor`, `Or`, `And`,
+  `Not`, the comparisons, `&`, `+` and `-`, `Mod`, `\`, `*` and `/`, the
+  minus in front of a thing, and `^`. The three worth knowing: a comparison
+  binds tighter than `Not`, so `Not a = b` asks whether `a = b` is false;
+  `Not` binds tighter than `And`; and a power binds tighter than the minus in
+  front of it, so minus two squared is minus four.
+  **A line nobody here understands is kept and complained about.** It becomes
+  a branch holding its own words, so the module still comes back byte for
+  byte, and a complaint goes on the list with its line number and what was
+  expected, in the words Word's own editor uses: "Expected: End Sub". A
+  parser that quietly swallowed what it did not know would report every
+  module as read and be wrong about half of them — and the swallowing would
+  be invisible, because the round trip would still pass.
+  *Done:* `./x.sh vba` and `.\x.ps1 vba` read every module of every document
+  in the corpus and ask the two questions of each: was it understood, and did
+  it come back as it went in. The second is the stronger one — a parser can
+  understand a line and still lose the tab in front of it — and the command
+  ends unhappily on either, because both are this program's fault. In the
+  program itself, the Macros dialog now says `Compile error: line 12:
+  Expected: End Sub` where Word's editor would say it, and **L1**'s
+  line-by-line scan for what looks like a procedure is gone: there is one way
+  of finding a procedure now, and it is reading the module.
+  *Proven by:* twenty-four tests. Seven of the lexer: what goes in comes out,
+  for seven kinds of line; a continuation is not the end of a statement and a
+  continued line still counts as a line; two quotes in a row are one quote;
+  a hash is a date only when one closes it; numbers with their exponents and
+  suffixes; a comment however it began, and a name that merely starts with
+  `Rem`; and the case a word was written in is kept and not compared.
+  Thirteen of the parser: a module using every form this item names — and a
+  few besides — is read with no complaints, comes back byte for byte, and has
+  nothing kept unread in it; what binds tighter than what, in seven pairs; a
+  call without brackets; a one-line `If`; a full stop that begins an
+  expression inside a `With`; a label and a line number; the compiler's own
+  `#If` lines, whose insides are read as ordinary Visual Basic; four kinds of
+  file statement, and a name that happens to be spelled `Get`; a syntax error
+  that names its line; a block left open; a line nobody understands, after
+  which the next line is still read; and the empty module. Three of the
+  command, and one of the dialog that shows what could not be read.
+  *Not done, and named here:* the corpus is empty on this machine, so what is
+  proven today is the parser against what this program can write, and not
+  against what people wrote — which is the whole reason the command exists
+  and **K1** is the shape it follows. `#If` is read and not obeyed: what is
+  inside one is parsed whether or not this build would have compiled it,
+  because this is a reader and not a compiler. `Declare`, `Event`,
+  `Implements`, `Attribute` and `Option` are kept as the words they are
+  written with rather than taken apart, since nothing yet asks what is in
+  them and taking them apart would be inventing a shape nobody reads.
+  Nothing here checks that a name exists or that two types agree — that is
+  not reading — and nothing runs a line of it, which is **L3**.
 - [ ] **L3. The language: running it.** The interpreter over that tree.
   Variants and the coercions between them, which are most of what VBA is;
   arrays with their bases and `ReDim`; strings, dates and currency with
