@@ -340,6 +340,37 @@ impl Editor {
             // The Document Recovery pane, as the first start after a crash
             // shows it: the copies a run that did not end left behind, with
             // one of them open.
+            // A document carrying Visual Basic, with what one of its macros
+            // says open in front of it. The project is built here because the
+            // repository holds no Word file to take one from — see the
+            // corpus, which is every machine's own.
+            "macros" => {
+                self.vba = wp_vba::Project::open(&wp_vba::example(&[(
+                    "Module1",
+                    "Attribute VB_Name = \"Module1\"\r\n\
+                     Option Explicit\r\n\
+                     \r\n\
+                     ' Runs when the button on the ribbon is pressed.\r\n\
+                     Public Sub StampToday()\r\n    \
+                         Dim where As Range\r\n    \
+                         Set where = ActiveDocument.Content\r\n    \
+                         where.Collapse wdCollapseEnd\r\n    \
+                         where.InsertAfter Format(Date, \"d MMMM yyyy\")\r\n\
+                     End Sub\r\n\
+                     \r\n\
+                     Private Sub Unused()\r\n\
+                     End Sub\r\n",
+                )]))
+                .ok();
+                self.carries_macros = self.vba.is_some();
+                self.run(crate::chrome::Command::Macros);
+                let at = self
+                    .popup
+                    .as_ref()
+                    .map(|popup| (0..8).filter(|index| popup.item(*index).is_some()).count())
+                    .unwrap_or_default();
+                self.choose_macro(at.saturating_sub(1));
+            }
             "recovery" => {
                 let entries = vec![
                     super::autorecover::Recovered {

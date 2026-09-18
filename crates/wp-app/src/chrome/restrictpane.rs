@@ -204,6 +204,10 @@ impl RestrictPane {
     }
 
     /// Whether there is more of it than there is room for.
+    ///
+    /// Asked by the tests. What the pane does about it — draw the bar, and
+    /// stop the scrolling at the end — asks the scroll itself.
+    #[cfg(test)]
     #[must_use]
     pub fn overflows(&self) -> bool {
         self.scroll.overflows()

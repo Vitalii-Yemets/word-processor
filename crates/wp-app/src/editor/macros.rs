@@ -23,9 +23,12 @@
 
 use wp_shell::Response;
 
+use crate::chrome::dialog::{Dialog, Field};
 use crate::chrome::findbar::{FindBar, Purpose};
 use crate::chrome::{ribbon, Choice, Command, Popup};
 use crate::messages::t;
+
+use super::dialogs::Asking;
 
 use super::Editor;
 
@@ -72,11 +75,26 @@ pub(super) fn read_steps(line: &str) -> Vec<Step> {
     line.split(BETWEEN).filter_map(Step::parse).collect()
 }
 
+/// Which field of the macro dialog holds the module's text.
+const SOURCE: usize = 3;
+
 /// How many steps one macro may hold.
 ///
 /// A recording somebody forgot to stop should not grow without end, and a
 /// hundred steps is longer than any macro anybody records by hand.
 const LONGEST: usize = 100;
+
+/// The Visual Basic project a document carries, read.
+///
+/// A project that will not read is not an error anybody can act on — the
+/// document still carries it, it is still written back untouched, and the
+/// list still says so. What is lost is the names, and saying nothing about
+/// them is better than saying something wrong about them.
+#[must_use]
+pub(super) fn project_of(document: &wp_docx::Document) -> Option<wp_vba::Project> {
+    let bytes = document.package().part("word/vbaProject.bin")?;
+    wp_vba::Project::open(bytes).ok()
+}
 
 impl Editor {
     /// Drops open the macros, and the way to record another.
@@ -100,8 +118,16 @@ impl Editor {
         // A document with Visual Basic in it must say so here, of all
         // places: a person who opens this list and sees only what they
         // recorded would read it as a document with no macros in it.
+        self.document_macros = self.vba.as_ref().map(wp_vba::Project::macros).unwrap_or_default();
         if self.carries_macros {
             items.push(t("This document also carries Visual Basic macros").to_owned());
+            // By name, with the module they are in, which is how Word's own
+            // dialog lists them and the only way to tell two `Hello`s apart.
+            // Shown rather than run: running one is a later item, and a line
+            // that said Run and did not would be worse than no line at all.
+            items.extend(
+                self.document_macros.iter().map(|one| format!("Show: {}", one.qualified())),
+            );
         }
 
         self.popup = Some(Popup::new(Choice::Macro, items, None, left, top, 300.0));
@@ -115,14 +141,23 @@ impl Editor {
 
         let heading = if self.recording.is_some() { 2 } else { 1 };
         if index >= heading {
-            let Some(name) = self.macro_names.get(index - heading).cloned() else {
-                // Past the recorded ones is the line about the document's
-                // own macros, which is there to be read rather than run.
+            let at = index - heading;
+            if let Some(name) = self.macro_names.get(at).cloned() {
+                return self.play_macro(&name);
+            }
+            // Past the recorded ones is the line about the document's own
+            // macros, which is there to be read rather than run, and then one
+            // line for each of them.
+            let at = at - self.macro_names.len();
+            if at == 0 {
                 return self.report(
                     "This document carries Visual Basic macros. They are kept as they are and not run.",
                 );
+            }
+            let Some(wanted) = self.document_macros.get(at - 1).cloned() else {
+                return Response::Ignored;
             };
-            return self.play_macro(&name);
+            return self.show_macro(&wanted);
         }
 
         if self.recording.is_none() {
@@ -160,6 +195,41 @@ impl Editor {
         self.settings.set_macro(&name, &write_steps(&steps));
         self.settings.save();
         self.report(&format!("Macro {name}: {} steps", steps.len()))
+    }
+
+    /// Shows what one of the document's own macros says.
+    ///
+    /// The whole module, because that is what a macro is written in and what
+    /// Word's own editor opens: the lines above it declare what it uses, and
+    /// a macro read without them is a macro read out of context. The box
+    /// opens at the line that declares the one chosen.
+    fn show_macro(&mut self, wanted: &wp_vba::Macro) -> Response {
+        let Some(module) = self.vba.as_ref().and_then(|vba| vba.module(&wanted.module)) else {
+            return Response::Ignored;
+        };
+        let lines: Vec<String> = module.source.lines().map(str::to_owned).collect();
+        let at = module
+            .procedures()
+            .iter()
+            .find(|one| one.name == wanted.name)
+            .map_or(1, |one| one.line)
+            - 1;
+
+        let dialog = Dialog::message(
+            "Macro",
+            vec![
+                Field::Said { label: "Macro name".to_owned(), value: wanted.qualified() },
+                Field::Said {
+                    label: "In".to_owned(),
+                    value: format!("{} ({})", module.name, module.kind.label()),
+                },
+                Field::Heading(t("Kept as it is and not run").to_owned()),
+                Field::Lines { label: "Source".to_owned(), lines, scroll: 0 },
+            ],
+        );
+        let mut dialog = dialog;
+        dialog.show_line(SOURCE, at);
+        self.ask(Asking::Macro, dialog)
     }
 
     /// Does again what was recorded.
@@ -263,12 +333,13 @@ mod tests {
 
 #[cfg(test)]
 mod document_macros {
+    use crate::chrome::dialog::Field;
     use crate::chrome::Command;
     use wp_docx::kinds::Kind;
     use wp_docx::model::{Block, Body, Paragraph};
     use wp_docx::Document;
     use wp_layout::FontLibrary;
-    use wp_shell::{App, Event};
+    use wp_shell::{App, Event, Key, Modifiers};
 
     use crate::editor::Editor;
 
@@ -340,6 +411,144 @@ mod document_macros {
             !lines.iter().any(|line| line.contains("Visual Basic")),
             "it says a document has macros when it has none: {lines:?}"
         );
+    }
+
+    /// The same, carrying a project this program can actually read.
+    fn with_a_project() -> Document {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("one")));
+        let mut document = Document::create(&body).expect("a document");
+        document.set_kind(Kind::MacroEnabledDocument);
+
+        let bytes = document.save().expect("saving");
+        let mut package = wp_opc::Package::open(&bytes).expect("a package");
+        package.add_part(
+            "word/vbaProject.bin",
+            "application/vnd.ms-office.vbaProject",
+            wp_vba::example(&[
+                ("Module1", SOURCE),
+                ("ThisDocument", "Attribute VB_Name = \"ThisDocument\"\r\n"),
+            ]),
+        );
+        let mut relationships = package.relationships("word/document.xml").expect("relationships");
+        relationships.add(
+            "http://schemas.microsoft.com/office/2006/relationships/vbaProject",
+            "vbaProject.bin",
+            wp_opc::TargetMode::Internal,
+        );
+        package.set_relationships(&relationships).expect("writing them");
+        let bytes = package.save().expect("saving the package");
+        Document::open(&bytes).expect("reopening")
+    }
+
+    /// A module with one macro in it, and enough lines above and below that
+    /// the box showing it cannot show all of them at once.
+    const SOURCE: &str = "Attribute VB_Name = \"Module1\"\r\n\
+         Option Explicit\r\n\
+         \r\n\
+         Private Sub NotAMacro(ByVal n As Long)\r\n\
+         End Sub\r\n\
+         \r\n\
+         ' six\r\n\
+         ' seven\r\n\
+         ' eight\r\n\
+         ' nine\r\n\
+         ' ten\r\n\
+         Public Sub Hello()\r\n    \
+             MsgBox \"Hello\"\r\n\
+         End Sub\r\n\
+         ' fifteen\r\n\
+         ' sixteen\r\n";
+
+    fn lines_of(editor: &Editor) -> (Vec<String>, usize) {
+        let dialog = editor.dialog.as_ref().expect("the dialog");
+        match dialog.fields.iter().find(|field| matches!(field, Field::Lines { .. })) {
+            Some(Field::Lines { lines, scroll, .. }) => (lines.clone(), *scroll),
+            _ => panic!("the dialog shows no source at all"),
+        }
+    }
+
+    #[test]
+    fn the_macros_a_document_carries_are_listed_by_module_and_name() {
+        // Word's own dialog lists them by name; two modules may each have a
+        // Hello, so the module is named as well.
+        let mut editor = editor(with_a_project());
+        editor.set_view_option("tab=view").expect("the View tab");
+        editor.draw(1400, 900);
+        editor.run(Command::Macros);
+
+        let popup = editor.popup.as_ref().expect("the list");
+        let lines: Vec<String> =
+            (0..8).filter_map(|at| popup.item(at).map(str::to_owned)).collect();
+        assert!(
+            lines.iter().any(|line| line.contains("Module1.Hello")),
+            "the document's own macro is not on the list: {lines:?}"
+        );
+        // Not the private one, and not the one that wants an argument: those
+        // are not macros anybody could run from a list.
+        assert!(
+            !lines.iter().any(|line| line.contains("NotAMacro")),
+            "a private procedure was offered: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn choosing_one_shows_the_module_it_is_written_in() {
+        let mut editor = editor(with_a_project());
+        editor.set_view_option("tab=view").expect("the View tab");
+        editor.draw(1400, 900);
+        editor.run(Command::Macros);
+
+        let popup = editor.popup.as_ref().expect("the list");
+        let at = (0..8)
+            .find(|at| popup.item(*at).is_some_and(|line| line.contains("Module1.Hello")))
+            .expect("the line");
+        editor.choose_macro(at);
+
+        let (lines, scroll) = lines_of(&editor);
+        assert!(lines.iter().any(|line| line.contains("MsgBox")), "{lines:?}");
+        assert!(
+            lines.iter().any(|line| line.contains("Option Explicit")),
+            "the module is shown whole, not the macro alone: {lines:?}"
+        );
+        // Opened at the line that declares the one chosen, which is past the
+        // eight the box can show.
+        assert!(scroll > 0, "a macro on line twelve was shown from the top");
+        assert!(scroll <= 11, "the declaration was scrolled past: {scroll}");
+    }
+
+    #[test]
+    fn the_source_box_reaches_the_lines_below_the_ones_it_shows() {
+        // The other half of showing a macro: a box that shows eight lines of
+        // sixteen and cannot reach the ninth is hiding what was asked for.
+        let mut editor = editor(with_a_project());
+        editor.set_view_option("tab=view").expect("the View tab");
+        editor.draw(1400, 900);
+        editor.run(Command::Macros);
+        let popup = editor.popup.as_ref().expect("the list");
+        let at = (0..8)
+            .find(|at| popup.item(*at).is_some_and(|line| line.contains("Module1.Hello")))
+            .expect("the line");
+        editor.choose_macro(at);
+
+        // The box of lines is the only thing in that dialog the keyboard
+        // can land on, so it already has it.
+        let (lines, was) = lines_of(&editor);
+        editor.handle(Event::KeyDown { key: Key::Home, modifiers: Modifiers::default() });
+        let (_, home) = lines_of(&editor);
+        assert_eq!(home, 0, "Home did not reach the first line, from {was}");
+
+        editor.handle(Event::KeyDown { key: Key::End, modifiers: Modifiers::default() });
+        let (_, end) = lines_of(&editor);
+        assert_eq!(
+            end,
+            lines.len() - crate::chrome::dialog::LINES_SHOWN,
+            "End did not reach the last"
+        );
+
+        editor.handle(Event::KeyDown { key: Key::Up, modifiers: Modifiers::default() });
+        let (_, up) = lines_of(&editor);
+        assert_eq!(up, end - 1, "the arrows do not move it a line at a time");
     }
 
     #[test]

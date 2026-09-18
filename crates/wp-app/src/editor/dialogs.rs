@@ -52,6 +52,9 @@ pub(super) enum Asking {
     /// How much there is of the document. Word's Word Count: a dialog that
     /// tells rather than asks.
     WordCount,
+    /// What one of the document's own macros says. Another that tells: this
+    /// program reads Visual Basic and does not run it.
+    Macro,
     /// The margins, the paper and the way round it goes.
     PageSetup,
     /// A name for this place in the document.
@@ -231,7 +234,7 @@ impl Editor {
             }
             // Answered on the way out, above.
             Some(Asking::Exceptions) => Response::Redraw,
-            Some(Asking::WordCount) | None => {
+            Some(Asking::WordCount) | Some(Asking::Macro) | None => {
                 let _ = dialog;
                 Response::Redraw
             }

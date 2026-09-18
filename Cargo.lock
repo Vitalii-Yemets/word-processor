@@ -25,6 +25,7 @@ dependencies = [
  "wp-sign",
  "wp-svg",
  "wp-text",
+ "wp-vba",
 ]
 
 [[package]]
@@ -271,6 +272,14 @@ name = "wp-text"
 version = "0.0.1"
 dependencies = [
  "wp-normal",
+]
+
+[[package]]
+name = "wp-vba"
+version = "0.0.1"
+dependencies = [
+ "wp-ole",
+ "wp-text",
 ]
 
 [[package]]

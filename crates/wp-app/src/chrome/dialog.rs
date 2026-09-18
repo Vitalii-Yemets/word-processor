@@ -208,7 +208,10 @@ pub enum Field {
     /// Some lines of text in a box, to be looked at and not changed: Word's
     /// Preview on the File Conversion dialog, where a person sees which
     /// encoding makes their text readable before choosing it.
-    Lines { label: String, lines: Vec<String> },
+    /// `scroll` is the first line showing. A box that shows eight lines of a
+    /// forty-line macro and cannot reach the ninth is a box that is hiding
+    /// what somebody asked to see.
+    Lines { label: String, lines: Vec<String>, scroll: usize },
     /// A rectangle round everything that follows, with a caption on its top
     /// edge, until the next group or the next tab.
     ///
@@ -216,6 +219,45 @@ pub enum Field {
     /// drawn round the two indent boxes says what those two boxes have to do
     /// with each other, which no amount of putting them near each other does.
     Group(String),
+}
+
+/// How wide the bar beside a box of lines is.
+const BAR: f32 = 4.0;
+
+/// Draws the bar that says how much there is and where in it we are.
+///
+/// Only a box of lines has one. The other lists in a dialog are picked from,
+/// and the row they have picked says where in them a person is; a box of
+/// lines is read rather than picked from, so without this there is nothing at
+/// all to say that there is more below.
+#[allow(clippy::too_many_arguments)]
+fn draw_scroll_bar(
+    canvas: &mut Canvas,
+    right: f32,
+    top: f32,
+    height: f32,
+    scroll: usize,
+    rows: usize,
+    shown: usize,
+    theme: &Theme,
+) {
+    let most = rows.saturating_sub(shown);
+    if most == 0 || height <= 0.0 {
+        return;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let share = shown as f32 / rows as f32;
+    let thumb = (height * share).max(12.0).min(height);
+    #[allow(clippy::cast_precision_loss)]
+    let along = scroll as f32 / most as f32;
+    let at = top + (height - thumb) * along.clamp(0.0, 1.0);
+    canvas.fill_rect(
+        (right - BAR - 1.0) as i32,
+        at as i32,
+        BAR as i32,
+        thumb as i32,
+        theme.control_edge,
+    );
 }
 
 /// One row of a [`Field::Tree`].
@@ -321,7 +363,6 @@ impl Field {
                 | Self::Shape(_)
                 | Self::Columns(_)
                 | Self::Group(_)
-                | Self::Lines { .. }
         )
     }
 
@@ -373,7 +414,7 @@ impl Field {
                 current,
                 scroll,
             },
-            Self::Lines { label, lines } => Self::Lines { label: m(&label), lines },
+            Self::Lines { label, lines, scroll } => Self::Lines { label: m(&label), lines, scroll },
             Self::Group(caption) => Self::Group(m(&caption)),
             // Nothing to translate: a picture of the document, or a marker.
             other @ (Self::Preview(_) | Self::Shape(_) | Self::Columns(_)) => other,
@@ -918,6 +959,22 @@ impl Dialog {
                 self.move_in_tree(self.focus, if key == Key::Up { -1 } else { 1 });
                 Reaction::Changed
             }
+            // Lines are read rather than picked from, so the arrows move the
+            // box itself rather than a chosen row in it.
+            Key::Up | Key::Down | Key::PageUp | Key::PageDown | Key::Home | Key::End
+                if matches!(self.fields.get(self.focus), Some(Field::Lines { .. })) =>
+            {
+                let step = match key {
+                    Key::Up => -1,
+                    Key::Down => 1,
+                    Key::PageUp => -(LINES_SHOWN as i32),
+                    Key::PageDown => LINES_SHOWN as i32,
+                    Key::Home => i32::MIN,
+                    _ => i32::MAX,
+                };
+                self.scroll_lines(self.focus, step);
+                Reaction::Changed
+            }
             Key::Space if matches!(self.fields.get(self.focus), Some(Field::Tree { .. })) => {
                 self.tick_in_tree(self.focus);
                 Reaction::Changed
@@ -1143,6 +1200,29 @@ impl Dialog {
         } else if wanted >= *scroll + TREE_ROWS {
             *scroll = wanted + 1 - TREE_ROWS;
         }
+    }
+
+    /// Moves a box of lines, and stops at either end of them.
+    ///
+    /// There is no chosen row to follow, so the box is moved directly. The
+    /// two ends of the range are the whole travel: `i32::MIN` is Home and
+    /// `i32::MAX` is End, which saves a second way of saying the same thing.
+    fn scroll_lines(&mut self, index: usize, step: i32) {
+        let Some(Field::Lines { lines, scroll, .. }) = self.fields.get_mut(index) else { return };
+        let most = lines.len().saturating_sub(LINES_SHOWN);
+        let wanted = i64::from(i32::try_from(*scroll).unwrap_or(i32::MAX)) + i64::from(step);
+        *scroll = wanted.clamp(0, most as i64) as usize;
+    }
+
+    /// Scrolls a box of lines so that one line of it is in sight.
+    ///
+    /// Put a third of the way down where there is room above it, because a
+    /// line at the very top of a box has no context in front of it and a
+    /// macro's first line means little without the two lines before it.
+    pub fn show_line(&mut self, index: usize, line: usize) {
+        let Some(Field::Lines { lines, scroll, .. }) = self.fields.get_mut(index) else { return };
+        let most = lines.len().saturating_sub(LINES_SHOWN);
+        *scroll = line.saturating_sub(LINES_SHOWN / 3).min(most);
     }
 
     /// Turns the tick of the chosen row on or off, if it has one; and folds it
@@ -1986,7 +2066,7 @@ impl Dialog {
                 self.placed.push((Hit::Field(index), label_x, list_top, room, list_height));
             }
 
-            Field::Lines { label, lines } => {
+            Field::Lines { label, lines, scroll } => {
                 let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
 
@@ -2001,7 +2081,7 @@ impl Dialog {
                     theme.field,
                 );
                 outline(canvas, label_x, list_top, room, list_height, theme.field_edge);
-                for (showing, text) in lines.iter().take(LINES_SHOWN).enumerate() {
+                for (showing, text) in lines.iter().skip(scroll).take(LINES_SHOWN).enumerate() {
                     let row_y = list_top + PAIR_ROW * showing as f32;
                     let line = engine.simple_line(
                         text,
@@ -2019,6 +2099,19 @@ impl Dialog {
                         PAIR_ROW,
                     );
                 }
+                if lines.len() > LINES_SHOWN {
+                    draw_scroll_bar(
+                        canvas,
+                        label_x + room,
+                        list_top,
+                        list_height,
+                        scroll,
+                        lines.len(),
+                        LINES_SHOWN,
+                        theme,
+                    );
+                }
+                self.placed.push((Hit::Field(index), label_x, list_top, room, list_height));
             }
 
             Field::Pairs { label, second, rows, current, scroll } => {

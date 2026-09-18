@@ -23,6 +23,7 @@ members = [
     "crates/wp-rtf",
     "crates/wp-shape",
     "crates/wp-text",
+    "crates/wp-vba",
     "crates/wp-svg",
     "crates/wp-raster",
     "crates/wp-rsa",

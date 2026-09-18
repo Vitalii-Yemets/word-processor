@@ -138,7 +138,7 @@ impl Editor {
                 value: "Select the encoding that makes your document readable.".to_owned(),
             },
             Field::Choice { label: "Text encoding".to_owned(), items: names, current },
-            Field::Lines { label: "Preview".to_owned(), lines: preview },
+            Field::Lines { label: "Preview".to_owned(), lines: preview, scroll: 0 },
         ];
         crate::chrome::dialog::check_rows(
             "File Conversion",
@@ -254,7 +254,7 @@ impl Editor {
                 current: ending,
             },
             Field::Check { label: "Allow character substitution".to_owned(), on: substitute },
-            Field::Lines { label: "Preview".to_owned(), lines: preview },
+            Field::Lines { label: "Preview".to_owned(), lines: preview, scroll: 0 },
             Field::Said {
                 label: String::new(),
                 value: match lost {

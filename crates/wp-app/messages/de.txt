@@ -956,6 +956,9 @@ language = Deutsch
 = Hyphens (--) with dash (—)
 > Bindestriche (--) durch Geviertstrich (—)
 
+= In
+> In
+
 = In Normal.dotm
 > In Normal.dotm
 
@@ -1046,6 +1049,9 @@ language = Deutsch
 = Keep with next
 > Absätze nicht trennen
 
+= Kept as it is and not run
+> Wird unverändert behalten und nicht ausgeführt
+
 = Kerning from
 > Unterschneidung ab
 
@@ -1105,6 +1111,9 @@ language = Deutsch
 
 = Lock aspect ratio
 > Seitenverhältnis sperren
+
+= Macro name
+> Makroname
 
 = More users…
 > Weitere Benutzer…
@@ -1225,6 +1234,9 @@ language = Deutsch
 
 = Signed as
 > Signiert als
+
+= Source
+> Quellcode
 
 = Start Enforcing Protection
 > Schutz anwenden

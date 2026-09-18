@@ -1,0 +1,14 @@
+[package]
+name = "wp-vba"
+description = "The Visual Basic project a macro-enabled document carries: its modules and their text, read and not run"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+wp-ole = { path = "../wp-ole" }
+wp-text = { path = "../wp-text" }
+
+[lints]
+workspace = true

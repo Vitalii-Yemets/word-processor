@@ -203,12 +203,6 @@ impl SignaturePane {
         self.scroll.by(pixels)
     }
 
-    /// Whether there is more of it than there is room for.
-    #[must_use]
-    pub fn overflows(&self) -> bool {
-        self.scroll.overflows()
-    }
-
     /// The name of the pane, and the cross that shuts it.
     fn caption(&mut self, pen: &mut Pen<'_, '_, '_>, top: f32) {
         pen.words(t("Signatures"), pen.left + PADDING, HEADING, pen.theme.text);

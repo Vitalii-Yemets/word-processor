@@ -6183,13 +6183,86 @@ And nothing here changes what happens when a file is opened: **L6** is the
 gate, it is built before anything is allowed to run, and until it exists the
 interpreter is reachable only from the macro list a person opened themselves.
 
-- [ ] **L1. The project inside `vbaProject.bin`, read.** The compound file is
-  already read — **J2** built it — and inside it is the VBA storage: a `dir`
-  stream naming every module, and one stream per module holding compressed
-  source. The compression is the run-length scheme of [MS-OVBA] §2.4.1, which
-  is small and exactly specified. Done when a document's macros are listed by
-  name in Word's Macros dialog, with their module and their source shown, and
-  when the bytes survive a save untouched as they do now.
+- [x] **L1. The project inside `vbaProject.bin`, read.**
+  **The compression is the whole of the format's difficulty, and it is a
+  page.** [MS-OVBA] §2.4.1: a signature byte, then chunks, then groups of
+  eight tokens with a flag byte in front saying which of the eight are
+  literals and which are copies. The one part anybody gets wrong is that a
+  copy's offset field *grows as the chunk fills* — four bits while sixteen
+  bytes have been written, twelve by the end — so a reader that fixes the
+  width reads every copy in the file at the wrong place. A copy may also
+  reach into what it is writing, which is how a run of one byte is written
+  down, so the copying is a byte at a time and not a block move.
+  **There is a compressor here as well, because a reader nothing can make a
+  file for is a reader nobody has tested.** The repository holds no Word file
+  — the corpus is every machine's own, **K1** — so `wp_vba::example` builds a
+  project the way Word builds one, and both this crate's tests and the
+  program's are handed one of those. It is also half of what editing a macro
+  will need, which is **L5**.
+  **The `dir` stream is walked by length rather than by understanding.**
+  Every record is an identifier, a length and that many bytes, with exactly
+  one exception — the project's version, whose length field does not count
+  the version — so a project full of references to libraries nobody here has
+  heard of is stepped over record by record instead of choking on the first
+  one. That is what makes this survive files it was not written against.
+  **In front of a module's text is a cache Word keeps for its own editor**,
+  and the `MODULEOFFSET` record says how far. This reads past it and leaves
+  it alone; a test puts something that is plainly not text in that cache and
+  checks it does not come back as source. Names are written twice, once in
+  the project's code page and once in UTF-16, and the second is taken where
+  it is there, because it cannot be wrong about a character the code page has
+  no room for. Which module belongs to the document itself is not in the
+  `dir` stream at all — it says only procedural or not — so the `PROJECT`
+  stream beside it, which names `ThisDocument`, is what tells a class and the
+  document's own module apart.
+  **A macro's name is found the way somebody scanning a listing finds it**:
+  the modifiers a declaration may carry, then the word that says what it is,
+  then the name. Enough to list them, and deliberately not enough to run
+  them — the parser is **L2** and a far larger thing. What the list offers is
+  what Word's offers: a public `Sub` that wants no arguments, because a
+  private one is the module's own business and a function wanting an argument
+  cannot be run from a list at all. It says **Show** where Word says Run,
+  since running one is **L3** and a line that said Run and did not would be
+  worse than no line.
+  **A box that shows eight lines of a forty-line module and cannot reach the
+  ninth is hiding what somebody asked to see.** So the dialog's box of lines
+  now takes the keyboard and scrolls: the arrows a line, Page a boxful, Home
+  and End the ends, and it opens at the line that declares the macro chosen,
+  a third of the way down so that what is above it is in sight too. It is the
+  one list in a dialog with a bar down its edge, because the others are
+  picked from and the row they have picked says where in them a person is,
+  while a box of lines has no picked row and would say nothing at all. The
+  File Conversion preview, which is the other box of lines, got the scrolling
+  with it.
+  *Proven by:* seventeen tests. Fourteen in `wp-vba`: a stream written out by
+  hand byte by byte reads as it was meant to, which is the one case that does
+  not agree with this program by construction; what is compressed comes back,
+  over one chunk and over four; the offset field's width at four sizes; a
+  copy reaching before its chunk is refused; a project is read out of the
+  bytes of the part; a module's text is read past the cache; the procedures
+  are found where they are declared, with their line numbers; the list is
+  what Word would offer to run; a comment that looks like a declaration is
+  not one; a property is three words and not two; the document's own module
+  is told from a class; and a part that is not a project says so. Three in
+  the program: a document's macros are listed by module and name and the
+  private one is not offered, choosing one shows the whole module opened at
+  the right line, and the box reaches the lines below the ones it shows.
+  A picture of the dialog, and `--picture … tab=view macros` is how to look
+  at it again.
+  *Found along the way:* two methods nothing used and a needless `mut`, none
+  of which `cargo clippy --workspace --all-targets` reported and all of which
+  a plain `cargo build --workspace` did. A method used only by tests is used
+  as far as `--all-targets` is concerned, so the ordinary build of the
+  program is a check of its own and is now run as one. Both dead methods were
+  **J32**'s: one is `#[cfg(test)]` now and the other is gone.
+  *Not done, and named here:* nothing is run, and nothing here is a step
+  towards running anything on opening a file — **L6** is that gate and it is
+  built before the interpreter is reachable at all. The references a project
+  declares to other libraries are stepped over rather than listed. Forms are
+  not read: a `UserForm` is a storage of its own and is **L7**. The source
+  cannot be changed, which is **L5**. And a module written in a code page
+  this program has no table for is read as Windows-1252, which is a guess and
+  is made only where there is nothing better to use.
 - [ ] **L2. The language: reading it.** A lexer and a parser for VBA — the
   statement forms, the expression grammar with its precedence, `If`, `For`,
   `For Each`, `Do`, `While`, `Select Case`, `With`, procedures and functions

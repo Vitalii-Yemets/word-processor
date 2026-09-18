@@ -564,6 +564,8 @@ impl Editor {
         // they are; both halves of that are worth saying before somebody
         // wonders why nothing happened.
         self.carries_macros = self.document.has_macros();
+        self.vba = super::macros::project_of(&self.document);
+        self.document_macros.clear();
         // A document carrying Visual Basic says so across the top for as
         // long as it is open, because it is true for that long: this program
         // keeps macros and does not run them, and a person opening somebody

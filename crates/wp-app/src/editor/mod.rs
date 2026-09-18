@@ -476,6 +476,12 @@ pub struct Editor {
     /// Whether the document open now carries macros written in Visual Basic,
     /// which this program keeps and does not run.
     carries_macros: bool,
+    /// And the project itself, read: which modules are in it and what they
+    /// say. Nothing here runs a line of it — see [`macros`].
+    vba: Option<wp_vba::Project>,
+    /// The document's own macros, as the list last showed them, so that
+    /// choosing one finds the same one.
+    document_macros: Vec<wp_vba::Macro>,
     /// A list of people being typed from nothing, which is Word's Type a New
     /// List: it is not the merge's list until it has been saved. See
     /// [`mailings`].
@@ -681,6 +687,7 @@ impl Editor {
         // Asked once here as well as on every open: a document handed
         // straight to a new editor never goes through the opening path.
         let carries_macros = document.has_macros();
+        let vba = macros::project_of(&document);
 
         Self {
             document,
@@ -817,6 +824,8 @@ impl Editor {
             asking: None,
             comparing: None,
             carries_macros,
+            vba,
+            document_macros: Vec::new(),
             filling_in: None,
             left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,

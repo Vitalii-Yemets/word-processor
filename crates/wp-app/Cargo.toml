@@ -14,6 +14,7 @@ path = "src/main.rs"
 wp-crypt = { path = "../wp-crypt" }
 wp-dict = { path = "../wp-dict" }
 wp-docx = { path = "../wp-docx" }
+wp-vba = { path = "../wp-vba" }
 wp-segment = { path = "../wp-segment" }
 wp-layout = { path = "../wp-layout" }
 wp-pdf = { path = "../wp-pdf" }

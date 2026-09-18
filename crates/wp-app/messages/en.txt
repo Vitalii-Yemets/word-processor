@@ -325,6 +325,7 @@
 = Hyphens (--) with dash (—)
 = INitial CAps
 = Illustrations
+= In
 = In Normal.dotm
 = In brackets
 = In the left margin
@@ -353,6 +354,7 @@
 = Keep lines together
 = Keep the last AutoRecovered version if I close without saving
 = Keep with next
+= Kept as it is and not run
 = Kerning from
 = Labels
 = Language
@@ -373,6 +375,7 @@
 = Link to Previous
 = Links
 = Lock aspect ratio
+= Macro name
 = Macros
 = Mail Merge Recipients
 = Mailings
@@ -629,6 +632,7 @@
 = Sort by
 = Sort, filter and check
 = Sorted by {0}
+= Source
 = Space after
 = Space between cells
 = Spacing

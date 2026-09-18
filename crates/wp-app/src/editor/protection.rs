@@ -792,7 +792,7 @@ mod tests {
         // Out of what each style carries, not a list invented here: a
         // document made from somebody's template is for whatever that
         // template says it is for.
-        let mut editor = editor();
+        let editor = editor();
         let recommended = editor.recommended_styles();
         assert!(!recommended.is_empty(), "nothing was recommended at all");
 
