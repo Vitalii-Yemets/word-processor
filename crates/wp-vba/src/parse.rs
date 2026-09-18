@@ -731,7 +731,18 @@ impl Reader<'_> {
         }
         self.finish(&mut held);
         held.push(self.body(&[&["loop"]]));
-        self.close(&["loop"], &mut held, "Expected: Loop");
+        // The condition at the bottom is read here rather than by `close`,
+        // because it is an expression and not the words that end a block:
+        // kept as words, nothing could ask what it says.
+        if self.word("loop") {
+            held.push(self.take());
+            if self.take_word("while", &mut held) || self.take_word("until", &mut held) {
+                held.push(self.expression());
+            }
+            self.finish(&mut held);
+        } else {
+            self.complain("Expected: Loop");
+        }
         Node::branch(Part::Do, held)
     }
 

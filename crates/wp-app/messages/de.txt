@@ -1052,9 +1052,6 @@ language = Deutsch
 = Keep with next
 > Absätze nicht trennen
 
-= Kept as it is and not run
-> Wird unverändert behalten und nicht ausgeführt
-
 = Kerning from
 > Unterschneidung ab
 
@@ -1114,6 +1111,9 @@ language = Deutsch
 
 = Lock aspect ratio
 > Seitenverhältnis sperren
+
+= Macro
+> Makro
 
 = Macro name
 > Makroname
@@ -1201,6 +1201,15 @@ language = Deutsch
 
 = Restricted to: {0}, formatting limited
 > Eingeschränkt auf: {0}, Formatierung beschränkt
+
+= Run
+> Ausführen
+
+= Run reaches the language and not the document yet
+> Ausführen erreicht bisher die Sprache und nicht das Dokument
+
+= Said
+> Ausgaben
 
 = Save Current Watermark to Gallery
 > Aktuelles Wasserzeichen im Katalog speichern
@@ -2507,6 +2516,9 @@ language = Deutsch
 = {0} point
 > {0} Punkt
 
+= {0} ran
+> {0} wurde ausgeführt
+
 = {0} recipients typed
 > {0} Empfänger eingegeben
 
@@ -2527,6 +2539,9 @@ language = Deutsch
 
 = {0} set for this document only
 > {0} nur für dieses Dokument festgelegt
+
+= {0} stopped: {1}
+> {0} wurde angehalten: {1}
 
 = {0} stretches you may edit, selected
 > {0} Bereiche, die Sie bearbeiten dürfen, ausgewählt

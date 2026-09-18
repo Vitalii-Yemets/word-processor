@@ -264,6 +264,12 @@ impl Editor {
             }
             // Word's three buttons above the list of styles, each of which
             // ticks what it names and leaves the dialog standing.
+            // The one button that runs a macro, which is the only way into
+            // the interpreter this program has.
+            (Some(Asking::Macro), button) if button == super::macros::RUN => {
+                let wanted = self.showing_macro.clone()?;
+                Some(self.run_macro(&wanted))
+            }
             (Some(Asking::FormattingLimits), button)
                 if matches!(
                     button,

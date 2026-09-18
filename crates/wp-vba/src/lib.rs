@@ -25,9 +25,13 @@
 #![forbid(unsafe_code)]
 
 pub mod compress;
+pub mod dates;
 pub mod lex;
+pub mod library;
 pub mod parse;
+pub mod run;
 pub mod tree;
+pub mod value;
 
 use wp_ole::CompoundFile;
 

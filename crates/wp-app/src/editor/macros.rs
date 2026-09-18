@@ -23,7 +23,7 @@
 
 use wp_shell::Response;
 
-use crate::chrome::dialog::{Dialog, Field};
+use crate::chrome::dialog::{Answer, Button, Dialog, Field};
 use crate::chrome::findbar::{FindBar, Purpose};
 use crate::chrome::{ribbon, Choice, Command, Popup};
 use crate::messages::t;
@@ -74,6 +74,14 @@ pub(super) fn write_steps(steps: &[Step]) -> String {
 pub(super) fn read_steps(line: &str) -> Vec<Step> {
     line.split(BETWEEN).filter_map(Step::parse).collect()
 }
+
+/// The button on the macro dialog that runs it.
+///
+/// Word's own Macros dialog has one, and this program now has something
+/// behind it. Nothing else in the program reaches the interpreter: a document
+/// that is opened runs nothing at all, and the gate that will let it is a
+/// later item. See [`super::Editor::run_macro`].
+pub(super) const RUN: &str = "Run";
 
 /// Which field of the macro dialog holds the module's text, which is the last
 /// of them however many there are in front of it.
@@ -224,8 +232,11 @@ impl Editor {
                 label: "In".to_owned(),
                 value: format!("{} ({})", module.name, module.kind.label()),
             },
-            Field::Heading(t("Kept as it is and not run").to_owned()),
+            Field::Heading(t("Run reaches the language and not the document yet").to_owned()),
         ];
+        // What running one does and does not reach, said before it is run
+        // rather than after: a macro that touches the document stops on the
+        // first thing it touches, and that is this program's own doing.
         // A line this program could not read is worth saying out loud, where
         // Word's own editor would say it: the line number is what a person
         // needs to find it, and a module shown without the warning would look
@@ -237,11 +248,83 @@ impl Editor {
             });
         }
         fields.push(Field::Lines { label: "Source".to_owned(), lines, scroll: 0 });
-        let dialog = Dialog::message("Macro", fields);
+        let dialog = Dialog::with_buttons(
+            "Macro",
+            fields,
+            vec![
+                Button { label: RUN.to_owned(), answer: Answer::Named(RUN), default: false },
+                Button { label: "Close".to_owned(), answer: Answer::Accept, default: true },
+            ],
+        );
+        self.showing_macro = Some(wanted.clone());
         let mut dialog = dialog;
         let source = source_field(&dialog);
         dialog.show_line(source, at);
         self.ask(Asking::Macro, dialog)
+    }
+
+    /// Runs one of the document's own macros.
+    ///
+    /// Reachable from here and from nowhere else. Opening a document runs
+    /// nothing, and every other way in is behind the gate that is a later
+    /// item; this is the one a person asked for by opening the list, finding
+    /// the macro and pressing the button.
+    ///
+    /// What it can do is the language: arithmetic, strings, dates, arrays,
+    /// files and a message box. What it cannot do yet is the document — the
+    /// object model is a later item — and a macro that touches one stops on
+    /// the first thing it touches and says so.
+    pub(super) fn run_macro(&mut self, wanted: &wp_vba::Macro) -> Response {
+        let Some(module) = self.vba.as_ref().and_then(|vba| vba.module(&wanted.module)).cloned()
+        else {
+            return Response::Ignored;
+        };
+        self.dialog = None;
+        self.asking = None;
+        self.needs_redraw = true;
+
+        let (program, complaints) = wp_vba::run::Program::read(&module.source);
+        if let Some(complaint) = complaints.first() {
+            return self.report(&crate::messages::with(
+                "{0} stopped: {1}",
+                &[&wanted.qualified(), &complaint.to_string()],
+            ));
+        }
+
+        let mut host = wp_vba::library::Quiet::default();
+        let answer = program.run(&wanted.name, Vec::new(), &mut host);
+        // What the macro showed is shown afterwards rather than in the middle
+        // of it: a message box put up while a macro is running would have to
+        // stop the macro to wait for an answer, and stopping in the middle is
+        // what the debugger is for, which is a later item.
+        let mut said: Vec<String> = host.messages;
+        said.extend(host.notes);
+        if let Err(fault) = answer {
+            said.push(fault.to_string());
+            if !said.is_empty() {
+                self.show_what_a_macro_said(wanted, said);
+            }
+            return self.report(&crate::messages::with(
+                "{0} stopped: {1}",
+                &[&wanted.qualified(), &fault.to_string()],
+            ));
+        }
+        if !said.is_empty() {
+            self.show_what_a_macro_said(wanted, said);
+        }
+        self.report(&crate::messages::with("{0} ran", &[&wanted.qualified()]))
+    }
+
+    /// What a macro showed while it ran.
+    fn show_what_a_macro_said(&mut self, wanted: &wp_vba::Macro, said: Vec<String>) {
+        let dialog = Dialog::message(
+            "Macro",
+            vec![
+                Field::Said { label: "Macro name".to_owned(), value: wanted.qualified() },
+                Field::Lines { label: "Said".to_owned(), lines: said, scroll: 0 },
+            ],
+        );
+        let _ = self.ask(Asking::Macro, dialog);
     }
 
     /// Does again what was recorded.
@@ -561,6 +644,65 @@ mod document_macros {
         editor.handle(Event::KeyDown { key: Key::Up, modifiers: Modifiers::default() });
         let (_, up) = lines_of(&editor);
         assert_eq!(up, end - 1, "the arrows do not move it a line at a time");
+    }
+
+    /// Opens the list, finds a macro by name and shows it.
+    fn showing(editor: &mut Editor, named: &str) {
+        editor.set_view_option("tab=view").expect("the View tab");
+        editor.draw(1400, 900);
+        editor.run(Command::Macros);
+        let popup = editor.popup.as_ref().expect("the list");
+        let at = (0..8)
+            .find(|at| popup.item(*at).is_some_and(|line| line.contains(named)))
+            .expect("the line");
+        editor.choose_macro(at);
+    }
+
+    #[test]
+    fn the_run_button_runs_the_one_that_is_showing() {
+        // The only way into the interpreter this program has: a person
+        // opened the list, found the macro and pressed the button.
+        let mut editor = editor(with_a_project());
+        editor.vba = wp_vba::Project::open(&wp_vba::example(&[(
+            "Module1",
+            "Public Sub Hello()\r\n    MsgBox \"Ran \" & (6 * 7)\r\nEnd Sub\r\n",
+        )]))
+        .ok();
+        showing(&mut editor, "Module1.Hello");
+
+        let dialog = editor.dialog.clone().expect("the dialog");
+        assert!(
+            dialog.buttons.iter().any(|button| button.label == "Run"),
+            "there is no way to run it"
+        );
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
+
+        assert!(editor.status.contains("ran"), "{}", editor.status);
+        // And what it showed is shown, because a message box put up in the
+        // middle of a macro would have to stop it to wait for an answer.
+        let (said, _) = lines_of(&editor);
+        assert!(said.iter().any(|line| line == "Ran 42"), "{said:?}");
+    }
+
+    #[test]
+    fn a_macro_that_stops_says_why_and_leaves_the_document_alone() {
+        let mut editor = editor(with_a_project());
+        let before = editor.document.plain_text();
+        editor.vba = wp_vba::Project::open(&wp_vba::example(&[(
+            "Module1",
+            "Public Sub Hello()\r\n    Selection.TypeText \"oh no\"\r\nEnd Sub\r\n",
+        )]))
+        .ok();
+        showing(&mut editor, "Module1.Hello");
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
+
+        assert!(editor.status.contains("stopped"), "{}", editor.status);
+        assert!(
+            editor.status.contains("later item") || editor.status.contains("object"),
+            "it did not say what it could not do: {}",
+            editor.status
+        );
+        assert_eq!(editor.document.plain_text(), before, "the document was changed");
     }
 
     #[test]

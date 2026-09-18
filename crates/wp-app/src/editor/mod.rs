@@ -482,6 +482,9 @@ pub struct Editor {
     /// The document's own macros, as the list last showed them, so that
     /// choosing one finds the same one.
     document_macros: Vec<wp_vba::Macro>,
+    /// And the one whose source is on the screen, which is the one the Run
+    /// button on that dialog would run.
+    showing_macro: Option<wp_vba::Macro>,
     /// A list of people being typed from nothing, which is Word's Type a New
     /// List: it is not the merge's list until it has been saved. See
     /// [`mailings`].
@@ -826,6 +829,7 @@ impl Editor {
             carries_macros,
             vba,
             document_macros: Vec::new(),
+            showing_macro: None,
             filling_in: None,
             left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,

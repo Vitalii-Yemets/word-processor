@@ -6344,14 +6344,93 @@ interpreter is reachable only from the macro list a person opened themselves.
   them and taking them apart would be inventing a shape nobody reads.
   Nothing here checks that a name exists or that two types agree — that is
   not reading — and nothing runs a line of it, which is **L3**.
-- [ ] **L3. The language: running it.** The interpreter over that tree.
-  Variants and the coercions between them, which are most of what VBA is;
-  arrays with their bases and `ReDim`; strings, dates and currency with
-  Word's own arithmetic; `Err`, `On Error Resume Next` and `On Error GoTo`;
-  and the standard library a macro actually uses — `Left`, `Mid`, `InStr`,
-  `Replace`, `Format`, `MsgBox`, `InputBox`, `Rnd`, the file statements.
-  Done against a suite of macros whose answers are known, each checked
-  against what Word gives for the same input.
+- [x] **L3. The language: running it.**
+  **Most of Visual Basic is the Variant, so most of this item is the rules
+  for one.** A macro rarely says what kind of thing a variable holds, so
+  nearly every value turns into whatever the next operator needs, and the
+  turnings are not obvious: `"3" + 4` is seven and `"3" & 4` is "34"; `Empty`
+  is nought to a sum and "" to a join; `Null` swallows whatever it touches
+  except a join, where it is nothing; `True` is minus one as a number; `/`
+  always gives a Double and `\` and `Mod` round both sides first, which is
+  why `7.6 Mod 3` is two. Currency is a whole number of ten-thousandths, so a
+  tenth added a hundred times is exactly ten where a Double drifts. A date is
+  a count of days from the thirtieth of December 1899 — a day chosen to agree
+  with a spreadsheet that believed 1900 was a leap year, and kept ever since
+  by every program that reads those files. All of it is written out once,
+  with the reason beside each rule, rather than scattered through the
+  interpreter.
+  **The interpreter walks the tree the parser made.** There is no second tree
+  and no byte code. That costs a little speed and buys the thing that
+  matters: what runs is what the file says, and every value carries the line
+  its words came from.
+  **Arguments are passed back as well as in.** Visual Basic passes by
+  reference unless told otherwise, so a procedure that changes what it was
+  given has changed the caller's variable. That is done by remembering where
+  each argument came from and writing the parameter back into it afterwards —
+  and the first version wrote it into a frame it had just made, which is to
+  say nowhere. The test that passes a variable to a `Sub` that doubles it is
+  the one that caught it.
+  **A macro that never stops is stopped.** There is a budget of statements,
+  and running out of it is an error like any other, because a program that
+  hangs the window it is running in is worse than one that says it gave up.
+  The budget is spent at every statement *and* at every turn of every loop:
+  `Do` and `Loop` on two lines with nothing between them runs no statements
+  at all, and the first run of the suite hung on exactly that.
+  **Running the language found two things the parser had got away with.** The
+  condition on `Loop Until i >= 3` was being kept as four separate words,
+  because the helper that closes a block takes the rest of the line as words
+  — which round-trips perfectly and can be asked nothing at all, so the loop
+  had no condition and never ended. And `For Input` in `Open … For Input As
+  #1` is an ordinary name as far as the parser is concerned, so the mode was
+  never read and every file was opened for writing. Both were invisible to a
+  parser test and obvious to the first macro that used them, which is the
+  argument for this item following that one.
+  **Where it can be reached from, and only from there.** The macro list a
+  person opened themselves: found the macro, pressed Run. Opening a document
+  runs nothing at all, and every other way in waits for **L6**. What a macro
+  showed is shown after it has finished rather than in the middle, because a
+  message box put up while it runs would have to stop it to wait for an
+  answer, and stopping in the middle is the debugger, which is **L5**. The
+  dialog says so on its face: *Run reaches the language and not the document
+  yet*, and a macro that touches the document stops on the first thing it
+  touches and says which.
+  *Proven by:* fifty-six tests. Twenty-seven macros with known answers: a
+  function that answers with its own name; by reference and by value, side by
+  side; recursion; five kinds of loop counting the same way; `Exit For`
+  leaving only the loop it is in; arrays counted from where they were
+  declared; `ReDim Preserve` keeping what was there by subscript and not by
+  position; `Erase` leaving the shape and emptying the cells; `For Each` over
+  what `Split` made; `Select Case` with lists, ranges and `Is`; the Variant
+  rules from inside a macro; a variable of a declared kind holding that kind;
+  `Static` remembering between calls; a module-level variable outliving one;
+  constants and `Enum`; `On Error Resume Next` with `Err.Number` afterwards;
+  `On Error GoTo` with `Resume Next` coming back; an error nobody watched for
+  stopping the macro; `GoTo` and a label; `Option Explicit` refusing an
+  undeclared name; what a macro shows going to the program and not the
+  language; the library reached from a macro; a macro that never stops being
+  stopped; a file written and read back; `Like` and its four patterns; a
+  macro that is not there saying so; and a line that never parsed refusing to
+  run. Eleven of the Variant's own arithmetic, seven of the dates, nine of
+  the library — including one that walks the list of names against the
+  functions, so the two cannot drift apart — and two of the button.
+  *Not done, and named here:* **objects**. `New`, `TypeOf`, a `With` block's
+  full stop, and every name that belongs to the document are refused with the
+  reason, which is that the object model is **L4**. A `Type … End Type`
+  parses and a variable of one does not run. `GoSub` and `Return` are refused
+  by name: nothing written since procedures had names uses them.
+  `Option Compare Text` is not honoured — comparisons are by the letters'
+  own order. `Declare` cannot call into the system and there is no
+  `CreateObject`, which is a decision rather than a gap: a macro that can
+  reach the system through this program has made this program the way in.
+  `Format` covers the named pictures and the ones made of `0`, `#`, a point,
+  commas and the date letters, not every picture there is. `MsgBox` always
+  answers OK, because nothing can ask yet.
+  *And the honest part of "checked against what Word gives":* there is no
+  Word on this machine to ask. Every answer here is the one the language
+  documents, and each test says which rule it is showing rather than
+  asserting a number nobody can check. Holding these against Word's own
+  answers is what the corpus is for, and it is **K1**'s shape again: the
+  macros that would settle it cannot be committed.
 - [ ] **L4. The object model: the document.** `Application`,
   `ActiveDocument`, `Documents`, `Selection`, `Range` and everything
   reachable from them that this program already models — paragraphs, runs,

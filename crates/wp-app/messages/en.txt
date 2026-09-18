@@ -355,7 +355,6 @@
 = Keep lines together
 = Keep the last AutoRecovered version if I close without saving
 = Keep with next
-= Kept as it is and not run
 = Kerning from
 = Labels
 = Language
@@ -376,6 +375,7 @@
 = Link to Previous
 = Links
 = Lock aspect ratio
+= Macro
 = Macro name
 = Macros
 = Mail Merge Recipients
@@ -571,6 +571,9 @@
 = Ruler
 = Rulers
 = Rules
+= Run
+= Run reaches the language and not the document yet
+= Said
 = Save
 = Save Address List
 = Save As
@@ -839,6 +842,7 @@
 = {0} of {1}
 = {0} on the list
 = {0} point
+= {0} ran
 = {0} recipients typed
 = {0} recovered
 = {0} refiled
@@ -846,6 +850,7 @@
 = {0} selected
 = {0} set for this and every new document
 = {0} set for this document only
+= {0} stopped: {1}
 = {0} stretches you may edit, selected
 = {0} styles allowed
 = {0} was not kept
