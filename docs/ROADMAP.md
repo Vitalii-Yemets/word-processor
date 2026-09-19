@@ -6908,11 +6908,52 @@ interpreter is reachable only from the macro list a person opened themselves.
   cover pages, headers, page numbers — which are **J6**'s and were never
   filed as blocks. The placeholder text of a control is drawn as text and
   not greyed, which is **L10**'s Design Mode.
-- [ ] **L10. Design Mode.** Word's button that turns every content control
-  into its own name and lets the placeholder text be edited in place. **J15**
-  drew the boundary it needed, so what is left is the mode itself: the tags
-  showing the title rather than bracketing the content, and typing inside one
-  changing what the control shows before anybody has filled it in.
+- [x] **L10. Design Mode.**
+  **A placeholder is a question, and the file says so.** A control put into
+  a document holds the words that ask for an answer — "Enter text", "Choose
+  an item", "Choose a building block." — until somebody answers. Word draws
+  those grey, selects the whole of them when the control is clicked so that
+  typing replaces them, and marks the control as showing them,
+  `w:showingPlcHdr`, so that a program reading the file can tell a question
+  from an answer. **J8** wrote the words and none of the rest. Now a new
+  control says it is showing its placeholder; the placeholder is read grey
+  for showing and plain for copying; a click in it selects it whole; typing
+  over the whole of a control's words goes inside the control, where before
+  the words fell off its edge into the paragraph; and the mark comes off
+  the moment the words change — by typing, by an item chosen, by a block
+  chosen, by a node bound (**L8**).
+  **Design Mode is the button that turns the page into the drawing board.**
+  On the Developer tab, lit while it is on. Every control shows its tags —
+  the start tag with the control's title on it, or its kind where it has
+  no title, and the end tag after it — instead of the faint brackets **J15**
+  drew; and typing in a control showing its placeholder changes the
+  placeholder itself, which stays a placeholder: that is how the words that
+  ask are written in the first place. Off again, the same typing is an
+  answer. The controls round paragraphs (**L9**) wear tags too, at the
+  start of the first and the end of the last.
+  *Proven by:* three tests. A click on a placeholder selects it and typing
+  replaces it inside the control, the control stops asking, and a click in
+  an answered control is the caret's; in Design Mode the click is the
+  caret's, typing changes the placeholder, it stays one through a save and
+  comes back grey; and the tag says the title, or the kind. A picture of a
+  form in Design Mode: three controls tagged, two placeholders grey, one
+  answered. One older test turned round: a text control used to leave every
+  click to the caret, and now leaves the ones on an answer.
+  *Found along the way:* typing over the whole of a control's words put the
+  new words outside the control, because at the boundary between the words
+  before it and its own the earlier piece won, as it should everywhere else;
+  a selection that is exactly a control's content is answered through the
+  control now.
+  *Not done, and named here:* Word's tags sit in the line and push the words
+  along; these hang just above the line, translucent so the line above shows
+  through, because the layout does not know about them and a tag drawn over
+  the words would hide what it is tagging. Word keeps a control's
+  placeholder as a building block in the glossary and points at it with
+  `w:placeholder`, so that a control emptied of its answer asks again with
+  the same words; here the placeholder is the content while it is showing,
+  and a control emptied of its answer is empty. The read back by Word of a
+  control marked as showing its placeholder is, like the rest of block
+  **L**'s, not something the corpus can show.
 
 ---
 

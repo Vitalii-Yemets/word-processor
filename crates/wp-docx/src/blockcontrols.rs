@@ -70,6 +70,8 @@ pub struct BlockControl {
     /// The way down from the root to the `w:sdt`, as the indices of the
     /// children to step through.
     pub path: Vec<usize>,
+    /// Whether it is showing its placeholder rather than an answer.
+    pub placeholder: bool,
 }
 
 impl BlockControl {
@@ -230,6 +232,7 @@ impl Document {
         let empty = self.paragraph_text(caret.paragraph).is_none_or(|text| text.is_empty());
 
         let mut properties = Element::new(&named("sdtPr"), Some(read::W));
+        properties.push_element(Element::new(&named("showingPlcHdr"), Some(read::W)));
         let mut list = Element::new(&named("docPartList"), Some(read::W));
         for (local, value) in [("docPartGallery", gallery), ("docPartCategory", category)] {
             let mut element = Element::new(&named(local), Some(read::W));
@@ -283,6 +286,13 @@ impl Document {
             TextPosition::new(control.last, end),
         )]);
         if self.paste_blocks(blocks) {
+            // A block chosen is an answer, so the control stops asking.
+            if let Some(properties) =
+                edit::element_at_path_mut(&mut self.tree_mut().root, &control.path)
+                    .and_then(|sdt| sdt.child_mut(Some(read::W), "sdtPr"))
+            {
+                properties.remove_children_named(Some(read::W), "showingPlcHdr");
+            }
             return true;
         }
         self.set_caret(TextPosition::new(control.first, 0));
@@ -325,6 +335,7 @@ fn walk(
                     first,
                     last: first,
                     path: path.clone(),
+                    placeholder: read::showing_placeholder(child),
                 });
                 if let Some(content) = child.child(Some(read::W), "sdtContent") {
                     path.push(child.position_of(Some(read::W), "sdtContent").unwrap_or(0));

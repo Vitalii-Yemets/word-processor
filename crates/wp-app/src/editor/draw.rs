@@ -47,6 +47,7 @@ impl Editor {
             drawing_table: self.holding_table_pen(super::borderpainter::TablePen::Draw),
             erasing: self.holding_table_pen(super::borderpainter::TablePen::Erase),
             show_comments: self.navigation.section == crate::chrome::navigation::Section::Comments,
+            design_mode: self.design_mode,
             restricted: self.restriction_now(),
             limits: self.document.formatting_limits(),
             can_edit_here: !self.is_locked(),
@@ -441,8 +442,13 @@ impl Editor {
         // the document is shut.
         self.draw_marked_regions();
         // The tags at the ends of a content control, which go over the text
-        // because they stand beside it rather than behind it.
-        self.draw_control_edges();
+        // because they stand beside it rather than behind it — the faint
+        // brackets, or in Design Mode the tags with the titles on them.
+        if self.design_mode {
+            self.draw_design_tags();
+        } else {
+            self.draw_control_edges();
+        }
         // And the plus at the corner of each item of a repeating section.
         self.draw_repeat_buttons();
 

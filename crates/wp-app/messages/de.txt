@@ -635,6 +635,15 @@ language = Deutsch
 = Delete Repeating Section Item
 > Wiederholungsabschnittselement löschen
 
+= Design Mode
+> Entwurfsmodus
+
+= Design Mode is off
+> Der Entwurfsmodus ist aus
+
+= Design Mode is on: the tags show each control's title, and typing in a placeholder changes the placeholder
+> Der Entwurfsmodus ist an: die Tags zeigen den Titel jedes Steuerelements, und Tippen in einen Platzhalter ändert den Platzhalter
+
 = Developer
 > Entwicklertools
 

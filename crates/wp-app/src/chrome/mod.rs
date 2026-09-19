@@ -413,6 +413,9 @@ pub enum Command {
     DeleteRepeatItem,
     /// A control that offers a gallery of building blocks.
     GalleryControl,
+    /// Word's Design Mode: the tags on every control, and placeholders
+    /// written in place.
+    DesignMode,
     /// Word's XML Mapping pane: the data a document carries, and binding a
     /// control to a node of it.
     XmlMapping,
@@ -679,6 +682,8 @@ pub struct ToolbarState {
     pub erasing: bool,
     /// Whether the comments are listed in the pane.
     pub show_comments: bool,
+    /// Whether Design Mode is on, which lights its button.
+    pub design_mode: bool,
     /// What the document's restriction lets be pressed, if it has one.
     pub restricted: Option<wp_docx::protection::EditMode>,
     /// And what it forbids the formatting to be changed with.
@@ -825,6 +830,7 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
         Command::Eraser => state.erasing,
         Command::ShowProofing => state.show_proofing,
         Command::ReviewingPane | Command::ShowComments => state.show_comments,
+        Command::DesignMode => state.design_mode,
         Command::WebLayout => state.view_is("Web layout"),
         Command::PrintLayout => state.view_is("Print layout"),
         Command::DraftView => state.view_is("Draft"),

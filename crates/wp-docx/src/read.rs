@@ -110,9 +110,23 @@ fn collect_blocks(parent: &Element, blocks: &mut Vec<Block>) {
             continue;
         }
         match child.local_name() {
-            "p" => blocks.push(Block::Paragraph(read_paragraph(child))),
+            "p" => blocks.push(Block::Paragraph(read_paragraph_for_display(child))),
             "tbl" => blocks.push(Block::Table(Box::new(read_table(child)))),
-            _ if is_transparent_block(child) => collect_blocks(child, blocks),
+            _ if is_transparent_block(child) => {
+                let before = blocks.len();
+                collect_blocks(child, blocks);
+                // A control round paragraphs showing its placeholder shows
+                // it grey, as one round words does.
+                if child.local_name() == "sdt" && showing_placeholder(child) {
+                    for block in &mut blocks[before..] {
+                        if let Block::Paragraph(paragraph) = block {
+                            for run in &mut paragraph.runs {
+                                run.properties.color = Some(PLACEHOLDER_GREY.to_owned());
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -410,12 +424,33 @@ pub(crate) fn read_border(element: &Element) -> Border {
 }
 
 pub(crate) fn read_paragraph(element: &Element) -> Paragraph {
+    read_paragraph_as(element, false)
+}
+
+/// The same for showing: the words a content control holds in place of an
+/// answer — its placeholder — come out grey, as Word draws them. Not for
+/// copying, where the words are only words.
+pub(crate) fn read_paragraph_for_display(element: &Element) -> Paragraph {
+    read_paragraph_as(element, true)
+}
+
+fn read_paragraph_as(element: &Element, display: bool) -> Paragraph {
     let properties =
         element.child(Some(W), "pPr").map(read_paragraph_properties).unwrap_or_default();
 
     let mut runs = Vec::new();
-    collect_runs(element, &mut runs);
+    collect_runs_within(element, &mut runs, None, None, display);
     Paragraph { properties, runs }
+}
+
+/// The grey Word draws a placeholder in.
+pub const PLACEHOLDER_GREY: &str = "808080";
+
+/// Whether a control is showing its placeholder rather than an answer.
+pub(crate) fn showing_placeholder(control: &Element) -> bool {
+    control
+        .child(Some(W), "sdtPr")
+        .is_some_and(|properties| properties.child(Some(W), "showingPlcHdr").is_some())
 }
 
 /// The tab stops of a paragraph, in the order they come along the line.
@@ -521,21 +556,15 @@ fn signed(element: &Element, name: &str) -> Option<i32> {
     element.attribute(Some(W), name).and_then(|text| text.parse().ok())
 }
 
-fn collect_runs(parent: &Element, runs: &mut Vec<Run>) {
-    collect_runs_in_field(parent, runs, None);
-}
-
-/// The same, remembering which field the runs are the result of.
-fn collect_runs_in_field(parent: &Element, runs: &mut Vec<Run>, field: Option<&str>) {
-    collect_runs_within(parent, runs, field, None);
-}
-
-/// The same again, remembering the tracked change the runs are part of.
+/// Collects the runs under an element, remembering which field they are the
+/// result of and which tracked change they are part of; and, when they are
+/// for showing, greying the ones a control holds as its placeholder.
 fn collect_runs_within(
     parent: &Element,
     runs: &mut Vec<Run>,
     field: Option<&str>,
     revision: Option<&Revision>,
+    display: bool,
 ) {
     // Fields written the long way are a run of markers among the ordinary
     // runs, so reading them means keeping track of where in one we are. See
@@ -616,7 +645,7 @@ fn collect_runs_within(
                         .and_then(|text| text.parse().ok())
                         .unwrap_or(0),
                 };
-                collect_runs_within(child, runs, field, Some(&change));
+                collect_runs_within(child, runs, field, Some(&change), display);
             }
             // A simple field holds the runs that show its last computed value.
             // They are read as ordinary runs so the cached answer is never
@@ -625,10 +654,18 @@ fn collect_runs_within(
             "fldSimple" => {
                 let instruction =
                     child.attribute(Some(W), "instr").unwrap_or_default().trim().to_owned();
-                collect_runs_within(child, runs, Some(&instruction), revision);
+                collect_runs_within(child, runs, Some(&instruction), revision, display);
             }
             _ if is_transparent_inline(child) => {
-                collect_runs_within(child, runs, field, revision);
+                let before = runs.len();
+                collect_runs_within(child, runs, field, revision, display);
+                // A control's placeholder is shown grey, whatever the run
+                // says: it is not the answer, it is the question.
+                if display && child.local_name() == "sdt" && showing_placeholder(child) {
+                    for run in &mut runs[before..] {
+                        run.properties.color = Some(PLACEHOLDER_GREY.to_owned());
+                    }
+                }
             }
             _ => {}
         }

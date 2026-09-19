@@ -223,6 +223,11 @@ impl Editor {
                 }
                 _ => {}
             }
+            // A control showing its placeholder is clicked to be answered:
+            // the whole placeholder is selected, and typing replaces it.
+            if let Some(response) = self.select_placeholder(at) {
+                return Some(response);
+            }
         }
         // A gallery control round whole paragraphs drops its gallery open.
         if let Some(response) = self.offer_gallery(at) {
@@ -389,9 +394,14 @@ mod tests {
 
     #[test]
     fn clicking_a_text_control_leaves_the_click_to_the_caret() {
+        // Once it has been answered. While it is still asking, the click
+        // selects the whole placeholder so that typing replaces it — see
+        // [`super::super::designmode`].
         let mut editor = editor();
         editor.insert_content_control(1);
         let at = editor.document.controls()[0].start;
+        assert!(editor.used_a_control(at).is_some(), "a placeholder was not selected");
+        assert!(editor.document.set_control_text(at, "answered"));
         assert!(editor.used_a_control(at).is_none(), "a text control swallowed the click");
     }
     /// Puts a control in, opens its Properties, and hands the dialog back.

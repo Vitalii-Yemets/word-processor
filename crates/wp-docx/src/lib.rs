@@ -1035,6 +1035,32 @@ impl Document {
         // bring the replaced text straight back, the way it does in every other
         // editor. So the removal and the insertion share a single step.
         if let Some((start, end)) = self.selection() {
+            // A selection that is the whole of what a content control holds
+            // is answered rather than removed: the words go inside the
+            // control, where its boundary would otherwise be an edge the
+            // new text fell off. See [`controls`].
+            if let Some(control) = self.control_at(start) {
+                if control.start == start
+                    && control.end == end
+                    && control.start != control.end
+                    && !matches!(
+                        control.kind,
+                        controls::ControlKind::CheckBox | controls::ControlKind::Picture
+                    )
+                {
+                    self.record(EditKind::Structural, start, false);
+                    self.anchor = None;
+                    if self.set_control_text(start, text) {
+                        self.caret = TextPosition::new(start.paragraph, start.offset + text.len());
+                        self.apply_pending(start, self.caret);
+                    } else {
+                        self.caret = start;
+                    }
+                    self.modified = true;
+                    self.history.break_merge();
+                    return true;
+                }
+            }
             self.record(EditKind::Structural, start, false);
             self.remove_range(start, end);
             self.anchor = None;

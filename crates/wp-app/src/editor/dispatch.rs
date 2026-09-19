@@ -304,6 +304,7 @@ impl Editor {
             Command::RepeatItemAfter => self.repeat_item(true),
             Command::DeleteRepeatItem => self.delete_repeat_item(),
             Command::GalleryControl => self.insert_gallery_control(),
+            Command::DesignMode => self.toggle_design_mode(),
             Command::LegacyFields => self.open_legacy_fields(),
             Command::ControlProperties => self.open_control_properties(),
             Command::StyleSet => self.open_style_sets(),

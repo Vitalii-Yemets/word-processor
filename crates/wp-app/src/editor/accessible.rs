@@ -260,6 +260,7 @@ fn toggled(command: Command, state: &crate::chrome::ToolbarState) -> Option<bool
             | Command::ShowProofing
             | Command::ReviewingPane
             | Command::ShowComments
+            | Command::DesignMode
     );
     toggles.then(|| crate::chrome::is_active(command, state))
 }

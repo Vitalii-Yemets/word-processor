@@ -1889,8 +1889,9 @@ static DEVELOPER_GROUPS: &[Group] = &[
             Item::Small(Command::Control(5), Icon::DateTime, "Date Picker"),
             Item::Small(Command::RepeatingSection, Icon::Outline, "Repeating Section"),
             Item::Break,
-            // Word's Properties, which is what a control is named and given
-            // its list from after it has been put in.
+            // Word's Design Mode, and its Properties, which is what a control
+            // is named and given its list from after it has been put in.
+            Item::Small(Command::DesignMode, Icon::Brush, "Design Mode"),
             Item::Small(Command::ControlProperties, Icon::Properties, "Properties"),
         ],
         launcher: None,

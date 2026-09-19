@@ -2092,6 +2092,35 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // Design Mode on a form: every control wearing its tags, the
+            // placeholders grey, and one control answered.
+            "designmode" => {
+                self.set_view_option("tab=developer")?;
+                let end = self.document.paragraph_text(3).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(3, end));
+                self.document.type_text("  Name: ");
+                self.document.insert_control(
+                    wp_docx::controls::ControlKind::PlainText,
+                    "Surname",
+                    &[],
+                );
+                self.document.type_text("  Town: ");
+                self.document.insert_control(
+                    wp_docx::controls::ControlKind::PlainText,
+                    "Town",
+                    &[],
+                );
+                self.document.type_text("  Sent by ");
+                self.document.insert_control(
+                    wp_docx::controls::ControlKind::DropDown,
+                    "Carrier",
+                    &["Post".to_owned(), "Courier".to_owned()],
+                );
+                let town = self.document.controls()[1].start;
+                self.document.set_control_text(town, "Ludlow");
+                self.toggle_design_mode();
+                self.relayout();
+            }
             // The three that hold more than words: a picture control with
             // its placeholder, a repeating section round two paragraphs with
             // the plus at its corner, and a gallery control waiting for a

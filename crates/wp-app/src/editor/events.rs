@@ -213,6 +213,7 @@ impl App for Editor {
         let may_have_edited = !matches!(event, Event::Tick | Event::MouseMove { .. });
         let response = self.handle_event(event);
         if may_have_edited {
+            self.keep_placeholders();
             self.keep_bindings();
         }
         // Wherever the caret went, the document may have something to say

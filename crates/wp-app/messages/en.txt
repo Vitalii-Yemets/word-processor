@@ -223,6 +223,9 @@
 = Delete part
 = Description
 = Design
+= Design Mode
+= Design Mode is off
+= Design Mode is on: the tags show each control's title, and typing in a placeholder changes the placeholder
 = Developer
 = Dictionaries
 = Dictionaries on this machine

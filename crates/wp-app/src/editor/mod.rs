@@ -24,6 +24,7 @@ mod controls;
 mod correcting;
 pub mod debugger;
 mod defaults;
+mod designmode;
 pub(crate) mod designs;
 mod diagram;
 mod dialogs;
@@ -555,6 +556,11 @@ pub struct Editor {
     /// dropped open, by name. See [`morecontrols`].
     repeat_buttons: Vec<(f32, f32, f32, f32, usize)>,
     gallery_names: Vec<String>,
+    /// Whether Word's Design Mode is on, and what the control the caret was
+    /// last in said, for knowing when a placeholder has been typed over.
+    /// See [`designmode`].
+    design_mode: bool,
+    last_control_text: Option<(wp_docx::TextPosition, String)>,
     restrict_limiting: bool,
     restrict_restricting: bool,
     restrict_mode: usize,
@@ -827,6 +833,8 @@ impl Editor {
             has_bindings: false,
             repeat_buttons: Vec::new(),
             gallery_names: Vec::new(),
+            design_mode: false,
+            last_control_text: None,
             restrict_limiting: false,
             restrict_restricting: false,
             restrict_mode: 0,

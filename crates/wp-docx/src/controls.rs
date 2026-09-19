@@ -144,6 +144,9 @@ pub struct Control {
     /// The node of a custom XML part it is bound to, if it is bound. See
     /// [`crate::customxml`].
     pub binding: Option<crate::customxml::Binding>,
+    /// Whether what it shows is its placeholder — the words that ask for
+    /// an answer — rather than an answer: Word's `w:showingPlcHdr`.
+    pub placeholder: bool,
 }
 
 impl Control {
@@ -293,7 +296,40 @@ impl Document {
             return false;
         }
         let Some((shown, _)) = control.items.get(index).cloned() else { return false };
-        self.change_control(&control, |_, content, prefix| write_content(content, &shown, prefix))
+        self.change_control(&control, |properties, content, prefix| {
+            // An item chosen is an answer, so the control stops asking.
+            properties.remove_children_named(Some(read::W), "showingPlcHdr");
+            write_content(content, &shown, prefix);
+        })
+    }
+
+    /// Says the control at a position holds an answer now, whatever it
+    /// held: what happens when a person types into its placeholder.
+    pub fn clear_placeholder(&mut self, at: TextPosition) -> bool {
+        let Some(control) = self.control_at(at) else { return false };
+        if !control.placeholder {
+            return false;
+        }
+        self.change_control(&control, |properties, _, _| {
+            properties.remove_children_named(Some(read::W), "showingPlcHdr");
+        })
+    }
+
+    /// Says the control at a position is showing its placeholder: what it
+    /// holds is the question, which Design Mode lets a person rewrite.
+    pub fn set_placeholder(&mut self, at: TextPosition) -> bool {
+        let Some(control) = self.control_at(at) else { return false };
+        if control.placeholder
+            || matches!(control.kind, ControlKind::CheckBox | ControlKind::Picture)
+        {
+            return false;
+        }
+        self.change_control(&control, |properties, _, prefix| {
+            properties.push_element(Element::new(
+                &edit::name_with(prefix, "showingPlcHdr"),
+                Some(read::W),
+            ));
+        })
     }
 
     /// Word's Properties: what a control is called, and what may be done to
@@ -463,6 +499,9 @@ fn walk(element: &Element, paragraph: usize, offset: &mut usize, found: &mut Vec
                     start,
                     end: TextPosition::new(paragraph, *offset),
                     binding: binding_of(properties),
+                    placeholder: properties.is_some_and(|properties| {
+                        properties.child(Some(read::W), "showingPlcHdr").is_some()
+                    }),
                 });
             }
             "t" => *offset += child.text_content().len(),
@@ -596,6 +635,11 @@ fn written(kind: ControlKind, alias: &str, items: &[String], prefix: Option<&str
     if !alias.is_empty() {
         properties.push_element(valued("alias", alias));
         properties.push_element(valued("tag", &alias.to_lowercase().replace(' ', "")));
+    }
+    // What a new control holds is its placeholder, and it says so, as Word
+    // does; a tick box and a picture hold what they hold.
+    if !matches!(kind, ControlKind::CheckBox | ControlKind::Picture) {
+        properties.push_element(Element::new(&named("showingPlcHdr"), Some(read::W)));
     }
     match kind {
         ControlKind::RichText => {}
