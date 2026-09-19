@@ -2921,9 +2921,10 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   **Media kept inside the document.** `wp-docx/src/embedded.rs`: a
   `w:object` counts as the one character it is and is a drawing where it
   stands, its preview shown as a picture; behind it the compound file is
-  read — sectors, FAT, directory, the mini stream — and the file the
-  packager wrapped in `\1Ole10Native` comes out with its name, or the object
-  itself does, named after the program that made it. A picture that carries
+  opened with `wp-ole`, the reader the `.doc` and the encrypted document
+  already go through, and the file the packager wrapped in `\1Ole10Native`
+  comes out with its name, or the object itself does, named after the
+  program that made it. A picture that carries
   `a:videoFile` gives the media the same way, from the package or as the
   path it names. Ctrl and a press offers the file to be saved where the
   person chooses — not to whatever program plays such things, because a
@@ -2937,9 +2938,9 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   written, the floating form written as Word writes it and read back as ink
   rather than as a picture, the eraser leaving what it did not touch where
   it was and one undo putting a stroke back; `wp-layout/src/inking.rs` —
-  the fit both ways; `embedded.rs` — a stream read out of a compound file by
-  name, the packaged file with its name, an object that is not a package
-  offered as what it is, an embedded object with its preview counting one
+  the fit both ways; `embedded.rs` — the packaged file with its name, an
+  object that is not a package offered as what it is, an embedded object
+  with its preview counting one
   character and offering its file, a video inside or outside the document;
   `editor/inking.rs` — a stroke drawn with the pointer becoming ink that
   floats where it was drawn, the highlighter's look, the two erasers,
@@ -2960,9 +2961,12 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   hand, and a scrawl is read as the nearest of them; Ink to Shape knows
   seven shapes, and an oval drawn wobbly may be read as the polygon it
   nearly is. The run form of 2010 keeps its ink in the line, its offset
-  still unused. Nothing here plays a sound or a film. The compound-file
-  reader and the packager's wrapping were tested against files written
-  here, not against one Word wrote.
+  still unused. Nothing here plays a sound or a film. The packager's
+  wrapping was tested against a file written here with `wp-ole`'s builder,
+  not against one Word wrote.
+  *Fixed after:* the first commit of this carried a compound-file reader of
+  its own, written without looking for the one the repository had; it is
+  gone, and `wp-ole` is used.
 
 ## E — The rest of the text engine
 

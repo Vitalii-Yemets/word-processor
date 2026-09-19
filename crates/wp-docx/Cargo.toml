@@ -13,6 +13,7 @@ wp-crypt = { path = "../wp-crypt" }
 wp-sign = { path = "../wp-sign" }
 wp-hash = { path = "../wp-hash" }
 wp-opc = { path = "../wp-opc" }
+wp-ole = { path = "../wp-ole" }
 wp-normal = { path = "../wp-normal" }
 wp-segment = { path = "../wp-segment" }
 wp-text = { path = "../wp-text" }

@@ -5,11 +5,10 @@
 //!
 //! `w:object`: a picture of the thing — the icon or the first frame, as VML —
 //! and beside it `o:OLEObject`, which names the part the thing itself is kept
-//! in, `word/embeddings/oleObject1.bin`. That part is a compound file: the
-//! container OLE has used since 1993, a little file system with sectors, a
-//! file allocation table and a directory, holding streams by name. A file
-//! packaged whole is in the stream `\1Ole10Native`, wrapped by the packager
-//! with its name and the path it came from.
+//! in, `word/embeddings/oleObject1.bin`. That part is a compound file, the
+//! container OLE has used since 1993, which [`wp_ole`] reads. A file packaged
+//! whole is in the stream `\1Ole10Native`, wrapped by the packager with its
+//! name and the path it came from.
 //!
 //! # What this program does with one
 //!
@@ -79,8 +78,10 @@ impl Document {
 /// part is a compound file holding one, and otherwise the part as it is,
 /// named after the program that made it.
 fn unwrap_object(bytes: &[u8], part: &str, program: &str) -> EmbeddedFile {
-    if let Some(stream) = cfb::stream(bytes, "\u{1}Ole10Native") {
-        if let Some((name, data)) = packaged(&stream) {
+    if let Ok(compound) = wp_ole::CompoundFile::open(bytes.to_vec()) {
+        if let Some((name, data)) =
+            compound.stream("\u{1}Ole10Native").and_then(|stream| packaged(&stream))
+        {
             return EmbeddedFile { name, bytes: data };
         }
     }
@@ -147,250 +148,6 @@ fn find<'a>(element: &'a Element, local: &str) -> Option<&'a Element> {
     None
 }
 
-/// The compound file: enough of it to read one stream by name.
-pub(crate) mod cfb {
-    /// The eight bytes every compound file begins with.
-    const SIGNATURE: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
-    /// The sector number that ends a chain.
-    const END_OF_CHAIN: u32 = 0xFFFF_FFFE;
-    /// How many of the FAT's own sector numbers the header holds.
-    const IN_HEADER: usize = 109;
-
-    fn u16_at(bytes: &[u8], at: usize) -> Option<u16> {
-        Some(u16::from_le_bytes(bytes.get(at..at + 2)?.try_into().ok()?))
-    }
-
-    fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
-        Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
-    }
-
-    /// The compound file's shape: how big a sector is, and the tables.
-    struct Layout {
-        sector: usize,
-        mini_sector: usize,
-        fat: Vec<u32>,
-        mini_fat: Vec<u32>,
-        directory: Vec<u8>,
-        mini_stream: Vec<u8>,
-        cutoff: usize,
-    }
-
-    /// Reads a stream out of a compound file by name, `\1Ole10Native` and
-    /// the like. `None` for anything that is not a compound file, or one
-    /// with no such stream.
-    pub(crate) fn stream(bytes: &[u8], name: &str) -> Option<Vec<u8>> {
-        let layout = Layout::read(bytes)?;
-        let wanted: Vec<u16> = name.encode_utf16().collect();
-        for entry in layout.directory.chunks_exact(128) {
-            let length = usize::from(u16_at(entry, 64)?).min(64) / 2;
-            let found: Vec<u16> = (0..length.saturating_sub(1))
-                .filter_map(|index| u16_at(entry, index * 2))
-                .collect();
-            if found != wanted || entry[66] != 2 {
-                continue;
-            }
-            let start = u32_at(entry, 116)?;
-            let size = u32_at(entry, 120)? as usize;
-            return Some(layout.stream_at(bytes, start, size));
-        }
-        None
-    }
-
-    impl Layout {
-        fn read(bytes: &[u8]) -> Option<Self> {
-            if bytes.get(0..8)? != SIGNATURE {
-                return None;
-            }
-            let sector = 1usize << u16_at(bytes, 30)?;
-            let mini_sector = 1usize << u16_at(bytes, 32)?;
-            if !(64..=65_536).contains(&sector) || mini_sector == 0 || mini_sector > sector {
-                return None;
-            }
-            let fat_sectors = u32_at(bytes, 44)? as usize;
-            let first_directory = u32_at(bytes, 48)?;
-            let cutoff = u32_at(bytes, 56)? as usize;
-            let first_mini_fat = u32_at(bytes, 60)?;
-            let mini_fat_sectors = u32_at(bytes, 64)? as usize;
-            let first_difat = u32_at(bytes, 68)?;
-            let difat_sectors = u32_at(bytes, 72)? as usize;
-
-            // Where the FAT's sectors are: the first hundred and nine in the
-            // header, the rest in a chain of their own.
-            let mut fat_places: Vec<u32> = (0..IN_HEADER)
-                .filter_map(|index| u32_at(bytes, 76 + index * 4))
-                .take(fat_sectors)
-                .collect();
-            let mut difat = first_difat;
-            for _ in 0..difat_sectors {
-                if difat >= END_OF_CHAIN - 1 {
-                    break;
-                }
-                let at = (difat as usize + 1) * sector;
-                let per = sector / 4 - 1;
-                for index in 0..per {
-                    if fat_places.len() >= fat_sectors {
-                        break;
-                    }
-                    fat_places.push(u32_at(bytes, at + index * 4)?);
-                }
-                difat = u32_at(bytes, at + per * 4)?;
-            }
-            let mut fat = Vec::new();
-            for place in fat_places {
-                let at = (place as usize + 1) * sector;
-                for index in 0..sector / 4 {
-                    fat.push(u32_at(bytes, at + index * 4)?);
-                }
-            }
-
-            let mut layout = Self {
-                sector,
-                mini_sector,
-                fat,
-                mini_fat: Vec::new(),
-                directory: Vec::new(),
-                mini_stream: Vec::new(),
-                cutoff,
-            };
-            layout.directory = layout.chain(bytes, first_directory, usize::MAX);
-            // The mini FAT is a chain like any other; the mini stream is the
-            // root entry's own stream, in which the small streams live.
-            if mini_fat_sectors > 0 {
-                let raw = layout.chain(bytes, first_mini_fat, mini_fat_sectors * sector);
-                layout.mini_fat = raw
-                    .chunks_exact(4)
-                    .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                    .collect();
-            }
-            if let Some(root) = layout.directory.get(0..128) {
-                let start = u32_at(root, 116)?;
-                let size = u32_at(root, 120)? as usize;
-                layout.mini_stream = layout.chain(bytes, start, size);
-            }
-            Some(layout)
-        }
-
-        /// The sectors of a chain, one after another, cut to a size.
-        fn chain(&self, bytes: &[u8], first: u32, size: usize) -> Vec<u8> {
-            let mut out = Vec::new();
-            let mut at = first;
-            let mut steps = 0usize;
-            while at < END_OF_CHAIN - 1 && out.len() < size && steps <= self.fat.len() {
-                let from = (at as usize + 1) * self.sector;
-                let Some(piece) = bytes.get(from..from + self.sector) else { break };
-                out.extend_from_slice(piece);
-                let Some(next) = self.fat.get(at as usize) else { break };
-                at = *next;
-                steps += 1;
-            }
-            out.truncate(size);
-            out
-        }
-
-        /// A stream: from the mini stream when it is small, else from the
-        /// file's own sectors.
-        fn stream_at(&self, bytes: &[u8], first: u32, size: usize) -> Vec<u8> {
-            if size >= self.cutoff {
-                return self.chain(bytes, first, size);
-            }
-            let mut out = Vec::new();
-            let mut at = first;
-            let mut steps = 0usize;
-            while at < END_OF_CHAIN - 1 && out.len() < size && steps <= self.mini_fat.len() {
-                let from = at as usize * self.mini_sector;
-                let Some(piece) = self.mini_stream.get(from..from + self.mini_sector) else {
-                    break;
-                };
-                out.extend_from_slice(piece);
-                let Some(next) = self.mini_fat.get(at as usize) else { break };
-                at = *next;
-                steps += 1;
-            }
-            out.truncate(size);
-            out
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) mod tests {
-        use super::*;
-
-        /// A compound file of one stream, written the simplest way the
-        /// format allows: one FAT sector, one directory sector, and the
-        /// stream in the file's own sectors, however small it is.
-        pub(crate) fn compound_file(name: &str, content: &[u8]) -> Vec<u8> {
-            let sector = 512usize;
-            let data_sectors = content.len().div_ceil(sector).max(1);
-            // Sector 0 is the FAT, 1 the directory, 2.. the stream.
-            let mut fat: Vec<u32> = vec![0xFFFF_FFFD, END_OF_CHAIN];
-            for index in 0..data_sectors {
-                fat.push(if index + 1 == data_sectors { END_OF_CHAIN } else { (index + 3) as u32 });
-            }
-            while fat.len() < sector / 4 {
-                fat.push(0xFFFF_FFFF);
-            }
-
-            let mut header = vec![0u8; sector];
-            header[0..8].copy_from_slice(&SIGNATURE);
-            header[24..26].copy_from_slice(&0x3Eu16.to_le_bytes());
-            header[26..28].copy_from_slice(&3u16.to_le_bytes());
-            header[28..30].copy_from_slice(&0xFFFEu16.to_le_bytes());
-            header[30..32].copy_from_slice(&9u16.to_le_bytes());
-            header[32..34].copy_from_slice(&6u16.to_le_bytes());
-            header[44..48].copy_from_slice(&1u32.to_le_bytes());
-            header[48..52].copy_from_slice(&1u32.to_le_bytes());
-            // Everything is in the file's own sectors: a cutoff of nought.
-            header[56..60].copy_from_slice(&0u32.to_le_bytes());
-            header[60..64].copy_from_slice(&END_OF_CHAIN.to_le_bytes());
-            header[64..68].copy_from_slice(&0u32.to_le_bytes());
-            header[68..72].copy_from_slice(&END_OF_CHAIN.to_le_bytes());
-            header[72..76].copy_from_slice(&0u32.to_le_bytes());
-            for index in 0..IN_HEADER {
-                let value = if index == 0 { 0u32 } else { 0xFFFF_FFFF };
-                header[76 + index * 4..80 + index * 4].copy_from_slice(&value.to_le_bytes());
-            }
-
-            let entry = |name: &str, kind: u8, start: u32, size: u32, child: u32| -> Vec<u8> {
-                let mut out = vec![0u8; 128];
-                let utf16: Vec<u16> = name.encode_utf16().collect();
-                for (index, unit) in utf16.iter().enumerate().take(31) {
-                    out[index * 2..index * 2 + 2].copy_from_slice(&unit.to_le_bytes());
-                }
-                out[64..66].copy_from_slice(&(((utf16.len() + 1) * 2) as u16).to_le_bytes());
-                out[66] = kind;
-                out[67] = 1;
-                out[68..72].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
-                out[72..76].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
-                out[76..80].copy_from_slice(&child.to_le_bytes());
-                out[116..120].copy_from_slice(&start.to_le_bytes());
-                out[120..124].copy_from_slice(&size.to_le_bytes());
-                out
-            };
-            let mut directory = entry("Root Entry", 5, END_OF_CHAIN, 0, 1);
-            directory.extend(entry(name, 2, 2, content.len() as u32, 0xFFFF_FFFF));
-            directory.resize(sector, 0);
-
-            let mut out = header;
-            for value in fat {
-                out.extend_from_slice(&value.to_le_bytes());
-            }
-            out.extend_from_slice(&directory);
-            out.extend_from_slice(content);
-            out.resize((3 + data_sectors) * sector, 0);
-            out
-        }
-
-        #[test]
-        fn a_stream_is_read_back_out_of_a_compound_file_by_name() {
-            let content: Vec<u8> = (0..1500u32).map(|n| (n % 251) as u8).collect();
-            let file = compound_file("\u{1}Ole10Native", &content);
-            assert_eq!(stream(&file, "\u{1}Ole10Native"), Some(content));
-            assert_eq!(stream(&file, "Nothing"), None);
-            assert_eq!(stream(b"not a compound file at all", "\u{1}Ole10Native"), None);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,7 +182,7 @@ mod tests {
 
     #[test]
     fn an_object_that_is_not_a_packaged_file_is_offered_as_what_it_is() {
-        let file = cfb::tests::compound_file("Workbook", b"BIFF8");
+        let file = wp_ole::Builder::new().stream("Workbook", b"BIFF8".to_vec()).build();
         let offered = unwrap_object(&file, "word/embeddings/oleObject1.bin", "Excel.Sheet.8");
         assert_eq!(offered.name, "oleObject1.xls");
         assert_eq!(offered.bytes, file);
@@ -476,7 +233,7 @@ mod document_tests {
         let mut document = document();
         let clip = b"RIFF....WAVEfmt ".to_vec();
         let stream = super::tests::wrapped("clip.wav", &clip);
-        let file = cfb::tests::compound_file("\u{1}Ole10Native", &stream);
+        let file = wp_ole::Builder::new().stream("\u{1}Ole10Native", stream).build();
         document.package_mut().add_part(
             "word/embeddings/oleObject1.bin",
             "application/vnd.openxmlformats-officedocument.oleObject",

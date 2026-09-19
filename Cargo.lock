@@ -115,6 +115,7 @@ dependencies = [
  "wp-hash",
  "wp-image",
  "wp-normal",
+ "wp-ole",
  "wp-opc",
  "wp-segment",
  "wp-sign",
