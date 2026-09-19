@@ -45,6 +45,7 @@
 #![forbid(unsafe_code)]
 
 pub mod bilingual;
+pub mod hyphenation;
 pub mod thesaurus;
 
 use std::collections::{HashMap, HashSet};
@@ -65,6 +66,9 @@ pub enum Error {
     UnknownEncoding(String),
     /// The files could not be read at all.
     NotReadable(String),
+    /// The file is not what it claims to be: a set of patterns with no
+    /// pattern in it.
+    Malformed(String),
 }
 
 impl core::fmt::Display for Error {
@@ -74,6 +78,7 @@ impl core::fmt::Display for Error {
                 write!(f, "the dictionary is written in {name}, which cannot be read here")
             }
             Self::NotReadable(why) => write!(f, "the dictionary could not be read: {why}"),
+            Self::Malformed(why) => write!(f, "the file is not a dictionary: {why}"),
         }
     }
 }

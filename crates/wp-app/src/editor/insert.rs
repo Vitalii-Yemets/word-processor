@@ -1384,6 +1384,36 @@ impl Editor {
                     self.ink_move(*x as i32, *y as i32, true);
                 }
             }
+            // The same justified paragraph twice: with the document set to
+            // hyphenate on its own, the words are broken where English breaks
+            // them and the lines are even; without, the spaces gape.
+            "hyphenation" => {
+                let words = "The responsibility of a typographer is the understanding \
+                    of the paragraph: information and knowledge are set with \
+                    extraordinary care, and the development of a photograph, a \
+                    telephone or a government is nothing to the development of \
+                    the international university and its beautiful algorithms.";
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.type_text(words);
+                self.document.press_enter();
+                self.document.type_text(words);
+                let end = self.document.caret();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.extend_selection_to(end);
+                self.document.set_size(20.0);
+                self.document.set_alignment_here(wp_docx::model::Alignment::Both);
+                self.document.clear_selection();
+                // The second paragraph keeps its words whole, which is what
+                // the paragraph's own setting is for.
+                self.document.set_caret(wp_docx::TextPosition::new(3, 0));
+                let _ = self.document.set_paragraph_format(&wp_docx::model::ParagraphProperties {
+                    no_hyphenation: Some(true),
+                    ..wp_docx::model::ParagraphProperties::default()
+                });
+                self.document.set_automatic_hyphenation(true);
+                self.document.set_hyphenation_zone(Some(360));
+                self.relayout();
+            }
             "flowchart" => {
                 let shapes: Vec<wp_layout::geometry::Preset> = wp_layout::geometry::Preset::all()
                     .into_iter()

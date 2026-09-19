@@ -57,32 +57,6 @@ impl Editor {
         self.edited(changed, &format!("Line numbers: {label}"))
     }
 
-    /// Drops open the two ways of hyphenating.
-    pub(super) fn open_hyphenation(&mut self) -> Response {
-        if self.close_popup_if(Choice::Hyphenation) {
-            return Response::Redraw;
-        }
-        let Some((left, top, _)) = self.ribbon.command_rect(Command::Hyphenation) else {
-            return Response::Ignored;
-        };
-
-        let current = usize::from(self.document.automatic_hyphenation());
-        let items = vec!["None".to_owned(), "Automatic".to_owned()];
-        self.popup = Some(Popup::new(Choice::Hyphenation, items, Some(current), left, top, 200.0));
-        self.needs_redraw = true;
-        Response::Redraw
-    }
-
-    /// Turns hyphenation on or off.
-    pub(super) fn choose_hyphenation(&mut self, index: usize) -> Response {
-        self.popup = None;
-        let on = index == 1;
-        let changed = self.document.set_automatic_hyphenation(on);
-        // Nothing about the layout changes yet — this program does not break
-        // words itself — but the document says so, and Word will.
-        self.edited(changed, if on { "Hyphenation: automatic" } else { "Hyphenation: none" })
-    }
-
     /// Closes an open list if it is the one asked about.
     ///
     /// Pressing a button whose list is already open closes it, which is what

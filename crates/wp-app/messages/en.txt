@@ -82,8 +82,10 @@
 = AutoFormat As You Type
 = AutoRecover file location
 = AutoText
+= Automatic
 = Automatic bulleted and numbered lists
 = Automatically add words to list
+= Automatically hyphenate document
 = Autosaved {0}
 = Banded
 = Banded Columns
@@ -388,7 +390,13 @@
 = Highlighter: draw over the words. Escape to stop
 = Holding
 = Home
+= Hyphenate at
+= Hyphenate words in CAPS
 = Hyphenation
+= Hyphenation Options...
+= Hyphenation is complete
+= Hyphenation zone
+= Hyphenation: automatic.
 = Hyphens (--) with dash (—)
 = INitial CAps
 = Ignore
@@ -444,6 +452,7 @@
 = Legacy
 = Legacy Tools
 = Lime
+= Limit consecutive hyphens to
 = Limit formatting to a selection of styles
 = Line
 = Line Numbers
@@ -467,6 +476,8 @@
 = Make Default
 = Manage Sources
 = Manage Styles
+= Manual Hyphenation
+= Manual...
 = Mapping
 = Margins
 = Mark Citation
@@ -505,6 +516,7 @@
 = Next
 = Next Footnote
 = No
+= No hyphenation patterns for this language are on this machine
 = No names were typed
 = No numbers were typed, so no chart was drawn
 = No two of them say the same thing

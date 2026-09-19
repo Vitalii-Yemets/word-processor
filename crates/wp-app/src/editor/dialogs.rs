@@ -42,6 +42,11 @@ pub(super) enum Asking {
     ManageStyles,
     /// What two documents are to be compared by, and where the answer goes.
     Compare,
+    /// Word's four hyphenation settings.
+    HyphenationOptions,
+    /// One word the automatic rule would break, offered to be broken by
+    /// hand.
+    ManualHyphenation,
     /// What the document is signed with, and what to sign it with.
     Signatures,
     /// Whether a document that asks to be opened read-only is to be, and the
@@ -179,6 +184,7 @@ impl Editor {
                 Some(Asking::TextOpen) => self.cancel_text_open(),
                 Some(Asking::Unseal) => self.cancel_unseal(),
                 Some(Asking::Compare) => self.cancel_comparison(),
+                Some(Asking::ManualHyphenation) => self.cancel_manual_hyphenation(),
                 Some(Asking::OpenReadOnly) => self.cancel_open_read_only(),
                 Some(Asking::TextSave) => self.cancel_text_save(),
                 Some(Asking::MacroMessage) => return self.answer_macro_message(None),
@@ -220,6 +226,13 @@ impl Editor {
             Some(Asking::ControlProperties) => self.apply_control_properties(&dialog),
             Some(Asking::ManageStyles) => self.apply_manage_styles(&dialog),
             Some(Asking::Compare) => self.apply_comparison(&dialog),
+            Some(Asking::HyphenationOptions) => self.apply_hyphenation_options(
+                &dialog,
+                answer == Answer::Named(super::hyphenation::MANUAL),
+            ),
+            Some(Asking::ManualHyphenation) => {
+                self.answer_manual_hyphenation(&dialog, answer == Answer::Accept)
+            }
             Some(Asking::Signatures) => self.apply_signature(&dialog),
             Some(Asking::OpenReadOnly) => self.apply_open_read_only(&dialog),
             Some(Asking::ReadOnlySettings) => self.apply_read_only_settings(&dialog),

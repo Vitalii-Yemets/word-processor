@@ -1273,6 +1273,9 @@ pub(crate) struct RunStyle {
     /// a Turkish i is not the capital of an English one. See
     /// [`wp_docx::casing`].
     casing: wp_docx::casing::Tailoring,
+    /// Where the words of this run's language may be broken, when the
+    /// machine has the patterns for it. See [`Hyphenation`].
+    hyphenation: Option<Rc<wp_dict::hyphenation::Patterns>>,
     /// How wide the letters are drawn, as a fraction of their own width.
     /// One for text at its natural width, which is nearly all of it.
     stretch: f32,
@@ -1380,6 +1383,7 @@ impl RunStyle {
             size,
             color,
             casing: wp_docx::casing::Tailoring::Default,
+            hyphenation: None,
             highlight: None,
             effect: None,
             underline: false,
@@ -1520,8 +1524,13 @@ pub(crate) struct Item {
     /// hyphen — the mark a writer puts inside a word to say it may be broken
     /// there — carries the width of the hyphen that is then drawn, which is
     /// what makes the room for it before the line is settled rather than
-    /// after.
+    /// after. So does a piece of a word the patterns of its language say may
+    /// be broken there, when the document hyphenates on its own.
     hyphen: f32,
+    /// Whether this is the rest of a word after a place the language's
+    /// patterns allow a break: a line may end before it, but only when the
+    /// document's hyphenation rules let it — see [`Breaking`].
+    auto_hyphen: bool,
     /// A shape drawn in the line, with the height it takes up.
     shape: Option<(Box<wp_docx::shapes::Shape>, f32)>,
     /// A group of drawings in the line, with the height it takes up.
@@ -1628,6 +1637,16 @@ pub struct LayoutEngine<'a> {
     /// The level of the last heading passed, so the body text under it can be
     /// indented one step further in.
     outline_heading: u8,
+    /// Word's automatic hyphenation, as the document has it set.
+    hyphenation: Hyphenation,
+    /// Whether the paragraph whose items are being built may have its words
+    /// broken by the patterns: the document hyphenates, and the paragraph
+    /// does not say to leave its words alone.
+    hyphenating: bool,
+    /// The patterns for each language asked for so far, and none for a
+    /// language the machine has no patterns for, so that it is not looked
+    /// for again for every run.
+    patterns: HashMap<String, Option<Rc<wp_dict::hyphenation::Patterns>>>,
     /// The document's theme: the shadow it puts under a shape, and the
     /// colours and the fills a shape names from it.
     ///
@@ -1697,6 +1716,9 @@ impl<'a> LayoutEngine<'a> {
             merge_record: Vec::new(),
             outline: None,
             outline_heading: 0,
+            hyphenation: Hyphenation::default(),
+            hyphenating: false,
+            patterns: HashMap::new(),
             theme: wp_docx::theme::Theme::default(),
             default_tab: DEFAULT_TAB_TWIPS,
             paragraph_styles: Vec::new(),
@@ -2084,6 +2106,7 @@ impl<'a> LayoutEngine<'a> {
         previous: Vec<Page>,
     ) -> Vec<Page> {
         self.theme = document.theme();
+        self.hyphenation = Hyphenation::of(document, self.pixels_per_point());
         // Where the tabs fall back to when a paragraph names no stops of its
         // own, which every document says for itself.
         self.default_tab = document.default_tab_width();
@@ -2514,6 +2537,9 @@ impl<'a> LayoutEngine<'a> {
     ) {
         let resolved = document.resolve_paragraph(paragraph);
         let scale = self.pixels_per_point();
+        // Whether the words of this paragraph may be broken by the patterns:
+        // the document hyphenates, and the paragraph does not say not to.
+        self.hyphenating = self.hyphenation.automatic && !resolved.no_hyphenation;
 
         // Shown as an outline, a paragraph sits at the depth of its heading and
         // one deeper than the level being shown is not drawn at all. Body text
@@ -2720,8 +2746,15 @@ impl<'a> LayoutEngine<'a> {
         // page still gets laid out rather than moved for ever.
         let mut kept_together = false;
         let mut widow_moved = false;
+        // How many lines in a row have ended with a hyphen, for the limit on
+        // them.
+        let mut hyphens_in_a_row = 0u32;
         while cursor < items.len() || number == 0 {
             let extra_first = if number == 0 { indent_first.max(0.0) } else { 0.0 };
+            let rules = Breaking {
+                allowed: self.hyphenation.limit == 0 || hyphens_in_a_row < self.hyphenation.limit,
+                zone: self.hyphenation.zone,
+            };
             let page_index = pages.len().saturating_sub(1);
             let here = area.in_column(*column);
 
@@ -2734,7 +2767,7 @@ impl<'a> LayoutEngine<'a> {
                 *y,
                 *y + 1.0,
             );
-            let mut line = break_line(&mut items, &mut item_levels, cursor, line_width);
+            let mut line = break_line(&mut items, &mut item_levels, cursor, line_width, rules);
             let (mut ascent, mut descent, mut natural_height) =
                 line_metrics(&line, &items, &styles);
             let mut height = line_height(natural_height, &resolved, scale);
@@ -2752,7 +2785,7 @@ impl<'a> LayoutEngine<'a> {
             if settled_width < line_width {
                 line_left = settled_left;
                 line_width = settled_width;
-                line = break_line(&mut items, &mut item_levels, cursor, line_width);
+                line = break_line(&mut items, &mut item_levels, cursor, line_width, rules);
                 let measured = line_metrics(&line, &items, &styles);
                 ascent = measured.0;
                 descent = measured.1;
@@ -2798,7 +2831,7 @@ impl<'a> LayoutEngine<'a> {
                 if resolved.widow_control
                     && !widow_moved
                     && number >= 2
-                    && is_one_line_left(&items, cursor, line_width)
+                    && is_one_line_left(&items, cursor, line_width, rules)
                 {
                     widow_moved = true;
                     before_line.take_back(pages);
@@ -2825,7 +2858,7 @@ impl<'a> LayoutEngine<'a> {
                 );
                 line_left = fresh_left;
                 line_width = fresh_width;
-                line = break_line(&mut items, &mut item_levels, cursor, line_width);
+                line = break_line(&mut items, &mut item_levels, cursor, line_width, rules);
                 let measured = line_metrics(&line, &items, &styles);
                 ascent = measured.0;
                 descent = measured.1;
@@ -2871,9 +2904,9 @@ impl<'a> LayoutEngine<'a> {
                     // Nowhere to pass a word on to, so this one takes it
                     // whatever its width — and cuts it if it is wider than the
                     // stretch itself.
-                    break_line(&mut items, &mut item_levels, at, span_width)
+                    break_line(&mut items, &mut item_levels, at, span_width, rules)
                 } else {
-                    break_next_line_fitting(&items, at, span_width, true)
+                    break_next_line_fitting(&items, at, span_width, true, rules)
                 };
                 if piece.items.end <= at {
                     // Nothing fits in this stretch. The word goes in the next.
@@ -2950,6 +2983,16 @@ impl<'a> LayoutEngine<'a> {
             // A drawing wrapped above and below pushes the text past its foot,
             // which is the whole of what that wrapping means.
             *y = self.past_top_and_bottom_floats(page_index, *y);
+
+            // Whether this line ended with a hyphen: it went on past its
+            // last word, and that word carried one.
+            let ended_with_hyphen = next < items.len()
+                && items[cursor..next]
+                    .iter()
+                    .rev()
+                    .find(|item| !item.is_space)
+                    .is_some_and(|item| item.hyphen > 0.0);
+            hyphens_in_a_row = if ended_with_hyphen { hyphens_in_a_row + 1 } else { 0 };
 
             number += 1;
             if next <= cursor && number > 0 && cursor < items.len() {
@@ -3711,6 +3754,15 @@ impl<'a> LayoutEngine<'a> {
                         })
                         .unwrap_or_else(|| text.clone());
                     let chunks = segment(&shown);
+                    // The words are cut where the language's patterns allow,
+                    // when the document hyphenates on its own and the text is
+                    // the document's — a field's answer is not cut, since its
+                    // pieces would not be the document's bytes.
+                    let patterns = if self.hyphenating && shown == *text {
+                        style.hyphenation.clone()
+                    } else {
+                        None
+                    };
                     // However long the shown text is, the chunks between them
                     // take up exactly the bytes the document holds, so the
                     // caret still lands where the text really is.
@@ -3718,7 +3770,6 @@ impl<'a> LayoutEngine<'a> {
                     for (number, chunk) in chunks.iter().enumerate() {
                         let start = *offset;
                         let glyphs = self.shape(&chunk.text, style, start);
-                        let width = glyphs.iter().map(|glyph| glyph.advance).sum();
                         // A chunk ends with an optional hyphen only where the
                         // writer put one, and a break is allowed after every
                         // one of them — so such a chunk is a place a line may
@@ -3735,30 +3786,53 @@ impl<'a> LayoutEngine<'a> {
                         };
                         left -= taken;
                         *offset += taken;
-                        items.push(Item {
-                            glyphs,
-                            width,
-                            is_space: chunk.is_space,
-                            breaks_before: true,
-                            is_tab: false,
-                            aligned_tab: None,
-                            picture: None,
-                            picture_anchor: None,
-                            picture_name: None,
-                            picture_turn: wp_docx::floating::Turned::default(),
-                            picture_video: false,
-                            group: None,
-                            shape: None,
-                            math: None,
-                            chart: None,
-                            ink: None,
-                            ruby: None,
-                            hyphen: drawn_hyphen,
-                            hard_break: None,
-                            style: style_index,
-                            start_offset: start,
-                            end_offset: *offset,
-                        });
+                        let end = *offset;
+
+                        // Where the word may be broken, as byte offsets into
+                        // the chunk, from the patterns; nothing for a space,
+                        // for a word with anything but letters in it, and for
+                        // a word in capitals when those are to be left alone.
+                        let cuts = match &patterns {
+                            Some(patterns) if !chunk.is_space && taken == chunk.text.len() => {
+                                word_cuts(&chunk.text, patterns, self.hyphenation.capitals)
+                            }
+                            _ => Vec::new(),
+                        };
+                        let hyphen_width =
+                            if cuts.is_empty() { 0.0 } else { self.hyphen_width(style) };
+                        let pieces = cut_glyphs(glyphs, start, &cuts);
+                        let count = pieces.len();
+                        for (which, (glyphs, piece_start, piece_end)) in
+                            pieces.into_iter().enumerate()
+                        {
+                            let last = which + 1 == count;
+                            let width = glyphs.iter().map(|glyph| glyph.advance).sum();
+                            items.push(Item {
+                                glyphs,
+                                width,
+                                is_space: chunk.is_space,
+                                breaks_before: which == 0,
+                                is_tab: false,
+                                aligned_tab: None,
+                                picture: None,
+                                picture_anchor: None,
+                                picture_name: None,
+                                picture_turn: wp_docx::floating::Turned::default(),
+                                picture_video: false,
+                                group: None,
+                                shape: None,
+                                math: None,
+                                chart: None,
+                                ink: None,
+                                ruby: None,
+                                hyphen: if last { drawn_hyphen } else { hyphen_width },
+                                auto_hyphen: which > 0,
+                                hard_break: None,
+                                style: style_index,
+                                start_offset: piece_start,
+                                end_offset: if last { end } else { piece_end },
+                            });
+                        }
                     }
                 }
                 // An alignment tab is a tab that goes to the middle of the line
@@ -3786,6 +3860,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3821,6 +3896,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3856,6 +3932,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3894,6 +3971,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -3962,6 +4040,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: drawing.map(|drawing| (Box::new(drawing), height)),
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -4005,6 +4084,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -4044,6 +4124,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: Some((Box::new(laid), height)),
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -4081,6 +4162,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -4122,6 +4204,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         shape: Some((shape.clone(), height)),
                         hard_break: None,
                         style: style_index,
@@ -4164,6 +4247,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         shape: None,
                         hard_break: None,
                         style: style_index,
@@ -4213,6 +4297,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         hard_break: None,
                         style: style_index,
                         start_offset: start,
@@ -4241,6 +4326,7 @@ impl<'a> LayoutEngine<'a> {
                         ink: None,
                         ruby: None,
                         hyphen: 0.0,
+                        auto_hyphen: false,
                         shape: None,
                         hard_break: Some(*kind),
                         style: style_index,
@@ -5094,6 +5180,9 @@ impl<'a> LayoutEngine<'a> {
             casing: wp_docx::casing::Tailoring::of(
                 properties.language.as_deref().unwrap_or_default(),
             ),
+            hyphenation: self.patterns_for(
+                properties.language.as_deref().unwrap_or(wp_docx::languages::DEFAULT_TAG),
+            ),
             caps: if properties.small_caps {
                 Caps::Small
             } else if properties.caps {
@@ -5113,6 +5202,19 @@ impl<'a> LayoutEngine<'a> {
             descent,
             line_height: line_height.max(full_size * 1.2),
         })
+    }
+
+    /// The patterns for a language, looked for on the machine once and kept.
+    fn patterns_for(&mut self, language: &str) -> Option<Rc<wp_dict::hyphenation::Patterns>> {
+        if !self.hyphenation.automatic {
+            return None;
+        }
+        if let Some(found) = self.patterns.get(language) {
+            return found.clone();
+        }
+        let found = wp_dict::hyphenation::for_language(language).map(Rc::new);
+        self.patterns.insert(language.to_owned(), found.clone());
+        found
     }
 
     /// Lays a word out with its reading over it.
@@ -5734,11 +5836,11 @@ impl<'a> LayoutEngine<'a> {
 /// alone on the next page is the thing widow control exists to prevent. The
 /// width used is the one the line being broken had: near enough, since the two
 /// lines are on the same page and the same column.
-fn is_one_line_left(items: &[Item], cursor: usize, width: f32) -> bool {
+fn is_one_line_left(items: &[Item], cursor: usize, width: f32, rules: Breaking) -> bool {
     if cursor >= items.len() {
         return false;
     }
-    let line = break_next_line(items, cursor, width);
+    let line = break_next_line(items, cursor, width, rules);
     line.items.end >= items.len()
 }
 
@@ -6080,7 +6182,7 @@ impl LayoutEngine<'_> {
 
         // Where the hyphen goes, if this line broke a word in half: the place
         // the last word ends, and the style it was written in.
-        let mut broken_at: Option<(f32, usize, usize)> = None;
+        let mut broken_at: Option<(f32, usize, usize, bool)> = None;
 
         for index in visual {
             let item = &items[index];
@@ -6145,9 +6247,12 @@ impl LayoutEngine<'_> {
             // A word broken at an optional hyphen is drawn with the hyphen the
             // writer asked for — and only then. The last line of a paragraph
             // ends where the words end, and an optional hyphen there is
-            // nothing at all.
+            // nothing at all. A word the patterns broke is drawn with a
+            // hyphen the same way; there the piece ends with a letter and
+            // not with a mark.
             if item.hyphen > 0.0 && index + 1 == line.last_visible && line.items.end < items.len() {
-                broken_at = Some((x, item.style, item.end_offset));
+                let marked = item.glyphs.last().is_some_and(|glyph| glyph.invisible);
+                broken_at = Some((x, item.style, item.end_offset, marked));
             }
             if let Some((shape, height)) = &item.shape {
                 // A drawing that floats is not on the line at all: it is put
@@ -6493,7 +6598,7 @@ impl LayoutEngine<'_> {
         // The hyphen that says a word was broken. It belongs to the line
         // rather than to any item of it — the writer wrote a mark, not a
         // hyphen, and what turns one into the other is the line ending there.
-        if let Some((at, style_index, offset)) = broken_at {
+        if let Some((at, style_index, offset, marked)) = broken_at {
             if let Some(style) = styles.get(style_index).cloned() {
                 if let Some(glyph) = self.hyphen_glyph(&style, offset) {
                     page.glyphs.push(PositionedGlyph {
@@ -6506,13 +6611,18 @@ impl LayoutEngine<'_> {
                         stretch: style.stretch,
                         color: style.color,
                         effect: style.effect,
-                        // It points at the mark it was drawn for, and covers
-                        // none of the text: the mark itself is already a
-                        // character of the line, and a click on the hyphen
-                        // lands beside it rather than inside anything.
+                        // It points at the mark it was drawn for — or, for a
+                        // word the patterns broke, at the place the word was
+                        // broken — and covers none of the text: a click on
+                        // the hyphen lands beside it rather than inside
+                        // anything.
                         source: TextPosition::new(
                             placement.paragraph,
-                            offset.saturating_sub('\u{00AD}'.len_utf8()),
+                            if marked {
+                                offset.saturating_sub('\u{00AD}'.len_utf8())
+                            } else {
+                                offset
+                            },
                         ),
                         source_length: 0,
                         invisible: false,
@@ -8200,6 +8310,110 @@ fn count_sequences(
     }
 }
 
+/// Word's automatic hyphenation, as the document has it set.
+///
+/// Word's Hyphenation Options, all four: whether words are broken at all
+/// where nobody put a mark; whether a word in capitals may be; how close to
+/// the margin a line has to come before a word is broken rather than carried
+/// whole; and how many lines in a row may end with a hyphen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Hyphenation {
+    pub automatic: bool,
+    pub capitals: bool,
+    /// The zone, in pixels: a line whose last word would leave less room
+    /// than this at the margin is left unbroken, and the word goes over
+    /// whole. Word's default is a quarter of an inch.
+    pub zone: f32,
+    /// How many lines in a row may end with a hyphen; nought is no limit,
+    /// which is what Word writes for it.
+    pub limit: u32,
+}
+
+impl Default for Hyphenation {
+    fn default() -> Self {
+        Self { automatic: false, capitals: true, zone: 0.0, limit: 0 }
+    }
+}
+
+impl Hyphenation {
+    /// What the document says, with Word's own numbers where it says nothing.
+    fn of(document: &Document, scale: f32) -> Self {
+        let twips = document.hyphenation_zone().unwrap_or(360).max(0) as f32;
+        Self {
+            automatic: document.automatic_hyphenation(),
+            capitals: document.hyphenate_capitals(),
+            zone: twips / 20.0 * scale,
+            limit: document.consecutive_hyphen_limit().unwrap_or(0).max(0) as u32,
+        }
+    }
+}
+
+/// What a line may do about a word that does not fit: break it where its
+/// language allows, or carry it whole.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Breaking {
+    /// Whether a word may be broken on this line at all — no, once as many
+    /// lines in a row have ended with a hyphen as the document allows.
+    allowed: bool,
+    /// The hyphenation zone, in pixels. See [`Hyphenation::zone`].
+    zone: f32,
+}
+
+/// Where a chunk of text may be broken, as byte offsets into it, by the
+/// patterns of its language.
+///
+/// The word is the letters of the chunk with whatever is not a letter
+/// stripped from either end: `(word,` is asked about as `word`. A word with
+/// anything else inside it — a digit, an apostrophe — is not one the
+/// patterns can speak for, and is not broken. Nor is a word in capitals,
+/// when the document says to leave those alone.
+fn word_cuts(chunk: &str, patterns: &wp_dict::hyphenation::Patterns, capitals: bool) -> Vec<usize> {
+    let trimmed = chunk.trim_matches(|character: char| !character.is_alphabetic());
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let head = chunk.find(trimmed).unwrap_or(0);
+    if !capitals && trimmed.chars().all(|character| !character.is_lowercase()) {
+        return Vec::new();
+    }
+    patterns.breaks(trimmed).into_iter().map(|at| head + at).collect()
+}
+
+/// Cuts a chunk's glyphs into pieces at byte offsets of the chunk, keeping
+/// each glyph with the characters it stands for. Each piece is its glyphs
+/// and the offsets it begins and ends at. A cut that falls inside a glyph —
+/// a ligature across the place — is not made: the pieces either side of it
+/// stay one.
+fn cut_glyphs(
+    glyphs: Vec<ShapedGlyph>,
+    start: usize,
+    cuts: &[usize],
+) -> Vec<(Vec<ShapedGlyph>, usize, usize)> {
+    if cuts.is_empty() {
+        let end = glyphs.last().map_or(start, |glyph| glyph.offset + glyph.length.max(1));
+        return vec![(glyphs, start, end)];
+    }
+    let mut pieces: Vec<(Vec<ShapedGlyph>, usize, usize)> = Vec::new();
+    let mut piece: Vec<ShapedGlyph> = Vec::new();
+    let mut piece_start = start;
+    let mut next_cut = 0usize;
+    for glyph in glyphs {
+        // A cut at the very cluster this glyph begins ends the piece before
+        // it; a cut inside a glyph is passed over.
+        while next_cut < cuts.len() && start + cuts[next_cut] <= glyph.offset {
+            if start + cuts[next_cut] == glyph.offset && !piece.is_empty() {
+                pieces.push((std::mem::take(&mut piece), piece_start, glyph.offset));
+                piece_start = glyph.offset;
+            }
+            next_cut += 1;
+        }
+        piece.push(glyph);
+    }
+    let end = piece.last().map_or(piece_start, |glyph| glyph.offset + glyph.length.max(1));
+    pieces.push((piece, piece_start, end));
+    pieces
+}
+
 /// A percentage in thousandths of a per cent, as a fraction of one.
 ///
 /// The unit the format counts shares in: 50000 is half. Kept to something
@@ -8222,8 +8436,8 @@ const ROOM_FOR_TEXT: f32 = 9.6;
 /// Greedy, as Word is: words are added until one does not fit and the line ends
 /// before it. A single item wider than the line still goes on it, because there
 /// is nowhere else for it to go and a line that fits nothing would never end.
-fn break_next_line(items: &[Item], start: usize, available: f32) -> Line {
-    break_next_line_fitting(items, start, available, false)
+fn break_next_line(items: &[Item], start: usize, available: f32, rules: Breaking) -> Line {
+    break_next_line_fitting(items, start, available, false, rules)
 }
 
 /// The same, able to say that nothing fits.
@@ -8232,9 +8446,19 @@ fn break_next_line(items: &[Item], start: usize, available: f32) -> Line {
 /// beside a picture belongs in the piece on the other side of it, not cut in
 /// half. The last piece has nowhere to pass a word on to, so it takes one
 /// whatever its width — which is the rule this had always followed.
-fn break_next_line_fitting(items: &[Item], start: usize, available: f32, must_fit: bool) -> Line {
+fn break_next_line_fitting(
+    items: &[Item],
+    start: usize,
+    available: f32,
+    must_fit: bool,
+    rules: Breaking,
+) -> Line {
     let mut index = start;
     let mut used = 0.0f32;
+    // How much of the line was used at the last place it could have ended
+    // before a word: what the line would be left with if the word went over
+    // whole, which is what decides whether the word is broken instead.
+    let mut used_at_opportunity = 0.0f32;
 
     // A space at the start of a line is dropped rather than indenting it.
     while index < items.len() && items[index].is_space && used == 0.0 {
@@ -8267,6 +8491,18 @@ fn break_next_line_fitting(items: &[Item], start: usize, available: f32, must_fi
             if item.breaks_before {
                 return Line { items: first..index, last_visible };
             }
+            // The rest of a word after a place its language allows a break:
+            // the line may end here, with a hyphen after the piece before,
+            // when the document lets it — and only when carrying the word
+            // over whole would leave more room at the margin than the
+            // hyphenation zone allows. Word's rule, and what the zone means.
+            if item.auto_hyphen
+                && rules.allowed
+                && index > first
+                && available - used_at_opportunity > rules.zone
+            {
+                return Line { items: first..index, last_visible };
+            }
             // The item is glued to what comes before it — a closing bracket, a
             // full stop — so the line ends further back and the pair goes over
             // together.
@@ -8277,6 +8513,7 @@ fn break_next_line_fitting(items: &[Item], start: usize, available: f32, must_fi
 
         if index > first && item.breaks_before && !item.is_space {
             opportunity = Some(index);
+            used_at_opportunity = used;
         }
         used = would_be;
         if !item.is_space {
@@ -8303,15 +8540,21 @@ fn break_next_line_fitting(items: &[Item], start: usize, available: f32, must_fi
 /// Word cuts such a word between letters and carries the rest to the next line.
 /// So the line is broken, and while what came out is one word that still does
 /// not fit, that word is cut and the line broken again.
-fn break_line(items: &mut Vec<Item>, levels: &mut Vec<u8>, cursor: usize, available: f32) -> Line {
-    let mut line = break_next_line(items, cursor, available);
+fn break_line(
+    items: &mut Vec<Item>,
+    levels: &mut Vec<u8>,
+    cursor: usize,
+    available: f32,
+    rules: Breaking,
+) -> Line {
+    let mut line = break_next_line(items, cursor, available, rules);
     while line.items.end == line.items.start + 1
         && items
             .get(line.items.start)
             .is_some_and(|item| item.width > available && item.hard_break.is_none())
         && split_item(items, levels, line.items.start, available)
     {
-        line = break_next_line(items, cursor, available);
+        line = break_next_line(items, cursor, available, rules);
     }
     line
 }

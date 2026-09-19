@@ -160,6 +160,7 @@ version = "0.0.1"
 dependencies = [
  "wp-bidi",
  "wp-break",
+ "wp-dict",
  "wp-docx",
  "wp-font",
  "wp-image",

@@ -38,8 +38,10 @@ FROM rust:1.98.0-bookworm
 # one where words are written run together. The thesaurus is the same again
 # for the words that mean the same, and the English-German dictionary for what
 # a word is in another language: a dictzip that cannot be read without reading
-# a real one. None is shipped with the product; the program reads whatever the
-# machine has.
+# a real one. The hyphenation patterns are the same again for where a word may
+# be broken: English has one level and German two, and the German reading of
+# the file cannot be believed against a file written for the test. None is
+# shipped with the product; the program reads whatever the machine has.
 #
 # LibreOffice, without its windows, is here to write the files the readers of
 # the older formats are tested against: a binary .doc from an implementation
@@ -94,6 +96,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-noto-color-emoji \
         hunspell-en-us \
         hunspell-de-de \
+        hyphen-en-us \
+        hyphen-de \
         mythes-en-us \
         dict-freedict-eng-deu \
         libreoffice-writer-nogui \

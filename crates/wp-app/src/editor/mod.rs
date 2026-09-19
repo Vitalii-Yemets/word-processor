@@ -51,6 +51,7 @@ mod groups;
 mod handles;
 mod handwriting;
 mod help;
+mod hyphenation;
 pub(crate) mod inking;
 mod insert;
 mod keytips;
@@ -200,6 +201,8 @@ pub struct Editor {
     table_pen: Option<borderpainter::TablePen>,
     /// The Draw tab: what is in hand, and the stroke being drawn.
     inking: inking::Inking,
+    /// Where hyphenating by hand has got to.
+    manual_hyphenation: hyphenation::Manual,
     /// Where the table pen went down, while a line is being drawn.
     drawing_from: Option<(i32, i32)>,
     /// The line the border painter is carrying, while it is in hand.
@@ -767,6 +770,7 @@ impl Editor {
             dragging: false,
             table_pen: None,
             inking: inking::Inking::default(),
+            manual_hyphenation: hyphenation::Manual::default(),
             drawing_from: None,
             border_pen: None,
             adding_selection: false,

@@ -3256,7 +3256,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   it.
   *Not done:* hyphenating a word nobody marked — see **E14**.
 
-- [ ] **E14. Automatic hyphenation.** Breaking a word nowhere anybody said it
+- [x] **E14. Automatic hyphenation.** Breaking a word nowhere anybody said it
   may break, which is what Word's Automatic does and what this cannot do yet.
   It needs pattern data: the standard way is Liang's algorithm, which holds a
   few thousand patterns per language — `hy3phen`, `.ad4der` — and takes the
@@ -3276,6 +3276,63 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   paragraph's own "never break the words in this one"; and Word's Layout tab
   menu — Automatic, Manual, Hyphenation Options — which is not there at all,
   because a menu whose two commands do nothing is worse than no menu.
+  *Done.* **Where the patterns come from: the machine.** The decision this
+  waited on was the one the spelling checker had already made: none are
+  shipped and none are made up, and what is read is whatever the machine
+  has — `hyph_en_US.dic` and the rest, the files LibreOffice and TeX keep
+  their patterns in, found beside the program or under `/usr/share/hyphen`
+  and looked up by the run's language, region first and then language. The
+  build image has the English and German ones, on the same terms as the
+  dictionaries. `wp-dict/src/hyphenation.rs` reads them: the encoding on the
+  first line, the minimums, the comments, the two levels of a German file.
+  **Not Liang's search but the library's machine.** The files were written
+  for `libhyphen`, which LibreOffice hyphenates with, and it does not apply
+  every pattern that occurs in a word as TeX does: it walks the word through
+  a trie of the patterns, falling back to the longest suffix it knows, and
+  applies only the pattern that is exactly the state it is in. A German file
+  read TeX's way broke *Zusammenarbeit* into single letters where the
+  library breaks it where the language does; so the machine here is the
+  library's, its defaults are the library's, and forty words in two
+  languages come out letter for letter as the library gives them — the
+  answers were asked of it, not guessed. A two-level file is read the way
+  it means: the first level finds the seams of a compound word, and the
+  second is asked about each part on its own.
+  **The layout obeys the four settings.** A word is shaped once, whole, and
+  its glyphs cut at the places the patterns allow, so the kerning and the
+  ligatures inside it survive; a line may end at a cut, with the hyphen
+  drawn as an optional hyphen's is, only when carrying the word over whole
+  would leave more room at the margin than the zone, and only while fewer
+  lines in a row have ended with a hyphen than the limit allows. Words in
+  capitals are left alone when the document says so, a paragraph that says
+  to leave its words alone is left alone, and a field's answer is never cut.
+  **The menu.** None, Automatic, Manual… and Hyphenation Options…, and each
+  does what it says. Automatic lays the document out again. The options
+  dialog has the four settings and Word's Manual… button. Manual walks the
+  document offering each word the automatic rule would break — asked of the
+  layout itself, laid out again with the rule on, so what is offered by
+  hand is what Automatic would do — shown with every place it may break and
+  the rule's choice chosen; Yes puts the optional hyphen in, No moves on,
+  Cancel keeps what was marked. A machine without the patterns is told so.
+  *Proven by:* `hyphenation.rs` — the pattern split, Liang's own example,
+  the ends left alone, non-letters refused, the encoding followed, a second
+  level; `tests/real_hyphenation.rs` — twenty English and thirteen German
+  words as the library breaks them, and the files found by language;
+  `wp-layout/tests/autohyphenation.rs` — words whole without the setting,
+  broken with it and every letter still drawn once, the paragraph's own
+  refusal, the zone keeping a word whole, the limit kept, capitals left
+  alone; `editor/hyphenation.rs` — Automatic and None through the menu,
+  the dialog writing all four, and Manual offering a word, marking it on
+  Yes, passing it on No and stopping on Cancel.
+  *Not done, and named:* only the languages the machine has patterns for;
+  Word's own hyphenation is a lexicon of its own, so where it and the
+  patterns differ the patterns win here. The patterns that replace letters
+  at a break (`ff` to `ff-f` in German) are not read, and such a word is
+  broken where the plain patterns allow or not at all. A cut that falls
+  inside a ligature is not made. The zone is measured to where the word
+  would have begun, a space's width short of Word's margin. Manual
+  hyphenation offers a word once and walks from the top each time, which
+  is right but slow on a long document; Word's cursor among the breaks is
+  a list here.
 - [x] **E4. Ruby: the reading printed over a word.** `w:ruby` — Word's Phonetic
   Guide — read, drawn, written, and kept through an edit.
   *Done when:* a document with 漢字 and かんじ over it shows both, at the right

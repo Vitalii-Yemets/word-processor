@@ -230,11 +230,17 @@ language = Deutsch
 = AutoRecover file location
 > Speicherort für AutoWiederherstellen-Dateien
 
+= Automatic
+> Automatisch
+
 = Automatic bulleted and numbered lists
 > Automatische Aufzählung und Nummerierung
 
 = Automatically add words to list
 > Wörter automatisch zur Liste hinzufügen
+
+= Automatically hyphenate document
+> Automatische Silbentrennung
 
 = Autosaved {0}
 > Automatisch gespeichert {0}
@@ -1151,8 +1157,26 @@ language = Deutsch
 = Home
 > Start
 
+= Hyphenate at
+> Trennen bei
+
+= Hyphenate words in CAPS
+> Wörter in GROSSBUCHSTABEN trennen
+
 = Hyphenation
 > Silbentrennung
+
+= Hyphenation Options...
+> Silbentrennungsoptionen...
+
+= Hyphenation is complete
+> Die Silbentrennung ist abgeschlossen
+
+= Hyphenation zone
+> Silbentrennzone
+
+= Hyphenation: automatic.
+> Silbentrennung: automatisch.
 
 = Hyphens (--) with dash (—)
 > Bindestriche (--) durch Geviertstrich (—)
@@ -1313,6 +1337,9 @@ language = Deutsch
 = Lime
 > Limette
 
+= Limit consecutive hyphens to
+> Aufeinanderfolgende Trennstriche
+
 = Limit formatting to a selection of styles
 > Formatierung auf eine Auswahl von Formatvorlagen einschränken
 
@@ -1370,6 +1397,12 @@ language = Deutsch
 = Macros run without being asked about
 > Makros laufen, ohne dass nachgefragt wird
 
+= Manual Hyphenation
+> Manuelle Silbentrennung
+
+= Manual...
+> Manuell...
+
 = Mapping
 > Zuordnung
 
@@ -1384,6 +1417,9 @@ language = Deutsch
 
 = No
 > Nein
+
+= No hyphenation patterns for this language are on this machine
+> Auf diesem Rechner gibt es keine Trennmuster für diese Sprache
 
 = No names were typed
 > Es wurden keine Namen eingegeben

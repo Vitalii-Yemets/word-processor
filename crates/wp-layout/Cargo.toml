@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 wp-docx = { path = "../wp-docx" }
+wp-dict = { path = "../wp-dict" }
 wp-font = { path = "../wp-font" }
 wp-image = { path = "../wp-image" }
 wp-segment = { path = "../wp-segment" }
