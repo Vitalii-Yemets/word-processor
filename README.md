@@ -48,7 +48,7 @@ the operating system's own ABI: Win32 on Windows, declared directly with
 and Wayland wire protocols spoken over their own sockets, with no Xlib and no
 `libwayland` — six calls against the C library for passing a file descriptor
 and sharing a block of memory, which have no equivalent in the standard
-library.
+library — and CUPS spoken to in IPP over its socket, with no `libcups`.
 
 **Windows first, Linux supported.** The core carries no operating-system
 dependency at all — it turns a document into a pixel buffer with nothing but

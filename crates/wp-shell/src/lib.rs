@@ -766,6 +766,10 @@ pub mod dialog {
 /// letters went, and the page would not be the page on screen. Everything here
 /// is laid out and rasterized by this program at the printer's own resolution,
 /// so what comes out is what was shown.
+///
+/// On Windows the pages go to the spooler through a device context; on Linux
+/// they go to CUPS as a PDF of pictures, one a page, over its socket. The
+/// same bands, either way.
 pub mod printing {
     use wp_raster::Canvas;
 
@@ -812,7 +816,7 @@ pub mod printing {
     }
 
     impl Printer {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         pub(crate) fn from_device_context(device_context: usize) -> Self {
             Self { device_context, started: false, finished: false }
         }
@@ -878,9 +882,10 @@ pub mod printing {
             }
         }
 
-        /// Ends the job, sending it to the queue.
-        pub fn finish(&mut self) {
-            self.close(true);
+        /// Ends the job, sending it to the queue: whether the queue took
+        /// it.
+        pub fn finish(&mut self) -> bool {
+            self.close(true)
         }
 
         /// Throws the job away instead.
@@ -888,18 +893,19 @@ pub mod printing {
             self.close(false);
         }
 
-        fn close(&mut self, keep: bool) {
+        fn close(&mut self, keep: bool) -> bool {
             if self.finished {
-                return;
+                return false;
             }
             self.finished = true;
             #[cfg(any(windows, target_os = "linux"))]
             {
-                crate::platform::finish_document(self.device_context, keep && self.started);
+                crate::platform::finish_document(self.device_context, keep && self.started)
             }
             #[cfg(not(any(windows, target_os = "linux")))]
             {
                 let _ = keep;
+                false
             }
         }
     }

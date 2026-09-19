@@ -545,11 +545,15 @@ impl Editor {
         }
 
         if printed == sheets.len() {
-            printer.finish();
-            self.status = match printed {
-                1 => "Printed one sheet".to_owned(),
-                many => format!("Printed {many} sheets"),
-            };
+            if printer.finish() {
+                self.status = match printed {
+                    1 => "Printed one sheet".to_owned(),
+                    many => format!("Printed {many} sheets"),
+                };
+            } else {
+                wp_shell::dialog::show_error("The printer would not accept the document.");
+                self.status = String::from("The printer refused the document");
+            }
         } else {
             printer.cancel();
             self.status =

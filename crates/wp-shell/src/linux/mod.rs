@@ -25,6 +25,7 @@
 //! same goes for the documents the desktop remembers and which program
 //! opens which kind of file; see [`files`].
 
+mod cups;
 mod dialogs;
 mod files;
 pub(crate) mod keys;
@@ -172,59 +173,12 @@ pub(crate) fn open_in_shell(address: &str) -> bool {
 // --- Printing ---------------------------------------------------------------
 //
 // Neither window system has anything to do with printing on Linux: that is
-// CUPS, which is **A5** in the roadmap. Both shells answer the same way,
-// so the answer is here rather than twice over.
+// CUPS, spoken to over its own socket. See [`cups`].
 
-pub(crate) fn printer_names() -> Vec<String> {
-    Vec::new()
-}
-
-pub(crate) fn default_printer_name() -> Option<String> {
-    None
-}
-
-pub(crate) fn supports_both_sides(_name: &str) -> bool {
-    false
-}
-
-pub(crate) fn open_printer_with(
-    _name: &str,
-    _both_sides: Option<bool>,
-) -> Option<crate::printing::Printer> {
-    None
-}
-
-pub(crate) fn choose_printer() -> Option<crate::printing::Printer> {
-    None
-}
-
-pub(crate) fn printer_page(_device_context: usize) -> crate::printing::PageSetup {
-    crate::printing::PageSetup {
-        width: 1,
-        height: 1,
-        paper_width: 1,
-        paper_height: 1,
-        offset_x: 0,
-        offset_y: 0,
-        dpi_x: 96.0,
-        dpi_y: 96.0,
-    }
-}
-
-pub(crate) fn start_document(_device_context: usize, _name: &str) -> bool {
-    false
-}
-
-pub(crate) fn print_page(
-    _device_context: usize,
-    _width: usize,
-    _height: usize,
-    _band: impl FnMut(usize, usize) -> Vec<u8>,
-) -> bool {
-    false
-}
-
-pub(crate) fn finish_document(_device_context: usize, _keep: bool) {}
+pub(crate) use cups::{
+    choose_printer, default_printer_name, finish_document, open_printer_with, print_page,
+    printer_names, printer_page, start_document, supports_both_sides,
+};
 
 #[cfg(test)]
 mod tests {

@@ -2236,16 +2236,15 @@ pub(crate) fn print_page(
 }
 
 /// Ends a print job and releases the printer.
-pub(crate) fn finish_document(device_context: usize, keep: bool) {
+pub(crate) fn finish_document(device_context: usize, keep: bool) -> bool {
     let handle = device_context as Handle;
     // SAFETY: the handle came from the print dialog and is released here once.
     unsafe {
-        if keep {
-            EndDoc(handle);
-        } else {
-            AbortDoc(handle);
-        }
+        // `EndDoc` answers with the job's number, or something below one
+        // when the spooler would not take it.
+        let taken = if keep { EndDoc(handle) > 0 } else { AbortDoc(handle) > 0 };
         DeleteDC(handle);
+        taken
     }
 }
 

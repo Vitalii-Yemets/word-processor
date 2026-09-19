@@ -277,13 +277,53 @@ A word processor that cannot print is not one. Nothing of this exists yet.
   *Not yet proven:* no PDF reader has opened one. There is none in the
   container.
 
-- [ ] **A5. Printing on Linux.** CUPS, the same page images, through the same
-  layer.
-  *Waiting for **H6**, the Linux window.* There is nothing on Linux to print
-  from yet, and nothing in the build container to print to, so the code could
-  not be run even once. What the Linux build can already do is write the PDF
-  that CUPS takes as its own input.
-  *Done when:* it prints from the Linux build.
+- [x] **A5. Printing on Linux.**
+  **CUPS, spoken to in its own protocol.** A server with a socket, and
+  everything a printer on Linux is asked goes to it as an HTTP request
+  carrying an IPP message — RFC 8010 for the bytes, RFC 8011 for the
+  operations, CUPS's own two for listing the printers and naming the
+  default. No library is linked: the socket is opened, the bytes are
+  written and read, as the X server is spoken to next door. The server is
+  found where CUPS keeps it — its socket file, then its port — or where
+  `CUPS_SERVER` says. Which printers there are, which is the default,
+  whether one can turn the sheet over, and what paper one is set up for
+  are four questions, each a message and a reply; a printer that cannot be
+  asked is a printer that cannot be opened, and the program says so rather
+  than guessing.
+  **The same page images, through the same layer.** The Print page draws
+  the pages a band at a time at the printer's own resolution and hands the
+  bands to the shell, on Linux as on Windows. CUPS takes a document and
+  not a device context, and the one document every CUPS takes is a PDF; so
+  the bands are gathered into pages and the pages into a PDF of pictures,
+  each page a picture at the printer's resolution laid on the paper where
+  the printable part is, and that is the job. The paper is the printer's
+  default medium, whose size is in its name — `iso_a4_210x297mm`,
+  `na_letter_8.5x11in` — at its default resolution, less the smallest
+  margins it says it keeps to; the sheet is turned over by the `sides` the
+  job asks for. A job the queue would not take is said so on the status
+  line rather than reported as printed, on both systems: `EndDoc`'s answer
+  was thrown away before.
+  *Proven by:* seven tests. A request laid out byte by byte as the RFC
+  says; a reply read with every value of a set and a collection's members
+  stepped over; a medium's size read from its name; the paper worked out
+  from the medium, the resolution and the margins; a chunked body joined
+  and a refusal refused; and, against a pretend CUPS on a port of the
+  test's own — one that answers the four questions as a server with one
+  printer would and keeps what it is sent — the whole way through: the
+  printer listed, the default named, both sides offered, the printer
+  opened on Letter at three hundred dots, two pages sent as bands, the job
+  taken, and what arrived a PDF of two pages whose cross-reference table
+  points at every object; and, with no server on the port, no printers,
+  no default and nothing opened.
+  *Not done, and named here:* nobody has printed a sheet with it — the
+  container has no CUPS and no printer, which is the same sentence
+  **A2** ends with. The pretend server is this program's, and holds the
+  client to the RFC's bytes and to a document a reader can walk; a real
+  queue is the proof this item asks for. There is no system dialog to
+  choose a printer with, so choosing is the default printer, and a job goes
+  with one copy and the sides asked for and nothing else: the paper, the
+  tray and the quality are the printer's defaults. A server that wants a
+  password is not answered.
 
 ## B — Speed on a document that is not a toy
 
@@ -7004,7 +7044,9 @@ that changed, and inside that part only the nodes that changed — a content
 control, a chart or a colleague's tracked change beside the edit comes through
 untouched.
 
-**What it cannot do yet** is print, and that is where the work goes next.
+**It prints**, on Windows through the spooler and on Linux through CUPS, and
+writes a PDF; what is left in the queue above is the tail each block named
+as not done, one item to a tail.
 
 [MS-DOC]: https://learn.microsoft.com/openspecs/office_file_formats/ms-doc/
 [MS-CFB]: https://learn.microsoft.com/openspecs/windows_protocols/ms-cfb/
