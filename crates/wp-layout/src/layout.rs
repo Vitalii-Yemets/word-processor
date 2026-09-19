@@ -39,6 +39,9 @@ use wp_docx::cells::CellEdge;
 use crate::borders::Side;
 use crate::library::FontLibrary;
 
+/// Laying the body out again from where it changed.
+mod again;
+
 /// Twentieths of a point, the unit the format measures almost everything in.
 pub(crate) const TWIPS_PER_POINT: f32 = 20.0;
 /// Points per inch, which is what makes a point a point.
@@ -815,7 +818,7 @@ pub struct Decoration {
 }
 
 /// One page, ready to draw.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct Page {
     /// Page size in pixels.
     pub width: f32,
@@ -840,6 +843,29 @@ pub struct Page {
     /// text the ordinary way up, and a word of it should not have to carry a
     /// field that says so a hundred thousand times. See [`Page::turn_of`].
     pub turned: Vec<(core::ops::Range<usize>, Turn)>,
+    /// Which pass of which engine drew it.
+    ///
+    /// Bookkeeping, not content: two pages that draw the same are the same
+    /// page whichever pass drew them, so the stamp is left out of equality.
+    /// It is how an engine given pages back tells its own last pass's from
+    /// any others — see [`again`]. Public because a page built anywhere
+    /// else with `..Page::default()` has to be able to leave it at nought.
+    pub stamp: u64,
+}
+
+impl PartialEq for Page {
+    fn eq(&self, other: &Self) -> bool {
+        self.width == other.width
+            && self.height == other.height
+            && self.glyphs == other.glyphs
+            && self.images == other.images
+            && self.shapes == other.shapes
+            && self.decorations == other.decorations
+            && self.cells == other.cells
+            && self.paths == other.paths
+            && self.lines == other.lines
+            && self.turned == other.turned
+    }
 }
 
 impl Page {
@@ -1575,6 +1601,9 @@ pub struct LayoutEngine<'a> {
     /// says in its settings and half of them say something other than the
     /// half inch the format assumes.
     default_tab: i32,
+    /// The style of every paragraph of the document, gathered once per
+    /// layout, for the paragraphs that ask about their neighbours.
+    paragraph_styles: Vec<Option<String>>,
     /// Which section each page of the document belongs to.
     ///
     /// Kept because a page cannot be asked: it is a picture of paper, and the
@@ -1583,6 +1612,21 @@ pub struct LayoutEngine<'a> {
     /// itself — a header or a footnote is laid out through the same code and
     /// has no sections of its own.
     page_sections: Vec<usize>,
+    /// What the last pass over the document's body left behind, for the
+    /// next one to take up from. See [`again`].
+    remembered: Option<again::Remembered>,
+    /// This engine's number, and how many passes it has made: together, the
+    /// stamp on the pages of a pass.
+    engine: u64,
+    passes: u64,
+    /// How many writes the document's package had seen when it was last
+    /// laid out. A write is a style edited, a picture replaced, a chart's
+    /// figures changed — something that alters how a paragraph looks
+    /// without altering the paragraph, so everything kept about the
+    /// paragraphs is let go when the count moves.
+    generation: u64,
+    /// How many blocks of the body the last layout of a document placed.
+    placed: usize,
 }
 
 impl<'a> LayoutEngine<'a> {
@@ -1614,8 +1658,24 @@ impl<'a> LayoutEngine<'a> {
             outline_heading: 0,
             theme_effect: None,
             default_tab: DEFAULT_TAB_TWIPS,
+            paragraph_styles: Vec::new(),
             page_sections: Vec::new(),
+            remembered: None,
+            engine: again::engine_number(),
+            passes: 0,
+            generation: 0,
+            placed: 0,
         }
+    }
+
+    /// How many blocks of the body the last layout of a document placed.
+    ///
+    /// A keystroke into a long document should place a handful, however
+    /// long the document is: the pages that did not move are kept. See
+    /// [`again`].
+    #[must_use]
+    pub fn blocks_placed(&self) -> usize {
+        self.placed
     }
 
     /// Sets whether tracked changes are drawn as changes.
@@ -1964,52 +2024,86 @@ impl<'a> LayoutEngine<'a> {
     /// What a view mode is: draft and web layout are the same document on
     /// different paper, not a different way of laying one out.
     pub fn layout_document_with(&mut self, document: &Document, metrics: PageMetrics) -> Vec<Page> {
+        self.layout_document_again(document, metrics, Vec::new())
+    }
+
+    /// The same, given back the pages this engine gave last time.
+    ///
+    /// Those pages, untouched, are what lets a keystroke cost what it costs
+    /// on a short document however long this one is: the pages before the
+    /// change are kept, the text is laid out again from where it changed,
+    /// and the pages after are kept once the pagination lands where it
+    /// landed before. See [`again`]. Pages that are not this
+    /// engine's last are laid out afresh, so nothing is lost by giving the
+    /// wrong ones back — only time.
+    pub fn layout_document_again(
+        &mut self,
+        document: &Document,
+        metrics: PageMetrics,
+        previous: Vec<Page>,
+    ) -> Vec<Page> {
         self.theme_effect = Some(document.theme().effect);
         // Where the tabs fall back to when a paragraph names no stops of its
         // own, which every document says for itself.
         self.default_tab = document.default_tab_width();
+        self.paragraph_styles = document.paragraph_styles();
         self.number_notes(document);
-        self.number_sequences(document);
+        // A part of the package written since — a style, a picture, a theme
+        // — changes what a paragraph resolves to without changing the
+        // paragraph, so nothing measured before it can be trusted after.
+        let generation = document.package().generation();
+        if self.generation != generation {
+            self.generation = generation;
+            self.measured.clear();
+        }
+        self.placed = 0;
 
-        // Footnotes take room away from the text on the page they belong to, and
-        // which page a mark lands on depends on how much room the text has — so
-        // the two are worked out together. Two passes settle it for any
-        // ordinary document; Word does the same and also stops.
+        // Footnotes take room away from the text on the page they belong to,
+        // and which page a mark lands on depends on how much room the text
+        // has — so the two are worked out together. A `PAGEREF` can only be
+        // answered once there are pages to count, so it is the same again.
+        // The body is laid out, the room and the pages are read off it, and
+        // if either differs from what the body was laid out with it is laid
+        // out again with the new answers: twice more at most. A page number
+        // that moves the text that moves the page number is a document
+        // nobody can typeset, and Word gives up at the same point.
+        //
+        // What it is laid out with the first time is what the last layout
+        // ended with, when there are pages back from it: on a keystroke the
+        // answers are almost always still right, and then one pass is all
+        // it takes. Without pages back it starts, as a new engine does, from
+        // no room and no pages.
         let footnotes = document.notes(wp_docx::notes::Kind::Footnote);
         let body = document.body();
+        // Counted over the body that is about to be laid out, so that it is
+        // built once.
+        self.number_sequences(&body);
+        if previous.is_empty() {
+            self.reserved = Vec::new();
+        }
         // From here to the end of the body, the paragraphs are the document's
         // own and their measurements are worth keeping. A header or the text
         // inside a shape is counted from zero as well, so it must not be
         // mistaken for the body — see [`Measured`].
         self.keeping = true;
-        let mut pages = self.layout_body(&body, document, metrics);
-        if !footnotes.is_empty() {
-            for _ in 0..2 {
-                let reserved = self.measure_footnotes(&pages, &footnotes, document, metrics);
-                if reserved == self.reserved {
-                    break;
-                }
-                self.reserved = reserved;
-                pages = self.layout_body(&document.body(), document, metrics);
+        let mut pages = self.layout_body_from(&body, document, metrics, previous);
+        for _ in 0..2 {
+            let reserved = if footnotes.is_empty() {
+                Vec::new()
+            } else {
+                self.measure_footnotes(&pages, &footnotes, document, metrics)
+            };
+            let bookmarks = Self::locate_bookmarks(&pages, document);
+            if reserved == self.reserved && bookmarks == self.bookmark_pages {
+                break;
             }
-            self.place_footnotes(&mut pages, &footnotes, document, metrics);
-            self.reserved = Vec::new();
+            self.reserved = reserved;
+            self.bookmark_pages = bookmarks;
+            let previous = core::mem::take(&mut pages);
+            pages = self.layout_body_from(&body, document, metrics, previous);
         }
-
-        // A `PAGEREF` can only be answered once there are pages to count, so the
-        // document is laid out again with the answers in. One extra pass: a
-        // page number that moves the text that moves the page number is a
-        // document nobody can typeset, and Word gives up at the same point.
-        let had_references = !self.bookmark_pages.is_empty();
-        self.locate_bookmarks(&pages, document);
-        if !self.bookmark_pages.is_empty() || had_references {
-            pages = self.layout_body(&document.body(), document, metrics);
-            if !footnotes.is_empty() {
-                self.reserved = self.measure_footnotes(&pages, &footnotes, document, metrics);
-                pages = self.layout_body(&document.body(), document, metrics);
-                self.place_footnotes(&mut pages, &footnotes, document, metrics);
-                self.reserved = Vec::new();
-            }
+        if !footnotes.is_empty() {
+            self.place_footnotes(&mut pages, &footnotes, document, metrics);
         }
 
         // The numbers down the margin, where a section asks for them.
@@ -2053,6 +2147,23 @@ impl<'a> LayoutEngine<'a> {
         document: &Document,
         metrics: PageMetrics,
     ) -> Vec<Page> {
+        self.layout_body_from(body, document, metrics, Vec::new())
+    }
+
+    /// The same, given back the pages of the last pass over the document's
+    /// body, so that it is taken up from where the body changed and left off
+    /// where the pagination lands as it did. See [`again`].
+    ///
+    /// Only the document's own body is remembered from one pass to the
+    /// next; any other body is laid out whole, and the pages given back are
+    /// let go.
+    fn layout_body_from(
+        &mut self,
+        body: &Body,
+        document: &Document,
+        metrics: PageMetrics,
+        previous: Vec<Page>,
+    ) -> Vec<Page> {
         // Every pass starts with no floating drawings: they are found again as
         // the text is placed, and keeping the last pass's would narrow the
         // lines twice over.
@@ -2071,7 +2182,27 @@ impl<'a> LayoutEngine<'a> {
         let mut y = 0.0f32;
         let mut column = 0usize;
 
-        for Stretch { blocks: range, metrics, start, section } in stretches {
+        // Where the last pass over this body left off, and where this one
+        // takes up from.
+        let mut trail = self.keeping.then(|| again::Trail::on(metrics));
+        let mut resumed = None;
+        if let Some(trail) = &mut trail {
+            match self.take_up(body, &stretches, previous, trail) {
+                again::Taking::Afresh => {}
+                again::Taking::Unchanged(pages) => return pages,
+                again::Taking::From(mut from) => {
+                    pages = core::mem::take(&mut from.pages);
+                    belongs = core::mem::take(&mut from.belongs);
+                    y = from.y;
+                    column = from.column;
+                    index = from.index;
+                    resumed = Some(from);
+                }
+            }
+        }
+
+        for (which, stretch) in stretches.iter().enumerate() {
+            let Stretch { blocks: range, metrics, start, section } = stretch;
             let scale = self.pixels_per_point();
             let page_width = metrics.width * scale;
             let page_height = metrics.height * scale;
@@ -2083,27 +2214,50 @@ impl<'a> LayoutEngine<'a> {
             let text_width = metrics.column_width() * scale;
             let column_gap = metrics.column_gap * scale;
 
-            // A section on paper of its own has to begin a page of its own,
-            // because a page is one size all the way down.
-            let first = pages.is_empty();
-            if first || start.on_a_new_page() {
-                pages.push(Page { width: page_width, height: page_height, ..Page::default() });
-                // One that has to begin on an even or an odd page takes a blank
-                // page in front of it when the count comes out wrong, which is
-                // how a chapter always opens on the same side of the paper.
-                let wrong = match start {
-                    Start::EvenPage => pages.len() % 2 == 1,
-                    Start::OddPage => pages.len() % 2 == 0,
-                    _ => false,
-                };
-                if wrong && !first {
-                    pages.push(Page { width: page_width, height: page_height, ..Page::default() });
+            let mut from = range.start;
+            match &resumed {
+                // The stretches before the one taken up in are done, and that
+                // one is entered at the block taken up at, on the page as it
+                // stood.
+                Some(taken) if which < taken.stretch => continue,
+                Some(taken) if which == taken.stretch => from = taken.block,
+                _ => {
+                    // A section on paper of its own has to begin a page of its
+                    // own, because a page is one size all the way down.
+                    let first = pages.is_empty();
+                    if first || start.on_a_new_page() {
+                        pages.push(Page {
+                            width: page_width,
+                            height: page_height,
+                            ..Page::default()
+                        });
+                        // One that has to begin on an even or an odd page
+                        // takes a blank page in front of it when the count
+                        // comes out wrong, which is how a chapter always opens
+                        // on the same side of the paper.
+                        let wrong = match start {
+                            Start::EvenPage => pages.len() % 2 == 1,
+                            Start::OddPage => pages.len() % 2 == 0,
+                            _ => false,
+                        };
+                        if wrong && !first {
+                            pages.push(Page {
+                                width: page_width,
+                                height: page_height,
+                                ..Page::default()
+                            });
+                        }
+                        y = top;
+                        column = 0;
+                    }
                 }
-                y = top;
-                column = 0;
             }
 
-            let Some(blocks) = body.blocks.get(range) else { continue };
+            let Some(blocks) = body.blocks.get(from..range.end) else { continue };
+            if let Some(trail) = &mut trail {
+                trail.stretch = which;
+                trail.offset = from;
+            }
             self.place_blocks(
                 blocks,
                 &mut index,
@@ -2122,13 +2276,18 @@ impl<'a> LayoutEngine<'a> {
                     column_gap,
                     keeping: true,
                 },
+                trail.as_mut(),
             );
             // Everything pushed while this section was placed is that section's.
-            belongs.resize(pages.len(), section);
-        }
+            belongs.resize(pages.len(), *section);
 
-        if of_the_document {
-            self.page_sections = belongs;
+            // Landed where the last pass landed: the rest is the last pass's.
+            if let (Some(trail), Some(taken)) = (&trail, &mut resumed) {
+                if trail.settled.is_some() {
+                    self.settle(trail, taken, &mut pages, &mut belongs);
+                    break;
+                }
+            }
         }
 
         if pages.is_empty() {
@@ -2138,6 +2297,14 @@ impl<'a> LayoutEngine<'a> {
                 height: metrics.height * scale,
                 ..Page::default()
             });
+            belongs.resize(1, 0);
+        }
+        if of_the_document {
+            self.page_sections.clone_from(&belongs);
+        }
+        if let Some(trail) = trail {
+            self.placed += trail.placed;
+            self.remember(trail, resumed, &mut pages, belongs, body, &stretches);
         }
         pages
     }
@@ -2189,6 +2356,11 @@ impl<'a> LayoutEngine<'a> {
     /// because that is what a caret position means. Walking the blocks here
     /// rather than flattening them first is what lets a table be laid out as a
     /// grid instead of as a list of its paragraphs.
+    ///
+    /// Given a trail, it leaves a checkpoint at every block the placement
+    /// could be taken up from — one outside any run of paragraphs kept
+    /// together, and not one a run was moved back to — and stops the moment
+    /// a checkpoint matches the last pass's. See [`again`].
     #[allow(clippy::too_many_arguments)]
     fn place_blocks(
         &mut self,
@@ -2199,6 +2371,7 @@ impl<'a> LayoutEngine<'a> {
         y: &mut f32,
         column: &mut usize,
         area: Placement,
+        mut trail: Option<&mut again::Trail>,
     ) {
         // The run of paragraphs that have asked to stay with the one after
         // them, and where that run began: a heading followed by two more
@@ -2211,6 +2384,32 @@ impl<'a> LayoutEngine<'a> {
 
         let mut position = 0usize;
         while position < blocks.len() {
+            if let Some(trail) = trail.as_deref_mut() {
+                if kept.is_none() && moved_at.is_none_or(|moved| position > moved) {
+                    let point = again::Checkpoint {
+                        block: trail.offset + position,
+                        index: *index,
+                        stretch: trail.stretch,
+                        page: pages.len().saturating_sub(1),
+                        held: pages.last().map(again::Extent::of).unwrap_or_default(),
+                        y: *y,
+                        column: *column,
+                        counters: self.counters.clone(),
+                        floats: self.floats.len(),
+                        outline_heading: self.outline_heading,
+                    };
+                    let settled = self.settles(trail, &point);
+                    trail.checkpoints.push(point);
+                    if settled.is_some() {
+                        trail.settled = settled;
+                        return;
+                    }
+                }
+            }
+
+            if let Some(trail) = trail.as_deref_mut() {
+                trail.placed += 1;
+            }
             let before = Mark::here(pages, *y, *column, 0, 0);
             let counted = *index;
 
@@ -2309,11 +2508,17 @@ impl<'a> LayoutEngine<'a> {
         // what makes a bulleted list read as a list instead of as a column of
         // paragraphs with gaps between them, and it is asked of the neighbours
         // rather than of this paragraph alone.
+        // Asked of the styles gathered once for the whole document, because
+        // asking the document for each neighbour walks the whole tree for
+        // each paragraph, and that made a keystroke on a thousand pages
+        // cost seconds.
         let same_as = |other: usize| {
-            resolved.contextual_spacing && document.style_of(other) == document.style_of(index)
+            resolved.contextual_spacing
+                && self.paragraph_styles.get(other) == self.paragraph_styles.get(index)
+                && other < self.paragraph_styles.len()
         };
         let after_its_own_kind = index > 0 && same_as(index - 1);
-        let before_its_own_kind = index + 1 < document.paragraph_count() && same_as(index + 1);
+        let before_its_own_kind = index + 1 < self.paragraph_styles.len() && same_as(index + 1);
 
         let space_before = if after_its_own_kind {
             0.0
@@ -3151,7 +3356,16 @@ impl<'a> LayoutEngine<'a> {
         let cell_area = Placement { left, text_width: width, bottom_limit: f32::INFINITY, ..area }
             .without_columns();
         let mut cell_column = 0usize;
-        self.place_blocks(&cell.blocks, index, document, pages, y, &mut cell_column, cell_area);
+        self.place_blocks(
+            &cell.blocks,
+            index,
+            document,
+            pages,
+            y,
+            &mut cell_column,
+            cell_area,
+            None,
+        );
     }
 
     /// Moves the flow on: to the next column, or to a new page after the last.
@@ -4617,12 +4831,16 @@ impl<'a> LayoutEngine<'a> {
                 if shape.joins.is_nothing() {
                     continue;
                 }
+                // Used up here: a page kept from one layout to the next has
+                // its connectors joined already, and joining one again from
+                // where the first joining left it would move it.
+                let joins = core::mem::take(&mut shape.joins);
                 // An end fastened to nothing stays where the connector was
                 // drawn; one fastened to a shape goes to that shape.
                 let corner = wp_raster::Point::new(shape.x, shape.y);
                 let far = wp_raster::Point::new(shape.x + shape.width, shape.y + shape.height);
-                let start = shape.joins.start.and_then(site_of).unwrap_or(corner);
-                let end = shape.joins.end.and_then(site_of).unwrap_or(far);
+                let start = joins.start.and_then(site_of).unwrap_or(corner);
+                let end = joins.end.and_then(site_of).unwrap_or(far);
 
                 shape.x = start.x.min(end.x);
                 shape.y = start.y.min(end.y);
@@ -4639,7 +4857,7 @@ impl<'a> LayoutEngine<'a> {
                     shape.preset,
                     crate::geometry::Preset::Line | crate::geometry::Preset::StraightConnector
                 );
-                let (Some(one), Some(two)) = (shape.joins.start, shape.joins.end) else {
+                let (Some(one), Some(two)) = (joins.start, joins.end) else {
                     continue;
                 };
                 let (Some(from_box), Some(to_box)) = (box_of(one), box_of(two)) else {
@@ -6243,15 +6461,15 @@ struct LinePlacement {
 /// One stretch of a body laid out on paper of its own: a section, or the whole
 /// of a body that has no sections.
 #[derive(Clone, Debug)]
-struct Stretch {
+pub(crate) struct Stretch {
     /// The blocks it covers.
-    blocks: core::ops::Range<usize>,
+    pub(crate) blocks: core::ops::Range<usize>,
     /// The paper they are printed on.
-    metrics: PageMetrics,
+    pub(crate) metrics: PageMetrics,
     /// How the stretch begins.
-    start: Start,
+    pub(crate) start: Start,
     /// Which section of the document it is, for the header printed on it.
-    section: usize,
+    pub(crate) section: usize,
 }
 
 /// Which pages a stretch of header or footer is being printed on.
@@ -7420,6 +7638,7 @@ impl LayoutEngine<'_> {
                     &mut y,
                     &mut column,
                     area,
+                    None,
                 );
                 (scratch.remove(0), y)
             };
@@ -7536,7 +7755,14 @@ impl LayoutEngine<'_> {
 
 impl LayoutEngine<'_> {
     /// How far down a page the text may go, once its footnotes are allowed for.
+    ///
+    /// Only the document's own body has footnotes under it. The room is kept
+    /// from one layout to the next, so a header laid out on a page of its
+    /// own must not read it as its own.
     fn limit(&self, page: usize, area: Placement) -> f32 {
+        if !self.keeping {
+            return area.bottom_limit;
+        }
         area.bottom_limit - self.reserved.get(page).copied().unwrap_or(0.0)
     }
 
@@ -7551,9 +7777,10 @@ impl LayoutEngine<'_> {
         let mut reserved = vec![0.0f32; pages.len()];
         let scale = self.pixels_per_point();
 
+        let lines = Lines::of(pages);
         for note in notes {
             let Some(mark) = note.mark else { continue };
-            let Some(page) = page_of(pages, mark) else { continue };
+            let Some(page) = lines.page_of(mark) else { continue };
             reserved[page] += self.note_height(note, document, metrics);
         }
 
@@ -7612,7 +7839,16 @@ impl LayoutEngine<'_> {
 
         let counters = core::mem::replace(&mut self.counters, ListCounters::new());
         let reserved = core::mem::take(&mut self.reserved);
-        self.place_blocks(&body.blocks, &mut counted, document, pages, &mut y, &mut column, area);
+        self.place_blocks(
+            &body.blocks,
+            &mut counted,
+            document,
+            pages,
+            &mut y,
+            &mut column,
+            area,
+            None,
+        );
         self.counters = counters;
         self.reserved = reserved;
         y
@@ -7632,9 +7868,10 @@ impl LayoutEngine<'_> {
 
         // Grouped by page first, so the notes on one page stack in order.
         let mut by_page: HashMap<usize, Vec<&wp_docx::notes::Note>> = HashMap::new();
+        let lines = Lines::of(pages);
         for note in notes {
             let Some(mark) = note.mark else { continue };
-            let Some(page) = page_of(pages, mark) else { continue };
+            let Some(page) = lines.page_of(mark) else { continue };
             by_page.entry(page).or_default().push(note);
         }
 
@@ -7692,14 +7929,39 @@ impl LayoutEngine<'_> {
 const SEPARATOR_SPACE: f32 = 12.0;
 
 /// Which page a place in the text landed on.
-fn page_of(pages: &[Page], at: wp_docx::TextPosition) -> Option<usize> {
-    pages.iter().position(|page| {
-        page.lines.iter().any(|line| {
-            line.paragraph == at.paragraph
-                && at.offset >= line.start_offset
-                && at.offset <= line.end_offset
-        })
-    })
+/// Where every line of every page is, by the paragraph it shows.
+///
+/// A bookmark or a note mark is on the page whose line covers it, and a
+/// document has hundreds of the one and thousands of the other: asked one at
+/// a time of every line on every page, that was most of what a keystroke
+/// cost on a long document with a table of contents.
+struct Lines {
+    by_paragraph: HashMap<usize, Vec<(usize, usize, usize)>>,
+}
+
+impl Lines {
+    fn of(pages: &[Page]) -> Self {
+        let mut by_paragraph: HashMap<usize, Vec<(usize, usize, usize)>> = HashMap::new();
+        for (page, laid) in pages.iter().enumerate() {
+            for line in &laid.lines {
+                by_paragraph.entry(line.paragraph).or_default().push((
+                    page,
+                    line.start_offset,
+                    line.end_offset,
+                ));
+            }
+        }
+        Self { by_paragraph }
+    }
+
+    /// The first page with a line covering the position.
+    fn page_of(&self, at: wp_docx::TextPosition) -> Option<usize> {
+        self.by_paragraph
+            .get(&at.paragraph)?
+            .iter()
+            .find(|(_, start, end)| at.offset >= *start && at.offset <= *end)
+            .map(|(page, _, _)| *page)
+    }
 }
 
 impl LayoutEngine<'_> {
@@ -7709,11 +7971,10 @@ impl LayoutEngine<'_> {
     /// body before anything is placed. Keyed by the paragraph and by which
     /// field of that paragraph it is, so laying the same paragraph out twice
     /// gives the same answer both times.
-    fn number_sequences(&mut self, document: &Document) {
+    fn number_sequences(&mut self, body: &Body) {
         self.sequence_numbers.clear();
         let mut counts: HashMap<String, usize> = HashMap::new();
 
-        let body = document.body();
         let mut paragraph_index = 0usize;
         count_sequences(
             &body.blocks,
@@ -7724,21 +7985,19 @@ impl LayoutEngine<'_> {
     }
 
     /// Which page each bookmark begins on.
-    fn locate_bookmarks(&mut self, pages: &[Page], document: &Document) {
-        self.bookmark_pages.clear();
-        for mark in document.bookmarks() {
-            let at = mark.range.0;
-            let found = pages.iter().position(|page| {
-                page.lines.iter().any(|line| {
-                    line.paragraph == at.paragraph
-                        && at.offset >= line.start_offset
-                        && at.offset <= line.end_offset
-                })
-            });
-            if let Some(page) = found {
-                self.bookmark_pages.insert(mark.name, page + 1);
+    fn locate_bookmarks(pages: &[Page], document: &Document) -> HashMap<String, usize> {
+        let marks = document.bookmarks();
+        let mut found = HashMap::new();
+        if marks.is_empty() {
+            return found;
+        }
+        let lines = Lines::of(pages);
+        for mark in marks {
+            if let Some(page) = lines.page_of(mark.range.0) {
+                found.insert(mark.name, page + 1);
             }
         }
+        found
     }
 
     /// What a sequence or a reference field shows.

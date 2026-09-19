@@ -504,13 +504,10 @@ pub(crate) fn supports_both_sides(name: &str) -> bool {
 /// `na_letter_8.5x11in`, as width and height in hundredths of a millimetre.
 fn medium_size(name: &str) -> Option<(u32, u32)> {
     let size = name.rsplit('_').next()?;
-    let (numbers, unit) = if let Some(rest) = size.strip_suffix("mm") {
-        (rest, 100.0)
-    } else if let Some(rest) = size.strip_suffix("in") {
-        (rest, 2540.0)
-    } else {
-        return None;
-    };
+    let (numbers, unit) = size
+        .strip_suffix("mm")
+        .map(|rest| (rest, 100.0))
+        .or_else(|| size.strip_suffix("in").map(|rest| (rest, 2540.0)))?;
     let (width, height) = numbers.split_once('x')?;
     let width: f64 = width.parse().ok()?;
     let height: f64 = height.parse().ok()?;

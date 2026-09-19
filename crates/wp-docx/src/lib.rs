@@ -2778,6 +2778,25 @@ impl Document {
             .map(str::to_owned)
     }
 
+    /// The style of every paragraph, in one walk of the document.
+    ///
+    /// For whoever asks about every paragraph's neighbours in turn: asking
+    /// [`Self::style_of`] eleven thousand times walks the tree eleven thousand
+    /// times, and that is a keystroke that costs seconds.
+    #[must_use]
+    pub fn paragraph_styles(&self) -> Vec<Option<String>> {
+        self.paragraph_elements()
+            .into_iter()
+            .map(|paragraph| {
+                paragraph
+                    .child(Some(read::W), "pPr")
+                    .and_then(|properties| properties.child(Some(read::W), "pStyle"))
+                    .and_then(read::value)
+                    .map(str::to_owned)
+            })
+            .collect()
+    }
+
     /// Where the tabs stop in the paragraph at the caret, after the style chain
     /// has had its say.
     ///

@@ -99,7 +99,7 @@ impl Document {
     /// The innermost block-level control a paragraph is in.
     #[must_use]
     pub fn block_control_at(&self, paragraph: usize) -> Option<BlockControl> {
-        self.block_controls().into_iter().filter(|control| control.holds(paragraph)).last()
+        self.block_controls().into_iter().rfind(|control| control.holds(paragraph))
     }
 
     /// The repeating-section item a paragraph is in, if it is in one.
@@ -107,8 +107,7 @@ impl Document {
     pub fn repeating_item_at(&self, paragraph: usize) -> Option<BlockControl> {
         self.block_controls()
             .into_iter()
-            .filter(|control| control.kind == BlockKind::RepeatingItem && control.holds(paragraph))
-            .last()
+            .rfind(|control| control.kind == BlockKind::RepeatingItem && control.holds(paragraph))
     }
 
     /// Puts a repeating section round the paragraphs the selection covers,

@@ -336,7 +336,7 @@ fn read_level(level: &Element) -> Level {
 /// paragraph alone: the third item of a list is only the third because of the
 /// two before it. Starting a level again resets everything under it, which is
 /// what makes a sub-list begin at one under each new parent item.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ListCounters {
     /// Counts per list, one entry per level.
     counts: HashMap<i32, Vec<i32>>,

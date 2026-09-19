@@ -1565,8 +1565,12 @@ impl Editor {
         let record = self.preview_record.map(|at| self.recipients.record(at)).unwrap_or_default();
         self.engine.set_merge_record(record);
 
+        // The pages go back to the engine, which keeps the ones that did
+        // not move: that is what makes a keystroke cost the same on a
+        // thousand pages as on ten.
         let metrics = self.view_metrics();
-        self.pages = self.engine.layout_document_with(&self.document, metrics);
+        let previous = core::mem::take(&mut self.pages);
+        self.pages = self.engine.layout_document_again(&self.document, metrics, previous);
         self.recheck_proofing();
         // Every other window is now showing pages worked out before this.
         self.other_windows_are_stale();

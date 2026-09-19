@@ -1607,6 +1607,23 @@ pub enum Block {
 }
 
 impl Block {
+    /// How many paragraphs the block holds, counted the way a
+    /// [`crate::TextPosition`] counts them: a paragraph is one, a table is
+    /// every paragraph in every cell, tables inside cells included.
+    #[must_use]
+    pub fn paragraph_count(&self) -> usize {
+        match self {
+            Self::Paragraph(_) => 1,
+            Self::Table(table) => table
+                .rows
+                .iter()
+                .flat_map(|row| &row.cells)
+                .flat_map(|cell| &cell.blocks)
+                .map(Block::paragraph_count)
+                .sum(),
+        }
+    }
+
     /// The block's text with formatting removed.
     #[must_use]
     pub fn plain_text(&self) -> String {

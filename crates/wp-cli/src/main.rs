@@ -651,9 +651,27 @@ fn bench(pages: &str) -> Result<(), String> {
     document.insert_text(wp_docx::TextPosition::new(middle, 0), "x");
     let typing = start.elapsed();
 
+    let pages_before = laid.len();
     let start = Instant::now();
-    let after = engine.layout_document(&document);
+    let after = engine.layout_document_again(
+        &document,
+        wp_layout::PageMetrics::from_document(&document),
+        laid,
+    );
     let relayout = start.elapsed();
+    let placed = engine.blocks_placed();
+
+    // And a paragraph break, which is the other thing a person types: it
+    // moves everything after it down a line, so the pages after it cannot
+    // be kept, and the layout runs to the end of the document. Word does the
+    // same, in the background.
+    let metrics = wp_layout::PageMetrics::from_document(&document);
+    document.set_caret(wp_docx::TextPosition::new(middle, 1));
+    document.type_text("\n");
+    let start = Instant::now();
+    let after = engine.layout_document_again(&document, metrics, after);
+    let breaking = start.elapsed();
+    let placed_after_break = engine.blocks_placed();
 
     // What a hundred letters cost, which is what a person types in half a
     // minute — and what the undo history has to hold afterwards. Typed the way
@@ -672,13 +690,16 @@ fn bench(pages: &str) -> Result<(), String> {
     let saved = document.save().map_err(|error| format!("cannot save: {error}"))?;
     let saving = start.elapsed();
 
-    outln!("pages: {} before the edit, {} after", laid.len(), after.len());
+    outln!("pages: {pages_before} before the edit, {} after", after.len());
     outln!();
     outln!("{:<26} {:>10}", "WHAT", "TIME");
     outln!("{:<26} {:>10}", "opening the file", took(opening));
     outln!("{:<26} {:>10}", "laying it out", took(layout));
     outln!("{:<26} {:>10}", "typing one letter", took(typing));
     outln!("{:<26} {:>10}", "laying it out again", took(relayout));
+    outln!("{:<26} {:>10}", "  blocks placed", format!("{placed} of {paragraphs}"));
+    outln!("{:<26} {:>10}", "after a paragraph break", took(breaking));
+    outln!("{:<26} {:>10}", "  blocks placed", format!("{placed_after_break} of {paragraphs}"));
     outln!("{:<26} {:>10}", "saving it", took(saving));
     outln!("{:<26} {:>10}", "typing a hundred letters", took(hundred));
     outln!("{:<26} {:>10}", "  undo steps kept", document.undo_depth().to_string());

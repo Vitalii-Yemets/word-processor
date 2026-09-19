@@ -41,6 +41,14 @@ impl PackageEntry {
 pub struct Package {
     entries: Vec<PackageEntry>,
     content_types: ContentTypes,
+    /// How many times a part has been written or taken away.
+    ///
+    /// Not saved: a count of edits, for anyone holding something worked out
+    /// from the parts — a layout, say — to tell whether it still holds
+    /// without reading them all again. Everything that changes a part goes
+    /// through [`Self::set_part`] or [`Self::remove_part`], so the count is
+    /// complete.
+    generation: u64,
 }
 
 impl Package {
@@ -71,13 +79,21 @@ impl Package {
                     .map_err(|source| Error::Xml { part: CONTENT_TYPES_PART.to_owned(), source })
             })?;
 
-        Ok(Self { entries, content_types })
+        Ok(Self { entries, content_types, generation: 0 })
     }
 
     /// Builds an empty package with no parts and no declared types.
     #[must_use]
     pub fn empty() -> Self {
-        Self { entries: Vec::new(), content_types: ContentTypes::default() }
+        Self { entries: Vec::new(), content_types: ContentTypes::default(), generation: 0 }
+    }
+
+    /// How many times a part has been written or taken away since the
+    /// package was opened. Two readings that agree mean no part has changed
+    /// between them.
+    #[must_use]
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Every entry, in the order it appears in the archive.
@@ -119,6 +135,7 @@ impl Package {
     /// because a part whose type is undeclared makes the package invalid and
     /// silently inventing one would hide the mistake.
     pub fn set_part(&mut self, name: &str, data: Vec<u8>) {
+        self.generation += 1;
         let name = normalize(name);
         match self.entries.iter_mut().find(|entry| entry.name.eq_ignore_ascii_case(&name)) {
             Some(entry) => entry.data = data,
@@ -133,6 +150,7 @@ impl Package {
 
     /// Removes a part and any override declaring its type.
     pub fn remove_part(&mut self, name: &str) {
+        self.generation += 1;
         let name = normalize(name);
         self.entries.retain(|entry| !entry.name.eq_ignore_ascii_case(&name));
         self.content_types.remove_override(&name);
