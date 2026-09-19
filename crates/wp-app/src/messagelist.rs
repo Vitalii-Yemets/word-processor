@@ -39,6 +39,10 @@ fn from_the_tables() -> BTreeSet<String> {
     use crate::chrome::stylespane::Showing;
 
     let mut out = BTreeSet::new();
+    // The four things the Trust Centre may be told, in Word's own words.
+    for trusting in crate::editor::trust::Trusting::ALL {
+        out.insert(trusting.label().to_owned());
+    }
     for tab in Tab::ALL.iter().chain(Tab::CONTEXTUAL.iter()) {
         out.insert(tab.label().to_owned());
         for group in ribbon::groups_of(*tab) {

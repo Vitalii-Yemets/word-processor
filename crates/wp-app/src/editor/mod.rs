@@ -39,6 +39,7 @@ pub use files::{
     is_doc_path, is_odt_path, is_pdf_path, is_rtf_path, is_template_path, is_web_path,
 };
 mod textfiles;
+pub mod trust;
 pub use textfiles::is_text_path;
 mod fontdialog;
 mod formuladialog;
@@ -488,6 +489,9 @@ pub struct Editor {
     /// And the one whose source is on the screen, which is the one the Run
     /// button on that dialog would run.
     showing_macro: Option<wp_vba::Macro>,
+    /// Whether somebody said this document's macros may run, for as long as
+    /// it is open. See [`trust`].
+    enabled_here: bool,
     /// Word's Visual Basic Editor, while it is what the window is showing.
     basic: Option<crate::chrome::basicpane::BasicPane>,
     /// A macro running, which may be stopped in the middle of itself.
@@ -837,6 +841,7 @@ impl Editor {
             vba,
             document_macros: Vec::new(),
             showing_macro: None,
+            enabled_here: false,
             basic: None,
             debugger: None,
             filling_in: None,

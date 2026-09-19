@@ -66,7 +66,9 @@ impl Because {
     pub fn said(self) -> &'static str {
         match self {
             Self::ReadOnly => "This document is open read-only.",
-            Self::Macros => "This document carries macros. They are kept and not run.",
+            Self::Macros => {
+                "This document carries macros. They are disabled until you say otherwise."
+            }
             Self::Recovered => "This document was recovered after the program stopped.",
         }
     }
@@ -76,10 +78,9 @@ impl Because {
     pub fn button(self) -> Option<&'static str> {
         match self {
             Self::ReadOnly => Some("Edit Anyway"),
-            // Nothing runs macros, so there is nothing to enable: the bar
-            // says what is true and offers no button that would be a lie.
-            // See the roadmap's **L6**, which is where the button arrives.
-            Self::Macros => None,
+            // Word's own words, and the one decision a person opening a
+            // document with macros in it is being asked to make.
+            Self::Macros => Some("Enable Content"),
             Self::Recovered => Some("Save As"),
         }
     }
@@ -98,6 +99,17 @@ impl InfoBar {
     #[must_use]
     pub fn new(because: Because) -> Self {
         Self { because, placed: Vec::new() }
+    }
+
+    /// The middle of the button, once the bar has been drawn: where a press
+    /// on it lands.
+    #[must_use]
+    pub fn button_middle(&self) -> Option<(i32, i32)> {
+        self.placed.iter().find(|(hit, ..)| *hit == Hit::Button).map(
+            |(_, left, top, width, height)| {
+                ((left + width / 2.0) as i32, (top + height / 2.0) as i32)
+            },
+        )
     }
 
     /// What a point is over, if anything.
@@ -236,11 +248,14 @@ mod tests {
     }
 
     #[test]
-    fn a_bar_with_nothing_to_offer_offers_no_button() {
-        // Nothing in this program runs a macro, so a button that said it
-        // would enable them would be a lie.
-        assert_eq!(Because::Macros.button(), None);
-        assert!(Because::ReadOnly.button().is_some());
+    fn every_bar_offers_the_one_thing_somebody_would_want_to_do_about_it() {
+        // And what it offers is what its words are about: the bar that says
+        // macros are disabled is the only place they can be enabled, and the
+        // one that says the document is read-only is the only place that can
+        // be undone. See [`crate::editor::trust`].
+        assert_eq!(Because::Macros.button(), Some("Enable Content"));
+        assert_eq!(Because::ReadOnly.button(), Some("Edit Anyway"));
+        assert_eq!(Because::Recovered.button(), Some("Save As"));
     }
 
     #[test]

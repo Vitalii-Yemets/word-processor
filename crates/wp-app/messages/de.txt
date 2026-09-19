@@ -638,6 +638,15 @@ language = Deutsch
 = Different Odd & Even Pages
 > Gerade und ungerade Seiten anders
 
+= Disable all macros except digitally signed macros
+> Alle Makros außer digital signierten Makros deaktivieren
+
+= Disable all macros with notification
+> Alle Makros mit Benachrichtigung deaktivieren
+
+= Disable all macros without notification
+> Alle Makros ohne Benachrichtigung deaktivieren
+
 = Display
 > Anzeige
 
@@ -715,6 +724,12 @@ language = Deutsch
 
 = Email
 > E-Mail
+
+= Enable Content
+> Inhalt aktivieren
+
+= Enable all macros (not recommended)
+> Alle Makros aktivieren (nicht empfohlen)
 
 = Encrypt Document
 > Dokument verschlüsseln
@@ -802,6 +817,9 @@ language = Deutsch
 
 = First Name
 > Vorname
+
+= Folder
+> Ordner
 
 = Font
 > Schriftart
@@ -1124,6 +1142,21 @@ language = Deutsch
 = Macro name
 > Makroname
 
+= Macro settings
+> Makroeinstellungen
+
+= Macros are disabled without notification. The Trust Centre is where that is changed.
+> Makros sind ohne Benachrichtigung deaktiviert. Im Trust Center lässt sich das ändern.
+
+= Macros are disabled. The bar across the top offers to enable them for this document.
+> Makros sind deaktiviert. Die Leiste oben bietet an, sie für dieses Dokument zu aktivieren.
+
+= Macros are enabled for this document, for as long as it is open
+> Makros sind für dieses Dokument aktiviert, solange es geöffnet ist
+
+= Macros run without being asked about
+> Makros laufen, ohne dass nachgefragt wird
+
 = More users…
 > Weitere Benutzer…
 
@@ -1147,6 +1180,9 @@ language = Deutsch
 
 = One stretch you may edit, selected
 > Ein Bereich, den Sie bearbeiten dürfen, ausgewählt
+
+= Only macros signed by somebody trusted may run. The Trust Centre is where that is set.
+> Nur Makros mit der Signatur eines vertrauenswürdigen Herausgebers dürfen laufen. Im Trust Center wird das festgelegt.
 
 = Page 1
 > Seite 1
@@ -1201,6 +1237,9 @@ language = Deutsch
 
 = Remove Current Cover Page
 > Aktuelles Deckblatt entfernen
+
+= Remove Location
+> Speicherort entfernen
 
 = Requested signatures
 > Angeforderte Signaturen
@@ -1301,8 +1340,14 @@ language = Deutsch
 = There is no part of this document you may edit
 > Es gibt keinen Teil dieses Dokuments, den Sie bearbeiten dürfen
 
+= This document carries macros. They are disabled until you say otherwise.
+> Dieses Dokument enthält Makros. Sie sind deaktiviert, bis Sie es anders bestimmen.
+
 = This document fixes its theme — Review ▸ Restrict Editing lifts it
 > Dieses Dokument legt sein Design fest — Überprüfen ▸ Bearbeitung einschränken hebt es auf
+
+= This document has never been saved, so it is not in a folder yet
+> Dieses Dokument wurde noch nie gespeichert und liegt daher noch in keinem Ordner
 
 = This document has no watermark to save
 > Dieses Dokument hat kein Wasserzeichen zum Speichern
@@ -1334,6 +1379,15 @@ language = Deutsch
 = Top of Page
 > Seitenanfang
 
+= Trust Center
+> Trust Center
+
+= Trust This Folder
+> Diesem Ordner vertrauen
+
+= Trusted locations
+> Vertrauenswürdige Speicherorte
+
 = Valid signatures
 > Gültige Signaturen
 
@@ -1345,6 +1399,12 @@ language = Deutsch
 
 = Watermarks
 > Wasserzeichen
+
+= What a document's own macros may do
+> Was die Makros eines Dokuments tun dürfen
+
+= What is trusted
+> Was vertraut wird
 
 = Yes, Start Enforcing Protection
 > Ja, Schutz jetzt anwenden
@@ -2219,9 +2279,6 @@ language = Deutsch
 = Themes
 > Designs
 
-= This document carries macros. They are kept and not run.
-> Dieses Dokument enthält Makros. Sie bleiben erhalten und werden nicht ausgeführt.
-
 = This document fixes its style set — Review ▸ Restrict Editing lifts it
 > Dieses Dokument legt seinen Formatvorlagensatz fest — Überprüfen ▸ Bearbeitung einschränken hebt es auf
 
@@ -2501,8 +2558,14 @@ language = Deutsch
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 > {0} ist kein Bild, das dieses Programm lesen kann. PNG, JPEG, BMP, GIF, TIFF und die Metadateien sind es.
 
+= {0} is not trusted any more
+> {0} wird nicht mehr vertraut
+
 = {0} is reserved.
 > {0} ist reserviert.
+
+= {0} is trusted
+> {0} wird vertraut
 
 = {0} left in, {1} left out
 > {0} übernommen, {1} ausgelassen

@@ -419,6 +419,11 @@ impl Editor {
                 return self.report("That macro is still running");
             }
         }
+        // The gate every way of running a macro goes through: see
+        // [`super::trust`].
+        if let super::trust::Allowed::No(why) = self.macros_allowed() {
+            return self.report(&why);
+        }
         self.keep_basic();
         let Some(pane) = &self.basic else { return Response::Ignored };
         let text = pane.text();
@@ -493,6 +498,15 @@ impl Editor {
             return Response::Redraw;
         }
         pane.answers.push(format!("> {typed}"));
+        // A line typed here is Visual Basic running against the document, so
+        // it is the same question as F5 and goes through the same gate.
+        if let super::trust::Allowed::No(why) = self.macros_allowed() {
+            if let Some(pane) = &mut self.basic {
+                pane.answers.push(why);
+            }
+            self.needs_redraw = true;
+            return Response::Redraw;
+        }
 
         // A line beginning with `?` asks for a value, as it does in Word's
         // own Immediate window; anything else is a statement to run.
@@ -625,6 +639,9 @@ mod tests {
         let mut editor = Editor::new(library(), document_with(source), None);
         editor.handle(Event::Resized { width: 1200, height: 800 });
         editor.draw(1200, 800);
+        // Enabled first, as a person enables them: nothing here runs a macro
+        // until somebody has said so. See [`super::trust`].
+        editor.enable_macros_here();
         editor.open_basic();
         editor
     }

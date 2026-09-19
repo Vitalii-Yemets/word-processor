@@ -217,6 +217,9 @@
 = Different First Page
 = Different Odd & Even Pages
 = Digital Signatures
+= Disable all macros except digitally signed macros
+= Disable all macros with notification
+= Disable all macros without notification
 = Display
 = Distance
 = Distance from text
@@ -243,6 +246,8 @@
 = Editing
 = Effects
 = Email
+= Enable Content
+= Enable all macros (not recommended)
 = Encrypt Document
 = Encrypt with Password
 = End lines with
@@ -272,6 +277,7 @@
 = First Column
 = First Letter
 = First Name
+= Folder
 = Font
 = Fonts
 = Font…
@@ -379,7 +385,12 @@
 = Lock aspect ratio
 = Macro
 = Macro name
+= Macro settings
 = Macros
+= Macros are disabled without notification. The Trust Centre is where that is changed.
+= Macros are disabled. The bar across the top offers to enable them for this document.
+= Macros are enabled for this document, for as long as it is open
+= Macros run without being asked about
 = Mail Merge Recipients
 = Mailings
 = Make Default
@@ -438,6 +449,7 @@
 = One Page
 = One or more margins are outside the printable area.
 = One stretch you may edit, selected
+= Only macros signed by somebody trusted may run. The Trust Centre is where that is set.
 = Open
 = Open a dictionary
 = Open documents at
@@ -546,6 +558,7 @@
 = Remove
 = Remove Current Cover Page
 = Remove Link
+= Remove Location
 = Remove Table
 = Rename
 = Repeat Header Rows
@@ -720,9 +733,10 @@
 = Thesaurus
 = This document
 = This document also carries Visual Basic macros
-= This document carries macros. They are kept and not run.
+= This document carries macros. They are disabled until you say otherwise.
 = This document fixes its style set — Review ▸ Restrict Editing lifts it
 = This document fixes its theme — Review ▸ Restrict Editing lifts it
+= This document has never been saved, so it is not in a folder yet
 = This document has no watermark to save
 = This document is encrypted. An empty box takes that off.
 = This document is not signed.
@@ -756,6 +770,9 @@
 = Translate from
 = Translate to
 = Translator Preferences
+= Trust Center
+= Trust This Folder
+= Trusted locations
 = Type
 = Type a New List...
 = Type one person, press Add, and type the next.
@@ -783,7 +800,9 @@
 = Web Layout
 = Web Page (*.htm;*.html)
 = Web Pages (*.htm;*.html;*.mht;*.mhtml)
+= What a document's own macros may do
 = What a paragraph looks like before anything is applied to it.
+= What is trusted
 = What's New
 = When correcting spelling
 = Where it goes
@@ -837,7 +856,9 @@
 = {0} is a control that cannot be deleted
 = {0} is encrypted.
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
+= {0} is not trusted any more
 = {0} is reserved.
+= {0} is trusted
 = {0} left in, {1} left out
 = {0} left out as copies of somebody already on the list
 = {0} may edit this

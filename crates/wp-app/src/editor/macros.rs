@@ -279,6 +279,13 @@ impl Editor {
     /// cannot do it says by name and stops, because a macro told `Empty` for
     /// a property nobody modelled will carry on and write the wrong thing.
     pub(super) fn run_macro(&mut self, wanted: &wp_vba::Macro) -> Response {
+        // The gate, which every way of running a macro goes through. See
+        // [`super::trust`].
+        if let super::trust::Allowed::No(why) = self.macros_allowed() {
+            self.dialog = None;
+            self.asking = None;
+            return self.report(&why);
+        }
         let Some(module) = self.vba.as_ref().and_then(|vba| vba.module(&wanted.module)).cloned()
         else {
             return Response::Ignored;
@@ -482,6 +489,10 @@ mod document_macros {
     fn editor(document: Document) -> Editor {
         let mut editor = Editor::new(library(), document, None);
         editor.handle(Event::Resized { width: 1400, height: 900 });
+        // What a person does before any of this: the bar across the top
+        // offers it, and nothing runs until somebody has. See
+        // [`super::super::trust`].
+        editor.enable_macros_here();
         editor
     }
 

@@ -96,6 +96,16 @@ pub struct Settings {
     /// line saying "as it comes" are the same thing. See
     /// [`crate::chrome::customise`].
     pub chrome: crate::chrome::Customisation,
+    /// What the Trust Centre has been told about macros, by name. Nothing
+    /// means it has never been told, and macros are disabled with the bar
+    /// that offers to enable them — which is Word's own default and this
+    /// program's. See [`crate::editor::trust`].
+    pub macro_trust: Option<String>,
+    /// The folders whose documents may run macros without being asked about.
+    pub trusted_places: Vec<String>,
+    /// And the people whose signatures are trusted, by the name in their
+    /// certificate.
+    pub trusted_publishers: Vec<String>,
     /// The documents opened lately, the most recent first.
     ///
     /// Kept as written rather than as paths, because a path that no longer
@@ -224,6 +234,9 @@ impl Settings {
                 "autosave" => settings.autosave = parse_flag(value),
                 "autosave-minutes" => settings.autosave_minutes = value.parse().ok(),
                 "keep-autosaved" => settings.keep_autosaved = parse_flag(value),
+                "macro-trust" => settings.macro_trust = Some(value.to_owned()),
+                "trusted-place" => settings.trusted_places.push(value.to_owned()),
+                "trusted-publisher" => settings.trusted_publishers.push(value.to_owned()),
                 // Says that the replacements below are the whole list. It has
                 // to be said out loud, because a person who deletes the last
                 // replacement leaves a file with nothing to read, and nothing
@@ -315,6 +328,17 @@ impl Settings {
         }
         if let Some(zoom) = self.zoom {
             write("zoom", format!("{zoom:.0}"));
+        }
+        if let Some(trust) = &self.macro_trust {
+            write("macro-trust", trust.clone());
+        }
+        // One line each rather than numbered, because they are a set and not
+        // an order: a person editing the file by hand can add one anywhere.
+        for place in &self.trusted_places {
+            write("trusted-place", place.clone());
+        }
+        for publisher in &self.trusted_publishers {
+            write("trusted-publisher", publisher.clone());
         }
         for (key, flagged) in [
             ("marks", self.marks),
@@ -511,6 +535,9 @@ mod tests {
             autosave: Some(false),
             autosave_minutes: Some(5),
             keep_autosaved: Some(false),
+            macro_trust: Some("signed".to_owned()),
+            trusted_places: vec!["/home/somebody/Trusted".to_owned()],
+            trusted_publishers: vec!["CN=Somebody".to_owned()],
             autocorrect: Some(crate::autocorrect::AutoCorrect::default()),
             recent: vec![
                 "C:\\Documents\\Report, final.docx".to_owned(),

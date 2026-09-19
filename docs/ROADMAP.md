@@ -6580,15 +6580,71 @@ interpreter is reachable only from the macro list a person opened themselves.
   are lower case, because that is how the interpreter keeps them. And `Stop`
   in a macro ends it rather than dropping into the debugger, which is what it
   does in Word; the breakpoint is the way in here.
-- [ ] **L6. The trust that gates all of it.** Word's answer to the fact that
-  a document can carry a program: nothing runs on opening; a bar across the
-  top says the document carries macros and offers to enable them for this
-  document; a trust centre holds the setting; a list of trusted locations
-  runs them without asking; and a project signed by a certificate that is
-  trusted runs without asking too — **J3** and **J12** are where certificates
-  are read and checked. Done when a document carrying an `AutoOpen` does
-  nothing at all until somebody says so, and when every route to running one
-  goes through this.
+- [x] **L6. The trust that gates all of it.**
+  **A document can carry a program, and that is the whole difficulty.**
+  Opening a file somebody sent is not supposed to be a decision, and a file
+  that carries a program makes it one. The answer — Word's and this one — is
+  that nothing a document carries runs until somebody says so, and that
+  there is exactly one place where "somebody said so" is decided. Every way
+  of running a macro asks it first: the Run button on the macro dialog, F5
+  and F8 in the Visual Basic editor, and a line typed into the Immediate
+  window. Nothing runs when a document is opened, and there is no other
+  route in. When the events a document can raise arrive — **L7** — they will
+  ask the same question, because there is only one to ask.
+  **Four settings, which are Word's four.** Disabled without notification;
+  disabled with the bar across the top that offers to enable them, which is
+  Word's default and this program's; only the macros of a document signed by
+  somebody trusted; and everything, which is the setting nobody should
+  have. They live on a Trust Center page of the Options dialog, because they
+  are about the person and not the document and follow them to the next one.
+  Two lists say yes before the setting is asked: the folders whose documents
+  are trusted — a folder trusts what is under it too, which is Word's own
+  "subfolders" tick — and the people whose signatures are.
+  **Enable Content is for this document, for as long as it is open.** The
+  bar's button turns them on and nothing is written down; opening the same
+  file tomorrow asks again, and opening another file now asks now. The bar is
+  there only where there is something to offer: a document whose macros are
+  already allowed has nothing to enable, and one whose macros are disabled
+  without notification is not to be notified.
+  **Where this differs from Word, said out loud.** Word checks the signature
+  *on the project*: a macro project is signed separately from its document,
+  and a trusted publisher's project runs inside a document nobody signed.
+  This program checks the signature *on the document*, because that is the
+  signature **J12** and **J24** taught it to read and to verify. A project
+  signed the way Word signs one is a project this program does not yet know
+  how to check, and under "only signed" it is refused rather than trusted.
+  Trusting a folder trusts the folder the open document is in, from a button
+  on the page; browsing for some other folder needs a folder picker the
+  shell does not have yet.
+  *Proven by:* nine tests. A document carrying `AutoOpen` does nothing at all
+  when it is opened, which is the sentence this item is named after; by
+  default the bar is there, running is refused with a sentence that says
+  where to go, the bar's button is Enable Content, and pressing it is what
+  turns them on — after which the same macro runs and the bar is gone;
+  enabling is for this document only, and the next one is asked again; a
+  document under a trusted folder is not asked; disabled without
+  notification shows no bar and says why when a run is tried; enabling
+  everything asks nothing; only-signed refuses an unsigned document, refuses
+  a signed one until the signer is on the list, and allows it after — with a
+  certificate OpenSSL made for the test and a signature this program's own
+  code verified; F5 and the Immediate window are refused by the same
+  sentence as the button; and the setting is remembered by a name that is
+  not the one on the screen, falling back on asking for a name nobody wrote.
+  A picture of the bar under the ribbon with the macro dialog in front of it.
+  *Found along the way:* the ribbon page of the Options dialog already had a
+  button called Remove, and a second button of the same name is one button
+  as far as the dialog's answer is concerned; the Trust Center's is Remove
+  Location. And a stash: this item was stopped halfway on request and put
+  back a day later, which is what the numbering of the dialog's fields is
+  for — the page had to move to the end, after the two pages of lists.
+  *Not done, and named here:* a project's own signature, as above. Trusted
+  publishers are read from the settings file and shown nowhere: there is no
+  page to add one to or take one off, and the way onto the list is the file,
+  because the dialog that Word offers — "trust all from this publisher" on
+  the bar — wants the certificate's chain checked against the machine's own
+  store first, which is **J24**'s work turned the other way round and is not
+  a line of this item. Word's "Trust access to the VBA project object
+  model" has nothing to gate yet.
 - [ ] **L7. Forms, and the rest of it.** `UserForm` with its controls, the
   events a document and its controls raise — `Document_Open`, `AutoNew`,
   `AutoClose`, the content-control events — and the class modules a project

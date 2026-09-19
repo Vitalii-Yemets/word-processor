@@ -72,8 +72,31 @@ const CORRECTING: usize = 29;
 const PROOFING: usize = 30;
 const HIDE_SPELLING: usize = 31;
 
+// Trust Centre. Word gives it a dialog of its own behind a button; here it
+// is a page of this one, because the two are the same question — what this
+// program is allowed to do without asking — and a dialog that opens a dialog
+// to answer it would be one window too many.
+// It is the last page, after the two pages of lists, so its numbers follow
+// theirs: see [`ribbondialog::FIRST`] for where those begin.
+const TAB_TRUST: usize = ribbondialog::FIRST + 8;
+const MACRO_SETTINGS: usize = TAB_TRUST + 1;
+const MACRO_TRUST: usize = TAB_TRUST + 2;
+const TRUSTED_LOCATIONS: usize = TAB_TRUST + 3;
+pub(super) const TRUSTED_PLACES: usize = TAB_TRUST + 4;
+
 /// Which tab of the dialog Proofing is, so its button is drawn on that one.
 const TAB_PROOFING_PAGE: usize = 4;
+
+/// And which the Trust Centre is, for the two buttons that belong to it:
+/// after General, Display, Language, Save, Proofing, and the two pages of
+/// lists.
+const TAB_TRUST_PAGE: usize = 7;
+
+/// The button that trusts the folder the document is in.
+pub(super) const TRUST_FOLDER: &str = "Trust This Folder";
+
+/// And the one that forgets a folder that was trusted.
+pub(super) const FORGET_PLACE: &str = "Remove Location";
 /// And which General is, for the button that registers the file types.
 const TAB_GENERAL_PAGE: usize = 0;
 
@@ -244,6 +267,41 @@ impl Editor {
         // column of switches. See [`super::ribbondialog`].
         let mut fields = fields;
         fields.extend(self.customise_fields());
+        // --- Trust Centre ---------------------------------------------------
+        // Last, as it is last in Word's own list of pages.
+        fields.extend([
+            Field::Tab("Trust Center".to_owned()),
+            Field::Group("Macro settings".to_owned()),
+            Field::Choice {
+                label: "What a document's own macros may do".to_owned(),
+                items: super::trust::Trusting::ALL
+                    .iter()
+                    .map(|one| crate::messages::t(one.label()).to_owned())
+                    .collect(),
+                current: super::trust::Trusting::ALL
+                    .iter()
+                    .position(|one| *one == self.trusting())
+                    .unwrap_or(1),
+            },
+            Field::Group("Trusted locations".to_owned()),
+            Field::Pairs {
+                label: "Folder".to_owned(),
+                second: "What is trusted".to_owned(),
+                rows: self
+                    .settings
+                    .trusted_places
+                    .iter()
+                    .map(|place| {
+                        (
+                            place.clone(),
+                            crate::messages::t("Macros run without being asked about").to_owned(),
+                        )
+                    })
+                    .collect(),
+                current: 0,
+                scroll: 0,
+            },
+        ]);
 
         let mut kinds = vec![
             (TAB_GENERAL, "a tab"),
@@ -280,6 +338,13 @@ impl Editor {
             (HIDE_SPELLING, "a tick box"),
         ];
         kinds.extend(Self::customise_kinds());
+        kinds.extend([
+            (TAB_TRUST, "a tab"),
+            (MACRO_SETTINGS, "a group"),
+            (MACRO_TRUST, "a list"),
+            (TRUSTED_LOCATIONS, "a group"),
+            (TRUSTED_PLACES, "a list of pairs"),
+        ]);
         crate::chrome::dialog::check_rows("Options", &fields, &kinds);
 
         let named = |label: &'static str| Button {
@@ -294,6 +359,8 @@ impl Editor {
                 Button { label: "OK".to_owned(), answer: Answer::Accept, default: true },
                 named(AUTOCORRECT_OPTIONS),
                 named(MAKE_DEFAULT),
+                named(TRUST_FOLDER),
+                named(FORGET_PLACE),
                 named(ribbondialog::ADD),
                 named(ribbondialog::REMOVE),
                 named(ribbondialog::MOVE_UP),
@@ -307,7 +374,9 @@ impl Editor {
         // about under the pointer.
         .wide(760.0)
         .button_on_tab(Answer::Named(AUTOCORRECT_OPTIONS), TAB_PROOFING_PAGE)
-        .button_on_tab(Answer::Named(MAKE_DEFAULT), TAB_GENERAL_PAGE);
+        .button_on_tab(Answer::Named(MAKE_DEFAULT), TAB_GENERAL_PAGE)
+        .button_on_tab(Answer::Named(TRUST_FOLDER), TAB_TRUST_PAGE)
+        .button_on_tab(Answer::Named(FORGET_PLACE), TAB_TRUST_PAGE);
         for label in [
             ribbondialog::ADD,
             ribbondialog::REMOVE,
@@ -353,6 +422,11 @@ impl Editor {
             self.autosave_minutes = minutes.clamp(1, 120);
         }
         self.keep_autosaved = dialog.ticked(KEEP_AUTOSAVED);
+        // What the Trust Centre was told, which is about the person and not
+        // about the document: it follows them to the next one.
+        if let Some(chosen) = super::trust::Trusting::ALL.get(dialog.chose(MACRO_TRUST)) {
+            self.settings.macro_trust = Some(chosen.name().to_owned());
+        }
         self.show_proofing = dialog.ticked(PROOFING);
         self.document.set_setting_flag("hideSpellingErrors", dialog.ticked(HIDE_SPELLING));
 

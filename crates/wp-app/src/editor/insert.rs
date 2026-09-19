@@ -363,13 +363,20 @@ impl Editor {
                 )]))
                 .ok();
                 self.carries_macros = self.vba.is_some();
+                // The bar that asks, as it is when a document is opened.
+                self.info_bar = self.should_offer_macros().then(|| {
+                    crate::chrome::infobar::InfoBar::new(crate::chrome::infobar::Because::Macros)
+                });
+                self.relayout();
                 self.run(crate::chrome::Command::Macros);
-                let at = self
-                    .popup
-                    .as_ref()
-                    .map(|popup| (0..8).filter(|index| popup.item(*index).is_some()).count())
-                    .unwrap_or_default();
-                self.choose_macro(at.saturating_sub(1));
+                let at = self.popup.as_ref().and_then(|popup| {
+                    (0..8).find(|index| {
+                        popup.item(*index).is_some_and(|line| line.starts_with("Show:"))
+                    })
+                });
+                if let Some(at) = at {
+                    self.choose_macro(at);
+                }
             }
             // Word's Visual Basic editor, on a document that carries a macro,
             // with a breakpoint in the margin and the macro stopped on it.

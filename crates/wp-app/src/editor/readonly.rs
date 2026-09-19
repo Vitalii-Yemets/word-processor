@@ -146,6 +146,13 @@ impl Editor {
                     self.save_as_now();
                     self.after_file_command()
                 }
+                // Word's Enable Content, and the only thing that turns a
+                // document's macros on: see [`super::trust`].
+                Some(Because::Macros) => {
+                    let response = self.enable_macros_here();
+                    self.relayout();
+                    response
+                }
                 _ => Response::Ignored,
             },
         }

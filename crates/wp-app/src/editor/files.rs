@@ -570,8 +570,12 @@ impl Editor {
         // long as it is open, because it is true for that long: this program
         // keeps macros and does not run them, and a person opening somebody
         // else's document is owed that plainly. See [`super::macros`].
+        // Whatever was enabled was enabled for the document that has just
+        // been put away: a new one is asked about again, which is what makes
+        // "for this document" mean anything.
+        self.enabled_here = false;
         self.info_bar = self
-            .carries_macros
+            .should_offer_macros()
             .then(|| crate::chrome::infobar::InfoBar::new(crate::chrome::infobar::Because::Macros));
         // Whatever is opened is opened for writing until it asks not to be,
         // which is asked at the door and not here: see [`super::readonly`].
