@@ -25,7 +25,7 @@ use std::rc::Rc;
 use wp_docx::model::{
     Alignment, Block, Body, Border, BreakKind, LineRule, Paragraph, ResolvedRunProperties, Run,
     RunContent, TabAlignment, TabLeader, TabStop, Table, TableBorders, TableCell, TableRow,
-    VerticalAlignment,
+    TextDirection, VerticalAlignment,
 };
 use wp_docx::sections::{NumberFormat, Start};
 use wp_docx::styles::Conditional;
@@ -82,6 +82,9 @@ pub struct PageMetrics {
     /// points. One column is the ordinary case and means no gap is used.
     pub columns: usize,
     pub column_gap: f32,
+    /// Which way the text runs on the paper: across, or down it. See
+    /// [`Self::boxed`] for what that does to everything else here.
+    pub direction: TextDirection,
 }
 
 impl Default for PageMetrics {
@@ -96,6 +99,7 @@ impl Default for PageMetrics {
             columns: 1,
             // Word's default gap between columns is half an inch.
             column_gap: 720.0 / TWIPS_PER_POINT,
+            direction: TextDirection::Horizontal,
         }
     }
 }
@@ -133,6 +137,82 @@ impl PageMetrics {
             margin_left: points(setup.margin_left),
             columns: setup.columns.max(1),
             column_gap: points(setup.column_gap),
+            // Word takes no notice of text reading upwards on a section,
+            // whatever the file says, and neither does this.
+            direction: match setup.direction {
+                TextDirection::Up => TextDirection::Horizontal,
+                other => other,
+            },
+        }
+    }
+
+    /// Whether the text runs down the paper rather than across it, so that
+    /// the body is laid out into a box and turned.
+    #[must_use]
+    pub fn is_turned(&self) -> bool {
+        self.direction.is_turned()
+    }
+
+    /// The paper as the text sees it: the box the body of a turned section is
+    /// laid out into, before the box is turned onto the page.
+    ///
+    /// # What turns with the paper
+    ///
+    /// Everything. Text that runs down the page has its lines going from
+    /// right to left, so the top margin is where the lines begin and the
+    /// right margin is where the first of them stands; the columns divide the
+    /// page's height into bands rather than its width into strips, which is
+    /// what Word does with columns in vertical text; a paragraph's left indent
+    /// is measured from the top. So the box is the paper with its sides
+    /// swapped round the corner the turn is about, and laying the body out
+    /// into it as though it were paper is what gives all of that at once —
+    /// see [`Frame`].
+    #[must_use]
+    pub fn boxed(&self) -> Self {
+        if !self.is_turned() {
+            return *self;
+        }
+        let (top, right, bottom, left) = match self.direction {
+            // Reading down from the top right, the lines going leftwards: the
+            // box's left is the page's top and its top is the page's right.
+            TextDirection::Down | TextDirection::TurnedDown => {
+                (self.margin_right, self.margin_bottom, self.margin_left, self.margin_top)
+            }
+            // Reading down from the top left, the lines going rightwards.
+            TextDirection::DownLeftToRight => {
+                (self.margin_left, self.margin_bottom, self.margin_right, self.margin_top)
+            }
+            // Reading up from the bottom left, the lines going rightwards.
+            TextDirection::Up => {
+                (self.margin_left, self.margin_top, self.margin_right, self.margin_bottom)
+            }
+            TextDirection::Horizontal | TextDirection::RotatedAsian => unreachable!(),
+        };
+        Self {
+            width: self.height,
+            height: self.width,
+            margin_top: top,
+            margin_right: right,
+            margin_bottom: bottom,
+            margin_left: left,
+            direction: TextDirection::Horizontal,
+            ..*self
+        }
+    }
+
+    /// The frame that puts the box of [`Self::boxed`] onto a page this many
+    /// pixels across and down.
+    #[must_use]
+    pub fn frame_on(&self, page_width: f32, page_height: f32) -> Frame {
+        match self.direction {
+            TextDirection::Down | TextDirection::TurnedDown => {
+                Frame::turned(Turn::Down, page_width, 0.0)
+            }
+            TextDirection::DownLeftToRight => {
+                Frame { turn: Turn::Down, flipped: true, x: 0.0, y: 0.0 }
+            }
+            TextDirection::Up => Frame::turned(Turn::Up, 0.0, page_height),
+            TextDirection::Horizontal | TextDirection::RotatedAsian => Frame::default(),
         }
     }
 
@@ -169,6 +249,15 @@ impl PageMetrics {
             if let Some(space) = twips(columns, "space") {
                 metrics.column_gap = space;
             }
+        }
+        if let Some(direction) = section
+            .child(namespace, "textDirection")
+            .and_then(|element| element.attribute(namespace, "val"))
+        {
+            metrics.direction = match TextDirection::from_word(direction) {
+                TextDirection::Up => TextDirection::Horizontal,
+                other => other,
+            };
         }
         if let Some(margins) = section.child(namespace, "pgMar") {
             if let Some(value) = twips(margins, "top") {
@@ -273,12 +362,23 @@ pub struct PositionedGlyph {
     /// band all treat a tab like any other character. Leaving it out would put
     /// the caret on the wrong side of one.
     pub invisible: bool,
+    /// Where the glyph is drawn from where the pen stands, on the page.
+    ///
+    /// Nothing for nearly every glyph: the pen's place is the glyph's. A
+    /// letter that stands upright in a line running down the page is the
+    /// exception — the pen walks down the turned baseline and the letter is
+    /// drawn beside it, centred on the column — and so is a run set across
+    /// such a line. The pen's place is what a caret and a click are measured
+    /// against; this is only where the drawing lands. See [`Turn::Upright`].
+    pub shift_x: f32,
+    pub shift_y: f32,
 }
 
 /// Which way a run of text is turned on the page.
 ///
-/// Word's Text Direction in a table cell, and nothing else so far. See
-/// [`Frame`], which is how a turn becomes coordinates.
+/// Word's Text Direction in a table cell or a text box, or a section set
+/// down the page rather than across it. See [`Frame`], which is how a turn
+/// becomes coordinates.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Turn {
     #[default]
@@ -287,6 +387,69 @@ pub enum Turn {
     Down,
     /// A right angle the other way: the text reads upwards.
     Up,
+    /// Two right angles: the text reads leftwards, upside down. Never asked
+    /// for by a document; what two clockwise turns come to, one inside the
+    /// other.
+    Over,
+    /// Not a turn of the line but of one letter against it: the letter stands
+    /// upright in a line that reads downwards, which is how every ideograph
+    /// and every kana is set in vertical writing. Only ever on a glyph, never
+    /// on a [`Frame`]; and it stays what it is however the line it is in is
+    /// turned again, because there is no drawing an upright letter other than
+    /// upright.
+    Upright,
+}
+
+impl Turn {
+    /// How many right angles clockwise.
+    const fn quarters(self) -> u8 {
+        match self {
+            Self::None | Self::Upright => 0,
+            Self::Down => 1,
+            Self::Over => 2,
+            Self::Up => 3,
+        }
+    }
+
+    const fn from_quarters(quarters: u8) -> Self {
+        match quarters % 4 {
+            0 => Self::None,
+            1 => Self::Down,
+            2 => Self::Over,
+            _ => Self::Up,
+        }
+    }
+
+    /// This turn, and then another on top of it: what a letter turned with
+    /// its cell is turned when the page the cell is on is turned too.
+    #[must_use]
+    pub fn then(self, outer: Self) -> Self {
+        if self == Self::Upright || outer == Self::Upright {
+            return Self::Upright;
+        }
+        Self::from_quarters(self.quarters() + outer.quarters())
+    }
+
+    /// The turn that undoes this one.
+    #[must_use]
+    pub fn inverse(self) -> Self {
+        match self {
+            Self::Upright => Self::Upright,
+            other => Self::from_quarters(4 - other.quarters()),
+        }
+    }
+
+    /// The turn in radians, clockwise on a canvas, for a letter that is
+    /// turned at all.
+    #[must_use]
+    pub fn radians(self) -> Option<f32> {
+        match self {
+            Self::None | Self::Upright => None,
+            Self::Down => Some(core::f32::consts::FRAC_PI_2),
+            Self::Over => Some(core::f32::consts::PI),
+            Self::Up => Some(-core::f32::consts::FRAC_PI_2),
+        }
+    }
 }
 
 /// Where a line's own coordinates sit on the page.
@@ -295,38 +458,83 @@ pub enum Turn {
 ///
 /// Because breaking a line, spacing it, aligning it and numbering it are the
 /// same work whichever way up the text is. Turned text is laid out into a box
-/// as long as the cell is tall, and this is what maps that box onto the page:
-/// the layout never learns about angles, and only the drawing does.
+/// as long as the cell is tall — or as long as the page is, for a section
+/// written down the page — and this is what maps that box onto the page: the
+/// layout never learns about angles, and only the drawing does.
 ///
 /// The origin is the corner the box's own origin lands on — the cell's top
 /// right for text reading downwards, its bottom left for text reading upwards —
 /// so that the first letter of the first line is where a reader would start.
+///
+/// A frame is a turn and a place, and once in a while a mirror as well:
+/// Mongolian reads downwards like Japanese but its lines go across to the
+/// right rather than the left, which no turn alone gives. The mirror is a
+/// flip of the box's own down axis before the turn, and it changes nothing
+/// about which way up a letter is drawn — only where the next line goes.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Frame {
     pub turn: Turn,
+    /// Whether the lines go the other way from where the turn alone would
+    /// stack them.
+    pub flipped: bool,
     pub x: f32,
     pub y: f32,
 }
 
 impl Frame {
+    /// A frame that turns about a corner, with the lines stacking the way
+    /// the turn stacks them.
+    #[must_use]
+    pub const fn turned(turn: Turn, x: f32, y: f32) -> Self {
+        Self { turn, flipped: false, x, y }
+    }
+
+    /// The turn's own mapping of a direction, with the flip before it: what
+    /// the box's axes become on the page, without the move.
+    fn linear(self, x: f32, y: f32) -> (f32, f32) {
+        let y = if self.flipped { -y } else { y };
+        match self.turn {
+            Turn::None | Turn::Upright => (x, y),
+            Turn::Down => (-y, x),
+            Turn::Over => (-x, -y),
+            Turn::Up => (y, -x),
+        }
+    }
+
+    /// And the same mapping undone.
+    fn linear_back(self, x: f32, y: f32) -> (f32, f32) {
+        let (x, y) = match self.turn {
+            Turn::None | Turn::Upright => (x, y),
+            Turn::Down => (y, -x),
+            Turn::Over => (-x, -y),
+            Turn::Up => (-y, x),
+        };
+        if self.flipped {
+            (x, -y)
+        } else {
+            (x, y)
+        }
+    }
+
     /// A point of the box, as a point of the page.
     #[must_use]
     pub fn on_page(self, x: f32, y: f32) -> (f32, f32) {
-        match self.turn {
-            Turn::None => (self.x + x, self.y + y),
-            Turn::Down => (self.x - y, self.y + x),
-            Turn::Up => (self.x + y, self.y - x),
-        }
+        let (x, y) = self.linear(x, y);
+        (self.x + x, self.y + y)
     }
 
     /// And back, which is what a click on the page asks.
     #[must_use]
     pub fn in_frame(self, x: f32, y: f32) -> (f32, f32) {
-        match self.turn {
-            Turn::None => (x - self.x, y - self.y),
-            Turn::Down => (y - self.y, self.x - x),
-            Turn::Up => (self.y - y, x - self.x),
-        }
+        self.linear_back(x - self.x, y - self.y)
+    }
+
+    /// A direction of the box — a move, with no place to it — as a direction
+    /// of the page. What a glyph's shift, which is a move and not a place,
+    /// goes through.
+    #[must_use]
+    pub fn direction_on_page(self, x: f32, y: f32) -> (f32, f32) {
+        self.linear(x, y)
     }
 
     /// A rectangle of the box, as a rectangle of the page.
@@ -335,44 +543,66 @@ impl Frame {
     /// selection band and a caret need nothing cleverer than this.
     #[must_use]
     pub fn rect(&self, x: f32, y: f32, width: f32, height: f32) -> (f32, f32, f32, f32) {
-        match self.turn {
-            Turn::None => (self.x + x, self.y + y, width, height),
-            // The far corner of the rectangle is the near one after a turn, so
-            // both corners are mapped and the lesser of each is taken.
-            _ => {
-                let (one_x, one_y) = self.on_page(x, y);
-                let (other_x, other_y) = self.on_page(x + width, y + height);
-                (
-                    one_x.min(other_x),
-                    one_y.min(other_y),
-                    (other_x - one_x).abs(),
-                    (other_y - one_y).abs(),
-                )
-            }
+        if !self.is_turned() {
+            return (self.x + x, self.y + y, width, height);
         }
+        // The far corner of the rectangle is the near one after a turn, so
+        // both corners are mapped and the lesser of each is taken.
+        let (one_x, one_y) = self.on_page(x, y);
+        let (other_x, other_y) = self.on_page(x + width, y + height);
+        (one_x.min(other_x), one_y.min(other_y), (other_x - one_x).abs(), (other_y - one_y).abs())
     }
 
     /// Whether the text is turned at all.
     #[must_use]
     pub fn is_turned(&self) -> bool {
-        self.turn != Turn::None
+        self.turn != Turn::None || self.flipped
+    }
+
+    /// Whether a right angle is in it, so that the box's across is the page's
+    /// down: what says a line's band is a column.
+    #[must_use]
+    pub fn is_sideways(&self) -> bool {
+        matches!(self.turn, Turn::Down | Turn::Up)
+    }
+
+    /// This frame inside another: where the box of a turned cell lands when
+    /// the page it was laid out on is itself turned.
+    ///
+    /// A point goes through this frame and then the outer one, so the result
+    /// is the frame that does both at once. The turns add; a flip in the outer
+    /// frame turns the inner turn the other way round, which is what a mirror
+    /// does to a clock.
+    #[must_use]
+    pub fn then(self, outer: Self) -> Self {
+        let (x, y) = outer.on_page(self.x, self.y);
+        let turn = if outer.flipped {
+            Turn::from_quarters(outer.turn.quarters() + 4 - self.turn.quarters())
+        } else {
+            Turn::from_quarters(outer.turn.quarters() + self.turn.quarters())
+        };
+        Self { turn, flipped: self.flipped != outer.flipped, x, y }
+    }
+
+    /// The frame that undoes this one: a page turned and then turned by this
+    /// is the page as it was.
+    #[must_use]
+    pub fn inverse(self) -> Self {
+        let turn = if self.flipped { self.turn } else { self.turn.inverse() };
+        let back = Self { turn, flipped: self.flipped, x: 0.0, y: 0.0 };
+        let (x, y) = back.on_page(-self.x, -self.y);
+        Self { x, y, ..back }
     }
 
     /// The same mapping, as a transform — for the things that are drawn from
     /// outlines rather than from rectangles.
     #[must_use]
     pub fn transform(&self) -> wp_raster::Transform {
-        match self.turn {
-            Turn::None => wp_raster::Transform::translate(self.x, self.y),
-            // x' = fx − y, y' = fy + x, which is a quarter turn clockwise on a
-            // canvas and the corner it turns about.
-            Turn::Down => {
-                wp_raster::Transform { a: 0.0, b: 1.0, c: -1.0, d: 0.0, e: self.x, f: self.y }
-            }
-            Turn::Up => {
-                wp_raster::Transform { a: 0.0, b: -1.0, c: 1.0, d: 0.0, e: self.x, f: self.y }
-            }
-        }
+        // The transform's columns are where the box's axes land: x' = a·x +
+        // c·y + e, y' = b·x + d·y + f.
+        let (a, b) = self.linear(1.0, 0.0);
+        let (c, d) = self.linear(0.0, 1.0);
+        wp_raster::Transform { a, b, c, d, e: self.x, f: self.y }
     }
 }
 
@@ -569,6 +799,10 @@ pub struct PlacedShape {
     pub solid: Solid,
     /// The glyphs of the text inside, already placed relative to the page.
     pub text: Vec<PositionedGlyph>,
+    /// Which of them are turned, and which way: the words of a text box that
+    /// run down it rather than across. See [`Page::turned`], which is the
+    /// same thing for the page's own text.
+    pub text_turned: Vec<(core::ops::Range<usize>, Turn)>,
     /// What the drawing is called, which is what a list of them shows.
     pub name: String,
     /// The number the file knows it by, which is what a connector names.
@@ -601,6 +835,17 @@ pub struct PlacedShape {
     pub turn: f32,
     pub flipped_across: bool,
     pub flipped_down: bool,
+}
+
+impl PlacedShape {
+    /// Which way one of the glyphs of the text inside is turned.
+    #[must_use]
+    pub fn text_turn_of(&self, glyph: usize) -> Turn {
+        self.text_turned
+            .iter()
+            .filter(|(span, _)| span.contains(&glyph))
+            .fold(Turn::None, |so_far, (_, turn)| so_far.then(*turn))
+    }
 }
 
 /// What a shape is drawn with besides its fill and its line, in pixels.
@@ -853,6 +1098,20 @@ pub struct Page {
     /// text the ordinary way up, and a word of it should not have to carry a
     /// field that says so a hundred thousand times. See [`Page::turn_of`].
     pub turned: Vec<(core::ops::Range<usize>, Turn)>,
+    /// How the page's own text was turned as a whole, for a section written
+    /// down the page rather than across it.
+    ///
+    /// The body is laid out into a box as long as the page is tall and
+    /// turned onto the page afterwards — the same way a turned cell is, see
+    /// [`Frame`] — and everything the box held is already where it lands.
+    /// What is kept here is the turn itself, because the first `turned_glyphs`
+    /// glyphs are turned by it on top of whatever their own spans say, and
+    /// because a page given back to the engine has to be turned back into its
+    /// box before the engine can go on placing text into it. Nothing put on
+    /// the page after the turn — a header, a footer, the line numbers — is
+    /// turned with it, which is why the count is kept.
+    pub frame: Frame,
+    pub turned_glyphs: usize,
     /// Which pass of which engine drew it.
     ///
     /// Bookkeeping, not content: two pages that draw the same are the same
@@ -876,6 +1135,8 @@ impl PartialEq for Page {
             && self.inks == other.inks
             && self.lines == other.lines
             && self.turned == other.turned
+            && self.frame == other.frame
+            && self.turned_glyphs == other.turned_glyphs
     }
 }
 
@@ -958,11 +1219,19 @@ impl Page {
     #[must_use]
     pub fn turn_of(&self, glyph: usize) -> Turn {
         // A page has one span per turned cell and most pages have none, so this
-        // is a walk over nothing at all in the ordinary case.
-        self.turned
+        // is a walk over nothing at all in the ordinary case. A glyph in a
+        // turned cell on a page turned as a whole is in two spans at once, and
+        // is turned by both.
+        let own = self
+            .turned
             .iter()
-            .find(|(span, _)| span.contains(&glyph))
-            .map_or(Turn::None, |(_, turn)| *turn)
+            .filter(|(span, _)| span.contains(&glyph))
+            .fold(Turn::None, |so_far, (_, turn)| so_far.then(*turn));
+        if glyph < self.turned_glyphs {
+            own.then(self.frame.turn)
+        } else {
+            own
+        }
     }
 
     /// The drawings that go under the text, in the order they are drawn.
@@ -1301,6 +1570,9 @@ pub(crate) struct RunStyle {
     ascent: f32,
     descent: f32,
     pub(crate) line_height: f32,
+    /// The run set across a vertical line, or as two lines in one: Word's
+    /// Asian Layout. See [`wp_docx::eastasian`].
+    east_asian: wp_docx::eastasian::EastAsianLayout,
 }
 
 /// What one stored character is drawn as, and at what size.
@@ -1400,6 +1672,7 @@ impl RunStyle {
             raise: 0.0,
             ascent: size * 0.8,
             descent: size * 0.2,
+            east_asian: wp_docx::eastasian::EastAsianLayout::default(),
             line_height: size * 1.2,
         }
     }
@@ -1434,6 +1707,16 @@ struct ShapedGlyph {
     /// case: a small capital is a capital drawn smaller than the capitals
     /// beside it, and so carries a size of its own.
     size: f32,
+    /// Where the glyph is drawn from where the pen stands, when that is not
+    /// the same place: `Some` for a letter standing upright in a line that
+    /// runs down the page, or set across such a line, or set as one of two
+    /// lines in one. In the line's own coordinates; see
+    /// [`PositionedGlyph::shift_x`].
+    upright: Option<(f32, f32)>,
+    /// How much narrower the glyph is drawn than its own width, on top of the
+    /// run's stretch: one for nearly every glyph, and less for a run squeezed
+    /// into a square across a vertical line.
+    squeeze: f32,
 }
 
 /// What was worked out for one paragraph last time it was laid out.
@@ -1457,6 +1740,10 @@ struct Measured {
     styles: Vec<RunStyle>,
     /// The direction of each item, which the text and the styles decide.
     levels: Vec<u8>,
+    /// Whether it was measured for a line running down the page, where the
+    /// letters of the East Asian scripts stand upright and take the room the
+    /// font gives them that way round.
+    vertical: bool,
 }
 
 /// Whether a paragraph is one whose measurements may be kept.
@@ -1643,6 +1930,11 @@ pub struct LayoutEngine<'a> {
     /// broken by the patterns: the document hyphenates, and the paragraph
     /// does not say to leave its words alone.
     hyphenating: bool,
+    /// Whether the text being placed reads down the page, laid out into a box
+    /// that is turned afterwards: the letters of the East Asian scripts then
+    /// stand upright in the line, and a run may be set across it. See
+    /// [`Frame`] and [`Turn::Upright`].
+    vertical: bool,
     /// The patterns for each language asked for so far, and none for a
     /// language the machine has no patterns for, so that it is not looked
     /// for again for every run.
@@ -1718,6 +2010,7 @@ impl<'a> LayoutEngine<'a> {
             outline_heading: 0,
             hyphenation: Hyphenation::default(),
             hyphenating: false,
+            vertical: false,
             patterns: HashMap::new(),
             theme: wp_docx::theme::Theme::default(),
             default_tab: DEFAULT_TAB_TWIPS,
@@ -1942,6 +2235,8 @@ impl<'a> LayoutEngine<'a> {
                 source: TextPosition::default(),
                 source_length: glyph.length,
                 invisible: false,
+                shift_x: 0.0,
+                shift_y: 0.0,
             });
             pen += glyph.advance;
         }
@@ -2015,6 +2310,8 @@ impl<'a> LayoutEngine<'a> {
                 source: TextPosition::default(),
                 source_length: glyph.length,
                 invisible: style.hidden,
+                shift_x: 0.0,
+                shift_y: 0.0,
             });
             pen += glyph.advance;
         }
@@ -2139,6 +2436,13 @@ impl<'a> LayoutEngine<'a> {
         // no room and no pages.
         let footnotes = document.notes(wp_docx::notes::Kind::Footnote);
         let body = document.body();
+        // The pages of a section written down the page were turned before
+        // they were given out, and the engine places text into the box they
+        // were laid out in: so back into the box they go, until the end.
+        let mut previous = previous;
+        for page in &mut previous {
+            page.unturn();
+        }
         // Counted over the body that is about to be laid out, so that it is
         // built once.
         self.number_sequences(&body);
@@ -2170,6 +2474,11 @@ impl<'a> LayoutEngine<'a> {
             self.place_footnotes(&mut pages, &footnotes, document, metrics);
         }
 
+        // The body and its footnotes are on the pages; a section written
+        // down the page has them turned onto the paper now, and everything
+        // after this goes onto the paper the ordinary way up.
+        self.turn_pages(&mut pages, document, metrics);
+
         // The numbers down the margin, where a section asks for them.
         // Everything after this is a header, a footer or the text inside a
         // shape, and those are counted from zero as the body is.
@@ -2190,6 +2499,31 @@ impl<'a> LayoutEngine<'a> {
         self.fill_shapes(&mut pages, document);
         mark_videos(&mut pages);
         pages
+    }
+
+    /// Turns the pages of every section written down the page onto their
+    /// paper. See [`Page::turn`].
+    fn turn_pages(&self, pages: &mut [Page], document: &Document, metrics: PageMetrics) {
+        for (index, page) in pages.iter_mut().enumerate() {
+            let paper = self.paper_of_page(index, document, metrics);
+            if paper.is_turned() {
+                let (width, height) = (page.height, page.width);
+                page.turn(paper.frame_on(width, height));
+            }
+        }
+    }
+
+    /// The paper one of the document's pages is printed on: its section's,
+    /// or the document's where the page belongs to no section it knows.
+    fn paper_of_page(&self, page: usize, document: &Document, metrics: PageMetrics) -> PageMetrics {
+        let sections = document.sections();
+        if sections.len() <= 1 {
+            return metrics;
+        }
+        self.page_sections
+            .get(page)
+            .and_then(|section| sections.get(*section))
+            .map_or(metrics, |section| PageMetrics::from_setup(&section.setup))
     }
 
     /// Lays a body out into pages.
@@ -2266,7 +2600,13 @@ impl<'a> LayoutEngine<'a> {
         }
 
         for (which, stretch) in stretches.iter().enumerate() {
-            let Stretch { blocks: range, metrics, start, section } = stretch;
+            let Stretch { blocks: range, metrics: paper, start, section } = stretch;
+            // A section written down the page is laid out into the paper's
+            // box, which is the paper with its sides swapped, and turned
+            // onto the paper once everything is on it. See
+            // [`PageMetrics::boxed`].
+            let metrics = paper.boxed();
+            self.vertical = paper.direction.is_vertical_writing();
             let scale = self.pixels_per_point();
             let page_width = metrics.width * scale;
             let page_height = metrics.height * scale;
@@ -2277,6 +2617,15 @@ impl<'a> LayoutEngine<'a> {
             // column when it runs out of page, and only then to a new page.
             let text_width = metrics.column_width() * scale;
             let column_gap = metrics.column_gap * scale;
+            // A change of direction is a change of paper: the box the text
+            // goes into is a different shape, so it cannot share a page with
+            // what came before.
+            let turned_differently = which > 0
+                && stretches.get(which - 1).is_some_and(|before| {
+                    before.metrics.direction.is_turned() != paper.direction.is_turned()
+                        || (paper.direction.is_turned()
+                            && before.metrics.direction != paper.direction)
+                });
 
             let mut from = range.start;
             match &resumed {
@@ -2289,7 +2638,7 @@ impl<'a> LayoutEngine<'a> {
                     // A section on paper of its own has to begin a page of its
                     // own, because a page is one size all the way down.
                     let first = pages.is_empty();
-                    if first || start.on_a_new_page() {
+                    if first || start.on_a_new_page() || turned_differently {
                         pages.push(Page {
                             width: page_width,
                             height: page_height,
@@ -2354,8 +2703,10 @@ impl<'a> LayoutEngine<'a> {
             }
         }
 
+        self.vertical = false;
         if pages.is_empty() {
             let scale = self.pixels_per_point();
+            let metrics = metrics.boxed();
             pages.push(Page {
                 width: metrics.width * scale,
                 height: metrics.height * scale,
@@ -2624,7 +2975,9 @@ impl<'a> LayoutEngine<'a> {
             .then(|| self.measured.get(index))
             .flatten()
             .and_then(Option::as_ref)
-            .filter(|measured| measured.paragraph == *paragraph)
+            .filter(|measured| {
+                measured.paragraph == *paragraph && measured.vertical == self.vertical
+            })
             .cloned();
 
         let (mut items, styles, mut item_levels) = match ready {
@@ -2681,6 +3034,7 @@ impl<'a> LayoutEngine<'a> {
                         items: items.clone(),
                         styles: styles.clone(),
                         levels: item_levels.clone(),
+                        vertical: self.vertical,
                     });
                 }
                 (items, styles, item_levels)
@@ -3306,16 +3660,25 @@ impl<'a> LayoutEngine<'a> {
                     let length = (height - spacing - margins.down()).max(1.0);
                     let laid = self.turned_cell(cell, index, document, area, length, across);
                     let frame = match cell.direction {
-                        wp_docx::model::TextDirection::Up => Frame {
-                            turn: Turn::Up,
-                            x: *left + margins.start,
-                            y: cells_bottom - margins.bottom,
-                        },
-                        _ => Frame {
+                        wp_docx::model::TextDirection::Up => Frame::turned(
+                            Turn::Up,
+                            *left + margins.start,
+                            cells_bottom - margins.bottom,
+                        ),
+                        // Mongolian's way: reading downwards with the lines
+                        // going across to the right, which is the clockwise
+                        // turn with its lines mirrored.
+                        wp_docx::model::TextDirection::DownLeftToRight => Frame {
                             turn: Turn::Down,
-                            x: *left + *width - margins.end,
+                            flipped: true,
+                            x: *left + margins.start,
                             y: cells_top + margins.top,
                         },
+                        _ => Frame::turned(
+                            Turn::Down,
+                            *left + *width - margins.end,
+                            cells_top + margins.top,
+                        ),
                     };
                     if let Some(page) = pages.last_mut() {
                         lay_turned(page, laid, frame);
@@ -3411,7 +3774,12 @@ impl<'a> LayoutEngine<'a> {
     ) -> Page {
         let mut pages = vec![Page { width: length, height: across, ..Page::default() }];
         let mut y = 0.0f32;
+        // Word's Vertical is writing, not a turn: the letters of the East
+        // Asian scripts stand upright in it. The other directions turn the
+        // whole line.
+        let was = core::mem::replace(&mut self.vertical, cell.direction.is_vertical_writing());
         self.place_cell(cell, index, document, &mut pages, &mut y, area, 0.0, length);
+        self.vertical = was;
         // A cell has no bottom limit of its own, so it is never broken across
         // pages and there is exactly one page to take back.
         pages.remove(0)
@@ -3594,6 +3962,8 @@ impl<'a> LayoutEngine<'a> {
                 source: TextPosition::default(),
                 source_length: 0,
                 invisible: false,
+                shift_x: 0.0,
+                shift_y: 0.0,
             });
             pen += glyph.advance;
         }
@@ -3753,6 +4123,11 @@ impl<'a> LayoutEngine<'a> {
                             )
                         })
                         .unwrap_or_else(|| text.clone());
+                    // A run set across a vertical line, or as two lines in
+                    // one, is one piece that no line breaks inside.
+                    if self.east_asian_run(&shown, text, style, style_index, items, offset) {
+                        continue;
+                    }
                     let chunks = segment(&shown);
                     // The words are cut where the language's patterns allow,
                     // when the document hyphenates on its own and the text is
@@ -4540,6 +4915,7 @@ impl<'a> LayoutEngine<'a> {
             outline_weight: (shape.outline_points_in(&self.theme) * scale).max(1.0),
             shadow: self.shape_shadow(scale),
             text: Vec::new(),
+            text_turned: Vec::new(),
             name: shape.name.clone(),
             at,
             depth: anchor.depth,
@@ -4651,6 +5027,7 @@ impl<'a> LayoutEngine<'a> {
                         outline_weight: (shape.outline_points_in(&self.theme) * scale).max(1.0),
                         shadow: self.shape_shadow(scale),
                         text: Vec::new(),
+                        text_turned: Vec::new(),
                         name: shape.name.clone(),
                         // The group's place and not the member's: a member has
                         // no place of its own in the text, and a press on one
@@ -5075,18 +5452,24 @@ impl<'a> LayoutEngine<'a> {
                 let inset_x = INSET_X * scale;
                 let inset_y = INSET_Y * scale;
                 let width = (shape.width / scale - INSET_X * 2.0).max(1.0);
+                let height = (shape.height / scale - INSET_Y * 2.0).max(1.0);
                 // Tall enough that the text never runs off the end of it: what
                 // does not fit in a shape is hidden by the shape's edge, not
-                // carried onto a second one.
+                // carried onto a second one. A text box whose words run down
+                // it is the exception: its box is laid out on its side and
+                // turned, the way a section written down the page is, and
+                // what runs off its end is what runs off its edge.
+                let direction = source.direction;
                 let metrics = PageMetrics {
                     width,
-                    height: f32::MAX / 4.0,
+                    height: if direction.is_turned() { height } else { f32::MAX / 4.0 },
                     margin_top: 0.0,
                     margin_right: 0.0,
                     margin_bottom: 0.0,
                     margin_left: 0.0,
                     columns: 1,
                     column_gap: 0.0,
+                    direction,
                 };
 
                 // The words that name no colour of their own take the one the
@@ -5098,9 +5481,17 @@ impl<'a> LayoutEngine<'a> {
                 {
                     self.automatic_color = ink;
                 }
-                let inner = self.layout_body(&source.body(), document, metrics);
+                let mut inner = self.layout_body(&source.body(), document, metrics);
                 self.automatic_color = automatic;
-                let Some(first) = inner.first() else { continue };
+                if inner.is_empty() {
+                    continue;
+                }
+                let first = &mut inner[0];
+                if direction.is_turned() {
+                    let (turned_width, turned_height) = (first.height, first.width);
+                    first.turn(metrics.frame_on(turned_width, turned_height));
+                }
+                shape.text_turned = spans_of((0..first.glyphs.len()).map(|at| first.turn_of(at)));
                 shape.text = first
                     .glyphs
                     .iter()
@@ -5201,6 +5592,7 @@ impl<'a> LayoutEngine<'a> {
             ascent: ascent.max(full_size * 0.8),
             descent,
             line_height: line_height.max(full_size * 1.2),
+            east_asian: properties.east_asian_layout,
         })
     }
 
@@ -5290,6 +5682,8 @@ impl<'a> LayoutEngine<'a> {
                 source: TextPosition::new(paragraph, glyph.offset),
                 source_length: glyph.length,
                 invisible: style.hidden || glyph.invisible,
+                shift_x: 0.0,
+                shift_y: 0.0,
             });
             x += glyph.advance;
         }
@@ -5375,6 +5769,8 @@ impl crate::charting::ChartShaper for LabelShaper<'_, '_> {
                 source: wp_docx::TextPosition::new(0, 0),
                 source_length: 0,
                 invisible: false,
+                shift_x: 0.0,
+                shift_y: 0.0,
             });
             at += glyph.advance;
         }
@@ -5438,6 +5834,8 @@ impl crate::math::MathShaper for EngineShaper<'_, '_> {
                 source: wp_docx::TextPosition::new(0, 0),
                 source_length: 0,
                 invisible: false,
+                shift_x: 0.0,
+                shift_y: 0.0,
             });
             x += glyph.advance;
         }
@@ -5568,6 +5966,8 @@ impl<'a> LayoutEngine<'a> {
                 length: character.len_utf8(),
                 character,
                 size: style.size,
+                upright: None,
+                squeeze: 1.0,
             });
         }
         glyphs
@@ -5709,6 +6109,8 @@ impl<'a> LayoutEngine<'a> {
                             character,
                             length: source.len_utf8(),
                             size,
+                            upright: None,
+                            squeeze: 1.0,
                         });
                         previous = Some(glyph);
                     }
@@ -5720,7 +6122,61 @@ impl<'a> LayoutEngine<'a> {
         // Which way round the glyphs go is not decided here: it belongs to the
         // paragraph, not the run, and the bidirectional algorithm settles it
         // once the whole paragraph is known. See [`wp_bidi`].
-        hide_optional_hyphens(glyphs)
+        let mut glyphs = hide_optional_hyphens(glyphs);
+        if self.vertical {
+            self.stand_upright(&mut glyphs, style);
+        }
+        glyphs
+    }
+
+    /// Sets the letters that stand upright in a line running down the page
+    /// upright: the ideographs, the kana, hangul, and the marks that have a
+    /// form of their own for that way round.
+    ///
+    /// Three things change for such a glyph, and only for such a glyph — a
+    /// Latin word in the same line lies on its side and is left exactly as it
+    /// was. The font is asked for the glyph's vertical form, which is where a
+    /// full stop moves to the top right of its square and a bracket turns to
+    /// open downwards. The room it takes along the line is what the font
+    /// gives it downwards rather than across, which is its square. And where
+    /// it is drawn is worked out from where the pen stands: the pen walks
+    /// down what will be the turned baseline, and the letter has to stand
+    /// centred on the column beside it. See [`Turn::Upright`] for the shift.
+    fn stand_upright(&mut self, glyphs: &mut [ShapedGlyph], style: &RunStyle) {
+        use wp_shape::vertical::Orientation;
+        for glyph in glyphs.iter_mut() {
+            let orientation = Orientation::of(glyph.character);
+            if orientation == Orientation::Rotated || glyph.invisible {
+                continue;
+            }
+            let Some(font) = self.font(glyph.face) else { continue };
+            let units = f32::from(font.units_per_em());
+            let scale = glyph.size / units;
+
+            let mut stands = orientation.is_upright();
+            if orientation.wants_vertical_form() {
+                let script = wp_shape::script_of(&glyph.character.to_string());
+                if let Some(form) = wp_shape::vertical_form(font, &script, glyph.glyph) {
+                    glyph.glyph = form;
+                    stands = true;
+                }
+            }
+            if !stands {
+                continue;
+            }
+
+            // The square, and where the pen's baseline runs through it.
+            let (top, bottom) = font.ideographic_extent();
+            let (top, bottom) = (f32::from(top) * scale, -f32::from(bottom) * scale);
+            let origin = f32::from(font.vertical_origin(glyph.glyph)) * scale;
+            let width = f32::from(font.advance(glyph.glyph)) * scale * style.stretch;
+            let down = f32::from(font.vertical_advance(glyph.glyph)) * scale;
+
+            glyph.advance = if style.hidden { 0.0 } else { down + style.letter_spacing };
+            glyph.upright = Some((origin, width / 2.0 - (top - bottom) / 2.0));
+            glyph.x_offset = 0.0;
+            glyph.y_offset = 0.0;
+        }
     }
 
     /// Shapes text in a joined script, if a face can be found that knows how.
@@ -5783,6 +6239,8 @@ impl<'a> LayoutEngine<'a> {
                 character: text[entry.cluster..].chars().next().unwrap_or('\u{FFFD}'),
                 length: length.max(1),
                 size: style.size,
+                upright: None,
+                squeeze: 1.0,
             });
         }
 
@@ -5790,6 +6248,171 @@ impl<'a> LayoutEngine<'a> {
         // round a piece of text goes is settled once for the whole paragraph,
         // by the bidirectional algorithm. See [`wp_bidi`].
         Some(glyphs)
+    }
+
+    /// Word's Asian Layout for one run: the run set across a line that runs
+    /// down the page, or set as two lines in one. Either makes the run one
+    /// item that no line breaks inside, with each glyph told where it is
+    /// drawn from where the pen stands. See [`wp_docx::eastasian`].
+    ///
+    /// Whether anything was made: nothing when the run asks for neither, and
+    /// the caller then lays it out as words.
+    fn east_asian_run(
+        &mut self,
+        shown: &str,
+        stored: &str,
+        style: &RunStyle,
+        style_index: usize,
+        items: &mut Vec<Item>,
+        offset: &mut usize,
+    ) -> bool {
+        let layout = style.east_asian;
+        let across = layout.horizontal_in_vertical && self.vertical;
+        if (!across && !layout.two_lines_in_one) || shown.is_empty() {
+            return false;
+        }
+        let start = *offset;
+        *offset += stored.len();
+        let glyphs = if across {
+            self.across_the_line(shown, style, start)
+        } else {
+            self.two_lines_in_one(shown, style, start)
+        };
+        let width = glyphs.iter().map(|glyph| glyph.advance).sum();
+        items.push(Item {
+            glyphs,
+            width,
+            is_space: false,
+            breaks_before: true,
+            is_tab: false,
+            aligned_tab: None,
+            picture: None,
+            picture_anchor: None,
+            picture_name: None,
+            picture_turn: wp_docx::floating::Turned::default(),
+            picture_video: false,
+            group: None,
+            shape: None,
+            math: None,
+            chart: None,
+            ink: None,
+            ruby: None,
+            hyphen: 0.0,
+            auto_hyphen: false,
+            hard_break: None,
+            style: style_index,
+            start_offset: start,
+            end_offset: *offset,
+        });
+        true
+    }
+
+    /// Horizontal in Vertical: the run stands upright and reads across,
+    /// inside a line that runs down the page.
+    ///
+    /// The run is shaped as the horizontal run it is, and then set on its
+    /// side in the box — which is upright on the page — centred on the
+    /// column, in the room of one square along the line. Squeezed to that
+    /// square across as well when the run asks to fit in the line and is
+    /// wider than it. The pen walks the square in equal steps, one per
+    /// glyph, so that the caret has somewhere to stand between them.
+    fn across_the_line(&mut self, text: &str, style: &RunStyle, start: usize) -> Vec<ShapedGlyph> {
+        // Shaped as a horizontal run, which is what it is: the pass that
+        // stands letters upright is not for it.
+        let was = core::mem::replace(&mut self.vertical, false);
+        let mut glyphs = self.shape(text, style, start);
+        self.vertical = was;
+        let Some(first) = glyphs.first().copied() else { return glyphs };
+        let Some(font) = self.font(first.face) else { return glyphs };
+        let scale = style.size / f32::from(font.units_per_em());
+        let (top, bottom) = font.ideographic_extent();
+        let (top, bottom) = (f32::from(top) * scale, -f32::from(bottom) * scale);
+        let origin = f32::from(font.vertical_origin(first.glyph)) * scale;
+        let square = top + bottom;
+
+        let total: f32 = glyphs.iter().map(|glyph| glyph.advance).sum();
+        let squeeze = if style.east_asian.fit_in_line && total > square && total > 0.0 {
+            square / total
+        } else {
+            1.0
+        };
+        let shown = total * squeeze;
+        let slot = square / glyphs.len() as f32;
+        let mut running = 0.0;
+        for (index, glyph) in glyphs.iter_mut().enumerate() {
+            let own = glyph.advance * squeeze;
+            glyph.upright =
+                Some((origin - index as f32 * slot, shown / 2.0 - (top - bottom) / 2.0 - running));
+            glyph.squeeze = squeeze;
+            glyph.advance = slot;
+            running += own;
+        }
+        glyphs
+    }
+
+    /// Two Lines in One: the run set as two half-height lines stacked inside
+    /// the height of one, with brackets round the pair when it asks for them.
+    ///
+    /// The first half of the characters goes on the upper line and the rest
+    /// on the lower, each centred in the width of the wider. The pen walks
+    /// the upper line's glyphs in equal steps across that width and stands
+    /// still for the lower line's, so that the caret can be put between the
+    /// characters of the upper line and lands after the pair for the lower.
+    /// In a line that runs down the page the two lines are two columns side
+    /// by side, and the letters stand upright in each — the shift that
+    /// stands a letter upright and the one that puts it on its line add.
+    fn two_lines_in_one(&mut self, text: &str, style: &RunStyle, start: usize) -> Vec<ShapedGlyph> {
+        let characters: Vec<usize> = text.char_indices().map(|(at, _)| at).collect();
+        let half = characters.len().div_ceil(2);
+        let split = characters.get(half).copied().unwrap_or(text.len());
+        let (upper, lower) = text.split_at(split);
+
+        let small = RunStyle { size: style.size / 2.0, ..style.clone() };
+        let mut upper_glyphs = self.shape(upper, &small, start);
+        let mut lower_glyphs = self.shape(lower, &small, start + split);
+        let width_upper: f32 = upper_glyphs.iter().map(|glyph| glyph.advance).sum();
+        let width_lower: f32 = lower_glyphs.iter().map(|glyph| glyph.advance).sum();
+        let wide = width_upper.max(width_lower);
+
+        let place = |glyphs: &mut Vec<ShapedGlyph>, width: f32, down: f32, stepping: bool| {
+            let step = if stepping { wide / glyphs.len().max(1) as f32 } else { 0.0 };
+            // The pen has walked the whole width by the time the lower line
+            // is placed, so its glyphs are drawn that far back.
+            let back = if stepping { 0.0 } else { wide };
+            let mut running = 0.0;
+            for (index, glyph) in glyphs.iter_mut().enumerate() {
+                let (up_x, up_y) = glyph.upright.unwrap_or((0.0, 0.0));
+                glyph.upright = Some((
+                    up_x + (wide - width) / 2.0 + running - index as f32 * step - back,
+                    up_y + down,
+                ));
+                running += glyph.advance;
+                glyph.advance = step;
+            }
+        };
+        place(&mut upper_glyphs, width_upper, -style.ascent / 2.0, true);
+        place(&mut lower_glyphs, width_lower, style.descent / 2.0, false);
+
+        let mut glyphs = Vec::new();
+        let brackets = style.east_asian.brackets.characters();
+        let bracket = |this: &mut Self, character: char, at: usize| {
+            let mut shaped = this.shape(&character.to_string(), style, at);
+            for glyph in &mut shaped {
+                // The bracket is drawn and is nobody's character: the caret
+                // does not stop inside it.
+                glyph.length = 0;
+            }
+            shaped
+        };
+        if let Some((open, _)) = brackets {
+            glyphs.extend(bracket(self, open, start));
+        }
+        glyphs.extend(upper_glyphs);
+        glyphs.extend(lower_glyphs);
+        if let Some((_, close)) = brackets {
+            glyphs.extend(bracket(self, close, start + text.len()));
+        }
+        glyphs
     }
 
     /// How wide the hyphen is that ends a broken word, in this style.
@@ -6061,6 +6684,8 @@ impl LayoutEngine<'_> {
                 source,
                 source_length: 0,
                 invisible: false,
+                shift_x: 0.0,
+                shift_y: 0.0,
             });
             x += one.advance;
         }
@@ -6209,6 +6834,8 @@ impl LayoutEngine<'_> {
                     source: TextPosition::new(placement.paragraph, item.start_offset),
                     source_length: item.end_offset - item.start_offset,
                     invisible: true,
+                    shift_x: 0.0,
+                    shift_y: 0.0,
                 });
                 x += advance;
                 continue;
@@ -6218,6 +6845,17 @@ impl LayoutEngine<'_> {
             // A superscript or subscript sits off the line rather than on it.
             let glyph_baseline = baseline - style.raise;
             for glyph in &item.glyphs {
+                let (shift_x, shift_y) = glyph.upright.unwrap_or((0.0, 0.0));
+                // A letter standing upright in a line that will be turned is
+                // marked as such, so that the turn leaves it be. The marks
+                // are spans, and a run of upright letters is one span.
+                if glyph.upright.is_some() && self.vertical {
+                    let at = page.glyphs.len();
+                    match page.turned.last_mut() {
+                        Some((span, Turn::Upright)) if span.end == at => span.end = at + 1,
+                        _ => page.turned.push((at..at + 1, Turn::Upright)),
+                    }
+                }
                 page.glyphs.push(PositionedGlyph {
                     face: glyph.face,
                     glyph: glyph.glyph,
@@ -6230,7 +6868,7 @@ impl LayoutEngine<'_> {
                     // The glyph's own size rather than the run's: a small
                     // capital is drawn smaller than the capitals beside it.
                     size: glyph.size,
-                    stretch: style.stretch,
+                    stretch: style.stretch * glyph.squeeze,
                     color: style.color,
                     effect: style.effect,
                     source: TextPosition::new(placement.paragraph, glyph.offset),
@@ -6240,6 +6878,8 @@ impl LayoutEngine<'_> {
                     // still lands in the right place — which is what happens in
                     // Word when the marks are turned back on.
                     invisible: style.hidden || glyph.invisible,
+                    shift_x,
+                    shift_y,
                 });
                 x += glyph.advance;
             }
@@ -6310,6 +6950,7 @@ impl LayoutEngine<'_> {
                     .max(1.0),
                     shadow: self.shape_shadow(self.pixels_per_point()),
                     text: Vec::new(),
+                    text_turned: Vec::new(),
                     name: shape.name.clone(),
                     at: Some(TextPosition::new(placement.paragraph, item.start_offset)),
                     // In the line of text, which is under everything that
@@ -6543,6 +7184,8 @@ impl LayoutEngine<'_> {
                     source: TextPosition::new(placement.paragraph, item.start_offset),
                     source_length: item.end_offset - item.start_offset,
                     invisible: true,
+                    shift_x: 0.0,
+                    shift_y: 0.0,
                 });
             }
             if item.is_space {
@@ -6626,6 +7269,8 @@ impl LayoutEngine<'_> {
                         ),
                         source_length: 0,
                         invisible: false,
+                        shift_x: 0.0,
+                        shift_y: 0.0,
                     });
                     x += glyph.advance;
                 }
@@ -6893,7 +7538,16 @@ fn lay_turned(page: &mut Page, laid: Page, frame: Frame) {
         let (x, y) = frame.on_page(glyph.x, glyph.baseline);
         glyph.x = x;
         glyph.baseline = y;
+        let (shift_x, shift_y) = frame.direction_on_page(glyph.shift_x, glyph.shift_y);
+        glyph.shift_x = shift_x;
+        glyph.shift_y = shift_y;
         page.glyphs.push(glyph);
+    }
+    // The cell's own spans first — a letter standing upright in it, a cell
+    // turned inside it — and then the turn of the whole cell, which is on
+    // top of them. See [`Page::turn_of`].
+    for (span, turn) in laid.turned {
+        page.turned.push(((span.start + first)..(span.end + first), turn));
     }
     if page.glyphs.len() > first {
         page.turned.push((first..page.glyphs.len(), frame.turn));
@@ -6903,7 +7557,7 @@ fn lay_turned(page: &mut Page, laid: Page, frame: Frame) {
         // The lines keep their own numbers and are told where they sit, which
         // is what makes a click and a caret land in the right place.
         line.glyphs = (line.glyphs.start + first)..(line.glyphs.end + first);
-        line.frame = frame;
+        line.frame = line.frame.then(frame);
         page.lines.push(line);
     }
 
@@ -6944,6 +7598,140 @@ fn lay_turned(page: &mut Page, laid: Page, frame: Frame) {
     for mut path in laid.paths {
         path.path = path.path.transformed(&frame.transform());
         page.paths.push(path);
+    }
+
+    for mut ink in laid.inks {
+        let (x, y, width, height) = frame.rect(ink.x, ink.y, ink.width, ink.height);
+        ink.x = x;
+        ink.y = y;
+        ink.width = width;
+        ink.height = height;
+        ink.drawing = ink.drawing.transformed(&frame.transform());
+        page.inks.push(ink);
+    }
+}
+
+/// The turns of a row of glyphs, as spans: one per run of glyphs turned the
+/// same way, and none for the ordinary way up.
+fn spans_of(turns: impl Iterator<Item = Turn>) -> Vec<(core::ops::Range<usize>, Turn)> {
+    let mut spans: Vec<(core::ops::Range<usize>, Turn)> = Vec::new();
+    for (at, turn) in turns.enumerate() {
+        if turn == Turn::None {
+            continue;
+        }
+        match spans.last_mut() {
+            Some((span, last)) if *last == turn && span.end == at => span.end = at + 1,
+            _ => spans.push((at..at + 1, turn)),
+        }
+    }
+    spans
+}
+
+/// Turns a page laid out into a box onto the paper — or, given the inverse
+/// frame, back into its box.
+///
+/// What [`lay_turned`] does for a cell, done to a whole page in place: for a
+/// section written down the page, whose body is laid out into a box as
+/// long as the page is tall and turned afterwards. Everything on the page
+/// moves — see [`Page::frame`] for why the turn is kept on the page rather
+/// than only its effect.
+///
+/// Every step here is a swap of coordinates and a subtraction from the
+/// page's edge, and the subtraction is the one that rounds: a page turned,
+/// turned back and turned again lands exactly where it landed the first
+/// time, because the second subtraction is of two numbers a whisker apart,
+/// which is exact. That is what lets the engine be given its pages back —
+/// see [`again`].
+fn turn_page(page: &mut Page, frame: Frame) {
+    for glyph in &mut page.glyphs {
+        let (x, y) = frame.on_page(glyph.x, glyph.baseline);
+        glyph.x = x;
+        glyph.baseline = y;
+        let (shift_x, shift_y) = frame.direction_on_page(glyph.shift_x, glyph.shift_y);
+        glyph.shift_x = shift_x;
+        glyph.shift_y = shift_y;
+    }
+    for line in &mut page.lines {
+        line.frame = line.frame.then(frame);
+    }
+    for decoration in &mut page.decorations {
+        let (x, y, width, height) =
+            frame.rect(decoration.x, decoration.y, decoration.width, decoration.height);
+        decoration.x = x;
+        decoration.y = y;
+        decoration.width = width;
+        decoration.height = height;
+    }
+    for cell in &mut page.cells {
+        let (x, y, width, height) = frame.rect(cell.x, cell.y, cell.width, cell.height);
+        cell.x = x;
+        cell.y = y;
+        cell.width = width;
+        cell.height = height;
+    }
+    for picture in &mut page.images {
+        let (x, y, width, height) = frame.rect(picture.x, picture.y, picture.width, picture.height);
+        picture.x = x;
+        picture.y = y;
+        picture.width = width;
+        picture.height = height;
+    }
+    for shape in &mut page.shapes {
+        let (x, y, width, height) = frame.rect(shape.x, shape.y, shape.width, shape.height);
+        shape.x = x;
+        shape.y = y;
+        shape.width = width;
+        shape.height = height;
+        for glyph in &mut shape.text {
+            let (gx, gy) = frame.on_page(glyph.x, glyph.baseline);
+            glyph.x = gx;
+            glyph.baseline = gy;
+        }
+        if let Some(route) = &mut shape.route {
+            *route = route.transformed(&frame.transform());
+        }
+    }
+    for path in &mut page.paths {
+        path.path = path.path.transformed(&frame.transform());
+    }
+    for ink in &mut page.inks {
+        let (x, y, width, height) = frame.rect(ink.x, ink.y, ink.width, ink.height);
+        ink.x = x;
+        ink.y = y;
+        ink.width = width;
+        ink.height = height;
+        ink.drawing = ink.drawing.transformed(&frame.transform());
+    }
+    if frame.is_sideways() {
+        core::mem::swap(&mut page.width, &mut page.height);
+    }
+}
+
+impl Page {
+    /// Turns the page's body onto the paper, for a section written down it.
+    /// The turn is remembered on the page, and the glyphs on it now are the
+    /// ones it covers.
+    fn turn(&mut self, frame: Frame) {
+        if !frame.is_turned() || self.frame.is_turned() {
+            return;
+        }
+        turn_page(self, frame);
+        self.frame = frame;
+        self.turned_glyphs = self.glyphs.len();
+    }
+
+    /// And back into its box, for the engine to go on placing text in it.
+    /// Whatever was put on the page after the turn is turned with it, which
+    /// does no harm: the engine takes all of that off again before it places
+    /// anything. See [`again`].
+    fn unturn(&mut self) {
+        if !self.frame.is_turned() {
+            return;
+        }
+        let frame = self.frame;
+        turn_page(self, frame.inverse());
+        self.frame = Frame::default();
+        self.turned_glyphs = 0;
     }
 }
 
@@ -7447,6 +8235,8 @@ mod tests {
                     source: TextPosition::new(*paragraph, offset),
                     source_length: character.len_utf8(),
                     invisible: false,
+                    shift_x: 0.0,
+                    shift_y: 0.0,
                 });
                 offset += character.len_utf8();
             }
@@ -7898,9 +8688,15 @@ impl LayoutEngine<'_> {
 /// The lines are deliberately not copied: a header is drawn on the page but is
 /// not part of the text, so a click in it must not put the caret there.
 fn merge_page(page: &mut Page, from: Page, offset: f32) {
+    let first = page.glyphs.len();
     for mut glyph in from.glyphs {
         glyph.baseline += offset;
         page.glyphs.push(glyph);
+    }
+    // Which of them are turned — a heading down a cell of a table in the
+    // running head, a note's ideographs standing upright — comes with them.
+    for (span, turn) in from.turned {
+        page.turned.push(((span.start + first)..(span.end + first), turn));
     }
     for mut decoration in from.decorations {
         decoration.y += offset;
@@ -8000,7 +8796,13 @@ impl LayoutEngine<'_> {
         for note in notes {
             let Some(mark) = note.mark else { continue };
             let Some(page) = lines.page_of(mark) else { continue };
-            reserved[page] += self.note_height(note, document, metrics);
+            // On the paper of the page the mark is on — and in its box, for
+            // a section written down the page, where the notes run down the
+            // page too and stand at its left.
+            let paper = self.paper_of_page(page, document, metrics);
+            let was = core::mem::replace(&mut self.vertical, paper.direction.is_vertical_writing());
+            reserved[page] += self.note_height(note, document, paper.boxed());
+            self.vertical = was;
         }
 
         // Room for the rule above the notes, on every page that has any.
@@ -8082,8 +8884,6 @@ impl LayoutEngine<'_> {
         metrics: PageMetrics,
     ) {
         let scale = self.pixels_per_point();
-        let left = metrics.margin_left * scale;
-        let width = metrics.text_width() * scale;
 
         // Grouped by page first, so the notes on one page stack in order.
         let mut by_page: HashMap<usize, Vec<&wp_docx::notes::Note>> = HashMap::new();
@@ -8101,6 +8901,13 @@ impl LayoutEngine<'_> {
             let Some(mut on_page) = by_page.remove(&index) else { continue };
             on_page.sort_by_key(|note| note.number);
             let Some(page) = pages.get(index) else { continue };
+            // The paper of this page, as its box: the notes go on before the
+            // page is turned, so that they are turned with it.
+            let paper = self.paper_of_page(index, document, metrics);
+            let metrics = paper.boxed();
+            let left = metrics.margin_left * scale;
+            let width = metrics.text_width() * scale;
+            let was = core::mem::replace(&mut self.vertical, paper.direction.is_vertical_writing());
 
             let bottom = page.height - metrics.margin_bottom * scale;
             let reserved = self.reserved.get(index).copied().unwrap_or(0.0);
@@ -8140,6 +8947,7 @@ impl LayoutEngine<'_> {
                 merge_page(&mut pages[index], scratch.remove(0), y);
                 y += height;
             }
+            self.vertical = was;
         }
     }
 }

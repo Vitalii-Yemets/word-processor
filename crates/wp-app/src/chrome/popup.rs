@@ -173,6 +173,8 @@ pub enum Choice {
     LineNumbers,
     /// Whether words are broken across lines.
     Hyphenation,
+    TextDirection,
+    AsianLayout,
     /// Which of the two ways of putting two documents together.
     Comparing,
     /// Which of the ways a mail merge can end.

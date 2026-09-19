@@ -61,7 +61,7 @@ use wp_docx::numbering::ListCounters;
 use wp_docx::sections::Start;
 use wp_raster::Color;
 
-use super::{Float, LayoutEngine, Page, PageMetrics, Stretch};
+use super::{Float, Frame, LayoutEngine, Page, PageMetrics, Stretch};
 
 /// How much of a page is drawn: the length of each of its lists.
 ///
@@ -141,6 +141,8 @@ impl Extent {
             inks: page.inks.split_off(self.inks),
             lines: page.lines.split_off(self.lines),
             turned: page.turned.split_off(self.turned),
+            frame: Frame::default(),
+            turned_glyphs: 0,
             stamp: 0,
         }
     }

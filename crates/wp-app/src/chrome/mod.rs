@@ -362,6 +362,11 @@ pub enum Command {
     SendBehindText,
     LineNumbers,
     Hyphenation,
+    /// Which way the text of the section runs: across the page, or down it.
+    TextDirectionSection,
+    /// Word's Asian Layout menu: a run set across a vertical line, or as two
+    /// lines in one.
+    AsianLayout,
 
     // The Header & Footer tab, which is only there while one is being edited.
     GoToHeader,

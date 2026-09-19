@@ -3367,8 +3367,8 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   — the reading can be put in from the model and not yet from the ribbon. And
   the other half of what this item used to be: see **E15**.
 
-- [ ] **E15. Vertical writing.** Japanese set down the page rather than across
-  it: `w:textDirection` on a section, a frame or a table cell, and
+- [x] **E15. Vertical writing.** Japanese set down the page rather than across
+  it: `w:textDirection` on a section, a text box or a table cell, and
   `w:eastAsianLayout` for the words inside it that are turned or squeezed.
   This is not a feature of the text engine, it is a second engine. Every line
   in this program runs left to right along a baseline, wraps at a width and
@@ -3380,8 +3380,94 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   vertical line, the two-digit number set upright in one square
   (`w:eastAsianLayout` with `w:vert`), and the punctuation that changes its
   corner of the square.
-  Worth doing after the engine's own axes are a thing it can be asked about
-  rather than a thing it assumes.
+  *Done when:* a Japanese paragraph set Vertical stands in columns from the
+  right edge leftwards, with the kana upright, the Latin lying down and the
+  full stop in its corner; and the same engine, given its pages back, gives
+  the same pages.
+  **It was not a second engine after all.** The turned cell of the table
+  work had already found the shape of it: lay the text out straight into a
+  box as long as the line has to be, and turn the box. A section written
+  down the page is the same thing with the page as the box — the paper with
+  its sides swapped round the corner the turn is about, so that the top
+  margin is where the lines begin and the right margin is where the first
+  of them stands, the columns divide the page's height into bands as Word's
+  do, and a paragraph's left indent is measured from the top. Everything
+  the box held is turned onto the page afterwards: the letters, the lines
+  the caret walks, the rules and bands, the cells, the pictures, the shapes,
+  the ink. The one thing that is not a turn is the letters themselves —
+  every ideograph and every kana stands upright in a line that reads
+  downwards, and only the Latin lies on its side — and that is where the
+  work was. Which characters stand is Unicode's Vertical Orientation
+  property, reduced to its ranges; a letter that stands is asked of the
+  font in its vertical form (`vert`: the full stop moves to its corner, a
+  bracket turns to open downwards, the long vowel mark and the ellipsis
+  stand only if the font has a form for them), takes along the line what
+  the font gives it *downwards* (`vmtx`, or an em without it), and is drawn
+  beside the pen rather than at it — centred on the column, its top where
+  the vertical origin says (`VORG`, or the typographic ascender). The pen's
+  place is what a click and a caret are measured against; the shift is only
+  where the drawing lands. So a caret in a vertical line lies across the
+  column, a click lands in the right character, and the arrow keys are read
+  as what they do on the page: down is along the text, left is on to the
+  next column, which is Word's way.
+  **The engine can be given its pages back.** The pages it gives out are
+  turned; the pages it goes on placing text into are the box. So a page
+  given back is turned back into its box on the way in and turned again on
+  the way out, and that round trip is exact — a subtraction from the page's
+  edge, undone by a subtraction of two numbers a whisker apart — which is
+  what keeps the pages of a document written down the page the pages a new
+  engine gives, whatever the engine has been through. Footnotes go onto the
+  box before it is turned, so they stand at the left of the page and run
+  down it; headers and footers go onto the paper afterwards, the ordinary
+  way up.
+  **The six directions.** Word's Vertical (`tbRl`) is writing: the East
+  Asian letters stand. `btLr` and a text box's `vert270` turn the whole line
+  anticlockwise; a text box's `vert` turns it clockwise, ideographs and all;
+  `tbRlV` and `tbLrV` — which Word draws alike, whatever the standard says
+  of the first — read downwards with the lines going across to the right,
+  Mongolian's way, which is the clockwise turn with its lines mirrored, and
+  a frame carries that flip beside its turn. The frames compose, so a
+  turned cell on a turned page is turned twice, and undo, so a page can be
+  turned back. A section reading upwards is read and kept and drawn across,
+  which is what Word does with it.
+  **The words inside.** `w:eastAsianLayout`: Horizontal in Vertical sets a
+  run upright and across inside the column — a year, a page number — in the
+  room of one square along the line, squeezed to the square across as well
+  when it asks to fit in the line; Two Lines in One sets a run as two
+  half-height lines stacked inside the height of one, with the brackets it
+  names round the pair, which in a vertical line is two columns side by
+  side. Both are one piece no line breaks inside, and both are the same
+  shifts the upright letters use. The Asian Layout menu on the Home tab has
+  the two dialogs with Word's OK, Remove and Cancel; Text Direction on the
+  Layout tab sets the section. A text box's `wps:bodyPr/@vert` is read,
+  written and laid out the same way, its words turned with the box and
+  then with the shape. A turned or upright letter is written into a PDF
+  with a text matrix that says so, which turned cells were not before.
+  *Proven by:* `wp-shape/src/vertical.rs` — which characters stand, which
+  lie down, and which depend on the font; `wp-layout/tests/vertical.rs` —
+  the direction written and read, the box of a turned page, the lines as
+  columns from the right edge leftwards inside the margins, the kana upright
+  and the Latin down with the full stop in its vertical form, a click and a
+  caret agreeing down the column, the same pages after an edit as from a
+  new engine, columns as bands, a year across the column in one square, two
+  lines in one stacked inside the line; `wp-docx/src/eastasian.rs` — the
+  attributes as Word spells them; `editor/vertical.rs` — the section set
+  from the menu and back, the arrows walking the column, both dialogs
+  writing and removing. The proof picture shows a page of it with the
+  Japanese font the build image has.
+  *Not done, and named:* `lrTbV`, horizontal with the East Asian letters
+  turned, is read and kept and drawn across. A text box's direction has no
+  button of its own yet. The underline of a vertical line is drawn on the
+  left of the column, where the turn puts it; Word's side was not checked.
+  A ruby's reading in a vertical line lies down with the Latin. A drawing
+  anchored in a vertical section is placed in the box's frame, so a
+  position measured from the page's top is measured from its right. Line
+  numbers on a vertical page stand the ordinary way up. Mongolian text is
+  set in the Mongolian direction but its letters are not joined, since the
+  shaper has no rules for the script. The lower line of two lines in one
+  has no room of its own along the line for the caret, which lands after the
+  pair. The gallery's third entry is named here and not by Word, whose own
+  words for the section directions were not to hand.
 - [x] **E5. Case mapping with language tailoring.** The capital of a letter is
   not the same everywhere, so both places this program makes one — Word's
   Change Case, which rewrites the text, and `w:caps`, which only draws it —

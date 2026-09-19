@@ -397,6 +397,8 @@ impl Editor {
             Command::SendBehindText => self.set_shape_depth(true),
             Command::LineNumbers => self.open_line_numbers(),
             Command::Hyphenation => self.open_hyphenation(),
+            Command::TextDirectionSection => self.open_text_direction(),
+            Command::AsianLayout => self.open_asian_layout(),
             Command::RestrictEditing => self.open_protection(),
             Command::AddBookmark => self.start_bookmark(),
             Command::CrossReference => self.open_references(wp_docx::captions::Reference::Text),

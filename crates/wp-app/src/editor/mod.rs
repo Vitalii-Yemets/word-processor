@@ -119,6 +119,7 @@ mod theme_effects;
 mod themes;
 mod thesaurus;
 mod translate;
+pub(crate) mod vertical;
 mod video;
 mod views;
 mod watermark;
@@ -132,6 +133,7 @@ use wp_docx::page::CaseChange;
 use wp_docx::{CharacterFormat, Document, TextPosition};
 use wp_layout::{FontLibrary, LayoutEngine, Page, Renderer};
 use wp_raster::{Canvas, Color};
+use wp_shell::Key;
 use wp_shell::Response;
 
 use crate::chrome::navigation::{Contents, Found, Heading};
@@ -1519,16 +1521,68 @@ impl Editor {
         let target = if downwards { index + 1 } else { index.wrapping_sub(1) };
         let Some(&(page_index, line_index)) = lines.get(target) else { return };
 
-        let wanted_x = self
-            .pages
-            .get(current.0)
-            .and_then(|page| page.caret_at(self.caret(), CARET_WIDTH as f32))
-            .map_or(0.0, |(x, _, _, _)| x);
+        // How far along its line the caret is, in the line's own coordinates
+        // — which for a line running down the page is how far down it is —
+        // and the same distance along the line moved to. See
+        // [`wp_layout::Frame`].
+        let wanted = self.pages.get(current.0).and_then(|page| {
+            let line = page.lines.get(current.1)?;
+            let (x, y, _, _) = page.caret_at(self.caret(), CARET_WIDTH as f32)?;
+            Some(line.frame.in_frame(x, y).0)
+        });
+        let wanted = wanted.unwrap_or(0.0);
 
         let page = &self.pages[page_index];
         let line = &page.lines[line_index];
-        if let Some(position) = page.position_at(wanted_x, line.baseline) {
+        let (x, y) = line.frame.on_page(wanted, line.baseline);
+        if let Some(position) = page.position_at(x, y) {
             self.document.move_caret(position, extend);
+        }
+    }
+
+    /// The frame of the line the caret is on: the ordinary way up for nearly
+    /// every line, and turned for a line that runs down the page — in a
+    /// section written that way, or a cell whose text is turned.
+    fn caret_frame(&self) -> wp_layout::Frame {
+        self.caret_line()
+            .and_then(|(page, line)| Some(self.pages.get(page)?.lines.get(line)?.frame))
+            .unwrap_or_default()
+    }
+
+    /// Which arrow key means what on a line that is turned.
+    ///
+    /// The arrows are about the page: down means down. On a line that runs
+    /// down the page, down is along the text and left is on to the next
+    /// line, so the key is read as the one that does that on an ordinary
+    /// line — which is what Word does in vertical text, where the down arrow
+    /// moves along the column and the left arrow to the next column.
+    fn arrow_on_the_page(&self, key: Key) -> Key {
+        let frame = self.caret_frame();
+        if !frame.is_turned() {
+            return key;
+        }
+        let pressed = match key {
+            Key::Left => (-1.0, 0.0),
+            Key::Right => (1.0, 0.0),
+            Key::Up => (0.0, -1.0),
+            Key::Down => (0.0, 1.0),
+            other => return other,
+        };
+        let along = frame.direction_on_page(1.0, 0.0);
+        let stack = frame.direction_on_page(0.0, 1.0);
+        let same = |one: (f32, f32), other: (f32, f32)| {
+            (one.0 - other.0).abs() < 0.01 && (one.1 - other.1).abs() < 0.01
+        };
+        if same(pressed, along) {
+            Key::Right
+        } else if same(pressed, (-along.0, -along.1)) {
+            Key::Left
+        } else if same(pressed, stack) {
+            Key::Down
+        } else if same(pressed, (-stack.0, -stack.1)) {
+            Key::Up
+        } else {
+            key
         }
     }
 

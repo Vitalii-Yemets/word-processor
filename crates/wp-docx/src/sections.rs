@@ -89,6 +89,9 @@ pub struct Setup {
     pub column_gap: i32,
     /// How this section begins.
     pub start: Start,
+    /// Which way its text runs: across the page, or down it. See
+    /// [`crate::model::TextDirection`].
+    pub direction: crate::model::TextDirection,
 }
 
 impl Default for Setup {
@@ -105,6 +108,7 @@ impl Default for Setup {
             columns: 1,
             column_gap: 720,
             start: Start::NextPage,
+            direction: crate::model::TextDirection::Horizontal,
         }
     }
 }
@@ -152,6 +156,12 @@ impl Setup {
             properties.child(Some(W), "type").and_then(|element| element.attribute(Some(W), "val"))
         {
             setup.start = Start::from_word(kind);
+        }
+        if let Some(direction) = properties
+            .child(Some(W), "textDirection")
+            .and_then(|element| element.attribute(Some(W), "val"))
+        {
+            setup.direction = crate::model::TextDirection::from_word(direction);
         }
         setup
     }

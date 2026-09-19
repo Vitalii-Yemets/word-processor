@@ -57,6 +57,7 @@ pub mod cover;
 pub mod customxml;
 pub mod depth;
 pub mod diagram;
+pub mod eastasian;
 pub mod edit;
 pub mod effects;
 pub mod embedded;
@@ -2095,6 +2096,7 @@ impl Document {
             position_half_points: Some(resolved.position_half_points),
             kerning_half_points: resolved.kerning_half_points,
             open_type: Some(resolved.open_type),
+            east_asian_layout: Some(resolved.east_asian_layout),
         }
     }
 

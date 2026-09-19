@@ -32,6 +32,7 @@ pub mod gpos;
 pub mod gsub;
 pub mod indic;
 pub mod joining;
+pub mod vertical;
 
 use wp_font::{Font, GlyphId};
 
@@ -89,6 +90,24 @@ pub fn script_of(text: &str) -> [u8; 4] {
             0x0D00..=0x0D7F => return *b"mlym",
             0x0D80..=0x0DFF => return *b"sinh",
             0x0E00..=0x0E7F => return *b"thai",
+            // The East Asian scripts, whose fonts keep the vertical forms
+            // under the script's own name: the kana, the ideographs with the
+            // marks written alongside them, and hangul.
+            0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9F | 0x1B000..=0x1B16F => {
+                return *b"kana";
+            }
+            0x2E80..=0x2FDF
+            | 0x3000..=0x303F
+            | 0x3100..=0x312F
+            | 0x3190..=0x31EF
+            | 0x3400..=0x4DBF
+            | 0x4E00..=0x9FFF
+            | 0xF900..=0xFAFF
+            | 0xFF01..=0xFF60
+            | 0x20000..=0x3FFFF => return *b"hani",
+            0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF => {
+                return *b"hang";
+            }
             _ => {}
         }
     }
@@ -287,6 +306,32 @@ pub fn kerning_between(font: &Font<'_>, script: &[u8; 4], left: GlyphId, right: 
     i32::from(font.kerning(left, right))
 }
 
+/// The form a glyph takes when it stands in a line that runs down the page,
+/// if the font has one: the `vert` feature, which is where a full stop moves
+/// to the top right of its square and a bracket turns to open downwards.
+///
+/// One glyph at a time, because which glyphs stand upright in such a line is
+/// decided character by character — see [`vertical`] — and a Latin letter in
+/// the same run is not asked. `None` when the font offers nothing for it,
+/// which for a letter is the ordinary answer.
+#[must_use]
+pub fn vertical_form(font: &Font<'_>, script: &[u8; 4], glyph: GlyphId) -> Option<GlyphId> {
+    let table = font.substitution_table().and_then(Substitutions::parse)?;
+    let lookups = table.lookups_for(script, b"vert");
+    if lookups.is_empty() {
+        return None;
+    }
+    let mut one = vec![glyph];
+    let mut cluster = vec![0];
+    for lookup in lookups {
+        table.apply(lookup, &mut one, &mut cluster);
+    }
+    match one.as_slice() {
+        [form] if *form != glyph => Some(*form),
+        _ => None,
+    }
+}
+
 /// Applies a feature to one glyph, leaving the rest of the run alone.
 ///
 /// A joining form is decided per letter, so the lookup has to be run against
@@ -345,6 +390,14 @@ mod tests {
         // A line beginning in English and continuing in Arabic is shaped as
         // Arabic: the Latin part needs nothing the Arabic rules would break.
         assert_eq!(script_of("page \u{0628}"), *b"arab");
+    }
+
+    #[test]
+    fn the_east_asian_scripts_are_named() {
+        assert_eq!(script_of("漢字"), *b"hani");
+        assert_eq!(script_of("かな"), *b"kana");
+        assert_eq!(script_of("한글"), *b"hang");
+        assert_eq!(script_of("。"), *b"hani");
     }
 
     #[test]

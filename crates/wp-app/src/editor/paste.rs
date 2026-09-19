@@ -449,6 +449,7 @@ impl Editor {
             margin_left: 0.0,
             columns: 1,
             column_gap: 0.0,
+            ..PageMetrics::default()
         };
         let pages = engine.layout_body(&body, &self.document, metrics);
         let page = pages.first()?;

@@ -518,6 +518,7 @@ impl Styles {
             position_half_points: accumulated.position_half_points.unwrap_or(0),
             kerning_half_points: accumulated.kerning_half_points,
             open_type: accumulated.open_type.unwrap_or_default(),
+            east_asian_layout: accumulated.east_asian_layout.unwrap_or_default(),
         }
     }
 }

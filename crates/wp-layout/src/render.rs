@@ -15,7 +15,7 @@ use wp_raster::{Canvas, Color, Path, Point, Transform};
 use wp_docx::effects::Effect;
 
 use crate::device::Device;
-use crate::layout::{Drawing, GlyphEffect, Page, PositionedGlyph, Turn};
+use crate::layout::{Drawing, GlyphEffect, Page, PlacedShape, PositionedGlyph, Turn};
 use crate::library::FontLibrary;
 
 /// Draws pages, keeping the outlines it has already read.
@@ -195,10 +195,7 @@ impl<'a> Renderer<'a> {
         // in a turned cell turns about its own origin, which is already where
         // it belongs on the page.
         let own = page.glyphs.iter().enumerate().map(|(at, glyph)| {
-            let turn = Self::quarter_turn(page.turn_of(at)).map(|angle| {
-                Transform::rotate_about(angle, glyph.x + offset_x, glyph.baseline + offset_y)
-            });
-            (glyph, turn)
+            (glyph, glyph_transform(page.turn_of(at), glyph, offset_x, offset_y))
         });
         self.draw_glyphs(canvas, own, offset_x, offset_y);
 
@@ -208,8 +205,7 @@ impl<'a> Renderer<'a> {
         // shape in front of the text has its own text drawn with it, below, or
         // the shape would be filled in over its own words.
         for shape in page.shapes.iter().filter(|shape| !shape.over_text) {
-            let turn = shape_turn(shape, offset_x, offset_y);
-            let text = shape.text.iter().map(|glyph| (glyph, turn));
+            let text = shape_text(shape, offset_x, offset_y);
             self.draw_glyphs(canvas, text, offset_x, offset_y);
         }
 
@@ -219,8 +215,7 @@ impl<'a> Renderer<'a> {
         for drawing in page.drawings_over() {
             draw_drawing(canvas, drawing, offset_x, offset_y);
             if let Drawing::Shape(shape) = drawing {
-                let turn = shape_turn(shape, offset_x, offset_y);
-                let text = shape.text.iter().map(|glyph| (glyph, turn));
+                let text = shape_text(shape, offset_x, offset_y);
                 self.draw_glyphs(canvas, text, offset_x, offset_y);
             }
         }
@@ -284,20 +279,49 @@ impl<'a> Renderer<'a> {
             canvas.fill_path(&path, glyph.color);
         }
     }
+}
 
-    /// How far round a turned letter goes, in radians.
-    ///
-    /// Clockwise on a canvas for text that reads downwards, the other way for
-    /// text that reads upwards. Nothing at all for the ordinary way up, which
-    /// is what almost every letter of almost every document is.
-    fn quarter_turn(turn: Turn) -> Option<f32> {
-        match turn {
-            Turn::None => None,
-            Turn::Down => Some(core::f32::consts::FRAC_PI_2),
-            Turn::Up => Some(-core::f32::consts::FRAC_PI_2),
-        }
+/// What a letter is drawn through once it is at the pen: the quarter turn of
+/// a cell that reads sideways, about the pen, and then the move of a letter
+/// that is drawn beside the pen rather than at it. Nothing at all for the
+/// ordinary way up, which is what almost every letter of almost every document
+/// is.
+fn glyph_transform(
+    turn: Turn,
+    glyph: &PositionedGlyph,
+    offset_x: f32,
+    offset_y: f32,
+) -> Option<Transform> {
+    let mut transform = turn
+        .radians()
+        .map(|angle| Transform::rotate_about(angle, glyph.x + offset_x, glyph.baseline + offset_y));
+    if glyph.shift_x != 0.0 || glyph.shift_y != 0.0 {
+        let shift = Transform::translate(glyph.shift_x, glyph.shift_y);
+        transform = Some(transform.map_or(shift, |turn| turn.then(&shift)));
     }
+    transform
+}
 
+/// The text inside a shape, each letter with what it is drawn through: its
+/// own turn, for a text box whose words run down it, and then the turn of the
+/// shape it is in — because the words on a turned sign are turned too.
+fn shape_text(
+    shape: &PlacedShape,
+    offset_x: f32,
+    offset_y: f32,
+) -> impl Iterator<Item = (&PositionedGlyph, Option<Transform>)> {
+    let whole = shape_turn(shape, offset_x, offset_y);
+    shape.text.iter().enumerate().map(move |(at, glyph)| {
+        let own = glyph_transform(shape.text_turn_of(at), glyph, offset_x, offset_y);
+        let transform = match (own, whole) {
+            (Some(own), Some(whole)) => Some(own.then(&whole)),
+            (own, whole) => own.or(whole),
+        };
+        (glyph, transform)
+    })
+}
+
+impl Renderer<'_> {
     /// Draws a page's text through a transform.
     ///
     /// (See [`draw_drawing`] below for the one that draws a picture or a

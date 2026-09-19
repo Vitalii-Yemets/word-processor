@@ -344,6 +344,11 @@ fn run_satisfies(run: &Element, change: &RunProperties) -> bool {
             direct.kerning_half_points == change.kerning_half_points,
         )
         && same(change.open_type.is_some(), open_type_matches(&direct, change))
+        && same(
+            change.east_asian_layout.is_some(),
+            direct.east_asian_layout.unwrap_or_default()
+                == change.east_asian_layout.unwrap_or_default(),
+        )
 }
 
 /// Whether a run already says what is being asked of it, counting the value
@@ -632,6 +637,13 @@ pub(crate) fn write_run_properties(
     if let Some(wanted) = &change.open_type {
         crate::typography::remove_open_type(properties);
         crate::typography::write_open_type(properties, wanted);
+    }
+    if let Some(layout) = change.east_asian_layout {
+        // Nothing asked for is said by saying nothing, as the format does.
+        properties.remove_children_named(Some(W), "eastAsianLayout");
+        if !layout.is_empty() {
+            insert_ordered(properties, layout.element(prefix), RUN_PROPERTY_ORDER);
+        }
     }
     if let Some(color) = &change.color {
         properties.remove_children_named(Some(W), "color");

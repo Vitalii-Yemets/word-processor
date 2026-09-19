@@ -1718,6 +1718,8 @@ impl Editor {
             Choice::ThemeFonts => Command::ThemeFonts,
             Choice::LineNumbers => Command::LineNumbers,
             Choice::Hyphenation => Command::Hyphenation,
+            Choice::TextDirection => Command::TextDirectionSection,
+            Choice::AsianLayout => Command::AsianLayout,
             Choice::Comparing => Command::Compare,
             Choice::Finishing => Command::FinishMerge,
             Choice::LegacyField => Command::LegacyFields,
@@ -1795,6 +1797,8 @@ impl Editor {
             | Choice::Source
             | Choice::LineNumbers
             | Choice::Hyphenation
+            | Choice::TextDirection
+            | Choice::AsianLayout
             | Choice::Comparing
             | Choice::Finishing
             | Choice::LegacyField
@@ -1990,6 +1994,8 @@ impl Editor {
             Choice::ThemeFonts => self.choose_theme_fonts(index),
             Choice::LineNumbers => self.choose_line_numbers(index),
             Choice::Hyphenation => self.choose_hyphenation(index),
+            Choice::TextDirection => self.choose_text_direction(index),
+            Choice::AsianLayout => self.choose_asian_layout(index),
             Choice::Comparing => self.choose_comparing(index),
             Choice::Finishing => self.choose_finishing(index),
             Choice::LegacyField => self.choose_legacy_field(index),
@@ -2302,6 +2308,10 @@ impl Editor {
         }
 
         let extend = modifiers.shift;
+        // On a line that runs down the page, the arrows are read as what
+        // they do on the page: down is along the text. See
+        // [`Editor::arrow_on_the_page`].
+        let key = self.arrow_on_the_page(key);
         match key {
             // The function keys Word has always had, which a person who has
             // used Word reaches for without thinking.

@@ -5,6 +5,7 @@
 # A catalogue for a language is this list with a line under each
 # message saying it in that language. See messages/de.txt.
 
+= ( )
 = (Ctrl)
 = (default)
 = (no style)
@@ -19,6 +20,7 @@
 = 2. Editing restrictions
 = 3. Exceptions
 = 4. Start enforcement
+= < >
 = A block has to have a name
 = A new document
 = A password that is lost cannot be recovered.
@@ -299,6 +301,7 @@
 = Email
 = Enable Content
 = Enable all macros (not recommended)
+= Enclose with characters
 = Encrypt Document
 = Encrypt with Password
 = End lines with
@@ -331,6 +334,7 @@
 = First Column
 = First Letter
 = First Name
+= Fit in line
 = Folder
 = Font
 = Fonts
@@ -390,6 +394,9 @@
 = Highlighter: draw over the words. Escape to stop
 = Holding
 = Home
+= Horizontal
+= Horizontal in Vertical
+= Horizontal in Vertical...
 = Hyphenate at
 = Hyphenate words in CAPS
 = Hyphenation
@@ -727,6 +734,8 @@
 = Select
 = Select Recipients
 = Select part of the document, then tick who may edit it.
+= Select the characters to set across the line first
+= Select the characters to set as two lines first
 = Select the part of the document they may edit first
 = Selection Pane
 = Send Backward
@@ -824,6 +833,7 @@
 = Text Pane
 = Text Wrapping
 = Text boxes
+= Text direction
 = Text encoding
 = Text files
 = Text formatting
@@ -913,6 +923,8 @@
 = Trust This Folder
 = Trusted locations
 = Turquoise
+= Two Lines in One
+= Two Lines in One...
 = Type
 = Type a New List...
 = Type one person, press Add, and type the next.
@@ -934,7 +946,9 @@
 = Use contextual alternates
 = Valid signatures
 = Validate
+= Vertical
 = Vertical Box List
+= Vertical, left to right
 = Video
 = View
 = View Gridlines
@@ -991,12 +1005,14 @@
 = Your permissions
 = Z to A
 = Zoom
+= [ ]
 = [Text]
 = in this machine's store
 = locked
 = off
 = on
 = unsaved changes
+= { }
 = {0} added to the list
 = {0} characters
 = {0} chart, {1} points

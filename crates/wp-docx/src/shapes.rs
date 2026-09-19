@@ -104,6 +104,9 @@ pub struct Shape {
     /// not the same as one turned by anything.
     pub flipped_across: bool,
     pub flipped_down: bool,
+    /// Which way the words inside run: `wps:bodyPr/@vert`, Word's Text
+    /// Direction for a text box. See [`crate::model::TextDirection`].
+    pub direction: crate::model::TextDirection,
 }
 
 impl Default for Shape {
@@ -132,6 +135,7 @@ impl Default for Shape {
             rotation: 0,
             flipped_across: false,
             flipped_down: false,
+            direction: crate::model::TextDirection::Horizontal,
         }
     }
 }
@@ -367,6 +371,11 @@ pub fn read_shape(drawing: &Element) -> Option<Shape> {
         None => shape.outline = if line_style > 0 { line_colour } else { None },
     }
 
+    if let Some(body) = find(wsp, "bodyPr") {
+        if let Some(vertical) = body.attribute_by_name("vert") {
+            shape.direction = crate::model::TextDirection::from_body_word(vertical);
+        }
+    }
     if let Some(content) = find(wsp, "txbxContent") {
         let body = read::read_part(content);
         shape.text = body
@@ -585,6 +594,9 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     // text, and a shape without it is one Word repairs.
     let mut body = Element::new("wps:bodyPr", Some(WPS));
     body.set_attribute("rot", "0");
+    if shape.direction.is_turned() {
+        body.set_attribute("vert", shape.direction.body_word());
+    }
     body.set_attribute("anchor", "ctr");
     wsp.push_element(body);
 

@@ -15,7 +15,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use wp_layout::{FontLibrary, Page, PositionedGlyph};
+use wp_layout::{FontLibrary, Page, PositionedGlyph, Turn};
 use wp_raster::{Color, Command, Path};
 
 use crate::writer::number;
@@ -72,13 +72,18 @@ pub(crate) fn of(page: &Page, names: &BTreeMap<usize, String>, library: &FontLib
         ));
     }
 
-    let inside =
-        page.shapes.iter().filter(|shape| !shape.over_text).flat_map(|shape| shape.text.iter());
-    let glyphs: Vec<&PositionedGlyph> = page
+    // Each glyph with which way it is turned: a heading down a cell, the
+    // ideographs of a section written down the page standing upright.
+    let inside = page.shapes.iter().filter(|shape| !shape.over_text).flat_map(|shape| {
+        shape.text.iter().enumerate().map(|(at, glyph)| (glyph, shape.text_turn_of(at)))
+    });
+    let glyphs: Vec<(&PositionedGlyph, Turn)> = page
         .glyphs
         .iter()
+        .enumerate()
+        .map(|(at, glyph)| (glyph, page.turn_of(at)))
         .chain(inside)
-        .filter(|glyph| !glyph.invisible && glyph.size > 0.0)
+        .filter(|(glyph, _)| !glyph.invisible && glyph.size > 0.0)
         .collect();
     write_text(&mut out, &glyphs, names, library, height, &mut drawing);
 
@@ -87,8 +92,13 @@ pub(crate) fn of(page: &Page, names: &BTreeMap<usize, String>, library: &FontLib
     for placed in page.drawings_over() {
         write_drawing(&mut out, placed, height, &mut drawing);
         if let wp_layout::Drawing::Shape(shape) = placed {
-            let glyphs: Vec<&PositionedGlyph> =
-                shape.text.iter().filter(|glyph| !glyph.invisible && glyph.size > 0.0).collect();
+            let glyphs: Vec<(&PositionedGlyph, Turn)> = shape
+                .text
+                .iter()
+                .enumerate()
+                .map(|(at, glyph)| (glyph, shape.text_turn_of(at)))
+                .filter(|(glyph, _)| !glyph.invisible && glyph.size > 0.0)
+                .collect();
             write_text(&mut out, &glyphs, names, library, height, &mut drawing);
         }
     }
@@ -211,7 +221,7 @@ fn write_drawing(
 /// as numbers, the way every PDF holds a line of text.
 fn write_text(
     out: &mut String,
-    glyphs: &[&PositionedGlyph],
+    glyphs: &[(&PositionedGlyph, Turn)],
     names: &BTreeMap<usize, String>,
     library: &FontLibrary,
     height: f32,
@@ -219,7 +229,7 @@ fn write_text(
 ) {
     let mut index = 0;
     while index < glyphs.len() {
-        let first = glyphs[index];
+        let (first, turn) = glyphs[index];
 
         // A glyph a font keeps as a picture is drawn as a picture. There is no
         // outline to fill and no font to embed that would draw it: written as
@@ -233,10 +243,18 @@ fn write_text(
             index += 1;
             continue;
         };
+        // A glyph turned, or drawn beside the pen rather than at it, is
+        // written on its own with a text matrix that says so: such glyphs
+        // are few, and a run of them would need the gaps worked out along
+        // the turned line.
+        let alone = turn != Turn::None || first.shift_x != 0.0 || first.shift_y != 0.0;
         let mut end = index + 1;
-        while end < glyphs.len() {
-            let next = glyphs[end];
+        while end < glyphs.len() && !alone {
+            let (next, next_turn) = glyphs[end];
             let same = next.face == first.face
+                && next_turn == Turn::None
+                && next.shift_x == 0.0
+                && next.shift_y == 0.0
                 && (next.size - first.size).abs() < 0.01
                 && (next.stretch - first.stretch).abs() < 0.001
                 && next.color == first.color
@@ -251,14 +269,29 @@ fn write_text(
             end += 1;
         }
 
-        let run = &glyphs[index..end];
+        let run: Vec<&PositionedGlyph> =
+            glyphs[index..end].iter().map(|(glyph, _)| *glyph).collect();
+        let run = run.as_slice();
         drawing.fonts.insert(name.clone());
         out.push_str(&paint(first.color, drawing));
+        // The text matrix: where the pen is, and which way the letter is
+        // turned. A PDF's y runs up the page, so a quarter turn clockwise on
+        // the page is a quarter turn the other way here.
+        let (a, b, c, d) = match turn {
+            Turn::None | Turn::Upright => (1.0, 0.0, 0.0, 1.0),
+            Turn::Down => (0.0, -1.0, 1.0, 0.0),
+            Turn::Up => (0.0, 1.0, -1.0, 0.0),
+            Turn::Over => (-1.0, 0.0, 0.0, -1.0),
+        };
         out.push_str(&format!(
-            "BT /{name} {} Tf 1 0 0 1 {} {} Tm\n",
+            "BT /{name} {} Tf {} {} {} {} {} {} Tm\n",
             number(first.size),
-            number(first.x),
-            number(height - first.baseline),
+            number(a),
+            number(b),
+            number(c),
+            number(d),
+            number(first.x + first.shift_x),
+            number(height - first.baseline - first.shift_y),
         ));
         // Letters drawn wider or narrower than they are tall. `Tz` is part of
         // the text state and outlives the block that set it, so it is put back

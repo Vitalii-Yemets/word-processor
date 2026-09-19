@@ -70,6 +70,12 @@ fn rich_body() -> Body {
                     stylistic_sets: vec![3],
                     contextual_alternates: true,
                 }),
+                east_asian_layout: Some(wp_docx::eastasian::EastAsianLayout {
+                    horizontal_in_vertical: true,
+                    fit_in_line: true,
+                    two_lines_in_one: false,
+                    brackets: wp_docx::eastasian::CombineBrackets::None,
+                }),
             },
             field: None,
             revision: None,

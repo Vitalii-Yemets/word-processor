@@ -164,6 +164,8 @@ mod tests {
                 source: TextPosition::new(0, 0),
                 source_length: 1,
                 invisible: false,
+                shift_x: 0.0,
+                shift_y: 0.0,
             })
             .collect();
         Half { glyphs, width: count as f32 * advance, ascent: 9.0, descent: 3.0 }

@@ -88,6 +88,7 @@ pub(crate) const RUN_PROPERTY_ORDER: &[&str] = &[
     "cs",
     "em",
     "lang",
+    "eastAsianLayout",
 ];
 
 /// Finds the prefix a document uses for a namespace.
@@ -937,6 +938,9 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
     // standard properties in their standard order before it.
     if let Some(wanted) = &properties.open_type {
         crate::typography::write_open_type(&mut element, wanted);
+    }
+    if let Some(layout) = properties.east_asian_layout.filter(|layout| !layout.is_empty()) {
+        element.push_element(layout.element(prefix));
     }
 
     element

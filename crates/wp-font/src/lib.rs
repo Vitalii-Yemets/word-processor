@@ -239,6 +239,13 @@ pub struct Font<'a> {
     gdef: Option<TableRange>,
     name: Option<TableRange>,
     os2: Option<TableRange>,
+    /// The tables of a font that can be set down the page as well as across
+    /// it: how far the pen moves down after each glyph, and where the top of
+    /// each glyph's box is. Fonts for the scripts written that way carry
+    /// them; most fonts do not, and are set with an em's worth of each.
+    vhea: Option<TableRange>,
+    vmtx: Option<TableRange>,
+    vorg: Option<TableRange>,
     character_map: CharacterMap,
 }
 
@@ -321,6 +328,9 @@ impl<'a> Font<'a> {
         let mut gdef = None;
         let mut name = None;
         let mut os2 = None;
+        let mut vhea = None;
+        let mut vmtx = None;
+        let mut vorg = None;
 
         for _ in 0..table_count {
             let tag = reader.tag()?;
@@ -358,6 +368,9 @@ impl<'a> Font<'a> {
                 b"GDEF" => gdef = Some(range),
                 b"name" => name = Some(range),
                 b"OS/2" => os2 = Some(range),
+                b"vhea" => vhea = Some(range),
+                b"vmtx" => vmtx = Some(range),
+                b"VORG" => vorg = Some(range),
                 _ => {}
             }
         }
@@ -418,6 +431,9 @@ impl<'a> Font<'a> {
             gdef,
             name,
             os2,
+            vhea,
+            vmtx,
+            vorg,
             character_map,
         })
     }
@@ -488,6 +504,85 @@ impl<'a> Font<'a> {
         let index = glyph.0.min(self.number_of_h_metrics - 1);
         let offset = hmtx.offset + usize::from(index) * 4;
         Reader::at(self.data, offset).ok()?.u16().ok()
+    }
+
+    /// How far the pen moves down after a glyph set upright in a line that
+    /// runs down the page, in font units.
+    ///
+    /// What the font says in its vertical metrics, when it has any; an em
+    /// otherwise, which is the square every East Asian letter is drawn in and
+    /// the distance a font without the table is set at. A glyph past the
+    /// end of the table repeats the last entry, as the horizontal table does.
+    #[must_use]
+    pub fn vertical_advance(&self, glyph: GlyphId) -> u16 {
+        self.vertical_advance_checked(glyph).unwrap_or(self.units_per_em)
+    }
+
+    fn vertical_advance_checked(&self, glyph: GlyphId) -> Option<u16> {
+        let vhea = self.vhea?;
+        let vmtx = self.vmtx?;
+        let count = Reader::at(self.data, vhea.offset + 34).ok()?.u16().ok()?;
+        if count == 0 {
+            return None;
+        }
+        let index = glyph.0.min(count - 1);
+        Reader::at(self.data, vmtx.offset + usize::from(index) * 4).ok()?.u16().ok()
+    }
+
+    /// How far above the horizontal baseline the top of a glyph's box is when
+    /// the glyph is set upright in a line that runs down the page, in font
+    /// units.
+    ///
+    /// The `VORG` table says it for a PostScript font, glyph by glyph or once
+    /// for all; a TrueType font has no such table and its glyphs' boxes start
+    /// where the typographic ascender says, which for the fonts of the scripts
+    /// written this way is the top of the em square.
+    #[must_use]
+    pub fn vertical_origin(&self, glyph: GlyphId) -> i16 {
+        self.vertical_origin_checked(glyph).unwrap_or_else(|| self.ideographic_extent().0)
+    }
+
+    fn vertical_origin_checked(&self, glyph: GlyphId) -> Option<i16> {
+        let vorg = self.vorg?;
+        let mut reader = Reader::at(self.data, vorg.offset + 4).ok()?;
+        let default = reader.i16().ok()?;
+        let count = usize::from(reader.u16().ok()?);
+        // The entries are sorted by glyph, so the one for this glyph — if it
+        // has one of its own — is found by halving.
+        let (mut low, mut high) = (0usize, count);
+        while low < high {
+            let middle = (low + high) / 2;
+            let mut entry = Reader::at(self.data, vorg.offset + 8 + middle * 4).ok()?;
+            let found = entry.u16().ok()?;
+            match found.cmp(&glyph.0) {
+                core::cmp::Ordering::Less => low = middle + 1,
+                core::cmp::Ordering::Greater => high = middle,
+                core::cmp::Ordering::Equal => return entry.i16().ok(),
+            }
+        }
+        Some(default)
+    }
+
+    /// The top and the bottom of the em square, as heights above the
+    /// horizontal baseline in font units: the typographic ascender and
+    /// descender, which is the box a letter of an East Asian script is drawn
+    /// in and the box that stands upright when the line runs down the page.
+    ///
+    /// The descender comes back negative, as the font writes it. A font
+    /// without an `OS/2` table is taken at its horizontal header's word.
+    #[must_use]
+    pub fn ideographic_extent(&self) -> (i16, i16) {
+        self.typographic_extent().unwrap_or((self.vertical.ascender, self.vertical.descender))
+    }
+
+    fn typographic_extent(&self) -> Option<(i16, i16)> {
+        let os2 = self.os2?;
+        let mut reader = Reader::at(self.data, os2.offset + 68).ok()?;
+        let ascender = reader.i16().ok()?;
+        let descender = reader.i16().ok()?;
+        // A font that says nothing here is not saying the square has no
+        // height.
+        (ascender != 0 || descender != 0).then_some((ascender, descender))
     }
 
     /// The axes this font can be set along, if it is a variable one.

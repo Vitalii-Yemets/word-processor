@@ -282,6 +282,41 @@ impl Document {
         true
     }
 
+    /// Which way the text of the section at the caret runs: across the page,
+    /// or down it. Word's Text Direction on the Layout tab.
+    #[must_use]
+    pub fn text_direction(&self) -> crate::model::TextDirection {
+        self.section_properties()
+            .and_then(|section| section.child(Some(read::W), "textDirection"))
+            .and_then(|element| element.attribute(Some(read::W), "val"))
+            .map(crate::model::TextDirection::from_word)
+            .unwrap_or_default()
+    }
+
+    /// Sets it. Across is what a section that says nothing means, so it is
+    /// said by saying nothing; a value the file had that this program does
+    /// not draw is kept until somebody chooses another.
+    pub fn set_text_direction(&mut self, direction: crate::model::TextDirection) -> bool {
+        if self.text_direction() == direction {
+            return false;
+        }
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+        let Some(section) = self.section_properties_mut(prefix.as_deref()) else { return false };
+        section.remove_children_named(Some(read::W), "textDirection");
+        if direction.is_turned() {
+            let element = section_child(section, prefix.as_deref(), "textDirection");
+            element.set_namespaced_attribute(
+                &edit::name_with(prefix.as_deref(), "val"),
+                read::W,
+                direction.word(),
+            );
+        }
+        self.mark_modified();
+        true
+    }
+
     /// Changes the case of the selection, the way Word's `Aa` button does.
     ///
     /// In the language the selection is written in: the capital of a Turkish i

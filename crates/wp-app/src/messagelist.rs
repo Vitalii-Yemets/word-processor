@@ -143,6 +143,14 @@ fn from_the_tables() -> BTreeSet<String> {
     {
         out.insert((*name).to_owned());
     }
+    // Which way a section's text may run, and the brackets round two lines
+    // in one.
+    for (_, label) in crate::editor::vertical::DIRECTIONS {
+        out.insert((*label).to_owned());
+    }
+    for brackets in wp_docx::eastasian::CombineBrackets::ALL {
+        out.insert(brackets.label().to_owned());
+    }
     for name in crate::editor::inking::SEEN_SHAPES {
         out.insert((*name).to_owned());
     }

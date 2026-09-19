@@ -2,6 +2,9 @@
 # one for the same thing.
 language = Deutsch
 
+= ( )
+> ( )
+
 = (Ctrl)
 > (Strg)
 
@@ -43,6 +46,9 @@ language = Deutsch
 
 = 4. Start enforcement
 > 4. Schutz anwenden
+
+= < >
+> < >
 
 = A block has to have a name
 > Ein Baustein braucht einen Namen
@@ -884,6 +890,9 @@ language = Deutsch
 = Enable all macros (not recommended)
 > Alle Makros aktivieren (nicht empfohlen)
 
+= Enclose with characters
+> Mit Zeichen einschließen
+
 = Encrypt Document
 > Dokument verschlüsseln
 
@@ -979,6 +988,9 @@ language = Deutsch
 
 = First Name
 > Vorname
+
+= Fit in line
+> In Zeile einpassen
 
 = Folder
 > Ordner
@@ -1156,6 +1168,15 @@ language = Deutsch
 
 = Home
 > Start
+
+= Horizontal
+> Horizontal
+
+= Horizontal in Vertical
+> Horizontal in vertikal
+
+= Horizontal in Vertical...
+> Horizontal in vertikal...
 
 = Hyphenate at
 > Trennen bei
@@ -1610,6 +1631,12 @@ language = Deutsch
 = Select part of the document, then tick who may edit it.
 > Einen Teil des Dokuments auswählen und ankreuzen, wer ihn bearbeiten darf.
 
+= Select the characters to set across the line first
+> Markieren Sie zuerst die Zeichen, die quer zur Zeile gesetzt werden sollen
+
+= Select the characters to set as two lines first
+> Markieren Sie zuerst die Zeichen, die als zwei Zeilen gesetzt werden sollen
+
 = Select the part of the document they may edit first
 > Zuerst den Teil des Dokuments auswählen, den sie bearbeiten dürfen
 
@@ -1678,6 +1705,9 @@ language = Deutsch
 
 = Text boxes
 > Textfelder
+
+= Text direction
+> Textrichtung
 
 = That ink is not a shape this program can see
 > In dieser Freihandeingabe erkennt das Programm keine Form
@@ -1805,6 +1835,12 @@ language = Deutsch
 = Turquoise
 > Türkis
 
+= Two Lines in One
+> Zwei Zeilen in einer
+
+= Two Lines in One...
+> Zwei Zeilen in einer...
+
 = Type the numbers: title; name=value; name=value
 > Zahlen eingeben: Titel; Name=Wert; Name=Wert
 
@@ -1823,8 +1859,14 @@ language = Deutsch
 = Valid signatures
 > Gültige Signaturen
 
+= Vertical
+> Vertikal
+
 = Vertical Box List
 > Vertikale Feldliste
+
+= Vertical, left to right
+> Vertikal, von links nach rechts
 
 = Visual Basic Editor
 > Visual Basic-Editor
@@ -1876,6 +1918,9 @@ language = Deutsch
 
 = Your permissions
 > Ihre Berechtigungen
+
+= [ ]
+> [ ]
 
 = [Text]
 > [Text]
@@ -2977,6 +3022,9 @@ language = Deutsch
 
 = unsaved changes
 > nicht gespeicherte Änderungen
+
+= { }
+> { }
 
 = {0} added to the list
 > {0} zur Liste hinzugefügt

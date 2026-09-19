@@ -213,3 +213,6 @@ EraserSegment eraser_segment
 Lasso lasso
 InkToShape draw_shape
 InkToText draw_text
+# Which way the text of a section runs, and the Asian Layout menu.
+VerticalText text_direction_vertical
+AsianLayout text_direction_rotate_90_right

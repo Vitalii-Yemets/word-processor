@@ -1414,6 +1414,57 @@ impl Editor {
                 self.document.set_hyphenation_zone(Some(360));
                 self.relayout();
             }
+            // A section written down the page: Japanese standing upright in
+            // columns that go from right to left, with a Latin word lying on
+            // its side, a year set across the column, and a gloss set as two
+            // lines in one.
+            "vertical" => {
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.type_text("縦書きの文章は、右から左へ列が進む。");
+                self.document.press_enter();
+                self.document.type_text("漢字とかなは立ち、Latin は横に寝る。");
+                self.document.press_enter();
+                self.document.type_text("令和");
+                let from = self.document.caret();
+                self.document.type_text("12");
+                let to = self.document.caret();
+                self.document.type_text("年の春、「括弧」も向きを変える……。");
+                self.document.set_caret(from);
+                self.document.extend_selection_to(to);
+                let _ = self.document.set_character_format(&wp_docx::model::RunProperties {
+                    east_asian_layout: Some(wp_docx::eastasian::EastAsianLayout {
+                        horizontal_in_vertical: true,
+                        fit_in_line: true,
+                        ..wp_docx::eastasian::EastAsianLayout::default()
+                    }),
+                    ..wp_docx::model::RunProperties::default()
+                });
+                self.document.clear_selection();
+                self.document.press_enter();
+                self.document.type_text("割注は");
+                let from = self.document.caret();
+                self.document.type_text("二行に分けて");
+                let to = self.document.caret();
+                self.document.type_text("組む。");
+                self.document.set_caret(from);
+                self.document.extend_selection_to(to);
+                let _ = self.document.set_character_format(&wp_docx::model::RunProperties {
+                    east_asian_layout: Some(wp_docx::eastasian::EastAsianLayout {
+                        two_lines_in_one: true,
+                        brackets: wp_docx::eastasian::CombineBrackets::Round,
+                        ..wp_docx::eastasian::EastAsianLayout::default()
+                    }),
+                    ..wp_docx::model::RunProperties::default()
+                });
+                self.document.clear_selection();
+                let end = self.document.caret();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.extend_selection_to(end);
+                self.document.set_size(22.0);
+                self.document.clear_selection();
+                self.document.set_text_direction(wp_docx::model::TextDirection::Down);
+                self.relayout();
+            }
             "flowchart" => {
                 let shapes: Vec<wp_layout::geometry::Preset> = wp_layout::geometry::Preset::all()
                     .into_iter()

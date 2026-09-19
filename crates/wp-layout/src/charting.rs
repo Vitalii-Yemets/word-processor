@@ -710,6 +710,8 @@ mod tests {
                     source: wp_docx::TextPosition::new(0, 0),
                     source_length: 0,
                     invisible: false,
+                    shift_x: 0.0,
+                    shift_y: 0.0,
                 });
                 at += size;
             }

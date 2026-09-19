@@ -346,7 +346,9 @@ impl Editor {
                 contextual_alternates: dialog.ticked(CONTEXTUAL),
             },
             // Not on this dialog: kept as they were so that answering it does
-            // not quietly take away a highlight or a glow.
+            // not quietly take away a highlight or a glow — or the run's
+            // Asian Layout, which has a menu of its own.
+            east_asian_layout: self.document.character_format_here().east_asian_layout,
             highlight: self.document.character_format_here().highlight,
             effect: self.document.character_format_here().effect,
             right_to_left: self.document.character_format_here().right_to_left,
@@ -476,6 +478,7 @@ pub(super) fn authored(wanted: &ResolvedRunProperties) -> RunProperties {
         position_half_points: Some(wanted.position_half_points),
         kerning_half_points: wanted.kerning_half_points,
         open_type: Some(wanted.open_type.clone()),
+        east_asian_layout: Some(wanted.east_asian_layout),
         // A colour written out overrides a colour named after the theme, so the
         // name has to go with it — otherwise the theme puts the old one back.
         color_theme: None,

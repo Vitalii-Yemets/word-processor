@@ -98,11 +98,23 @@ impl<'a> Tables<'a> {
     /// the wrong one finds nothing and draws the letters in the order they
     /// were typed.
     pub fn has_script(&self, script: &[u8; 4]) -> bool {
-        self.default_language(script).is_some()
+        self.language_of(script).is_some()
     }
 
-    /// The default language system of a script, if the font has that script.
+    /// The default language system of a script, if the font has that script
+    /// — or, if it has not, of the script the font names as its default,
+    /// which is where a font keeps what applies to every script alike.
     fn default_language(&self, script: &[u8; 4]) -> Option<usize> {
+        self.language_of(script).or_else(|| {
+            if script == b"DFLT" {
+                None
+            } else {
+                self.language_of(b"DFLT")
+            }
+        })
+    }
+
+    fn language_of(&self, script: &[u8; 4]) -> Option<usize> {
         let count = usize::from(u16_at(self.data, self.scripts)?);
         for index in 0..count {
             let entry = self.scripts + 2 + index * 6;

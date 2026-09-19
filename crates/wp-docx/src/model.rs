@@ -203,6 +203,9 @@ pub struct RunProperties {
     /// Which of the font's alternate forms are asked for. See
     /// [`crate::typography`].
     pub open_type: Option<crate::typography::OpenType>,
+    /// The run set across a vertical line, or as two lines in one. See
+    /// [`crate::eastasian`].
+    pub east_asian_layout: Option<crate::eastasian::EastAsianLayout>,
 }
 
 impl RunProperties {
@@ -259,6 +262,7 @@ impl RunProperties {
             position_half_points: other.position_half_points.or(self.position_half_points),
             kerning_half_points: other.kerning_half_points.or(self.kerning_half_points),
             open_type: other.open_type.clone().or_else(|| self.open_type.clone()),
+            east_asian_layout: other.east_asian_layout.or(self.east_asian_layout),
         }
     }
 }
@@ -303,6 +307,8 @@ pub struct ResolvedRunProperties {
     pub kerning_half_points: Option<u32>,
     /// Which of the font's alternate forms are asked for.
     pub open_type: crate::typography::OpenType,
+    /// The run set across a vertical line, or as two lines in one.
+    pub east_asian_layout: crate::eastasian::EastAsianLayout,
 }
 
 impl Default for ResolvedRunProperties {
@@ -332,6 +338,7 @@ impl Default for ResolvedRunProperties {
             position_half_points: 0,
             kerning_half_points: None,
             open_type: crate::typography::OpenType::default(),
+            east_asian_layout: crate::eastasian::EastAsianLayout::default(),
         }
     }
 }
@@ -1418,41 +1425,92 @@ impl CellMargins {
     }
 }
 
-/// Which way up the text in a cell is set: Word's Text Direction.
+/// Which way the text runs: Word's Text Direction, on a section, a table
+/// cell or a text box.
 ///
-/// `w:textDirection`, and what the headings of a narrow column are set in. The
-/// format has six values, three of which are for vertical East Asian text and
-/// are not turns at all; these are the three Word's button offers, and a value
-/// this program does not know is left in the file exactly as it came.
+/// `w:textDirection` on a section or a cell, `wps:bodyPr/@vert` on a text
+/// box. Two of these are the vertical writing of the East Asian scripts,
+/// where the ideographs stand upright one under the other and only the
+/// letters of other scripts lie on their side; the rest turn the whole line
+/// as one piece, the way a heading down a narrow column is set. Word's own
+/// dialogs draw them apart, and so does the layout — see the frames in the
+/// layout crate.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TextDirection {
-    /// `lrTb`: the way every other line of text goes.
+    /// `lrTb`: across the page, the way every other line of text goes.
     #[default]
     Horizontal,
-    /// `tbRl`: turned a right angle clockwise, so it reads downwards.
+    /// `tbRl`, Word's Vertical: the line runs down the page and the lines go
+    /// from right to left. The letters of the East Asian scripts stand
+    /// upright in it; everything else is turned a right angle clockwise,
+    /// which is what makes a Latin heading in a narrow cell read downwards.
     Down,
-    /// `btLr`: turned a right angle the other way, so it reads upwards.
+    /// `btLr`, Word's Rotate All Text 270°: the whole line turned a right
+    /// angle anticlockwise, so it reads upwards, with the lines going from
+    /// left to right.
     Up,
+    /// `wps:bodyPr/@vert="vert"`, Word's Rotate All Text 90° in a text box:
+    /// the whole line turned clockwise, ideographs and all, with the lines
+    /// going from right to left. The file has no such value for a cell or a
+    /// section.
+    TurnedDown,
+    /// `tbRlV` and `tbLrV`, which Word draws alike whatever the standard says
+    /// of the first: the line runs down the page, everything in it is turned
+    /// clockwise, and the lines go from left to right — the way Mongolian is
+    /// written.
+    DownLeftToRight,
+    /// `lrTbV`: across the page, with the East Asian letters turned and the
+    /// rest as they are. Kept as it came and drawn the ordinary way up, which
+    /// is the one of the six this program does not draw.
+    RotatedAsian,
 }
 
 impl TextDirection {
-    /// What the file calls it.
+    /// What the file calls it in `w:textDirection`.
     #[must_use]
     pub fn word(self) -> &'static str {
         match self {
-            Self::Horizontal => "lrTb",
-            Self::Down => "tbRl",
+            Self::Horizontal | Self::RotatedAsian => "lrTb",
+            Self::Down | Self::TurnedDown => "tbRl",
             Self::Up => "btLr",
+            Self::DownLeftToRight => "tbRlV",
         }
     }
 
-    /// And back. Anything else is text the ordinary way up, which is what a
-    /// program that cannot turn it that way should draw.
+    /// And back, from the six names the transitional format gives and the
+    /// six the strict one does. Anything else is text the ordinary way up.
     #[must_use]
     pub fn from_word(word: &str) -> Self {
         match word {
-            "tbRl" => Self::Down,
-            "btLr" => Self::Up,
+            "tbRl" | "rl" => Self::Down,
+            "btLr" | "lr" => Self::Up,
+            "tbRlV" | "tbLrV" | "rlV" | "lrV" => Self::DownLeftToRight,
+            "lrTbV" | "tbV" => Self::RotatedAsian,
+            _ => Self::Horizontal,
+        }
+    }
+
+    /// What a text box's `wps:bodyPr/@vert` calls it.
+    #[must_use]
+    pub fn body_word(self) -> &'static str {
+        match self {
+            Self::Horizontal | Self::RotatedAsian => "horz",
+            Self::Down => "eaVert",
+            Self::TurnedDown => "vert",
+            Self::Up => "vert270",
+            Self::DownLeftToRight => "mongolianVert",
+        }
+    }
+
+    /// And back. WordArt's stacked letters are not a direction the text can
+    /// be laid out in here, and are drawn across.
+    #[must_use]
+    pub fn from_body_word(word: &str) -> Self {
+        match word {
+            "eaVert" => Self::Down,
+            "vert" => Self::TurnedDown,
+            "vert270" => Self::Up,
+            "mongolianVert" => Self::DownLeftToRight,
             _ => Self::Horizontal,
         }
     }
@@ -1461,26 +1519,36 @@ impl TextDirection {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
-            Self::Horizontal => "Text direction: across",
-            Self::Down => "Text direction: turned down",
+            Self::Horizontal | Self::RotatedAsian => "Text direction: across",
+            Self::Down => "Text direction: vertical",
             Self::Up => "Text direction: turned up",
+            Self::TurnedDown => "Text direction: turned down",
+            Self::DownLeftToRight => "Text direction: vertical, left to right",
         }
     }
 
-    /// The next one round, which is what pressing Word's button does.
+    /// The next one round, which is what pressing Word's button in a table
+    /// does: across, down, up, and across again.
     #[must_use]
     pub fn next(self) -> Self {
         match self {
-            Self::Horizontal => Self::Down,
-            Self::Down => Self::Up,
+            Self::Horizontal | Self::RotatedAsian => Self::Down,
+            Self::Down | Self::TurnedDown | Self::DownLeftToRight => Self::Up,
             Self::Up => Self::Horizontal,
         }
     }
 
-    /// Whether the text is turned at all.
+    /// Whether the line is turned at all.
     #[must_use]
     pub fn is_turned(self) -> bool {
-        !matches!(self, Self::Horizontal)
+        !matches!(self, Self::Horizontal | Self::RotatedAsian)
+    }
+
+    /// Whether the letters of the East Asian scripts stand upright in it,
+    /// which is what makes it writing rather than a turn.
+    #[must_use]
+    pub fn is_vertical_writing(self) -> bool {
+        matches!(self, Self::Down)
     }
 
     pub const ALL: &'static [Self] = &[Self::Horizontal, Self::Down, Self::Up];

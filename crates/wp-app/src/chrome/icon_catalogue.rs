@@ -222,10 +222,12 @@ pub enum Icon {
     Lasso = 204,
     InkToShape = 205,
     InkToText = 206,
+    VerticalText = 207,
+    AsianLayout = 208,
 }
 
 /// How many there are, so the drawings can be kept in a flat array.
-pub const COUNT: usize = 207;
+pub const COUNT: usize = 209;
 
 /// Every icon, in the order the catalogue declares them.
 ///
@@ -439,6 +441,8 @@ pub static ALL: [Icon; COUNT] = [
     Icon::Lasso,
     Icon::InkToShape,
     Icon::InkToText,
+    Icon::VerticalText,
+    Icon::AsianLayout,
 ];
 
 impl Icon {
@@ -1935,6 +1939,24 @@ impl Icon {
                     include_str!("../../assets/icons/ic_fluent_draw_text_24_regular.svg")
                 } else {
                     include_str!("../../assets/icons/ic_fluent_draw_text_20_regular.svg")
+                }
+            }
+            Self::VerticalText => {
+                if large {
+                    include_str!(
+                        "../../assets/icons/ic_fluent_text_direction_vertical_24_regular.svg"
+                    )
+                } else {
+                    include_str!(
+                        "../../assets/icons/ic_fluent_text_direction_vertical_20_regular.svg"
+                    )
+                }
+            }
+            Self::AsianLayout => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_text_direction_rotate_90_right_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_text_direction_rotate_90_right_20_regular.svg")
                 }
             }
         }

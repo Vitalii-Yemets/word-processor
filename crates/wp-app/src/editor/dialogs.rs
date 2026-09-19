@@ -47,6 +47,10 @@ pub(super) enum Asking {
     /// One word the automatic rule would break, offered to be broken by
     /// hand.
     ManualHyphenation,
+    /// Word's two Asian Layout dialogs: a run set across a vertical line,
+    /// and a run set as two lines in one.
+    HorizontalInVertical,
+    TwoLinesInOne,
     /// What the document is signed with, and what to sign it with.
     Signatures,
     /// Whether a document that asks to be opened read-only is to be, and the
@@ -233,6 +237,12 @@ impl Editor {
             Some(Asking::ManualHyphenation) => {
                 self.answer_manual_hyphenation(&dialog, answer == Answer::Accept)
             }
+            Some(Asking::HorizontalInVertical) => self.apply_horizontal_in_vertical(
+                &dialog,
+                answer == Answer::Named(super::vertical::REMOVE),
+            ),
+            Some(Asking::TwoLinesInOne) => self
+                .apply_two_lines_in_one(&dialog, answer == Answer::Named(super::vertical::REMOVE)),
             Some(Asking::Signatures) => self.apply_signature(&dialog),
             Some(Asking::OpenReadOnly) => self.apply_open_read_only(&dialog),
             Some(Asking::ReadOnlySettings) => self.apply_read_only_settings(&dialog),

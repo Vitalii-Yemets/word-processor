@@ -936,6 +936,9 @@ pub fn read_run_properties(properties: &Element) -> RunProperties {
                 result.position_half_points = value(property).and_then(|v| v.parse().ok());
             }
             "kern" => result.kerning_half_points = value(property).and_then(|v| v.parse().ok()),
+            "eastAsianLayout" => {
+                result.east_asian_layout = Some(crate::eastasian::EastAsianLayout::read(property));
+            }
             "u" => {
                 result.underline = Some(match value(property) {
                     // A bare <w:u/> with no value means a single underline.

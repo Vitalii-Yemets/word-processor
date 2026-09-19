@@ -29,6 +29,19 @@ impl InkDrawing {
             paths: self.paths.iter().map(|(path, colour)| (moved(path, x, y), *colour)).collect(),
         }
     }
+
+    /// The same drawing, put through a transform: turned with the page it
+    /// is on, for a section written down the page.
+    #[must_use]
+    pub fn transformed(&self, transform: &wp_raster::Transform) -> Self {
+        Self {
+            paths: self
+                .paths
+                .iter()
+                .map(|(path, colour)| (path.transformed(transform), *colour))
+                .collect(),
+        }
+    }
 }
 
 /// How ink is fitted into the box it is drawn in: the same both ways, and

@@ -1178,6 +1178,8 @@ impl Ribbon {
                     | Choice::Source
                     | Choice::LineNumbers
                     | Choice::Hyphenation
+                    | Choice::TextDirection
+                    | Choice::AsianLayout
                     | Choice::Comparing
                     | Choice::Finishing
                     | Choice::StatusBar
@@ -1514,6 +1516,7 @@ static HOME_GROUPS: &[Group] = &[
             Item::Button(Command::MultilevelList, Icon::MultilevelList),
             Item::Button(Command::IndentLess, Icon::IndentLess),
             Item::Button(Command::IndentMore, Icon::IndentMore),
+            Item::Button(Command::AsianLayout, Icon::AsianLayout),
             Item::Button(Command::Sort, Icon::Sort),
             Item::Button(Command::ShowMarks, Icon::Pilcrow),
             Item::Break,
@@ -1657,6 +1660,7 @@ static LAYOUT_GROUPS: &[Group] = &[
     Group {
         label: "Page Setup",
         items: &[
+            Item::Large(Command::TextDirectionSection, Icon::VerticalText, "Text Direction"),
             Item::Large(Command::Margins, Icon::Margins, "Margins"),
             Item::Large(Command::Orientation, Icon::Orientation, "Orientation"),
             Item::Large(Command::PageSize, Icon::PageSize, "Size"),
