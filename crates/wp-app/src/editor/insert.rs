@@ -483,6 +483,25 @@ impl Editor {
                 self.relayout();
                 self.launch("Module1.NewLetter", Vec::new(), false);
             }
+            // The XML Mapping pane beside a document that carries an order,
+            // with the customer's name bound into a control in the text.
+            "mapping" => {
+                self.set_view_option("tab=developer")?;
+                self.add_custom_xml_text(
+                    "<o:order xmlns:o=\"http://example.com/order\" o:number=\"4471\">\r\n  \
+                     <o:customer>Habgood &amp; Daughters</o:customer>\r\n  \
+                     <o:item>Two dozen brass hinges</o:item>\r\n  \
+                     <o:item>A tin of linseed oil</o:item>\r\n  \
+                     <o:due>2026-10-01</o:due>\r\n</o:order>",
+                );
+                self.open_mapping();
+                self.mapping_row = Some(2);
+                let end = self.document.paragraph_text(3).unwrap_or_default().chars().count();
+                self.document.set_caret(wp_docx::TextPosition::new(3, end));
+                self.document.type_text("  Order for ");
+                self.choose_mapped_control(1);
+                self.relayout();
+            }
             // And a macro's message box, with Word's Yes and No on it.
             "msgbox" => {
                 self.vba = wp_vba::Project::open(&wp_vba::example(&[(

@@ -6773,15 +6773,76 @@ interpreter is reachable only from the macro list a person opened themselves.
   thread. Everything above is held to the specification and to the writer
   beside the reader, not to a form Word wrote: the corpus is every machine's
   own, and a form in it is the first thing to try.
-
-- [ ] **L8. Mapping a content control to custom XML.** Word's Developer tab
-  carries an XML Mapping pane: a `customXml` part in the package, and a
-  content control bound to a node of it by an XPath, so that the document and
-  the data are two views of one thing. **J8** built the controls and said
-  this was not planned; that, like **J7**'s, was a decision taken here rather
-  than asked for, and it is withdrawn. Done when a control bound to a node
-  shows what the node says, writing in the control writes the node, and both
-  survive a round trip through Word.
+- [x] **L8. Mapping a content control to custom XML.**
+  **Two views of one thing.** A document can carry data as well as words: an
+  XML part of its own, of any shape its author likes, under `customXml/`.
+  A content control bound to one node of it shows what the node says, and
+  writing in the control writes the node. A program that fills the data in
+  gets a document that reads as prose; a person who edits the prose leaves
+  data a program can read back. That is what Word's XML Mapping pane is
+  for, and it is on the Developer tab now, in a group called Mapping, where
+  Word has it.
+  **How a part is stored, which is how Word stores one.** Three things in
+  the package: the data itself, `customXml/item1.xml`; a *datastore item*
+  beside it, `itemProps1.xml`, carrying a GUID, because a control names the
+  part it is bound to by that and not by a number that may change; and the
+  relationship from the one to the other, with the document's own
+  relationship reaching the item. The content types and the relationship
+  types are the ones Word writes, and the GUID is made the way one is —
+  hashed from the clock, the process and a count, with the bits set that
+  mark a random one.
+  **How a control is bound, which is how Word binds one.** `w:dataBinding`
+  in the control's properties: an XPath, the prefixes it uses declared
+  beside it, and the part's GUID. The paths Word writes are of one shape —
+  every step an element by name with its number among its namesakes, and at
+  most an attribute at the end — and that shape is what is followed; a
+  path of another shape is not followed, and a control bound by one is left
+  as it was found. A path made here counts elements and not the text
+  between them, which a file with line breaks in it is full of.
+  **When the two halves are brought together.** The node into the control
+  when the document is opened, which is when Word does it — and not as an
+  edit: the document is as it was opened, nothing is marked changed and
+  there is nothing to undo. The control into the node as it is typed in:
+  after every event that could have changed the document, the control the
+  caret is in is written to its node if it is bound and its words have
+  changed, which is one control found by the caret and nothing when the
+  document has no binding at all. A tick box is bound to `true` and
+  `false`.
+  **The pane.** The parts the document carries, one of them chosen; the
+  chosen part as a tree, an element to a row with its attributes set in
+  under it and what each says beside it; and three buttons — bind the
+  control the caret is in to the chosen node, or put a new one in and bind
+  it, from a menu of the six kinds; add a part from an XML file; delete
+  the chosen part. Word's binding is under a right-click on the node; here
+  it is a button, because a button can be found. A control put in this way
+  is titled with the node's name, as Word titles one.
+  *Proven by:* six tests of the storage — a part added with its item and
+  read back after a save, the package holding what Word looks for; a path
+  leading to an element by number and to an attribute and nowhere for a
+  prefix nobody declared; a bound control showing the node, writing back
+  into it, following it after the node changed under the document, and all
+  of it surviving a save; a tick box bound both ways; a part taken out with
+  its item and its relationships; XML that does not parse refused — and
+  four of the pane: opened from the Developer tab and listing the tree; a
+  control put in from it showing the node and typing in it writing the
+  node event by event, with the pane showing the new words; the control
+  the caret is in bound, and a document saved and opened again showing
+  what a program wrote into the node, unmarked; malformed XML refused with
+  a reason. A picture of the pane beside a document with an order in it and
+  the customer's name bound into the text.
+  *Found along the way:* a line of interface text measures its width from
+  the window's edge and not from where it began, which the form window
+  (**L7**) had read the other way: the caret in a text box sat at the box's
+  far end whatever was typed. Fixed here.
+  *Not done, and named here:* the round trip through Word — the item is
+  written where Word writes it and the binding the way Word writes it, and
+  a document Word has opened and saved is the proof this item asks for and
+  the corpus does not have. The pane shows a tree and not a schema: Word's
+  "Add new part" also takes a namespace and a schema reference, and a part
+  here has neither. A node's value cannot be edited in the pane, which is
+  Word's way too. Repeating a section over repeated nodes is **L9**'s
+  repeating-section control. A picture control bound to a node holding a
+  picture is **L9** as well.
 - [ ] **L9. The three content controls that are not built.** Word's picture,
   repeating-section and building-block-gallery controls. The first holds a
   picture and needs the drawing machinery hung inside a control; the second

@@ -65,6 +65,12 @@ language = Deutsch
 = A password that is lost cannot be recovered.
 > Ein verlorenes Kennwort kann nicht wiederhergestellt werden.
 
+= Add new part
+> Neue Komponente hinzufügen
+
+= Add new part...
+> Neue Komponente hinzufügen...
+
 = Add Users
 > Benutzer hinzufügen
 
@@ -245,6 +251,9 @@ language = Deutsch
 = Bibliography
 > Literaturverzeichnis
 
+= Bind the control to this node
+> Steuerelement diesem Knoten zuordnen
+
 = Blank Page
 > Leere Seite
 
@@ -293,6 +302,9 @@ language = Deutsch
 = Bottom of Page
 > Seitenende
 
+= Bound
+> Zugeordnet
+
 = Breaks
 > Umbrüche
 
@@ -319,6 +331,9 @@ language = Deutsch
 
 = Cannot open {0}: {1}
 > {0} kann nicht geöffnet werden: {1}
+
+= Cannot read {0}
+> {0} kann nicht gelesen werden
 
 = Cannot read {0}: {1}
 > {0} kann nicht gelesen werden: {1}
@@ -403,6 +418,9 @@ language = Deutsch
 
 = Chart
 > Diagramm
+
+= Choose a node of the part to bind a control to
+> Wählen Sie einen Knoten der Komponente, dem ein Steuerelement zugeordnet wird
 
 = Choose one to put it in, to refile it, or to take it away.
 > Einen wählen, um ihn einzufügen, neu abzulegen oder zu entfernen.
@@ -572,6 +590,9 @@ language = Deutsch
 = Custom Print
 > Benutzerdefinierter Druck
 
+= Custom XML Part:
+> Benutzerdefinierte XML-Komponente:
+
 = Customize Quick Access Toolbar
 > Symbolleiste für den Schnellzugriff anpassen
 
@@ -598,6 +619,9 @@ language = Deutsch
 
 = Date Picker
 > Datumsauswahl
+
+= Delete part
+> Komponente löschen
 
 = Developer
 > Entwicklertools
@@ -1040,6 +1064,9 @@ language = Deutsch
 = Insert Alignment Tab
 > Tabstopp einfügen
 
+= Insert content control
+> Inhaltssteuerelement einfügen
+
 = Insert Endnote
 > Endnote einfügen
 
@@ -1162,6 +1189,9 @@ language = Deutsch
 
 = Macros run without being asked about
 > Makros laufen, ohne dass nachgefragt wird
+
+= Mapping
+> Zuordnung
 
 = More users…
 > Weitere Benutzer…
@@ -1328,14 +1358,26 @@ language = Deutsch
 = That is not a watermark any more
 > Das ist kein Wasserzeichen mehr
 
+= That is not well-formed XML, so it cannot be a part
+> Das ist kein wohlgeformtes XML und kann daher keine Komponente sein
+
 = That line is no longer in this document
 > Diese Zeile ist nicht mehr in diesem Dokument
+
+= That part has no identifier, so it cannot be taken out
+> Diese Komponente hat keinen Bezeichner und kann daher nicht entfernt werden
 
 = That watermark is no longer saved
 > Dieses Wasserzeichen ist nicht mehr gespeichert
 
 = The next stretch you may edit
 > Der nächste Bereich, den Sie bearbeiten dürfen
+
+= The part was added
+> Die Komponente wurde hinzugefügt
+
+= The part was deleted
+> Die Komponente wurde gelöscht
 
 = The selection is saved to the {0} gallery.
 > Die Auswahl wird im Katalog {0} gespeichert.
@@ -1354,6 +1396,9 @@ language = Deutsch
 
 = This document carries macros. They are disabled until you say otherwise.
 > Dieses Dokument enthält Makros. Sie sind deaktiviert, bis Sie es anders bestimmen.
+
+= This document carries no custom XML. Add a part from a file to bind controls to it.
+> Dieses Dokument enthält kein benutzerdefiniertes XML. Fügen Sie eine Komponente aus einer Datei hinzu, um Steuerelemente zuzuordnen.
 
 = This document fixes its theme — Review ▸ Restrict Editing lifts it
 > Dieses Dokument legt sein Design fest — Überprüfen ▸ Bearbeitung einschränken hebt es auf
@@ -1417,6 +1462,15 @@ language = Deutsch
 
 = What is trusted
 > Was vertraut wird
+
+= XML files (*.xml)
+> XML-Dateien (*.xml)
+
+= XML Mapping
+> XML-Zuordnung
+
+= XML Mapping Pane
+> XML-Zuordnungsbereich
 
 = Yes
 > Ja

@@ -26,6 +26,11 @@ impl Editor {
     /// Opens or shuts the pane.
     pub(super) fn toggle_styles_pane(&mut self) -> Response {
         self.show_styles = !self.show_styles;
+        if self.show_styles {
+            self.show_restrict = false;
+            self.show_signatures = false;
+            self.show_mapping = false;
+        }
         self.clamp_scroll();
         self.needs_redraw = true;
         Response::Redraw

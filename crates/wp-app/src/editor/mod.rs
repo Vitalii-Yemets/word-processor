@@ -56,6 +56,7 @@ mod links;
 mod macros;
 pub(crate) mod mailings;
 mod managestyles;
+mod mapping;
 mod matching;
 mod menus;
 mod minibar;
@@ -539,6 +540,15 @@ pub struct Editor {
     /// somebody change their mind. See [`restrict`].
     show_restrict: bool,
     restrict_pane: crate::chrome::restrictpane::RestrictPane,
+    /// Word's XML Mapping pane, whether it is showing, which part and which
+    /// node of it are chosen, and whether the document has any control bound
+    /// to a node — which is when the caret is followed into one. See
+    /// [`mapping`].
+    show_mapping: bool,
+    mapping_pane: crate::chrome::mappingpane::MappingPane,
+    mapping_part: usize,
+    mapping_row: Option<usize>,
+    has_bindings: bool,
     restrict_limiting: bool,
     restrict_restricting: bool,
     restrict_mode: usize,
@@ -804,6 +814,11 @@ impl Editor {
             signing_for: signatures::SignFor::Document,
             show_restrict: false,
             restrict_pane: crate::chrome::restrictpane::RestrictPane::new(),
+            show_mapping: false,
+            mapping_pane: crate::chrome::mappingpane::MappingPane::new(),
+            mapping_part: 0,
+            mapping_row: None,
+            has_bindings: false,
             restrict_limiting: false,
             restrict_restricting: false,
             restrict_mode: 0,
@@ -1091,6 +1106,7 @@ impl Editor {
             - self.styles_pane_width()
             - self.restrict_pane_width()
             - self.signature_pane_width()
+            - self.mapping_pane_width()
             - self.compare_pane_width()
             - crate::chrome::SCROLLBAR_THICKNESS)
             .max(1.0)

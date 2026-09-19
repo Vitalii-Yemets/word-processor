@@ -184,6 +184,9 @@ pub enum Choice {
     /// Which kind of editing a restriction allows, dropped from the pane that
     /// asks rather than from a button of the ribbon.
     RestrictMode,
+    /// The kinds of content control the XML Mapping pane can put in, bound
+    /// to the node it has chosen.
+    MappedControl,
     /// The breaks that can be put in: of a page, of a column, and of a section.
     Break,
     /// The margins Word offers by name.

@@ -86,6 +86,7 @@ impl Editor {
         // is one of them hidden behind the other.
         self.show_styles = false;
         self.show_restrict = false;
+        self.show_mapping = false;
         self.show_signatures = true;
         self.clamp_scroll();
         self.needs_redraw = true;

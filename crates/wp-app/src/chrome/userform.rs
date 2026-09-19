@@ -477,12 +477,11 @@ impl FormWindow {
                 );
                 let room = if control.kind == Kind::ComboBox { width - 18.0 } else { width };
                 let line = engine.simple_line(&control.value, x + 4.0, baseline, TEXT, ink);
-                // What is typed is kept in view from its end, as a box does.
-                let shift = (line.width + 8.0 - room).max(0.0);
                 renderer.draw_within(canvas, &line, x + 1.0, y + 1.0, room - 2.0, height - 2.0);
-                let _ = shift;
                 if focused && control.enabled {
-                    let caret = (x + 4.0 + line.width).min(x + room - 3.0);
+                    // A line's width is where its pen stopped, from the
+                    // window's edge, which is where the caret goes.
+                    let caret = line.width.min(x + room - 3.0);
                     canvas.fill_rect(
                         caret as i32,
                         (y + 4.0) as i32,

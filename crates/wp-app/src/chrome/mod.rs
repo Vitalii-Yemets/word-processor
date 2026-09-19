@@ -22,6 +22,7 @@ mod icon_catalogue;
 pub mod icons;
 pub mod infobar;
 pub mod keytips;
+pub mod mappingpane;
 pub mod minibar;
 pub mod mirror;
 pub mod navigation;
@@ -403,6 +404,9 @@ pub enum Command {
     LegacyFields,
     /// What a content control is called, and what may be done to it.
     ControlProperties,
+    /// Word's XML Mapping pane: the data a document carries, and binding a
+    /// control to a node of it.
+    XmlMapping,
     /// Which set of styles the whole document is formatted with.
     StyleSet,
 }

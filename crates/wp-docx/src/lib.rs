@@ -52,6 +52,7 @@ pub mod compare;
 pub mod contents;
 pub mod controls;
 pub mod cover;
+pub mod customxml;
 pub mod depth;
 pub mod diagram;
 pub mod edit;

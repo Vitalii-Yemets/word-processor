@@ -594,6 +594,11 @@ impl Editor {
         self.form_window = None;
         self.closing_raised = false;
         self.refresh_control_watch();
+        // A control bound to the document's own data shows the data, which
+        // is what Word does on opening: see [`super::mapping`].
+        self.refresh_bindings();
+        self.mapping_part = 0;
+        self.mapping_row = None;
         // Whatever is opened is opened for writing until it asks not to be,
         // which is asked at the door and not here: see [`super::readonly`].
         self.opened_read_only = false;

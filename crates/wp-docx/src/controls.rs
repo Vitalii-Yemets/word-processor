@@ -132,6 +132,9 @@ pub struct Control {
     /// Where the content starts and ends.
     pub start: TextPosition,
     pub end: TextPosition,
+    /// The node of a custom XML part it is bound to, if it is bound. See
+    /// [`crate::customxml`].
+    pub binding: Option<crate::customxml::Binding>,
 }
 
 impl Control {
@@ -323,7 +326,7 @@ impl Document {
 
     /// Finds the control's two halves and hands them to whoever is changing
     /// it.
-    fn change_control(
+    pub(crate) fn change_control(
         &mut self,
         control: &Control,
         change: impl FnOnce(&mut Element, &mut Element, Option<&str>),
@@ -391,6 +394,7 @@ fn walk(element: &Element, paragraph: usize, offset: &mut usize, found: &mut Vec
                     locked_edit: locked(properties).1,
                     start,
                     end: TextPosition::new(paragraph, *offset),
+                    binding: binding_of(properties),
                 });
             }
             "t" => *offset += child.text_content().len(),
@@ -399,6 +403,23 @@ fn walk(element: &Element, paragraph: usize, offset: &mut usize, found: &mut Vec
             _ => walk(child, paragraph, offset, found),
         }
     }
+}
+
+/// What `w:dataBinding` says, where there is one.
+fn binding_of(properties: Option<&Element>) -> Option<crate::customxml::Binding> {
+    let binding = properties?.child(Some(read::W), "dataBinding")?;
+    let attribute = |local: &str| {
+        binding
+            .attribute(Some(read::W), local)
+            .or_else(|| binding.attribute_by_name(&format!("w:{local}")))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    Some(crate::customxml::Binding {
+        prefixes: attribute("prefixMappings"),
+        xpath: attribute("xpath"),
+        store_item: attribute("storeItemID"),
+    })
 }
 
 /// What a property says, by its `w:val`.

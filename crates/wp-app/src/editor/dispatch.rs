@@ -347,6 +347,7 @@ impl Editor {
             Command::TextFromFile => self.insert_text_from_file(),
             Command::SmartArt => self.open_diagram(),
             Command::Macros => self.open_macros(),
+            Command::XmlMapping => self.open_mapping(),
             Command::OnlineVideo => self.start_video(),
             Command::Equation => self.start_equation(),
             Command::Rules => self.open_rules(),

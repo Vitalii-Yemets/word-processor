@@ -101,6 +101,8 @@ impl Editor {
         // The styles pane and this one are both down the right-hand side, and
         // two panes in one place is one pane with the other underneath it.
         self.show_styles = false;
+        self.show_signatures = false;
+        self.show_mapping = false;
         self.show_restrict = true;
         self.clamp_scroll();
         self.needs_redraw = true;

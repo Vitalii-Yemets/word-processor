@@ -32,6 +32,8 @@
 = Add
 = Add Source
 = Add Users
+= Add new part
+= Add new part...
 = Address
 = Address Line 1
 = Advanced
@@ -86,6 +88,7 @@
 = Between dashes
 = Bibliographies
 = Bibliography
+= Bind the control to this node
 = Blank Page
 = Blank document
 = Block Authors
@@ -102,6 +105,7 @@
 = Borders…
 = Bottom
 = Bottom of Page
+= Bound
 = Breaks
 = Bring Forward
 = Browse
@@ -113,6 +117,7 @@
 = Cannot insert the picture: {0}
 = Cannot make a document: {0}
 = Cannot open {0}: {1}
+= Cannot read {0}
 = Cannot read {0}: {1}
 = Cannot save: {0}
 = Cannot set that: {0}
@@ -142,6 +147,7 @@
 = Check for Errors
 = Checked styles are currently allowed
 = Choose a column to sort by
+= Choose a node of the part to bind a control to
 = Choose commands from
 = Choose one to put it in, to refile it, or to take it away.
 = Citation
@@ -195,6 +201,7 @@
 = Current Position
 = Custom Margins…
 = Custom Print
+= Custom XML Part:
 = Customize Quick Access Toolbar
 = Customize Ribbon
 = Customize the Ribbon
@@ -209,6 +216,7 @@
 = Delete Note
 = Delete Row
 = Delete Table
+= Delete part
 = Description
 = Design
 = Developer
@@ -355,6 +363,7 @@
 = Insert Index
 = Insert Picture
 = Insert Table
+= Insert content control
 = Insert line breaks
 = Interface language
 = Internet and network paths with hyperlinks
@@ -398,6 +407,7 @@
 = Make Default
 = Manage Sources
 = Manage Styles
+= Mapping
 = Margins
 = Mark Citation
 = Mark Entry
@@ -711,7 +721,9 @@
 = Text formatting
 = Text from File
 = That is not a watermark any more
+= That is not well-formed XML, so it cannot be a part
 = That line is no longer in this document
+= That part has no identifier, so it cannot be taken out
 = That style could not be changed
 = That watermark is no longer saved
 = The author asked for it to be opened read-only.
@@ -726,6 +738,8 @@
 = The letter goes to everybody ticked.
 = The list was not saved, so nothing is merged
 = The next stretch you may edit
+= The part was added
+= The part was deleted
 = The same headings, closer together
 = The selection is saved to the {0} gallery.
 = The two passwords are not the same
@@ -738,6 +752,7 @@
 = This document
 = This document also carries Visual Basic macros
 = This document carries macros. They are disabled until you say otherwise.
+= This document carries no custom XML. Add a part from a file to bind controls to it.
 = This document fixes its style set — Review ▸ Restrict Editing lifts it
 = This document fixes its theme — Review ▸ Restrict Editing lifts it
 = This document has never been saved, so it is not in a folder yet
@@ -835,6 +850,9 @@
 = WordArt
 = Wrap Text
 = Write & Insert Fields
+= XML Mapping
+= XML Mapping Pane
+= XML files (*.xml)
 = Yes
 = Yes, Start Enforcing Protection
 = You may edit one stretch of this document.

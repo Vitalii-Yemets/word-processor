@@ -1180,6 +1180,7 @@ impl Ribbon {
                     | Choice::PageNumberPlace
                     | Choice::PageNumberDesign
                     | Choice::RestrictMode
+                    | Choice::MappedControl
                     | Choice::Selecting
                     | Choice::NoteJump
                     | Choice::Accepting
@@ -1866,11 +1867,10 @@ static REVIEW_GROUPS: &[Group] = &[
 
 /// Word's Developer tab, as far as this program has one.
 ///
-/// Word's has six groups; three of them are about Visual Basic, add-ins and
-/// mapping a control to XML, and none of those is here — see the roadmap,
-/// where not running Visual Basic is a decision. What is left is the part a
-/// form is actually made of: the controls, the older fields they replaced,
-/// and the restriction that turns a document into a form somebody fills in.
+/// Word's has six groups. Here are the controls a form is made of, the
+/// older fields they replaced, the mapping of a control to the document's
+/// own data, the restriction that turns a document into a form somebody
+/// fills in, and the macros; add-ins are not.
 static DEVELOPER_GROUPS: &[Group] = &[
     Group {
         label: "Controls",
@@ -1893,6 +1893,11 @@ static DEVELOPER_GROUPS: &[Group] = &[
     Group {
         label: "Legacy",
         items: &[Item::Large(Command::LegacyFields, Icon::QuickParts, "Legacy Tools")],
+        launcher: None,
+    },
+    Group {
+        label: "Mapping",
+        items: &[Item::Large(Command::XmlMapping, Icon::Outline, "XML Mapping Pane")],
         launcher: None,
     },
     Group {

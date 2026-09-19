@@ -208,7 +208,13 @@ impl App for Editor {
     }
 
     fn handle(&mut self, event: Event) -> Response {
+        // Whether this is the kind of event that may have changed the
+        // document, which is what a binding follows: see [`super::mapping`].
+        let may_have_edited = !matches!(event, Event::Tick | Event::MouseMove { .. });
         let response = self.handle_event(event);
+        if may_have_edited {
+            self.keep_bindings();
+        }
         // Wherever the caret went, the document may have something to say
         // about it: see [`super::autoevents`].
         self.notice_control_change();
@@ -461,6 +467,14 @@ impl Editor {
                 }
                 if self.over_signature_pane(self.pointer_x as i32) {
                     return if self.signature_pane.scroll_by(-lines * super::PANE_STEP) {
+                        self.needs_redraw = true;
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    };
+                }
+                if self.over_mapping_pane(self.pointer_x as i32) {
+                    return if self.mapping_pane.scroll_by(-lines * super::PANE_STEP) {
                         self.needs_redraw = true;
                         Response::Redraw
                     } else {
@@ -942,6 +956,9 @@ impl Editor {
         // the bar beside it.
         if self.over_signature_pane(x) && (y as f32) > self.ribbon_bottom() {
             return self.signature_pane_press(x, y);
+        }
+        if self.over_mapping_pane(x) && (y as f32) > self.ribbon_bottom() {
+            return self.mapping_pane_press(x, y);
         }
         if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
             return self.restrict_pane_press(x, y);
@@ -1471,6 +1488,13 @@ impl Editor {
             }
             return Response::Redraw;
         }
+        if self.over_mapping_pane(x) && (y as f32) > self.ribbon_bottom() {
+            let changed = self.mapping_pane_hover(x, y);
+            if changed {
+                self.needs_redraw = true;
+            }
+            return Response::Redraw;
+        }
         if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
             let changed = self.restrict_pane_hover(x, y);
             if changed {
@@ -1659,7 +1683,7 @@ impl Editor {
             }
             // The kinds of editing hang beside the Restrict Editing pane,
             // which is not a button of the ribbon and places its own lists.
-            Choice::RestrictMode => return Response::Ignored,
+            Choice::RestrictMode | Choice::MappedControl => return Response::Ignored,
             // Hangs where the caret is rather than under a button.
             Choice::FillIn => Command::LegacyFields,
             // The strip's own menu hangs where it was opened, not under a
@@ -1791,6 +1815,7 @@ impl Editor {
             | Choice::Envelope
             | Choice::PageNumberDesign
             | Choice::RestrictMode
+            | Choice::MappedControl
             | Choice::Label => (Vec::new(), None),
             Choice::Zoom => {
                 let index = chrome::ZOOMS.iter().position(|value| (value - self.zoom).abs() < 0.5);
@@ -1904,6 +1929,7 @@ impl Editor {
             Choice::AutoText => self.choose_auto_text(index),
             Choice::PageNumberDesign => self.choose_page_number_design(index),
             Choice::RestrictMode => self.choose_restrict_mode(index),
+            Choice::MappedControl => self.choose_mapped_control(index),
             Choice::FillIn => self.choose_fill_in(index),
             Choice::StatusBar => self.choose_status_part(index),
             Choice::PageNumbering => self.choose_page_numbering(index),
