@@ -3585,18 +3585,61 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   `WordBreakTest.txt`, `NormalizationTest.txt` — and Perl does not carry them,
   so running them needs the same decision about where data comes from that
   **E2**, **E6** and **E14** are waiting on.
-- [ ] **E16. Line breaking with the standard's own classes.** UAX #14 names
-  about forty and this program keeps seventeen, folding the rest into them by a
-  list in `tools/unicode/generate.rs`. What the folding costs, named: the half
+- [x] **E16. Line breaking with the standard's own classes.** UAX #14 names
+  about forty and this program kept seventeen, folding the rest into them by a
+  list in `tools/unicode/generate.rs`. What the folding cost, named: the half
   of LB9 that gives a combining mark the class of the letter it is drawn on —
-  the other half, that a mark may not begin a line, is kept; LB30b, which
-  forbids a break between an emoji and its skin tone, is approximated by
+  the other half, that a mark may not begin a line, was kept; LB30b, which
+  forbids a break between an emoji and its skin tone, was approximated by
   making the tone a non-starter; B2, the em dash, allows a
-  break before it as well as after and here allows only after; SY, the solidus,
-  is broken after even between two digits, where LB25 forbids it; and the
-  Korean jamo are letters, so a syllable spelled out in them is never broken
+  break before it as well as after and here allowed only after; SY, the solidus,
+  was broken after even between two digits, where LB25 forbids it; and the
+  Korean jamo were letters, so a syllable spelled out in them was never broken
   anywhere. The item is the standard's own class set and its pair table, and
   the rules written against them rather than against a fold.
+  *Done when:* the Consortium's `LineBreakTest.txt` for the version the
+  tables are generated from passes, but for the cases this program tailors on
+  purpose and says so.
+  **The classes are the standard's, all forty-three by their own two-letter
+  names**, generated from the database with nothing folded; beside them the
+  East Asian width of every character, which is the one thing LB30 asks
+  about a bracket, and the two sets the rules name — the South East Asian
+  letters that are marks, which LB1 reads as CM, and the code points reserved
+  for pictographs and not yet assigned, which LB30b keeps a skin tone with.
+  LB1 is applied as the rules read the text, so the table still says what
+  the database says.
+  **The rules are LB2 to LB31 in the standard's order**, applied to a line
+  whole rather than to a pair at a time: LB9 attaches a mark or a joiner to
+  the character before it and the rules then see that character, LB10 makes
+  a mark with nothing to attach to a letter, LB8 and LB14 to LB17 look back
+  through a run of spaces, LB21a looks past the hyphen to the Hebrew letter
+  before it, LB30a counts the regional indicators before a break so that a
+  flag is never halved, and LB25 is the standard's own example of a
+  tailoring — a number is `(PR|PO)? (OP|HY)? NU (NU|SY|IS)* (CL|CP)? (PR|PO)?`
+  and nothing inside one is broken — because that, and not the bare pairs,
+  is what the standard's test data expects: a per cent sign holds to a
+  closing bracket only where there is a number for both to belong to. The
+  pair the layout asks about where two runs meet is answered the same way,
+  as a line of two.
+  **The Thai tailoring stays.** The standard hands the South East Asian
+  scripts to a dictionary; this program has none and breaks Thai and Lao
+  where a syllable begins, which is where every word begins and some places
+  besides, exactly as **E6** wrote it down. It is the one case in the
+  Consortium's file that fails, on purpose, and the conformance command's
+  own note says so.
+  *Proven by:* `LineBreakTest.txt` 14.0.0, the version the tables come from,
+  run through `./x.sh conformance`: 7654 cases, 7653 passed, the one the
+  Thai tailoring; and the crate's own tests — the classes as the database
+  gives them, a mark taking its letter's class, a skin tone held to its
+  emoji and to nothing else, an em dash broken before as well as after, a
+  solidus held inside a fraction and not outside one, a jamo syllable held
+  and two broken apart, two regional indicators one flag, a Hebrew hyphen
+  held, a narrow bracket held to its word and a wide one not, a run of
+  spaces looked through, a joiner holding two emoji, a sign held to a number
+  and to nothing else, with everything the fold's tests held to still held.
+  *Not done, and named:* the file itself is not in the repository — it is
+  test data, and **K3** says where it goes and why. The dictionary Thai
+  wants is still the dictionary Thai wants.
 - [x] **E8. CFF and CFF2 outlines.** PostScript-flavoured fonts, which a good
   many documents ask for.
   *Done when:* a document set in an `.otf` file is drawn, and written to a PDF

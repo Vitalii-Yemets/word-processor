@@ -334,90 +334,131 @@ fn bidi(ucd: &Path, root: &Path, version: &str) {
 // Line breaking
 // ---------------------------------------------------------------------------
 
-/// What each of [UAX #14]'s classes is called here.
+/// The classes of [UAX #14], every one of them by the standard's own name.
 ///
-/// This program keeps fewer classes than the standard names, and the ones it
-/// does not keep are folded into the nearest it has. Every fold is written out
-/// here rather than left to a default, so that what is lost can be read off the
-/// list.
+/// Nothing is folded: the standard's pair table is written against these,
+/// and the rules in `wp-break` are the standard's rules. The one name changed
+/// is the database's word for a character it has not assigned, which the
+/// standard calls XX.
 ///
 /// [UAX #14]: https://www.unicode.org/reports/tr14/
-fn breaking_class(value: &str, code: u32) -> String {
-    let name = match value {
-        // The breaks the text itself asks for.
-        "BK" | "CR" | "LF" | "NL" => "Mandatory",
-        "SP" => "Space",
-        "OP" => "Open",
-        // What clings to what precedes it: the closing brackets, and the
-        // standard's EX and IS — the exclamation mark, the full stop, the comma
-        // inside a number.
-        "CL" | "CP" | "EX" | "IS" => "Close",
-        "QU" => "Quote",
-        // What forbids a break on either side: glue, the word joiner, and the
-        // zero width joiner that holds two emoji together.
-        "GL" | "WJ" | "ZWJ" => "Glue",
-        // What may not begin a line: the small kana, the ellipsis of the
-        // standard's IN, the skin tone that belongs to the emoji before it,
-        // and the combining marks — an accent, a vowel sign, the selector that
-        // says which face of a character was meant — every one of which
-        // belongs to the character before it and cannot start a line without
-        // it. That is the half of LB9 that can be kept without knowing what
-        // the mark is drawn on.
-        "NS" | "CJ" | "IN" | "EM" | "CM" => "NonStarter",
-        "HY" => "Hyphen",
-        // What a break is allowed after: the standard's BA, the zero width
-        // space, the solidus, the em dash, and the place an inline object sits.
-        "BA" | "ZW" | "SY" | "B2" | "CB" => "BreakAfter",
-        "BB" => "BreakBefore",
-        // What may be broken between: the ideographs, the kana, the composed
-        // Hangul syllables and the emoji.
-        "ID" | "H2" | "H3" | "EB" => "Ideograph",
-        "NU" => "Numeric",
-        "PR" => "Prefix",
-        "PO" => "Postfix",
-        // Thai and Lao are broken by rules of their own. The rest of the
-        // standard's SA is the South East Asian scripts whose words this
-        // program cannot find either; LB1 says to read those as letters, and a
-        // letter is at least never broken in the wrong place.
-        "SA" if (0x0E00..=0x0EFF).contains(&code) => "Complex",
-        // LB1 again: what is ambiguous, unknown or half of a surrogate reads as
-        // a letter. So do the Korean jamo: breaking a syllable into its
-        // consonants is worse than not breaking it.
-        "SA" | "AI" | "AL" | "HL" | "SG" | "XX" | "Unknown" | "JL" | "JV" | "JT" | "RI" => {
-            "Alphabetic"
-        }
-        _ => panic!("unknown line break class {value}"),
-    };
+fn breaking_class(value: &str) -> String {
+    const KNOWN: &[&str] = &[
+        "BK", "CR", "LF", "CM", "NL", "SG", "WJ", "ZW", "GL", "SP", "ZWJ", "B2", "BA", "BB", "HY",
+        "CB", "CL", "CP", "EX", "IN", "NS", "OP", "QU", "IS", "NU", "PO", "PR", "SY", "AI", "AL",
+        "CJ", "EB", "EM", "H2", "H3", "HL", "ID", "JL", "JV", "JT", "RI", "SA", "XX",
+    ];
+    let name = if value == "Unknown" { "XX" } else { value };
+    assert!(KNOWN.contains(&name), "unknown line break class {value}");
     name.to_string()
+}
+
+/// Whether a character is East Asian wide, full-width or half-width, which
+/// is the one thing LB30 asks about a bracket.
+fn width_class(value: &str) -> String {
+    match value {
+        "W" | "F" | "H" => "Wide".to_string(),
+        "Na" | "A" | "N" | "Neutral" => "Narrow".to_string(),
+        _ => panic!("unknown East Asian width {value}"),
+    }
+}
+
+/// The characters of a map that carry one value and fall inside a set, as
+/// ranges: what LB1 and LB30b ask about, worked out once here rather than
+/// from two tables at run time.
+fn within(mapped: &[(u32, u32, String)], value: &str, set: &[(u32, u32)]) -> Vec<(u32, u32)> {
+    let mut out: Vec<(u32, u32)> = Vec::new();
+    for (first, last, held) in mapped {
+        if held != value {
+            continue;
+        }
+        for (from, to) in set {
+            let (low, high) = ((*first).max(*from), (*last).min(*to));
+            if low > high {
+                continue;
+            }
+            match out.last_mut() {
+                Some((_, end)) if *end + 1 == low => *end = high,
+                _ => out.push((low, high)),
+            }
+        }
+    }
+    out.sort_unstable();
+    out
 }
 
 fn breaking(ucd: &Path, root: &Path, version: &str) {
     let file = ucd.join("To/Lb.pl");
-    let named = renamed(&map(&file), &|value, code| breaking_class(value, code));
-    let classes = runs(&named, &breaking_class(&absent(&file), 0));
+    let mapped = map(&file);
+    let named = renamed(&mapped, &|value, _| breaking_class(value));
+    let classes = runs(&named, &breaking_class(&absent(&file)));
+
+    let widths_file = ucd.join("To/Ea.pl");
+    let widths = renamed(&map(&widths_file), &|value, _| width_class(value));
+    let widths = runs(&widths, &width_class(&absent(&widths_file)));
+
+    // LB1: the South East Asian letters that are marks become CM, and the
+    // rest AL. Which are marks is the general category.
+    let mut marks = set(&ucd.join("lib/Gc/Mn.pl"));
+    marks.extend(set(&ucd.join("lib/Gc/Mc.pl")));
+    marks.sort_unstable();
+    let complex_marks = within(&mapped, "SA", &marks);
+
+    // LB30b: a pictograph the database has reserved room for but not yet
+    // assigned takes a skin tone the way an assigned one does.
+    let unassigned = set(&ucd.join("lib/Gc/Cn.pl"));
+    let pictographs: Vec<(u32, u32, String)> = set(&ucd.join("lib/ExtPict/Y.pl"))
+        .into_iter()
+        .map(|(first, last)| (first, last, "Y".to_string()))
+        .collect();
+    let reserved = within(&pictographs, "Y", &unassigned);
 
     let mut text = preamble(
         "//! What kind of thing each character is, for the rules that say where a\n\
-         //! line may be broken.\n\
-         //!\n\
-         //! The names are this program's own and there are fewer of them than\n\
-         //! [UAX #14] gives; the generator holds the list saying which of the\n\
-         //! standard's classes became which of these, and so what was folded away.\n\
+         //! line may be broken: the classes of [UAX #14], by the standard's own\n\
+         //! names, and the two sets its rules ask about beside them.\n\
          //!\n\
          //! [UAX #14]: https://www.unicode.org/reports/tr14/\n",
         version,
     );
-    text.push_str("use crate::Class;\n\n");
+    text.push_str("use crate::{Class, Width};\n\n");
     text.push_str(&table_of_runs("/// Where each run of one class begins.\n", "CLASSES", "Class", &classes));
-    text.push_str(&search_of_runs(
-        "/// The class of one character, before the optional hyphen is taken out\n\
-         /// of it: see [`crate::class_of`].\n",
-        "class_of",
-        "CLASSES",
-        "Class",
+    text.push_str(&search_of_runs("/// The class of one character.\n", "class_of", "CLASSES", "Class"));
+    text.push_str(&table_of_runs(
+        "/// Where each run of one East Asian width begins, wide or not.\n",
+        "WIDTHS",
+        "Width",
+        &widths,
     ));
+    text.push_str(&search_of_runs(
+        "/// Whether one character is East Asian wide, full-width or half-width.\n",
+        "width_of",
+        "WIDTHS",
+        "Width",
+    ));
+    text.push_str(&table_of_pairs(
+        "/// The letters of the South East Asian scripts that are marks — a vowel\n\
+         /// written above its consonant, a tone mark — which LB1 reads as CM.\n",
+        "COMPLEX_MARKS",
+        "pub(crate) ",
+        &complex_marks,
+    ));
+    text.push_str(&table_of_pairs(
+        "/// The code points reserved for pictographs and not yet assigned, which\n\
+         /// LB30b keeps a skin tone with.\n",
+        "RESERVED_PICTOGRAPHS",
+        "pub(crate) ",
+        &reserved,
+    ));
+    text.push_str(
+        "/// Whether a code point falls in one of a table's ranges.\n\
+         pub(crate) fn within(table: &[(u32, u32)], code: u32) -> bool {\n    \
+         let after = table.partition_point(|(first, _)| *first <= code);\n    \
+         after > 0 && table[after - 1].1 >= code\n\
+         }\n\n",
+    );
 
-    text.push_str(&order_check(&["CLASSES"]));
+    text.push_str(&order_check(&["CLASSES", "WIDTHS"]));
     write_out(root.join("crates/wp-break/src/tables.rs"), &text);
 }
 

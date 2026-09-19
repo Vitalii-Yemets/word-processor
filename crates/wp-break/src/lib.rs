@@ -16,17 +16,17 @@
 //!
 //! # What is here
 //!
-//! The part of [UAX #14] that decides these cases: each character is given a
-//! class, and the classes either side of a possible break say whether it is
-//! allowed. Which class each character has is generated from the character
-//! database, so every character there is has one.
+//! [UAX #14], as the standard writes it. Each character has one of the
+//! standard's forty-three classes, generated from the character database so
+//! that every character there is has one; the rules LB1 to LB31 are applied in
+//! the standard's order, against those classes, and the first that speaks
+//! decides. Nothing is folded: where the standard tells a full stop from a
+//! closing bracket, or an em dash from a slash, so does this.
 //!
-//! There are fewer classes here than the standard names. Its pair table is
-//! forty classes square and settles a great many cases that never arise in a
-//! document; the classes here are the ones that do arise, and each of the
-//! standard's is folded into the nearest of them by a list in
-//! `tools/unicode/generate.rs` — which is therefore where to read what the
-//! folding costs.
+//! What is tailored, and the standard allows it: the South East Asian scripts,
+//! which the standard hands to a dictionary and this program has none for.
+//! Thai and Lao are broken where a syllable begins, which is where every
+//! word begins and some places besides — see [`starts_syllable`].
 //!
 //! Hyphenation — breaking *inside* a word, at a place the language allows — is
 //! a different problem needing pattern data per language, and is not here.
@@ -45,178 +45,471 @@
 
 mod tables;
 
-/// What a character does to a break beside it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The classes of [UAX #14], by the standard's own two-letter names, which
+/// are what its pair table and its rules are written in.
+///
+/// [UAX #14]: https://www.unicode.org/reports/tr14/#Table1
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Class {
-    /// A space: a break is allowed after a run of them.
-    Space,
-    /// A line feed or a paragraph separator, which breaks whatever is beside
-    /// it.
-    Mandatory,
-    /// An opening bracket or quote: nothing may be broken away from it.
-    Open,
-    /// A closing bracket, and the punctuation that clings to what precedes it —
-    /// a full stop, a comma, an exclamation mark.
-    Close,
-    /// A quotation mark, which could be either and is treated as neither.
-    Quote,
-    /// Glue: a non-breaking space or hyphen, which forbids a break on both
-    /// sides.
-    Glue,
-    /// A character that may not begin a line, though it may end one: the small
-    /// kana, the sound marks, the ellipsis.
-    NonStarter,
-    /// Thai and Lao: written without spaces between the words, and broken by
-    /// rules of their own. See [`starts_syllable`].
-    Complex,
-    /// The optional hyphen: a place inside a word where the writer says a line
-    /// may be broken. It is drawn only if the line is broken there, and is
-    /// otherwise nothing at all.
-    SoftHyphen,
-    /// A hyphen, which a line may be broken after.
-    Hyphen,
-    /// Something a break is allowed after: an en dash, a slash, an ideographic
-    /// space.
-    BreakAfter,
-    /// Something a break is allowed before.
-    BreakBefore,
-    /// An ideograph or a kana, which may be broken between.
-    Ideograph,
-    /// A digit.
-    Numeric,
-    /// A sign that goes before a number, such as a currency sign.
-    Prefix,
-    /// A sign that goes after one, such as a per cent sign.
-    Postfix,
-    /// A letter.
-    Alphabetic,
+    /// Mandatory break: the form feed, the line and paragraph separators.
+    BK,
+    /// Carriage return.
+    CR,
+    /// Line feed.
+    LF,
+    /// Combining mark: an accent, a vowel sign, a variation selector, which
+    /// belongs to the character before it.
+    CM,
+    /// Next line.
+    NL,
+    /// A surrogate, which cannot appear in text and is read as a letter.
+    SG,
+    /// Word joiner: forbids a break either side.
+    WJ,
+    /// Zero width space: a break is allowed after it.
+    ZW,
+    /// Glue: the non-breaking space and its kind.
+    GL,
+    /// Space.
+    SP,
+    /// Zero width joiner, which holds two emoji together.
+    ZWJ,
+    /// Break opportunity before and after: the em dash.
+    B2,
+    /// Break after: the hyphens that are not the hyphen-minus, the ideographic
+    /// space, the optional hyphen.
+    BA,
+    /// Break before.
+    BB,
+    /// The hyphen-minus.
+    HY,
+    /// Contingent break: the place an inline object sits.
+    CB,
+    /// Closing punctuation.
+    CL,
+    /// Closing parenthesis, which LB30 tells from the rest.
+    CP,
+    /// Exclamation and question marks, which cling to what precedes them.
+    EX,
+    /// Inseparable: the ellipsis, the leaders.
+    IN,
+    /// Non-starter: the small kana, the sound marks.
+    NS,
+    /// Opening punctuation.
+    OP,
+    /// A quotation mark, which could open or close.
+    QU,
+    /// Infix numeric separator: the comma and full stop inside a number.
+    IS,
+    /// Numeric.
+    NU,
+    /// Postfix numeric: a per cent sign, a degree.
+    PO,
+    /// Prefix numeric: a currency sign, a plus.
+    PR,
+    /// Symbols allowing break after: the solidus.
+    SY,
+    /// Ambiguous, which LB1 reads as a letter.
+    AI,
+    /// Alphabetic.
+    AL,
+    /// Conditional Japanese starter: the small kana, which LB1 reads as NS.
+    CJ,
+    /// An emoji base, which takes a skin tone.
+    EB,
+    /// An emoji modifier: the skin tone.
+    EM,
+    /// A Hangul syllable of two jamo, and of three.
+    H2,
+    H3,
+    /// Hebrew letter.
+    HL,
+    /// Ideographic: the ideographs, the kana, the emoji.
+    ID,
+    /// The Hangul jamo: leading, vowel, trailing.
+    JL,
+    JV,
+    JT,
+    /// Regional indicator: half of a flag.
+    RI,
+    /// Complex context: the South East Asian scripts written without spaces,
+    /// whose words need a dictionary.
+    SA,
+    /// Unknown, which LB1 reads as a letter.
+    XX,
 }
 
-/// The class of one character.
+/// Whether a character is East Asian wide, full-width or half-width — the one
+/// thing LB30 asks about a bracket, and the width in the standard's own terms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Width {
+    Narrow,
+    Wide,
+}
+
+/// The class of one character, as the character database gives it.
 ///
-/// The table behind this is generated from the character database and covers
-/// every code point there is, so there is no character it does not know. The
-/// one thing decided here rather than there is the optional hyphen: the
-/// standard puts it with the ordinary hyphens, and this program has to tell it
-/// apart from them because it is drawn only where a line is broken.
+/// The table behind this is generated from the database and covers every code
+/// point there is, so there is no character it does not know. What the rules
+/// see is this after LB1 — see [`resolved_class`].
 #[must_use]
 pub fn class_of(character: char) -> Class {
-    if character == '\u{00AD}' {
-        return Class::SoftHyphen;
-    }
     tables::class_of(character)
 }
 
-/// Whether a line may be broken between two characters.
+/// Whether a character is East Asian wide, full-width or half-width.
+#[must_use]
+pub fn width_of(character: char) -> Width {
+    tables::width_of(character)
+}
+
+/// The class of one character after LB1: the ambiguous, the surrogates and
+/// the unknown read as letters, the small kana as non-starters, and the South
+/// East Asian letters as letters or, where they are marks, as marks.
+#[must_use]
+pub fn resolved_class(character: char) -> Class {
+    match class_of(character) {
+        Class::AI | Class::SG | Class::XX => Class::AL,
+        Class::CJ => Class::NS,
+        Class::SA => {
+            if tables::within(tables::COMPLEX_MARKS, character as u32) {
+                Class::CM
+            } else {
+                Class::AL
+            }
+        }
+        other => other,
+    }
+}
+
+/// Whether a line may be broken between two characters, with nothing else
+/// known about the line.
 ///
-/// The rules are applied in the standard's order, and the first that speaks
-/// decides. Anything the rules say nothing about is a break opportunity only
-/// between two things that are not letters of the same word — which is what
-/// the last two rules say.
+/// The rules that look further than the pair — a run of spaces, a mark on
+/// its letter, a pair of flags — are answered as though the two stood alone.
+/// A line is asked about whole through [`opportunities`]; this is for the
+/// place where two runs of text meet and only their edges are to hand.
 #[must_use]
 pub fn may_break(before: char, after: char) -> bool {
-    let (left, right) = (class_of(before), class_of(after));
+    let mut text = String::with_capacity(8);
+    text.push(before);
+    text.push(after);
+    !opportunities(&text).is_empty()
+}
 
-    // LB4 and LB5: a line feed breaks, and nothing may be broken away from it.
-    if left == Class::Mandatory || right == Class::Mandatory {
-        return left == Class::Mandatory;
-    }
+/// Every place in a line where it may be broken, as byte offsets.
+///
+/// The offsets are the starts of the characters a break would put on the next
+/// line. Neither end of the text is one: a break there would move nothing.
+/// The rules are the standard's, LB2 to LB31, applied in its order at each
+/// place between two characters, and the first that speaks decides.
+#[must_use]
+pub fn opportunities(text: &str) -> Vec<usize> {
+    let characters: Vec<(usize, char)> = text.char_indices().collect();
+    let line = Line::of(&characters);
+    (1..characters.len()).filter(|at| line.breaks_before(*at)).map(|at| characters[at].0).collect()
+}
 
-    // LB7: never before a space; a run of spaces goes with the line it ends.
-    if right == Class::Space {
-        return false;
-    }
+/// A line of text with its classes worked out, and what each rule needs to
+/// look back at.
+struct Line {
+    characters: Vec<char>,
+    /// The class of each character after LB1.
+    raw: Vec<Class>,
+    /// The class each character stands for once LB9 and LB10 are applied: a
+    /// mark or a joiner stands for the character it is attached to, and one
+    /// attached to nothing stands for a letter.
+    class: Vec<Class>,
+    /// Which character each stands for: itself, or the base a mark is
+    /// attached to.
+    base: Vec<usize>,
+    /// Whether each character is inside a number, with the character before
+    /// it: what LB25 asks. See [`Self::mark_numbers`].
+    in_number: Vec<bool>,
+}
 
-    // LB12 and LB12a: glue forbids a break on both sides. That is what makes a
-    // non-breaking space non-breaking.
-    if left == Class::Glue || right == Class::Glue {
-        return false;
-    }
-
-    // LB18: after a space a break is always allowed.
-    if left == Class::Space {
-        return true;
-    }
-
-    // LB13 and LB16: never before closing punctuation or a non-starter, which
-    // is the rule that keeps a full stop off the beginning of a line and a
-    // small kana with the syllable it belongs to.
-    if matches!(right, Class::Close | Class::NonStarter) {
-        return false;
-    }
-
-    // LB14: never after an opening bracket.
-    if left == Class::Open {
-        return false;
-    }
-
-    // LB19: a quotation mark could open or close, so nothing is broken either
-    // side of it.
-    if left == Class::Quote || right == Class::Quote {
-        return false;
-    }
-
-    // LB25: a number holds together with the signs around it. This is why
-    // "$1,500" and "20%" are never broken up.
-    if matches!(left, Class::Numeric | Class::Prefix)
-        && matches!(right, Class::Numeric | Class::Postfix)
-    {
-        return false;
-    }
-    if left == Class::Numeric && right == Class::Alphabetic {
-        return false;
-    }
-
-    // LB6 as it applies to the optional hyphen: the writer put it there to say
-    // a line may be broken inside this word, so it may — after it and never
-    // before it, the same as any other hyphen. What makes it different is what
-    // is drawn, which is the layout's business rather than this one's.
-    if right == Class::SoftHyphen {
-        return false;
-    }
-    if left == Class::SoftHyphen {
-        return true;
-    }
-
-    // LB21: a break is allowed after a hyphen and before a break-before, and
-    // never before a hyphen — "well-known" breaks after the hyphen, never in
-    // front of it.
-    if right == Class::Hyphen {
-        return false;
-    }
-    if left == Class::Hyphen {
-        // Except between two digits, where the hyphen is a minus sign or part
-        // of a number and breaking would read as arithmetic.
-        return right != Class::Numeric;
-    }
-    if left == Class::BreakAfter || right == Class::BreakBefore {
-        return true;
+impl Line {
+    fn of(characters: &[(usize, char)]) -> Self {
+        let characters: Vec<char> = characters.iter().map(|(_, character)| *character).collect();
+        let raw: Vec<Class> =
+            characters.iter().map(|character| resolved_class(*character)).collect();
+        let mut class = Vec::with_capacity(raw.len());
+        let mut base = Vec::with_capacity(raw.len());
+        for (at, own) in raw.iter().enumerate() {
+            // LB9: a mark or a joiner is part of the character before it,
+            // unless that character is one a mark cannot attach to. LB10: a
+            // mark with nothing to attach to is a letter.
+            let attached = matches!(own, Class::CM | Class::ZWJ)
+                && at > 0
+                && !matches!(
+                    raw[at - 1],
+                    Class::BK | Class::CR | Class::LF | Class::NL | Class::SP | Class::ZW
+                );
+            if attached {
+                class.push(class[at - 1]);
+                base.push(base[at - 1]);
+            } else if matches!(own, Class::CM | Class::ZWJ) {
+                class.push(Class::AL);
+                base.push(at);
+            } else {
+                class.push(*own);
+                base.push(at);
+            }
+        }
+        let in_number = Self::mark_numbers(&class, &base);
+        Self { characters, raw, class, base, in_number }
     }
 
-    // LB8a and LB23: an ideograph may be broken from anything, and anything
-    // from an ideograph, which is what makes text without spaces wrap at all.
-    if left == Class::Ideograph || right == Class::Ideograph {
-        return true;
+    /// LB25, as the standard's own example of tailoring writes it: a number
+    /// is `(PR | PO)? (OP | HY)? NU (NU | SY | IS)* (CL | CP)? (PR | PO)?`,
+    /// and nothing inside one is broken. The pairs the rule lists by
+    /// themselves would hold a per cent sign to any closing bracket and a
+    /// full stop to any digit; the expression holds them only where there
+    /// is a number for them to belong to, which is what the standard's own
+    /// test data expects.
+    ///
+    /// Every character that could begin a number is tried, and a boundary
+    /// inside any match is held — so "5% 3" and "1/2/3" are held throughout.
+    fn mark_numbers(class: &[Class], base: &[usize]) -> Vec<bool> {
+        let mut held = vec![false; class.len()];
+        // The characters that stand for themselves, which is what the
+        // expression is matched over: a mark inside a number is its base.
+        let bases: Vec<usize> = (0..class.len()).filter(|at| base[*at] == *at).collect();
+        let at = |index: usize| bases.get(index).map(|at| class[*at]);
+        let sign = |class: Option<Class>| matches!(class, Some(Class::PR | Class::PO));
+        for start in 0..bases.len() {
+            let mut end = start;
+            if sign(at(end)) {
+                end += 1;
+            }
+            if matches!(at(end), Some(Class::OP | Class::HY)) {
+                end += 1;
+            }
+            if at(end) != Some(Class::NU) {
+                continue;
+            }
+            while matches!(at(end), Some(Class::NU | Class::SY | Class::IS)) {
+                end += 1;
+            }
+            if matches!(at(end), Some(Class::CL | Class::CP)) {
+                end += 1;
+            }
+            if sign(at(end)) {
+                end += 1;
+            }
+            for index in start + 1..end {
+                held[bases[index]] = true;
+            }
+        }
+        held
     }
 
-    // LB28a, the standard's "complex context": Thai and Lao are written
-    // without spaces between the words, and where one word ends is a matter
-    // for a dictionary. What can be known without one is where a syllable
-    // begins, and a break is allowed there — never inside a syllable, and
-    // never between a vowel written before its consonant and that consonant.
-    // See the note on [`starts_syllable`].
-    if left == Class::Complex && right == Class::Complex {
-        return starts_syllable(after) && !leads_a_syllable(before);
-    }
-    // Against anything else the standard resolves these to ordinary letters,
-    // so a Thai word is not broken away from the Latin one it is joined to.
-    if left == Class::Complex || right == Class::Complex {
-        return false;
+    /// The class standing before a run of spaces that ends at `at`, or the
+    /// class before `at` when there is no run: what LB8 and LB14 to LB17 ask.
+    fn before_spaces(&self, at: usize) -> Option<Class> {
+        let mut index = at;
+        while index > 0 && self.raw[index - 1] == Class::SP {
+            index -= 1;
+        }
+        (index > 0).then(|| self.class[index - 1])
     }
 
-    // LB28 and LB29: two letters, or a letter and a digit, are the inside of a
-    // word and are never broken.
-    false
+    /// Whether a line may be broken before the character at `at`.
+    fn breaks_before(&self, at: usize) -> bool {
+        let (before, after) = (self.raw[at - 1], self.raw[at]);
+        let (left, right) = (self.class[at - 1], self.class[at]);
+
+        // LB4 and LB5: the breaks the text itself asks for, and nothing
+        // broken between a carriage return and its line feed.
+        if before == Class::BK {
+            return true;
+        }
+        if before == Class::CR && after == Class::LF {
+            return false;
+        }
+        if matches!(before, Class::CR | Class::LF | Class::NL) {
+            return true;
+        }
+        // LB6: nothing is broken away from a mandatory break.
+        if matches!(after, Class::BK | Class::CR | Class::LF | Class::NL) {
+            return false;
+        }
+        // LB7: never before a space or a zero width space.
+        if matches!(after, Class::SP | Class::ZW) {
+            return false;
+        }
+        // LB8: a zero width space, and any spaces after it, is a break.
+        if self.before_spaces(at) == Some(Class::ZW) {
+            return true;
+        }
+        // LB8a: never after a zero width joiner.
+        if before == Class::ZWJ {
+            return false;
+        }
+        // LB9: a mark stays with what it is attached to.
+        if self.base[at] != at {
+            return false;
+        }
+        // LB11: nothing is broken away from a word joiner.
+        if right == Class::WJ || left == Class::WJ {
+            return false;
+        }
+        // LB12 and LB12a: glue holds, and holds to what precedes it unless
+        // that is a space or a place to break after.
+        if left == Class::GL {
+            return false;
+        }
+        if right == Class::GL && !matches!(left, Class::SP | Class::BA | Class::HY) {
+            return false;
+        }
+        // LB13: never before closing punctuation, or the marks that cling.
+        if matches!(right, Class::CL | Class::CP | Class::EX | Class::IS | Class::SY) {
+            return false;
+        }
+        // LB14 to LB17: what holds across a run of spaces — an opening
+        // bracket to whatever follows, a quotation mark to an opening
+        // bracket, a closing bracket to a non-starter, one half of a break-
+        // both-ways to the other.
+        let ahead = self.before_spaces(at);
+        if ahead == Some(Class::OP) {
+            return false;
+        }
+        if ahead == Some(Class::QU) && right == Class::OP {
+            return false;
+        }
+        if matches!(ahead, Some(Class::CL | Class::CP)) && right == Class::NS {
+            return false;
+        }
+        if ahead == Some(Class::B2) && right == Class::B2 {
+            return false;
+        }
+        // LB18: after a space a break is allowed.
+        if before == Class::SP {
+            return true;
+        }
+        // LB19: a quotation mark could open or close, so nothing is broken
+        // either side of it.
+        if right == Class::QU || left == Class::QU {
+            return false;
+        }
+        // LB20: an inline object may be broken from either side.
+        if right == Class::CB || left == Class::CB {
+            return true;
+        }
+        // LB21: never before a hyphen, a break-after or a non-starter, and
+        // never after a break-before.
+        if matches!(right, Class::BA | Class::HY | Class::NS) || left == Class::BB {
+            return false;
+        }
+        // LB21a: a Hebrew letter holds the hyphen after it to what follows.
+        if matches!(left, Class::HY | Class::BA) {
+            let hyphen = self.base[at - 1];
+            if hyphen > 0 && self.class[hyphen - 1] == Class::HL {
+                return false;
+            }
+        }
+        // LB21b: a solidus holds to a Hebrew letter after it.
+        if left == Class::SY && right == Class::HL {
+            return false;
+        }
+        // LB22: never before an ellipsis.
+        if right == Class::IN {
+            return false;
+        }
+        // LB23 and LB23a: letters hold to digits, and a prefix to an
+        // ideograph or an emoji, and those to a postfix.
+        let letter = |class: Class| matches!(class, Class::AL | Class::HL);
+        let picture = |class: Class| matches!(class, Class::ID | Class::EB | Class::EM);
+        if (letter(left) && right == Class::NU) || (left == Class::NU && letter(right)) {
+            return false;
+        }
+        if (left == Class::PR && picture(right)) || (picture(left) && right == Class::PO) {
+            return false;
+        }
+        // LB24: a prefix or a postfix holds to a letter either way round.
+        let sign = |class: Class| matches!(class, Class::PR | Class::PO);
+        if (sign(left) && letter(right)) || (letter(left) && sign(right)) {
+            return false;
+        }
+        // LB25: a number holds together with the signs around it. See
+        // [`Self::mark_numbers`].
+        if self.in_number[at] {
+            return false;
+        }
+        // LB26 and LB27: a Hangul syllable spelled in jamo holds together,
+        // and holds to the signs round it.
+        let jamo = |class: Class| {
+            matches!(class, Class::JL | Class::JV | Class::JT | Class::H2 | Class::H3)
+        };
+        if left == Class::JL && matches!(right, Class::JL | Class::JV | Class::H2 | Class::H3) {
+            return false;
+        }
+        if matches!(left, Class::JV | Class::H2) && matches!(right, Class::JV | Class::JT) {
+            return false;
+        }
+        if matches!(left, Class::JT | Class::H3) && right == Class::JT {
+            return false;
+        }
+        if (jamo(left) && right == Class::PO) || (left == Class::PR && jamo(right)) {
+            return false;
+        }
+        // This program's tailoring of the standard's complex context: Thai
+        // and Lao are broken where a syllable begins. See
+        // [`starts_syllable`].
+        if class_of(self.characters[at - 1]) == Class::SA
+            && class_of(self.characters[at]) == Class::SA
+        {
+            return starts_syllable(self.characters[at])
+                && !leads_a_syllable(self.characters[at - 1]);
+        }
+        // LB28 and LB29: two letters are the inside of a word, and so is a
+        // full stop between a number and a letter.
+        if letter(left) && letter(right) {
+            return false;
+        }
+        if left == Class::IS && letter(right) {
+            return false;
+        }
+        // LB30: a letter or a digit holds to an opening bracket after it,
+        // and a closing bracket to one after it — unless the bracket is East
+        // Asian wide, where the room round it is the bracket's own.
+        let word = |class: Class| letter(class) || class == Class::NU;
+        let narrow = |index: usize| width_of(self.characters[self.base[index]]) == Width::Narrow;
+        if word(left) && right == Class::OP && narrow(at) {
+            return false;
+        }
+        if left == Class::CP && narrow(at - 1) && word(right) {
+            return false;
+        }
+        // LB30a: two regional indicators are one flag, and a flag may be
+        // broken from the next — so a break is allowed only after an even
+        // number of them.
+        if left == Class::RI && right == Class::RI {
+            let mut count = 0;
+            let mut index = at;
+            while index > 0 && self.class[index - 1] == Class::RI {
+                count += 1;
+                index = self.base[index - 1];
+            }
+            if count % 2 == 1 {
+                return false;
+            }
+        }
+        // LB30b: a skin tone stays with the emoji it colours — including one
+        // the database has reserved room for but not yet named.
+        if right == Class::EM
+            && (left == Class::EB
+                || tables::within(
+                    tables::RESERVED_PICTOGRAPHS,
+                    self.characters[self.base[at - 1]] as u32,
+                ))
+        {
+            return false;
+        }
+        // LB31: everywhere else.
+        true
+    }
 }
 
 /// Whether a character may begin a syllable of Thai or Lao.
@@ -267,25 +560,6 @@ fn clings_to_what_precedes(character: char) -> bool {
         // Lao, which is written the same way.
         | 0x0EAF..=0x0EBC | 0x0EC6..=0x0ECD
     )
-}
-
-/// Every place in a line where it may be broken, as byte offsets.
-///
-/// The offsets are the starts of the characters a break would put on the next
-/// line. Neither end of the text is one: a break there would move nothing.
-#[must_use]
-pub fn opportunities(text: &str) -> Vec<usize> {
-    let mut out = Vec::new();
-    let mut previous: Option<(usize, char)> = None;
-    for (offset, character) in text.char_indices() {
-        if let Some((_, before)) = previous {
-            if may_break(before, character) {
-                out.push(offset);
-            }
-        }
-        previous = Some((offset, character));
-    }
-    out
 }
 
 #[cfg(test)]
@@ -371,6 +645,136 @@ mod tests {
     fn a_line_break_in_the_text_is_a_break_wherever_it_falls() {
         assert!(may_break('\n', 'a'));
         assert!(!may_break('a', '\n'), "nothing is broken away from the break itself");
+    }
+}
+
+/// What the fold used to cost, each named in the roadmap and each now the
+/// standard's own answer.
+#[cfg(test)]
+mod unfolded {
+    use super::*;
+
+    #[test]
+    fn the_classes_are_the_standards_own() {
+        assert_eq!(class_of('a'), Class::AL);
+        assert_eq!(class_of('.'), Class::IS);
+        assert_eq!(class_of('!'), Class::EX);
+        assert_eq!(class_of(')'), Class::CP);
+        assert_eq!(class_of('」'), Class::CL);
+        assert_eq!(class_of('/'), Class::SY);
+        assert_eq!(class_of('—'), Class::B2);
+        assert_eq!(class_of('\u{00AD}'), Class::BA);
+        assert_eq!(class_of('\u{200D}'), Class::ZWJ);
+        assert_eq!(class_of('\u{1F1E6}'), Class::RI);
+        assert_eq!(class_of('\u{1F3FB}'), Class::EM);
+        assert_eq!(class_of('\u{1F466}'), Class::EB);
+        assert_eq!(class_of('\u{05D0}'), Class::HL);
+        assert_eq!(class_of('\u{0E01}'), Class::SA);
+        assert_eq!(resolved_class('\u{0E01}'), Class::AL);
+        assert_eq!(resolved_class('\u{0E31}'), Class::CM, "a Thai vowel above is a mark");
+        assert_eq!(resolved_class('ょ'), Class::NS);
+    }
+
+    #[test]
+    fn a_mark_takes_the_class_of_the_letter_it_is_drawn_on() {
+        // LB9 whole: a mark on a letter is the letter, so a mark on the last
+        // letter of a word before a space still lets the space break — and a
+        // mark on an ideograph is an ideograph, and may be broken from the
+        // next.
+        assert_eq!(opportunities("e\u{0301} f"), vec![4]);
+        assert_eq!(opportunities("日\u{0301}本"), vec![5]);
+        // A mark with nothing to attach to is a letter of its own.
+        assert!(!may_break('\u{0301}', 'a'));
+        assert!(!may_break('a', '\u{0301}'));
+    }
+
+    #[test]
+    fn a_skin_tone_stays_with_its_emoji_and_the_next_emoji_may_follow() {
+        // LB30b as written: the tone holds to an emoji base, and not to
+        // anything else.
+        assert!(!may_break('\u{1F466}', '\u{1F3FB}'));
+        assert!(may_break('\u{1F3FB}', '\u{1F466}'));
+        assert!(may_break('日', '\u{1F3FB}'), "a tone after an ideograph is not held");
+    }
+
+    #[test]
+    fn an_em_dash_may_be_broken_before_as_well_as_after() {
+        assert!(may_break('a', '—'));
+        assert!(may_break('—', 'a'));
+        // But not between two of them, and not from a space.
+        assert!(!may_break('—', '—'));
+    }
+
+    #[test]
+    fn a_solidus_holds_between_two_digits() {
+        // LB25: 1/2 is a fraction, and so is 1/2/3; a solidus with no number
+        // before it begins nothing.
+        assert!(opportunities("1/2").is_empty());
+        assert!(opportunities("1/2/3").is_empty());
+        assert!(may_break('/', '2'), "a solidus alone is not a number");
+        assert!(may_break('/', 'b'), "a solidus between letters still breaks after");
+    }
+
+    #[test]
+    fn a_sign_holds_to_a_number_and_to_nothing_else() {
+        // LB25 as the standard's example tailors it: "$1,500.00" and "20%"
+        // are numbers; a per cent sign after a closing bracket is not.
+        assert!(opportunities("$1,500.00").is_empty());
+        assert!(opportunities("20%").is_empty());
+        assert!(opportunities("(1)%").is_empty());
+        assert!(may_break('}', '%'));
+        assert!(may_break('.', '3'), "a full stop with no number before it begins nothing");
+        assert!(opportunities("5% 3").len() == 1);
+    }
+
+    #[test]
+    fn a_hangul_syllable_spelled_in_jamo_holds_and_two_syllables_break() {
+        // LB26: the jamo of one syllable hold together; between a trailing
+        // jamo and the next leading one a line may be broken.
+        assert!(!may_break('\u{1100}', '\u{1161}'));
+        assert!(!may_break('\u{1161}', '\u{11A8}'));
+        assert!(may_break('\u{11A8}', '\u{1100}'));
+    }
+
+    #[test]
+    fn two_regional_indicators_are_one_flag() {
+        let flag = "\u{1F1EC}\u{1F1E7}";
+        assert!(opportunities(flag).is_empty(), "a flag was broken in half");
+        let two = format!("{flag}{flag}");
+        assert_eq!(opportunities(&two), vec![8], "two flags may be broken between");
+    }
+
+    #[test]
+    fn a_hebrew_word_keeps_its_hyphen_to_what_follows() {
+        // LB21a.
+        assert!(opportunities("\u{05D0}-\u{05D1}").is_empty());
+        assert_eq!(opportunities("a-b"), vec![2]);
+    }
+
+    #[test]
+    fn a_narrow_bracket_holds_to_the_word_and_a_wide_one_does_not() {
+        // LB30: "word(" is one piece; a full-width bracket after an
+        // ideograph is its own.
+        assert!(!may_break('d', '('));
+        assert!(!may_break(')', 'w'));
+        assert!(may_break('日', '（'));
+        assert_eq!(width_of('（'), Width::Wide);
+        assert_eq!(width_of('('), Width::Narrow);
+    }
+
+    #[test]
+    fn a_run_of_spaces_is_looked_through() {
+        // LB14: an opening bracket holds across the spaces after it.
+        assert!(opportunities("(  a").is_empty());
+        // LB16: a closing bracket holds a non-starter across spaces.
+        assert!(opportunities(") ょ").is_empty());
+        // LB8: a zero width space breaks after its spaces.
+        assert_eq!(opportunities("a\u{200B}  b"), vec![6]);
+    }
+
+    #[test]
+    fn a_zero_width_joiner_holds_two_emoji_together() {
+        assert!(opportunities("\u{1F468}\u{200D}\u{1F469}").is_empty());
     }
 }
 
@@ -515,6 +919,7 @@ mod coverage {
         for code in 0..=0x10FFFFu32 {
             if let Some(character) = char::from_u32(code) {
                 let _ = class_of(character);
+                let _ = width_of(character);
             }
         }
         assert!(tables::in_order(), "the table is out of order");
@@ -525,7 +930,7 @@ mod coverage {
         // Extension B and the rest live above U+FFFF. A hand-written table
         // that stopped at the common ranges made a page of them one
         // unbreakable word.
-        assert_eq!(class_of('\u{20000}'), Class::Ideograph);
+        assert_eq!(class_of('\u{20000}'), Class::ID);
         assert!(may_break('\u{20000}', '\u{20001}'));
     }
 
@@ -537,18 +942,7 @@ mod coverage {
     }
 
     #[test]
-    fn a_hangul_syllable_spelled_in_jamo_is_not_broken_apart() {
-        // The consonants and vowels of one syllable are one syllable; a line
-        // broken between them reads as nonsense.
-        assert!(!may_break('\u{1100}', '\u{1161}'));
-        assert!(!may_break('\u{1161}', '\u{11A8}'));
-    }
-
-    #[test]
     fn a_mark_never_begins_a_line() {
-        // The standard gives a combining mark the class of the letter it is
-        // drawn on; here it is simply a letter, which comes to the same thing
-        // at a break.
         assert!(!may_break('a', '\u{0301}'));
         assert!(!may_break('\u{0915}', '\u{093F}'), "a Devanagari vowel sign");
     }
@@ -557,7 +951,7 @@ mod coverage {
     fn tibetan_breaks_at_its_own_mark() {
         // The tsheg is what separates Tibetan syllables, and the standard says
         // a line may be broken after it.
-        assert_eq!(class_of('\u{0F0B}'), Class::BreakAfter);
+        assert_eq!(class_of('\u{0F0B}'), Class::BA);
         assert!(may_break('\u{0F0B}', '\u{0F40}'));
     }
 }

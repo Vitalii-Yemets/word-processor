@@ -35,11 +35,12 @@
 //!
 //! The command reports how many cases each suite ran and how many passed, and
 //! writes the totals to `unicode/conformance.log` so they can be seen to
-//! move. It does not fail on a failing case. Line breaking here keeps
-//! seventeen classes where the standard has about forty, and that is written
-//! down in the roadmap rather than discovered again by a red build every
-//! morning; what is wanted from this is the number and the first few lines
-//! that produce it.
+//! move. It does not fail on a failing case. Where the engine tailors a rule
+//! on purpose — Thai is broken where a syllable begins, which the standard
+//! leaves to a dictionary — the case that says so fails every morning, and
+//! that is written down in the roadmap rather than discovered again by a red
+//! build; what is wanted from this is the number and the first few lines that
+//! produce it.
 
 use std::path::{Path, PathBuf};
 

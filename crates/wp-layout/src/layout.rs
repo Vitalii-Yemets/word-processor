@@ -8074,7 +8074,7 @@ fn push_piece(chunks: &mut Vec<Chunk>, piece: &str) {
 /// A non-breaking space is not: it is drawn wherever it falls, which is the
 /// whole point of it.
 fn collapses_at_a_line_end(character: char) -> bool {
-    character.is_whitespace() && wp_break::class_of(character) != wp_break::Class::Glue
+    character.is_whitespace() && wp_break::class_of(character) != wp_break::Class::GL
 }
 
 /// The first and last characters of a run's text, for deciding whether a line
