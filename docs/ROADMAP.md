@@ -2666,7 +2666,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   there is no grid to edit them in afterwards, which is what the workbook is
   written for Word to offer.
 
-- [ ] **D25. The layout language, and editing a diagram.** `layout1.xml` is
+- [x] **D25. The layout language, and editing a diagram.** `layout1.xml` is
   read here for one thing — the name of the arrangement it is — and the rest of
   it is not run: the algorithms, the constraints, the rules, the conditions and
   the `forEach` that walk the data model and place a shape for every point. A
@@ -2692,6 +2692,92 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the gallery's. What Word draws from it when the words change has not been
   checked against Word itself; the picture does not depend on it, because the
   drawing is written too.
+  *Done.* **The language runs.** `wp-docx/src/diagram/language.rs` reads a
+  layout definition and lays a data model out through it: the tree of
+  `layoutNode`s, `alg` with its parameters, `shape`, `presOf`, the
+  constraints — every `type` the definitions use, `for`/`forName`/`ptType`
+  on the target, `refType`/`refFor`/`refForName`/`refPtType` on what it
+  refers to, `op`, `val` and `fact`, and `w`/`h` in units of a sibling's
+  share — the rules that let a font shrink to a floor, `varLst`, `forEach`
+  with its axis, `ptType`, `st`, `cnt` and `hideLastTrans`, a named
+  `forEach` called again by `ref`, and `choose`/`if`/`else` with the
+  functions `cnt`, `depth`, `maxDepth`, `pos`, `revPos`, `posEven`, `posOdd`
+  and `var` and their comparisons. The axes are all twelve: `self`, `ch`,
+  `des`, `desOrSelf`, `par`, `ancst`, `ancstOrSelf`, `follow`, `followSib`,
+  `preced`, `precedSib` and `root`, over every point type including the
+  transitions. The algorithms are the ones the arrangements here use —
+  `lin` in both directions, `composite`, `hierRoot` and `hierChild` with the
+  elbow lines drawn between a parent and its children, `cycle` with its
+  connectors turned along the ring, `snake` in rows that may turn back,
+  `pyra`, `tx`, `sp` and `conn` — and a definition is sized, then placed,
+  then its words fitted, so a box that is given its room before its words
+  are measured gets the font the rules allow.
+  **Six arrangements written in it.** The process, the vertical box list,
+  the hierarchy, the cycle, the pyramid and the block list are each a
+  definition in the language, written into `layoutN.xml` when a diagram is
+  made, and read back out and run: nothing about a diagram made here is
+  remembered outside its file. A file whose diagram has no drawing is laid
+  out from whatever layout part it carries.
+  **The drawing, read whole and rewritten.** `dsp:txXfrm` is read, and the
+  words go in the rectangle it names; `dsp:style` names the theme's line,
+  fill and font by index, and a shape that states no colour of its own is
+  drawn in those; a gradient where the fill is is read as one. The quick
+  style and the colour list are read now, `wp-docx/src/diagram/styles.rs` —
+  the label's fill, line and text, the accent it names, and the three ways a
+  colourful list hands its colours out, repeating, cycling and spanning — so
+  a diagram whose drawing is lost is drawn in the colours its parts ask for.
+  And when the words change the drawing is written again from the layout
+  into the frame, so what the file carries is never stale.
+  **Editing.** Choosing a diagram brings up Word's two tabs, *SmartArt
+  Design* and *Format*, and opens the Text Pane, `chrome/textpane.rs` and
+  `editor/textpane.rs`: the words as a bulleted outline, typed into, with
+  Enter for a new box, Backspace at the start to join it to the one above,
+  Tab to hang it under that one and Shift+Tab to lift it out, the arrows and
+  Home and End to move about. The tab has Add Shape, Promote, Demote, Move
+  Up, Move Down, Right to Left, Text Pane, the Layouts gallery, Change
+  Colors, and Reset Graphic; *Format* has Larger and Smaller, which scale
+  the frame and lay the diagram out again into it. A row of boxes asked to
+  be a hierarchy hangs the rest under the first; a tree asked to be a
+  process shows its deeper words as bullets in the box, as Word's does.
+  Every one of those is one step of undo: a diagram's words and picture live
+  in parts of the package, so the history keeps those parts with the tree
+  and puts them back — `Kept::WithParts` in `wp-docx/src/history.rs`.
+  *Proven by:* `language.rs` — the model and its points, every axis, `st`
+  and `cnt`, the conditions, a process definition laying boxes across with
+  arrows between, and words that shrink to the floor; `styles.rs` — the
+  three ways of handing out colours and the label lookups; `diagram.rs` —
+  each of the six arrangements measured, words centred in their box, the
+  data model's tree written and read back, the drawing round trip, the
+  style fallback, a gradient, the colour lists, and the rehanging;
+  `tests/diagrams.rs` — the parts in the package; `editor/textpane.rs` —
+  the tab and the pane on choosing, typing that changes the picture, Enter
+  and Backspace, Tab and Shift+Tab, moving, Add Shape, the layout and the
+  colours changed and the file saying so, Right to Left and Reset, Larger
+  and Smaller, one undo per edit, and Escape and the other panes shutting
+  it.
+  *Not done, and named:* the definitions are this program's, simpler than
+  the gallery's hundred and thirty, and none of the gallery's files are
+  here to run — a file that carries one is laid out by it, and what that
+  looks like has not been checked against Word, nor has what Word draws
+  from the definitions written here. The algorithms are the seven the
+  arrangements use, and not every parameter of those: `hierChild` follows
+  `chDir` and not `linDir`, `secLinDir`, `chAlign` or `hierAlign`; `cycle`
+  follows `stAng`, `spanAng` and `ctrShpMap` and not `rotPath`; `snake`
+  follows `contDir`, `bkpt` and `bkPtFixedVal` and not `grDir` or `flowDir`;
+  `lin`'s `fallback` is read past; and a `constr` whose `type` is one of the
+  distances on a connector (`begPad`, `endPad`, `bendDist`) is kept but
+  changes nothing. Words are measured by an estimate — six-tenths of an em a
+  character, a leading of one and a fifth — not by the font, so a box's font
+  size may differ from Word's by a step. A one-dimensional connector — the
+  elbow between a parent and its children, the line between two shapes of a
+  cycle — is drawn as bars a point wide, where Word draws it but not as the
+  `bentConnector3` or the arrow Word draws; a connector's own preset is
+  honoured only in a drawing Word wrote. The Format tab has no shape fill,
+  outline or text effects of its own, and the SmartArt Styles gallery is
+  Change Colors alone: the quick styles beyond the first are not offered.
+  Three-dimensional and animation parameters are read past. The Text Pane
+  does not select a box in the picture when a line is chosen, nor does
+  clicking a box move the pane's caret.
 
 - [ ] **D26. A shape drawn in the theme's colours.** `a:schemeClr` where a
   colour is asked for. A diagram's drawing has this now — the slot and the

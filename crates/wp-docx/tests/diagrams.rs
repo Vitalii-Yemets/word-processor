@@ -134,8 +134,9 @@ fn what_is_drawn_is_a_shape_for_every_box_with_its_words_in_it() {
     let diagram = document.diagram(&reference).expect("the diagram");
     let drawing = diagram.drawing.expect("the drawing");
 
-    // Three boxes and the two arrows between them.
-    assert_eq!(drawing.members.len(), 5);
+    // Three boxes and the two arrows between them, and the words of each
+    // box as a member of their own, hung in the middle of it.
+    assert_eq!(drawing.members.len(), 8);
     let words: Vec<String> = drawing
         .members
         .iter()

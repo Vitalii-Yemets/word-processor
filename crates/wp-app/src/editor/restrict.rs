@@ -103,6 +103,7 @@ impl Editor {
         self.show_styles = false;
         self.show_signatures = false;
         self.show_mapping = false;
+        self.show_text_pane = false;
         self.show_restrict = true;
         self.clamp_scroll();
         self.needs_redraw = true;

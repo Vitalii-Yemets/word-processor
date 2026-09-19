@@ -9,6 +9,7 @@ use wp_shell::Response;
 
 use crate::chrome::findbar::{FindBar, Purpose};
 use crate::chrome::{Choice, Command, Popup};
+use crate::messages::{t, with};
 
 use super::Editor;
 
@@ -23,7 +24,7 @@ impl Editor {
         };
 
         let items =
-            Arrangement::ALL.iter().map(|entry| entry.label().to_owned()).collect::<Vec<_>>();
+            Arrangement::ALL.iter().map(|entry| t(entry.label()).to_owned()).collect::<Vec<_>>();
         self.popup = Some(Popup::new(Choice::Diagram, items, None, left, top, 240.0));
         self.needs_redraw = true;
         Response::Redraw
@@ -40,7 +41,7 @@ impl Editor {
         self.find_bar = Some(FindBar::for_purpose(Purpose::Diagram));
         self.clamp_scroll();
         self.needs_redraw = true;
-        self.report("Type what the boxes say, with semicolons between them")
+        self.report(t("Type what the boxes say, with semicolons between them"))
     }
 
     /// Draws the diagram.
@@ -56,7 +57,7 @@ impl Editor {
             .filter(|part| !part.is_empty())
             .collect();
         if items.is_empty() {
-            return self.report("Nothing was typed, so no diagram was drawn");
+            return self.report(t("Nothing was typed, so no diagram was drawn"));
         }
 
         let room = self.text_width_emu();
@@ -64,11 +65,18 @@ impl Editor {
             Ok(true) => {
                 self.relayout();
                 self.reveal_caret();
-                let named = self.diagram_arrangement.label();
-                self.edited(true, &format!("{named}, {} boxes", items.len()))
+                // The diagram comes up chosen, with its tab and its Text Pane,
+                // which is how Word hands a new one over.
+                self.choose_drawing_here();
+                self.note_diagram_chosen();
+                self.open_text_pane();
+                let named = t(self.diagram_arrangement.label());
+                self.edited(true, &with("{0}, {1} boxes", &[named, &items.len().to_string()]))
             }
-            Ok(false) => self.report("The diagram could not be drawn"),
-            Err(error) => self.report(&format!("The diagram could not be drawn: {error}")),
+            Ok(false) => self.report(t("The diagram could not be drawn")),
+            Err(error) => {
+                self.report(&with("The diagram could not be drawn: {0}", &[&error.to_string()]))
+            }
         }
     }
 }

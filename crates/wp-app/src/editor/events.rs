@@ -482,6 +482,14 @@ impl Editor {
                         Response::Ignored
                     };
                 }
+                if self.over_text_pane(self.pointer_x as i32) {
+                    return if self.text_pane.scroll_by(-lines * super::PANE_STEP) {
+                        self.needs_redraw = true;
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    };
+                }
                 // Over the navigation pane the wheel scrolls the outline.
                 // The wheel over the styles pane scrolls its list.
                 if self.over_styles_pane(self.pointer_x as i32) {
@@ -663,6 +671,10 @@ impl Editor {
                 }
                 if self.show_navigation && self.navigation.searching {
                     return self.type_into_search(character);
+                }
+                // The Text Pane takes typing for the chosen diagram's words.
+                if self.text_pane_has_keyboard() {
+                    return self.text_pane_character(character);
                 }
                 if self.is_locked() {
                     return self.refuse_locked();
@@ -960,6 +972,9 @@ impl Editor {
         }
         if self.over_mapping_pane(x) && (y as f32) > self.ribbon_bottom() {
             return self.mapping_pane_press(x, y);
+        }
+        if self.over_text_pane(x) && (y as f32) > self.ribbon_bottom() {
+            return self.text_pane_press(x, y);
         }
         if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
             return self.restrict_pane_press(x, y);
@@ -1503,6 +1518,13 @@ impl Editor {
             }
             return Response::Redraw;
         }
+        if self.over_text_pane(x) && (y as f32) > self.ribbon_bottom() {
+            let changed = self.text_pane_hover(x, y);
+            if changed {
+                self.needs_redraw = true;
+            }
+            return Response::Redraw;
+        }
         if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
             let changed = self.restrict_pane_hover(x, y);
             if changed {
@@ -1662,6 +1684,8 @@ impl Editor {
             Choice::Rule => Command::Rules,
             Choice::Macro => Command::Macros,
             Choice::Diagram => Command::SmartArt,
+            Choice::DiagramLayout => Command::DiagramLayouts,
+            Choice::DiagramColours => Command::DiagramColours,
             Choice::Screenshot => Command::Screenshot,
             Choice::OutlineLevel => Command::OutlineView,
             Choice::MatchField | Choice::MatchColumn => Command::MatchFields,
@@ -1817,6 +1841,8 @@ impl Editor {
             | Choice::Rule
             | Choice::Macro
             | Choice::Diagram
+            | Choice::DiagramLayout
+            | Choice::DiagramColours
             | Choice::Screenshot
             | Choice::OutlineLevel
             | Choice::MatchField
@@ -1919,6 +1945,8 @@ impl Editor {
             Choice::Rule => self.choose_rule(index),
             Choice::Macro => self.choose_macro(index),
             Choice::Diagram => self.choose_diagram(index),
+            Choice::DiagramLayout => self.choose_diagram_layout(index),
+            Choice::DiagramColours => self.choose_diagram_colours(index),
             Choice::Screenshot => self.choose_screenshot(index),
             Choice::OutlineLevel => self.choose_outline_level(index),
             Choice::MatchField => self.choose_match_field(index),
@@ -2003,6 +2031,19 @@ impl Editor {
                     return self.step_box(command, key == Key::Up);
                 }
                 _ => return Response::Ignored,
+            }
+        }
+
+        // The Text Pane takes the keys that walk and edit the chosen
+        // diagram's words, while it is open with a diagram chosen.
+        if self.text_pane_has_keyboard()
+            && !modifiers.control
+            && self.popup.is_none()
+            && !self.showing_key_tips()
+        {
+            let response = self.text_pane_key(key, modifiers);
+            if response != Response::Ignored {
+                return response;
             }
         }
 

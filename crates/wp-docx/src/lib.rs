@@ -636,13 +636,54 @@ impl Document {
             history::Kept::Paragraph { index, .. } => self
                 .kept_paragraph(*index)
                 .unwrap_or_else(|| history::Kept::Whole(self.tree.clone())),
+            history::Kept::WithParts { parts, .. } => {
+                let names: Vec<&str> = parts.iter().map(|(name, _)| name.as_str()).collect();
+                self.kept_with_parts(&names)
+            }
         }
+    }
+
+    /// The whole tree and some parts of the package as they are now.
+    fn kept_with_parts(&self, names: &[&str]) -> history::Kept {
+        let parts = names
+            .iter()
+            .filter_map(|name| Some(((*name).to_owned(), self.package.part(name)?.to_vec())))
+            .collect();
+        history::Kept::WithParts { tree: self.tree.clone(), parts }
+    }
+
+    /// Records the current state, tree and named parts of the package, so a
+    /// change to those parts can be taken back.
+    pub(crate) fn record_with_parts(&mut self, ends_at: TextPosition, names: &[&str]) {
+        if self.gesture_depth > 0 {
+            if self.gesture_noted {
+                return;
+            }
+            self.gesture_noted = true;
+        }
+        let kept = self.kept_with_parts(names);
+        let caret = if self.gesture_depth > 0 { self.gesture_caret } else { self.caret };
+        self.history.record(
+            kept,
+            &self.main_part,
+            caret,
+            self.modified,
+            EditKind::Structural,
+            ends_at,
+            false,
+        );
     }
 
     /// Puts a kept state back where it came from.
     fn put_back(&mut self, kept: history::Kept) {
         match kept {
             history::Kept::Whole(tree) => self.tree = tree,
+            history::Kept::WithParts { tree, parts } => {
+                self.tree = tree;
+                for (name, bytes) in parts {
+                    self.package.set_part(&name, bytes);
+                }
+            }
             history::Kept::Paragraph { index, element } => {
                 let Some(path) = position::paragraph_path(&self.tree.root, index) else { return };
                 if let Some(target) = edit::element_at_path_mut(&mut self.tree.root, &path) {

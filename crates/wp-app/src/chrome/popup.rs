@@ -131,6 +131,10 @@ pub enum Choice {
     Macro,
     /// The arrangements a diagram can take.
     Diagram,
+    /// The same, for a diagram already in the document.
+    DiagramLayout,
+    /// Which of the theme's colours a diagram is drawn in.
+    DiagramColours,
     /// The printers this machine can reach.
     Printer,
     /// Which pages of the document go to one.

@@ -30,6 +30,7 @@ impl Editor {
             self.show_restrict = false;
             self.show_signatures = false;
             self.show_mapping = false;
+            self.show_text_pane = false;
         }
         self.clamp_scroll();
         self.needs_redraw = true;

@@ -49,6 +49,11 @@ pub(crate) enum Kept {
     Whole(XmlTree),
     /// One paragraph as it was, and where it sat.
     Paragraph { index: usize, element: Box<Element> },
+    /// The whole tree and some parts of the package as they were, for a
+    /// change that lives in the parts as much as in the tree: a diagram's
+    /// words are in a part of their own, and undoing an edit to them has to
+    /// put that part back.
+    WithParts { tree: XmlTree, parts: Vec<(String, Vec<u8>)> },
 }
 
 /// One recoverable state of the document.

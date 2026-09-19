@@ -1070,6 +1070,7 @@ fn read_chart_reference(drawing: &Element) -> Option<crate::model::ChartReferenc
 fn read_diagram_reference(drawing: &Element) -> Option<crate::model::DiagramReference> {
     let ids = find_named(drawing, "relIds")?;
     let data = ids.attribute(Some(RELATIONSHIPS), "dm")?.to_owned();
+    let named = |name: &str| ids.attribute(Some(RELATIONSHIPS), name).unwrap_or("").to_owned();
     let (width, height) = drawing_extent(drawing);
 
     // The name and the description are the drawing's own rather than the
@@ -1084,6 +1085,9 @@ fn read_diagram_reference(drawing: &Element) -> Option<crate::model::DiagramRefe
     };
     Some(crate::model::DiagramReference {
         relationship: data,
+        layout: named("lo"),
+        style: named("qs"),
+        colours: named("cs"),
         name: attribute("name"),
         description: attribute("descr"),
         width_emu: width,

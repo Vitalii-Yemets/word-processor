@@ -33,6 +33,7 @@
 = Accept All
 = Accessibility
 = Add
+= Add Shape
 = Add Source
 = Add Users
 = Add new part
@@ -87,6 +88,10 @@
 = Banded
 = Banded Columns
 = Banded Rows
+= Basic Block List
+= Basic Cycle
+= Basic Process
+= Basic Pyramid
 = Before:
 = Below
 = Between dashes
@@ -142,6 +147,7 @@
 = Centimeters
 = Centred
 = Certificate
+= Change Colors
 = Change Password
 = Change how the text is corrected as you type
 = Changes
@@ -154,6 +160,8 @@
 = Check for Errors
 = Checked styles are currently allowed
 = Choose a column to sort by
+= Choose a diagram to add a box to
+= Choose a diagram to type its words here.
 = Choose a node of the part to bind a control to
 = Choose commands from
 = Choose one to put it in, to refile it, or to take it away.
@@ -171,6 +179,13 @@
 = Clustered Column
 = Code
 = Color
+= Colored Fill - Accent 1
+= Colored Fill - Accent 2
+= Colored Fill - Accent 3
+= Colored Fill - Accent 4
+= Colored Fill - Accent 5
+= Colored Fill - Accent 6
+= Colorful - Accent Colors
 = Colors
 = Column
 = Columns
@@ -205,6 +220,7 @@
 = Cover Pages
 = Cover page taken off
 = Create
+= Create Graphic
 = Create New Building Block
 = Create a PDF
 = Cross-reference
@@ -228,6 +244,7 @@
 = Delete Row
 = Delete Table
 = Delete part
+= Demote
 = Description
 = Design
 = Design Mode
@@ -275,6 +292,7 @@
 = Encrypt Document
 = Encrypt with Password
 = End lines with
+= Enter adds a box, Tab hangs one under the last, Shift+Tab lifts it out.
 = Enter new password (optional)
 = Envelopes
 = Equation
@@ -312,6 +330,7 @@
 = Footnotes
 = Footnotes and endnotes
 = For the line of {0}
+= Format
 = Format Page Numbers
 = Format Painter
 = Formatting
@@ -349,6 +368,7 @@
 = Hidden
 = Hide White Space
 = Hide spelling errors in this document only
+= Hierarchy
 = Highlight
 = Highlight the regions I can edit
 = Holding
@@ -396,9 +416,11 @@
 = Kerning from
 = Labels
 = Language
+= Larger
 = Last Column
 = Last Name
 = Layout
+= Layouts
 = Leader
 = Left
 = Left:
@@ -473,6 +495,7 @@
 = None
 = Normal
 = Nothing is restricted: tick one of the two boxes
+= Nothing was typed, so no diagram was drawn
 = Number format
 = OK
 = Office display language
@@ -571,6 +594,7 @@
 = Print on Both Sides
 = Printing stopped after {0} sheets
 = Project
+= Promote
 = Proofing
 = Properties
 = Protect
@@ -608,6 +632,7 @@
 = Replaced one of "{0}"
 = Requested signatures
 = Reset
+= Reset Graphic
 = Restrict Editing
 = Restricted to
 = Restricted to: {0}
@@ -620,6 +645,7 @@
 = Rich Text
 = Rich Text Format (*.rtf)
 = Right
+= Right to Left
 = Right:
 = Rotate
 = Row
@@ -687,7 +713,10 @@
 = Single File Web Page (*.mht;*.mhtml)
 = Size
 = Small caps
+= Smaller
 = SmartArt
+= SmartArt Design
+= SmartArt Styles
 = Sort
 = Sort by
 = Sort, filter and check
@@ -745,6 +774,7 @@
 = Text Boxes
 = Text Direction
 = Text Files (*.txt)
+= Text Pane
 = Text Wrapping
 = Text boxes
 = Text encoding
@@ -762,6 +792,8 @@
 = The caret is not in a repeating section
 = The chart could not be drawn: {0}
 = The contents of this control cannot be edited
+= The diagram could not be drawn
+= The diagram could not be drawn: {0}
 = The document is not encrypted.
 = The document is unreadable without it.
 = The file types could not be registered
@@ -837,6 +869,8 @@
 = Type the points: title; x=y:size; x=y:size
 = Type the points: title; x=y; x=y
 = Type what a row has to hold
+= Type what the boxes say, with semicolons between them
+= Type your text here
 = Underline
 = Undo
 = Unprotect Document
@@ -847,6 +881,7 @@
 = Use contextual alternates
 = Valid signatures
 = Validate
+= Vertical Box List
 = Video
 = View
 = View Gridlines
@@ -902,6 +937,7 @@
 = Your permissions
 = Z to A
 = Zoom
+= [Text]
 = in this machine's store
 = locked
 = off
@@ -946,5 +982,6 @@
 = {0} was not kept
 = {0} words
 = {0} {1}
+= {0}, {1} boxes
 = {0}x{1} Table
 = “Straight quotes” with “smart quotes”

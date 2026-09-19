@@ -39,6 +39,7 @@ pub mod scrollbar;
 pub mod signaturepane;
 pub mod status;
 pub mod stylespane;
+pub mod textpane;
 pub mod theme;
 pub mod tip;
 pub mod titlebar;
@@ -112,6 +113,21 @@ pub enum Command {
     SignatureLine,
     TextFromFile,
     SmartArt,
+    /// The SmartArt Design tab: the words of a chosen diagram, and how it
+    /// is drawn.
+    DiagramAddShape,
+    DiagramPromote,
+    DiagramDemote,
+    DiagramMoveUp,
+    DiagramMoveDown,
+    DiagramRightToLeft,
+    DiagramTextPane,
+    DiagramLayouts,
+    DiagramColours,
+    DiagramReset,
+    /// And its Format tab: the frame grown or shrunk.
+    DiagramLarger,
+    DiagramSmaller,
     Macros,
     OnlineVideo,
     Equation,
@@ -733,6 +749,11 @@ pub struct ToolbarState {
     /// Whether a header or a footer is being edited, which is what puts the
     /// Header & Footer tab on the ribbon.
     pub in_furniture: bool,
+    /// Whether a diagram is chosen, which is when its two tabs show.
+    pub in_diagram: bool,
+    /// Whether the diagram's Text Pane is open, for its button to show
+    /// pressed.
+    pub text_pane_open: bool,
     /// Which list is dropped open, so its field stays lit while it is.
     pub open: Option<Choice>,
 }
@@ -826,6 +847,7 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
         Command::AlignCell(which) => state.cell_alignment == Some(which),
         Command::ShowMarkup => state.show_markup,
         Command::BorderPainter => state.painting_borders,
+        Command::DiagramTextPane => state.text_pane_open,
         Command::DrawTable => state.drawing_table,
         Command::Eraser => state.erasing,
         Command::ShowProofing => state.show_proofing,

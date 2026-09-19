@@ -1792,14 +1792,41 @@ impl Editor {
             "diagrams" => {
                 use wp_docx::diagram::Arrangement;
 
-                let room = self.text_width_emu();
-                for arrangement in Arrangement::ALL {
-                    let items: Vec<String> =
-                        ["Plan", "Draw", "Check"].iter().map(|item| (*item).to_owned()).collect();
+                let room = self.text_width_emu() / 2;
+                for arrangement in Arrangement::ALL.iter().rev() {
+                    let items: Vec<String> = ["Plan", "Draw", "Check", "Ship", "Review"]
+                        .iter()
+                        .map(|item| (*item).to_owned())
+                        .collect();
                     self.document.set_caret(wp_docx::TextPosition::new(2, 0));
                     let _ = self.document.insert_diagram(*arrangement, &items, room);
                 }
                 self.relayout();
+                self.reveal_caret();
+            }
+            // A diagram chosen, with its tab up and the Text Pane open on
+            // its words: the third line is being typed into.
+            "textpane" => {
+                use wp_docx::diagram::{Arrangement, Node};
+
+                let room = self.text_width_emu() * 2 / 3;
+                let tree = vec![Node {
+                    text: "Head office".to_owned(),
+                    children: vec![
+                        Node { text: "North".to_owned(), children: vec![Node::new("Leeds")] },
+                        Node::new("South"),
+                        Node::new("Overseas"),
+                    ],
+                }];
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                let _ = self.document.insert_diagram_of(Arrangement::Hierarchy, &tree, room);
+                self.relayout();
+                self.choose_drawing_here();
+                self.note_diagram_chosen();
+                self.open_text_pane();
+                self.diagram_line = 2;
+                self.diagram_caret = 5;
+                self.reveal_caret();
             }
             // Two series drawn every way a chart can be drawn, each with a key
             // naming the series and the number written on every point.

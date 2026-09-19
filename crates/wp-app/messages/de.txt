@@ -74,6 +74,9 @@ language = Deutsch
 = A password that is lost cannot be recovered.
 > Ein verlorenes Kennwort kann nicht wiederhergestellt werden.
 
+= Add Shape
+> Form hinzufügen
+
 = Add new part
 > Neue Komponente hinzufügen
 
@@ -248,6 +251,18 @@ language = Deutsch
 = Banded Rows
 > Verbundene Zeilen
 
+= Basic Block List
+> Einfache Blockliste
+
+= Basic Cycle
+> Einfacher Kreis
+
+= Basic Process
+> Einfacher Prozess
+
+= Basic Pyramid
+> Einfache Pyramide
+
 = Before:
 > Vor:
 
@@ -413,6 +428,9 @@ language = Deutsch
 = Certificate
 > Zertifikat
 
+= Change Colors
+> Farben ändern
+
 = Change how the text is corrected as you type
 > Ändern, wie Text während der Eingabe korrigiert wird
 
@@ -440,6 +458,12 @@ language = Deutsch
 = Chart
 > Diagramm
 
+= Choose a diagram to add a box to
+> Wählen Sie ein Diagramm, dem ein Feld hinzugefügt werden soll
+
+= Choose a diagram to type its words here.
+> Wählen Sie ein Diagramm, um hier seinen Text einzugeben.
+
 = Choose a node of the part to bind a control to
 > Wählen Sie einen Knoten der Komponente, dem ein Steuerelement zugeordnet wird
 
@@ -454,6 +478,27 @@ language = Deutsch
 
 = Clustered Column
 > Gruppierte Säulen
+
+= Colored Fill - Accent 1
+> Farbige Füllung - Akzent 1
+
+= Colored Fill - Accent 2
+> Farbige Füllung - Akzent 2
+
+= Colored Fill - Accent 3
+> Farbige Füllung - Akzent 3
+
+= Colored Fill - Accent 4
+> Farbige Füllung - Akzent 4
+
+= Colored Fill - Accent 5
+> Farbige Füllung - Akzent 5
+
+= Colored Fill - Accent 6
+> Farbige Füllung - Akzent 6
+
+= Colorful - Accent Colors
+> Farbig - Akzentfarben
 
 = Column
 > Spalte
@@ -499,6 +544,9 @@ language = Deutsch
 
 = Cover page taken off
 > Deckblatt entfernt
+
+= Create Graphic
+> Grafik erstellen
 
 = Create New Building Block
 > Neuen Baustein erstellen
@@ -656,6 +704,9 @@ language = Deutsch
 = Delete Repeating Section Item
 > Wiederholungsabschnittselement löschen
 
+= Demote
+> Tiefer stufen
+
 = Design Mode
 > Entwurfsmodus
 
@@ -812,6 +863,9 @@ language = Deutsch
 = End lines with
 > Zeilen beenden mit
 
+= Enter adds a box, Tab hangs one under the last, Shift+Tab lifts it out.
+> Eingabe fügt ein Feld hinzu, Tab stuft es unter das vorige, Umschalt+Tab hebt es wieder heraus.
+
 = Enter new password (optional)
 > Neues Kennwort eingeben (optional)
 
@@ -923,6 +977,9 @@ language = Deutsch
 = For the line of {0}
 > Für die Zeile von {0}
 
+= Format
+> Format
+
 = Format Page Numbers
 > Seitenzahlen formatieren
 
@@ -1033,6 +1090,9 @@ language = Deutsch
 
 = Hide spelling errors in this document only
 > Rechtschreibfehler nur in diesem Dokument ausblenden
+
+= Hierarchy
+> Hierarchie
 
 = Highlight
 > Texthervorhebungsfarbe
@@ -1175,6 +1235,9 @@ language = Deutsch
 = Language
 > Sprache
 
+= Larger
+> Größer
+
 = Last Column
 > Letzte Spalte
 
@@ -1183,6 +1246,9 @@ language = Deutsch
 
 = Layout
 > Layout
+
+= Layouts
+> Layouts
 
 = Leader
 > Füllzeichen
@@ -1277,6 +1343,9 @@ language = Deutsch
 = Nothing is restricted: tick one of the two boxes
 > Nichts ist eingeschränkt: eines der beiden Kästchen ankreuzen
 
+= Nothing was typed, so no diagram was drawn
+> Es wurde nichts eingegeben, daher wurde kein Diagramm gezeichnet
+
 = On a grey band
 > Auf grauem Band
 
@@ -1337,6 +1406,9 @@ language = Deutsch
 = Project
 > Projekt
 
+= Promote
+> Höher stufen
+
 = Put one and its key in this folder, or use one the machine holds:
 > Eines mit seinem Schlüssel in diesen Ordner legen oder eines aus dem Speicher des Rechners verwenden:
 
@@ -1361,6 +1433,9 @@ language = Deutsch
 = Requested signatures
 > Angeforderte Signaturen
 
+= Reset Graphic
+> Grafik zurücksetzen
+
 = Restricted to: {0}
 > Eingeschränkt auf: {0}
 
@@ -1369,6 +1444,9 @@ language = Deutsch
 
 = Retry
 > Wiederholen
+
+= Right to Left
+> Von rechts nach links
 
 = Run
 > Ausführen
@@ -1415,6 +1493,15 @@ language = Deutsch
 = Signed as
 > Signiert als
 
+= Smaller
+> Kleiner
+
+= SmartArt Design
+> SmartArt-Design
+
+= SmartArt Styles
+> SmartArt-Formatvorlagen
+
 = Source
 > Quellcode
 
@@ -1445,6 +1532,9 @@ language = Deutsch
 = Text Boxes
 > Textfelder
 
+= Text Pane
+> Textbereich
+
 = Text boxes
 > Textfelder
 
@@ -1470,6 +1560,12 @@ language = Deutsch
 > Die Einfügemarke steht nicht in einem Wiederholungsabschnitt
 
 = The chart could not be drawn: {0}
+> Das Diagramm konnte nicht gezeichnet werden: {0}
+
+= The diagram could not be drawn
+> Das Diagramm konnte nicht gezeichnet werden
+
+= The diagram could not be drawn: {0}
 > Das Diagramm konnte nicht gezeichnet werden: {0}
 
 = The last item of a repeating section stays
@@ -1562,8 +1658,17 @@ language = Deutsch
 = Type the points: title; x=y; x=y
 > Punkte eingeben: Titel; x=y; x=y
 
+= Type what the boxes say, with semicolons between them
+> Geben Sie den Text der Felder ein, durch Semikolons getrennt
+
+= Type your text here
+> Geben Sie hier Ihren Text ein
+
 = Valid signatures
 > Gültige Signaturen
+
+= Vertical Box List
+> Vertikale Feldliste
 
 = Visual Basic Editor
 > Visual Basic-Editor
@@ -1612,6 +1717,9 @@ language = Deutsch
 
 = Your permissions
 > Ihre Berechtigungen
+
+= [Text]
+> [Text]
 
 = in this machine's store
 > im Speicher dieses Rechners
@@ -2827,6 +2935,9 @@ language = Deutsch
 
 = {0} {1}
 > {0} {1}
+
+= {0}, {1} boxes
+> {0}, {1} Felder
 
 = {0}x{1} Table
 > Tabelle {0}x{1}

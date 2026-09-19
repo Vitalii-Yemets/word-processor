@@ -803,6 +803,10 @@ impl InkReference {
 pub struct DiagramReference {
     /// The relationship of the main document that reaches the data model.
     pub relationship: String,
+    /// And the ones that reach the layout, the quick style and the colours.
+    pub layout: String,
+    pub style: String,
+    pub colours: String,
     /// What the drawing is called, which is what a list of drawings shows.
     pub name: String,
     /// What it shows, said in words, for anyone who cannot see it.

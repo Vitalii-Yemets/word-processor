@@ -111,6 +111,7 @@ mod tablespots;
 mod tablestyle;
 mod tablework;
 mod tabsdialog;
+mod textpane;
 mod theme_effects;
 mod themes;
 mod thesaurus;
@@ -549,6 +550,13 @@ pub struct Editor {
     /// [`mapping`].
     show_mapping: bool,
     mapping_pane: crate::chrome::mappingpane::MappingPane,
+    /// Word's Text Pane, for the chosen diagram's words, and where the
+    /// caret stands in them: which line, and how far along it. See
+    /// [`textpane`].
+    show_text_pane: bool,
+    text_pane: crate::chrome::textpane::TextPane,
+    diagram_line: usize,
+    diagram_caret: usize,
     mapping_part: usize,
     mapping_row: Option<usize>,
     has_bindings: bool,
@@ -830,6 +838,10 @@ impl Editor {
             restrict_pane: crate::chrome::restrictpane::RestrictPane::new(),
             show_mapping: false,
             mapping_pane: crate::chrome::mappingpane::MappingPane::new(),
+            show_text_pane: false,
+            text_pane: crate::chrome::textpane::TextPane::new(),
+            diagram_line: 0,
+            diagram_caret: usize::MAX,
             mapping_part: 0,
             mapping_row: None,
             has_bindings: false,
@@ -1125,6 +1137,7 @@ impl Editor {
             - self.restrict_pane_width()
             - self.signature_pane_width()
             - self.mapping_pane_width()
+            - self.text_pane_width()
             - self.compare_pane_width()
             - crate::chrome::SCROLLBAR_THICKNESS)
             .max(1.0)

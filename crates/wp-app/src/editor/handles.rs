@@ -232,6 +232,7 @@ impl Editor {
     pub(super) fn choose_drawing_at(&mut self, at: TextPosition) {
         self.chosen_drawings = vec![at];
         self.document.set_caret(TextPosition::new(at.paragraph, at.offset + 1));
+        self.note_diagram_chosen();
         self.needs_redraw = true;
     }
 

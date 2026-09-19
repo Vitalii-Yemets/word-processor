@@ -52,6 +52,8 @@ impl Editor {
             limits: self.document.formatting_limits(),
             can_edit_here: !self.is_locked(),
             in_table: self.document.table_here().is_some(),
+            in_diagram: self.chosen_diagram().is_some(),
+            text_pane_open: self.show_text_pane,
             table_look: self.document.table_look().unwrap_or_default(),
             show_table_gridlines: self.show_table_gridlines,
             repeat_header_row: self.document.table_header_row().unwrap_or(false),
@@ -975,6 +977,7 @@ impl Editor {
         self.draw_restrict_pane();
         self.draw_signature_pane();
         self.draw_mapping_pane();
+        self.draw_text_pane();
         self.draw_compare_pane();
         self.draw_drop_mark();
 

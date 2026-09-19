@@ -91,6 +91,9 @@ pub enum Tab {
     TableLayout,
     /// And the one that appears while a header or a footer is being edited.
     HeaderFooter,
+    /// The two that appear while a diagram is chosen, as Word's do.
+    SmartArtDesign,
+    SmartArtFormat,
 }
 
 impl Tab {
@@ -111,7 +114,13 @@ impl Tab {
 
     /// The tabs that are only shown while what they are about is being worked
     /// on: the two for a table, and the one for a header or a footer.
-    pub const CONTEXTUAL: &'static [Tab] = &[Tab::TableDesign, Tab::TableLayout, Tab::HeaderFooter];
+    pub const CONTEXTUAL: &'static [Tab] = &[
+        Tab::TableDesign,
+        Tab::TableLayout,
+        Tab::HeaderFooter,
+        Tab::SmartArtDesign,
+        Tab::SmartArtFormat,
+    ];
 
     #[must_use]
     pub fn label(self) -> &'static str {
@@ -130,6 +139,8 @@ impl Tab {
             Self::TableDesign => "Table Design",
             Self::TableLayout => "Table Layout",
             Self::HeaderFooter => "Header & Footer",
+            Self::SmartArtDesign => "SmartArt Design",
+            Self::SmartArtFormat => "Format",
         }
     }
 
@@ -170,6 +181,10 @@ impl Tab {
             Self::HeaderFooter => "E",
             Self::TableDesign => "T",
             Self::TableLayout => "L",
+            // Word reaches the diagram tabs through J too; here each takes a
+            // letter nothing else has.
+            Self::SmartArtDesign => "D",
+            Self::SmartArtFormat => "O",
         }
     }
 
@@ -180,6 +195,7 @@ impl Tab {
         match self {
             Self::TableDesign | Self::TableLayout => state.in_table,
             Self::HeaderFooter => state.in_furniture,
+            Self::SmartArtDesign | Self::SmartArtFormat => state.in_diagram,
             _ => true,
         }
     }
@@ -1219,6 +1235,8 @@ impl Ribbon {
                     | Choice::Rule
                     | Choice::Macro
                     | Choice::Diagram
+                    | Choice::DiagramLayout
+                    | Choice::DiagramColours
                     | Choice::Screenshot
                     | Choice::OutlineLevel
                     | Choice::MatchField
@@ -2244,8 +2262,70 @@ pub fn groups_of(tab: Tab) -> &'static [Group] {
         Tab::TableDesign => TABLE_DESIGN_GROUPS,
         Tab::TableLayout => TABLE_LAYOUT_GROUPS,
         Tab::HeaderFooter => HEADER_FOOTER_GROUPS,
+        Tab::SmartArtDesign => SMARTART_DESIGN_GROUPS,
+        Tab::SmartArtFormat => SMARTART_FORMAT_GROUPS,
     }
 }
+
+/// Word's SmartArt Design tab: the words of the chosen diagram and how it
+/// is drawn.
+static SMARTART_DESIGN_GROUPS: &[Group] = &[
+    Group {
+        label: "Create Graphic",
+        items: &[
+            Item::Large(Command::DiagramAddShape, Icon::Shapes, "Add Shape"),
+            Item::Small(Command::DiagramPromote, Icon::IndentLess, "Promote"),
+            Item::Break,
+            Item::Small(Command::DiagramDemote, Icon::IndentMore, "Demote"),
+            Item::Break,
+            Item::Small(Command::DiagramRightToLeft, Icon::Rotate, "Right to Left"),
+            Item::NewColumn,
+            Item::Small(Command::DiagramMoveUp, Icon::InsertRowAbove, "Move Up"),
+            Item::Break,
+            Item::Small(Command::DiagramMoveDown, Icon::InsertRowBelow, "Move Down"),
+            Item::Break,
+            Item::Small(Command::DiagramTextPane, Icon::TextBox, "Text Pane"),
+        ],
+        launcher: None,
+    },
+    Group {
+        label: "Layouts",
+        items: &[Item::Large(Command::DiagramLayouts, Icon::SmartArt, "Layouts")],
+        launcher: None,
+    },
+    Group {
+        label: "SmartArt Styles",
+        items: &[Item::Large(Command::DiagramColours, Icon::Colors, "Change Colors")],
+        launcher: None,
+    },
+    Group {
+        label: "Reset",
+        items: &[Item::Large(Command::DiagramReset, Icon::Undo, "Reset Graphic")],
+        launcher: None,
+    },
+];
+
+/// And its Format tab: the frame's size.
+static SMARTART_FORMAT_GROUPS: &[Group] = &[
+    Group {
+        label: "Shapes",
+        items: &[
+            Item::Small(Command::DiagramLarger, Icon::Zoom, "Larger"),
+            Item::Break,
+            Item::Small(Command::DiagramSmaller, Icon::Zoom, "Smaller"),
+        ],
+        launcher: None,
+    },
+    Group {
+        label: "Arrange",
+        items: &[
+            Item::Small(Command::WrapText, Icon::WrapText, "Wrap Text"),
+            Item::Break,
+            Item::Small(Command::Position, Icon::Position, "Position"),
+        ],
+        launcher: None,
+    },
+];
 
 /// The commands that have a name but no button on the ribbon.
 ///
