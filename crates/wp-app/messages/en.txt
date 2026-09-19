@@ -14,6 +14,8 @@
 = 1 word
 = 1. Formatting restrictions
 = 100%
+= 100% Stacked Bar
+= 100% Stacked Column
 = 2. Editing restrictions
 = 3. Exceptions
 = 4. Start enforcement
@@ -65,6 +67,7 @@
 = Appearance
 = Apply as you type
 = Apply to
+= Area
 = Arrange
 = Arrange All
 = Art
@@ -110,6 +113,7 @@
 = Breaks
 = Bring Forward
 = Browse
+= Bubble
 = Building Block Gallery
 = Building Block Gallery Content Control
 = Building Blocks Organizer
@@ -163,6 +167,8 @@
 = Close
 = Close Header and Footer
 = Close the Comparison
+= Clustered Bar
+= Clustered Column
 = Code
 = Color
 = Colors
@@ -185,6 +191,7 @@
 = Content control cannot be deleted
 = Contents
 = Contents cannot be edited
+= Contour
 = Controls
 = Convert to Text
 = Copies
@@ -250,6 +257,7 @@
 = Don't hyphenate
 = Done
 = Double strikethrough
+= Doughnut
 = Draft
 = Draw
 = Draw Table
@@ -400,6 +408,7 @@
 = Line
 = Line Numbers
 = Line and Page Breaks
+= Line with Markers
 = Lines
 = Link
 = Link to Previous
@@ -457,6 +466,7 @@
 = Next Footnote
 = No
 = No names were typed
+= No numbers were typed, so no chart was drawn
 = No two of them say the same thing
 = Nobody has been asked to sign.
 = Nobody was typed, so no list was made
@@ -538,6 +548,7 @@
 = Picture
 = Pictures
 = Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
+= Pie
 = Plain
 = Plain Text
 = Plain Text (*.txt)
@@ -568,6 +579,7 @@
 = Put the caret in a content control first
 = Quick Access Toolbar
 = Quick Parts
+= Radar with Markers
 = Read Mode
 = Read-Only Recommended
 = Recently used
@@ -636,6 +648,7 @@
 = Saved {0} as a web page
 = Saved {0} pages to {1}
 = Scale
+= Scatter
 = Screenshot
 = Search document
 = Section: {0}
@@ -687,6 +700,10 @@
 = Spelling
 = Split
 = Split Cells
+= Stacked Area
+= Stacked Bar
+= Stacked Column
+= Stacked Line
 = Start Enforcing Protection
 = Start Mail Merge
 = Start Merge
@@ -743,6 +760,7 @@
 = That watermark is no longer saved
 = The author asked for it to be opened read-only.
 = The caret is not in a repeating section
+= The chart could not be drawn: {0}
 = The contents of this control cannot be edited
 = The document is not encrypted.
 = The document is unreadable without it.
@@ -815,6 +833,9 @@
 = Type one person, press Add, and type the next.
 = Type somebody first
 = Type the new name first
+= Type the numbers: title; name=value; name=value
+= Type the points: title; x=y:size; x=y:size
+= Type the points: title; x=y; x=y
 = Type what a row has to hold
 = Underline
 = Undo
@@ -888,6 +909,7 @@
 = unsaved changes
 = {0} added to the list
 = {0} characters
+= {0} chart, {1} points
 = {0} copied
 = {0} could not be opened
 = {0} could not be opened: {1}

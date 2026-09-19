@@ -2580,7 +2580,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   outside the box — and none of that is written back, so Word opens a document
   saved here and routes the connector its own way between the same two points.
 
-- [ ] **D24. The rest of what a chart is.** What **D4** left, named:
+- [x] **D24. The rest of what a chart is.** What **D4** left, named:
   the chart types beyond the four drawn today — stacked and hundred-percent
   columns and bars, area, scatter, bubble, doughnut, radar, surface, and the
   combinations Word offers as one chart; `c:dTable`, the table of the numbers
@@ -2597,6 +2597,74 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   unchanged, but every key that is not a pie's is drawn in a row under the plot
   whatever it says, because putting it at any of the four sides means laying the
   plot out four ways.
+  *Done.* Ten kinds where there were four: column, bar, line, pie, doughnut,
+  area, scatter, bubble, radar and surface, each read from its element and
+  written back to it, the three-dimensional elements read as the flat kind
+  they picture. Columns, bars, lines and areas are grouped as the file says —
+  side by side, stacked, or stacked to the same height as shares — with
+  negative numbers hanging below a nought line that is drawn where nought is.
+  A series may be drawn as another kind than the chart's, which is Word's
+  combination chart, and may stand against a second value axis down the
+  right; the file's several plot elements come back as several, in order,
+  with a series numbered by its place among all of them. A scatter has an x
+  per point and a bubble a size, and both are typed as `x=y` and `x=y:size`
+  from the chart bar, whose list is now Word's gallery in one column.
+  The key goes where it is asked — right, left, top, bottom, the top right
+  corner, or laid over the plot — and takes its room off the plot before the
+  plot is laid out. A pie's key names its slices at whichever side it asks
+  for. The table of the numbers is drawn under the plot with its columns on
+  the plot's slots, its rows named and keyed, and the axis names left to its
+  first row, as Word leaves them. A label says what it is asked to say — the
+  number, the category, the series, the share — joined with commas, sits
+  where `c:dLblPos` puts it, and on a slice it will not fit across is moved
+  out past the edge on a leader line, which is the one Word draws. A series
+  or a point coloured by the document keeps its colour, resolved against the
+  theme when it names a theme colour; a chart with `c:varyColors` colours
+  each point. The value axis takes the scale the file states — its ends and
+  its step — and otherwise a scale at numbers a person would choose.
+  **Number formats.** `wp-docx/src/numberformat.rs` reads the spreadsheet's
+  format codes as far as a chart uses them: digits and thousands, forced and
+  optional places, percent, the scale by a thousand, scientific notation,
+  the words round a number, and the sections that give a negative or a nought
+  its own form. `"$"#,##0.00` draws money as money, and an axis in `0%`
+  draws shares as percentages.
+  **The workbook.** Every chart made here carries the spreadsheet Word
+  would have made, in `word/embeddings`, laid out as Word lays it out and
+  pointed at from the chart part through `c:externalData`, so that Word's Edit
+  Data opens on it. And it is read: a chart part that cached no numbers and
+  says only where they are — `Sheet1!$B$2:$B$5` — has them read from the
+  workbook, which is what Word does with such a file. A workbook is a package
+  like the document, and is written and read with the same code.
+  *Fixed on the way:* the chart bar's messages were never in the catalogue,
+  so a German window asked for the numbers in English.
+  *Proven by:* `wp-docx/src/chart.rs` — every kind and every grouping
+  written and read back, a three-dimensional element read as flat, the key
+  at every side, everything a label can say, labels a series keeps for
+  itself, the table and the axes, colours chosen and colours named from the
+  theme, a combination chart on a second axis, a scatter's x values and a
+  bubble's sizes, a doughnut's hole, and numbers left to the workbook read
+  from it; `numberformat.rs` — eleven shapes of code; `workbook.rs` — a
+  workbook written and read back, cell addresses and references;
+  `wp-layout/src/charting.rs` — every kind drawn inside its box with a key
+  and labels, negatives below nought, stacks standing on one another and
+  shares reaching the top, an area filled, points and bubbles, a radar's
+  rings and spokes, a surface's bands, a doughnut's rings, the key at each
+  side, the table under the plot, a money axis, chosen colours, a line over
+  columns, and a slice's label moved out on its line; `tests/charts.rs` — the
+  workbook in the package and the chart pointing at it, numbers read from it,
+  and a theme colour resolved against the document's.
+  *Not done, and named:* the three-dimensional kinds are drawn flat, without
+  Word's perspective; a surface is drawn as its contour, seen from above,
+  never as the wireframe; a scatter is points and never the smooth or
+  straight lines Word can draw through them, and a radar is never filled;
+  stock, pie-of-pie and bar-of-pie charts are read as the line and the pie
+  they are made of; an axis title is neither read nor drawn; dates, times,
+  fractions and the conditions in a format code (`[>100]`) are written as
+  `General`; a label's separator is always the comma; the second value axis
+  writes its numbers plainly, whatever format it asks for; a marker is
+  always a square. The numbers of a chart are typed once, when it is made:
+  there is no grid to edit them in afterwards, which is what the workbook is
+  written for Word to offer.
 
 - [ ] **D25. The layout language, and editing a diagram.** `layout1.xml` is
   read here for one thing — the name of the arrangement it is — and the rest of

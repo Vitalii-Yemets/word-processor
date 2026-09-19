@@ -1,4 +1,4 @@
-//! Drawing a chart: axes, bars, a line or a pie, and the words round them.
+//! Drawing a chart: the plot, the axes, the key, the table and the words.
 //!
 //! # Why the chart is drawn here rather than stored as a picture
 //!
@@ -8,19 +8,29 @@
 //!
 //! # What it draws
 //!
-//! The plot area is what is left after the title, the labels along the bottom
-//! and the numbers up the side have taken their room. Everything is measured
-//! from the box the drawing was given, so a chart made bigger is drawn bigger
-//! rather than scaled up from a small one.
+//! The box the drawing was given is shared out from the outside in: the
+//! title takes the top, the key takes the side it asks for, the table of
+//! numbers takes the bottom, and the plot is what is left, with its axes and
+//! the words along them inside that. Everything is measured from the box, so
+//! a chart made bigger is drawn bigger rather than scaled up from a small one.
+//!
+//! Each kind of plot is in [`plots`]: columns and bars side by side, stacked
+//! or as shares; lines and areas; points and bubbles against two value axes;
+//! a radar; a surface seen from above; and a pie or a doughnut. What they
+//! share is here: the scale of a value axis, the axes and gridlines, the
+//! words on a point, the key, the table.
 //!
 //! Colours come from the theme, so a chart in a blue document is blue: the
 //! caller passes the accents and they are used in turn, which is what Word does
-//! for a chart whose series are not coloured by hand.
+//! for a chart whose series are not coloured by hand. A series or a point the
+//! document coloured itself keeps its colour.
 
-use wp_docx::chart::{Chart, Kind};
+use wp_docx::chart::{Axis, Chart, Kind, LegendPosition, Series};
 use wp_raster::{Color, Path, Point};
 
 use crate::layout::{Decoration, PositionedGlyph};
+
+mod plots;
 
 /// How much of the height the title takes, when there is one.
 const TITLE_SHARE: f32 = 0.14;
@@ -28,15 +38,13 @@ const TITLE_SHARE: f32 = 0.14;
 const LABEL_SHARE: f32 = 0.12;
 /// And how much of the width the numbers up the side take.
 const AXIS_SHARE: f32 = 0.14;
-/// How much of the height a key along the bottom takes.
-const KEY_SHARE: f32 = 0.14;
 /// The room left round the whole thing.
 const MARGIN: f32 = 6.0;
 /// How much of a slot a bar fills, leaving the rest as the gap between bars.
 const BAR_SHARE: f32 = 0.7;
 /// How thick the line of a line chart is, and the axes.
 const LINE: f32 = 2.0;
-/// How many steps the value axis is marked in.
+/// How many steps the value axis is marked in, when the file does not say.
 const STEPS: usize = 4;
 
 /// A chart laid out: everything needed to draw it, in page coordinates.
@@ -78,6 +86,7 @@ impl ChartDrawing {
         }
     }
 }
+
 /// What the chart drawing needs from the engine: words turned into glyphs.
 pub trait ChartShaper {
     /// Places text with its left edge at `x` and its baseline at `baseline`,
@@ -102,6 +111,136 @@ pub struct Palette {
     pub text: Color,
 }
 
+/// A rectangle something is drawn in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Frame {
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+}
+
+impl Frame {
+    fn width(self) -> f32 {
+        self.right - self.left
+    }
+
+    fn height(self) -> f32 {
+        self.bottom - self.top
+    }
+}
+
+/// Everything the drawing of a plot needs to reach: the words, the
+/// colours, the size of the writing, and where the drawing goes.
+pub(crate) struct Canvas<'a> {
+    shaper: &'a mut dyn ChartShaper,
+    chart: &'a Chart,
+    palette: &'a Palette,
+    /// The size of the writing.
+    size: f32,
+    out: ChartDrawing,
+}
+
+impl Canvas<'_> {
+    /// Words placed with their left edge at `x`.
+    fn words(&mut self, text: &str, x: f32, baseline: f32, size: f32) -> f32 {
+        let (glyphs, width) = self.shaper.shape_label(text, x, baseline, size, self.palette.text);
+        self.out.glyphs.extend(glyphs);
+        width
+    }
+
+    /// Words placed with their middle at `x`.
+    fn centred(&mut self, text: &str, middle: f32, baseline: f32, size: f32) -> f32 {
+        let width = self.measure(text, size);
+        self.words(text, middle - width / 2.0, baseline, size)
+    }
+
+    /// Words placed with their right edge at `x`.
+    fn right_aligned(&mut self, text: &str, right: f32, baseline: f32, size: f32) -> f32 {
+        let width = self.measure(text, size);
+        self.words(text, right - width, baseline, size)
+    }
+
+    /// How wide words would come out.
+    fn measure(&mut self, text: &str, size: f32) -> f32 {
+        self.shaper.shape_label(text, 0.0, -1000.0, size, self.palette.text).1
+    }
+
+    fn rule(&mut self, x: f32, y: f32, width: f32, height: f32, color: Color) {
+        self.out.rules.push(rectangle(x, y, width, height, color));
+    }
+
+    fn path(&mut self, path: Path, color: Color) {
+        self.out.paths.push((path, color));
+    }
+
+    /// The colour of a series: the one the document chose, or the next of
+    /// the theme's.
+    fn series_colour(&self, which: usize, series: &Series) -> Color {
+        series
+            .fill
+            .as_deref()
+            .and_then(Color::from_hex)
+            .unwrap_or_else(|| accent(self.palette, which))
+    }
+
+    /// The colour of one point of a series: its own, when the document
+    /// chose one; the next of the theme's, when every point is its own
+    /// colour; the series' otherwise.
+    fn point_colour(&self, which: usize, series: &Series, point: usize) -> Color {
+        if let Some((_, fill)) = series.points.iter().find(|(index, _)| *index == point) {
+            if let Some(colour) = Color::from_hex(fill) {
+                return colour;
+            }
+        }
+        if self.chart.vary_colors {
+            return accent(self.palette, point);
+        }
+        self.series_colour(which, series)
+    }
+
+    /// The faint line a gridline is drawn in.
+    fn faint(&self) -> Color {
+        let line = self.palette.line;
+        Color::rgba(line.red, line.green, line.blue, 60)
+    }
+
+    /// The words written on one point: what the chart asks for, joined the
+    /// way Word joins them.
+    fn label_text(&self, series: &Series, point: usize, value: f64, share: f64) -> String {
+        let labels = self.chart.labels_of(series);
+        let mut pieces = Vec::new();
+        if labels.series {
+            pieces.push(series.name.clone());
+        }
+        if labels.category {
+            if let Some(name) = self.chart.categories.get(point).filter(|name| !name.is_empty()) {
+                pieces.push(name.clone());
+            }
+        }
+        if labels.value {
+            pieces.push(formatted(labels.number_format.as_deref(), value));
+        }
+        if labels.percent {
+            pieces.push(wp_docx::numberformat::format("0%", share));
+        }
+        pieces.join(", ")
+    }
+
+    /// Writes the words on a point, centred on a place.
+    fn label(&mut self, series: &Series, point: usize, value: f64, share: f64, at: (f32, f32)) {
+        if !self.chart.labels_of(series).shows_anything() {
+            return;
+        }
+        let text = self.label_text(series, point, value, share);
+        if text.is_empty() {
+            return;
+        }
+        let (middle_x, baseline) = at;
+        self.centred(&text, middle_x, baseline, self.size * 0.85);
+    }
+}
+
 /// Lays a chart out inside a box.
 #[must_use]
 pub fn draw(
@@ -113,117 +252,360 @@ pub fn draw(
     height: f32,
     palette: &Palette,
 ) -> ChartDrawing {
-    let mut out = ChartDrawing::default();
     if chart.is_empty() || width <= 0.0 || height <= 0.0 {
-        return out;
+        return ChartDrawing::default();
     }
 
     let size = (height * 0.07).clamp(7.0, 14.0);
-    let mut top = y + MARGIN;
-    let bottom = y + height - MARGIN;
-    let left = x + MARGIN;
-    let right = x + width - MARGIN;
+    let mut canvas = Canvas { shaper, chart, palette, size, out: ChartDrawing::default() };
+    let mut frame = Frame {
+        left: x + MARGIN,
+        top: y + MARGIN,
+        right: x + width - MARGIN,
+        bottom: y + height - MARGIN,
+    };
 
     if !chart.title.is_empty() {
-        let baseline = top + size;
-        let (glyphs, text_width) =
-            shaper.shape_label(&chart.title, 0.0, baseline, size * 1.2, palette.text);
+        let baseline = frame.top + size;
         // Centred over the whole box, which is where a heading goes.
-        let shift = ((right - left) - text_width) / 2.0;
-        out.glyphs.extend(shifted(glyphs, left + shift.max(0.0)));
-        top += height * TITLE_SHARE;
+        let middle = (frame.left + frame.right) / 2.0;
+        canvas.centred(&chart.title, middle, baseline, size * 1.2);
+        frame.top += height * TITLE_SHARE;
     }
 
-    // A key takes room from the plot, so it is measured out before anything is
-    // drawn and drawn after: a plot laid out over the key would have its
-    // bottom row of numbers behind it.
-    let mut bottom = bottom;
-    if chart.legend.is_some() && !chart.series.is_empty() && chart.kind != Kind::Pie {
-        bottom -= height * KEY_SHARE;
+    // The key takes room from the plot at the side it asks for, so it is
+    // measured before anything is drawn and drawn after: a plot laid out
+    // over the key would have its bottom row of numbers behind it.
+    let entries = key_entries(&canvas);
+    let key = chart.legend.filter(|_| !entries.is_empty()).map(|legend| {
+        let room = key_room(&mut canvas, &entries);
+        let place = frame;
+        let drawn = match legend.position {
+            LegendPosition::Right | LegendPosition::TopRight => {
+                let at = Frame { left: place.right - room.0, ..place };
+                if !legend.overlay {
+                    frame.right -= room.0 + size;
+                }
+                at
+            }
+            LegendPosition::Left => {
+                let at = Frame { right: place.left + room.0, ..place };
+                if !legend.overlay {
+                    frame.left += room.0 + size;
+                }
+                at
+            }
+            LegendPosition::Top => {
+                let at = Frame { bottom: place.top + room.1, ..place };
+                if !legend.overlay {
+                    frame.top += room.1 + size * 0.5;
+                }
+                at
+            }
+            LegendPosition::Bottom => {
+                let at = Frame { top: place.bottom - room.1, ..place };
+                if !legend.overlay {
+                    frame.bottom -= room.1 + size * 0.5;
+                }
+                at
+            }
+        };
+        (legend.position, drawn)
+    });
+
+    // The table of the numbers takes rows under the plot: one for the
+    // categories and one per series, and its rows have to line up with the
+    // slots of the plot, so the plot is told how much to leave.
+    let table_rows = chart
+        .data_table
+        .filter(|_| chart.kind.has_axes() && !chart.kind.plots_points())
+        .map(|_| chart.series.len() + 1)
+        .unwrap_or(0);
+    let row_height = size * 1.5;
+    let table_height = table_rows as f32 * row_height;
+    let table_labels = if table_rows > 0 {
+        let widest = chart
+            .series
+            .iter()
+            .map(|series| canvas.measure(&series.name, size))
+            .fold(0.0, f32::max);
+        widest + size * 1.8
+    } else {
+        0.0
+    };
+
+    let plot = Frame { bottom: frame.bottom - table_height, ..frame };
+    let slots = match chart.kind {
+        Kind::Pie | Kind::Doughnut => plots::round(&mut canvas, plot),
+        Kind::Column => plots::columns(&mut canvas, plot, table_labels),
+        Kind::Bar => plots::bars(&mut canvas, plot),
+        Kind::Line | Kind::Area => plots::lines(&mut canvas, plot, table_labels),
+        Kind::Scatter | Kind::Bubble => plots::points(&mut canvas, plot),
+        Kind::Radar => plots::radar(&mut canvas, plot),
+        Kind::Surface => plots::surface(&mut canvas, plot, table_labels),
+    };
+
+    if table_rows > 0 {
+        if let Some(slots) = slots {
+            let top = frame.bottom - table_height;
+            data_table(&mut canvas, &slots, top, row_height, table_labels);
+        }
     }
 
-    match chart.kind {
-        Kind::Pie => pie(shaper, chart, left, top, right, bottom, size, palette, &mut out),
-        Kind::Column => columns(shaper, chart, left, top, right, bottom, size, palette, &mut out),
-        Kind::Bar => bars(shaper, chart, left, top, right, bottom, size, palette, &mut out),
-        Kind::Line => line(shaper, chart, left, top, right, bottom, size, palette, &mut out),
+    if let Some((position, at)) = key {
+        key_draw(&mut canvas, &entries, position, at);
     }
-
-    // A pie has its key beside it and every other chart has its key under it,
-    // because a pie names its slices and the rest name their series: the names
-    // are as long as the categories and there are as many of them as there are
-    // slices, which is a column and not a row.
-    if chart.legend.is_some() && chart.kind != Kind::Pie {
-        key(shaper, chart, left, bottom, right, size, palette, &mut out);
-    }
-    out
+    canvas.out
 }
 
-/// The key: a square of each series' colour with its name beside it, in a row
-/// under the plot. What a pie needs is the other key, down the side, because a
-/// pie is one series and its slices are the categories.
-///
-/// Under it wherever the file asks for it. Word puts a key at any of the four
-/// sides; a key along the bottom is the one that costs the plot least, and
-/// putting it where the file says means laying the plot out four ways. Named in
-/// the roadmap.
-#[allow(clippy::too_many_arguments)]
-fn key(
-    shaper: &mut dyn ChartShaper,
-    chart: &Chart,
+/// One entry of the key: what it is called and what colour stands for it.
+struct Entry {
+    name: String,
+    colour: Color,
+}
+
+/// What the key names: the series, or for a chart of slices the slices,
+/// which are the categories.
+fn key_entries(canvas: &Canvas<'_>) -> Vec<Entry> {
+    let chart = canvas.chart;
+    if chart.kind == Kind::Surface {
+        // A surface's key names its bands of height.
+        return plots::bands(canvas)
+            .into_iter()
+            .map(|(name, colour)| Entry { name, colour })
+            .collect();
+    }
+    if chart.kind.is_round() || (chart.vary_colors && chart.series.len() == 1) {
+        let Some(series) = chart.series.first() else { return Vec::new() };
+        return chart
+            .categories
+            .iter()
+            .enumerate()
+            .filter(|(_, name)| !name.is_empty())
+            .map(|(index, name)| Entry {
+                name: name.clone(),
+                colour: canvas.point_colour(0, series, index),
+            })
+            .collect();
+    }
+    chart
+        .series
+        .iter()
+        .enumerate()
+        .map(|(which, series)| Entry {
+            name: series.name.clone(),
+            colour: canvas.series_colour(which, series),
+        })
+        .collect()
+}
+
+/// How much room the key needs: as a column, and as a row.
+fn key_room(canvas: &mut Canvas<'_>, entries: &[Entry]) -> (f32, f32) {
+    let size = canvas.size;
+    let widest = entries.iter().map(|entry| canvas.measure(&entry.name, size)).fold(0.0, f32::max);
+    (widest + size * 1.6, size * 1.6)
+}
+
+/// The key: a square of each entry's colour with its name beside it, down a
+/// column at the side or along a row above or below.
+fn key_draw(canvas: &mut Canvas<'_>, entries: &[Entry], position: LegendPosition, at: Frame) {
+    let size = canvas.size;
+    let step = size * 1.6;
+    match position {
+        LegendPosition::Right | LegendPosition::Left | LegendPosition::TopRight => {
+            // Down the side, centred on the plot — or from the top, for a
+            // key that asked for the corner.
+            let total = entries.len() as f32 * step;
+            let mut baseline = if position == LegendPosition::TopRight {
+                at.top + size
+            } else {
+                at.top + (at.height() - total).max(0.0) / 2.0 + size
+            };
+            for entry in entries {
+                canvas.rule(at.left, baseline - size * 0.7, size * 0.7, size * 0.7, entry.colour);
+                canvas.words(&entry.name, at.left + size, baseline, size);
+                baseline += step;
+            }
+        }
+        LegendPosition::Top | LegendPosition::Bottom => {
+            // Along a row, centred: a key that started at the left edge would
+            // sit under one end of the plot rather than under the plot.
+            let widths: Vec<f32> =
+                entries.iter().map(|entry| canvas.measure(&entry.name, size)).collect();
+            let total: f32 = widths.iter().map(|width| width + size * 2.4).sum();
+            let baseline = at.top + size * 1.2;
+            let mut x = at.left + (at.width() - total).max(0.0) / 2.0;
+            for (entry, width) in entries.iter().zip(widths) {
+                canvas.rule(x, baseline - size * 0.7, size * 0.7, size * 0.7, entry.colour);
+                canvas.words(&entry.name, x + size, baseline, size);
+                x += width + size * 2.4;
+            }
+        }
+    }
+}
+
+/// Where the categories of a plot stand across it, for the table of numbers
+/// to line its columns up with: the left edge of the row labels, the edges
+/// of the slots, and which way up the values are read.
+pub(crate) struct Slots {
     left: f32,
-    top: f32,
-    right: f32,
-    size: f32,
-    palette: &Palette,
-    out: &mut ChartDrawing,
-) {
-    let baseline = top + size * 1.6;
-    // Measured first, so the row can be centred: a key that started at the left
-    // edge would sit under one end of the plot rather than under the plot.
-    let mut widths = Vec::new();
-    let mut total = 0.0;
-    for series in &chart.series {
-        let (_, width) = shaper.shape_label(&series.name, 0.0, -1000.0, size, palette.text);
-        widths.push(width);
-        total += width + size * 2.4;
+    edges: Vec<f32>,
+}
+
+/// The table of the numbers under the plot: the categories along the top
+/// row, and a row per series with its name and its numbers under each
+/// category.
+fn data_table(canvas: &mut Canvas<'_>, slots: &Slots, top: f32, row_height: f32, labels: f32) {
+    let chart = canvas.chart;
+    let Some(table) = chart.data_table else { return };
+    let size = canvas.size;
+    let line = canvas.palette.line;
+    let faint = canvas.faint();
+    let left = slots.left - labels;
+    let right = slots.edges.last().copied().unwrap_or(slots.left);
+    let rows = chart.series.len() + 1;
+    let bottom = top + rows as f32 * row_height;
+    let format = chart.value_axis.number_format.clone();
+
+    // The categories along the first row, then a row per series.
+    for (index, name) in chart.categories.iter().enumerate() {
+        let (Some(from), Some(to)) = (slots.edges.get(index), slots.edges.get(index + 1)) else {
+            continue;
+        };
+        canvas.centred(name, (from + to) / 2.0, top + size * 1.1, size * 0.85);
     }
-    let mut at = left + ((right - left) - total).max(0.0) / 2.0;
-    for (index, series) in chart.series.iter().enumerate() {
-        out.rules.push(rectangle(
-            at,
-            baseline - size * 0.7,
-            size * 0.7,
-            size * 0.7,
-            accent(palette, index),
-        ));
-        let (glyphs, _) = shaper.shape_label(&series.name, at + size, baseline, size, palette.text);
-        out.glyphs.extend(glyphs);
-        at += widths[index] + size * 2.4;
+    for (which, series) in chart.series.iter().enumerate() {
+        let row_top = top + (which + 1) as f32 * row_height;
+        let baseline = row_top + size * 1.1;
+        let mut name_x = left + size * 0.4;
+        if table.keys {
+            let colour = canvas.series_colour(which, series);
+            canvas.rule(name_x, baseline - size * 0.7, size * 0.7, size * 0.7, colour);
+            name_x += size;
+        }
+        canvas.words(&series.name, name_x, baseline, size * 0.85);
+        for (index, value) in series.values.iter().enumerate() {
+            let (Some(from), Some(to)) = (slots.edges.get(index), slots.edges.get(index + 1))
+            else {
+                continue;
+            };
+            let text = formatted(format.as_deref(), *value);
+            canvas.centred(&text, (from + to) / 2.0, baseline, size * 0.85);
+        }
+    }
+
+    if table.horizontal_lines {
+        for row in 1..rows {
+            let y = top + row as f32 * row_height;
+            canvas.rule(left, y, right - left, 1.0, faint);
+        }
+    }
+    if table.vertical_lines {
+        for edge in &slots.edges {
+            canvas.rule(*edge, top, 1.0, bottom - top, faint);
+        }
+    }
+    if table.outline {
+        canvas.rule(left, top, right - left, 1.0, line);
+        canvas.rule(left, bottom - 1.0, right - left, 1.0, line);
+        canvas.rule(left, top, 1.0, bottom - top, line);
+        canvas.rule(right - 1.0, top, 1.0, bottom - top, line);
     }
 }
 
-/// The number written on a point, when the chart asks for its labels.
-fn label(
-    shaper: &mut dyn ChartShaper,
-    chart: &Chart,
-    value: f64,
-    at: (f32, f32),
-    size: f32,
-    palette: &Palette,
-    out: &mut ChartDrawing,
-) {
-    if !chart.labels {
-        return;
-    }
-    let (middle_x, baseline) = at;
-    let (glyphs, width) = shaper.shape_label(&number(value), 0.0, baseline, size, palette.text);
-    out.glyphs.extend(shifted(glyphs, middle_x - width / 2.0));
+/// The scale of a value axis: where it starts and ends, and how far apart
+/// its marks are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Scale {
+    min: f64,
+    max: f64,
+    step: f64,
 }
 
-/// Moves glyphs sideways, which is how a label is centred after measuring.
-fn shifted(glyphs: Vec<PositionedGlyph>, dx: f32) -> Vec<PositionedGlyph> {
-    glyphs.into_iter().map(|glyph| PositionedGlyph { x: glyph.x + dx, ..glyph }).collect()
+impl Scale {
+    /// A scale that reaches from the smallest number to the largest, at
+    /// marks a person would choose — unless the file states the ends or the
+    /// step, which are then what it says.
+    fn spanning(axis: &Axis, smallest: f64, largest: f64) -> Self {
+        // A scale that starts at nought unless a number is below it, which
+        // is where a column is measured from.
+        let mut low = smallest.min(0.0);
+        let mut high = largest.max(0.0);
+        if high - low <= 0.0 {
+            high = low + 1.0;
+        }
+        let step = axis
+            .major_unit
+            .filter(|unit| *unit > 0.0)
+            .unwrap_or_else(|| nice((high - low) / STEPS as f64));
+        low = axis.min.unwrap_or_else(|| (low / step).floor() * step);
+        high = axis.max.unwrap_or_else(|| (high / step).ceil() * step);
+        if high <= low {
+            high = low + step;
+        }
+        Self { min: low, max: high, step }
+    }
+
+    /// The scale of shares: nought to one whole.
+    fn shares() -> Self {
+        Self { min: 0.0, max: 1.0, step: 0.2 }
+    }
+
+    /// How far along the axis a value is, from nought at the start to one at
+    /// the end.
+    fn along(self, value: f64) -> f32 {
+        (((value - self.min) / (self.max - self.min)).clamp(0.0, 1.0)) as f32
+    }
+
+    /// The values marked along the axis.
+    fn marks(self) -> Vec<f64> {
+        let mut marks = Vec::new();
+        let mut value = self.min;
+        // Counted, so a step the file states as tiny is not a million marks.
+        while value <= self.max + self.step * 0.001 && marks.len() < 50 {
+            marks.push(value);
+            value += self.step;
+        }
+        marks
+    }
+}
+
+/// A step a person would choose: one, two or five times a power of ten.
+fn nice(rough: f64) -> f64 {
+    if rough <= 0.0 || !rough.is_finite() {
+        return 1.0;
+    }
+    let power = 10f64.powf(rough.log10().floor());
+    let fraction = rough / power;
+    let chosen = if fraction <= 1.0 {
+        1.0
+    } else if fraction <= 2.0 {
+        2.0
+    } else if fraction <= 5.0 {
+        5.0
+    } else {
+        10.0
+    };
+    chosen * power
+}
+
+/// A number as an axis or a label writes it: the way the file asks, or with
+/// no decimals unless it needs them.
+fn formatted(code: Option<&str>, value: f64) -> String {
+    match code {
+        Some(code) if !code.trim().is_empty() && !code.eq_ignore_ascii_case("General") => {
+            wp_docx::numberformat::format(code, value)
+        }
+        _ => number(value),
+    }
+}
+
+/// A number as a chart writes it: no decimals unless it needs them.
+fn number(value: f64) -> String {
+    if (value - value.round()).abs() < 0.05 {
+        return format!("{}", value.round() as i64);
+    }
+    format!("{value:.1}")
 }
 
 /// The colour of one bar or slice.
@@ -237,224 +619,6 @@ fn accent(palette: &Palette, index: usize) -> Color {
 /// A rectangle, as the drawing stores one.
 fn rectangle(x: f32, y: f32, width: f32, height: f32, color: Color) -> Decoration {
     Decoration { x, y, width: width.max(0.0), height: height.max(0.0), color }
-}
-
-/// The axes and the gridlines of a chart that has them.
-#[allow(clippy::too_many_arguments)]
-fn frame(
-    shaper: &mut dyn ChartShaper,
-    largest: f64,
-    plot_left: f32,
-    plot_top: f32,
-    plot_right: f32,
-    plot_bottom: f32,
-    size: f32,
-    palette: &Palette,
-    out: &mut ChartDrawing,
-    upright: bool,
-) {
-    // The line along the bottom and the one up the side.
-    out.rules.push(rectangle(plot_left, plot_bottom, plot_right - plot_left, LINE, palette.line));
-    out.rules.push(rectangle(plot_left, plot_top, LINE, plot_bottom - plot_top, palette.line));
-
-    if largest <= 0.0 {
-        return;
-    }
-    let faint = Color::rgba(palette.line.red, palette.line.green, palette.line.blue, 60);
-
-    for step in 1..=STEPS {
-        let share = step as f32 / STEPS as f32;
-        let value = largest * f64::from(share);
-        let shown = number(value);
-
-        if upright {
-            let at = plot_bottom - (plot_bottom - plot_top) * share;
-            out.rules.push(rectangle(plot_left, at, plot_right - plot_left, 1.0, faint));
-            let (glyphs, width) =
-                shaper.shape_label(&shown, 0.0, at + size / 3.0, size, palette.text);
-            out.glyphs.extend(shifted(glyphs, plot_left - width - 4.0));
-        } else {
-            let at = plot_left + (plot_right - plot_left) * share;
-            out.rules.push(rectangle(at, plot_top, 1.0, plot_bottom - plot_top, faint));
-            let (glyphs, width) =
-                shaper.shape_label(&shown, 0.0, plot_bottom + size + 2.0, size, palette.text);
-            out.glyphs.extend(shifted(glyphs, at - width / 2.0));
-        }
-    }
-}
-
-/// A number as a chart writes it: no decimals unless it needs them.
-fn number(value: f64) -> String {
-    if (value - value.round()).abs() < 0.05 {
-        return format!("{}", value.round() as i64);
-    }
-    format!("{value:.1}")
-}
-
-/// Upright columns.
-#[allow(clippy::too_many_arguments)]
-fn columns(
-    shaper: &mut dyn ChartShaper,
-    chart: &Chart,
-    left: f32,
-    top: f32,
-    right: f32,
-    bottom: f32,
-    size: f32,
-    palette: &Palette,
-    out: &mut ChartDrawing,
-) {
-    let plot_left = left + (right - left) * AXIS_SHARE;
-    let plot_bottom = bottom - (bottom - top) * LABEL_SHARE;
-    let largest = chart.largest();
-    frame(shaper, largest, plot_left, top, right, plot_bottom, size, palette, out, true);
-    if largest <= 0.0 {
-        return;
-    }
-
-    // One slot per category, shared out between the series: two series put two
-    // columns side by side in the slot, which is what Word calls clustered and
-    // is how a chart of several series is read.
-    let slot = (right - plot_left) / chart.points().max(1) as f32;
-    let run = chart.series.len().max(1) as f32;
-    let bar = slot * BAR_SHARE / run;
-    for index in 0..chart.points() {
-        let slot_left = plot_left + slot * index as f32;
-        for (which, series) in chart.series.iter().enumerate() {
-            let Some(value) = series.values.get(index) else { continue };
-            let share = (*value / largest).clamp(0.0, 1.0) as f32;
-            let tall = (plot_bottom - top) * share;
-            let x = slot_left + (slot - bar * run) / 2.0 + bar * which as f32;
-            out.rules.push(rectangle(x, plot_bottom - tall, bar, tall, accent(palette, which)));
-            label(
-                shaper,
-                chart,
-                *value,
-                (x + bar / 2.0, plot_bottom - tall - size * 0.4),
-                size * 0.85,
-                palette,
-                out,
-            );
-        }
-
-        if let Some(name) = chart.categories.get(index).filter(|name| !name.is_empty()) {
-            let (glyphs, width) =
-                shaper.shape_label(name, 0.0, plot_bottom + size + 4.0, size, palette.text);
-            out.glyphs.extend(shifted(glyphs, slot_left + (slot - width) / 2.0));
-        }
-    }
-}
-
-/// Bars lying on their side.
-#[allow(clippy::too_many_arguments)]
-fn bars(
-    shaper: &mut dyn ChartShaper,
-    chart: &Chart,
-    left: f32,
-    top: f32,
-    right: f32,
-    bottom: f32,
-    size: f32,
-    palette: &Palette,
-    out: &mut ChartDrawing,
-) {
-    let plot_left = left + (right - left) * AXIS_SHARE * 1.4;
-    let plot_bottom = bottom - (bottom - top) * LABEL_SHARE;
-    let largest = chart.largest();
-    frame(shaper, largest, plot_left, top, right, plot_bottom, size, palette, out, false);
-    if largest <= 0.0 {
-        return;
-    }
-
-    let slot = (plot_bottom - top) / chart.points().max(1) as f32;
-    let run = chart.series.len().max(1) as f32;
-    let thick = slot * BAR_SHARE / run;
-    for index in 0..chart.points() {
-        let slot_top = top + slot * index as f32;
-        for (which, series) in chart.series.iter().enumerate() {
-            let Some(value) = series.values.get(index) else { continue };
-            let share = (*value / largest).clamp(0.0, 1.0) as f32;
-            let wide = (right - plot_left) * share;
-            let y = slot_top + (slot - thick * run) / 2.0 + thick * which as f32;
-            out.rules.push(rectangle(plot_left, y, wide, thick, accent(palette, which)));
-            label(
-                shaper,
-                chart,
-                *value,
-                (plot_left + wide + size, y + thick / 2.0 + size / 3.0),
-                size * 0.85,
-                palette,
-                out,
-            );
-        }
-
-        if let Some(name) = chart.categories.get(index).filter(|name| !name.is_empty()) {
-            let (glyphs, width) = shaper.shape_label(
-                name,
-                0.0,
-                slot_top + slot / 2.0 + size / 3.0,
-                size,
-                palette.text,
-            );
-            out.glyphs.extend(shifted(glyphs, (plot_left - width - 4.0).max(left)));
-        }
-    }
-}
-
-/// A line through the points.
-#[allow(clippy::too_many_arguments)]
-fn line(
-    shaper: &mut dyn ChartShaper,
-    chart: &Chart,
-    left: f32,
-    top: f32,
-    right: f32,
-    bottom: f32,
-    size: f32,
-    palette: &Palette,
-    out: &mut ChartDrawing,
-) {
-    let plot_left = left + (right - left) * AXIS_SHARE;
-    let plot_bottom = bottom - (bottom - top) * LABEL_SHARE;
-    let largest = chart.largest();
-    frame(shaper, largest, plot_left, top, right, plot_bottom, size, palette, out, true);
-    if largest <= 0.0 {
-        return;
-    }
-
-    // One point per value, spread across the plot with half a slot at each end
-    // so the first and last are not on the axes.
-    let slot = (right - plot_left) / chart.points().max(1) as f32;
-    let point_at = |index: usize, value: f64| {
-        let share = (value / largest).clamp(0.0, 1.0) as f32;
-        (plot_left + slot * (index as f32 + 0.5), plot_bottom - (plot_bottom - top) * share)
-    };
-
-    // One line per series, each in its own colour: that is what tells them
-    // apart, and what the key names.
-    for (which, series) in chart.series.iter().enumerate() {
-        let colour = accent(palette, which);
-        let mut previous: Option<(f32, f32)> = None;
-        for (index, value) in series.values.iter().enumerate() {
-            let (x, y) = point_at(index, *value);
-            if let Some((last_x, last_y)) = previous {
-                out.paths.push((thick_line(last_x, last_y, x, y, LINE), colour));
-            }
-            // A dot at each point, so a single value is still visible.
-            out.rules.push(rectangle(x - LINE, y - LINE, LINE * 2.0, LINE * 2.0, colour));
-            previous = Some((x, y));
-            label(shaper, chart, *value, (x, y - size * 0.6), size * 0.85, palette, out);
-        }
-    }
-
-    for index in 0..chart.points() {
-        if let Some(name) = chart.categories.get(index).filter(|name| !name.is_empty()) {
-            let (glyphs, width) =
-                shaper.shape_label(name, 0.0, plot_bottom + size + 4.0, size, palette.text);
-            out.glyphs
-                .extend(shifted(glyphs, plot_left + slot * (index as f32 + 0.5) - width / 2.0));
-        }
-    }
 }
 
 /// A line of a given thickness, as a four-cornered shape.
@@ -473,97 +637,49 @@ fn thick_line(x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32) -> Path {
     path
 }
 
-/// A pie, divided by how much of the total each value is.
-#[allow(clippy::too_many_arguments)]
-fn pie(
-    shaper: &mut dyn ChartShaper,
-    chart: &Chart,
-    left: f32,
-    top: f32,
-    right: f32,
-    bottom: f32,
-    size: f32,
-    palette: &Palette,
-    out: &mut ChartDrawing,
-) {
-    let total = chart.total();
-    if total <= 0.0 {
-        return;
-    }
-
-    // The pie fills the shorter side, with room down the right for the names —
-    // and the whole width when the chart asks for no key, because then there
-    // are no names to leave room for.
-    let room = if chart.legend.is_some() { (right - left) * 0.62 } else { right - left };
-    let diameter = room.min(bottom - top);
-    let radius = diameter / 2.0;
-    let centre_x = left + radius;
-    let centre_y = top + (bottom - top) / 2.0;
-
-    // From the top, clockwise, which is where a pie starts.
-    // The first series and no other: a pie of several series would be several
-    // pies, and the format has a chart type of its own for that.
-    let first = chart.series.first().map(|series| series.values.clone()).unwrap_or_default();
-    let mut angle = -core::f32::consts::FRAC_PI_2;
-    for (index, value) in first.iter().enumerate() {
-        let share = (*value / total) as f32;
-        let sweep = share * core::f32::consts::TAU;
-        out.paths.push((slice(centre_x, centre_y, radius, angle, sweep), accent(palette, index)));
-        angle += sweep;
-
-        // The number on the slice, halfway out along the middle of it, where
-        // there is room for it inside the colour.
-        let middle = angle - sweep / 2.0;
-        label(
-            shaper,
-            chart,
-            *value,
-            (centre_x + middle.cos() * radius * 0.62, centre_y + middle.sin() * radius * 0.62),
-            size * 0.85,
-            palette,
-            out,
-        );
-
-        if chart.legend.is_none() {
-            continue;
-        }
-        if let Some(name) = chart.categories.get(index).filter(|name| !name.is_empty()) {
-            // The names down the right, each beside a square of its colour.
-            let baseline = top + size * 1.6 * (index as f32 + 1.0);
-            let key_x = left + room + 8.0;
-            out.rules.push(rectangle(
-                key_x,
-                baseline - size * 0.7,
-                size * 0.7,
-                size * 0.7,
-                accent(palette, index),
-            ));
-            let (glyphs, _) = shaper.shape_label(name, key_x + size, baseline, size, palette.text);
-            out.glyphs.extend(glyphs);
-        }
-    }
-}
-
-/// One slice of a pie, as a shape.
-fn slice(centre_x: f32, centre_y: f32, radius: f32, from: f32, sweep: f32) -> Path {
+/// A shape through some corners.
+fn polygon(corners: &[(f32, f32)]) -> Path {
     let mut path = Path::new();
-    path.move_to(Point::new(centre_x, centre_y));
-
-    // Enough straight edges that the curve reads as a curve: one every few
-    // degrees, which is finer than a page can show.
-    let steps = ((sweep.abs() / 0.08).ceil() as usize).clamp(2, 240);
-    for step in 0..=steps {
-        let angle = from + sweep * step as f32 / steps as f32;
-        path.line_to(Point::new(centre_x + radius * angle.cos(), centre_y + radius * angle.sin()));
+    for (index, (x, y)) in corners.iter().enumerate() {
+        if index == 0 {
+            path.move_to(Point::new(*x, *y));
+        } else {
+            path.line_to(Point::new(*x, *y));
+        }
     }
     path.close();
     path
 }
 
+/// A circle, as a shape.
+fn circle(centre_x: f32, centre_y: f32, radius: f32) -> Path {
+    let mut path = Path::new();
+    crate::geometry::ellipse(&mut path, centre_x, centre_y, radius, radius);
+    path
+}
+
+/// The same colour, see-through.
+fn translucent(colour: Color, alpha: u8) -> Color {
+    Color::rgba(colour.red, colour.green, colour.blue, alpha)
+}
+
+/// The colour words are drawn in against a fill: white on a dark one and
+/// the text colour on a light one.
+fn over(fill: Color, text: Color) -> Color {
+    let brightness =
+        (u32::from(fill.red) * 299 + u32::from(fill.green) * 587 + u32::from(fill.blue) * 114)
+            / 1000;
+    if brightness < 140 {
+        Color::WHITE
+    } else {
+        text
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wp_docx::chart::Chart;
+    use wp_docx::chart::{Chart, DataTable, Grouping, Labels, Legend, Series};
 
     /// A shaper that gives every character the same square, which is enough to
     /// place a label without a font.
@@ -601,17 +717,44 @@ mod tests {
         }
     }
 
+    const BLUE: Color = Color::rgb(0x44, 0x72, 0xC4);
+    const ORANGE: Color = Color::rgb(0xED, 0x7D, 0x31);
+
     fn palette() -> Palette {
-        Palette {
-            accents: vec![Color::rgb(0x44, 0x72, 0xC4), Color::rgb(0xED, 0x7D, 0x31)],
-            line: Color::BLACK,
-            text: Color::BLACK,
-        }
+        Palette { accents: vec![BLUE, ORANGE], line: Color::BLACK, text: Color::BLACK }
+    }
+
+    fn draw_chart(chart: &Chart) -> ChartDrawing {
+        draw(&mut Squares, chart, 0.0, 0.0, 400.0, 300.0, &palette())
     }
 
     fn drawn(kind: Kind, typed: &str) -> ChartDrawing {
-        let chart = Chart::parse(kind, "Sales", typed);
-        draw(&mut Squares, &chart, 0.0, 0.0, 400.0, 300.0, &palette())
+        draw_chart(&Chart::parse(kind, "Sales", typed))
+    }
+
+    /// The rectangles drawn in a series colour: the bars and the markers.
+    fn coloured(drawing: &ChartDrawing) -> Vec<&Decoration> {
+        drawing.rules.iter().filter(|rule| rule.color == BLUE || rule.color == ORANGE).collect()
+    }
+
+    fn two_series(kind: Kind) -> Chart {
+        Chart {
+            kind,
+            categories: vec!["North".to_owned(), "South".to_owned(), "East".to_owned()],
+            series: vec![
+                Series {
+                    name: "Last".to_owned(),
+                    values: vec![3.0, 5.0, 4.0],
+                    ..Series::default()
+                },
+                Series {
+                    name: "This".to_owned(),
+                    values: vec![4.0, 2.0, 6.0],
+                    ..Series::default()
+                },
+            ],
+            ..Chart::default()
+        }
     }
 
     #[test]
@@ -623,26 +766,13 @@ mod tests {
     #[test]
     fn a_column_chart_has_a_bar_for_every_number() {
         let drawing = drawn(Kind::Column, "a=1; b=2; c=3");
-        // Two axes, four gridlines and three bars.
-        let coloured = drawing
-            .rules
-            .iter()
-            .filter(|rule| {
-                rule.color == Color::rgb(0x44, 0x72, 0xC4)
-                    || rule.color == Color::rgb(0xED, 0x7D, 0x31)
-            })
-            .count();
-        assert_eq!(coloured, 3, "{:?}", drawing.rules);
+        assert_eq!(coloured(&drawing).len(), 3, "{:?}", drawing.rules);
     }
 
     #[test]
     fn a_bigger_number_makes_a_taller_column() {
         let drawing = drawn(Kind::Column, "a=1; b=3");
-        let bars: Vec<&Decoration> = drawing
-            .rules
-            .iter()
-            .filter(|rule| rule.color != Color::BLACK && rule.color.alpha == 255)
-            .collect();
+        let bars = coloured(&drawing);
         assert_eq!(bars.len(), 2);
         assert!(bars[1].height > bars[0].height, "{bars:?}");
     }
@@ -652,12 +782,7 @@ mod tests {
         let upright = drawn(Kind::Column, "a=1; b=3");
         let sideways = drawn(Kind::Bar, "a=1; b=3");
         let widest = |drawing: &ChartDrawing| {
-            drawing
-                .rules
-                .iter()
-                .filter(|rule| rule.color != Color::BLACK && rule.color.alpha == 255)
-                .map(|rule| rule.width)
-                .fold(0.0_f32, f32::max)
+            coloured(drawing).iter().map(|rule| rule.width).fold(0.0_f32, f32::max)
         };
         assert!(widest(&sideways) > widest(&upright), "the bars did not lie down");
     }
@@ -694,24 +819,33 @@ mod tests {
     #[test]
     fn the_title_is_drawn_over_the_chart() {
         let with = drawn(Kind::Column, "a=1");
-        let without = draw(
-            &mut Squares,
-            &Chart::parse(Kind::Column, "", "a=1"),
-            0.0,
-            0.0,
-            400.0,
-            300.0,
-            &palette(),
-        );
+        let without = draw_chart(&Chart::parse(Kind::Column, "", "a=1"));
         assert!(with.glyphs.len() > without.glyphs.len(), "the title was not drawn");
     }
 
     #[test]
-    fn a_chart_stays_inside_the_box_it_was_given() {
-        let drawing = drawn(Kind::Column, "a=1; b=2; c=3");
-        for rule in &drawing.rules {
-            assert!(rule.x >= -1.0 && rule.x + rule.width <= 401.0, "{rule:?}");
-            assert!(rule.y >= -1.0 && rule.y + rule.height <= 301.0, "{rule:?}");
+    fn every_kind_stays_inside_the_box_it_was_given() {
+        for kind in Kind::ALL {
+            let mut chart = two_series(*kind);
+            chart.legend = Some(Legend::at(LegendPosition::Right));
+            chart.labels = Labels::values();
+            if kind.plots_points() {
+                for series in &mut chart.series {
+                    series.xs = vec![1.0, 2.0, 3.0];
+                    series.sizes = vec![1.0, 2.0, 3.0];
+                }
+            }
+            let drawing = draw_chart(&chart);
+            for rule in &drawing.rules {
+                assert!(rule.x >= -1.0 && rule.x + rule.width <= 401.0, "{kind:?} {rule:?}");
+                assert!(rule.y >= -1.0 && rule.y + rule.height <= 301.0, "{kind:?} {rule:?}");
+            }
+            for (path, _) in &drawing.paths {
+                let (left, top, right, bottom) = wp_raster::bounds_of(path).expect("a shape");
+                assert!(left >= -1.0 && right <= 401.0, "{kind:?} {left} {right}");
+                assert!(top >= -1.0 && bottom <= 301.0, "{kind:?} {top} {bottom}");
+            }
+            assert!(!drawing.glyphs.is_empty(), "{kind:?} drew no words");
         }
     }
 
@@ -720,5 +854,201 @@ mod tests {
         assert_eq!(number(3.0), "3");
         assert_eq!(number(2.5), "2.5");
         assert_eq!(number(0.0), "0");
+    }
+
+    #[test]
+    fn a_scale_is_marked_at_numbers_a_person_would_choose() {
+        let scale = Scale::spanning(&Axis::default(), 0.0, 7.0);
+        assert_eq!(scale.step, 2.0);
+        assert_eq!(scale.min, 0.0);
+        assert_eq!(scale.max, 8.0);
+        assert_eq!(scale.marks(), vec![0.0, 2.0, 4.0, 6.0, 8.0]);
+
+        let stated =
+            Axis { min: Some(-5.0), max: Some(50.0), major_unit: Some(25.0), ..Axis::default() };
+        let scale = Scale::spanning(&stated, 0.0, 7.0);
+        assert_eq!((scale.min, scale.max, scale.step), (-5.0, 50.0, 25.0));
+    }
+
+    #[test]
+    fn a_negative_number_is_drawn_below_the_nought_line() {
+        let drawing = drawn(Kind::Column, "a=3; b=-2");
+        let bars = coloured(&drawing);
+        assert_eq!(bars.len(), 2);
+        // The second bar hangs from where the first stands.
+        assert!((bars[0].y + bars[0].height - bars[1].y).abs() < 1.0, "{bars:?}");
+    }
+
+    #[test]
+    fn stacked_columns_stand_on_one_another_and_shares_reach_the_top() {
+        let stacked =
+            draw_chart(&Chart { grouping: Grouping::Stacked, ..two_series(Kind::Column) });
+        let bars = coloured(&stacked);
+        assert_eq!(bars.len(), 6);
+        // The second series' first bar stands on the first series' first.
+        let (first, second) = (bars[0], bars[1]);
+        assert!((first.y - (second.y + second.height)).abs() < 1.0, "{first:?} {second:?}");
+        assert!((first.x - second.x).abs() < 0.5, "not in the same slot");
+
+        let shares =
+            draw_chart(&Chart { grouping: Grouping::PercentStacked, ..two_series(Kind::Column) });
+        let heights: Vec<f32> =
+            coloured(&shares).chunks(2).map(|pair| pair[0].height + pair[1].height).collect();
+        assert!(heights.windows(2).all(|pair| (pair[0] - pair[1]).abs() < 1.0), "{heights:?}");
+    }
+
+    #[test]
+    fn an_area_chart_fills_under_its_line() {
+        let drawing = draw_chart(&two_series(Kind::Area));
+        assert_eq!(drawing.paths.len(), 2, "one shape per series");
+    }
+
+    #[test]
+    fn a_scatter_chart_has_a_point_for_every_pair_and_a_bubble_a_circle() {
+        let chart = Chart::parse(Kind::Scatter, "", "1=3; 2=5; 4=4");
+        let drawing = draw_chart(&chart);
+        assert_eq!(coloured(&drawing).len(), 3);
+
+        let bubbles = draw_chart(&Chart::parse(Kind::Bubble, "", "1=3:1; 2=5:4"));
+        assert_eq!(bubbles.paths.len(), 2);
+        let area = |path: &Path| {
+            let (l, t, r, b) = wp_raster::bounds_of(path).expect("a bubble");
+            (r - l) * (b - t)
+        };
+        assert!(
+            area(&bubbles.paths[1].0) > area(&bubbles.paths[0].0) * 2.0,
+            "the bigger bubble is not bigger"
+        );
+    }
+
+    #[test]
+    fn a_radar_draws_a_ring_per_series_and_a_spoke_per_category() {
+        let drawing = draw_chart(&two_series(Kind::Radar));
+        // Rings for the scale, spokes for the categories, and the series.
+        assert!(drawing.paths.len() >= 2 + 3, "{}", drawing.paths.len());
+    }
+
+    #[test]
+    fn a_surface_is_a_grid_of_bands() {
+        let drawing = draw_chart(&two_series(Kind::Surface));
+        // A cell per category per series band.
+        assert!(
+            drawing
+                .rules
+                .iter()
+                .filter(|rule| rule.color.alpha == 255 && rule.width > 5.0 && rule.height > 5.0)
+                .count()
+                >= 3
+        );
+    }
+
+    #[test]
+    fn a_doughnut_has_a_ring_per_series_with_a_hole() {
+        let chart = Chart { hole: 50, ..two_series(Kind::Doughnut) };
+        let drawing = draw_chart(&chart);
+        assert_eq!(drawing.paths.len(), 6, "a slice per point per ring");
+    }
+
+    #[test]
+    fn the_key_goes_where_it_is_asked_to() {
+        let at = |position| {
+            let chart = Chart { legend: Some(Legend::at(position)), ..two_series(Kind::Column) };
+            let drawing = draw_chart(&chart);
+            let squares: Vec<&Decoration> = drawing
+                .rules
+                .iter()
+                .filter(|rule| (rule.width - rule.height).abs() < 0.01 && rule.width < 12.0)
+                .collect();
+            let x = squares.iter().map(|square| square.x).fold(0.0, f32::max);
+            let y = squares.iter().map(|square| square.y).fold(0.0, f32::max);
+            (x, y)
+        };
+        let (right_x, _) = at(LegendPosition::Right);
+        let (left_x, _) = at(LegendPosition::Left);
+        let (_, top_y) = at(LegendPosition::Top);
+        let (_, bottom_y) = at(LegendPosition::Bottom);
+        assert!(right_x > 300.0, "{right_x}");
+        assert!(left_x < 60.0, "{left_x}");
+        assert!(top_y < 60.0, "{top_y}");
+        assert!(bottom_y > 240.0, "{bottom_y}");
+    }
+
+    #[test]
+    fn the_table_of_numbers_is_drawn_under_the_plot() {
+        let with = draw_chart(&Chart {
+            data_table: Some(DataTable::default()),
+            ..two_series(Kind::Column)
+        });
+        let without = draw_chart(&two_series(Kind::Column));
+        assert!(with.glyphs.len() > without.glyphs.len() + 6, "the numbers were not written");
+        assert!(with.rules.len() > without.rules.len(), "the table has no lines");
+    }
+
+    #[test]
+    fn a_label_says_what_it_is_asked_to() {
+        let mut chart = two_series(Kind::Column);
+        chart.labels = Labels { value: true, category: true, series: true, ..Labels::default() };
+        let canvas = Canvas {
+            shaper: &mut Squares,
+            chart: &chart,
+            palette: &palette(),
+            size: 10.0,
+            out: ChartDrawing::default(),
+        };
+        assert_eq!(canvas.label_text(&chart.series[0], 1, 5.0, 0.5), "Last, South, 5");
+        let percent = Chart {
+            labels: Labels { percent: true, number_format: None, ..Labels::default() },
+            ..two_series(Kind::Pie)
+        };
+        let canvas = Canvas {
+            shaper: &mut Squares,
+            chart: &percent,
+            palette: &palette(),
+            size: 10.0,
+            out: ChartDrawing::default(),
+        };
+        assert_eq!(canvas.label_text(&percent.series[0], 0, 3.0, 0.25), "25%");
+    }
+
+    #[test]
+    fn a_number_format_on_the_axis_writes_money_as_money() {
+        let mut chart = two_series(Kind::Column);
+        chart.value_axis.number_format = Some("\"$\"#,##0".to_owned());
+        chart.series[0].values = vec![1000.0, 2000.0, 3000.0];
+        let drawing = draw_chart(&chart);
+        // A dollar sign is drawn: the shaper draws one glyph per character,
+        // so the axis words are longer than the bare numbers would be.
+        let bare = draw_chart(&Chart { value_axis: Axis::default(), ..chart.clone() });
+        assert!(drawing.glyphs.len() > bare.glyphs.len());
+    }
+
+    #[test]
+    fn a_series_coloured_by_the_document_keeps_its_colour() {
+        let mut chart = two_series(Kind::Column);
+        chart.series[0].fill = Some("FF0000".to_owned());
+        chart.series[1].points = vec![(2, "00FF00".to_owned())];
+        let drawing = draw_chart(&chart);
+        assert!(drawing.rules.iter().any(|rule| rule.color == Color::rgb(255, 0, 0)));
+        assert!(drawing.rules.iter().any(|rule| rule.color == Color::rgb(0, 255, 0)));
+    }
+
+    #[test]
+    fn a_combination_chart_draws_the_line_over_the_columns() {
+        let mut chart = two_series(Kind::Column);
+        chart.series[1].kind = Some(Kind::Line);
+        chart.series[1].secondary = true;
+        let drawing = draw_chart(&chart);
+        // Three columns, and a line of two joins with its three markers.
+        assert_eq!(drawing.paths.len(), 2);
+        assert_eq!(coloured(&drawing).len(), 6);
+    }
+
+    #[test]
+    fn a_pie_label_that_will_not_fit_is_moved_out_on_a_leader_line() {
+        let mut chart = Chart::parse(Kind::Pie, "", "big=100; tiny=1");
+        chart.labels = Labels { value: true, leader_lines: true, ..Labels::default() };
+        let drawing = draw_chart(&chart);
+        // Two slices and one leader line.
+        assert_eq!(drawing.paths.len(), 3, "{}", drawing.paths.len());
     }
 }

@@ -80,6 +80,7 @@ pub mod math;
 pub mod merge;
 pub mod model;
 pub mod notes;
+pub mod numberformat;
 pub mod numbering;
 pub mod page;
 pub mod pageborders;
@@ -113,6 +114,7 @@ pub mod typography;
 pub mod video;
 pub mod watermark;
 pub mod words;
+pub mod workbook;
 
 use history::History;
 use wp_opc::{Package, Relationships, TargetMode};

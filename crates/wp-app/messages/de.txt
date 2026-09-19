@@ -29,6 +29,12 @@ language = Deutsch
 = 100%
 > 100 %
 
+= 100% Stacked Bar
+> 100% gestapelte Balken
+
+= 100% Stacked Column
+> 100% gestapelte Säulen
+
 = 2. Editing restrictions
 > 2. Bearbeitungseinschränkungen
 
@@ -182,6 +188,9 @@ language = Deutsch
 = Apply to
 > Übernehmen für
 
+= Area
+> Fläche
+
 = Arrange
 > Anordnen
 
@@ -317,6 +326,9 @@ language = Deutsch
 = Browse
 > Durchsuchen
 
+= Bubble
+> Blase
+
 = Building Block Gallery
 > Bausteinkatalog
 
@@ -437,6 +449,12 @@ language = Deutsch
 = City
 > Ort
 
+= Clustered Bar
+> Gruppierte Balken
+
+= Clustered Column
+> Gruppierte Säulen
+
 = Column
 > Spalte
 
@@ -463,6 +481,9 @@ language = Deutsch
 
 = Contents cannot be edited
 > Inhalt kann nicht bearbeitet werden
+
+= Contour
+> Kontur
 
 = Countersign
 > Gegenzeichnen
@@ -736,6 +757,9 @@ language = Deutsch
 
 = Double strikethrough
 > Doppelt durchgestrichen
+
+= Doughnut
+> Ring
 
 = Draft
 > Entwurf
@@ -1187,6 +1211,9 @@ language = Deutsch
 = Line and Page Breaks
 > Zeilen- und Seitenumbruch
 
+= Line with Markers
+> Linie mit Datenpunkten
+
 = Lines
 > Linien
 
@@ -1241,6 +1268,9 @@ language = Deutsch
 = No names were typed
 > Es wurden keine Namen eingegeben
 
+= No numbers were typed, so no chart was drawn
+> Es wurden keine Zahlen eingegeben, daher wurde kein Diagramm gezeichnet
+
 = Nobody has been asked to sign.
 > Es wurde niemand um eine Signatur gebeten.
 
@@ -1292,6 +1322,9 @@ language = Deutsch
 = Picture
 > Bild
 
+= Pie
+> Kreis
+
 = Plain, in the middle
 > Einfach, zentriert
 
@@ -1306,6 +1339,9 @@ language = Deutsch
 
 = Put one and its key in this folder, or use one the machine holds:
 > Eines mit seinem Schlüssel in diesen Ordner legen oder eines aus dem Speicher des Rechners verwenden:
+
+= Radar with Markers
+> Netz mit Datenpunkten
 
 = Recommended Minimum
 > Empfohlenes Minimum
@@ -1352,6 +1388,9 @@ language = Deutsch
 = Save the document before signing it.
 > Das Dokument vor dem Signieren speichern.
 
+= Scatter
+> Punkt (XY)
+
 = Select part of the document, then tick who may edit it.
 > Einen Teil des Dokuments auswählen und ankreuzen, wer ihn bearbeiten darf.
 
@@ -1378,6 +1417,18 @@ language = Deutsch
 
 = Source
 > Quellcode
+
+= Stacked Area
+> Gestapelte Fläche
+
+= Stacked Bar
+> Gestapelte Balken
+
+= Stacked Column
+> Gestapelte Säulen
+
+= Stacked Line
+> Gestapelte Linie
 
 = Start Enforcing Protection
 > Schutz anwenden
@@ -1417,6 +1468,9 @@ language = Deutsch
 
 = The caret is not in a repeating section
 > Die Einfügemarke steht nicht in einem Wiederholungsabschnitt
+
+= The chart could not be drawn: {0}
+> Das Diagramm konnte nicht gezeichnet werden: {0}
 
 = The last item of a repeating section stays
 > Das letzte Element eines Wiederholungsabschnitts bleibt
@@ -1498,6 +1552,15 @@ language = Deutsch
 
 = Trusted locations
 > Vertrauenswürdige Speicherorte
+
+= Type the numbers: title; name=value; name=value
+> Zahlen eingeben: Titel; Name=Wert; Name=Wert
+
+= Type the points: title; x=y:size; x=y:size
+> Punkte eingeben: Titel; x=y:Größe; x=y:Größe
+
+= Type the points: title; x=y; x=y
+> Punkte eingeben: Titel; x=y; x=y
 
 = Valid signatures
 > Gültige Signaturen
@@ -2653,6 +2716,9 @@ language = Deutsch
 
 = {0} characters
 > {0} Zeichen
+
+= {0} chart, {1} points
+> {0}-Diagramm, {1} Punkte
 
 = {0} copied
 > {0} kopiert

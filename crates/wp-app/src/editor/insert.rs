@@ -1804,19 +1804,28 @@ impl Editor {
             // Two series drawn every way a chart can be drawn, each with a key
             // naming the series and the number written on every point.
             "charts" => {
-                use wp_docx::chart::{Chart, Kind, Legend, Series};
+                use wp_docx::chart::{Chart, Kind, Labels, Legend, LegendPosition, Series};
 
                 for kind in Kind::ALL {
+                    let point = |values: Vec<f64>| Series {
+                        values,
+                        xs: if kind.plots_points() { vec![1.0, 2.0, 4.0] } else { Vec::new() },
+                        sizes: if *kind == Kind::Bubble { vec![1.0, 3.0, 2.0] } else { Vec::new() },
+                        ..Series::default()
+                    };
                     let chart = Chart {
                         kind: *kind,
                         title: format!("{} chart", kind.label()),
                         categories: vec!["North".to_owned(), "South".to_owned(), "East".to_owned()],
                         series: vec![
-                            Series { name: "Last year".to_owned(), values: vec![3.0, 5.0, 4.0] },
-                            Series { name: "This year".to_owned(), values: vec![4.0, 2.0, 6.0] },
+                            Series { name: "Last year".to_owned(), ..point(vec![3.0, 5.0, 4.0]) },
+                            Series { name: "This year".to_owned(), ..point(vec![4.0, 2.0, 6.0]) },
                         ],
-                        legend: Some(Legend::Bottom),
-                        labels: true,
+                        legend: Some(Legend::at(LegendPosition::Bottom)),
+                        labels: Labels::values(),
+                        vary_colors: kind.is_round(),
+                        hole: 50,
+                        ..Chart::default()
                     };
                     self.document.set_caret(wp_docx::TextPosition::new(2, 0));
                     let _ = self.document.insert_chart(
@@ -1826,6 +1835,99 @@ impl Editor {
                     );
                 }
                 self.relayout();
+                self.reveal_caret();
+            }
+            // What the rest of a chart is: stacked columns with a table of
+            // the numbers under them and money on the axis, a pie with the
+            // shares on its slices and its key at the top, and a combination
+            // of columns and a line on a second axis.
+            "morecharts" => {
+                use wp_docx::chart::{
+                    Axis, Chart, DataTable, Grouping, Kind, Labels, Legend, LegendPosition, Series,
+                };
+
+                let categories = vec!["Q1".to_owned(), "Q2".to_owned(), "Q3".to_owned()];
+                let stacked = Chart {
+                    kind: Kind::Column,
+                    grouping: Grouping::Stacked,
+                    title: "Revenue by quarter".to_owned(),
+                    categories: categories.clone(),
+                    series: vec![
+                        Series {
+                            name: "Hardware".to_owned(),
+                            values: vec![1200.0, 1500.0, 900.0],
+                            ..Series::default()
+                        },
+                        Series {
+                            name: "Services".to_owned(),
+                            values: vec![800.0, 950.0, 1400.0],
+                            fill: Some("70AD47".to_owned()),
+                            ..Series::default()
+                        },
+                    ],
+                    legend: Some(Legend::at(LegendPosition::Right)),
+                    data_table: Some(DataTable::default()),
+                    value_axis: Axis {
+                        number_format: Some("\"$\"#,##0".to_owned()),
+                        ..Axis::default()
+                    },
+                    ..Chart::default()
+                };
+                let pie = Chart {
+                    kind: Kind::Pie,
+                    title: "Share of sales".to_owned(),
+                    categories: vec!["North".to_owned(), "South".to_owned(), "Overseas".to_owned()],
+                    series: vec![Series {
+                        name: "Sales".to_owned(),
+                        values: vec![55.0, 40.0, 5.0],
+                        ..Series::default()
+                    }],
+                    legend: Some(Legend::at(LegendPosition::Top)),
+                    labels: Labels {
+                        category: true,
+                        percent: true,
+                        leader_lines: true,
+                        ..Labels::default()
+                    },
+                    vary_colors: true,
+                    ..Chart::default()
+                };
+                let combined = Chart {
+                    kind: Kind::Column,
+                    title: "Units and margin".to_owned(),
+                    categories,
+                    series: vec![
+                        Series {
+                            name: "Units".to_owned(),
+                            values: vec![120.0, 150.0, 90.0],
+                            ..Series::default()
+                        },
+                        Series {
+                            name: "Margin".to_owned(),
+                            values: vec![0.31, 0.35, 0.28],
+                            kind: Some(Kind::Line),
+                            secondary: true,
+                            labels: Some(Labels {
+                                value: true,
+                                number_format: Some("0%".to_owned()),
+                                ..Labels::default()
+                            }),
+                            ..Series::default()
+                        },
+                    ],
+                    legend: Some(Legend::at(LegendPosition::Bottom)),
+                    ..Chart::default()
+                };
+                for chart in [stacked, pie, combined] {
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    let _ = self.document.insert_chart(
+                        &chart,
+                        wp_docx::EMU_PER_INCH * 3,
+                        wp_docx::EMU_PER_INCH * 2,
+                    );
+                }
+                self.relayout();
+                self.reveal_caret();
             }
             // What makes a shape solid: a bevel, a depth, and both together,
             // beside the same shape drawn flat.

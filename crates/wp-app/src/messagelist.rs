@@ -124,6 +124,10 @@ fn from_the_tables() -> BTreeSet<String> {
     for layout in wp_docx::cover::Layout::ALL {
         out.insert(layout.label().to_owned());
     }
+    // The kinds of chart the list offers.
+    for (_, _, label) in crate::editor::chart::PRESETS {
+        out.insert((*label).to_owned());
+    }
     // The quick style sets: what each is called and what it says about
     // itself, both of which a person reads off the menu.
     for set in crate::editor::stylesets::SETS {

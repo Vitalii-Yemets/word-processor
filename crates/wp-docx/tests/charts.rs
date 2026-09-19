@@ -14,6 +14,18 @@ fn document() -> Document {
     document
 }
 
+/// The same document with its first chart part rewritten by a function of
+/// its markup.
+fn with_chart_part_rewritten(document: &Document, rewrite: impl Fn(&str) -> String) -> Document {
+    let bytes = document.save().expect("saving");
+    let mut package = wp_opc::Package::open(&bytes).expect("the package");
+    let xml = package.xml_part("word/charts/chart1.xml").expect("the part").expect("text");
+    let rewritten = rewrite(&xml);
+    assert_ne!(rewritten, xml, "the rewriting changed nothing");
+    package.set_part("word/charts/chart1.xml", rewritten.into_bytes());
+    Document::open(&package.save().expect("saving the package")).expect("reopening")
+}
+
 fn round_trip(document: &Document) -> Document {
     let bytes = document.save().expect("saving");
     Document::open(&bytes).expect("reopening")
@@ -90,6 +102,93 @@ fn every_kind_of_chart_survives_being_saved_and_reopened() {
         assert_eq!(read.kind, *kind, "{}", kind.label());
         assert_eq!(read.series[0].values, chart.series[0].values, "{}", kind.label());
     }
+}
+
+#[test]
+fn the_workbook_behind_the_chart_is_in_the_package_and_the_chart_points_at_it() {
+    let document = with_chart(&sample());
+    let workbook = "word/embeddings/Microsoft_Excel_Worksheet1.xlsx";
+    assert!(document.package().part(workbook).is_some(), "the workbook is missing");
+    assert_eq!(
+        document.package().content_type(workbook),
+        Some(wp_docx::workbook::WORKBOOK_CONTENT_TYPE)
+    );
+
+    // The chart part points at the workbook, and says so in its own markup.
+    let relationships =
+        document.package().relationships("word/charts/chart1.xml").expect("relationships");
+    let found = relationships
+        .single_by_type(wp_docx::workbook::PACKAGE_RELATIONSHIP)
+        .expect("the package relationship");
+    assert_eq!(found.resolved_target("word/charts/chart1.xml").unwrap().unwrap(), workbook);
+    let xml = document.package().xml_part("word/charts/chart1.xml").unwrap().unwrap();
+    assert!(xml.contains("<c:externalData r:id=\""), "the chart does not name its workbook");
+
+    // And the workbook holds the numbers, laid out as Word lays them out.
+    let sheet = wp_docx::workbook::read_first_sheet(document.package().part(workbook).unwrap())
+        .expect("a sheet");
+    let values: Vec<f64> = sheet
+        .range("Sheet1!$B$2:$B$4")
+        .iter()
+        .map(|cell| cell.expect("a cell").number().expect("a number"))
+        .collect();
+    assert_eq!(values, vec![10.0, 20.0, 5.0]);
+    assert_eq!(sheet.range("Sheet1!$A$2")[0].unwrap().text(), "North");
+}
+
+#[test]
+fn numbers_a_chart_left_to_its_workbook_are_read_from_it() {
+    // The caches taken out of the chart part, leaving only the references.
+    let document = with_chart_part_rewritten(&with_chart(&sample()), |xml| {
+        let mut stripped = xml.to_owned();
+        while let Some(start) = stripped.find("<c:pt idx=") {
+            let end = stripped[start..].find("</c:pt>").expect("a point ends") + start + 7;
+            stripped.replace_range(start..end, "");
+        }
+        stripped
+    });
+
+    let id = reference_in(&document).expect("a chart reference");
+    let chart = document.chart(&id).expect("the chart");
+    assert_eq!(chart.series[0].values, vec![10.0, 20.0, 5.0]);
+    assert_eq!(chart.categories, vec!["North", "South", "East"]);
+    assert_eq!(chart.series[0].name, "Series 1");
+}
+
+#[test]
+fn a_colour_the_chart_names_from_the_theme_is_the_documents() {
+    let document = with_chart_part_rewritten(&with_chart(&sample()), |xml| {
+        xml.replace(
+            "</c:tx>",
+            "</c:tx><c:spPr><a:solidFill><a:schemeClr val=\"accent2\"/></a:solidFill></c:spPr>",
+        )
+    });
+
+    let id = reference_in(&document).expect("a chart reference");
+    let chart = document.chart(&id).expect("the chart");
+    let accent = document.theme().color(wp_docx::theme::Slot::Accent2);
+    assert_eq!(chart.series[0].fill, Some(accent));
+}
+
+#[test]
+fn every_grouping_and_the_rest_of_a_chart_survive_the_file() {
+    use wp_docx::chart::{Axis, DataTable, Grouping, Labels, Legend, LegendPosition};
+
+    let mut chart = sample();
+    chart.grouping = Grouping::PercentStacked;
+    chart.legend = Some(Legend::at(LegendPosition::Top));
+    chart.labels = Labels { value: true, category: true, ..Labels::default() };
+    chart.data_table = Some(DataTable::default());
+    chart.value_axis =
+        Axis { max: Some(100.0), number_format: Some("0%".to_owned()), ..Axis::default() };
+    let document = with_chart(&chart);
+    let id = reference_in(&document).expect("a chart reference");
+    let read = document.chart(&id).expect("the chart");
+    assert_eq!(read.grouping, Grouping::PercentStacked);
+    assert_eq!(read.legend, chart.legend);
+    assert_eq!(read.labels, chart.labels);
+    assert_eq!(read.data_table, chart.data_table);
+    assert_eq!(read.value_axis, chart.value_axis);
 }
 
 #[test]

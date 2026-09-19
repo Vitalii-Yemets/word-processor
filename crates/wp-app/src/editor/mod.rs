@@ -13,7 +13,7 @@ mod basic;
 mod borderpainter;
 mod boxes;
 mod certificates;
-mod chart;
+pub(crate) mod chart;
 mod citations;
 mod clipboardformats;
 mod commands;
@@ -297,6 +297,7 @@ pub struct Editor {
     active_window: usize,
     /// Which kind of chart is being drawn, while its numbers are typed.
     chart_kind: wp_docx::chart::Kind,
+    chart_grouping: wp_docx::chart::Grouping,
     /// Which merge rule is being put in, while its condition is typed.
     merge_rule: wp_docx::rules::Rule,
     /// How a diagram is arranged, while its boxes are being typed.
@@ -781,6 +782,7 @@ impl Editor {
             window_states: Vec::new(),
             active_window: 0,
             chart_kind: wp_docx::chart::Kind::default(),
+            chart_grouping: wp_docx::chart::Grouping::default(),
             merge_rule: wp_docx::rules::Rule::If,
             recording: None,
             macro_names: Vec::new(),

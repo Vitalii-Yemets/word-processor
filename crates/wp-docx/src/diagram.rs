@@ -1190,7 +1190,7 @@ fn read_drawn_text(body: &Element, theme: &Theme) -> Vec<Paragraph> {
 /// Both ways carry the same shifts — lighter, darker, a different shade of the
 /// same hue — and they are applied here rather than dropped, because the shift
 /// is how one diagram is drawn in six colours from one accent.
-fn colour_of(parent: &Element, theme: &Theme) -> Option<String> {
+pub(crate) fn colour_of(parent: &Element, theme: &Theme) -> Option<String> {
     fn search(element: &Element) -> Option<&Element> {
         if matches!(element.local_name(), "srgbClr" | "schemeClr") {
             return Some(element);
