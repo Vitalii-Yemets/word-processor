@@ -55,6 +55,9 @@ pub(super) enum Asking {
     /// What one of the document's own macros says. Another that tells: this
     /// program reads Visual Basic and does not run it.
     Macro,
+    /// A `MsgBox` a macro put up, and an `InputBox`: answered to the macro.
+    MacroMessage,
+    MacroInput,
     /// The margins, the paper and the way round it goes.
     PageSetup,
     /// A name for this place in the document.
@@ -178,11 +181,21 @@ impl Editor {
                 Some(Asking::Compare) => self.cancel_comparison(),
                 Some(Asking::OpenReadOnly) => self.cancel_open_read_only(),
                 Some(Asking::TextSave) => self.cancel_text_save(),
+                Some(Asking::MacroMessage) => return self.answer_macro_message(None),
+                Some(Asking::MacroInput) => return self.answer_macro_input(None),
                 _ => {}
             }
             return Response::Redraw;
         }
         match asking {
+            Some(Asking::MacroMessage) => {
+                let button = match answer {
+                    Answer::Named(label) => Some(label),
+                    _ => None,
+                };
+                self.answer_macro_message(button)
+            }
+            Some(Asking::MacroInput) => self.answer_macro_input(Some(dialog.said(1))),
             // Nothing to take from a dialog that was telling rather than
             // asking.
             Some(Asking::PageSetup) => self.apply_page_setup(&dialog),

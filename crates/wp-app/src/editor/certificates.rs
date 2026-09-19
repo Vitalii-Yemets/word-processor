@@ -88,7 +88,7 @@ impl Own {
     /// sign is this program's fault, and a store that will not is something
     /// the person can do something about.
     #[must_use]
-    pub fn from_the_system(&self) -> bool {
+    pub fn is_from_the_system(&self) -> bool {
         matches!(self.from, From::System)
     }
 

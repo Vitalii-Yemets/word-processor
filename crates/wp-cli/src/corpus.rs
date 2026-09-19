@@ -428,8 +428,7 @@ pub fn lines(directory: &Path, reports: &[Report]) -> Vec<String> {
     if !summary.parts.is_empty() {
         out.push(String::new());
         out.push("what differs, across the corpus:".to_owned());
-        let mut rows: Vec<((&str, String), usize)> =
-            summary.parts.into_iter().map(|(key, count)| (key, count)).collect();
+        let mut rows: Vec<((&str, String), usize)> = summary.parts.into_iter().collect();
         // The part that differs in the most documents is the work worth doing
         // first, so it goes at the top.
         rows.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));

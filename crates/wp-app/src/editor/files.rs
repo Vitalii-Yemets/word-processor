@@ -527,6 +527,14 @@ impl Editor {
     /// Returns whether it is all right to go ahead. A document with no changes
     /// asks nothing, because there is nothing to lose.
     pub(super) fn may_discard(&mut self) -> bool {
+        // The document is being closed, which it has macros for; they run
+        // before the question about saving, as Word runs them, so that
+        // what they change is part of what is asked about. Once for one
+        // closing, however many times the closing asks.
+        if !self.closing_raised {
+            self.closing_raised = true;
+            self.raise(super::autoevents::Moment::Closing);
+        }
         if !self.document.is_modified() {
             return true;
         }
@@ -544,7 +552,11 @@ impl Editor {
                 }
                 true
             }
-            wp_shell::dialog::Answer::Cancel => false,
+            // Not closing after all, so the next attempt is a new one.
+            wp_shell::dialog::Answer::Cancel => {
+                self.closing_raised = false;
+                false
+            }
         }
     }
 
@@ -559,17 +571,16 @@ impl Editor {
         self.document = document;
         self.file = file;
         // A document that carries macros is a document a person has to be
-        // told about. This program does not run them — see
-        // [`super::macros`], where that is a decision — and they are kept as
-        // they are; both halves of that are worth saying before somebody
-        // wonders why nothing happened.
+        // told about. Nothing in it runs until the gate says so — see
+        // [`super::trust`] — and it is kept as it is; both halves of that
+        // are worth saying before somebody wonders why nothing happened.
         self.carries_macros = self.document.has_macros();
         self.vba = super::macros::project_of(&self.document);
         self.document_macros.clear();
         // A document carrying Visual Basic says so across the top for as
-        // long as it is open, because it is true for that long: this program
-        // keeps macros and does not run them, and a person opening somebody
-        // else's document is owed that plainly. See [`super::macros`].
+        // long as it is open, because it is true for that long, and a person
+        // opening somebody else's document is owed that plainly, with the
+        // button that lets them run. See [`super::trust`].
         // Whatever was enabled was enabled for the document that has just
         // been put away: a new one is asked about again, which is what makes
         // "for this document" mean anything.
@@ -577,6 +588,12 @@ impl Editor {
         self.info_bar = self
             .should_offer_macros()
             .then(|| crate::chrome::infobar::InfoBar::new(crate::chrome::infobar::Because::Macros));
+        // A macro of the last document that was still going has no
+        // document now.
+        self.debugger = None;
+        self.form_window = None;
+        self.closing_raised = false;
+        self.refresh_control_watch();
         // Whatever is opened is opened for writing until it asks not to be,
         // which is asked at the door and not here: see [`super::readonly`].
         self.opened_read_only = false;
@@ -656,6 +673,10 @@ impl Editor {
                 self.status =
                     crate::messages::with("New document from {0}", &[&path.display().to_string()]);
                 self.remember_recent(path);
+                // The template's `AutoNew`, run for the document just made.
+                if let Ok(bytes) = std::fs::read(path) {
+                    self.raise_from_template(&bytes, path);
+                }
                 Response::Redraw
             }
             Err(message) => {
@@ -741,6 +762,10 @@ impl Editor {
                 self.set_document(document, Some(path.clone()));
                 self.status = crate::messages::with("Opened {0}", &[&path.display().to_string()]);
                 self.remember_recent(&path);
+                // The document's opening macros, if they may run: a trusted
+                // folder, a trusted signer, or the setting nobody should
+                // have. Otherwise the bar across the top is where they wait.
+                self.raise(super::autoevents::Moment::Opened);
                 // A document may ask not to be written, and the asking
                 // happens at the door rather than at the first keystroke.
                 if let Some(response) = self.asked_at_the_door(&path) {

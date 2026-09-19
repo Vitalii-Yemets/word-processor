@@ -6645,11 +6645,134 @@ interpreter is reachable only from the macro list a person opened themselves.
   store first, which is **J24**'s work turned the other way round and is not
   a line of this item. Word's "Trust access to the VBA project object
   model" has nothing to gate yet.
-- [ ] **L7. Forms, and the rest of it.** `UserForm` with its controls, the
-  events a document and its controls raise — `Document_Open`, `AutoNew`,
-  `AutoClose`, the content-control events — and the class modules a project
-  may define. The last of it, and named separately because a program that
-  ran every macro but these would still be worth having.
+- [x] **L7. Forms, and the rest of it.**
+  **A project is every module at once.** Until now a macro ran in its own
+  module and saw nothing else. Now the whole project is read together and a
+  macro calls what another module offers — `Greet "World"`, or
+  `Module2.Greet` by name — sees its `Public` variables and constants, and
+  is refused its `Private` ones, which the module keeps to itself. Each
+  module has its own module-level variables, so two modules that each
+  `Dim Count` have two counts. A class module is a class: `New Counter` makes
+  an object with the class's fields, `Class_Initialize` runs on it, its
+  `Public` procedures and `Property Get`, `Let` and `Set` are its members,
+  `Me` is itself, and a handle passed to a procedure is the same object on
+  both sides, as a reference is. The language's own `Collection` is here
+  too — `Add` with a key or a place, `Item` by number or key, `Count`,
+  `Remove`, and `For Each` over it — because it is the one object every
+  macro makes. `TypeName` names a class by its name and `IsObject` sees a
+  handle.
+  **A form is a window the macro designed, and it is read out of the file.**
+  A `UserForm` is two things in the project: its code, a module like any
+  other, and its design, a storage of its own beside the project written the
+  way Office Forms writes every parent control — [MS-OFORMS], a stream for
+  the form and its *sites* and a stream for the controls, each structure a
+  version, a size, a property mask and the values the mask says are there,
+  aligned to their own sizes. The reader walks the mask bit by bit, in the
+  specification's order, taking what is needed to show the form and run its
+  code — caption, size, and for each control its name, kind, place, size,
+  caption or text, whether shown and enabled, its tab index and whether it
+  is the button Enter or Escape presses — and stepping over the rest by the
+  sizes the format gives. Labels, text boxes, check boxes, option buttons,
+  toggle buttons, combo boxes, list boxes and command buttons are read as
+  themselves. A writer of the same format sits beside the reader so that a
+  project with a form can be built for a test and read back; and one test
+  holds both to the specification by the bytes of a form with one button,
+  worked out by hand from the spec's tables.
+  **Showing one is the debugger's thread doing what it was built for.** A
+  macro runs on its own thread and asks the window for everything (**L5**);
+  `UserForm1.Show` is one more question, answered when something is done on
+  the form. The window draws the form as the program draws its own dialogs —
+  the same face, the same caption bar, four pixels to three points as Word
+  shows it — at the places its author put the controls; typing goes into the
+  box with the keyboard, Tab walks the tab order, Space ticks, Enter presses
+  the default button and Escape the cancel button or shuts the form, a
+  combo box drops open, a list is walked with the arrows. Each of those is
+  sent back with what every control holds now, and the form's own code is
+  run for it — `cmdOK_Click`, `txtWho_Change` — with the form as `Me`,
+  `UserForm_Initialize` the first time the form is touched, `Activate` on
+  each `Show`, `QueryClose` with a `Cancel` that is honoured when the cross
+  is pressed, `Terminate` on `Unload`. The macro owns the form: the window
+  is shown a copy and keeps only the caret and the focus between happenings.
+  Controls answer `Text`, `Value`, `Caption`, `Visible`, `Enabled`, the
+  four sides, `AddItem`, `RemoveItem`, `Clear`, `List`, `ListCount` and
+  `ListIndex`, and take the ones that can be set.
+  **And so is a message box.** `MsgBox` was a note collected and shown after
+  the macro had finished, and `vbYesNo` always answered OK, which was a lie.
+  Both are waited on now like a form: the box goes up with Word's buttons —
+  `vbOKCancel`, `vbAbortRetryIgnore`, `vbYesNoCancel`, `vbYesNo`,
+  `vbRetryCancel`, with `vbDefaultButton2` and `3` honoured — and the macro
+  is told Word's number for the one pressed, `vbOK` to `vbNo`; Escape is the
+  button that says no. `InputBox` is a line to type, and Cancel is nothing.
+  The Run button on the Macros dialog runs a macro through the same thread
+  as F5, so a form or a box put up from there waits for the person as it
+  does in Word, and a macro stopped by a breakpoint from there opens the
+  editor on the line.
+  **The events a document raises, through the one gate.** Word has two
+  names for one moment: the auto macro — `Sub AutoOpen` in any module, or
+  `Main` in a module called `AutoOpen` — and the event procedure,
+  `Document_Open` in `ThisDocument`; and `AutoNew`/`Document_New` and
+  `AutoClose`/`Document_Close` beside them. Both run when the document is
+  opened, made from a template, or closed, and both ask
+  `macros_allowed` first — the question **L6** built and said these would
+  ask. So an `AutoOpen` does nothing when a file from the post is opened,
+  and runs when Enable Content is pressed, which is when Word runs it; a
+  document in a trusted folder, or under the setting nobody should have,
+  runs it on opening. The closing macros run before the question about
+  saving, once per closing however many times the closing asks. A new
+  document made from a template runs the *template's* `AutoNew`, and
+  whether it may is the template's question — its folder, its signature —
+  not the new document's, which has neither. A document's own module may
+  answer for its content controls as well: `Document_ContentControlOnEnter`
+  when the caret goes into one and `OnExit` when it leaves, with a `Cancel`
+  that keeps the caret where it was; the caret is watched for crossing a
+  control's edge only while the document has one of those two and its
+  macros may run. The object model gained `ContentControls` on a document, a
+  range and the selection, and a `ContentControl` with `Title`, `Tag`,
+  `Type`, `Checked`, `LockContents`, `LockContentControl` and `Range`,
+  writing into which goes through the control rather than round it.
+  *Proven by:* eleven tests of modules and classes; four of the form's file
+  format, one of them against the specification's bytes; four of forms
+  running under a scripted window — filled in, refused a close, answered by
+  a button, unloaded and shown again afresh; five of the form window's
+  keyboard and mouse; three of a form put up from the Run button, typed
+  into, ticked, and answered, shut with its cross, and put away when the
+  document changes; two of message and input boxes answering with the
+  button and the words; eight of the events — nothing on opening until
+  content is enabled and then both names, a trusted document on opening, the
+  closing macros, `Main` in a module of the macro's name, one that stops
+  said on the status line while the other still runs, the caret into a
+  control and out again, an exit cancelled, and a document with nothing to
+  say not watched. Two pictures: a letter's form up over the document, and
+  Word's Yes and No on a message box.
+  *Found along the way:* seven old lines clippy had never named before came
+  up on this run, in crates this item did not touch — a `from_` method
+  taking `self`, a `3.14159` in a test, a comparison with `false` — and the
+  toolchain has been the same since **J3**, so the cache that hid the dead
+  code at **L1** is the likeliest reason; they are fixed rather than
+  allowed.
+  *Not done, and named here:* which runs first, `AutoOpen` or
+  `Document_Open`, is not written down where it could be read; the auto
+  macro goes first here and that is a choice. `AutoExec` and `AutoExit` are
+  the Normal template's and there is no global template to hold them. An
+  auto macro in a template attached to an existing document does not run on
+  opening it — only the template's `AutoNew` for a document made from it.
+  Of the content-control events, only entering and leaving are raised;
+  `BeforeContentUpdate`, `BeforeDelete` and `AfterAdd` are not.
+  `Class_Terminate` never runs, because handles are copied and nothing
+  counts them; `Dim x As New Class1` makes the object at the declaration
+  rather than on first use, which shows only after `Set x = Nothing`;
+  `WithEvents` and `Implements` are stepped over. Frames and multi-pages on
+  a form are storages of their own and their children are not read; images,
+  spin buttons, scroll bars and tab strips are read as far as their site and
+  drawn as empty boxes; fonts and colours are not read, so every control is
+  drawn in the dialogs' one face; a text box has a caret at its end and no
+  selection; `Controls` and `SetFocus` are not there. The Visual Basic
+  editor shows a form's code and not its design, because a designer is not a
+  line of this item. A form shown from the Immediate window says it has no
+  window to be shown in, because that line still runs on the window's own
+  thread. Everything above is held to the specification and to the writer
+  beside the reader, not to a form Word wrote: the corpus is every machine's
+  own, and a form in it is the first thing to try.
 
 - [ ] **L8. Mapping a content control to custom XML.** Word's Developer tab
   carries an XML Mapping pane: a `customXml` part in the package, and a

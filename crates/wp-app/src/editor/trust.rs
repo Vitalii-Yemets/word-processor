@@ -9,11 +9,11 @@
 //! exactly one place where "somebody said so" is decided.
 //!
 //! Every way of running a macro asks [`Editor::macros_allowed`] first: the
-//! Run button on the macro dialog, F5 and F8 in the Visual Basic editor, and
-//! a line typed into the Immediate window. Nothing runs when a document is
-//! opened, and there is no other route in. When the events a document can
-//! raise arrive — `AutoOpen`, `Document_Open` — they will ask the same
-//! question, because there is only one to ask.
+//! Run button on the macro dialog, F5 and F8 in the Visual Basic editor, a
+//! line typed into the Immediate window, and the moments a document runs its
+//! own — `AutoOpen`, `Document_Open` and the rest, see [`super::autoevents`]
+//! — which ask the same question, because there is only one to ask. There
+//! is no other route in.
 //!
 //! # What the answer is made of
 //!
@@ -122,13 +122,27 @@ impl Editor {
         if self.enabled_here {
             return Allowed::Yes;
         }
-        if self.in_a_trusted_place() {
+        self.allowed_for(self.file.as_deref(), &self.document)
+    }
+
+    /// The same question about a file that is not the one open: the
+    /// template a new document was made from, whose macros are its own.
+    ///
+    /// Enable Content does not reach here, because it was pressed for the
+    /// document and not for the template.
+    #[must_use]
+    pub(super) fn allowed_for(
+        &self,
+        file: Option<&std::path::Path>,
+        document: &wp_docx::Document,
+    ) -> Allowed {
+        if self.in_a_trusted_place(file) {
             return Allowed::Yes;
         }
         match self.trusting() {
             Trusting::Everything => Allowed::Yes,
             Trusting::Signed => {
-                if self.signed_by_somebody_trusted() {
+                if self.signed_by_somebody_trusted(document) {
                     return Allowed::Yes;
                 }
                 Allowed::No(
@@ -159,10 +173,10 @@ impl Editor {
             && matches!(self.macros_allowed(), Allowed::No(_))
     }
 
-    /// Whether the document is in a folder somebody trusted.
+    /// Whether a file is in a folder somebody trusted.
     #[must_use]
-    fn in_a_trusted_place(&self) -> bool {
-        let Some(path) = self.file.as_ref().and_then(|path| path.parent()) else { return false };
+    fn in_a_trusted_place(&self, file: Option<&std::path::Path>) -> bool {
+        let Some(path) = file.and_then(|path| path.parent()) else { return false };
         self.settings.trusted_places.iter().any(|place| {
             let place = std::path::Path::new(place);
             // A folder trusts what is under it as well as what is in it,
@@ -171,11 +185,11 @@ impl Editor {
         })
     }
 
-    /// Whether the document is signed by somebody in the trusted list, and
+    /// Whether a document is signed by somebody in the trusted list, and
     /// whether that signature still holds.
     #[must_use]
-    fn signed_by_somebody_trusted(&self) -> bool {
-        self.document.signatures().iter().any(|signature| {
+    fn signed_by_somebody_trusted(&self, document: &wp_docx::Document) -> bool {
+        document.signatures().iter().any(|signature| {
             signature.standing == wp_sign::Standing::Good
                 && self
                     .settings
@@ -194,7 +208,12 @@ impl Editor {
         self.enabled_here = true;
         self.info_bar = None;
         self.needs_redraw = true;
-        self.report(t("Macros are enabled for this document, for as long as it is open"))
+        let response =
+            self.report(t("Macros are enabled for this document, for as long as it is open"));
+        // Which is when the document's opening macros run, as in Word: they
+        // were held back at the door, and this is the door opening.
+        self.raise(super::autoevents::Moment::Opened);
+        response
     }
 
     /// Trusts the folder the document is in, from the Trust Centre.

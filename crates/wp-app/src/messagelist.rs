@@ -43,6 +43,12 @@ fn from_the_tables() -> BTreeSet<String> {
     for trusting in crate::editor::trust::Trusting::ALL {
         out.insert(trusting.label().to_owned());
     }
+    // The buttons a macro's message box may have, which are Word's.
+    for buttons in 0..=5 {
+        for (label, _) in crate::editor::debugger::message_buttons(buttons) {
+            out.insert((*label).to_owned());
+        }
+    }
     for tab in Tab::ALL.iter().chain(Tab::CONTEXTUAL.iter()) {
         out.insert(tab.label().to_owned());
         for group in ribbon::groups_of(*tab) {

@@ -41,6 +41,7 @@ pub mod stylespane;
 pub mod theme;
 pub mod tip;
 pub mod titlebar;
+pub mod userform;
 
 use wp_docx::model::Alignment;
 use wp_docx::CharacterFormat;

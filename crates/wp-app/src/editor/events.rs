@@ -208,6 +208,48 @@ impl App for Editor {
     }
 
     fn handle(&mut self, event: Event) -> Response {
+        let response = self.handle_event(event);
+        // Wherever the caret went, the document may have something to say
+        // about it: see [`super::autoevents`].
+        self.notice_control_change();
+        response
+    }
+
+    fn switch_window(&mut self, index: usize) {
+        self.use_window(index);
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.paint(width, height);
+        self.canvas()
+    }
+
+    // What a screen reader is told. See [`super::accessible`].
+    fn accessible_elements(&mut self) -> Vec<wp_shell::accessibility::Element> {
+        Editor::accessible_elements(self)
+    }
+
+    fn accessible_invoke(&mut self, id: u64) -> Response {
+        Editor::accessible_invoke(self, id)
+    }
+
+    fn accessible_text(&mut self) -> Option<wp_shell::accessibility::TextState> {
+        Some(Editor::accessible_text(self))
+    }
+
+    fn accessible_select(&mut self, start: usize, end: usize) -> Response {
+        Editor::accessible_select(self, start, end)
+    }
+
+    fn accessible_rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
+        Editor::accessible_rects(self, start, end)
+    }
+}
+
+impl Editor {
+    /// One event, as it comes.
+    #[allow(clippy::too_many_lines)]
+    fn handle_event(&mut self, event: Event) -> Response {
         // Word's Visual Basic editor is a window of its own there and has the
         // window here, the way the Print page does: while it is up, the
         // document behind it is not being typed into.
@@ -242,6 +284,16 @@ impl App for Editor {
                 // window rather than about what is on it, goes on as usual.
                 Event::Resized { .. } | Event::ScaleChanged { .. } | Event::Closing => {}
                 _ => return Response::Ignored,
+            }
+        }
+
+        // A macro run from anywhere else is answered on the tick as well.
+        if let Event::Tick = event {
+            if self.debugger.is_some() && !self.in_form() {
+                let pumped = self.pump_macro();
+                if pumped && self.debugger.is_none() {
+                    return Response::Redraw;
+                }
             }
         }
 
@@ -297,6 +349,46 @@ impl App for Editor {
                 | Event::MiddleClick { .. }
                 | Event::MenuKey
                 | Event::ControlKey => return Response::Ignored,
+                _ => {}
+            }
+        }
+
+        // A form a macro has put up is modal in the same way, under a
+        // dialog the macro's code may put up over it.
+        if self.in_form() {
+            match event {
+                Event::MouseDown { x, y, .. } | Event::DoubleClick { x, y } => {
+                    return self.form_press(x, y)
+                }
+                Event::MouseMove { x, y, .. } => {
+                    return if self.form_hover(x, y) {
+                        self.needs_redraw = true;
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    }
+                }
+                Event::KeyDown { key, modifiers } => return self.form_key(key, modifiers.shift),
+                Event::Char(character) => return self.form_character(character),
+                Event::Commit(text) => {
+                    let mut response = Response::Ignored;
+                    for character in text.chars() {
+                        response = self.form_character(character);
+                    }
+                    return response;
+                }
+                Event::Scroll { .. }
+                | Event::MouseUp { .. }
+                | Event::RightClick { .. }
+                | Event::MiddleClick { .. }
+                | Event::MenuKey
+                | Event::ControlKey
+                | Event::Compose { .. }
+                | Event::ComposeEnd
+                | Event::FilesDropped { .. }
+                | Event::DataDragOver { .. }
+                | Event::DataDragLeft
+                | Event::DataDropped { .. } => return Response::Ignored,
                 _ => {}
             }
         }
@@ -657,36 +749,6 @@ impl App for Editor {
                 Response::Ignored
             }
         }
-    }
-
-    fn switch_window(&mut self, index: usize) {
-        self.use_window(index);
-    }
-
-    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
-        self.paint(width, height);
-        self.canvas()
-    }
-
-    // What a screen reader is told. See [`super::accessible`].
-    fn accessible_elements(&mut self) -> Vec<wp_shell::accessibility::Element> {
-        Editor::accessible_elements(self)
-    }
-
-    fn accessible_invoke(&mut self, id: u64) -> Response {
-        Editor::accessible_invoke(self, id)
-    }
-
-    fn accessible_text(&mut self) -> Option<wp_shell::accessibility::TextState> {
-        Some(Editor::accessible_text(self))
-    }
-
-    fn accessible_select(&mut self, start: usize, end: usize) -> Response {
-        Editor::accessible_select(self, start, end)
-    }
-
-    fn accessible_rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
-        Editor::accessible_rects(self, start, end)
     }
 }
 

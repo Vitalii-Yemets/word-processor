@@ -412,6 +412,93 @@ impl Editor {
                     }
                 }
             }
+            // A macro's own form, up over the document, waiting to be
+            // filled in: a label, a box, a tick, a list and two buttons,
+            // where the form's author put them.
+            "userform" => {
+                use wp_vba::forms::{Control, Form, Kind};
+                let mut form = Form::new("frmLetter");
+                form.caption = "New letter".to_owned();
+                form.width = 264.0;
+                form.height = 150.0;
+                form.controls.push(
+                    Control::new("lblWho", Kind::Label, 12.0, 14.0, 60.0, 12.0)
+                        .captioned("Addressed to"),
+                );
+                let mut who = Control::new("txtWho", Kind::TextBox, 78.0, 12.0, 168.0, 18.0);
+                who.tab_index = 0;
+                form.controls.push(who);
+                form.controls.push(
+                    Control::new("lblTone", Kind::Label, 12.0, 40.0, 60.0, 12.0)
+                        .captioned("Opening"),
+                );
+                let mut tone = Control::new("cboTone", Kind::ComboBox, 78.0, 38.0, 168.0, 18.0);
+                tone.tab_index = 1;
+                form.controls.push(tone);
+                let mut copy = Control::new("chkCopy", Kind::CheckBox, 78.0, 64.0, 168.0, 18.0)
+                    .captioned("Keep a copy in the file");
+                copy.tab_index = 2;
+                form.controls.push(copy);
+                let mut ok = Control::new("cmdOK", Kind::CommandButton, 108.0, 110.0, 66.0, 24.0)
+                    .captioned("OK");
+                ok.default = true;
+                ok.tab_index = 3;
+                form.controls.push(ok);
+                let mut cancel =
+                    Control::new("cmdCancel", Kind::CommandButton, 180.0, 110.0, 66.0, 24.0)
+                        .captioned("Cancel");
+                cancel.cancel = true;
+                cancel.tab_index = 4;
+                form.controls.push(cancel);
+
+                self.vba = wp_vba::Project::open(&wp_vba::example_with_forms(
+                    &[
+                        (
+                            "Module1",
+                            "Public Sub NewLetter()\r\n    frmLetter.Show\r\nEnd Sub\r\n",
+                        ),
+                        (
+                            "frmLetter",
+                            "Private Sub UserForm_Initialize()\r\n\
+                             \x20   cboTone.AddItem \"Dear\"\r\n\
+                             \x20   cboTone.AddItem \"Hello\"\r\n\
+                             \x20   cboTone.ListIndex = 0\r\n\
+                             \x20   txtWho.Text = \"Ms Okafor\"\r\n\
+                             \x20   chkCopy.Value = True\r\n\
+                             End Sub\r\n\
+                             Private Sub cmdOK_Click()\r\n\
+                             \x20   Selection.TypeText cboTone.Text & \" \" & txtWho.Text & \",\"\r\n\
+                             \x20   Me.Hide\r\n\
+                             End Sub\r\n\
+                             Private Sub cmdCancel_Click()\r\n\
+                             \x20   Me.Hide\r\n\
+                             End Sub\r\n",
+                        ),
+                    ],
+                    &[form],
+                ))
+                .ok();
+                self.carries_macros = self.vba.is_some();
+                self.enabled_here = true;
+                self.relayout();
+                self.launch("Module1.NewLetter", Vec::new(), false);
+            }
+            // And a macro's message box, with Word's Yes and No on it.
+            "msgbox" => {
+                self.vba = wp_vba::Project::open(&wp_vba::example(&[(
+                    "Module1",
+                    "Public Sub Ask()\r\n\
+                     \x20   If MsgBox(\"Stamp today's date at the end?\", vbYesNo + vbQuestion, \"Stamp\") = vbYes Then\r\n\
+                     \x20       ActiveDocument.Content.InsertAfter Format(Date, \"d MMMM yyyy\")\r\n\
+                     \x20   End If\r\n\
+                     End Sub\r\n",
+                )]))
+                .ok();
+                self.carries_macros = self.vba.is_some();
+                self.enabled_here = true;
+                self.relayout();
+                self.launch("Module1.Ask", Vec::new(), false);
+            }
             "recovery" => {
                 let entries = vec![
                     super::autorecover::Recovered {

@@ -1003,7 +1003,9 @@ impl Editor {
             self.popup = Some(popup);
         }
 
-        // A dialog is over everything: while one is up, it is the window.
+        // A form a macro has put up is over the document, and a dialog is
+        // over everything: while one is up, it is the window.
+        self.draw_form();
         self.draw_dialog();
 
         // And the tip over even that: it is the one thing that is always about

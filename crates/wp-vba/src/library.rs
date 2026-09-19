@@ -114,6 +114,16 @@ pub trait Host {
     fn as_text(&mut self, object: &Handle) -> Result<String, Fault> {
         self.member(object, "Text", &[])?.text()
     }
+
+    /// Puts a form up as it stands and waits for something to be done on
+    /// it: a button pressed, a box typed into, the window shut.
+    ///
+    /// Asked again after each answer, with the form as the code left it,
+    /// until the code hides the form. A program with no window to put one
+    /// in says so, and a macro that shows a form there stops.
+    fn show_form(&mut self, form: &crate::forms::Form) -> Result<crate::forms::Happening, Fault> {
+        Err(Fault::saying(5, &format!("There is no window here to show {} in", form.name)))
+    }
 }
 
 /// A host that says nothing and remembers everything, which is what a test
@@ -1097,7 +1107,7 @@ mod tests {
         let pieces = called("Split", &[text("a,b,c"), text(",")]);
         let Value::Array(array) = &pieces else { panic!("not an array: {pieces:?}") };
         assert_eq!(array.bounds, vec![(0, 2)]);
-        assert_eq!(called("UBound", &[pieces.clone()]), Value::Long(2));
+        assert_eq!(called("UBound", std::slice::from_ref(&pieces)), Value::Long(2));
         assert_eq!(called("Join", &[pieces, text("-")]), text("a-b-c"));
     }
 
@@ -1129,9 +1139,9 @@ mod tests {
     #[test]
     fn dates_are_taken_apart_and_put_together() {
         let day = Value::Date(dates::serial(2000, 1, 1));
-        assert_eq!(called("Year", &[day.clone()]), Value::Long(2000));
-        assert_eq!(called("Month", &[day.clone()]), Value::Long(1));
-        assert_eq!(called("Day", &[day.clone()]), Value::Long(1));
+        assert_eq!(called("Year", std::slice::from_ref(&day)), Value::Long(2000));
+        assert_eq!(called("Month", std::slice::from_ref(&day)), Value::Long(1));
+        assert_eq!(called("Day", std::slice::from_ref(&day)), Value::Long(1));
         assert_eq!(called("DateSerial", &[Value::Long(2000), Value::Long(1), Value::Long(1)]), day);
         assert_eq!(
             called("DateAdd", &[text("m"), Value::Long(1), day.clone()]),
@@ -1145,7 +1155,7 @@ mod tests {
 
     #[test]
     fn format_writes_a_number_or_a_date_by_what_the_picture_says() {
-        assert_eq!(called("Format", &[Value::Double(3.14159), text("0.00")]), text("3.14"));
+        assert_eq!(called("Format", &[Value::Double(1.23456), text("0.00")]), text("1.23"));
         assert_eq!(called("Format", &[Value::Double(1234.5), text("#,##0.00")]), text("1,234.50"));
         assert_eq!(called("Format", &[Value::Double(0.256), text("0%")]), text("26%"));
         let day = Value::Date(dates::serial(2000, 1, 2) + dates::time_serial(18, 5, 0));

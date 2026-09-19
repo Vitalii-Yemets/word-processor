@@ -27,9 +27,11 @@ use std::collections::BTreeSet;
 use wp_shell::{Key, Response};
 
 use crate::chrome::basicpane::{BasicPane, Pressed};
+use crate::chrome::dialog::{Answer, Button, Dialog, Field};
 use crate::messages::{t, with};
 
 use super::debugger::Debugger;
+use super::dialogs::Asking;
 use super::objects::Model;
 use super::Editor;
 
@@ -343,6 +345,7 @@ impl Editor {
         if let Some(bytes) = self.rebuilt_project(&stream, &source, code_page) {
             self.document.set_macro_project(bytes);
         }
+        self.refresh_control_watch();
     }
 
     /// The project's bytes with one module's text changed.
@@ -429,11 +432,18 @@ impl Editor {
         let text = pane.text();
         let breakpoints = pane.breakpoints.clone();
         let line = pane.caret.0 + 1;
+        let showing = pane.showing;
 
         let Some(name) = procedure_at(&text, line) else {
             return self.report("Put the caret in a Sub or a Function, and F5 runs that one");
         };
-        self.debugger = Some(Debugger::start(&text, &name, breakpoints, stepping));
+        // The whole project, with the module being edited as it is now:
+        // `keep_basic` above put its text into the project.
+        let Some(vba) = &self.vba else { return Response::Ignored };
+        let Some(module) = vba.modules.get(showing) else { return Response::Ignored };
+        let wanted = format!("{}.{name}", module.name);
+        let modules = super::macros::modules_of(vba);
+        self.debugger = Some(Debugger::start(modules, &wanted, Vec::new(), breakpoints, stepping));
         self.pump_macro();
         Response::Redraw
     }
@@ -460,11 +470,35 @@ impl Editor {
                 debugger.watched.iter().map(|(name, value)| (name.clone(), shown(value))).collect();
         }
 
+        // A question the macro has put — a message box, an input box — is
+        // put up as a dialog, over the form if there is one.
+        if let Some(prompt) = debugger.prompt.clone() {
+            if !matches!(self.asking, Some(Asking::MacroMessage | Asking::MacroInput)) {
+                self.ask_for_macro(prompt);
+            }
+        }
+        // A form the macro is waiting on is put up, or the one already up
+        // is brought to what the macro has made of it; a macro that has
+        // gone on past its form takes the form with it.
+        match debugger.form.clone() {
+            Some(form) => match &mut self.form_window {
+                Some(window) => window.replace(form),
+                None => self.form_window = Some(crate::chrome::userform::FormWindow::new(form)),
+            },
+            None => self.form_window = None,
+        }
+
         let ended = debugger.finished();
         let said = debugger.said.clone();
         let name = debugger.name.clone();
+        let quiet = debugger.quiet;
         match ended {
             Some(answer) => {
+                self.form_window = None;
+                let mut said = said;
+                if let Err(fault) = &answer {
+                    said.push(fault.to_string());
+                }
                 if let Some(pane) = &mut self.basic {
                     pane.stopped = None;
                     pane.answers.extend(said);
@@ -475,7 +509,22 @@ impl Editor {
                                 .push(with("{0} stopped: {1}", &[&name, &fault.to_string()]));
                         }
                     }
+                } else {
+                    // Run from the Macros dialog or by an event: what it
+                    // showed goes up afterwards, and the status line says
+                    // how it ended, unless nobody asked for it to run.
+                    if !said.is_empty() {
+                        self.show_what_a_macro_said(&name, said);
+                    }
+                    match &answer {
+                        Ok(_) if quiet => {}
+                        Ok(_) => self.status = with("{0} ran", &[&name]),
+                        Err(fault) => {
+                            self.status = with("{0} stopped: {1}", &[&name, &fault.to_string()]);
+                        }
+                    }
                 }
+                self.last_left = answer.ok().map(|(_, left)| left);
                 self.relayout();
                 self.reveal_caret();
                 self.needs_redraw = true;
@@ -487,6 +536,143 @@ impl Editor {
                 true
             }
         }
+    }
+
+    /// Whether a macro's form is up, which then has the window.
+    #[must_use]
+    pub(super) fn in_form(&self) -> bool {
+        self.form_window.is_some()
+    }
+
+    /// Puts up a macro's question as a dialog: Word's message box with
+    /// Word's buttons, or its input box with a line to type into.
+    fn ask_for_macro(&mut self, prompt: super::debugger::Prompt) {
+        use super::debugger::{default_button, message_buttons, Prompt};
+        let asking = match &prompt {
+            Prompt::Input { .. } => Asking::MacroInput,
+            Prompt::Message { .. } => Asking::MacroMessage,
+        };
+        let dialog = match prompt {
+            Prompt::Message { text, buttons, title } => {
+                let title = if title.is_empty() { "Word Processor".to_owned() } else { title };
+                let fields: Vec<Field> = text
+                    .replace("\r\n", "\n")
+                    .replace('\r', "\n")
+                    .lines()
+                    .map(Field::note)
+                    .collect();
+                let wanted = default_button(buttons);
+                let buttons: Vec<Button> = message_buttons(buttons)
+                    .iter()
+                    .enumerate()
+                    .map(|(at, (label, _))| Button {
+                        label: (*label).to_owned(),
+                        answer: Answer::Named(label),
+                        default: at == wanted,
+                    })
+                    .collect();
+                Dialog::with_buttons(&title, fields, buttons)
+            }
+            Prompt::Input { prompt, title, default } => {
+                let title = if title.is_empty() { "Word Processor".to_owned() } else { title };
+                Dialog::new(
+                    &title,
+                    vec![
+                        Field::note(&prompt),
+                        Field::Text { label: String::new(), value: default },
+                    ],
+                )
+            }
+        };
+        let _ = self.ask(asking, dialog);
+    }
+
+    /// The button a person pressed on a macro's message box, by its label,
+    /// or nothing for Escape; the macro is told Word's number for it.
+    pub(super) fn answer_macro_message(&mut self, button: Option<&str>) -> Response {
+        use super::debugger::{cancel_code, message_buttons};
+        if let Some(debugger) = &mut self.debugger {
+            let code = match (&debugger.prompt, button) {
+                (Some(super::debugger::Prompt::Message { buttons, .. }), Some(label)) => {
+                    message_buttons(*buttons)
+                        .iter()
+                        .find(|(offered, _)| *offered == label)
+                        .map_or(1, |(_, code)| *code)
+                }
+                (Some(super::debugger::Prompt::Message { buttons, .. }), None) => {
+                    cancel_code(*buttons)
+                }
+                _ => 1,
+            };
+            debugger.message_answered(code);
+        }
+        self.drive_macro();
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// What was typed into a macro's input box, or nothing for Cancel.
+    pub(super) fn answer_macro_input(&mut self, words: Option<String>) -> Response {
+        if let Some(debugger) = &mut self.debugger {
+            debugger.input_answered(words);
+        }
+        self.drive_macro();
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// What the form made of an event, and what the macro makes of that.
+    fn form_reacted(&mut self, outcome: crate::chrome::userform::Outcome) -> Response {
+        use crate::chrome::userform::Outcome;
+        match outcome {
+            Outcome::Ignored => Response::Ignored,
+            Outcome::Changed => {
+                self.needs_redraw = true;
+                Response::Redraw
+            }
+            Outcome::Happened(happening) => {
+                if let Some(debugger) = &mut self.debugger {
+                    debugger.form_happened(happening);
+                }
+                self.drive_macro();
+                self.needs_redraw = true;
+                Response::Redraw
+            }
+        }
+    }
+
+    /// A press while a form is up.
+    pub(super) fn form_press(&mut self, x: i32, y: i32) -> Response {
+        let Some(window) = &mut self.form_window else { return Response::Ignored };
+        let outcome = window.press(x, y);
+        self.form_reacted(outcome)
+    }
+
+    /// The pointer moving while a form is up.
+    pub(super) fn form_hover(&mut self, x: i32, y: i32) -> bool {
+        self.form_window.as_mut().is_some_and(|window| window.hover(x, y))
+    }
+
+    /// A key while a form is up.
+    pub(super) fn form_key(&mut self, key: Key, shift: bool) -> Response {
+        let Some(window) = &mut self.form_window else { return Response::Ignored };
+        let outcome = window.key(key, shift);
+        self.form_reacted(outcome)
+    }
+
+    /// A character typed while a form is up.
+    pub(super) fn form_character(&mut self, character: char) -> Response {
+        let Some(window) = &mut self.form_window else { return Response::Ignored };
+        let outcome = window.character(character);
+        self.form_reacted(outcome)
+    }
+
+    /// Draws the form a macro has put up, over everything but a dialog.
+    pub(super) fn draw_form(&mut self) {
+        let Some(mut window) = self.form_window.take() else { return };
+        let theme = self.theme;
+        window.draw(&mut self.canvas, &mut self.chrome_engine, &mut self.renderer, &theme);
+        self.form_window = Some(window);
     }
 
     /// Runs the line typed into the Immediate window.
@@ -518,20 +704,26 @@ impl Editor {
             format!("Sub __Immediate()\r\n{line}\r\nEnd Sub\r\n")
         };
 
-        let (program, complaints) = wp_vba::run::Program::read(&source);
-        if let Some(complaint) = complaints.first() {
-            let said = complaint.said.clone();
-            if let Some(pane) = &mut self.basic {
-                pane.answers.push(said);
+        // The line runs beside the project's own modules, so that it can
+        // call what they define, as it can in Word.
+        self.keep_basic();
+        let mut modules = self.vba.as_ref().map(super::macros::modules_of).unwrap_or_default();
+        modules.push(wp_vba::run::Source::new("__Immediate", wp_vba::Kind::Standard, &source));
+        let program = match super::macros::program_of(&modules) {
+            Ok(program) => program,
+            Err(why) => {
+                if let Some(pane) = &mut self.basic {
+                    pane.answers.push(why);
+                }
+                self.needs_redraw = true;
+                return Response::Redraw;
             }
-            self.needs_redraw = true;
-            return Response::Redraw;
-        }
+        };
 
         let mut model = Model::default();
         let answer = {
             let mut bound = model.on(self);
-            program.run("__Immediate", Vec::new(), &mut bound)
+            program.run("__Immediate.__Immediate", Vec::new(), &mut bound)
         };
         let mut said = model.said();
         said.push(match &answer {
@@ -657,14 +849,27 @@ mod tests {
     }
 
     /// Ticks until the macro stops, finishes, or too long has gone by.
-    fn settle(editor: &mut Editor) {
+    /// Ticks until the macro is done or stopped, pressing OK on every
+    /// message box it puts up, and gives back what the boxes said.
+    fn settle(editor: &mut Editor) -> Vec<String> {
+        let mut said = Vec::new();
         for _ in 0..200 {
             editor.handle(Event::Tick);
+            if editor.asking == Some(Asking::MacroMessage) {
+                if let Some(dialog) = &editor.dialog {
+                    said.extend(dialog.fields.iter().filter_map(|field| match field {
+                        Field::Said { value, .. } => Some(value.clone()),
+                        _ => None,
+                    }));
+                }
+                editor.finish_dialog(Answer::Named("OK"));
+            }
             let stopped = editor.basic.as_ref().and_then(|pane| pane.stopped).is_some();
             if stopped || editor.debugger.is_none() {
-                return;
+                return said;
             }
         }
+        said
     }
 
     fn pane(editor: &Editor) -> &BasicPane {
@@ -743,10 +948,12 @@ mod tests {
             pane.caret = (5, 0);
         }
         keys(&mut editor, Key::Function(5));
-        settle(&mut editor);
+        let said = settle(&mut editor);
 
+        // The message box is a box, put up in the middle as Word puts it,
+        // and the editor says the macro ran once it has been answered.
+        assert!(said.iter().any(|line| line == "42"), "{said:?}");
         let answers = &pane(&editor).answers;
-        assert!(answers.iter().any(|line| line == "42"), "{answers:?}");
         assert!(answers.iter().any(|line| line.contains("ran")), "{answers:?}");
     }
 
@@ -772,13 +979,9 @@ mod tests {
         );
 
         keys(&mut editor, Key::Function(5));
-        settle(&mut editor);
+        let said = settle(&mut editor);
         assert_eq!(pane(&editor).stopped, None, "it did not carry on");
-        assert!(
-            pane(&editor).answers.iter().any(|line| line == "42"),
-            "{:?}",
-            pane(&editor).answers
-        );
+        assert!(said.iter().any(|line| line == "42"), "{said:?}");
     }
 
     #[test]

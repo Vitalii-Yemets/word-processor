@@ -182,6 +182,7 @@ impl BasicPane {
     }
 
     /// Draws the whole page.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
         canvas: &mut Canvas,

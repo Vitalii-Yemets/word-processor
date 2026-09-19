@@ -10,9 +10,16 @@
 //!
 //! That is what this records: the buttons pressed and the words typed, in
 //! order, replayed the same way. No language, nothing to run but what a person
-//! did with their own hands. A document cannot carry one — macros live with the
-//! program, in [`crate::settings`] — so opening a file from anywhere can never
-//! run anything.
+//! did with their own hands. A document cannot carry one — these live with the
+//! program, in [`crate::settings`].
+//!
+//! # And Word's own, which a document does carry
+//!
+//! The second half of this file is the other kind: the Visual Basic a
+//! document carries, listed by module and name, shown, and run. Running goes
+//! one way only — [`Editor::launch`], on the debugger's own thread, and every
+//! way in asks [`Editor::macros_allowed`] first; see [`super::trust`] for the
+//! gate and [`super::autoevents`] for the moments a document runs its own.
 //!
 //! # How a command is written down
 //!
@@ -105,6 +112,30 @@ const LONGEST: usize = 100;
 pub(super) fn project_of(document: &wp_docx::Document) -> Option<wp_vba::Project> {
     let bytes = document.package().part("word/vbaProject.bin")?;
     wp_vba::Project::open(bytes).ok()
+}
+
+/// The project's modules as the interpreter takes them: name, what each is
+/// for, its text, and a form's design.
+pub(super) fn modules_of(project: &wp_vba::Project) -> Vec<wp_vba::run::Source> {
+    project
+        .modules
+        .iter()
+        .map(|module| wp_vba::run::Source {
+            name: module.name.clone(),
+            kind: module.kind,
+            source: module.source.clone(),
+            form: module.form.clone(),
+        })
+        .collect()
+}
+
+/// The same, read into a program, or what stopped it being read.
+pub(super) fn program_of(modules: &[wp_vba::run::Source]) -> Result<wp_vba::run::Program, String> {
+    let (program, complaints) = wp_vba::run::Program::of(modules);
+    match complaints.first() {
+        Some((module, complaint)) => Err(format!("{module}: {complaint}")),
+        None => Ok(program),
+    }
 }
 
 impl Editor {
@@ -267,12 +298,8 @@ impl Editor {
         self.ask(Asking::Macro, dialog)
     }
 
-    /// Runs one of the document's own macros.
-    ///
-    /// Reachable from here and from nowhere else. Opening a document runs
-    /// nothing, and every other way in is behind the gate that is a later
-    /// item; this is the one a person asked for by opening the list, finding
-    /// the macro and pressing the button.
+    /// Runs one of the document's own macros: the one a person asked for by
+    /// opening the list, finding the macro and pressing the button.
     ///
     /// What it can do is the language and the document: the text, the
     /// paragraphs, the styles, the formatting, find and replace. What it
@@ -286,60 +313,68 @@ impl Editor {
             self.asking = None;
             return self.report(&why);
         }
-        let Some(module) = self.vba.as_ref().and_then(|vba| vba.module(&wanted.module)).cloned()
-        else {
+        if self.vba.is_none() {
             return Response::Ignored;
-        };
+        }
         self.dialog = None;
         self.asking = None;
         self.needs_redraw = true;
+        // The same machinery as F5 in the editor, with nothing to stop it:
+        // a macro that puts up a form waits there for the form, and a
+        // macro that does not runs to its end here and now.
+        self.launch(&wanted.qualified(), Vec::new(), false);
+        Response::Redraw
+    }
 
-        let (program, complaints) = wp_vba::run::Program::read(&module.source);
-        if let Some(complaint) = complaints.first() {
-            return self.report(&crate::messages::with(
-                "{0} stopped: {1}",
-                &[&wanted.qualified(), &complaint.to_string()],
-            ));
-        }
+    /// Starts a procedure of the project by its qualified name, on its own
+    /// thread, and drives it as far as it goes without the window: to its
+    /// end, or to a form it is waiting on, or to a breakpoint.
+    ///
+    /// The one way any macro runs. The Run button, the events a document
+    /// raises and F5 all come here; what differs is whether anything is
+    /// said when it ends well, which an event's macro is not.
+    pub(super) fn launch(&mut self, name: &str, arguments: Vec<wp_vba::value::Value>, quiet: bool) {
+        let Some(vba) = &self.vba else { return };
+        let modules = modules_of(vba);
+        let breakpoints =
+            self.basic.as_ref().map(|pane| pane.breakpoints.clone()).unwrap_or_default();
+        let mut debugger =
+            super::debugger::Debugger::start(modules, name, arguments, breakpoints, false);
+        debugger.quiet = quiet;
+        self.debugger = Some(debugger);
+        self.drive_macro();
+    }
 
-        // The document as the macro sees it, which is what it runs against.
-        let (answer, mut said) = {
-            let mut model = super::objects::Model::default();
-            let answer = {
-                let mut bound = model.on(self);
-                program.run(&wanted.name, Vec::new(), &mut bound)
-            };
-            // What the macro showed is shown afterwards rather than in the
-            // middle of it: a message box put up while a macro is running
-            // would have to stop the macro to wait for an answer, and
-            // stopping in the middle is what the debugger is for, which is a
-            // later item.
-            (answer, model.said())
-        };
-        self.relayout();
-        self.reveal_caret();
-        if let Err(fault) = answer {
-            said.push(fault.to_string());
-            if !said.is_empty() {
-                self.show_what_a_macro_said(wanted, said);
+    /// Pumps the macro until it is done or is waiting for the window.
+    pub(super) fn drive_macro(&mut self) {
+        loop {
+            self.pump_macro();
+            match &self.debugger {
+                Some(debugger) if debugger.running() && !debugger.waiting() => {}
+                _ => break,
             }
-            return self.report(&crate::messages::with(
-                "{0} stopped: {1}",
-                &[&wanted.qualified(), &fault.to_string()],
-            ));
         }
-        if !said.is_empty() {
-            self.show_what_a_macro_said(wanted, said);
+        // A macro stopped at a breakpoint is looked at in the editor, which
+        // Word opens for the same reason.
+        if self.debugger.as_ref().is_some_and(|debugger| debugger.stopped.is_some())
+            && self.basic.is_none()
+        {
+            self.open_basic();
         }
-        self.report(&crate::messages::with("{0} ran", &[&wanted.qualified()]))
+    }
+
+    /// What the last macro left its arguments as, for an event whose
+    /// `Cancel` is passed by reference: a finished macro's, or nothing.
+    pub(super) fn macro_left(&mut self) -> Option<Vec<wp_vba::value::Value>> {
+        self.last_left.take()
     }
 
     /// What a macro showed while it ran.
-    fn show_what_a_macro_said(&mut self, wanted: &wp_vba::Macro, said: Vec<String>) {
+    pub(super) fn show_what_a_macro_said(&mut self, wanted: &str, said: Vec<String>) {
         let dialog = Dialog::message(
             "Macro",
             vec![
-                Field::Said { label: "Macro name".to_owned(), value: wanted.qualified() },
+                Field::Said { label: "Macro name".to_owned(), value: wanted.to_owned() },
                 Field::Lines { label: "Said".to_owned(), lines: said, scroll: 0 },
             ],
         );
@@ -449,6 +484,7 @@ mod tests {
 mod document_macros {
     use crate::chrome::dialog::Field;
     use crate::chrome::Command;
+    use crate::editor::dialogs::Asking;
     use wp_docx::kinds::Kind;
     use wp_docx::model::{Block, Body, Paragraph};
     use wp_docx::Document;
@@ -700,11 +736,28 @@ mod document_macros {
         );
         editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
 
-        assert!(editor.status.contains("ran"), "{}", editor.status);
-        // And what it showed is shown, because a message box put up in the
-        // middle of a macro would have to stop it to wait for an answer.
-        let (said, _) = lines_of(&editor);
+        // The message box is up, with the macro waiting behind it as it
+        // waits in Word, and the macro is done when the box is answered.
+        assert_eq!(editor.asking, Some(Asking::MacroMessage));
+        let said = message_text(&editor);
         assert!(said.iter().any(|line| line == "Ran 42"), "{said:?}");
+        assert!(editor.debugger.as_ref().is_some_and(|debugger| debugger.waiting()));
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named("OK"));
+        assert!(editor.status.contains("ran"), "{}", editor.status);
+        assert!(editor.debugger.is_none());
+    }
+
+    /// What a macro's message box says.
+    fn message_text(editor: &Editor) -> Vec<String> {
+        let dialog = editor.dialog.as_ref().expect("the message box");
+        dialog
+            .fields
+            .iter()
+            .filter_map(|field| match field {
+                Field::Said { value, .. } => Some(value.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     /// An editor holding a document of three paragraphs and a macro that is
@@ -738,7 +791,12 @@ mod document_macros {
     fn ran(editor: &mut Editor) -> Vec<String> {
         showing(editor, "Module1.Hello");
         editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
-        let said = editor.dialog.as_ref().map(|_| lines_of(editor).0).unwrap_or_default();
+        // Every message box it puts up is read and answered with OK.
+        let mut said = Vec::new();
+        while editor.asking == Some(Asking::MacroMessage) {
+            said.extend(message_text(editor));
+            editor.finish_dialog(crate::chrome::dialog::Answer::Named("OK"));
+        }
         assert!(!editor.status.contains("stopped"), "{}", editor.status);
         said
     }
@@ -918,5 +976,188 @@ mod document_macros {
 
         assert!(editor.status.contains("not run"), "{}", editor.status);
         assert!(editor.status.contains("kept"), "{}", editor.status);
+    }
+
+    /// An editor holding a document whose project has a form: a box, a
+    /// tick and a button, and code that writes what was typed into the
+    /// document when the button is pressed.
+    fn with_form() -> Editor {
+        use wp_vba::forms::{Control, Form, Kind as ControlKind};
+        let mut form = Form::new("UserForm1");
+        form.caption = "Who".to_owned();
+        let mut box_ = Control::new("TextBox1", ControlKind::TextBox, 10.0, 10.0, 120.0, 18.0);
+        box_.tab_index = 0;
+        form.controls.push(box_);
+        let mut tick = Control::new("CheckBox1", ControlKind::CheckBox, 10.0, 34.0, 120.0, 18.0)
+            .captioned("Loudly");
+        tick.tab_index = 1;
+        form.controls.push(tick);
+        let mut ok =
+            Control::new("OK", ControlKind::CommandButton, 140.0, 10.0, 60.0, 24.0).captioned("OK");
+        ok.default = true;
+        ok.tab_index = 2;
+        form.controls.push(ok);
+
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("one")));
+        let mut document = Document::create(&body).expect("a document");
+        document.set_kind(Kind::MacroEnabledDocument);
+        let bytes = document.save().expect("saving");
+        let mut package = wp_opc::Package::open(&bytes).expect("a package");
+        package.add_part(
+            "word/vbaProject.bin",
+            "application/vnd.ms-office.vbaProject",
+            wp_vba::example_with_forms(
+                &[
+                    (
+                        "Module1",
+                        "Public Sub Hello()\r\n\
+                         \x20   UserForm1.Show\r\n\
+                         \x20   Selection.TypeText \"after \"\r\n\
+                         End Sub\r\n",
+                    ),
+                    (
+                        "UserForm1",
+                        "Private Sub UserForm_Initialize()\r\n\
+                         \x20   TextBox1.Text = \"Bob\"\r\n\
+                         End Sub\r\n\
+                         Private Sub OK_Click()\r\n\
+                         \x20   Dim said As String\r\n\
+                         \x20   said = TextBox1.Text\r\n\
+                         \x20   If CheckBox1.Value Then said = UCase(said)\r\n\
+                         \x20   Selection.TypeText said & \" \"\r\n\
+                         \x20   Me.Hide\r\n\
+                         End Sub\r\n",
+                    ),
+                ],
+                &[form],
+            ),
+        );
+        let mut relationships = package.relationships("word/document.xml").expect("relationships");
+        relationships.add(
+            "http://schemas.microsoft.com/office/2006/relationships/vbaProject",
+            "vbaProject.bin",
+            wp_opc::TargetMode::Internal,
+        );
+        package.set_relationships(&relationships).expect("writing them");
+        let bytes = package.save().expect("saving the package");
+        editor(Document::open(&bytes).expect("reopening"))
+    }
+
+    #[test]
+    fn a_form_comes_up_from_the_run_button_and_its_code_answers_what_is_done_on_it() {
+        let mut editor = with_form();
+        let project = editor.vba.as_ref().expect("the project");
+        let form = project.module("UserForm1").expect("the form's module");
+        assert_eq!(form.kind, wp_vba::Kind::Form);
+        assert_eq!(form.form.as_ref().map(|form| form.caption.as_str()), Some("Who"));
+
+        showing(&mut editor, "Module1.Hello");
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
+
+        // The macro is waiting on the form, which is up, as Initialize left
+        // it, and the document is untouched.
+        let window = editor.form_window.as_ref().expect("the form is not up");
+        assert_eq!(window.form.caption, "Who");
+        assert_eq!(window.form.control("TextBox1").expect("the box").value, "Bob");
+        assert_eq!(editor.document.plain_text().trim(), "one");
+        assert!(editor.debugger.as_ref().is_some_and(|debugger| debugger.waiting()));
+
+        // Typing goes into the box, and the form stays up while the code
+        // is told about each keystroke.
+        editor.draw(1400, 900);
+        editor.handle(Event::Char('b'));
+        editor.handle(Event::Char('y'));
+        assert!(editor.form_window.is_some(), "the form went away between keystrokes");
+        // Tab to the tick box, space ticks it, Enter presses the default
+        // button, and the macro carries on past Show.
+        editor.handle(Event::KeyDown { key: Key::Tab, modifiers: Modifiers::default() });
+        editor.handle(Event::Char(' '));
+        editor.handle(Event::KeyDown { key: Key::Enter, modifiers: Modifiers::default() });
+
+        assert!(editor.form_window.is_none(), "the form stayed up after it was hidden");
+        assert!(editor.debugger.is_none(), "the macro did not finish");
+        assert_eq!(editor.document.plain_text().trim(), "BOBBY after one");
+        assert!(editor.status.contains("ran"), "{}", editor.status);
+    }
+
+    #[test]
+    fn shutting_the_form_with_its_cross_ends_the_show_and_the_macro_goes_on() {
+        let mut editor = with_form();
+        showing(&mut editor, "Module1.Hello");
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
+        assert!(editor.form_window.is_some());
+        editor.handle(Event::KeyDown { key: Key::Escape, modifiers: Modifiers::default() });
+        assert!(editor.form_window.is_none());
+        assert_eq!(editor.document.plain_text().trim(), "after one");
+    }
+
+    #[test]
+    fn a_new_document_puts_a_waiting_macro_away() {
+        let mut editor = with_form();
+        showing(&mut editor, "Module1.Hello");
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
+        assert!(editor.form_window.is_some());
+        editor.set_document(Document::create(&Body::default()).expect("blank"), None);
+        assert!(editor.form_window.is_none());
+        assert!(editor.debugger.is_none());
+    }
+
+    #[test]
+    fn a_message_box_answers_with_the_button_pressed_and_an_input_box_with_the_words() {
+        // `MsgBox` with Yes and No is a question, and the macro is told
+        // which was pressed; `InputBox` is a line to type. Both wait.
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n\
+             \x20   If MsgBox(\"Go on?\", vbYesNo + vbQuestion, \"Asking\") = vbYes Then\r\n\
+             \x20       Selection.TypeText \"yes \"\r\n\
+             \x20   Else\r\n\
+             \x20       Selection.TypeText \"no \"\r\n\
+             \x20   End If\r\n\
+             \x20   Selection.TypeText InputBox(\"Who?\", \"Name\", \"nobody\") & \" \"\r\n\
+             End Sub\r\n",
+        );
+        showing(&mut editor, "Module1.Hello");
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
+
+        let dialog = editor.dialog.clone().expect("the message box");
+        assert_eq!(dialog.title, "Asking");
+        let labels: Vec<&str> = dialog.buttons.iter().map(|button| button.label.as_str()).collect();
+        assert_eq!(labels, ["Yes", "No"]);
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named("No"));
+
+        assert_eq!(editor.asking, Some(Asking::MacroInput));
+        let mut dialog = editor.dialog.clone().expect("the input box");
+        assert_eq!(dialog.title, "Name");
+        assert_eq!(dialog.said(1), "nobody");
+        if let Some(Field::Text { value, .. }) = dialog.fields.get_mut(1) {
+            *value = "Ann".to_owned();
+        }
+        editor.dialog = Some(dialog);
+        editor.finish_dialog(crate::chrome::dialog::Answer::Accept);
+
+        assert!(editor.debugger.is_none(), "the macro did not finish");
+        assert!(
+            editor.document.plain_text().starts_with("no Ann one"),
+            "{}",
+            editor.document.plain_text()
+        );
+    }
+
+    #[test]
+    fn escape_on_a_message_box_is_the_button_that_says_no() {
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n\
+             \x20   Selection.TypeText MsgBox(\"Sure?\", vbOKCancel) & \" \"\r\n\
+             End Sub\r\n",
+        );
+        showing(&mut editor, "Module1.Hello");
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(super::RUN));
+        editor.finish_dialog(crate::chrome::dialog::Answer::Cancel);
+        assert!(
+            editor.document.plain_text().starts_with("2 one"),
+            "{}",
+            editor.document.plain_text()
+        );
     }
 }

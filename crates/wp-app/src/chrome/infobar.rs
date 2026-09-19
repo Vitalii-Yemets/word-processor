@@ -102,7 +102,8 @@ impl InfoBar {
     }
 
     /// The middle of the button, once the bar has been drawn: where a press
-    /// on it lands.
+    /// on it lands, for a test that presses it.
+    #[cfg(test)]
     #[must_use]
     pub fn button_middle(&self) -> Option<(i32, i32)> {
         self.placed.iter().find(|(hit, ..)| *hit == Hit::Button).map(

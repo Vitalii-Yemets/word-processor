@@ -1120,7 +1120,7 @@ mod the_rest_of_a_document {
 
         let footer = mine.furniture(Furniture::Footer).expect("the footer");
         assert!(!is_marked(&footer), "it was compared anyway");
-        assert_eq!(words(&footer).contains("Final"), false, "the other document's words arrived");
+        assert!(!words(&footer).contains("Final"), "the other document's words arrived");
     }
 
     #[test]

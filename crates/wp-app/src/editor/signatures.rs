@@ -318,7 +318,7 @@ impl Editor {
             },
         };
 
-        let through_the_system = own.from_the_system();
+        let through_the_system = own.is_from_the_system();
         let made = match self.signing_for.clone() {
             SignFor::Counter(part) => self.document.countersign_saved(&part, &signer),
             _ => self.document.save_signed(&signer).map_err(|error| error.to_string()),
@@ -537,7 +537,7 @@ mod tests {
         let folder = folder("pane-source", "der");
         let mine = own_certificates_in(&folder.0);
         let own = mine.first().expect("a certificate");
-        assert!(!own.from_the_system());
+        assert!(!own.is_from_the_system());
         assert!(matches!(own.from, From::Folder { .. }));
     }
 }

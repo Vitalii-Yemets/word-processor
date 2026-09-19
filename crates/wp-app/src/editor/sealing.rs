@@ -80,6 +80,7 @@ impl Editor {
                 self.waiting_to_unseal = None;
                 self.set_document(document, Some(waiting.path.clone()));
                 self.remember_recent(&waiting.path);
+                self.raise(super::autoevents::Moment::Opened);
                 self.status =
                     crate::messages::with("Opened {0}", &[&waiting.path.display().to_string()]);
                 Response::Redraw

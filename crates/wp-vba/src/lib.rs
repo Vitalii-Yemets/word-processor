@@ -26,6 +26,7 @@
 
 pub mod compress;
 pub mod dates;
+pub mod forms;
 pub mod lex;
 pub mod library;
 pub mod parse;
@@ -64,14 +65,18 @@ impl core::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 /// What a module is for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Kind {
     /// An ordinary module of procedures: `Module1`.
+    #[default]
     Standard,
     /// A class: `Class1`.
     Class,
     /// The one that belongs to the document itself: `ThisDocument`.
     Document,
+    /// A `UserForm`: a class with a window, whose design is a storage of
+    /// its own beside the code. See [`forms`].
+    Form,
 }
 
 impl Kind {
@@ -82,6 +87,7 @@ impl Kind {
             Self::Standard => "Module",
             Self::Class => "Class",
             Self::Document => "Document",
+            Self::Form => "UserForm",
         }
     }
 }
@@ -109,7 +115,7 @@ pub struct Procedure {
 }
 
 /// One module of a project.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Module {
     /// What it is called in the editor.
     pub name: String,
@@ -128,6 +134,10 @@ pub struct Module {
     /// business and must be carried through untouched when the text is
     /// written back.
     pub offset: usize,
+    /// The window and its controls, for a form; none for any other module,
+    /// and none for a form whose design could not be read, which is then
+    /// a form that cannot be shown and says so.
+    pub form: Option<forms::Form>,
 }
 
 impl Module {
@@ -166,7 +176,7 @@ impl Macro {
 }
 
 /// A document's Visual Basic project.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Project {
     /// What the project is called — `VBAProject` unless somebody changed it.
     pub name: String,
@@ -199,15 +209,25 @@ impl Project {
             }
         }
 
-        let kinds = document_modules(&file, encoding);
+        let (documents, forms) = named_modules(&file, encoding);
         let mut modules = Vec::with_capacity(project.modules.len());
         for held in project.modules {
             let source = source_of(&file, &held, encoding)?;
-            let kind = if kinds.iter().any(|name| name.eq_ignore_ascii_case(&held.name)) {
+            let kind = if documents.iter().any(|name| name.eq_ignore_ascii_case(&held.name)) {
                 Kind::Document
+            } else if forms.iter().any(|name| name.eq_ignore_ascii_case(&held.name)) {
+                Kind::Form
             } else {
                 held.kind
             };
+            // A form's design is a storage named after it, beside the code.
+            let form = (kind == Kind::Form)
+                .then(|| {
+                    let f = file.walk(&[&held.name, "f"])?;
+                    let o = file.walk(&[&held.name, "o"])?;
+                    forms::read(&f, &o, &held.name).ok()
+                })
+                .flatten();
             modules.push(Module {
                 name: held.name,
                 stream: held.stream,
@@ -216,6 +236,7 @@ impl Project {
                 read_only: held.read_only,
                 private: held.private,
                 offset: held.offset,
+                form,
             });
         }
 
@@ -263,12 +284,6 @@ struct Held {
     kind: Kind,
     read_only: bool,
     private: bool,
-}
-
-impl Default for Kind {
-    fn default() -> Self {
-        Self::Standard
-    }
 }
 
 /// The `dir` stream, before the code page has been applied to it.
@@ -412,23 +427,28 @@ fn source_of(
 /// puts a class and the document's own module together. The `PROJECT` stream
 /// — a page of `name=value` lines beside the storage — is where the two are
 /// told apart, and a project without one loses nothing but the word.
-fn document_modules(file: &CompoundFile, encoding: wp_text::Encoding) -> Vec<String> {
+/// The modules the `PROJECT` stream names as the document's own and as
+/// forms: `Document=ThisDocument/&H00000000` and `BaseClass=UserForm1`.
+fn named_modules(file: &CompoundFile, encoding: wp_text::Encoding) -> (Vec<String>, Vec<String>) {
     let Some(bytes) = file.walk(&["PROJECT"]) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
-    encoding
-        .decode(&bytes)
-        .lines()
-        .filter_map(|line| {
-            let (key, value) = line.split_once('=')?;
-            if !key.trim().eq_ignore_ascii_case("Document") {
-                return None;
-            }
-            // `Document=ThisDocument/&H00000000`, and the tail is a cookie.
-            Some(value.trim().split('/').next().unwrap_or_default().trim().to_owned())
-        })
-        .filter(|name| !name.is_empty())
-        .collect()
+    let mut documents = Vec::new();
+    let mut forms = Vec::new();
+    for line in encoding.decode(&bytes).lines() {
+        let Some((key, value)) = line.split_once('=') else { continue };
+        // The tail of a document's line is a cookie.
+        let name = value.trim().split('/').next().unwrap_or_default().trim().to_owned();
+        if name.is_empty() {
+            continue;
+        }
+        if key.trim().eq_ignore_ascii_case("Document") {
+            documents.push(name);
+        } else if key.trim().eq_ignore_ascii_case("BaseClass") {
+            forms.push(name);
+        }
+    }
+    (documents, forms)
 }
 
 /// What a procedure in the tree declares.
@@ -496,6 +516,14 @@ fn wide(text: &str) -> Vec<u8> {
 /// it too.
 #[must_use]
 pub fn example(modules: &[(&str, &str)]) -> Vec<u8> {
+    example_with_forms(modules, &[])
+}
+
+/// The same, with forms: each form's code is one of the modules, under the
+/// form's name, and its design is written beside the project as Word
+/// writes it.
+#[must_use]
+pub fn example_with_forms(modules: &[(&str, &str)], forms: &[forms::Form]) -> Vec<u8> {
     let mut dir = Vec::new();
     dir.extend_from_slice(&record(0x0003, &1252u16.to_le_bytes()));
     dir.extend_from_slice(&record(0x0004, b"VBAProject"));
@@ -533,11 +561,18 @@ pub fn example(modules: &[(&str, &str)]) -> Vec<u8> {
         "VBA",
         streams.into_iter().map(|(name, bytes)| wp_ole::Item::stream(&name, bytes)).collect(),
     ));
-    builder.stream(
-        "PROJECT",
+    let mut project =
         b"ID=\"{00000000-0000-0000-0000-000000000000}\"\r\nDocument=ThisDocument/&H00000000\r\n"
-            .to_vec(),
-    );
+            .to_vec();
+    for form in forms {
+        project.extend_from_slice(format!("BaseClass={}\r\n", form.name).as_bytes());
+        let (f, o) = forms::write(form);
+        builder.item(wp_ole::Item::storage(
+            &form.name,
+            vec![wp_ole::Item::stream("f", f), wp_ole::Item::stream("o", o)],
+        ));
+    }
+    builder.stream("PROJECT", project);
     builder.build()
 }
 
@@ -631,6 +666,7 @@ mod tests {
             read_only: false,
             private: false,
             offset: 0,
+            form: None,
         }
     }
 

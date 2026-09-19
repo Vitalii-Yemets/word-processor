@@ -5,6 +5,7 @@ pub(crate) mod align;
 mod appearance;
 mod arrange;
 mod autocorrectdialog;
+mod autoevents;
 pub(crate) mod autorecover;
 mod autoscroll;
 mod backstage;
@@ -21,7 +22,7 @@ mod composing;
 mod context;
 mod controls;
 mod correcting;
-mod debugger;
+pub mod debugger;
 mod defaults;
 pub(crate) mod designs;
 mod diagram;
@@ -496,6 +497,20 @@ pub struct Editor {
     basic: Option<crate::chrome::basicpane::BasicPane>,
     /// A macro running, which may be stopped in the middle of itself.
     debugger: Option<debugger::Debugger>,
+    /// A form a macro has put up, while it is up.
+    form_window: Option<crate::chrome::userform::FormWindow>,
+    /// What the last macro left its arguments as, for an event that passes
+    /// `Cancel` by reference and is answered by it.
+    last_left: Option<Vec<wp_vba::value::Value>>,
+    /// Whether the document answers for its content controls, which is
+    /// when the caret is watched crossing their edges; which control it is
+    /// in; and where it was last looked at. See [`autoevents`].
+    watching_controls: bool,
+    control_here: Option<usize>,
+    last_caret_seen: Option<wp_docx::TextPosition>,
+    /// Whether the closing macros have run for this attempt to close the
+    /// document, so that a close that asks twice runs them once.
+    closing_raised: bool,
     /// A list of people being typed from nothing, which is Word's Type a New
     /// List: it is not the merge's list until it has been saved. See
     /// [`mailings`].
@@ -844,6 +859,12 @@ impl Editor {
             enabled_here: false,
             basic: None,
             debugger: None,
+            form_window: None,
+            last_left: None,
+            watching_controls: false,
+            control_here: None,
+            last_caret_seen: None,
+            closing_raised: false,
             filling_in: None,
             left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,

@@ -30,13 +30,21 @@
 //! macro is running with nothing to stop it, that loop is where the time
 //! goes, which is the same as running it straight out — the difference is
 //! that it *can* stop.
+//!
+//! Three questions are left unanswered on purpose, and each is a way of
+//! waiting: the step before a line with a breakpoint on it, which is being
+//! stopped; a form the macro has put up, answered when something is done on
+//! it; and a message box or an input box, answered when the person answers
+//! the dialog. Every macro runs this way — the Run button, F5, and a
+//! document's own events — so that all three can happen from any of them.
 
 use std::collections::BTreeSet;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::Duration;
 
+use wp_vba::forms::{Form, Happening};
 use wp_vba::library::Host;
-use wp_vba::run::Program;
+use wp_vba::run::{Program, Source};
 use wp_vba::value::{Fault, Given, Handle, Value};
 
 use super::objects::Model;
@@ -79,8 +87,12 @@ enum Ask {
     /// About to run the statement on this line. The answer may not come for
     /// a while, and that is what being stopped is.
     Step(usize),
-    /// And the last thing it says.
-    Done(Box<Result<Value, Fault>>),
+    /// A form to put up, as it stands; answered when something is done on
+    /// it, which may be a while too.
+    Form(Box<Form>),
+    /// And the last thing it says: its answer, and what it left the
+    /// arguments as.
+    Done(Box<Result<(Value, Vec<Value>), Fault>>),
 }
 
 /// And what the window answers.
@@ -95,6 +107,8 @@ enum Answer {
     Nothing,
     /// Whether to carry on.
     Go(bool),
+    /// What was done on the form.
+    Happened(Box<Happening>),
 }
 
 /// The macro's side: everything it wants is a question down the channel.
@@ -184,6 +198,23 @@ impl Host for Proxy {
     fn step(&mut self, line: usize) -> bool {
         matches!(self.ask(Ask::Step(line)), Some(Answer::Go(true)))
     }
+
+    fn show_form(&mut self, form: &Form) -> Result<Happening, Fault> {
+        match self.ask(Ask::Form(Box::new(form.clone()))) {
+            Some(Answer::Happened(happening)) => Ok(*happening),
+            _ => Err(gone()),
+        }
+    }
+}
+
+/// A question a macro has put to the person, which the window shows as a
+/// dialog and answers when the dialog is answered.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Prompt {
+    /// `MsgBox`: the text, Word's buttons code, and the title.
+    Message { text: String, buttons: i64, title: String },
+    /// `InputBox`: the prompt, the title, and what the box starts with.
+    Input { prompt: String, title: String, default: String },
 }
 
 /// What a macro is told when the window has gone.
@@ -206,12 +237,22 @@ pub struct Debugger {
     pub stepping: bool,
     /// Which line it is stopped on, if it is stopped.
     pub stopped: Option<usize>,
+    /// The form it is waiting on, if it is: the window puts it up and
+    /// answers with what was done on it.
+    pub form: Option<Form>,
+    /// The question it is waiting on, if it is: a message box or an input
+    /// box, which the window puts up as a dialog.
+    pub prompt: Option<Prompt>,
+    /// Whether to say nothing when it ends well: an event's macro is not
+    /// something anybody asked to run.
+    pub quiet: bool,
     /// What the stopped procedure can see.
     pub watched: Vec<(String, Value)>,
     /// What it has said so far.
     pub said: Vec<String>,
-    /// And how it ended, once it has.
-    pub ended: Option<Result<Value, Fault>>,
+    /// And how it ended, once it has: its answer and what it left its
+    /// arguments as.
+    pub ended: Option<Result<(Value, Vec<Value>), Fault>>,
 }
 
 impl core::fmt::Debug for Debugger {
@@ -225,19 +266,30 @@ impl core::fmt::Debug for Debugger {
 
 impl Debugger {
     /// Starts a macro, stopping before its first statement if asked to.
+    ///
+    /// The whole project goes with it, because the macro may call into any
+    /// module of it; `name` says which module and which procedure, as
+    /// `Module1.Hello`.
     #[must_use]
-    pub fn start(source: &str, name: &str, breakpoints: BTreeSet<usize>, stepping: bool) -> Self {
+    pub fn start(
+        modules: Vec<Source>,
+        name: &str,
+        arguments: Vec<Value>,
+        breakpoints: BTreeSet<usize>,
+        stepping: bool,
+    ) -> Self {
         let (asks, from_macro) = std::sync::mpsc::channel();
         let (to_macro, answers) = std::sync::mpsc::channel();
-        let source = source.to_owned();
         let wanted = name.to_owned();
 
         let thread = std::thread::spawn(move || {
             let mut proxy = Proxy { asks: asks.clone(), answers };
-            let (program, complaints) = Program::read(&source);
+            let (program, complaints) = Program::of(&modules);
             let answer = match complaints.first() {
-                Some(complaint) => Err(Fault::saying(5, &complaint.to_string())),
-                None => program.run(&wanted, Vec::new(), &mut proxy),
+                Some((module, complaint)) => {
+                    Err(Fault::saying(5, &format!("{module}: {complaint}")))
+                }
+                None => program.run_back(&wanted, arguments, &mut proxy),
             };
             let _ = asks.send(Ask::Done(Box::new(answer)));
         });
@@ -251,6 +303,9 @@ impl Debugger {
             breakpoints,
             stepping,
             stopped: None,
+            form: None,
+            prompt: None,
+            quiet: false,
             watched: Vec::new(),
             said: Vec::new(),
             ended: None,
@@ -266,7 +321,11 @@ impl Debugger {
     /// Answers whatever the macro has asked, until it stops or finishes or
     /// has nothing to say for the moment.
     pub fn pump(&mut self, editor: &mut Editor) {
-        while self.stopped.is_none() && self.ended.is_none() {
+        while self.stopped.is_none()
+            && self.form.is_none()
+            && self.prompt.is_none()
+            && self.ended.is_none()
+        {
             let ask = match self.asks.recv_timeout(PATIENCE) {
                 Ok(ask) => ask,
                 // Still thinking: come back on the next tick rather than
@@ -298,15 +357,25 @@ impl Debugger {
                 }
                 Answer::Go(true)
             }
+            // The other: a form is up until something is done on it.
+            Ask::Form(form) => {
+                self.form = Some(*form);
+                return;
+            }
             Ask::Watching(values) => {
                 self.watched = values;
                 Answer::Nothing
             }
+            // A message box and an input box are modal, as they are in
+            // Word: the macro waits while the person reads or types, and is
+            // told which button was pressed. The window puts them up.
             Ask::Message { text, buttons, title } => {
-                Answer::Number(self.model.on(editor).message(&text, buttons, &title))
+                self.prompt = Some(Prompt::Message { text, buttons, title });
+                return;
             }
             Ask::Prompt { prompt, title, default } => {
-                Answer::Words(self.model.on(editor).ask(&prompt, &title, &default))
+                self.prompt = Some(Prompt::Input { prompt, title, default });
+                return;
             }
             Ask::Note(text) => {
                 self.model.on(editor).note(&text);
@@ -339,17 +408,99 @@ impl Debugger {
         if self.stopped.take().is_some() {
             let _ = self.answers.send(Answer::Go(false));
         }
+        // A macro waiting on a form is told the form was shut, and its own
+        // code decides what that means; nothing else can reach it there.
+        if self.form.take().is_some() {
+            let _ = self.answers.send(Answer::Happened(Box::new(Happening::Closed)));
+        }
+        // And one waiting on a question is told it was cancelled.
+        match self.prompt.take() {
+            Some(Prompt::Message { buttons, .. }) => {
+                let _ = self.answers.send(Answer::Number(cancel_code(buttons)));
+            }
+            Some(Prompt::Input { .. }) => {
+                let _ = self.answers.send(Answer::Words(None));
+            }
+            None => {}
+        }
+    }
+
+    /// Whether it is waiting for the window: stopped, on a form, or on a
+    /// question.
+    #[must_use]
+    pub fn waiting(&self) -> bool {
+        self.stopped.is_some() || self.form.is_some() || self.prompt.is_some()
+    }
+
+    /// Answers the message box it is waiting on with Word's number for the
+    /// button: `vbOK` is one, `vbCancel` two, and so on to `vbNo`, seven.
+    pub fn message_answered(&mut self, button: i64) {
+        if matches!(self.prompt.take(), Some(Prompt::Message { .. })) {
+            let _ = self.answers.send(Answer::Number(button));
+        }
+    }
+
+    /// Answers the input box it is waiting on, or says it was cancelled.
+    pub fn input_answered(&mut self, words: Option<String>) {
+        if matches!(self.prompt.take(), Some(Prompt::Input { .. })) {
+            let _ = self.answers.send(Answer::Words(words));
+        }
+    }
+
+    /// Answers the form it is waiting on.
+    pub fn form_happened(&mut self, happening: Happening) {
+        if self.form.take().is_some() {
+            let _ = self.answers.send(Answer::Happened(Box::new(happening)));
+        }
     }
 
     /// What the macro said and what it showed, for the window to put up.
     #[must_use]
-    pub fn finished(&mut self) -> Option<Result<Value, Fault>> {
+    pub fn finished(&mut self) -> Option<Result<(Value, Vec<Value>), Fault>> {
         let ended = self.ended.take()?;
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
         Some(ended)
     }
+}
+
+/// Word's buttons for a `MsgBox`, by the low bits of its buttons code, each
+/// with the number `MsgBox` answers when it is pressed: the labels are
+/// `vbOKOnly` to `vbRetryCancel`, and the numbers `vbOK` to `vbNo`.
+#[must_use]
+pub fn message_buttons(buttons: i64) -> &'static [(&'static str, i64)] {
+    match buttons & 0xF {
+        1 => &[("OK", 1), ("Cancel", 2)],
+        2 => &[("Abort", 3), ("Retry", 4), ("Ignore", 5)],
+        3 => &[("Yes", 6), ("No", 7), ("Cancel", 2)],
+        4 => &[("Yes", 6), ("No", 7)],
+        5 => &[("Retry", 4), ("Cancel", 2)],
+        _ => &[("OK", 1)],
+    }
+}
+
+/// Which of them Enter presses: the first unless the code says the second
+/// or the third, which `vbDefaultButton2` and `vbDefaultButton3` do.
+#[must_use]
+pub fn default_button(buttons: i64) -> usize {
+    match buttons & 0xF00 {
+        0x100 => 1,
+        0x200 => 2,
+        _ => 0,
+    }
+}
+
+/// What Escape answers: the button that means no, where there is one, and
+/// otherwise the only button there is.
+#[must_use]
+pub fn cancel_code(buttons: i64) -> i64 {
+    let offered = message_buttons(buttons);
+    offered
+        .iter()
+        .find(|(_, code)| *code == 2)
+        .or_else(|| offered.last())
+        .map_or(1, |(_, code)| *code)
 }
 
 impl Drop for Debugger {

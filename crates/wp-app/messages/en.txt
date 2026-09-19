@@ -24,6 +24,7 @@
 = A rule under every heading
 = A to Z
 = AaBbCcDdEe
+= Abort
 = Above
 = Accept
 = Accept All
@@ -332,6 +333,7 @@
 = Hyphenation
 = Hyphens (--) with dash (—)
 = INitial CAps
+= Ignore
 = Illustrations
 = Immediate
 = In
@@ -432,6 +434,7 @@
 = New name
 = Next
 = Next Footnote
+= No
 = No names were typed
 = No two of them say the same thing
 = Nobody has been asked to sign.
@@ -574,6 +577,7 @@
 = Restricted to: {0}
 = Restricted to: {0}, formatting limited
 = Results
+= Retry
 = Review
 = Reviewing Pane
 = Revised
@@ -831,6 +835,7 @@
 = WordArt
 = Wrap Text
 = Write & Insert Fields
+= Yes
 = Yes, Start Enforcing Protection
 = You may edit one stretch of this document.
 = You may edit {0} stretches of this document.

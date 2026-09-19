@@ -71,12 +71,14 @@ Visual Basic — and every mass outbreak of document-borne malware for thirty
 years has come through that door. Word's answer is a bar across the top of the
 document, a trust centre, trusted locations and signed projects: a macro runs
 when the person opening the file says it may, and not before. That is the
-behaviour being copied here, in that order. Today somebody else's macros are
-kept untouched through an edit and a save and the program says a document
-carries them; running them is the section of the roadmap that builds the
-language, the object model and the trust that gates them, and the gate is
-built before anything is allowed through it. There is also a recorder: the
-buttons pressed and the words typed, played back.
+behaviour being copied here, in that order. The language runs — the project
+read out of the file, every module of it, classes and forms included, with a
+debugger that stops on a line — against an object model that answers what it
+can and refuses the rest by name; and nothing runs until the gate says so:
+not the Run button, not F5, not a document's own `AutoOpen`. A project is
+kept untouched through an edit and a save, and edited where its editor was
+used. There is also a recorder: the buttons pressed and the words typed,
+played back.
 
 **Multilingual from the ground up.** Not a translation added at the end. The text
 engine lays out bidirectional scripts and shapes the ones that need shaping:
@@ -144,6 +146,14 @@ should: everything else must come out as it went in.
 | `wp-rsa` | Numbers too big for a machine word, and the signatures made with them |
 | `wp-sign` | Canonical XML, and the signature a signed document carries |
 | `wp-docx` | The WordprocessingML document model and styles |
+| `wp-doc` | The binary `.doc` Word wrote from 1997 to 2003 |
+| `wp-rtf` | Rich Text Format, read and written back |
+| `wp-html` | Web pages and MHT, read and written back |
+| `wp-odt` | OpenDocument Text, read and written |
+| `wp-text` | Plain text: the code pages, told apart, read and written |
+| `wp-vba` | The macro project: its streams, the language, and the forms it shows |
+| `wp-dict` | The open dictionary formats: word lists and affix rules |
+| `wp-grammar` | The mistakes that are not spelling, found by rules |
 | `wp-font` | TrueType and OpenType parsing: metrics, character mapping, outlines |
 | `wp-shape` | Turning characters into the glyphs that draw them: joining, ligatures |
 | `wp-bidi` | The Unicode bidirectional algorithm, for mixed-direction text |
@@ -186,6 +196,7 @@ The formats are public and the implementation follows them directly:
 - **ECMA-376** — Office Open XML: Part 1 for WordprocessingML, Part 2 for packaging
 - **[MS-OI29500]** — Microsoft's documented deviations from ECMA-376
 - **[MS-DOC]**, **[MS-CFB]** — the legacy binary `.doc` format
+- **[MS-OVBA]**, **[MS-OFORMS]** — the macro project and the forms in it
 - **RFC 1950 / 1951 / 1952** — zlib, DEFLATE, gzip
 - **PKWARE APPNOTE** — the ZIP format, including Zip64
 - **ISO/IEC 14496-22**, OpenType — font files

@@ -179,7 +179,7 @@ impl Editor {
             vec![
                 crate::chrome::dialog::Field::note(&crate::messages::with(
                     "The selection is saved to the {0} gallery.",
-                    &[&crate::messages::t("Watermarks").to_owned()],
+                    &[crate::messages::t("Watermarks")],
                 )),
                 crate::chrome::dialog::Field::Text {
                     label: "Name".to_owned(),

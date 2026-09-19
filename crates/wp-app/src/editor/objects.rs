@@ -67,6 +67,21 @@ mod kind {
     pub const COMMENTS: &str = "Comments";
     pub const COMMENT: &str = "Comment";
     pub const FIND: &str = "Find";
+    pub const CONTENT_CONTROLS: &str = "ContentControls";
+    pub const CONTENT_CONTROL: &str = "ContentControl";
+}
+
+/// Word's `WdContentControlType`, for what `.Type` answers.
+fn control_type(kind: wp_docx::controls::ControlKind) -> i64 {
+    use wp_docx::controls::ControlKind;
+    match kind {
+        ControlKind::RichText => 0,
+        ControlKind::PlainText => 1,
+        ControlKind::ComboBox => 3,
+        ControlKind::DropDown => 4,
+        ControlKind::Date => 6,
+        ControlKind::CheckBox => 8,
+    }
 }
 
 /// What a macro is holding on to, and what it has said.
@@ -83,6 +98,10 @@ pub struct Model {
     pub printed: Vec<String>,
     /// What a `Find` has been told to look for, by the range it belongs to.
     finding: Vec<(u64, String, String)>,
+    /// The ranges that are a content control's inside, by range and by
+    /// where the control starts: writing into one goes through the control
+    /// rather than round it.
+    inside_controls: Vec<(u64, TextPosition)>,
 }
 
 impl Model {
@@ -259,6 +278,28 @@ impl Bound<'_> {
         self.editor.relayout();
         self.editor.needs_redraw = true;
     }
+
+    /// The content controls in a stretch, by their number in the document.
+    fn controls_in(&self, (start, end): (TextPosition, TextPosition)) -> Vec<usize> {
+        self.editor
+            .document
+            .controls()
+            .iter()
+            .enumerate()
+            .filter(|(_, control)| control.start >= start && control.start <= end)
+            .map(|(at, _)| at)
+            .collect()
+    }
+
+    /// One content control, by its number.
+    fn control(&self, id: u64) -> Result<wp_docx::controls::Control, Fault> {
+        self.editor
+            .document
+            .controls()
+            .get(id as usize)
+            .cloned()
+            .ok_or_else(|| Fault::saying(91, "That content control is no longer in the document"))
+    }
 }
 
 impl Host for Bound<'_> {
@@ -312,6 +353,12 @@ impl Host for Bound<'_> {
             kind::STYLES => {
                 for (at, _) in self.editor.document.styles().all().iter().enumerate() {
                     out.push(Value::Object(Handle::of(kind::STYLE, at as u64)));
+                }
+            }
+            kind::CONTENT_CONTROLS => {
+                let stretch = self.stretch(&Handle::of(kind::RANGE, object.id))?;
+                for at in self.controls_in(stretch) {
+                    out.push(Value::Object(Handle::of(kind::CONTENT_CONTROL, at as u64)));
                 }
             }
             other => {
@@ -427,6 +474,52 @@ impl Host for Bound<'_> {
             (kind::DOCUMENT, "tables") => {
                 let collection = Value::Object(Handle::of(kind::TABLES, 0));
                 self.one_of(collection, given)
+            }
+            (kind::DOCUMENT | kind::RANGE | kind::SELECTION, "contentcontrols") => {
+                let stretch = self.stretch(object)?;
+                self.model.ranges.push(stretch);
+                #[allow(clippy::cast_possible_truncation)]
+                let collection = Value::Object(Handle::of(
+                    kind::CONTENT_CONTROLS,
+                    self.model.ranges.len() as u64 - 1,
+                ));
+                self.one_of(collection, given)
+            }
+
+            // --- Content controls ---------------------------------------
+            (kind::CONTENT_CONTROLS, "count") => {
+                let stretch = self.stretch(&Handle::of(kind::RANGE, object.id))?;
+                Ok(Value::Long(self.controls_in(stretch).len() as i64))
+            }
+            (kind::CONTENT_CONTROLS, "item") => {
+                let stretch = self.stretch(&Handle::of(kind::RANGE, object.id))?;
+                let which = first.map_or(Ok(1), |value| value.whole())?;
+                let inside = self.controls_in(stretch);
+                let at = usize::try_from(which - 1).map_err(|_| Fault::of(9))?;
+                let found = inside.get(at).copied().ok_or_else(|| Fault::of(9))?;
+                Ok(Value::Object(Handle::of(kind::CONTENT_CONTROL, found as u64)))
+            }
+            (kind::CONTENT_CONTROL, "title") => Ok(Value::Text(self.control(object.id)?.alias)),
+            (kind::CONTENT_CONTROL, "tag") => Ok(Value::Text(self.control(object.id)?.tag)),
+            (kind::CONTENT_CONTROL, "type") => {
+                Ok(Value::Long(control_type(self.control(object.id)?.kind)))
+            }
+            (kind::CONTENT_CONTROL, "checked") => {
+                Ok(Value::Boolean(self.control(object.id)?.checked))
+            }
+            (kind::CONTENT_CONTROL, "lockcontents") => {
+                Ok(Value::Boolean(self.control(object.id)?.locked_edit))
+            }
+            (kind::CONTENT_CONTROL, "lockcontentcontrol") => {
+                Ok(Value::Boolean(self.control(object.id)?.locked_delete))
+            }
+            (kind::CONTENT_CONTROL, "range") => {
+                let control = self.control(object.id)?;
+                let range = self.range((control.start, control.end));
+                if let Value::Object(handle) = &range {
+                    self.model.inside_controls.push((handle.id, control.start));
+                }
+                Ok(range)
             }
 
             // --- Paragraphs ---------------------------------------------
@@ -736,6 +829,56 @@ impl Host for Bound<'_> {
     fn set_member(&mut self, object: &Handle, member: &str, value: Value) -> Result<(), Fault> {
         let asked = member.to_ascii_lowercase();
         match (object.kind.as_str(), asked.as_str()) {
+            // --- Content controls ---------------------------------------
+            (kind::CONTENT_CONTROL, "title" | "tag" | "lockcontents" | "lockcontentcontrol") => {
+                let control = self.control(object.id)?;
+                let (mut alias, mut tag) = (control.alias.clone(), control.tag.clone());
+                let (mut locked_delete, mut locked_edit) =
+                    (control.locked_delete, control.locked_edit);
+                match asked.as_str() {
+                    "title" => alias = value.text()?,
+                    "tag" => tag = value.text()?,
+                    "lockcontents" => locked_edit = value.truth()?,
+                    _ => locked_delete = value.truth()?,
+                }
+                if !self.editor.document.set_control_properties(
+                    control.start,
+                    &alias,
+                    &tag,
+                    locked_delete,
+                    locked_edit,
+                ) {
+                    return Err(Fault::saying(5, "That content control could not be changed"));
+                }
+                self.done();
+                Ok(())
+            }
+            (kind::CONTENT_CONTROL, "checked") => {
+                let control = self.control(object.id)?;
+                if !self.editor.document.set_control_checked(control.start, value.truth()?) {
+                    return Err(Fault::saying(5, "Only a check box content control can be ticked"));
+                }
+                self.done();
+                Ok(())
+            }
+            // A range that is a control's inside is written through the
+            // control, which keeps the control round it.
+            (kind::RANGE, "text")
+                if self.model.inside_controls.iter().any(|(id, _)| *id == object.id) =>
+            {
+                let start = self
+                    .model
+                    .inside_controls
+                    .iter()
+                    .find(|(id, _)| *id == object.id)
+                    .map(|(_, start)| *start)
+                    .ok_or_else(|| Fault::of(91))?;
+                if !self.editor.document.set_control_text(start, &value.text()?) {
+                    return Err(Fault::saying(5, "That content control takes no text"));
+                }
+                self.done();
+                Ok(())
+            }
             (kind::RANGE | kind::SELECTION | kind::PARAGRAPH, "text") => {
                 let stretch = self.stretch(object)?;
                 let text = value.text()?;
