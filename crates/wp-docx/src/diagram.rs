@@ -653,8 +653,8 @@ impl Document {
         // gesture, so that change is not a step of its own.
         let parts = self.diagram_parts(reference);
         let names: Vec<&str> = parts.iter().map(String::as_str).collect();
-        self.record_with_parts(at, &names);
         self.begin_gesture();
+        self.record_with_parts(at, &names);
         let resized = self.set_drawing_size_at(at, width, height);
         self.end_gesture();
         if !resized {

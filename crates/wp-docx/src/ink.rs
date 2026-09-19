@@ -55,7 +55,7 @@ const EMU_PER_HIMETRIC: f64 = 360.0;
 
 /// One stroke of the pen, from the moment it went down to the moment it came
 /// up.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Stroke {
     /// Six hex digits.
     pub colour: String,
@@ -69,10 +69,42 @@ pub struct Stroke {
     pub flat: bool,
     /// Where the pen went, in English metric units in the ink's own space.
     pub points: Vec<(i64, i64)>,
+    /// How hard the pen was pressed at each point, from nought to one — one
+    /// per point when the pen reported it, and nothing at all when it did
+    /// not. A stroke with pressure swells and thins as it goes.
+    pub pressure: Vec<f32>,
+}
+
+impl Stroke {
+    /// How hard the pen was pressed at one point, or half when it never said.
+    #[must_use]
+    pub fn pressure_at(&self, index: usize) -> f32 {
+        self.pressure.get(index).copied().unwrap_or(0.5)
+    }
+
+    /// The rectangle this one stroke covers, pen width counted in: left, top,
+    /// right, bottom.
+    #[must_use]
+    pub fn bounds(&self) -> Option<(i64, i64, i64, i64)> {
+        let half = self.width_emu / 2;
+        let mut bounds: Option<(i64, i64, i64, i64)> = None;
+        for (x, y) in &self.points {
+            bounds = Some(match bounds {
+                None => (x - half, y - half, x + half, y + half),
+                Some((left, top, right, bottom)) => (
+                    left.min(x - half),
+                    top.min(y - half),
+                    right.max(x + half),
+                    bottom.max(y + half),
+                ),
+            });
+        }
+        bounds
+    }
 }
 
 /// Everything somebody drew in one go.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Ink {
     pub strokes: Vec<Stroke>,
 }
@@ -92,20 +124,30 @@ impl Ink {
     pub fn bounds(&self) -> Option<(i64, i64, i64, i64)> {
         let mut bounds: Option<(i64, i64, i64, i64)> = None;
         for stroke in &self.strokes {
-            let half = stroke.width_emu / 2;
-            for (x, y) in &stroke.points {
-                bounds = Some(match bounds {
-                    None => (x - half, y - half, x + half, y + half),
-                    Some((left, top, right, bottom)) => (
-                        left.min(x - half),
-                        top.min(y - half),
-                        right.max(x + half),
-                        bottom.max(y + half),
-                    ),
-                });
-            }
+            let Some((left, top, right, bottom)) = stroke.bounds() else { continue };
+            bounds = Some(match bounds {
+                None => (left, top, right, bottom),
+                Some((l, t, r, b)) => (l.min(left), t.min(top), r.max(right), b.max(bottom)),
+            });
         }
         bounds
+    }
+
+    /// The same ink with every point moved so that the rectangle it covers
+    /// starts at the origin, and how far it moved: what a stroke drawn on a
+    /// page becomes before it is written, since the file keeps the ink in a
+    /// space of its own and says where that space goes separately.
+    #[must_use]
+    pub fn at_origin(&self) -> (Self, (i64, i64)) {
+        let Some((left, top, _, _)) = self.bounds() else { return (self.clone(), (0, 0)) };
+        let mut moved = self.clone();
+        for stroke in &mut moved.strokes {
+            for (x, y) in &mut stroke.points {
+                *x -= left;
+                *y -= top;
+            }
+        }
+        (moved, (left, top))
     }
 }
 
@@ -116,23 +158,38 @@ impl Document {
     /// and the pen was somewhere when it drew it. Returns whether anything
     /// went in, which is false for ink with no stroke in it.
     pub fn insert_ink(&mut self, ink: &Ink) -> Result<bool, crate::Error> {
+        self.insert_ink_as(ink, None)
+    }
+
+    /// Puts ink at the caret, floating where the anchor says: what a stroke
+    /// drawn on the page with the pen becomes.
+    ///
+    /// Written as Word writes ink — a drawing whose graphic is the ink part,
+    /// anchored the way a picture floats, in an alternative a reader that
+    /// does not know ink may pass over. The ink's own space starts at the
+    /// stroke's top left corner, and the anchor says where that corner goes.
+    pub fn insert_ink_floating(
+        &mut self,
+        ink: &Ink,
+        anchor: &crate::anchor::Anchor,
+    ) -> Result<bool, crate::Error> {
+        self.insert_ink_as(ink, Some(anchor))
+    }
+
+    fn insert_ink_as(
+        &mut self,
+        ink: &Ink,
+        anchor: Option<&crate::anchor::Anchor>,
+    ) -> Result<bool, crate::Error> {
+        let (ink, _) = ink.at_origin();
         let Some((left, top, right, bottom)) = ink.bounds().filter(|_| !ink.is_empty()) else {
             return Ok(false);
         };
 
-        // A name nothing else in the package has.
-        let mut index = 1usize;
-        let name = loop {
-            let candidate = format!("word/ink/ink{index}.xml");
-            if self.package().part(&candidate).is_none() {
-                break candidate;
-            }
-            index += 1;
-        };
-
+        let name = self.free_ink_part_name();
         let caret = self.caret();
         self.record(crate::history::EditKind::Structural, caret, false);
-        self.add_package_part(&name, INK_CONTENT_TYPE, ink_xml(ink));
+        self.add_package_part(&name, INK_CONTENT_TYPE, ink_xml(&ink));
         let id = self.point_at_part(&name, INK_RELATIONSHIP)?;
 
         // The run that points at it is an extension, so the document has to
@@ -140,11 +197,18 @@ impl Document {
         crate::edit::declare_extension(&mut self.tree_mut().root, "w14", W14);
 
         let prefix = self.prefix();
-        let part = content_part_element(&id, right - left, bottom - top);
+        let (width, height) = (right - left, bottom - top);
+        let element = match anchor {
+            None => content_part_element(&id, width, height),
+            Some(anchor) => {
+                let number = self.next_drawing_id();
+                ink_drawing_element(&id, width, height, anchor, number, prefix.as_deref())
+            }
+        };
         let inserted = crate::position::insert_element_at(
             &mut self.tree_mut().root,
             caret,
-            part,
+            element,
             prefix.as_deref(),
         );
 
@@ -153,6 +217,100 @@ impl Document {
             self.mark_modified();
         }
         Ok(inserted)
+    }
+
+    /// A part name nothing else in the package has.
+    fn free_ink_part_name(&self) -> String {
+        let mut index = 1usize;
+        loop {
+            let candidate = format!("word/ink/ink{index}.xml");
+            if self.package().part(&candidate).is_none() {
+                return candidate;
+            }
+            index += 1;
+        }
+    }
+
+    /// A number no drawing in the document has yet, for a new one's `docPr`.
+    fn next_drawing_id(&self) -> u32 {
+        fn largest(element: &Element, found: &mut u32) {
+            if element.local_name() == "docPr" {
+                if let Some(id) = element.attribute_by_name("id").and_then(|id| id.parse().ok()) {
+                    *found = (*found).max(id);
+                }
+            }
+            for child in element.child_elements() {
+                largest(child, found);
+            }
+        }
+        let mut found = 0;
+        largest(&self.tree().root, &mut found);
+        found + 1
+    }
+
+    /// The ink drawing at one place in the text, if that is what is there.
+    #[must_use]
+    pub fn ink_at(&self, at: crate::TextPosition) -> Option<crate::model::InkReference> {
+        read_drawing_reference(self.drawing_element_at(at)?)
+    }
+
+    /// Writes the ink at one place afresh: what the eraser leaves behind when
+    /// it rubs part of a stroke out.
+    ///
+    /// The ink's space starts at the origin again, and the drawing moves by
+    /// as much as the ink's corner did, so what is left stays where it was
+    /// drawn. Nothing left takes the drawing out altogether.
+    pub fn replace_ink_at(&mut self, at: crate::TextPosition, ink: &Ink) -> bool {
+        let Some(reference) = self.ink_at(at) else { return false };
+        let Some(target) = self.relationship_target(&reference.relationship) else { return false };
+        if ink.is_empty() {
+            return self.remove_drawing_at(at);
+        }
+        let (moved, (left, top)) = ink.at_origin();
+        let Some((_, _, right, bottom)) = moved.bounds() else { return false };
+
+        // The strokes live in a part of their own, so the step keeps that
+        // part as it was: undo puts the rubbed-out stroke back.
+        let caret = self.caret();
+        self.begin_gesture();
+        self.record_with_parts(caret, &[&target]);
+        self.package_mut().set_part(&target, ink_xml(&moved).into_bytes());
+        let mut done = self.set_drawing_size_at(at, right, bottom);
+        if let Some(mut anchor) = reference.anchor {
+            use crate::anchor::Placement;
+            if let Placement::Offset(across) = anchor.horizontal {
+                anchor.horizontal = Placement::Offset(across + left);
+            }
+            if let Placement::Offset(down) = anchor.vertical {
+                anchor.vertical = Placement::Offset(down + top);
+            }
+            done |= self.set_anchor_at(at, Some(&anchor));
+        }
+        self.end_gesture();
+        if done {
+            self.mark_modified();
+        }
+        done
+    }
+
+    /// Takes the drawing at one place out of the text, whatever it holds.
+    pub fn remove_drawing_at(&mut self, at: crate::TextPosition) -> bool {
+        if !self.drawing_at(at) {
+            return false;
+        }
+        let caret = self.caret();
+        self.record(crate::history::EditKind::Structural, caret, false);
+        let done = crate::position::delete_range(
+            &mut self.tree_mut().root,
+            at.paragraph,
+            at.offset,
+            at.offset + 1,
+        );
+        if done {
+            self.set_caret(at);
+            self.mark_modified();
+        }
+        done
     }
 
     /// The ink a run points at, if the package holds it.
@@ -211,7 +369,7 @@ pub fn read_ink(root: &Element) -> Ink {
             .or_else(|| contexts.first().map(|(_, channels)| channels.clone()))
             .unwrap_or_default();
 
-        let points = decode(&trace.text_content(), &channels);
+        let (points, pressure) = decode(&trace.text_content(), &channels);
         if points.len() < 2 {
             continue;
         }
@@ -221,6 +379,7 @@ pub fn read_ink(root: &Element) -> Ink {
             transparency: brush.transparency,
             flat: brush.flat,
             points,
+            pressure,
         });
     }
     Ink { strokes }
@@ -232,6 +391,9 @@ struct Channel {
     name: String,
     /// English metric units to one of whatever this channel counts in.
     scale: f64,
+    /// The most the channel can say, for the one channel read as a share of
+    /// its most: how hard the pen was pressed.
+    max: f64,
 }
 
 /// Every brush anywhere in the part, by the name strokes call it.
@@ -300,6 +462,11 @@ fn gather_channels(element: &Element, out: &mut Vec<Channel>) {
             out.push(Channel {
                 name: child.attribute(None, "name").unwrap_or_default().to_owned(),
                 scale: measure(child.attribute(None, "units").unwrap_or("himetric")),
+                max: child
+                    .attribute(None, "max")
+                    .and_then(|value| value.trim().parse::<f64>().ok())
+                    .filter(|max| *max > 0.0)
+                    .unwrap_or(32_767.0),
             });
         } else {
             gather_channels(child, out);
@@ -346,18 +513,23 @@ fn measure(units: &str) -> f64 {
     }
 }
 
-/// The points of one trace, in English metric units.
-fn decode(text: &str, channels: &[Channel]) -> Vec<(i64, i64)> {
+/// The points of one trace, in English metric units, and how hard the pen
+/// was pressed at each when the trace carries that — the `F` channel, as a
+/// share of the most it can say.
+fn decode(text: &str, channels: &[Channel]) -> (Vec<(i64, i64)>, Vec<f32>) {
     // The first two channels when the file names none: every trace format
     // written by anything begins with where the pen was.
     let across = channels.iter().position(|channel| channel.name == "X").unwrap_or(0);
     let down = channels.iter().position(|channel| channel.name == "Y").unwrap_or(1);
+    let force = channels.iter().position(|channel| channel.name == "F");
     let scale =
         |index: usize| channels.get(index).map_or(EMU_PER_HIMETRIC, |channel| channel.scale);
     let (across_scale, down_scale) = (scale(across), scale(down));
+    let most = force.map_or(1.0, |index| channels[index].max);
 
     let mut state: Vec<Value> = Vec::new();
     let mut points = Vec::new();
+    let mut pressure = Vec::new();
     for piece in text.split(',') {
         let numbers = values(piece);
         if numbers.is_empty() {
@@ -371,8 +543,16 @@ fn decode(text: &str, channels: &[Channel]) -> Vec<(i64, i64)> {
         }
         let (Some(x), Some(y)) = (state.get(across), state.get(down)) else { continue };
         points.push(((x.value * across_scale) as i64, (y.value * down_scale) as i64));
+        if let Some(pressed) = force.and_then(|index| state.get(index)) {
+            pressure.push((pressed.value / most).clamp(0.0, 1.0) as f32);
+        }
     }
-    points
+    // A trace that said how hard the pen was pressed says it for every point
+    // or for none: a pressure the pen stopped reporting is not worth keeping.
+    if pressure.len() != points.len() {
+        pressure.clear();
+    }
+    (points, pressure)
 }
 
 /// One channel's running value: what it is now, how it last changed, and which
@@ -486,6 +666,7 @@ pub fn read_reference(element: &Element) -> Option<crate::model::InkReference> {
         height_emu: 0,
         name: String::new(),
         description: String::new(),
+        anchor: None,
     };
 
     if let Some(transform) = element.child_elements().find(|child| child.local_name() == "xfrm") {
@@ -514,6 +695,65 @@ pub fn read_reference(element: &Element) -> Option<crate::model::InkReference> {
     Some(reference)
 }
 
+/// The graphic data a drawing holds when it is ink: Word's own 2010
+/// extension, which is what says the content part is ink rather than
+/// anything else a content part may be.
+pub const INK_GRAPHIC: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingInk";
+
+/// Reads what a `w:drawing` says about the ink it holds, if ink is what it
+/// holds: the content part under its graphic, the anchor it floats at, and
+/// the name the drawing carries.
+///
+/// This is the form Word has written ink in since 2013 — a drawing like any
+/// other, whose graphic is the ink — and the run form above is the 2010 one.
+#[must_use]
+pub fn read_drawing_reference(drawing: &Element) -> Option<crate::model::InkReference> {
+    fn find_part(element: &Element) -> Option<&Element> {
+        if element.local_name() == "contentPart" && element.namespace.as_deref() == Some(W14) {
+            return Some(element);
+        }
+        element.child_elements().find_map(find_part)
+    }
+    fn find<'a>(element: &'a Element, local: &str) -> Option<&'a Element> {
+        if element.local_name() == local {
+            return Some(element);
+        }
+        element.child_elements().find_map(|child| find(child, local))
+    }
+
+    let data = find(drawing, "graphicData")?;
+    let part = if data.attribute_by_name("uri") == Some(INK_GRAPHIC) {
+        find_part(data)?
+    } else {
+        // A drawing that does not name the ink extension but holds a content
+        // part all the same is read as ink too: the part is the thing.
+        find_part(data)?
+    };
+    let mut reference = read_reference(part)?;
+    reference.anchor = crate::anchor::read_anchor(drawing);
+    // The drawing's box is what the text made room for, and the part's own
+    // transform is the same size when Word wrote both; the box wins where
+    // they differ, as a picture's does.
+    if let Some(extent) = find(drawing, "extent") {
+        let number = |name: &str| {
+            extent.attribute(None, name).and_then(|value| value.trim().parse().ok()).unwrap_or(0)
+        };
+        if number("cx") > 0 && number("cy") > 0 {
+            reference.width_emu = number("cx");
+            reference.height_emu = number("cy");
+        }
+    }
+    if let Some(properties) = find(drawing, "docPr") {
+        if let Some(name) = properties.attribute_by_name("name") {
+            reference.name = name.to_owned();
+        }
+        if let Some(description) = properties.attribute_by_name("descr") {
+            reference.description = description.to_owned();
+        }
+    }
+    Some(reference)
+}
+
 /// The ink part: the pens, and where each of them went.
 ///
 /// Every number is written outright. The format allows differences, and Word
@@ -522,13 +762,21 @@ pub fn read_reference(element: &Element) -> Option<crate::model::InkReference> {
 /// thing and says it in the plainest way the format has.
 #[must_use]
 fn ink_xml(ink: &Ink) -> String {
+    // How hard the pen was pressed is a channel of its own, written when any
+    // stroke has it, as the share of the most the channel can say.
+    let pressed = ink.strokes.iter().any(|stroke| !stroke.pressure.is_empty());
+    let force = if pressed {
+        "<inkml:channel name=\"F\" type=\"integer\" max=\"32767\" units=\"dev\"/>"
+    } else {
+        ""
+    };
     let mut out = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
          <inkml:ink xmlns:inkml=\"{INKML}\"><inkml:definitions>\
          <inkml:context xml:id=\"ctx0\"><inkml:inkSource xml:id=\"src0\"><inkml:traceFormat>\
          <inkml:channel name=\"X\" type=\"integer\" max=\"32767\" units=\"himetric\"/>\
          <inkml:channel name=\"Y\" type=\"integer\" max=\"32767\" units=\"himetric\"/>\
-         </inkml:traceFormat></inkml:inkSource></inkml:context>"
+         {force}</inkml:traceFormat></inkml:inkSource></inkml:context>"
     );
 
     for (index, stroke) in ink.strokes.iter().enumerate() {
@@ -556,12 +804,73 @@ fn ink_xml(ink: &Ink) -> String {
             }
             let himetric = |emu: i64| (emu as f64 / EMU_PER_HIMETRIC).round() as i64;
             out.push_str(&format!("{} {}", himetric(*x), himetric(*y)));
+            if pressed {
+                // A stroke without pressure among strokes with it is pressed
+                // evenly, halfway: the width the pen was set to.
+                let share = (stroke.pressure_at(at) * 32_767.0).round() as i64;
+                out.push_str(&format!(" {share}"));
+            }
         }
         out.push_str("</inkml:trace>");
     }
 
     out.push_str("</inkml:ink>");
     out
+}
+
+/// The drawing Word writes ink as: an anchored drawing whose graphic is the
+/// content part, inside an alternative only a reader that knows ink takes.
+///
+/// No fallback is written beside it. Word writes a picture of the ink for
+/// readers too old to know the extension, and this program has no such
+/// picture to write; a reader that old sees nothing where the ink is, which
+/// is what a reader that old sees of every extension.
+fn ink_drawing_element(
+    relationship: &str,
+    width_emu: i64,
+    height_emu: i64,
+    anchor: &crate::anchor::Anchor,
+    number: u32,
+    prefix: Option<&str>,
+) -> Element {
+    use crate::edit::{name_with, DRAWING_MAIN, DRAWING_WORDPROCESSING};
+
+    let mut choice_holder = Element::new("mc:AlternateContent", Some(crate::read::MC));
+    choice_holder.declarations.push((Some("mc".to_owned()), crate::read::MC.to_owned()));
+    choice_holder.declarations.push((Some("wpi".to_owned()), INK_GRAPHIC.to_owned()));
+    let mut choice = Element::new("mc:Choice", Some(crate::read::MC));
+    choice.set_attribute("Requires", "wpi");
+
+    let mut drawing = Element::new(&name_with(prefix, "drawing"), Some(crate::read::W));
+    let mut inline = Element::new("wp:inline", Some(DRAWING_WORDPROCESSING));
+    inline.declarations.push((Some("wp".to_owned()), DRAWING_WORDPROCESSING.to_owned()));
+    for side in ["distT", "distB", "distL", "distR"] {
+        inline.set_attribute(side, "0");
+    }
+    let mut extent = Element::new("wp:extent", Some(DRAWING_WORDPROCESSING));
+    extent.set_attribute("cx", &width_emu.max(1).to_string());
+    extent.set_attribute("cy", &height_emu.max(1).to_string());
+    inline.push_element(extent);
+    let mut properties = Element::new("wp:docPr", Some(DRAWING_WORDPROCESSING));
+    properties.set_attribute("id", &number.to_string());
+    properties.set_attribute("name", &format!("Ink {number}"));
+    inline.push_element(properties);
+    inline.push_element(Element::new("wp:cNvGraphicFramePr", Some(DRAWING_WORDPROCESSING)));
+
+    let mut graphic = Element::new("a:graphic", Some(DRAWING_MAIN));
+    graphic.declarations.push((Some("a".to_owned()), DRAWING_MAIN.to_owned()));
+    let mut data = Element::new("a:graphicData", Some(DRAWING_MAIN));
+    data.set_attribute("uri", INK_GRAPHIC);
+    data.push_element(content_part_element(relationship, width_emu, height_emu));
+    graphic.push_element(data);
+    inline.push_element(graphic);
+    drawing.push_element(inline);
+    // Floating, the way a picture floats: the same wrapper, turned about.
+    crate::floating::set_anchor_on(&mut drawing, Some(anchor), prefix);
+
+    choice.push_element(drawing);
+    choice_holder.push_element(choice);
+    choice_holder
 }
 
 /// The run's own element: which part the ink is in, and how big it is drawn.
@@ -782,6 +1091,7 @@ mod tests {
                 transparency: 0,
                 flat: false,
                 points: vec![(0, 0), (36_000, 18_000), (72_000, 0)],
+                pressure: Vec::new(),
             }],
         };
         let read = read_ink(&parsed(&ink_xml(&ink)));
@@ -801,6 +1111,7 @@ mod tests {
                     transparency: 0,
                     flat: false,
                     points: vec![(0, 0), (1_000, 0)],
+                    pressure: Vec::new(),
                 },
                 Stroke {
                     colour: "FFFF00".to_owned(),
@@ -808,6 +1119,7 @@ mod tests {
                     transparency: 128,
                     flat: true,
                     points: vec![(0, 5_000), (10_000, 5_000)],
+                    pressure: Vec::new(),
                 },
             ],
         };
@@ -828,6 +1140,7 @@ mod tests {
                 transparency: 0,
                 flat: false,
                 points: vec![(0, 0), (100, 100)],
+                pressure: Vec::new(),
             }],
         };
         wp_xml::tree::XmlTree::parse(&ink_xml(&ink)).expect("the part should parse");

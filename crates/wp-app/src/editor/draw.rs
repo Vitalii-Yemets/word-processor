@@ -54,6 +54,17 @@ impl Editor {
             in_table: self.document.table_here().is_some(),
             in_diagram: self.chosen_diagram().is_some(),
             text_pane_open: self.show_text_pane,
+            pen_in_hand: self.ink_tool()
+                == Some(super::inking::InkTool::Draw(super::inking::PenKind::Pen)),
+            pencil_in_hand: self.ink_tool()
+                == Some(super::inking::InkTool::Draw(super::inking::PenKind::Pencil)),
+            highlighter_in_hand: self.ink_tool()
+                == Some(super::inking::InkTool::Draw(super::inking::PenKind::Highlighter)),
+            ink_eraser_in_hand: matches!(
+                self.ink_tool(),
+                Some(super::inking::InkTool::StrokeEraser | super::inking::InkTool::PointEraser)
+            ),
+            choosing_drawings: self.choosing_drawings(),
             table_look: self.document.table_look().unwrap_or_default(),
             show_table_gridlines: self.show_table_gridlines,
             repeat_header_row: self.document.table_header_row().unwrap_or(false),
@@ -463,6 +474,9 @@ impl Editor {
         // Over the page and under the chrome: the handles belong to the drawing
         // on the page, but nothing on the page may be drawn over them.
         self.draw_shape_handles();
+        // And the stroke the pen is in the middle of, which is not on the
+        // page yet.
+        self.draw_stroke_in_hand();
 
         if self.show_rulers {
             self.draw_rulers();
@@ -568,6 +582,27 @@ impl Editor {
             self.draw_handles_round(chosen);
         }
         self.draw_choosing_band();
+    }
+
+    /// The stroke being drawn, as a band along where the pointer has been, in
+    /// the pen's colour and width: what it will be once the pen is lifted.
+    fn draw_stroke_in_hand(&mut self) {
+        let Some(stroke) = self.stroke_in_hand() else { return };
+        let (points, colour, width) = (stroke.points, stroke.colour, stroke.width);
+        if points.len() < 2 {
+            return;
+        }
+        let mut path = wp_raster::Path::new();
+        for (index, (x, y)) in points.iter().enumerate() {
+            let point = wp_raster::Point::new(*x, *y);
+            if index == 0 {
+                path.move_to(point);
+            } else {
+                path.line_to(point);
+            }
+        }
+        let band = wp_layout::geometry::band_along(&path, width);
+        self.canvas.fill_path(&band, colour);
     }
 
     /// The band being swept round a handful of drawings.

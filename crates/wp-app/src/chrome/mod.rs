@@ -128,6 +128,15 @@ pub enum Command {
     /// And its Format tab: the frame grown or shrunk.
     DiagramLarger,
     DiagramSmaller,
+    /// The Draw tab: Select, the two erasers, the three pens, and what the
+    /// ink can be turned into.
+    DrawSelect,
+    DrawEraser,
+    DrawPen,
+    DrawPencil,
+    DrawHighlighter,
+    InkToShape,
+    InkToText,
     Macros,
     OnlineVideo,
     Equation,
@@ -754,6 +763,14 @@ pub struct ToolbarState {
     /// Whether the diagram's Text Pane is open, for its button to show
     /// pressed.
     pub text_pane_open: bool,
+    /// Which of the Draw tab's tools is in hand, for its button to show
+    /// pressed: the pen, the pencil, the highlighter, an eraser — and
+    /// Select Objects, which the tab's Select is.
+    pub pen_in_hand: bool,
+    pub pencil_in_hand: bool,
+    pub highlighter_in_hand: bool,
+    pub ink_eraser_in_hand: bool,
+    pub choosing_drawings: bool,
     /// Which list is dropped open, so its field stays lit while it is.
     pub open: Option<Choice>,
 }
@@ -848,6 +865,11 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
         Command::ShowMarkup => state.show_markup,
         Command::BorderPainter => state.painting_borders,
         Command::DiagramTextPane => state.text_pane_open,
+        Command::DrawPen => state.pen_in_hand,
+        Command::DrawPencil => state.pencil_in_hand,
+        Command::DrawHighlighter => state.highlighter_in_hand,
+        Command::DrawEraser => state.ink_eraser_in_hand,
+        Command::DrawSelect | Command::SelectObjects => state.choosing_drawings,
         Command::DrawTable => state.drawing_table,
         Command::Eraser => state.erasing,
         Command::ShowProofing => state.show_proofing,

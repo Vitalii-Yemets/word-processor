@@ -40,7 +40,8 @@ fetch_one() {
 export -f fetch_one
 export repository
 
-grep -v '^#' tools/icons.list | awk 'NF { print $2 }' | sort -u | while read -r name; do
+# A drawing of our own, named with @, is not fetched: it is already here.
+grep -v '^#' tools/icons.list | awk 'NF && substr($2, 1, 1) != "@" { print $2 }' | sort -u | while read -r name; do
   directory="$(awk -F"\t" -v want="$name" '$2 == want { print $1; exit }' "$index.map")"
   if [ -z "$directory" ]; then
     echo "NO SUCH ICON $name" >&2

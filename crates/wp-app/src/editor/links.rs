@@ -5,6 +5,7 @@ use wp_docx::TextPosition;
 use wp_shell::Response;
 
 use crate::chrome::findbar::{FindBar, Purpose};
+use crate::messages::t;
 
 use super::Editor;
 
@@ -67,6 +68,15 @@ impl Editor {
     /// A place in the document is gone to; an address is handed to the desktop,
     /// which knows what the person opens pages with.
     pub(super) fn follow_link(&mut self) -> Response {
+        // A file the document carries inside it — an object put in with
+        // Insert ▸ Object, a video embedded whole — is offered to be saved
+        // where the person chooses, and not handed to whatever program plays
+        // it: a document does not get to say what this program runs.
+        if let Some(media) =
+            self.document.drawing_place_here().and_then(|at| self.document.media_at(at))
+        {
+            return self.offer_media(media);
+        }
         // A drawing carries its link inside itself rather than in an element
         // round it, so it is asked separately. A video from the web is exactly
         // this: a picture of the video, and the address of the video on it.
@@ -101,9 +111,46 @@ impl Editor {
         }
     }
 
+    /// Offers a file the document carries: the save dialog, opening on the
+    /// file's own name, and the file written where the person says. A file
+    /// the document only points at is named and left where it is.
+    fn offer_media(&mut self, media: wp_docx::embedded::Media) -> Response {
+        use wp_docx::embedded::Media;
+        match media {
+            Media::Outside(address) => self
+                .report(&format!("{}: {address}", t("This video is a file outside the document"))),
+            Media::Inside(file) => {
+                let suggested = std::path::PathBuf::from(&file.name);
+                let Some(path) =
+                    wp_shell::dialog::save_file(t("Save the file"), &[], Some(&suggested))
+                else {
+                    return self.report(t("Not saved"));
+                };
+                match std::fs::write(&path, &file.bytes) {
+                    Ok(()) => self.report(&format!("{} {}", t("Saved"), path.display())),
+                    Err(error) => {
+                        self.report(&format!("{}: {error}", t("The file could not be saved")))
+                    }
+                }
+            }
+        }
+    }
+
     /// What the status bar says about the link under the caret, if any.
     #[must_use]
     pub(super) fn link_note(&self) -> Option<String> {
+        if let Some(media) =
+            self.document.drawing_place_here().and_then(|at| self.document.media_at(at))
+        {
+            return Some(match media {
+                wp_docx::embedded::Media::Inside(file) => {
+                    format!("{} — {}", file.name, t("Ctrl+click to save the file"))
+                }
+                wp_docx::embedded::Media::Outside(address) => {
+                    format!("{}: {address}", t("This video is a file outside the document"))
+                }
+            });
+        }
         if let Some(address) = self.document.drawing_link_here() {
             return Some(format!("{address} — Ctrl+click to follow"));
         }

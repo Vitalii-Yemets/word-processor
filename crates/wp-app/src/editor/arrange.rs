@@ -428,7 +428,7 @@ mod tests {
             .iter()
             .filter_map(|drawing| match drawing {
                 wp_layout::Drawing::Shape(shape) => Some(shape.depth),
-                wp_layout::Drawing::Picture(_) => None,
+                wp_layout::Drawing::Picture(_) | wp_layout::Drawing::Ink(_) => None,
             })
             .collect();
         assert!(order.windows(2).all(|pair| pair[0] <= pair[1]), "got {order:?}");

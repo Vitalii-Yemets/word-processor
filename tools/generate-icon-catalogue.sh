@@ -65,12 +65,22 @@ impl Icon {
             Self::None => "",
 BODY
 
+  # A name beginning with @ is a drawing of our own in the same folder, named
+  # without the Fluent prefix and suffix: the open padlock is one, because the
+  # set has no open lock in it.
   grep -v '^#' "$list" | awk 'NF {
+    if (substr($2, 1, 1) == "@") {
+      large = sprintf("%s_24.svg", substr($2, 2))
+      small = sprintf("%s_20.svg", substr($2, 2))
+    } else {
+      large = sprintf("ic_fluent_%s_24_regular.svg", $2)
+      small = sprintf("ic_fluent_%s_20_regular.svg", $2)
+    }
     printf "            Self::%s => {\n", $1
     printf "                if large {\n"
-    printf "                    include_str!(\"../../assets/icons/ic_fluent_%s_24_regular.svg\")\n", $2
+    printf "                    include_str!(\"../../assets/icons/%s\")\n", large
     printf "                } else {\n"
-    printf "                    include_str!(\"../../assets/icons/ic_fluent_%s_20_regular.svg\")\n", $2
+    printf "                    include_str!(\"../../assets/icons/%s\")\n", small
     printf "                }\n"
     printf "            }\n"
   }'

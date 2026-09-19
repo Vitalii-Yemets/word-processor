@@ -75,6 +75,9 @@ pub enum Tab {
     File,
     Home,
     Insert,
+    /// Word's Draw tab, which Word hides until a pen has been used; this
+    /// program shows it, the way it shows Developer.
+    Draw,
     Design,
     Layout,
     References,
@@ -102,6 +105,7 @@ impl Tab {
         Tab::File,
         Tab::Home,
         Tab::Insert,
+        Tab::Draw,
         Tab::Design,
         Tab::Layout,
         Tab::References,
@@ -128,6 +132,7 @@ impl Tab {
             Self::File => "File",
             Self::Home => "Home",
             Self::Insert => "Insert",
+            Self::Draw => "Draw",
             Self::Design => "Design",
             Self::Layout => "Layout",
             Self::References => "References",
@@ -165,6 +170,9 @@ impl Tab {
             Self::File => "F",
             Self::Home => "H",
             Self::Insert => "N",
+            // Word reaches Draw through J and I; the I on its own is free
+            // here.
+            Self::Draw => "I",
             Self::Design => "G",
             Self::Layout => "P",
             Self::References => "S",
@@ -292,6 +300,12 @@ static MENUS: &[Menu] = &[
     // Word's Translate is a plain dropdown too: the selection, the document,
     // or the preferences, and nothing the face could do on its own.
     Menu { command: Command::Translate, choice: Choice::Translate, split: false },
+    // The Draw tab's pens: the face takes the pen up, the arrow offers what
+    // it may be. The eraser's face is the one that takes a whole stroke.
+    Menu { command: Command::DrawPen, choice: Choice::PenLook, split: true },
+    Menu { command: Command::DrawPencil, choice: Choice::PencilLook, split: true },
+    Menu { command: Command::DrawHighlighter, choice: Choice::HighlighterLook, split: true },
+    Menu { command: Command::DrawEraser, choice: Choice::EraserKind, split: true },
     // Word's two Arrange buttons: the face moves the drawing one place through
     // the pile, and the arrow beside it offers the two longer moves.
     Menu { command: Command::BringForward, choice: Choice::Forward, split: true },
@@ -1237,6 +1251,10 @@ impl Ribbon {
                     | Choice::Diagram
                     | Choice::DiagramLayout
                     | Choice::DiagramColours
+                    | Choice::PenLook
+                    | Choice::PencilLook
+                    | Choice::HighlighterLook
+                    | Choice::EraserKind
                     | Choice::Screenshot
                     | Choice::OutlineLevel
                     | Choice::MatchField
@@ -2258,6 +2276,7 @@ pub fn groups_of(tab: Tab) -> &'static [Group] {
         Tab::Review => REVIEW_GROUPS,
         Tab::View => VIEW_GROUPS,
         Tab::Developer => DEVELOPER_GROUPS,
+        Tab::Draw => DRAW_GROUPS,
         Tab::Help => HELP_GROUPS,
         Tab::TableDesign => TABLE_DESIGN_GROUPS,
         Tab::TableLayout => TABLE_LAYOUT_GROUPS,
@@ -2301,6 +2320,35 @@ static SMARTART_DESIGN_GROUPS: &[Group] = &[
     Group {
         label: "Reset",
         items: &[Item::Large(Command::DiagramReset, Icon::Undo, "Reset Graphic")],
+        launcher: None,
+    },
+];
+
+/// The Draw tab: Word's, as far as a pointer can use it.
+///
+/// The three pens each run from their face and drop their thicknesses and
+/// colours from their arrow; the eraser's arrow offers the one that takes a
+/// whole stroke and the one that rubs part of it out. Select is Word's
+/// Select Objects: a press chooses a drawing and a drag gathers several,
+/// which is what Ink to Shape and Ink to Text act on.
+static DRAW_GROUPS: &[Group] = &[
+    Group {
+        label: "Drawing Tools",
+        items: &[
+            Item::Large(Command::DrawSelect, Icon::Select, "Select"),
+            Item::Large(Command::DrawEraser, Icon::Eraser, "Eraser"),
+            Item::Large(Command::DrawPen, Icon::Pen, "Pen"),
+            Item::Large(Command::DrawPencil, Icon::Pencil, "Pencil"),
+            Item::Large(Command::DrawHighlighter, Icon::Highlight, "Highlighter"),
+        ],
+        launcher: None,
+    },
+    Group {
+        label: "Convert",
+        items: &[
+            Item::Large(Command::InkToShape, Icon::InkToShape, "Ink to Shape"),
+            Item::Large(Command::InkToText, Icon::InkToText, "Ink to Text"),
+        ],
         launcher: None,
     },
 ];

@@ -281,6 +281,9 @@ language = Deutsch
 = Bind the control to this node
 > Steuerelement diesem Knoten zuordnen
 
+= Black
+> Schwarz
+
 = Blank Page
 > Leere Seite
 
@@ -295,6 +298,9 @@ language = Deutsch
 
 = Block Theme or Scheme switching
 > Wechseln des Designs oder Schemas blockieren
+
+= Blue
+> Blau
 
 = Bold
 > Fett
@@ -470,6 +476,9 @@ language = Deutsch
 = Choose one to put it in, to refile it, or to take it away.
 > Einen wählen, um ihn einzufügen, neu abzulegen oder zu entfernen.
 
+= Choose the ink first: Select, then drag round it
+> Wählen Sie zuerst die Freihandeingabe aus: Auswählen, dann einen Rahmen darum ziehen
+
 = City
 > Ort
 
@@ -529,6 +538,9 @@ language = Deutsch
 
 = Contour
 > Kontur
+
+= Convert
+> Konvertieren
 
 = Countersign
 > Gegenzeichnen
@@ -659,6 +671,9 @@ language = Deutsch
 = Cross-reference
 > Querverweis
 
+= Ctrl+click to save the file
+> Strg+Klick speichert die Datei
+
 = Current Position
 > Aktuelle Position
 
@@ -682,6 +697,9 @@ language = Deutsch
 
 = Cut
 > Ausschneiden
+
+= Dark Gray
+> Dunkelgrau
 
 = Dark Mode
 > Dunkler Modus
@@ -739,6 +757,9 @@ language = Deutsch
 
 = Design
 > Entwurf
+
+= Diamond
+> Raute
 
 = Dictionaries
 > Wörterbücher
@@ -821,6 +842,9 @@ language = Deutsch
 = Draw Table
 > Tabelle zeichnen
 
+= Drawing Tools
+> Zeichentools
+
 = Drop-down list properties
 > Eigenschaften der Dropdownliste
 
@@ -880,6 +904,12 @@ language = Deutsch
 
 = Eraser
 > Radierer
+
+= Eraser: rub out part of a stroke. Escape to stop
+> Radierer: einen Teil eines Strichs wegradieren. Esc beendet
+
+= Eraser: touch a stroke to take it away. Escape to stop
+> Radierer: einen Strich berühren, um ihn zu entfernen. Esc beendet
 
 = Every column
 > Jede Spalte
@@ -1040,6 +1070,12 @@ language = Deutsch
 = Go to Header
 > Zu Kopfzeile wechseln
 
+= Gold
+> Gold
+
+= Green
+> Grün
+
 = Greeting
 > Grußzeile
 
@@ -1082,6 +1118,9 @@ language = Deutsch
 = Help
 > Hilfe
 
+= Hexagon
+> Sechseck
+
 = Hidden
 > Ausgeblendet
 
@@ -1099,6 +1138,12 @@ language = Deutsch
 
 = Highlight the regions I can edit
 > Bereiche hervorheben, die ich bearbeiten kann
+
+= Highlighter
+> Textmarker
+
+= Highlighter: draw over the words. Escape to stop
+> Textmarker: über die Wörter zeichnen. Esc beendet
 
 = Holding
 > Enthält
@@ -1162,6 +1207,12 @@ language = Deutsch
 
 = Info
 > Informationen
+
+= Ink to Shape
+> Freihand in Form
+
+= Ink to Text
+> Freihand in Text
 
 = Insert
 > Einfügen
@@ -1259,6 +1310,9 @@ language = Deutsch
 = Left:
 > Links:
 
+= Lime
+> Limette
+
 = Limit formatting to a selection of styles
 > Formatierung auf eine Auswahl von Formatvorlagen einschränken
 
@@ -1340,6 +1394,9 @@ language = Deutsch
 = Nobody has been asked to sign.
 > Es wurde niemand um eine Signatur gebeten.
 
+= Not saved
+> Nicht gespeichert
+
 = Nothing is restricted: tick one of the two boxes
 > Nichts ist eingeschränkt: eines der beiden Kästchen ankreuzen
 
@@ -1354,6 +1411,12 @@ language = Deutsch
 
 = Only macros signed by somebody trusted may run. The Trust Centre is where that is set.
 > Nur Makros mit der Signatur eines vertrauenswürdigen Herausgebers dürfen laufen. Im Trust Center wird das festgelegt.
+
+= Orange
+> Orange
+
+= Oval
+> Ellipse
 
 = Page 1
 > Seite 1
@@ -1388,11 +1451,32 @@ language = Deutsch
 = Page number: {0}
 > Seitenzahl: {0}
 
+= Pen
+> Stift
+
+= Pen put down
+> Stift abgelegt
+
+= Pen: draw on the page. Escape to stop
+> Stift: auf der Seite zeichnen. Esc beendet
+
+= Pencil
+> Bleistift
+
+= Pencil: draw on the page. Escape to stop
+> Bleistift: auf der Seite zeichnen. Esc beendet
+
+= Pentagon
+> Fünfeck
+
 = Picture
 > Bild
 
 = Pie
 > Kreis
+
+= Pink
+> Rosa
 
 = Plain, in the middle
 > Einfach, zentriert
@@ -1403,11 +1487,17 @@ language = Deutsch
 = Plain, to the right
 > Einfach, rechts
 
+= Point Eraser
+> Punktradierer
+
 = Project
 > Projekt
 
 = Promote
 > Höher stufen
+
+= Purple
+> Lila
 
 = Put one and its key in this folder, or use one the machine holds:
 > Eines mit seinem Schlüssel in diesen Ordner legen oder eines aus dem Speicher des Rechners verwenden:
@@ -1417,6 +1507,12 @@ language = Deutsch
 
 = Recommended Minimum
 > Empfohlenes Minimum
+
+= Rectangle
+> Rechteck
+
+= Red
+> Rot
 
 = Remove Current Cover Page
 > Aktuelles Deckblatt entfernen
@@ -1465,6 +1561,12 @@ language = Deutsch
 
 = Save the document before signing it.
 > Das Dokument vor dem Signieren speichern.
+
+= Save the file
+> Datei speichern
+
+= Saved
+> Gespeichert
 
 = Scatter
 > Punkt (XY)
@@ -1526,6 +1628,9 @@ language = Deutsch
 = Stopping it asks for the password.
 > Zum Aufheben wird das Kennwort verlangt.
 
+= Stroke Eraser
+> Strichradierer
+
 = Tables of Contents
 > Inhaltsverzeichnisse
 
@@ -1537,6 +1642,12 @@ language = Deutsch
 
 = Text boxes
 > Textfelder
+
+= That ink is not a shape this program can see
+> In dieser Freihandeingabe erkennt das Programm keine Form
+
+= That ink is not writing this program can read
+> Diese Freihandeingabe kann das Programm nicht als Schrift lesen
 
 = That is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 > Das ist kein Bild, das dieses Programm lesen kann. PNG, JPEG, BMP, GIF, TIFF und die Metadateien sind es.
@@ -1568,6 +1679,9 @@ language = Deutsch
 = The diagram could not be drawn: {0}
 > Das Diagramm konnte nicht gezeichnet werden: {0}
 
+= The file could not be saved
+> Die Datei konnte nicht gespeichert werden
+
 = The last item of a repeating section stays
 > Das letzte Element eines Wiederholungsabschnitts bleibt
 
@@ -1582,9 +1696,6 @@ language = Deutsch
 
 = The selection is saved to the {0} gallery.
 > Die Auswahl wird im Katalog {0} gespeichert.
-
-= The two passwords are not the same
-> Die beiden Kennwörter stimmen nicht überein
 
 = The words are open; the formatting is limited to this document's styles.
 > Der Text ist frei; die Formatierung ist auf die Formatvorlagen dieses Dokuments beschränkt.
@@ -1634,11 +1745,17 @@ language = Deutsch
 = This signs the whole document.
 > Dies signiert das gesamte Dokument.
 
+= This video is a file outside the document
+> Dieses Video ist eine Datei außerhalb des Dokuments
+
 = Title at the foot
 > Titel am Fuß
 
 = Top of Page
 > Seitenanfang
+
+= Triangle
+> Dreieck
 
 = Trust Center
 > Trust Center
@@ -1648,6 +1765,9 @@ language = Deutsch
 
 = Trusted locations
 > Vertrauenswürdige Speicherorte
+
+= Turquoise
+> Türkis
 
 = Type the numbers: title; name=value; name=value
 > Zahlen eingeben: Titel; Name=Wert; Name=Wert
@@ -1693,6 +1813,9 @@ language = Deutsch
 
 = XML Mapping Pane
 > XML-Zuordnungsbereich
+
+= Yellow
+> Gelb
 
 = Yes
 > Ja

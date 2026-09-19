@@ -532,6 +532,9 @@ impl Editor {
             Event::MouseDown { x, y, modifiers } => self.pressed(x, y, modifiers),
             Event::MouseMove { x, y, held, modifiers } => self.moved_pointer(x, y, held, modifiers),
             Event::MouseUp { x, y } => {
+                if self.ink_release(x, y) {
+                    return Response::Redraw;
+                }
                 self.release_shape();
                 if self.pending_text_drag.is_some() || self.dragging_text() {
                     return self.drop_text(x, y, false);
@@ -1020,6 +1023,12 @@ impl Editor {
         }
         self.activate_pane(self.pane_at(y as f32));
 
+        // A pen or an eraser from the Draw tab takes a press on a page before
+        // anything on the page does: while one is in hand, a press draws.
+        if self.ink_press(x, y) {
+            return Response::Redraw;
+        }
+
         // A drawing is taken hold of before the page underneath it is asked
         // about the press: a press on a picture is about the picture.
         if self.press_on_shape(x, y, modifiers.shift) {
@@ -1387,6 +1396,11 @@ impl Editor {
             return self.drag_text(x, y);
         }
 
+        // A stroke being drawn, or an eraser being dragged.
+        if let Some(response) = self.ink_move(x, y, held) {
+            return response;
+        }
+
         // The band being swept round a handful of drawings, while Select
         // Objects is in hand.
         if self.dragging_band() {
@@ -1686,6 +1700,12 @@ impl Editor {
             Choice::Diagram => Command::SmartArt,
             Choice::DiagramLayout => Command::DiagramLayouts,
             Choice::DiagramColours => Command::DiagramColours,
+            Choice::PenLook => return self.open_pen_look(super::inking::PenKind::Pen),
+            Choice::PencilLook => return self.open_pen_look(super::inking::PenKind::Pencil),
+            Choice::HighlighterLook => {
+                return self.open_pen_look(super::inking::PenKind::Highlighter)
+            }
+            Choice::EraserKind => return self.open_erasers(),
             Choice::Screenshot => Command::Screenshot,
             Choice::OutlineLevel => Command::OutlineView,
             Choice::MatchField | Choice::MatchColumn => Command::MatchFields,
@@ -1843,6 +1863,10 @@ impl Editor {
             | Choice::Diagram
             | Choice::DiagramLayout
             | Choice::DiagramColours
+            | Choice::PenLook
+            | Choice::PencilLook
+            | Choice::HighlighterLook
+            | Choice::EraserKind
             | Choice::Screenshot
             | Choice::OutlineLevel
             | Choice::MatchField
@@ -1947,6 +1971,12 @@ impl Editor {
             Choice::Diagram => self.choose_diagram(index),
             Choice::DiagramLayout => self.choose_diagram_layout(index),
             Choice::DiagramColours => self.choose_diagram_colours(index),
+            Choice::PenLook => self.choose_pen_look(super::inking::PenKind::Pen, index),
+            Choice::PencilLook => self.choose_pen_look(super::inking::PenKind::Pencil, index),
+            Choice::HighlighterLook => {
+                self.choose_pen_look(super::inking::PenKind::Highlighter, index)
+            }
+            Choice::EraserKind => self.choose_eraser(index),
             Choice::Screenshot => self.choose_screenshot(index),
             Choice::OutlineLevel => self.choose_outline_level(index),
             Choice::MatchField => self.choose_match_field(index),
@@ -2361,6 +2391,9 @@ impl Editor {
                 // made, and Word gives them up in that order as well.
                 if self.drop_chosen_drawing() {
                     return Response::Redraw;
+                }
+                if self.inking() {
+                    return self.put_ink_tool_down();
                 }
                 if self.choosing_drawings() {
                     return self.toggle_choosing_drawings();

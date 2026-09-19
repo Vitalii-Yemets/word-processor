@@ -105,6 +105,11 @@ fn write_drawing(
     drawing: &mut Drawing,
 ) {
     match placed {
+        wp_layout::Drawing::Ink(ink) => {
+            for (path, colour) in &ink.drawing.paths {
+                fill(out, path, *colour, height, drawing);
+            }
+        }
         wp_layout::Drawing::Picture(picture) => {
             // Named by how many have gone in already, which is what the page's
             // resource dictionary will call it.

@@ -357,6 +357,7 @@ impl Editor {
                     Drawing::Picture(picture) => {
                         (picture.at, picture.x, picture.y, picture.width, picture.height)
                     }
+                    Drawing::Ink(ink) => (ink.at, ink.x, ink.y, ink.width, ink.height),
                 };
                 let Some(at) = at else { continue };
                 out.push(OnPage {
@@ -827,7 +828,7 @@ impl Editor {
     /// The paragraph whose own band the point is in, or the nearest one above
     /// it: a drawing dropped in the white space under the text hangs from the
     /// last paragraph, which is what Word does with it.
-    fn paragraph_under(&self, page: usize, top: f32) -> Option<(usize, f32)> {
+    pub(super) fn paragraph_under(&self, page: usize, top: f32) -> Option<(usize, f32)> {
         let (_, origin_y) = self.page_origin(page);
         let up = self.content_top() + origin_y - self.scroll_down();
         let lines = &self.pages.get(page)?.lines;

@@ -769,7 +769,9 @@ fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
                 // A group is asked first of all, and has to be: it holds
                 // shapes and pictures, so every reader below would read a
                 // whole group as whatever it found inside it.
-                if let Some(group) = crate::group::read_group(child) {
+                if let Some(ink) = crate::ink::read_drawing_reference(child) {
+                    content.push(RunContent::Ink(ink));
+                } else if let Some(group) = crate::group::read_group(child) {
                     content.push(RunContent::Group(group));
                 } else if let Some(diagram) = read_diagram_reference(child) {
                     content.push(RunContent::Diagram(diagram));

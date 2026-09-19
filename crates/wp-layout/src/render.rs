@@ -526,6 +526,12 @@ fn draw_drawing(canvas: &mut Canvas, drawing: Drawing<'_>, offset_x: f32, offset
                 flipped_down: picture.flipped_down,
             },
         ),
+        Drawing::Ink(ink) => {
+            for (path, colour) in &ink.drawing.paths {
+                let moved = path.transformed(&Transform::translate(offset_x, offset_y));
+                canvas.fill_path(&moved, *colour);
+            }
+        }
         Drawing::Shape(shape) => {
             let (x, y) = (shape.x + offset_x, shape.y + offset_y);
             let turn = shape_turn(shape, offset_x, offset_y);

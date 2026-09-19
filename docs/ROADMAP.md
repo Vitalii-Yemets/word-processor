@@ -2851,7 +2851,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   `anchor="ctr"` and centred paragraph put them, which was so before this
   and is not a colour.
 
-- [ ] **D27. Drawing ink, and the media a document carries inside it.** What
+- [x] **D27. Drawing ink, and the media a document carries inside it.** What
   **D6** left.
   Nothing in this program draws ink: the strokes can be read, drawn and
   written, and the only way to make any is to hand the model a stroke. What is
@@ -2884,6 +2884,85 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   different machine from the one that draws a page, and what this program would
   honestly do first is show the frame and offer the file to whatever the person
   plays such things with.
+  *Done.* **The Draw tab.** `editor/inking.rs`: Select, which is Select
+  Objects; the Eraser, whose face takes a whole stroke at a touch and whose
+  arrow offers the one that rubs out what it passes over and leaves the rest
+  of the stroke in pieces; and the Pen, the Pencil and the Highlighter, each
+  taken up from its face and each with its thicknesses and colours on its
+  arrow — Word's own lists, half a millimetre of black for the pen, six of
+  yellow for the highlighter, which is wide, flat and see-through. A stroke
+  is drawn with the pointer and shown as it goes; when the button comes up
+  it is written as Word writes ink: a part of its own in a drawing that
+  floats across from the page's edge and down from the paragraph the stroke
+  began beside, in an alternative that names the ink extension, one drawing
+  per stroke. Drawing is not typing — the caret stays where it was — and
+  every stroke, every rub-out and every conversion is one undo, the ink part
+  kept with the tree.
+  **Where ink goes is where the file says.** The form Word has written ink
+  in since 2013 — a `w:drawing` whose graphic is the content part, anchored
+  the way a picture floats — is read as ink, with its anchor, its size and
+  its name, and placed by the same rule as a floating picture. Ink is a
+  drawing of its own on the page now, `PlacedInk`, ordered among the
+  pictures and shapes by its depth, chosen by a press, gathered by the
+  band, listed in the Selection Pane, and written to a PDF.
+  **Pressure.** The `F` channel is read as a share of the most it can say,
+  kept with the stroke, written back, and drawn: a stroke swells and thins
+  with it, from half the pen's width at no pressure to half as much again
+  pressed hard. A pen the file says nothing about is drawn even, as before.
+  **Ink to Shape and Ink to Text.** The strokes chosen become the shape
+  they draw — a line when they go straight, and when they come back to
+  where they began an oval, a triangle, a rectangle, a diamond, a pentagon
+  or a hexagon by the corners left once the wobble is taken out — in the
+  pen's colour and width, floating where the ink was; or the letters they
+  spell, `editor/handwriting.rs`: block capitals and digits, read by the
+  point-cloud method against templates drawn here, strokes that stand over
+  one another making one character, a gap of half a character's height
+  making a space, a bar an I among letters and a one among digits.
+  **Media kept inside the document.** `wp-docx/src/embedded.rs`: a
+  `w:object` counts as the one character it is and is a drawing where it
+  stands, its preview shown as a picture; behind it the compound file is
+  read — sectors, FAT, directory, the mini stream — and the file the
+  packager wrapped in `\1Ole10Native` comes out with its name, or the object
+  itself does, named after the program that made it. A picture that carries
+  `a:videoFile` gives the media the same way, from the package or as the
+  path it names. Ctrl and a press offers the file to be saved where the
+  person chooses — not to whatever program plays such things, because a
+  document does not get to say what this program runs — and the status bar
+  says so while the caret is beside it.
+  *Fixed on the way:* a diagram made larger or smaller was two undo steps
+  rather than one, the parts and the frame apart; the icon catalogue's
+  generator now knows a drawing of the program's own, so the open padlock
+  survives a regeneration.
+  *Proven by:* `wp-docx/src/ink.rs` and `tests/ink.rs` — pressure read and
+  written, the floating form written as Word writes it and read back as ink
+  rather than as a picture, the eraser leaving what it did not touch where
+  it was and one undo putting a stroke back; `wp-layout/src/inking.rs` —
+  the fit both ways; `embedded.rs` — a stream read out of a compound file by
+  name, the packaged file with its name, an object that is not a package
+  offered as what it is, an embedded object with its preview counting one
+  character and offering its file, a video inside or outside the document;
+  `editor/inking.rs` — a stroke drawn with the pointer becoming ink that
+  floats where it was drawn, the highlighter's look, the two erasers,
+  Escape and Select putting the pen down, a drawn box becoming a rectangle
+  and back in one undo, H and I drawn and read as "HI"; the shapes told
+  apart and the pieces an eraser leaves; `editor/handwriting.rs` — every
+  character read back from its own shape drawn larger and elsewhere,
+  strokes gathered into characters and words.
+  *Not done, and named:* a mouse reports no pressure, so ink drawn here is
+  written without it; a pen that does is read past by the shell, which
+  gives the window only where the pointer is. The pencil is drawn the same
+  as the pen, without Word's grain. The ink written here has no fallback
+  picture beside it for a reader older than the extension, and neither the
+  form written nor the relationship type has been checked against Word.
+  Lasso Select is the rectangular band; Ink to Math, the Drawing Canvas,
+  Ink Replay and the ruler are not there. Ink to Text reads block capitals
+  and digits only, from templates drawn here rather than from anybody's
+  hand, and a scrawl is read as the nearest of them; Ink to Shape knows
+  seven shapes, and an oval drawn wobbly may be read as the polygon it
+  nearly is. The run form of 2010 keeps its ink in the line, its offset
+  still unused. Nothing here plays a sound or a film. The compound-file
+  reader and the packager's wrapping were tested against files written
+  here, not against one Word wrote.
 
 ## E — The rest of the text engine
 

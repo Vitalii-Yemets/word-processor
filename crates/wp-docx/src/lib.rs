@@ -59,6 +59,7 @@ pub mod depth;
 pub mod diagram;
 pub mod edit;
 pub mod effects;
+pub mod embedded;
 pub mod fields;
 pub mod figures;
 pub mod fills;

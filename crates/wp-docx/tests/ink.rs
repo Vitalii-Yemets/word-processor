@@ -22,6 +22,7 @@ fn drawn() -> Ink {
         transparency: 0,
         flat: false,
         points,
+        pressure: Vec::new(),
     };
     Ink {
         strokes: vec![
@@ -82,8 +83,14 @@ fn the_strokes_read_back_as_what_was_drawn() {
 
     assert_eq!(ink.strokes.len(), 2);
     assert_eq!(ink.strokes[0].colour, "0070C0");
-    assert_eq!(ink.strokes[0].points, drawn().strokes[0].points);
-    assert_eq!(ink.strokes[1].points, drawn().strokes[1].points);
+    // Moved so that the ink's own space starts at the corner of what the
+    // pen covered, which is half the pen's width in from the first point.
+    let (left, top, _, _) = drawn().bounds().expect("some ink");
+    let moved = |points: &[(i64, i64)]| -> Vec<(i64, i64)> {
+        points.iter().map(|(x, y)| (x - left, y - top)).collect()
+    };
+    assert_eq!(ink.strokes[0].points, moved(&drawn().strokes[0].points));
+    assert_eq!(ink.strokes[1].points, moved(&drawn().strokes[1].points));
 }
 
 #[test]
@@ -126,6 +133,7 @@ fn nothing_drawn_is_no_ink() {
             transparency: 0,
             flat: false,
             points: vec![(10, 10)],
+            pressure: Vec::new(),
         }],
     };
     assert!(!document.insert_ink(&one_point).expect("a pen put down and lifted"));
@@ -153,4 +161,106 @@ fn ink_is_one_undo() {
 
     assert!(document.undo());
     assert!(reference_in(&document).is_none(), "the run is still in the text");
+}
+
+/// The same tick, drawn on the page rather than typed: it floats.
+fn floating_anchor() -> wp_docx::anchor::Anchor {
+    use wp_docx::anchor::{Anchor, Placement, Relative, Wrap};
+    Anchor {
+        wrap: Wrap::None,
+        horizontal_from: Relative::Page,
+        horizontal: Placement::Offset(914_400),
+        vertical_from: Relative::Paragraph,
+        vertical: Placement::Offset(457_200),
+        ..Anchor::default()
+    }
+}
+
+fn with_floating_ink() -> Document {
+    let mut document = document();
+    assert!(document.insert_ink_floating(&drawn(), &floating_anchor()).expect("drawing"));
+    let bytes = document.save().expect("saving");
+    Document::open(&bytes).expect("reopening")
+}
+
+#[test]
+fn ink_drawn_on_the_page_floats_where_the_pen_went_and_reads_back_so() {
+    let document = with_floating_ink();
+    let reference = reference_in(&document).expect("a reference to ink");
+    let anchor = reference.anchor.expect("the ink floats");
+    assert_eq!(anchor, floating_anchor());
+    assert_eq!(reference.name, "Ink 1");
+    let (left, top, right, bottom) = drawn().bounds().expect("some ink");
+    assert_eq!((reference.width_emu, reference.height_emu), (right - left, bottom - top));
+    // The strokes are the same, and the drawing is one character of the text.
+    let ink = document.ink(&reference.relationship).expect("the ink");
+    assert_eq!(ink.strokes.len(), 2);
+    assert_eq!(document.paragraph_text(0).unwrap_or_default().chars().count(), 13);
+    // Written the way Word writes ink: a drawing, in an alternative that
+    // names the ink extension.
+    let xml = document.package().xml_part("word/document.xml").expect("the part").expect("text");
+    assert!(xml.contains("Requires=\"wpi\""), "the alternative does not name the extension");
+    assert!(xml.contains("wordprocessingInk"), "the graphic does not say it is ink");
+    assert!(xml.contains("<wp:anchor") || xml.contains(":anchor "), "the drawing does not float");
+}
+
+#[test]
+fn ink_written_the_way_word_writes_it_is_read_as_ink_and_not_as_a_picture() {
+    let document = with_floating_ink();
+    assert!(document.ink_at(TextPosition::new(0, 7)).is_some(), "the drawing is not ink");
+    assert!(document.shapes().is_empty(), "the ink was read as a shape");
+}
+
+#[test]
+fn how_hard_the_pen_was_pressed_is_written_and_read_back() {
+    let mut document = document();
+    let mut pressed = drawn();
+    pressed.strokes[0].pressure = vec![0.25, 1.0];
+    assert!(document.insert_ink(&pressed).expect("putting the ink in"));
+    let reference = reference_in(&document).expect("a reference to ink");
+    let ink = document.ink(&reference.relationship).expect("the ink");
+    assert_eq!(ink.strokes[0].pressure.len(), 2);
+    assert!((ink.strokes[0].pressure[0] - 0.25).abs() < 0.001);
+    assert!((ink.strokes[0].pressure[1] - 1.0).abs() < 0.001);
+    // The stroke that never said is pressed evenly, halfway, once written
+    // beside one that did.
+    assert_eq!(ink.strokes[1].pressure.len(), 2);
+    assert!((ink.strokes[1].pressure[0] - 0.5).abs() < 0.001);
+    // And ink with no pressure anywhere writes none.
+    let plain = with_ink();
+    let reference = reference_in(&plain).expect("a reference to ink");
+    let ink = plain.ink(&reference.relationship).expect("the ink");
+    assert!(ink.strokes.iter().all(|stroke| stroke.pressure.is_empty()));
+}
+
+#[test]
+fn the_eraser_leaves_what_it_did_not_touch_where_it_was() {
+    let mut document = with_floating_ink();
+    let at = TextPosition::new(0, 7);
+    let mut ink = document.ink(&document.ink_at(at).expect("ink").relationship).expect("the ink");
+    // Rub out the first stroke: what is left starts lower and further right
+    // in the ink's own space, so the drawing moves by that much.
+    ink.strokes.remove(0);
+    let (left, top, right, bottom) = ink.bounds().expect("some ink");
+    assert!(document.replace_ink_at(at, &ink));
+    let reference = document.ink_at(at).expect("still ink");
+    assert_eq!((reference.width_emu, reference.height_emu), (right - left, bottom - top));
+    let anchor = reference.anchor.expect("still floats");
+    assert_eq!(anchor.horizontal, wp_docx::anchor::Placement::Offset(914_400 + left));
+    assert_eq!(anchor.vertical, wp_docx::anchor::Placement::Offset(457_200 + top));
+    let back = document.ink(&reference.relationship).expect("the ink");
+    assert_eq!(back.strokes.len(), 1);
+    assert_eq!(
+        back.strokes[0].points[0],
+        (ink.strokes[0].points[0].0 - left, ink.strokes[0].points[0].1 - top)
+    );
+    // One undo puts the stroke back.
+    assert!(document.undo());
+    let ink = document.ink(&document.ink_at(at).expect("ink").relationship).expect("the ink");
+    assert_eq!(ink.strokes.len(), 2);
+
+    // Nothing left takes the drawing away altogether.
+    assert!(document.replace_ink_at(at, &Ink::default()));
+    assert!(document.ink_at(at).is_none());
+    assert_eq!(document.paragraph_text(0).unwrap_or_default(), "Before after");
 }

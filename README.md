@@ -11,7 +11,7 @@ the window drawn by code in this repository.
 
 What the document model holds is most of what the format can carry: sections
 with their own paper, margins, columns and headers; styles, lists, tables and
-tab stops; pictures, shapes, charts, equations and diagrams; footnotes,
+tab stops; pictures, shapes, charts, equations, diagrams and ink; footnotes,
 captions, cross-references, a table of contents, citations and an index;
 comments, tracked changes, a document comparison and a mail merge.
 

@@ -779,6 +779,10 @@ pub struct InkReference {
     /// In English metric units, as DrawingML measures a drawing.
     pub width_emu: i64,
     pub height_emu: i64,
+    /// Where it floats, or `None` for ink that sits in the line of text.
+    /// Ink Word writes floats: a stroke goes where the pen went, not where
+    /// the caret was.
+    pub anchor: Option<crate::anchor::Anchor>,
 }
 
 impl InkReference {

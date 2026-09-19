@@ -135,6 +135,12 @@ pub enum Choice {
     DiagramLayout,
     /// Which of the theme's colours a diagram is drawn in.
     DiagramColours,
+    /// What a pen may be: its thicknesses, then its colours.
+    PenLook,
+    PencilLook,
+    HighlighterLook,
+    /// The two erasers.
+    EraserKind,
     /// The printers this machine can reach.
     Printer,
     /// Which pages of the document go to one.

@@ -247,6 +247,7 @@ impl Editor {
                 let (at, name) = match drawing {
                     wp_layout::Drawing::Shape(shape) => (shape.at, shape.name.clone()),
                     wp_layout::Drawing::Picture(picture) => (picture.at, picture.name.clone()),
+                    wp_layout::Drawing::Ink(ink) => (ink.at, ink.name.clone()),
                 };
                 let Some(at) = at else { continue };
                 out.push((at, name));

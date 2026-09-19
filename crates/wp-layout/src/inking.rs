@@ -16,7 +16,7 @@ use wp_docx::ink::Ink;
 use wp_raster::{Color, Path, Point};
 
 /// Ink laid out: paths ready to be put on a page, and the colour of each.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct InkDrawing {
     pub paths: Vec<(Path, Color)>,
 }
@@ -31,19 +31,65 @@ impl InkDrawing {
     }
 }
 
+/// How ink is fitted into the box it is drawn in: the same both ways, and
+/// centred in what is left. The one place that says how a point of the ink
+/// becomes a point of the box, so that what draws the ink and what asks
+/// which stroke the pointer is on agree.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fit {
+    /// The corner of what the ink covers, in its own space.
+    pub left: i64,
+    pub top: i64,
+    /// Pixels to one English metric unit.
+    pub scale: f32,
+    /// The room left over on each side once the ink is fitted, halved.
+    pub spare_x: f32,
+    pub spare_y: f32,
+}
+
+impl Fit {
+    /// The fit of some ink into a box that many pixels across and down.
+    #[must_use]
+    pub fn of(ink: &Ink, width: f32, height: f32) -> Option<Self> {
+        let (left, top, right, bottom) = ink.bounds()?;
+        let across = (right - left).max(1) as f32;
+        let down = (bottom - top).max(1) as f32;
+        let scale = (width / across).min(height / down);
+        Some(Self {
+            left,
+            top,
+            scale,
+            spare_x: (width - across * scale) / 2.0,
+            spare_y: (height - down * scale) / 2.0,
+        })
+    }
+
+    /// Where a point of the ink falls in the box.
+    #[must_use]
+    pub fn to_box(&self, x: i64, y: i64) -> Point {
+        Point {
+            x: self.spare_x + (x - self.left) as f32 * self.scale,
+            y: self.spare_y + (y - self.top) as f32 * self.scale,
+        }
+    }
+
+    /// And which point of the ink a point of the box is.
+    #[must_use]
+    pub fn from_box(&self, x: f32, y: f32) -> (i64, i64) {
+        let scale = self.scale.max(f32::EPSILON);
+        (
+            self.left + ((x - self.spare_x) / scale) as i64,
+            self.top + ((y - self.spare_y) / scale) as i64,
+        )
+    }
+}
+
 /// Lays ink out in a box that many pixels across and down.
 #[must_use]
 pub fn draw(ink: &Ink, width: f32, height: f32) -> InkDrawing {
     let mut out = InkDrawing::default();
-    let Some((left, top, right, bottom)) = ink.bounds() else { return out };
-
-    let across = (right - left).max(1) as f32;
-    let down = (bottom - top).max(1) as f32;
-    let scale = (width / across).min(height / down);
-    // What is left over after the fit, halved: the ink sits in the middle of
-    // the room it was given.
-    let spare_x = (width - across * scale) / 2.0;
-    let spare_y = (height - down * scale) / 2.0;
+    let Some(fit) = Fit::of(ink, width, height) else { return out };
+    let scale = fit.scale;
 
     for stroke in &ink.strokes {
         if stroke.points.len() < 2 {
@@ -57,10 +103,7 @@ pub fn draw(ink: &Ink, width: f32, height: f32) -> InkDrawing {
 
         let mut path = Path::new();
         for (index, (x, y)) in stroke.points.iter().enumerate() {
-            let point = Point {
-                x: spare_x + (x - left) as f32 * scale,
-                y: spare_y + (y - top) as f32 * scale,
-            };
+            let point = fit.to_box(*x, *y);
             if index == 0 {
                 path.move_to(point);
             } else {
@@ -71,9 +114,66 @@ pub fn draw(ink: &Ink, width: f32, height: f32) -> InkDrawing {
         // A pen thinner than a pixel is still a pen: what it draws has to be
         // visible, or the ink is there and nobody can see it.
         let weight = (stroke.width_emu as f32 * scale).max(1.0);
-        out.paths.push((crate::geometry::band_along(&path, weight), colour));
+        let band = if stroke.pressure.len() == stroke.points.len() {
+            // A pen that said how hard it was pressed draws a stroke that
+            // swells and thins with it: half the pen's width at no pressure,
+            // the width itself halfway, half as much again pressed hard. An
+            // estimate of Word's curve, which is not published.
+            let widths: Vec<f32> =
+                stroke.pressure.iter().map(|pressed| (weight * (0.5 + pressed)).max(1.0)).collect();
+            ribbon_along(&path, &widths)
+        } else {
+            crate::geometry::band_along(&path, weight)
+        };
+        out.paths.push((band, colour));
     }
     out
+}
+
+/// A band along a path of straight pieces whose width changes from point to
+/// point: each piece is drawn as wide as its ends say, and each turn is
+/// patched over as wide as the turn is. Laid down the way
+/// [`crate::geometry::band_along`] lays a band, and for the same reason.
+fn ribbon_along(path: &Path, widths: &[f32]) -> Path {
+    use wp_raster::Command;
+
+    let points: Vec<Point> = path
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            Command::MoveTo(point) | Command::LineTo(point) => Some(*point),
+            _ => None,
+        })
+        .collect();
+    let width_at = |index: usize| widths.get(index).copied().unwrap_or(1.0);
+
+    let mut band = Path::new();
+    for (index, pair) in points.windows(2).enumerate() {
+        let (from, to) = (pair[0], pair[1]);
+        let (dx, dy) = (to.x - from.x, to.y - from.y);
+        let length = dx.hypot(dy);
+        if length <= 0.0 {
+            continue;
+        }
+        let (nx, ny) = (-dy / length, dx / length);
+        let (start, end) = (width_at(index) / 2.0, width_at(index + 1) / 2.0);
+        band.move_to(Point::new(from.x + nx * start, from.y + ny * start));
+        band.line_to(Point::new(to.x + nx * end, to.y + ny * end));
+        band.line_to(Point::new(to.x - nx * end, to.y - ny * end));
+        band.line_to(Point::new(from.x - nx * start, from.y - ny * start));
+        band.close();
+    }
+    for (index, turn) in points.iter().enumerate().take(points.len().saturating_sub(1)).skip(1) {
+        // Wound the same way as the pieces, or by the nonzero rule the patch
+        // would cancel the piece under it and the stroke come out dashed.
+        let half = width_at(index) / 2.0;
+        band.move_to(Point::new(turn.x - half, turn.y + half));
+        band.line_to(Point::new(turn.x + half, turn.y + half));
+        band.line_to(Point::new(turn.x + half, turn.y - half));
+        band.line_to(Point::new(turn.x - half, turn.y - half));
+        band.close();
+    }
+    band
 }
 
 /// A path with every point moved by the same amount.
@@ -111,6 +211,7 @@ mod tests {
                 transparency: 0,
                 flat: false,
                 points: vec![(0, 0), (36_000, 0), (36_000, 36_000)],
+                pressure: Vec::new(),
             }],
         }
     }

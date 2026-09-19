@@ -203,3 +203,13 @@ AlignBottomLeft align_bottom_left
 AlignBottomCenter align_bottom_center
 AlignBottomRight align_bottom_right
 Lightning flash
+# The open padlock, for the stretch of a protected document everybody may
+# edit: drawn here, since the set has a closed lock and no open one.
+Everyone @lock_open
+Pen pen
+Pencil inking_tool
+Eraser eraser
+EraserSegment eraser_segment
+Lasso lasso
+InkToShape draw_shape
+InkToText draw_text

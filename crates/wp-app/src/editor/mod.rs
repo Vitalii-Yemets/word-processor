@@ -49,7 +49,9 @@ mod furnitureedit;
 mod grouping;
 mod groups;
 mod handles;
+mod handwriting;
 mod help;
+pub(crate) mod inking;
 mod insert;
 mod keytips;
 mod layoutdialog;
@@ -196,6 +198,8 @@ pub struct Editor {
     /// Which of Word's two table pens is in hand: the one that draws lines
     /// between cells, or the one that rubs them out. See [`borderpainter`].
     table_pen: Option<borderpainter::TablePen>,
+    /// The Draw tab: what is in hand, and the stroke being drawn.
+    inking: inking::Inking,
     /// Where the table pen went down, while a line is being drawn.
     drawing_from: Option<(i32, i32)>,
     /// The line the border painter is carrying, while it is in hand.
@@ -762,6 +766,7 @@ impl Editor {
             view_height: 0,
             dragging: false,
             table_pen: None,
+            inking: inking::Inking::default(),
             drawing_from: None,
             border_pen: None,
             adding_selection: false,

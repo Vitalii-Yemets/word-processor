@@ -721,6 +721,11 @@ mod tests {
         editor.run(Command::DiagramSmaller);
         let back = editor.chosen_diagram().expect("the diagram");
         assert!(back.width_emu < after.width_emu);
+        // Each is one undo: the frame and the parts laid out into it go
+        // back together.
+        assert!(editor.document.undo());
+        editor.relayout();
+        assert_eq!(editor.chosen_diagram().expect("the diagram").width_emu, after.width_emu);
     }
 
     #[test]

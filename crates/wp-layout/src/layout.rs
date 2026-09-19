@@ -844,6 +844,8 @@ pub struct Page {
     /// Shapes that are not rectangles: the slices of a pie, the line of a line
     /// chart. Already in page coordinates, and drawn over the decorations.
     pub paths: Vec<PlacedPath>,
+    /// Somebody's strokes, each lot where its drawing put it.
+    pub inks: Vec<PlacedInk>,
     pub lines: Vec<PageLine>,
     /// Which glyphs of the page are turned, and which way.
     ///
@@ -871,6 +873,7 @@ impl PartialEq for Page {
             && self.decorations == other.decorations
             && self.cells == other.cells
             && self.paths == other.paths
+            && self.inks == other.inks
             && self.lines == other.lines
             && self.turned == other.turned
     }
@@ -924,6 +927,30 @@ impl Page {
 pub enum Drawing<'a> {
     Picture(&'a PlacedImage),
     Shape(&'a PlacedShape),
+    Ink(&'a PlacedInk),
+}
+
+/// Ink on a page: somebody's strokes, laid out and put where they go.
+///
+/// A drawing like a picture is: it has a box, a place in the text, a depth
+/// among the other drawings, and a name. The strokes are already where the
+/// box is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlacedInk {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    /// The strokes, in page coordinates.
+    pub drawing: crate::inking::InkDrawing,
+    /// Which drawing is over which where two overlap, and whether this one is
+    /// over the text. See [`Page::drawings_under`].
+    pub depth: u32,
+    pub over_text: bool,
+    /// Where in the document it is, so a press on it can say which ink was
+    /// pressed. See [`PlacedShape::at`].
+    pub at: Option<TextPosition>,
+    pub name: String,
 }
 
 impl Page {
@@ -957,18 +984,23 @@ impl Page {
     /// which is what every drawing in the line of text does — by where they
     /// stand in the document. That is Word's tie-break too.
     fn drawings_where(&self, over: bool) -> Vec<Drawing<'_>> {
-        let mut out: Vec<(u32, bool, usize, Drawing<'_>)> = Vec::new();
+        let mut out: Vec<(u32, u8, usize, Drawing<'_>)> = Vec::new();
         for (at, picture) in self.images.iter().enumerate() {
             if picture.over_text == over {
-                out.push((picture.depth, false, at, Drawing::Picture(picture)));
+                out.push((picture.depth, 0, at, Drawing::Picture(picture)));
             }
         }
         for (at, shape) in self.shapes.iter().enumerate() {
             if shape.over_text == over {
-                out.push((shape.depth, true, at, Drawing::Shape(shape)));
+                out.push((shape.depth, 1, at, Drawing::Shape(shape)));
             }
         }
-        out.sort_by_key(|(depth, is_shape, at, _)| (*depth, *is_shape, *at));
+        for (at, ink) in self.inks.iter().enumerate() {
+            if ink.over_text == over {
+                out.push((ink.depth, 2, at, Drawing::Ink(ink)));
+            }
+        }
+        out.sort_by_key(|(depth, kind, at, _)| (*depth, *kind, *at));
         out.into_iter().map(|(_, _, _, drawing)| drawing).collect()
     }
 
@@ -3902,17 +3934,26 @@ impl<'a> LayoutEngine<'a> {
                     let drawing = drawn
                         .filter(|ink| !ink.is_empty())
                         .map(|ink| crate::inking::draw(&ink, width, height));
+                    // Ink that floats takes no room in the line, the same as a
+                    // picture that floats: the anchor says where it goes, and
+                    // the line leaves a floating item out — see [`Item::floats`].
+                    let floats = reference.anchor.is_some();
+                    let name = if reference.name.is_empty() {
+                        "Ink".to_owned()
+                    } else {
+                        reference.name.clone()
+                    };
 
                     items.push(Item {
                         glyphs: Vec::new(),
                         width,
                         is_space: false,
-                        breaks_before: true,
+                        breaks_before: !floats,
                         is_tab: false,
                         aligned_tab: None,
                         picture: None,
-                        picture_anchor: None,
-                        picture_name: None,
+                        picture_anchor: reference.anchor.clone(),
+                        picture_name: Some(name),
                         picture_turn: wp_docx::floating::Turned::default(),
                         picture_video: false,
                         group: None,
@@ -6224,14 +6265,51 @@ impl LayoutEngine<'_> {
                     false,
                 );
                 x += item.width;
-            } else if let Some((drawing, _)) = &item.ink {
-                // Ink is laid out already, in a box of its own: putting it on
-                // the line is moving that box to where the line is. It hangs
-                // from the baseline the way a picture does.
-                let moved = drawing.translated(x, baseline - item_height(item));
-                page.paths.extend(
-                    moved.paths.into_iter().map(|(path, color)| PlacedPath { path, color }),
-                );
+            } else if let Some((drawing, height)) = &item.ink {
+                let at = Some(TextPosition::new(placement.paragraph, item.start_offset));
+                // Ink that floats is put where its anchor says, the way a
+                // picture that floats is; the strokes are laid out already in
+                // a box of their own, so that box is moved to where it goes.
+                if let Some(anchor) = item.picture_anchor.clone() {
+                    let line_top = baseline - placement.ascent;
+                    let (width, height) =
+                        self.float_size(&anchor, &placement.area, (item.width, *height));
+                    let (at_x, at_y) = self.float_box(
+                        &anchor,
+                        placement.page,
+                        &placement.area,
+                        line_top,
+                        width,
+                        height,
+                        None,
+                    );
+                    page.inks.push(PlacedInk {
+                        x: at_x,
+                        y: at_y,
+                        width,
+                        height,
+                        drawing: drawing.translated(at_x, at_y),
+                        depth: anchor.depth,
+                        over_text: !anchor.behind_text,
+                        at,
+                        name: picture_name(item),
+                    });
+                    continue;
+                }
+                // In the line it hangs from the baseline the way a picture
+                // does.
+                let top = baseline - item_height(item);
+                page.inks.push(PlacedInk {
+                    x,
+                    y: top,
+                    width: item.width,
+                    height: *height,
+                    drawing: drawing.translated(x, top),
+                    depth: 0,
+                    over_text: false,
+                    at,
+                    name: picture_name(item),
+                });
                 x += item.width;
             } else if let Some((drawing, _)) = &item.chart {
                 // A chart is laid out already, in a box of its own; putting it

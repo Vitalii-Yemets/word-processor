@@ -1314,6 +1314,76 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // The Draw tab with the pen in hand: a stroke that swells with
+            // the pen's pressure, a highlighter over the words, and a stroke
+            // being drawn under the pointer.
+            "draw" => {
+                use wp_docx::anchor::{Anchor, Placement, Relative, Wrap};
+                use wp_docx::ink::{Ink, Stroke};
+
+                let floats = |across: i64, down: i64| Anchor {
+                    wrap: Wrap::None,
+                    horizontal_from: Relative::Page,
+                    horizontal: Placement::Offset(across),
+                    vertical_from: Relative::Paragraph,
+                    vertical: Placement::Offset(down),
+                    allow_overlap: true,
+                    ..Anchor::default()
+                };
+                // A wave whose pressure rises and falls along it.
+                let wave: Vec<(i64, i64)> = (0..=60)
+                    .map(|step| {
+                        let along = step as f64 / 60.0;
+                        (
+                            (along * 2_400_000.0) as i64,
+                            (200_000.0 + (along * 12.0).sin() * 150_000.0) as i64,
+                        )
+                    })
+                    .collect();
+                let pressure: Vec<f32> = (0..=60)
+                    .map(|step| 0.15 + 0.85 * ((step as f32 / 60.0) * core::f32::consts::PI).sin())
+                    .collect();
+                let pressed = Ink {
+                    strokes: vec![Stroke {
+                        colour: "C00000".to_owned(),
+                        width_emu: 36_000,
+                        transparency: 0,
+                        flat: false,
+                        points: wave,
+                        pressure,
+                    }],
+                };
+                let highlight = Ink {
+                    strokes: vec![Stroke {
+                        colour: "FFFF00".to_owned(),
+                        width_emu: 216_000,
+                        transparency: 128,
+                        flat: true,
+                        points: vec![(0, 0), (1_800_000, 0)],
+                        pressure: Vec::new(),
+                    }],
+                };
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                let _ = self.document.insert_ink_floating(&pressed, &floats(1_500_000, 500_000));
+                self.document.set_caret(wp_docx::TextPosition::new(3, 0));
+                let _ = self.document.insert_ink_floating(&highlight, &floats(1_100_000, 60_000));
+                self.relayout();
+                self.choose_tab(crate::chrome::ribbon::Tab::Draw);
+                self.take_pen(super::inking::PenKind::Pen);
+                let (origin_x, origin_y) = self.page_origin(0);
+                let top = self.content_top() + origin_y - self.scroll_down();
+                let points: Vec<(f32, f32)> = (0..=40)
+                    .map(|step| {
+                        let along = step as f32 / 40.0;
+                        (origin_x + 420.0 + along * 160.0, top + 330.0 + (along * 9.0).sin() * 18.0)
+                    })
+                    .collect();
+                let (x, y) = (points[0].0 as i32, points[0].1 as i32);
+                self.ink_press(x, y);
+                for (x, y) in &points[1..] {
+                    self.ink_move(*x as i32, *y as i32, true);
+                }
+            }
             "flowchart" => {
                 let shapes: Vec<wp_layout::geometry::Preset> = wp_layout::geometry::Preset::all()
                     .into_iter()
@@ -1766,6 +1836,7 @@ impl Editor {
                     transparency: 0,
                     flat: false,
                     points,
+                    pressure: Vec::new(),
                 };
 
                 // A tick, in two strokes of a blue pen.
@@ -1807,6 +1878,7 @@ impl Editor {
                             transparency: 110,
                             flat: true,
                             points: vec![(30_000, 150_000), (870_000, 150_000)],
+                            pressure: Vec::new(),
                         },
                     ],
                 };

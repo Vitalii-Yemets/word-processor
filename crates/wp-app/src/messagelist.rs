@@ -136,6 +136,16 @@ fn from_the_tables() -> BTreeSet<String> {
     for colouring in wp_docx::diagram::Colouring::ALL {
         out.insert(colouring.label().to_owned());
     }
+    // The Draw tab's pens: what they may be, and what the ink they draw
+    // may be seen as.
+    for (name, _) in
+        crate::editor::inking::PEN_COLOURS.iter().chain(crate::editor::inking::HIGHLIGHTER_COLOURS)
+    {
+        out.insert((*name).to_owned());
+    }
+    for name in crate::editor::inking::SEEN_SHAPES {
+        out.insert((*name).to_owned());
+    }
     // The quick style sets: what each is called and what it says about
     // itself, both of which a person reads off the menu.
     for set in crate::editor::stylesets::SETS {

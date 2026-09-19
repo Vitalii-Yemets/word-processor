@@ -489,7 +489,11 @@ impl Document {
 }
 
 /// Changes one `w:drawing` between floating and in the line.
-fn set_anchor_on(drawing: &mut Element, anchor: Option<&Anchor>, prefix: Option<&str>) -> bool {
+pub(crate) fn set_anchor_on(
+    drawing: &mut Element,
+    anchor: Option<&Anchor>,
+    prefix: Option<&str>,
+) -> bool {
     // Whichever wrapper is there: everything under it stays exactly as it is.
     let Some(wrapper) = drawing
         .child_elements_mut()
@@ -595,7 +599,7 @@ fn walk_drawings<'a>(
 ) {
     for node in &element.children {
         let Some(child) = node.as_element() else { continue };
-        if child.namespace.as_deref() == Some(read::W) && child.local_name() == "drawing" {
+        if is_drawing(child) {
             // The offset wanted is the drawing's own, not a caret beside it:
             // which of two neighbours is meant was settled before this.
             if *offset == wanted {
@@ -612,6 +616,15 @@ fn walk_drawings<'a>(
     }
 }
 
+/// Whether an element is a drawing that stands for one character of the
+/// text: `w:drawing`, or one of the older wrappers holding a picture — the
+/// same rule [`edit::atomic_text`] counts by.
+fn is_drawing(element: &Element) -> bool {
+    element.namespace.as_deref() == Some(read::W)
+        && (element.local_name() == "drawing"
+            || (matches!(element.local_name(), "pict" | "object") && edit::holds_picture(element)))
+}
+
 /// The same, to change it.
 pub(crate) fn walk_drawings_mut(
     element: &mut Element,
@@ -621,7 +634,7 @@ pub(crate) fn walk_drawings_mut(
 ) {
     for node in &mut element.children {
         let Some(child) = node.as_element_mut() else { continue };
-        if child.namespace.as_deref() == Some(read::W) && child.local_name() == "drawing" {
+        if is_drawing(child) {
             if *offset == wanted {
                 act(child);
             }

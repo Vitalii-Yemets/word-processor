@@ -77,6 +77,7 @@ pub(crate) struct Extent {
     decorations: usize,
     cells: usize,
     paths: usize,
+    inks: usize,
     lines: usize,
     turned: usize,
 }
@@ -90,6 +91,7 @@ impl Extent {
             decorations: page.decorations.len(),
             cells: page.cells.len(),
             paths: page.paths.len(),
+            inks: page.inks.len(),
             lines: page.lines.len(),
             turned: page.turned.len(),
         }
@@ -103,6 +105,7 @@ impl Extent {
         page.decorations.truncate(self.decorations);
         page.cells.truncate(self.cells);
         page.paths.truncate(self.paths);
+        page.inks.truncate(self.inks);
         page.lines.truncate(self.lines);
         page.turned.truncate(self.turned);
     }
@@ -115,6 +118,7 @@ impl Extent {
             && page.decorations.len() >= self.decorations
             && page.cells.len() >= self.cells
             && page.paths.len() >= self.paths
+            && page.inks.len() >= self.inks
             && page.lines.len() >= self.lines
             && page.turned.len() >= self.turned
     }
@@ -134,6 +138,7 @@ impl Extent {
             decorations: page.decorations.split_off(self.decorations),
             cells: page.cells.split_off(self.cells),
             paths: page.paths.split_off(self.paths),
+            inks: page.inks.split_off(self.inks),
             lines: page.lines.split_off(self.lines),
             turned: page.turned.split_off(self.turned),
             stamp: 0,
@@ -151,6 +156,7 @@ impl Extent {
         to.decorations.extend(from.decorations.drain(at.decorations - base.decorations..));
         to.cells.extend(from.cells.drain(at.cells - base.cells..));
         to.paths.extend(from.paths.drain(at.paths - base.paths..));
+        to.inks.extend(from.inks.drain(at.inks - base.inks..));
         to.lines.extend(from.lines.drain(at.lines - base.lines..));
         to.turned.extend(from.turned.drain(at.turned - base.turned..));
     }

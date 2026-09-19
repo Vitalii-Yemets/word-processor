@@ -214,15 +214,18 @@ pub enum Icon {
     AlignBottomCenter = 196,
     AlignBottomRight = 197,
     Lightning = 198,
-    /// An open padlock, for the stretch of a protected document everybody may
-    /// edit. Drawn here rather than taken from the icon set the rest come
-    /// from, which has no open lock in it: a closed one is Restrict Editing
-    /// and the two buttons stand next to each other.
     Everyone = 199,
+    Pen = 200,
+    Pencil = 201,
+    Eraser = 202,
+    EraserSegment = 203,
+    Lasso = 204,
+    InkToShape = 205,
+    InkToText = 206,
 }
 
 /// How many there are, so the drawings can be kept in a flat array.
-pub const COUNT: usize = 200;
+pub const COUNT: usize = 207;
 
 /// Every icon, in the order the catalogue declares them.
 ///
@@ -429,6 +432,13 @@ pub static ALL: [Icon; COUNT] = [
     Icon::AlignBottomRight,
     Icon::Lightning,
     Icon::Everyone,
+    Icon::Pen,
+    Icon::Pencil,
+    Icon::Eraser,
+    Icon::EraserSegment,
+    Icon::Lasso,
+    Icon::InkToShape,
+    Icon::InkToText,
 ];
 
 impl Icon {
@@ -1242,13 +1252,6 @@ impl Icon {
                     include_str!("../../assets/icons/ic_fluent_mail_template_20_regular.svg")
                 }
             }
-            Self::Everyone => {
-                if large {
-                    include_str!("../../assets/icons/lock_open_24.svg")
-                } else {
-                    include_str!("../../assets/icons/lock_open_20.svg")
-                }
-            }
             Self::Recipients => {
                 if large {
                     include_str!("../../assets/icons/ic_fluent_people_24_regular.svg")
@@ -1876,6 +1879,62 @@ impl Icon {
                     include_str!("../../assets/icons/ic_fluent_flash_24_regular.svg")
                 } else {
                     include_str!("../../assets/icons/ic_fluent_flash_20_regular.svg")
+                }
+            }
+            Self::Everyone => {
+                if large {
+                    include_str!("../../assets/icons/lock_open_24.svg")
+                } else {
+                    include_str!("../../assets/icons/lock_open_20.svg")
+                }
+            }
+            Self::Pen => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_pen_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_pen_20_regular.svg")
+                }
+            }
+            Self::Pencil => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_inking_tool_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_inking_tool_20_regular.svg")
+                }
+            }
+            Self::Eraser => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_eraser_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_eraser_20_regular.svg")
+                }
+            }
+            Self::EraserSegment => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_eraser_segment_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_eraser_segment_20_regular.svg")
+                }
+            }
+            Self::Lasso => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_lasso_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_lasso_20_regular.svg")
+                }
+            }
+            Self::InkToShape => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_draw_shape_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_draw_shape_20_regular.svg")
+                }
+            }
+            Self::InkToText => {
+                if large {
+                    include_str!("../../assets/icons/ic_fluent_draw_text_24_regular.svg")
+                } else {
+                    include_str!("../../assets/icons/ic_fluent_draw_text_20_regular.svg")
                 }
             }
         }

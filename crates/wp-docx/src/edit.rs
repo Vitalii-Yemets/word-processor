@@ -215,11 +215,24 @@ pub(crate) fn atomic_text(element: &Element) -> Option<&'static str> {
         // the layout counts a picture as one byte of the paragraph as well, and
         // an offset has to mean the same thing in both.
         "drawing" => Some("\u{1}"),
+        // The older wrappers — a picture written the way Word wrote one
+        // before 2007, or an object embedded with its preview — stand for
+        // one character too, when they hold a picture the reader takes.
+        "pict" | "object" if holds_picture(element) => Some("\u{1}"),
         // The mark that points at a footnote or an endnote is one character
         // too, for the same reasons.
         "footnoteReference" | "endnoteReference" => Some("\u{2}"),
         _ => None,
     }
+}
+
+/// Whether one of the older wrappers holds a picture the reader would take:
+/// an image behind `v:imagedata` or `a:blip`. One that holds a shape drawn
+/// in VML holds nothing this program models, and counts for nothing.
+pub(crate) fn holds_picture(element: &Element) -> bool {
+    element
+        .child_elements()
+        .any(|child| matches!(child.local_name(), "imagedata" | "blip") || holds_picture(child))
 }
 
 /// Replaces every occurrence of `needle` in the document, returning how many

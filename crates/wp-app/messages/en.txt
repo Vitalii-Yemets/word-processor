@@ -98,11 +98,13 @@
 = Bibliographies
 = Bibliography
 = Bind the control to this node
+= Black
 = Blank Page
 = Blank document
 = Block Authors
 = Block Quick Style Set switching
 = Block Theme or Scheme switching
+= Blue
 = Bold
 = Bookmark
 = Bookmark name
@@ -165,6 +167,7 @@
 = Choose a node of the part to bind a control to
 = Choose commands from
 = Choose one to put it in, to refile it, or to take it away.
+= Choose the ink first: Select, then drag round it
 = Citation
 = Citations & Bibliography
 = City
@@ -208,6 +211,7 @@
 = Contents cannot be edited
 = Contour
 = Controls
+= Convert
 = Convert to Text
 = Copies
 = Copy
@@ -224,6 +228,7 @@
 = Create New Building Block
 = Create a PDF
 = Cross-reference
+= Ctrl+click to save the file
 = Current Position
 = Custom Margins…
 = Custom Print
@@ -232,6 +237,7 @@
 = Customize Ribbon
 = Customize the Ribbon
 = Cut
+= Dark Gray
 = Dark Mode
 = Data
 = Date & Time
@@ -251,6 +257,7 @@
 = Design Mode is off
 = Design Mode is on: the tags show each control's title, and typing in a placeholder changes the placeholder
 = Developer
+= Diamond
 = Dictionaries
 = Dictionaries on this machine
 = Dictionary
@@ -278,6 +285,7 @@
 = Draft
 = Draw
 = Draw Table
+= Drawing Tools
 = Drop-Down List
 = Drop-down list properties
 = Edges
@@ -298,6 +306,8 @@
 = Equation
 = Equations
 = Eraser
+= Eraser: rub out part of a stroke. Escape to stop
+= Eraser: touch a stroke to take it away. Escape to stop
 = Every column
 = Every one of them has a name and an address
 = Every style may be used again
@@ -351,6 +361,8 @@
 = Glossary
 = Go to Footer
 = Go to Header
+= Gold
+= Green
 = Greeting
 = Gridlines
 = Group
@@ -365,12 +377,15 @@
 = Headings on a band
 = Height:
 = Help
+= Hexagon
 = Hidden
 = Hide White Space
 = Hide spelling errors in this document only
 = Hierarchy
 = Highlight
 = Highlight the regions I can edit
+= Highlighter
+= Highlighter: draw over the words. Escape to stop
 = Holding
 = Home
 = Hyphenation
@@ -392,6 +407,8 @@
 = Indents and Spacing
 = Index
 = Info
+= Ink to Shape
+= Ink to Text
 = Insert
 = Insert Alignment Tab
 = Insert Endnote
@@ -426,6 +443,7 @@
 = Left:
 = Legacy
 = Legacy Tools
+= Lime
 = Limit formatting to a selection of styles
 = Line
 = Line Numbers
@@ -494,6 +512,7 @@
 = Nobody was typed, so no list was made
 = None
 = Normal
+= Not saved
 = Nothing is restricted: tick one of the two boxes
 = Nothing was typed, so no diagram was drawn
 = Number format
@@ -517,6 +536,7 @@
 = Opened {0}
 = Opened {0} as {1}
 = Options
+= Orange
 = Order
 = Ordinals (1st) with superscript
 = Organizer
@@ -525,6 +545,7 @@
 = Outline
 = Outline level
 = Outside
+= Oval
 = PDF Files (*.pdf)
 = PDF documents (*.pdf)
 = Page 1
@@ -567,17 +588,25 @@
 = Paste
 = Paste as Picture
 = Paste function
+= Pen
+= Pen put down
+= Pen: draw on the page. Escape to stop
+= Pencil
+= Pencil: draw on the page. Escape to stop
+= Pentagon
 = Picas
 = Picture
 = Pictures
 = Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
 = Pie
+= Pink
 = Plain
 = Plain Text
 = Plain Text (*.txt)
 = Plain, in the middle
 = Plain, to the left
 = Plain, to the right
+= Point Eraser
 = Points
 = Position
 = Postcode
@@ -598,6 +627,7 @@
 = Proofing
 = Properties
 = Protect
+= Purple
 = Purpose
 = Put one and its key in this folder, or use one the machine holds:
 = Put the caret in a content control first
@@ -609,6 +639,8 @@
 = Recently used
 = Recipients
 = Recommended Minimum
+= Rectangle
+= Red
 = Redo
 = Reenter password to confirm
 = References
@@ -668,6 +700,8 @@
 = Save as PDF
 = Save documents
 = Save the document before signing it.
+= Save the file
+= Saved
 = Saved {0}
 = Saved {0} as OpenDocument Text
 = Saved {0} as Rich Text Format
@@ -739,6 +773,7 @@
 = Stop Protection
 = Stopping it asks for the password.
 = Strikethrough
+= Stroke Eraser
 = Style
 = Style Set
 = Style based on
@@ -781,6 +816,8 @@
 = Text files
 = Text formatting
 = Text from File
+= That ink is not a shape this program can see
+= That ink is not writing this program can read
 = That is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 = That is not a watermark any more
 = That is not well-formed XML, so it cannot be a part
@@ -796,6 +833,7 @@
 = The diagram could not be drawn: {0}
 = The document is not encrypted.
 = The document is unreadable without it.
+= The file could not be saved
 = The file types could not be registered
 = The file types were registered
 = The files below were recovered.
@@ -845,6 +883,7 @@
 = This signs the whole document.
 = This stretch is locked
 = This stretch may only be edited by {0}
+= This video is a file outside the document
 = Title
 = Title at the foot
 = Top
@@ -857,9 +896,11 @@
 = Translate from
 = Translate to
 = Translator Preferences
+= Triangle
 = Trust Center
 = Trust This Folder
 = Trusted locations
+= Turquoise
 = Type
 = Type a New List...
 = Type one person, press Add, and type the next.
@@ -927,6 +968,7 @@
 = XML Mapping
 = XML Mapping Pane
 = XML files (*.xml)
+= Yellow
 = Yes
 = Yes, Start Enforcing Protection
 = You may edit one stretch of this document.
