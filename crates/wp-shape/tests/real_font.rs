@@ -349,14 +349,23 @@ fn devanagari_is_drawn_in_the_order_it_is_read() {
 }
 
 #[test]
-fn the_hook_of_a_cluster_is_drawn_at_the_end_of_it() {
-    // र्क: the r is stored first and drawn last.
+fn the_hook_of_a_cluster_is_drawn_at_the_end_of_it_when_the_font_can_make_one() {
+    // र्क: the r is stored first and drawn last — by a font that has a hook
+    // to draw. A font with no rule for the hook draws the r as the letter it
+    // is, at the front, which is what every shaper does with such a font.
     let Some(bytes) = any_font() else { return };
     let font = Font::parse(&bytes).expect("a readable font");
+    let has_hook = font.substitution_table().and_then(Substitutions::parse).is_some_and(|table| {
+        wp_shape::indic::TAGS.iter().any(|tag| !table.lookups_for(tag, b"rphf").is_empty())
+    });
 
     let shaped = shape(&font, "\u{0930}\u{094D}\u{0915}");
     let clusters: Vec<usize> = shaped.iter().map(|entry| entry.cluster).collect();
-    assert_eq!(clusters, vec![6, 0, 3], "the hook was left at the front");
+    if has_hook {
+        assert_eq!(clusters.first(), Some(&6), "the hook was left at the front");
+    } else {
+        assert_eq!(clusters, vec![0, 3, 6], "a font with no hook moved the r");
+    }
 }
 
 #[test]
@@ -493,4 +502,130 @@ fn a_thai_tone_mark_follows_the_vowel_it_stands_on() {
         apart * 4 < i32::from(font.units_per_em()),
         "{name}: the tone mark ended {apart} units from the vowel it stands on"
     );
+}
+
+/// The first font on this machine that can draw a script written on
+/// Devanagari's plan and knows its rules.
+fn indic_font(script: wp_shape::indic::Script, sample: char) -> Option<(Vec<u8>, String)> {
+    for path in font_files() {
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        let Ok(font) = Font::parse(&bytes) else { continue };
+        if font.glyph_for(sample).is_none() {
+            continue;
+        }
+        let known = font
+            .substitution_table()
+            .and_then(Substitutions::parse)
+            .is_some_and(|table| script.tags().iter().any(|tag| table.has_script(tag)));
+        if !known {
+            continue;
+        }
+        let name = font.full_name().unwrap_or_else(|| path.display().to_string());
+        drop(font);
+        return Some((bytes, name));
+    }
+    None
+}
+
+#[test]
+fn a_vowel_written_in_two_parts_is_drawn_round_the_consonant_in_every_script_that_has_one() {
+    use wp_shape::indic::Script;
+    // Bengali কো, Oriya କୋ, Tamil கொ, Kannada ಕೊ, Malayalam കോ and Sinhala
+    // කේ: the consonant is stored first and the sign after it, and the sign
+    // is drawn in two parts, the first of them before the consonant.
+    for (script, text) in [
+        (Script::Bengali, "\u{0995}\u{09CB}"),
+        (Script::Oriya, "\u{0B15}\u{0B4B}"),
+        (Script::Tamil, "\u{0B95}\u{0BCA}"),
+        (Script::Kannada, "\u{0C95}\u{0CCA}"),
+        (Script::Malayalam, "\u{0D15}\u{0D4B}"),
+        (Script::Sinhala, "\u{0D9A}\u{0DDA}"),
+    ] {
+        let sample = text.chars().next().unwrap();
+        let Some((bytes, name)) = indic_font(script, sample) else {
+            eprintln!("no font with {script:?} rules on this machine; skipping");
+            continue;
+        };
+        let font = Font::parse(&bytes).expect("a readable font");
+        let shaped = shape(&font, text);
+        assert!(shaped.len() >= 2, "{name}: {script:?} drew {} glyphs", shaped.len());
+        // Kannada's two parts both sit to the right; every other script's
+        // first part is drawn before the consonant.
+        if script != Script::Kannada {
+            assert_eq!(shaped[0].cluster, 3, "{name}: {script:?} did not draw the sign first");
+            assert!(
+                shaped[1..].iter().any(|glyph| glyph.cluster == 0),
+                "{name}: {script:?} lost the consonant"
+            );
+        }
+        // Nothing has a glyph of nought: the font drew every part.
+        assert!(shaped.iter().all(|glyph| glyph.glyph.0 != 0), "{name}: {script:?} drew a notdef");
+    }
+}
+
+#[test]
+fn a_font_with_the_script_s_rules_draws_a_cluster_as_fewer_glyphs_than_it_has_letters() {
+    use wp_shape::indic::Script;
+    // Two consonants joined by a halant: a half form and a letter, a letter
+    // with a small one beneath it, or one conjunct — in every case fewer
+    // glyphs than the three characters written.
+    for (script, text) in [
+        (Script::Bengali, "\u{0995}\u{09CD}\u{0995}"),
+        (Script::Gurmukhi, "\u{0A15}\u{0A4D}\u{0A35}"),
+        (Script::Gujarati, "\u{0A95}\u{0ACD}\u{0A95}"),
+        (Script::Oriya, "\u{0B15}\u{0B4D}\u{0B15}"),
+        (Script::Telugu, "\u{0C15}\u{0C4D}\u{0C15}"),
+        (Script::Kannada, "\u{0C95}\u{0CCD}\u{0C95}"),
+        (Script::Malayalam, "\u{0D15}\u{0D4D}\u{0D15}"),
+    ] {
+        let sample = text.chars().next().unwrap();
+        let Some((bytes, name)) = indic_font(script, sample) else {
+            eprintln!("no font with {script:?} rules on this machine; skipping");
+            continue;
+        };
+        let font = Font::parse(&bytes).expect("a readable font");
+        let shaped = shape(&font, text);
+        assert!(
+            shaped.len() < 3,
+            "{name}: {script:?} drew a joined cluster as {} glyphs, one for each character",
+            shaped.len()
+        );
+    }
+}
+
+#[test]
+fn the_hook_is_one_glyph_drawn_after_the_letter_where_the_script_has_one() {
+    use wp_shape::indic::Script;
+    // Bengali র্ক and Gujarati ર્ક: the r and the halant become the hook, so
+    // three characters come out as two glyphs, and the hook comes after.
+    for (script, text) in [
+        (Script::Bengali, "\u{09B0}\u{09CD}\u{0995}"),
+        (Script::Gujarati, "\u{0AB0}\u{0ACD}\u{0A95}"),
+    ] {
+        let sample = text.chars().next().unwrap();
+        let Some((bytes, name)) = indic_font(script, sample) else {
+            eprintln!("no font with {script:?} rules on this machine; skipping");
+            continue;
+        };
+        let font = Font::parse(&bytes).expect("a readable font");
+        let shaped = shape(&font, text);
+        assert_eq!(shaped.len(), 2, "{name}: {script:?} did not make the hook one glyph");
+        assert_eq!(shaped[0].cluster, 6, "{name}: {script:?} drew the hook first");
+    }
+}
+
+#[test]
+fn a_tamil_font_without_a_hook_draws_the_ra_as_the_letter_it_is() {
+    use wp_shape::indic::Script;
+    // Tamil ர்க: no Tamil font makes a hook of ra and the pulli, so the ra
+    // stays a letter at the front, with its pulli over it.
+    let text = "\u{0BB0}\u{0BCD}\u{0B95}";
+    let Some((bytes, name)) = indic_font(Script::Tamil, '\u{0B95}') else {
+        eprintln!("no font with Tamil rules on this machine; skipping");
+        return;
+    };
+    let font = Font::parse(&bytes).expect("a readable font");
+    let shaped = shape(&font, text);
+    assert_eq!(shaped[0].cluster, 0, "{name}: the ra was moved");
+    assert_eq!(shaped.last().map(|glyph| glyph.cluster), Some(6), "{name}: the ka is not last");
 }

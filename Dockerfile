@@ -17,7 +17,9 @@ FROM rust:1.98.0-bookworm
 # for Thai could be written and tested, and nothing could be drawn with them to
 # look at. Lohit, TLWG and IPA are the smallest set that answers for the three
 # scripts whose rules are written out in this program: Devanagari, Thai and
-# Japanese. Nanum answers for Korean, whose syllables the line breaking rules
+# Japanese — and the other nine written on Devanagari's plan, a Lohit font
+# for each and LKLUG for Sinhala, since the rules for each differ and each
+# has to be looked at. Nanum answers for Korean, whose syllables the line breaking rules
 # now separate: without it the one thing the generated tables added there could
 # not be looked at, and the sample document's Korean line drew nothing at all.
 # The URW set is the other kind of font altogether: PostScript outlines in a
@@ -75,6 +77,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         unzip \
         fonts-dejavu-core \
         fonts-lohit-deva \
+        fonts-lohit-beng-bengali \
+        fonts-lohit-guru \
+        fonts-lohit-gujr \
+        fonts-lohit-orya \
+        fonts-lohit-taml \
+        fonts-lohit-telu \
+        fonts-lohit-knda \
+        fonts-lohit-mlym \
+        fonts-lklug-sinhala \
         fonts-thai-tlwg \
         fonts-ipafont-gothic \
         fonts-nanum \

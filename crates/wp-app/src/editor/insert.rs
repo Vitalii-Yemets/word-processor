@@ -1754,6 +1754,42 @@ impl Editor {
                 self.document.clear_selection();
                 self.relayout();
             }
+            // The nine scripts written on Devanagari's plan: a line for each,
+            // with a vowel sign written to the left or in two parts, a cluster
+            // of two consonants, and a syllable with a hook where the script
+            // has one — the words for the language's own name last.
+            "indic" => {
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                for line in [
+                    // Bengali: ki, kko, rka, bangla.
+                    "\u{0995}\u{09BF} \u{0995}\u{09CD}\u{0995}\u{09CB} \u{09B0}\u{09CD}\u{0995} \u{09AC}\u{09BE}\u{0982}\u{09B2}\u{09BE}",
+                    // Gurmukhi: ki, kva, punjabi.
+                    "\u{0A15}\u{0A3F} \u{0A15}\u{0A4D}\u{0A35} \u{0A2A}\u{0A70}\u{0A1C}\u{0A3E}\u{0A2C}\u{0A40}",
+                    // Gujarati: ki, kka, rka, gujarati.
+                    "\u{0A95}\u{0ABF} \u{0A95}\u{0ACD}\u{0A95} \u{0AB0}\u{0ACD}\u{0A95} \u{0A97}\u{0AC1}\u{0A9C}\u{0AB0}\u{0ABE}\u{0AA4}\u{0AC0}",
+                    // Oriya: ki, kko, rka, odia.
+                    "\u{0B15}\u{0B3F} \u{0B15}\u{0B4D}\u{0B15}\u{0B4B} \u{0B30}\u{0B4D}\u{0B15} \u{0B13}\u{0B21}\u{0B3C}\u{0B3F}\u{0B06}",
+                    // Tamil: ki, ko, kau, tamil.
+                    "\u{0B95}\u{0BBF} \u{0B95}\u{0BCA} \u{0B95}\u{0BCC} \u{0BA4}\u{0BAE}\u{0BBF}\u{0BB4}\u{0BCD}",
+                    // Telugu: ki, kka, kai, telugu.
+                    "\u{0C15}\u{0C3F} \u{0C15}\u{0C4D}\u{0C15} \u{0C15}\u{0C48} \u{0C24}\u{0C46}\u{0C32}\u{0C41}\u{0C17}\u{0C41}",
+                    // Kannada: ki, kka, ko, kannada.
+                    "\u{0C95}\u{0CBF} \u{0C95}\u{0CCD}\u{0C95} \u{0C95}\u{0CCB} \u{0C95}\u{0CA8}\u{0CCD}\u{0CA8}\u{0CA1}",
+                    // Malayalam: ki, kka, ko, kra, malayalam.
+                    "\u{0D15}\u{0D3F} \u{0D15}\u{0D4D}\u{0D15} \u{0D15}\u{0D4B} \u{0D15}\u{0D4D}\u{0D30} \u{0D2E}\u{0D32}\u{0D2F}\u{0D3E}\u{0D33}\u{0D02}",
+                    // Sinhala: ki, ke, ko, ksha with the joiner, sinhala.
+                    "\u{0D9A}\u{0DD2} \u{0D9A}\u{0DDA} \u{0D9A}\u{0DDC} \u{0D9A}\u{0DCA}\u{200D}\u{0DC2} \u{0DC3}\u{0DD2}\u{0D82}\u{0DC4}\u{0DBD}",
+                ] {
+                    self.document.type_text(line);
+                    self.document.press_enter();
+                }
+                let end = self.document.caret();
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                self.document.extend_selection_to(end);
+                self.document.set_size(28.0);
+                self.document.clear_selection();
+                self.relayout();
+            }
             // The scripts that are not drawn the way they are stored, and the
             // one that is written without spaces between its words.
             "scripts" => {

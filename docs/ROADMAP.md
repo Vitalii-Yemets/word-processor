@@ -3107,7 +3107,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   and where the caret lands inside a syllable whose letters are drawn out of
   order, which is a question of clusters rather than of glyphs.
 
-- [ ] **E13. The other scripts that reorder.** Bengali, Gurmukhi, Gujarati,
+- [x] **E13. The other scripts that reorder.** Bengali, Gurmukhi, Gujarati,
   Oriya, Tamil, Telugu, Kannada, Malayalam and Sinhala. They share the shape of
   the rules **E1** now has — a syllable, a letter the rest hangs on, pieces
   drawn in an order of their own — and differ in every detail of them: where
@@ -3117,6 +3117,68 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   split before the font is asked anything. Each needs its own reading of the
   same tables, and the block of each is a hundred and twenty-eight characters
   to be categorised by hand as Devanagari's was.
+  *Done.* **One engine for ten scripts.** `wp-shape/src/indic.rs` is no
+  longer Devanagari's alone. Every character of the ten blocks is told
+  apart by hand — consonant, Ra, independent vowel, vowel sign and where
+  it is drawn, nukta, halant, the dots that belong to the whole syllable,
+  the letters a sign may hang on — and the syllable rules run over pieces
+  rather than characters, because the vowel signs written in two parts are
+  split first: Bengali's o and au, Oriya's ai, o and au, Tamil's o, oo and
+  au, Telugu's ai, Kannada's ii, ee, ai, o and oo, Malayalam's o, oo and
+  au, and Sinhala's ee, o, oo and au, whose second part is the al-lakuna
+  and is a sign there and not a halant. Unicode's own decompositions, and
+  the parts carry the character they came from, so a caret still lands
+  between characters.
+  **What each script answers its own way.** Which consonant the syllable
+  hangs on: the last in the north, passing over one drawn as a tail or a
+  sign of the letter before it — Ra everywhere, ya-phala in Bengali, the
+  three beneath in Gurmukhi, ya, va, la and ra in Malayalam — and the
+  first in Telugu, Kannada and Oriya, where the rest are written small
+  beneath it, and in Sinhala, where a halant ends the letter unless a
+  joiner asks the next to touch it. Where the hook goes: every piece of a
+  syllable is given a place in one sequence — the signs before, the
+  letters before the base, the base, the forms beneath, the signs above
+  and below, the letters after, the signs after, the dots — and the hook
+  takes the place its script gives it: before the signs after in
+  Devanagari and Gujarati, after the signs below in Bengali, right after
+  the base in Oriya and Malayalam, after everything but the dots in Tamil,
+  Telugu, Kannada and Sinhala. Whether there is a hook at all: only when a
+  joiner asks in Telugu and Sinhala, and only when the font can make one
+  anywhere — a font with no rule for it draws the Ra as the letter it is,
+  which is what every shaper does and what this one did not. Malayalam's
+  hook is a character of its own, written first and drawn after the
+  letter, and is placed so. A consonant the font draws before the base —
+  Malayalam's ra — is found by asking the font's `pref` rule and moved in
+  front of the base, after the signs written to the left.
+  **The fonts are in the build image** — a Lohit for each of the eight and
+  LKLUG for Sinhala — so the rules could be looked at: the proof render
+  shows a line of each script with a sign written to the left or in two
+  parts, a cluster of two consonants, and a hook where the script has one.
+  *Proven by:* `indic.rs` — every block's consonants, vowels, signs and
+  halant told apart; a sign in two parts split with both parts carrying
+  their character and the first drawn first, in Bengali, Tamil, Malayalam
+  and Sinhala; Telugu and Kannada hanging on the first consonant, Telugu's
+  hook only when asked; the hook drawn where each script draws it;
+  ya-phala, va and the rest passed over when the base is sought; Sinhala's
+  halant ending the letter unless joined; a pre-base form drawn before the
+  base; every character coming out exactly once in every script; and the
+  Devanagari tests as they were. `tests/real_font.rs` — with the fonts on
+  the machine, a sign in two parts drawn round the consonant in six
+  scripts, a cluster drawn as fewer glyphs than it has letters in seven,
+  the hook one glyph drawn after the letter in Bengali and Gujarati, and
+  a Tamil font with no hook drawing the Ra as a letter.
+  *Not done, and named:* none of this has been checked against Word, or
+  against another shaper, glyph for glyph; the reading of each script's
+  rules is this program's own, from the standard and the fonts, and the
+  proof render is what was looked at. What a font says about which
+  consonant takes a form below or after the base is not asked — the
+  lists are written here per script, where a shaper that asks the font
+  would follow the font — so a font that draws a consonant differently
+  from the list may hang the syllable on the wrong letter. The Sinhala
+  hook made with a joiner, Gurmukhi's tippi and addak beyond their
+  places, Malayalam's chillu letters beyond being consonants, and the
+  older way of writing each script that the old tags name are read only
+  as far as the categories carry them.
 - [x] **E2. Thai and Lao: the syllable, and where a line may be broken.**
   *Done when:* a paragraph of Thai wraps, and wraps where a syllable begins
   rather than in the middle of one.

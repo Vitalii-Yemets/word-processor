@@ -79,6 +79,15 @@ pub fn script_of(text: &str) -> [u8; 4] {
             0x0700..=0x074F => return *b"syrc",
             0x0590..=0x05FF => return *b"hebr",
             0x0900..=0x097F => return *b"deva",
+            0x0980..=0x09FF => return *b"beng",
+            0x0A00..=0x0A7F => return *b"guru",
+            0x0A80..=0x0AFF => return *b"gujr",
+            0x0B00..=0x0B7F => return *b"orya",
+            0x0B80..=0x0BFF => return *b"taml",
+            0x0C00..=0x0C7F => return *b"telu",
+            0x0C80..=0x0CFF => return *b"knda",
+            0x0D00..=0x0D7F => return *b"mlym",
+            0x0D80..=0x0DFF => return *b"sinh",
             0x0E00..=0x0E7F => return *b"thai",
             _ => {}
         }
@@ -102,7 +111,7 @@ pub fn needs_shaping(text: &str) -> bool {
 /// Whether a character belongs to a script drawn in an order of its own.
 #[must_use]
 pub fn reorders(character: char) -> bool {
-    matches!(character as u32, 0x0900..=0x097F)
+    indic::Script::of(character).is_some()
 }
 
 /// Turns text into glyphs, applying whatever the font offers for its script.
@@ -149,11 +158,11 @@ pub fn shape_with(font: &Font<'_>, text: &str, features: &[[u8; 4]]) -> Vec<Shap
     };
     let mut script = script_of(text);
 
-    // Devanagari is not drawn in the order it is written, and no substitution
-    // table can say so: the text has to be rearranged before the font is asked
-    // anything. See [`indic`].
-    if script == *b"deva" {
-        script = indic::tag_in(&table);
+    // The scripts of India are not drawn in the order they are written, and
+    // no substitution table can say so: the text has to be rearranged before
+    // the font is asked anything. See [`indic`].
+    if let Some(which) = indic::Script::of_tag(&script) {
+        script = which.tag_in(&table);
         let (glyphs, clusters) = indic::shape(font, &table, &script, text);
         let mut out = zip(glyphs, clusters);
         position(font, &script, &mut out, features.contains(b"kern"));
