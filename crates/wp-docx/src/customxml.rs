@@ -579,10 +579,13 @@ impl Document {
     #[must_use]
     pub fn control_text(&self, control: &crate::controls::Control) -> String {
         let text = self.paragraph_text(control.start.paragraph).unwrap_or_default();
-        let letters: Vec<char> = text.chars().collect();
-        let from = control.start.offset.min(letters.len());
-        let to = control.end.offset.min(letters.len()).max(from);
-        letters[from..to].iter().collect()
+        // The offsets are bytes, and only whole characters are taken.
+        let boundary = |wanted: usize| {
+            text.char_indices().map(|(at, _)| at).find(|at| *at >= wanted).unwrap_or(text.len())
+        };
+        let from = boundary(control.start.offset);
+        let to = boundary(control.end.offset).max(from);
+        text.get(from..to).unwrap_or_default().to_owned()
     }
 
     /// Brings every bound control to what its node says, which is what Word

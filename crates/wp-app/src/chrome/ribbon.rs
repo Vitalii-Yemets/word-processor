@@ -1181,6 +1181,7 @@ impl Ribbon {
                     | Choice::PageNumberDesign
                     | Choice::RestrictMode
                     | Choice::MappedControl
+                    | Choice::GalleryBlock
                     | Choice::Selecting
                     | Choice::NoteJump
                     | Choice::Accepting
@@ -1874,15 +1875,19 @@ static REVIEW_GROUPS: &[Group] = &[
 static DEVELOPER_GROUPS: &[Group] = &[
     Group {
         label: "Controls",
+        // Word's nine, in Word's order, three to a column.
         items: &[
             Item::Small(Command::Control(0), Icon::QuickParts, "Rich Text"),
             Item::Small(Command::Control(1), Icon::TextBox, "Plain Text"),
+            Item::Small(Command::Control(6), Icon::Picture, "Picture"),
             Item::Break,
+            Item::Small(Command::GalleryControl, Icon::QuickParts, "Building Block Gallery"),
             Item::Small(Command::Control(2), Icon::Accept, "Check Box"),
             Item::Small(Command::Control(3), Icon::MultilevelList, "Combo Box"),
             Item::Break,
             Item::Small(Command::Control(4), Icon::MultilevelList, "Drop-Down List"),
             Item::Small(Command::Control(5), Icon::DateTime, "Date Picker"),
+            Item::Small(Command::RepeatingSection, Icon::Outline, "Repeating Section"),
             Item::Break,
             // Word's Properties, which is what a control is named and given
             // its list from after it has been put in.
@@ -2268,6 +2273,10 @@ static OFF_RIBBON_COMMANDS: &[(Command, &str, Icon)] = &[
     (Command::PasteMerge, "Merge Formatting", Icon::Clipboard),
     (Command::PasteAsPicture, "Paste as Picture", Icon::Clipboard),
     (Command::PasteTextOnly, "Keep Text Only", Icon::Clipboard),
+    // The three on the menu of a repeating section's item.
+    (Command::RepeatItemBefore, "Insert Item Before", Icon::Outline),
+    (Command::RepeatItemAfter, "Insert Item After", Icon::Outline),
+    (Command::DeleteRepeatItem, "Delete Repeating Section Item", Icon::DeleteRow),
 ];
 
 /// What a command is called, taken from the button that runs it.

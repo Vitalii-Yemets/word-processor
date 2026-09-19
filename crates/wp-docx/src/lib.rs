@@ -39,6 +39,7 @@ pub mod appearance;
 pub mod art;
 pub mod authorities;
 pub mod bibliography;
+pub mod blockcontrols;
 pub mod blocks;
 pub mod bookmarks;
 pub mod captions;

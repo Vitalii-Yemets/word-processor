@@ -29,13 +29,15 @@
 //! box says so in a namespace Word added in 2010, which is why that one
 //! element is written with its own declaration on it.
 //!
-//! # What is not here
+//! # The picture control
 //!
-//! The controls that hold something this program has no other way of holding:
-//! a picture control, a repeating section, a building block gallery. Each of
-//! those is a promise about behaviour rather than about storage, and a
-//! control that said it was a repeating section and did not repeat would be
-//! worse than one that was never offered.
+//! One more of the same shape, holding a drawing rather than words: `w:picture`
+//! in the properties, and a run with a `w:drawing` in the content. It is put
+//! in holding a picture — the placeholder the program draws — because a
+//! control holding nothing has no width and nothing to click, and it is
+//! clicked to be given the picture it is for. The controls that hold whole
+//! paragraphs — the repeating section and the building-block gallery — are
+//! [`crate::blockcontrols`].
 
 use wp_xml::tree::{Element, Node};
 
@@ -62,6 +64,8 @@ pub enum ControlKind {
     Date,
     /// Ticked or not.
     CheckBox,
+    /// A picture, chosen by clicking the control.
+    Picture,
 }
 
 impl ControlKind {
@@ -75,6 +79,7 @@ impl ControlKind {
             Self::ComboBox => Some("comboBox"),
             Self::Date => Some("date"),
             Self::CheckBox => Some("checkbox"),
+            Self::Picture => Some("picture"),
         }
     }
 
@@ -88,10 +93,13 @@ impl ControlKind {
             Self::ComboBox => "Combo Box Content Control",
             Self::Date => "Date Picker Content Control",
             Self::CheckBox => "Check Box Content Control",
+            Self::Picture => "Picture Content Control",
         }
     }
 
-    /// Every one that can be put into a document, in Word's order.
+    /// Every one that can be put into a document, in Word's order — with
+    /// the picture last, because it is put in by its own way and the ones
+    /// before it are numbered on the ribbon.
     pub const ALL: &'static [Self] = &[
         Self::RichText,
         Self::PlainText,
@@ -99,6 +107,7 @@ impl ControlKind {
         Self::ComboBox,
         Self::DropDown,
         Self::Date,
+        Self::Picture,
     ];
 
     /// Whether it offers a list to pick from.
@@ -202,6 +211,65 @@ impl Document {
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + shown.len()));
         self.mark_modified();
         true
+    }
+
+    /// Puts a picture control in at the caret, holding this picture: the
+    /// placeholder the program draws, until a person chooses one.
+    pub fn insert_picture_control(
+        &mut self,
+        bytes: &[u8],
+        extension: &str,
+        width_emu: i64,
+        height_emu: i64,
+    ) -> Result<bool, crate::Error> {
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let id = self.adopt_picture(bytes, extension)?;
+        let prefix = self.prefix();
+
+        let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
+            return Ok(false);
+        };
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+            return Ok(false);
+        };
+        crate::format::split_runs_at_offset(paragraph, caret.offset);
+        let at = edit::child_position_at_offset(paragraph, caret.offset);
+        let mut control = written(ControlKind::Picture, "", &[], prefix.as_deref());
+        if let Some(content) = control.child_mut(Some(read::W), "sdtContent") {
+            content.children.clear();
+            let mut run = Element::new(&edit::name_with(prefix.as_deref(), "r"), Some(read::W));
+            run.push_element(edit::drawing_element(&id, width_emu, height_emu, prefix.as_deref()));
+            content.push_element(run);
+        }
+        paragraph.insert_element(at, control);
+        // Past the picture, which is one character of the text.
+        self.set_caret(TextPosition::new(caret.paragraph, caret.offset + 1));
+        self.mark_modified();
+        Ok(true)
+    }
+
+    /// Puts a picture into the picture control at a position, in place of
+    /// the one it holds.
+    pub fn set_control_picture(
+        &mut self,
+        at: TextPosition,
+        bytes: &[u8],
+        extension: &str,
+        width_emu: i64,
+        height_emu: i64,
+    ) -> Result<bool, crate::Error> {
+        let Some(control) = self.control_at(at) else { return Ok(false) };
+        if control.kind != ControlKind::Picture {
+            return Ok(false);
+        }
+        let id = self.adopt_picture(bytes, extension)?;
+        Ok(self.change_control(&control, move |_, content, prefix| {
+            content.children.clear();
+            let mut run = Element::new(&edit::name_with(prefix, "r"), Some(read::W));
+            run.push_element(edit::drawing_element(&id, width_emu, height_emu, prefix));
+            content.push_element(run);
+        }))
     }
 
     /// Ticks or unticks the tick box at a position.
@@ -398,8 +466,13 @@ fn walk(element: &Element, paragraph: usize, offset: &mut usize, found: &mut Vec
                 });
             }
             "t" => *offset += child.text_content().len(),
-            "tab" | "br" | "cr" => *offset += 1,
             "instrText" => {}
+            // A picture, a hyphen written as an element, a note's mark: each
+            // is one thing in the text, counted as the text is counted.
+            _ if crate::edit::atomic_text(child).is_some() => {
+                *offset += crate::edit::atomic_text(child).map_or(0, str::len);
+            }
+            "cr" => *offset += 1,
             _ => walk(child, paragraph, offset, found),
         }
     }
@@ -503,6 +576,8 @@ fn shown_for(kind: ControlKind, alias: &str, items: &[String]) -> String {
             items.first().cloned().unwrap_or_else(|| "Choose an item".to_owned())
         }
         ControlKind::Date => "Enter a date".to_owned(),
+        // A picture control is given its picture by whoever puts it in.
+        ControlKind::Picture => String::new(),
         _ if alias.is_empty() => "Enter text".to_owned(),
         _ => format!("Enter {}", alias.to_lowercase()),
     }
@@ -553,6 +628,9 @@ fn written(kind: ControlKind, alias: &str, items: &[String], prefix: Option<&str
         }
         ControlKind::PlainText => {
             properties.push_element(Element::new(&named("text"), Some(read::W)));
+        }
+        ControlKind::Picture => {
+            properties.push_element(Element::new(&named("picture"), Some(read::W)));
         }
     }
 
@@ -633,8 +711,11 @@ fn control_path(
                 path.pop();
             }
             "t" => *offset += child.text_content().len(),
-            "tab" | "br" | "cr" => *offset += 1,
             "instrText" => {}
+            _ if crate::edit::atomic_text(child).is_some() => {
+                *offset += crate::edit::atomic_text(child).map_or(0, str::len);
+            }
+            "cr" => *offset += 1,
             _ => {
                 path.push(at);
                 if control_path(child, wanted, offset, path) {

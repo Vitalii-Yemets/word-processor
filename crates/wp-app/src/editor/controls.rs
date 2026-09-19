@@ -155,6 +155,10 @@ impl Editor {
     /// Puts one of the content controls in at the caret.
     pub(super) fn insert_content_control(&mut self, which: usize) -> Response {
         let Some(kind) = ControlKind::ALL.get(which).copied() else { return Response::Ignored };
+        // A picture control holds a picture, which is put in its own way.
+        if kind == ControlKind::Picture {
+            return self.insert_picture_control();
+        }
         let items: Vec<String> = if kind.has_items() {
             EXAMPLE_ITEMS.iter().map(|item| (*item).to_owned()).collect()
         } else {
@@ -213,8 +217,16 @@ impl Editor {
                 kind if kind.has_items() => {
                     return Some(self.open_control_items(&control));
                 }
+                // A picture control is clicked to be given its picture.
+                ControlKind::Picture => {
+                    return Some(self.choose_control_picture(control.start));
+                }
                 _ => {}
             }
+        }
+        // A gallery control round whole paragraphs drops its gallery open.
+        if let Some(response) = self.offer_gallery(at) {
+            return Some(response);
         }
 
         let field = self.document.form_field_at(at)?;

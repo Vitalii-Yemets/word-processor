@@ -258,6 +258,21 @@ impl Editor {
             Entry::item(Command::NewComment, "New Comment", Icon::NewComment),
         ]);
 
+        // What can be done to a repeating section, when the caret is in one
+        // of its items: Word's three.
+        if self.in_repeating_item() {
+            entries.extend([
+                Entry::line(),
+                Entry::item(Command::RepeatItemBefore, "Insert Item Before", Icon::Outline),
+                Entry::item(Command::RepeatItemAfter, "Insert Item After", Icon::Outline),
+                Entry::item(
+                    Command::DeleteRepeatItem,
+                    "Delete Repeating Section Item",
+                    Icon::DeleteRow,
+                ),
+            ]);
+        }
+
         // And what can be done to a table, when the caret is in one.
         if self.document.table_here().is_some() {
             entries.extend([

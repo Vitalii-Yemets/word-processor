@@ -60,6 +60,7 @@ mod mapping;
 mod matching;
 mod menus;
 mod minibar;
+mod morecontrols;
 mod notes;
 mod numbering;
 mod objects;
@@ -549,6 +550,11 @@ pub struct Editor {
     mapping_part: usize,
     mapping_row: Option<usize>,
     has_bindings: bool,
+    /// Where the plus at the corner of each repeating item was drawn, and
+    /// which paragraph each is for; and the blocks a gallery control has
+    /// dropped open, by name. See [`morecontrols`].
+    repeat_buttons: Vec<(f32, f32, f32, f32, usize)>,
+    gallery_names: Vec<String>,
     restrict_limiting: bool,
     restrict_restricting: bool,
     restrict_mode: usize,
@@ -819,6 +825,8 @@ impl Editor {
             mapping_part: 0,
             mapping_row: None,
             has_bindings: false,
+            repeat_buttons: Vec::new(),
+            gallery_names: Vec::new(),
             restrict_limiting: false,
             restrict_restricting: false,
             restrict_mode: 0,

@@ -1160,4 +1160,19 @@ mod document_macros {
             editor.document.plain_text()
         );
     }
+
+    #[test]
+    fn a_range_counts_accented_letters_as_one_character_each() {
+        // The document counts bytes and Word counts characters; a macro
+        // must see Word's numbers, or `Range(0, 4)` of "Café" is three
+        // letters and half of one.
+        let mut editor = with_macro(
+            "Public Sub Hello()\r\n\
+             \x20   Selection.TypeText \"Caf\" & ChrW(233) & \" \"\r\n\
+             \x20   MsgBox ActiveDocument.Range(0, 4).Text & \"|\" & ActiveDocument.Paragraphs(1).Range.End\r\n\
+             End Sub\r\n",
+        );
+        let said = ran(&mut editor);
+        assert!(said.iter().any(|line| line == "Café|8"), "{said:?}");
+    }
 }

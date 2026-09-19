@@ -48,6 +48,23 @@ use wp_vba::value::{Fault, Given, Handle, Value};
 
 use super::Editor;
 
+/// How many characters come before a byte offset of a paragraph's text.
+fn chars_before(text: &str, byte: usize) -> usize {
+    text.char_indices().take_while(|(at, _)| *at < byte).count()
+}
+
+/// The byte offset of the character this many characters in.
+fn byte_of(text: &str, chars: usize) -> usize {
+    text.char_indices().nth(chars).map_or(text.len(), |(at, _)| at)
+}
+
+/// The text between two byte offsets, whole characters only.
+fn between(text: &str, from: usize, to: usize) -> &str {
+    let from = text.char_indices().map(|(at, _)| at).find(|at| *at >= from).unwrap_or(text.len());
+    let to = text.char_indices().map(|(at, _)| at).find(|at| *at >= to).unwrap_or(text.len());
+    text.get(from..to.max(from)).unwrap_or_default()
+}
+
 /// The kinds of thing a macro can hold on to.
 mod kind {
     pub const APPLICATION: &str = "Application";
@@ -81,6 +98,7 @@ fn control_type(kind: wp_docx::controls::ControlKind) -> i64 {
         ControlKind::DropDown => 4,
         ControlKind::Date => 6,
         ControlKind::CheckBox => 8,
+        ControlKind::Picture => 2,
     }
 }
 
@@ -144,9 +162,12 @@ impl Bound<'_> {
             total +=
                 self.editor.document.paragraph_text(index).unwrap_or_default().chars().count() + 1;
         }
+        // The document's offset is in bytes and Word's is in characters,
+        // which are not the same thing past the first accented letter.
+        let text = self.editor.document.paragraph_text(position.paragraph).unwrap_or_default();
         #[allow(clippy::cast_possible_wrap)]
         {
-            (total + position.offset) as i64
+            (total + chars_before(&text, position.offset)) as i64
         }
     }
 
@@ -155,22 +176,22 @@ impl Bound<'_> {
         let mut left = offset.max(0) as usize;
         let count = self.editor.document.paragraph_count();
         for index in 0..count {
-            let length =
-                self.editor.document.paragraph_text(index).unwrap_or_default().chars().count();
+            let text = self.editor.document.paragraph_text(index).unwrap_or_default();
+            let length = text.chars().count();
             if left <= length {
-                return TextPosition::new(index, left);
+                return TextPosition::new(index, byte_of(&text, left));
             }
             left -= length + 1;
         }
         let last = count.saturating_sub(1);
-        let length = self.editor.document.paragraph_text(last).unwrap_or_default().chars().count();
+        let length = self.editor.document.paragraph_text(last).unwrap_or_default().len();
         TextPosition::new(last, length)
     }
 
     /// The whole document, as a stretch.
     fn everything(&self) -> (TextPosition, TextPosition) {
         let last = self.editor.document.paragraph_count().saturating_sub(1);
-        let length = self.editor.document.paragraph_text(last).unwrap_or_default().chars().count();
+        let length = self.editor.document.paragraph_text(last).unwrap_or_default().len();
         (TextPosition::new(0, 0), TextPosition::new(last, length))
     }
 
@@ -191,8 +212,7 @@ impl Bound<'_> {
             kind::DOCUMENT => Ok(self.everything()),
             kind::PARAGRAPH => {
                 let index = object.id as usize;
-                let length =
-                    self.editor.document.paragraph_text(index).unwrap_or_default().chars().count();
+                let length = self.editor.document.paragraph_text(index).unwrap_or_default().len();
                 Ok((TextPosition::new(index, 0), TextPosition::new(index, length)))
             }
             kind::RANGE | kind::FIND | kind::FONT => self
@@ -211,11 +231,9 @@ impl Bound<'_> {
         let mut out = String::new();
         for index in start.paragraph..=end.paragraph.min(self.editor.document.paragraph_count()) {
             let Some(text) = self.editor.document.paragraph_text(index) else { break };
-            let letters: Vec<char> = text.chars().collect();
-            let from = if index == start.paragraph { start.offset.min(letters.len()) } else { 0 };
-            let to =
-                if index == end.paragraph { end.offset.min(letters.len()) } else { letters.len() };
-            out.extend(letters[from.min(to)..to].iter());
+            let from = if index == start.paragraph { start.offset } else { 0 };
+            let to = if index == end.paragraph { end.offset } else { text.len() };
+            out.push_str(between(&text, from, to));
             if index < end.paragraph {
                 out.push('\r');
             }

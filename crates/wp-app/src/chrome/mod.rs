@@ -404,6 +404,15 @@ pub enum Command {
     LegacyFields,
     /// What a content control is called, and what may be done to it.
     ControlProperties,
+    /// The section that repeats, put round the selection.
+    RepeatingSection,
+    /// A copy of the repeating item the caret is in, before it or after
+    /// it, and the item taken away.
+    RepeatItemBefore,
+    RepeatItemAfter,
+    DeleteRepeatItem,
+    /// A control that offers a gallery of building blocks.
+    GalleryControl,
     /// Word's XML Mapping pane: the data a document carries, and binding a
     /// control to a node of it.
     XmlMapping,

@@ -21,6 +21,7 @@
 = A new document
 = A password that is lost cannot be recovered.
 = A password to modify does not encrypt the file.
+= A repeating section goes round whole paragraphs that are side by side
 = A rule under every heading
 = A to Z
 = AaBbCcDdEe
@@ -109,6 +110,8 @@
 = Breaks
 = Bring Forward
 = Browse
+= Building Block Gallery
+= Building Block Gallery Content Control
 = Building Blocks Organizer
 = Building blocks
 = Cancel
@@ -214,6 +217,7 @@
 = Delete
 = Delete Column
 = Delete Note
+= Delete Repeating Section Item
 = Delete Row
 = Delete Table
 = Delete part
@@ -361,6 +365,8 @@
 = Insert Alignment Tab
 = Insert Endnote
 = Insert Index
+= Insert Item After
+= Insert Item Before
 = Insert Picture
 = Insert Table
 = Insert content control
@@ -368,6 +374,8 @@
 = Interface language
 = Internet and network paths with hyperlinks
 = Italic
+= Item added
+= Item deleted
 = Items, separated by semicolons
 = Keep Source Formatting
 = Keep Text Only
@@ -524,6 +532,7 @@
 = Paste as Picture
 = Paste function
 = Picas
+= Picture
 = Pictures
 = Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
 = Plain
@@ -576,6 +585,8 @@
 = Rename
 = Repeat Header Rows
 = Repeat as header row at the top of each page
+= Repeating Section
+= Repeating Section Content Control
 = Replace
 = Replace as you type
 = Replace text as you type
@@ -720,6 +731,7 @@
 = Text files
 = Text formatting
 = Text from File
+= That is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 = That is not a watermark any more
 = That is not well-formed XML, so it cannot be a part
 = That line is no longer in this document
@@ -727,6 +739,7 @@
 = That style could not be changed
 = That watermark is no longer saved
 = The author asked for it to be opened read-only.
+= The caret is not in a repeating section
 = The contents of this control cannot be edited
 = The document is not encrypted.
 = The document is unreadable without it.
@@ -735,6 +748,7 @@
 = The files below were recovered.
 = The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
 = The headings a new document starts with
+= The last item of a repeating section stays
 = The letter goes to everybody ticked.
 = The list was not saved, so nothing is merged
 = The next stretch you may edit
@@ -748,6 +762,7 @@
 = Themes
 = There is no certificate on this machine to sign with.
 = There is no part of this document you may edit
+= There is nothing in the {0} gallery to choose from
 = Thesaurus
 = This document
 = This document also carries Visual Basic macros
@@ -878,6 +893,7 @@
 = {0} did not open. Try the password again.
 = {0} is a control that cannot be deleted
 = {0} is encrypted.
+= {0} is no longer in the template
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 = {0} is not trusted any more
 = {0} is reserved.
@@ -890,6 +906,7 @@
 = {0} of {1}
 = {0} on the list
 = {0} point
+= {0} put in
 = {0} ran
 = {0} recipients typed
 = {0} recovered

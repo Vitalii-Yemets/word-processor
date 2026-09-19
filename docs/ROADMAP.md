@@ -6843,12 +6843,71 @@ interpreter is reachable only from the macro list a person opened themselves.
   Word's way too. Repeating a section over repeated nodes is **L9**'s
   repeating-section control. A picture control bound to a node holding a
   picture is **L9** as well.
-- [ ] **L9. The three content controls that are not built.** Word's picture,
-  repeating-section and building-block-gallery controls. The first holds a
-  picture and needs the drawing machinery hung inside a control; the second
-  repeats its content and needs a way of repeating; the third offers **J6**'s
-  galleries from inside the document. Done when each can be put in, used, and
-  read back by Word as what it is.
+- [x] **L9. The three content controls that are not built.**
+  **The picture control.** `w:picture` in the properties, a run with a
+  `w:drawing` in the content: one more of the shape **J8** built, holding a
+  picture rather than words. It is put in holding a picture — a placeholder
+  the program draws, a grey card with a hill and a sun on it — because a
+  control holding nothing has no width and nothing to click; and it is
+  clicked to be given the picture it is for, which is asked for the way
+  Insert Picture asks and takes the placeholder's place at its own size,
+  brought down to the width of the text where it is wider. A picture is one
+  character of the text, and the control's ends are counted the way the
+  text counts them now, which they were not: a hyphen written as an element,
+  a note's mark and a picture were each counted as nothing, so a control
+  holding one ended a character early.
+  **The repeating section.** The other shape of control: a `w:sdt` among the
+  paragraphs of the body, with paragraphs inside it — which the reader has
+  always stepped through, so a document carrying one laid out already; what
+  was missing was knowing it was there and doing anything with it. A section
+  is a list of items, each an `sdt` of its own, in the namespace Word added
+  in 2013 and written with its own declaration as the tick box is. It goes
+  round the paragraphs the selection covers, or the caret's, as one item,
+  and only round paragraphs that are side by side, because a section round
+  half a table is not something the format can say. Repeating is copying:
+  Word draws a plus at the corner of each item, and pressing it puts a copy
+  of the item after it, words and all; so does this, at the end of the
+  item's last line. The right button offers Word's three — a copy before,
+  a copy after, and taking the item away, which is refused for the last one
+  as Word refuses it; the caret stays in the section when an item goes.
+  **The building-block gallery.** `w:docPartList` naming a gallery and a
+  category, round a paragraph that asks for a choice — in place of the
+  caret's paragraph where that is empty, and after it otherwise. A click in
+  it drops the blocks filed under its gallery in the person's own template
+  (**J6**), and the one chosen puts its paragraphs in place of what the
+  control held; chosen again, the old choice goes. A gallery with nothing
+  filed in it says so. Word's nine controls are on the Developer tab now,
+  in Word's order.
+  *Proven by:* five tests of the storage — a section put round a selection
+  as one item and read back after a save with the namespace declared; an
+  item copied, found by paragraph, taken away, and the last one kept; a
+  section refused round paragraphs that are not side by side; a gallery
+  control asking, filled, filled again, and read back; one put in below a
+  paragraph with words — and four of the program: the placeholder read back
+  as a picture of its size; a picture control put in from the ribbon,
+  counted as one character, given a picture and read back as a picture
+  control with two pictures in the package; a section repeated from its
+  plus, from its menu before, and taken away twice with the last one
+  staying; a gallery control put in, its click the control's and saying
+  the gallery is empty, and a block from a template in memory put in. A
+  picture of the three on a page. And one of the object model (**L4**): a
+  range counts accented letters as one character each, which it did not.
+  *Found along the way:* the object model gave Word a byte offset where Word
+  counts characters, so `Range(0, 4)` of "Café " was three letters and half
+  of one and a paragraph's `End` was a character short for every accent in
+  it; the two are translated at the edge now, as that entry said they were.
+  *Not done, and named here:* read back by Word as what it is — the three
+  are written as Word writes them and the corpus has no document Word has
+  read back, which is what this item asks for. The Properties dialog of a
+  repeating section — Word's "allow users to add and remove sections" and
+  the name of the item — is not there; a section's items are copied and
+  removed and nothing else. A repeating section bound to a repeating node of
+  a custom XML part (**L8**), one item to a node, is not done; nor is a
+  picture control bound to a node holding a picture. A gallery control
+  offers the person's own template and not the galleries Word ships with —
+  cover pages, headers, page numbers — which are **J6**'s and were never
+  filed as blocks. The placeholder text of a control is drawn as text and
+  not greyed, which is **L10**'s Design Mode.
 - [ ] **L10. Design Mode.** Word's button that turns every content control
   into its own name and lets the placeholder text be edited in place. **J15**
   drew the boundary it needed, so what is left is the mode itself: the tags

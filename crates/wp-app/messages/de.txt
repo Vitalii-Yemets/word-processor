@@ -47,6 +47,9 @@ language = Deutsch
 = A password to modify does not encrypt the file.
 > Ein Kennwort zum Ändern verschlüsselt die Datei nicht.
 
+= A repeating section goes round whole paragraphs that are side by side
+> Ein Wiederholungsabschnitt umschließt ganze, nebeneinanderstehende Absätze
+
 = A rule under every heading
 > Eine Linie unter jeder Überschrift
 
@@ -313,6 +316,12 @@ language = Deutsch
 
 = Browse
 > Durchsuchen
+
+= Building Block Gallery
+> Bausteinkatalog
+
+= Building Block Gallery Content Control
+> Bausteinkatalog-Inhaltssteuerelement
 
 = Cancel
 > Abbrechen
@@ -622,6 +631,9 @@ language = Deutsch
 
 = Delete part
 > Komponente löschen
+
+= Delete Repeating Section Item
+> Wiederholungsabschnittselement löschen
 
 = Developer
 > Entwicklertools
@@ -1073,6 +1085,12 @@ language = Deutsch
 = Insert Index
 > Index einfügen
 
+= Insert Item After
+> Element danach einfügen
+
+= Insert Item Before
+> Element davor einfügen
+
 = Insert Picture
 > Bild einfügen
 
@@ -1090,6 +1108,12 @@ language = Deutsch
 
 = Italic
 > Kursiv
+
+= Item added
+> Element hinzugefügt
+
+= Item deleted
+> Element gelöscht
 
 = Items, separated by semicolons
 > Einträge, durch Semikolon getrennt
@@ -1256,6 +1280,9 @@ language = Deutsch
 = Page number: {0}
 > Seitenzahl: {0}
 
+= Picture
+> Bild
+
 = Plain, in the middle
 > Einfach, zentriert
 
@@ -1279,6 +1306,12 @@ language = Deutsch
 
 = Remove Location
 > Speicherort entfernen
+
+= Repeating Section
+> Wiederholungsabschnitt
+
+= Repeating Section Content Control
+> Wiederholungsabschnitt-Inhaltssteuerelement
 
 = Requested signatures
 > Angeforderte Signaturen
@@ -1355,6 +1388,9 @@ language = Deutsch
 = Text boxes
 > Textfelder
 
+= That is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
+> Das ist kein Bild, das dieses Programm lesen kann. PNG, JPEG, BMP, GIF, TIFF und die Metadateien sind es.
+
 = That is not a watermark any more
 > Das ist kein Wasserzeichen mehr
 
@@ -1369,6 +1405,12 @@ language = Deutsch
 
 = That watermark is no longer saved
 > Dieses Wasserzeichen ist nicht mehr gespeichert
+
+= The caret is not in a repeating section
+> Die Einfügemarke steht nicht in einem Wiederholungsabschnitt
+
+= The last item of a repeating section stays
+> Das letzte Element eines Wiederholungsabschnitts bleibt
 
 = The next stretch you may edit
 > Der nächste Bereich, den Sie bearbeiten dürfen
@@ -1393,6 +1435,9 @@ language = Deutsch
 
 = There is no part of this document you may edit
 > Es gibt keinen Teil dieses Dokuments, den Sie bearbeiten dürfen
+
+= There is nothing in the {0} gallery to choose from
+> Im Katalog {0} gibt es nichts auszuwählen
 
 = This document carries macros. They are disabled until you say otherwise.
 > Dieses Dokument enthält Makros. Sie sind deaktiviert, bis Sie es anders bestimmen.
@@ -2624,6 +2669,9 @@ language = Deutsch
 = {0} is encrypted.
 > {0} ist verschlüsselt.
 
+= {0} is no longer in the template
+> {0} ist nicht mehr in der Vorlage
+
 = {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
 > {0} ist kein Bild, das dieses Programm lesen kann. PNG, JPEG, BMP, GIF, TIFF und die Metadateien sind es.
 
@@ -2659,6 +2707,9 @@ language = Deutsch
 
 = {0} point
 > {0} Punkt
+
+= {0} put in
+> {0} eingefügt
 
 = {0} ran
 > {0} wurde ausgeführt

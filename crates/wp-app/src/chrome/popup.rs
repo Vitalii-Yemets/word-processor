@@ -187,6 +187,8 @@ pub enum Choice {
     /// The kinds of content control the XML Mapping pane can put in, bound
     /// to the node it has chosen.
     MappedControl,
+    /// The building blocks a gallery control offers, dropped under it.
+    GalleryBlock,
     /// The breaks that can be put in: of a page, of a column, and of a section.
     Break,
     /// The margins Word offers by name.

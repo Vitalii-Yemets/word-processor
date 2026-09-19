@@ -1116,6 +1116,13 @@ impl Editor {
             return Response::Redraw;
         }
 
+        // The plus at the corner of a repeating section's item, which is
+        // drawn beside the text and copies the item.
+        if self.press_repeat_button(x, y) {
+            self.needs_redraw = true;
+            return Response::Redraw;
+        }
+
         // A tick box ticks when it is clicked and a drop-down drops open,
         // which is the whole of what makes a form a form rather than a
         // picture of one. Before the caret is moved, because what was
@@ -1683,7 +1690,9 @@ impl Editor {
             }
             // The kinds of editing hang beside the Restrict Editing pane,
             // which is not a button of the ribbon and places its own lists.
-            Choice::RestrictMode | Choice::MappedControl => return Response::Ignored,
+            Choice::RestrictMode | Choice::MappedControl | Choice::GalleryBlock => {
+                return Response::Ignored
+            }
             // Hangs where the caret is rather than under a button.
             Choice::FillIn => Command::LegacyFields,
             // The strip's own menu hangs where it was opened, not under a
@@ -1816,6 +1825,7 @@ impl Editor {
             | Choice::PageNumberDesign
             | Choice::RestrictMode
             | Choice::MappedControl
+            | Choice::GalleryBlock
             | Choice::Label => (Vec::new(), None),
             Choice::Zoom => {
                 let index = chrome::ZOOMS.iter().position(|value| (value - self.zoom).abs() < 0.5);
@@ -1930,6 +1940,7 @@ impl Editor {
             Choice::PageNumberDesign => self.choose_page_number_design(index),
             Choice::RestrictMode => self.choose_restrict_mode(index),
             Choice::MappedControl => self.choose_mapped_control(index),
+            Choice::GalleryBlock => self.choose_gallery_block(index),
             Choice::FillIn => self.choose_fill_in(index),
             Choice::StatusBar => self.choose_status_part(index),
             Choice::PageNumbering => self.choose_page_numbering(index),

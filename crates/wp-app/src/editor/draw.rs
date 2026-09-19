@@ -443,6 +443,8 @@ impl Editor {
         // The tags at the ends of a content control, which go over the text
         // because they stand beside it rather than behind it.
         self.draw_control_edges();
+        // And the plus at the corner of each item of a repeating section.
+        self.draw_repeat_buttons();
 
         // The wavy lines go over the text: they are about the words, and a word
         // drawn over its own mark would hide it.

@@ -12,7 +12,7 @@ use super::{Editor, DPI};
 /// The kinds of picture the dialog offers, which are the ones the decoder reads
 /// plus the ones a package can carry that Word will render even if this program
 /// cannot yet.
-const PICTURE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
+pub(super) const PICTURE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
     wp_shell::dialog::FileFilter {
         label: "Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)",
         pattern: "*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf",
@@ -2090,6 +2090,27 @@ impl Editor {
                     self.insert_content_control(which);
                     self.document.type_text("  ");
                 }
+                self.relayout();
+            }
+            // The three that hold more than words: a picture control with
+            // its placeholder, a repeating section round two paragraphs with
+            // the plus at its corner, and a gallery control waiting for a
+            // choice.
+            "morecontrols" => {
+                self.set_view_option("tab=developer")?;
+                let end = self.document.paragraph_text(3).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(3, end));
+                self.document.type_text("  ");
+                self.insert_content_control(6);
+                self.document.set_selections(&[(
+                    wp_docx::TextPosition::new(4, 0),
+                    wp_docx::TextPosition::new(5, 0),
+                )]);
+                self.insert_repeating_section();
+                let end = self.document.paragraph_text(6).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(6, end));
+                self.insert_gallery_control();
+                self.document.set_caret(wp_docx::TextPosition::new(4, 0));
                 self.relayout();
             }
             // What the Quick Parts button drops open onto.
