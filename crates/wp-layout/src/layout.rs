@@ -651,7 +651,11 @@ pub struct Reflection {
 impl Effects {
     /// The document's own numbers, in pixels and colours.
     #[must_use]
-    pub(crate) fn of(effects: &wp_docx::shapeeffects::Effects, scale: f32) -> Self {
+    pub(crate) fn of(
+        effects: &wp_docx::shapeeffects::Effects,
+        scale: f32,
+        theme: &wp_docx::theme::Theme,
+    ) -> Self {
         // A pixel per English metric unit, by way of the point.
         let pixels = |emu: i64| emu as f32 / wp_docx::shapes::EMU_PER_POINT as f32 * scale;
         let shadow = |shadow: &wp_docx::shapeeffects::Shadow| {
@@ -661,7 +665,7 @@ impl Effects {
             let angle = (shadow.direction as f32 / 60_000.0).to_radians();
             let distance = pixels(shadow.distance_emu);
             Shadow {
-                colour: tinted(&shadow.colour, shadow.alpha),
+                colour: tinted(&shadow.colour, shadow.alpha, theme),
                 blur: pixels(shadow.blur_emu),
                 across: distance * angle.cos(),
                 down: distance * angle.sin(),
@@ -671,7 +675,7 @@ impl Effects {
             outer_shadow: effects.outer_shadow.as_ref().map(&shadow),
             inner_shadow: effects.inner_shadow.as_ref().map(&shadow),
             glow: effects.glow.as_ref().map(|glow| Glow {
-                colour: tinted(&glow.colour, glow.alpha),
+                colour: tinted(&glow.colour, glow.alpha, theme),
                 reach: pixels(glow.radius_emu),
             }),
             soft_edge: pixels(effects.soft_edge_emu),
@@ -712,8 +716,8 @@ impl Effects {
 }
 
 /// A colour with an amount of it, as the format says one.
-fn tinted(colour: &str, alpha: i32) -> Color {
-    let solid = Color::from_hex(colour).unwrap_or(Color::rgb(0, 0, 0));
+fn tinted(colour: &wp_docx::colour::Colour, alpha: i32, theme: &wp_docx::theme::Theme) -> Color {
+    let solid = Color::from_hex(&colour.resolve(theme)).unwrap_or(Color::rgb(0, 0, 0));
     let alpha = (alpha.clamp(0, 100_000) * 255 / 100_000) as u8;
     Color::rgba(solid.red, solid.green, solid.blue, alpha)
 }
@@ -753,6 +757,7 @@ impl Solid {
         depth: &wp_docx::depth::Depth,
         scene: &wp_docx::depth::Scene,
         scale: f32,
+        theme: &wp_docx::theme::Theme,
     ) -> Self {
         if depth.is_flat() {
             return Self::default();
@@ -777,7 +782,10 @@ impl Solid {
             depth: depth_pixels,
             across,
             down,
-            sides: depth.extrusion_colour.as_deref().and_then(Color::from_hex),
+            sides: depth
+                .extrusion_colour
+                .as_ref()
+                .and_then(|colour| Color::from_hex(&colour.resolve(theme))),
             bevel,
             // What it is made of, which is what the light does on it: metal
             // takes a hard edge and matte hardly shows one.
@@ -1588,12 +1596,13 @@ pub struct LayoutEngine<'a> {
     /// The level of the last heading passed, so the body text under it can be
     /// indented one step further in.
     outline_heading: u8,
-    /// The shadow the document theme puts under a shape, if it puts one.
+    /// The document's theme: the shadow it puts under a shape, and the
+    /// colours and the fills a shape names from it.
     ///
     /// Read once when the document starts being laid out, because a theme is a
     /// property of the document and asking the package for it per shape would
     /// re-parse the theme part for every drawing on the page.
-    theme_effect: Option<wp_docx::theme::Effect>,
+    theme: wp_docx::theme::Theme,
     /// How far apart the stops a tab falls back to are, in twentieths of a
     /// point.
     ///
@@ -1656,7 +1665,7 @@ impl<'a> LayoutEngine<'a> {
             merge_record: Vec::new(),
             outline: None,
             outline_heading: 0,
-            theme_effect: None,
+            theme: wp_docx::theme::Theme::default(),
             default_tab: DEFAULT_TAB_TWIPS,
             paragraph_styles: Vec::new(),
             page_sections: Vec::new(),
@@ -2042,7 +2051,7 @@ impl<'a> LayoutEngine<'a> {
         metrics: PageMetrics,
         previous: Vec<Page>,
     ) -> Vec<Page> {
-        self.theme_effect = Some(document.theme().effect);
+        self.theme = document.theme();
         // Where the tabs fall back to when a paragraph names no stops of its
         // own, which every document says for itself.
         self.default_tab = document.default_tab_width();
@@ -4396,12 +4405,12 @@ impl<'a> LayoutEngine<'a> {
             id: shape.id,
             joins: shape.joins,
             route: None,
-            effects: Effects::of(&shape.effects, scale),
-            solid: Solid::of(&shape.depth, &shape.scene, scale),
+            effects: Effects::of(&shape.effects, scale, &self.theme),
+            solid: Solid::of(&shape.depth, &shape.scene, scale, &self.theme),
             tail_end: shape.tail_end,
-            fill: crate::paint::Paint::of(&shape.fill),
-            outline: shape.outline.as_deref().and_then(Color::from_hex),
-            outline_weight: (shape.outline_points() * scale).max(1.0),
+            fill: crate::paint::Paint::of(&shape.fill, &self.theme),
+            outline: self.outline_colour(shape),
+            outline_weight: (shape.outline_points_in(&self.theme) * scale).max(1.0),
             shadow: self.shape_shadow(scale),
             text: Vec::new(),
             name: shape.name.clone(),
@@ -4507,12 +4516,12 @@ impl<'a> LayoutEngine<'a> {
                         id: shape.id,
                         joins: shape.joins,
                         route: None,
-                        effects: Effects::of(&shape.effects, scale),
-                        solid: Solid::of(&shape.depth, &shape.scene, scale),
+                        effects: Effects::of(&shape.effects, scale, &self.theme),
+                        solid: Solid::of(&shape.depth, &shape.scene, scale, &self.theme),
                         tail_end: shape.tail_end,
-                        fill: crate::paint::Paint::of(&shape.fill),
-                        outline: shape.outline.as_deref().and_then(Color::from_hex),
-                        outline_weight: (shape.outline_points() * scale).max(1.0),
+                        fill: crate::paint::Paint::of(&shape.fill, &self.theme),
+                        outline: self.outline_colour(shape),
+                        outline_weight: (shape.outline_points_in(&self.theme) * scale).max(1.0),
                         shadow: self.shape_shadow(scale),
                         text: Vec::new(),
                         name: shape.name.clone(),
@@ -4777,11 +4786,16 @@ impl<'a> LayoutEngine<'a> {
 
     /// The shadow the theme puts under a shape, in pixels.
     ///
+    /// The colour of the line round a shape, against the document's theme.
+    fn outline_colour(&self, shape: &wp_docx::shapes::Shape) -> Option<Color> {
+        shape.outline.as_ref().and_then(|colour| Color::from_hex(&colour.resolve(&self.theme)))
+    }
+
     /// Word's Design ▸ Effects, which is a property of the document rather than
     /// of any one shape — so it is asked for here and applied to every shape
     /// alike. See [`wp_docx::theme::Effect`].
     fn shape_shadow(&self, scale: f32) -> Option<(Color, f32)> {
-        let (distance, alpha) = self.theme_effect?.shadow()?;
+        let (distance, alpha) = self.theme.effect.shadow()?;
         // The theme writes it in English metric units; a point is 12,700 of
         // them, and the second effect style is the one a plain shape uses.
         let points = distance as f32 / 12_700.0 * 2.0;
@@ -4948,7 +4962,17 @@ impl<'a> LayoutEngine<'a> {
                     column_gap: 0.0,
                 };
 
+                // The words that name no colour of their own take the one the
+                // shape names for them — white on a gallery shape — which is
+                // the automatic colour while they are laid out.
+                let automatic = self.automatic_color;
+                if let Some(ink) =
+                    source.ink.as_ref().and_then(|ink| Color::from_hex(&ink.resolve(&self.theme)))
+                {
+                    self.automatic_color = ink;
+                }
                 let inner = self.layout_body(&source.body(), document, metrics);
+                self.automatic_color = automatic;
                 let Some(first) = inner.first() else { continue };
                 shape.text = first
                     .glyphs
@@ -6125,12 +6149,19 @@ impl LayoutEngine<'_> {
                     id: shape.id,
                     joins: shape.joins,
                     route: None,
-                    effects: Effects::of(&shape.effects, self.pixels_per_point()),
-                    solid: Solid::of(&shape.depth, &shape.scene, self.pixels_per_point()),
+                    effects: Effects::of(&shape.effects, self.pixels_per_point(), &self.theme),
+                    solid: Solid::of(
+                        &shape.depth,
+                        &shape.scene,
+                        self.pixels_per_point(),
+                        &self.theme,
+                    ),
                     tail_end: shape.tail_end,
-                    fill: crate::paint::Paint::of(&shape.fill),
-                    outline: shape.outline.as_deref().and_then(Color::from_hex),
-                    outline_weight: (shape.outline_points() * self.pixels_per_point()).max(1.0),
+                    fill: crate::paint::Paint::of(&shape.fill, &self.theme),
+                    outline: self.outline_colour(shape),
+                    outline_weight: (shape.outline_points_in(&self.theme)
+                        * self.pixels_per_point())
+                    .max(1.0),
                     shadow: self.shape_shadow(self.pixels_per_point()),
                     text: Vec::new(),
                     name: shape.name.clone(),

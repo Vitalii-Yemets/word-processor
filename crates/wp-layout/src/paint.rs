@@ -18,6 +18,7 @@
 //! because each is its own arrangement of rows and columns.
 
 use wp_docx::fills::{Direction, Fill};
+use wp_docx::theme::Theme;
 use wp_raster::Color;
 
 /// What a shape is filled with.
@@ -43,18 +44,21 @@ pub enum Paint {
 }
 
 impl Paint {
-    /// Works one out from what the document says.
+    /// Works one out from what the document says, against the document's
+    /// theme: this is where a colour named from the theme becomes a colour,
+    /// and where a fill taken from the theme by number becomes a fill.
     #[must_use]
-    pub fn of(fill: &Fill) -> Self {
+    pub fn of(fill: &Fill, theme: &Theme) -> Self {
+        let colour = |colour: &wp_docx::colour::Colour| Color::from_hex(&colour.resolve(theme));
         match fill {
             Fill::None => Self::None,
-            Fill::Solid(colour) => Color::from_hex(colour).map_or(Self::None, Self::Solid),
+            Fill::Solid(named) => colour(named).map_or(Self::None, Self::Solid),
             Fill::Gradient(gradient) => {
                 let stops: Vec<(f32, Color)> = gradient
                     .stops
                     .iter()
-                    .filter_map(|(along, colour)| {
-                        Color::from_hex(colour).map(|colour| (*along as f32 / 100_000.0, colour))
+                    .filter_map(|(along, named)| {
+                        colour(named).map(|colour| (*along as f32 / 100_000.0, colour))
                     })
                     .collect();
                 if stops.is_empty() {
@@ -64,9 +68,17 @@ impl Paint {
             }
             Fill::Pattern(pattern) => Self::Pattern {
                 mask: mask_of(&pattern.name),
-                foreground: Color::from_hex(&pattern.foreground).unwrap_or(Color::BLACK),
-                background: Color::from_hex(&pattern.background).unwrap_or(Color::WHITE),
+                foreground: colour(&pattern.foreground).unwrap_or(Color::BLACK),
+                background: colour(&pattern.background).unwrap_or(Color::WHITE),
             },
+            Fill::Styled { index, colour } => {
+                // The theme's style in the shape's colour, which is never
+                // styled itself: the theme holds fills, not numbers.
+                match theme.fill_style(*index, colour) {
+                    Fill::Styled { .. } => Self::None,
+                    fill => Self::of(&fill, theme),
+                }
+            }
         }
     }
 
@@ -281,27 +293,65 @@ fn dither(percent: u32) -> [u8; 8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wp_docx::colour::Colour;
     use wp_docx::fills::{Gradient, Pattern};
+    use wp_docx::theme::Slot;
 
     #[test]
     fn nothing_is_nothing() {
-        assert!(Paint::of(&Fill::None).is_nothing());
-        assert_eq!(Paint::of(&Fill::None).colour(), None);
+        assert!(Paint::of(&Fill::None, &Theme::default()).is_nothing());
+        assert_eq!(Paint::of(&Fill::None, &Theme::default()).colour(), None);
     }
 
     #[test]
     fn one_colour_comes_through_as_that_colour() {
-        let paint = Paint::of(&Fill::Solid("4472C4".to_owned()));
+        let paint = Paint::of(&Fill::solid("4472C4"), &Theme::default());
         assert_eq!(paint.colour(), Some(Color::rgb(0x44, 0x72, 0xC4)));
         assert_eq!(paint.at(0.0, 0.0), Color::rgb(0x44, 0x72, 0xC4));
         assert_eq!(paint.at(1.0, 1.0), Color::rgb(0x44, 0x72, 0xC4));
     }
 
+    #[test]
+    fn a_colour_named_from_the_theme_is_the_theme_s_and_a_styled_fill_is_the_style_s() {
+        let theme = Theme::default();
+        let named = Paint::of(&Fill::Solid(Colour::scheme(Slot::Accent2)), &theme);
+        assert_eq!(named.colour(), Some(Color::rgb(0xED, 0x7D, 0x31)));
+        let styled =
+            Paint::of(&Fill::Styled { index: 1, colour: Colour::scheme(Slot::Accent1) }, &theme);
+        assert_eq!(styled.colour(), Some(Color::rgb(0x44, 0x72, 0xC4)));
+        let none =
+            Paint::of(&Fill::Styled { index: 0, colour: Colour::scheme(Slot::Accent1) }, &theme);
+        assert!(none.is_nothing(), "style nought is no fill");
+
+        // Another theme, another colour: nothing was resolved early.
+        let mut red = Theme::default();
+        red.colors[4] = "C00000".to_owned();
+        let styled =
+            Paint::of(&Fill::Styled { index: 1, colour: Colour::scheme(Slot::Accent1) }, &red);
+        assert_eq!(styled.colour(), Some(Color::rgb(0xC0, 0, 0)));
+        // And a theme whose second fill style is a gradient makes a gradient
+        // of the shape's colour.
+        red.fill_styles[1] = Fill::Gradient(Gradient {
+            stops: vec![
+                (0, Colour { base: wp_docx::colour::Base::Placeholder, shifts: Vec::new() }),
+                (100_000, Colour::rgb("FFFFFF")),
+            ],
+            direction: Direction::Linear(5_400_000),
+        });
+        let graded =
+            Paint::of(&Fill::Styled { index: 2, colour: Colour::scheme(Slot::Accent1) }, &red);
+        assert_eq!(graded.at(0.5, 0.0), Color::rgb(0xC0, 0, 0), "the top is the shape's colour");
+        assert_eq!(graded.at(0.5, 1.0), Color::WHITE);
+    }
+
     fn black_to_white(direction: Direction) -> Paint {
-        Paint::of(&Fill::Gradient(Gradient {
-            stops: vec![(0, "000000".to_owned()), (100_000, "FFFFFF".to_owned())],
-            direction,
-        }))
+        Paint::of(
+            &Fill::Gradient(Gradient {
+                stops: vec![(0, Colour::rgb("000000")), (100_000, Colour::rgb("FFFFFF"))],
+                direction,
+            }),
+            &Theme::default(),
+        )
     }
 
     #[test]
@@ -355,11 +405,14 @@ mod tests {
 
     #[test]
     fn a_hatching_is_two_colours_in_a_pattern() {
-        let paint = Paint::of(&Fill::Pattern(Pattern {
-            name: "ltHorz".to_owned(),
-            foreground: "FF0000".to_owned(),
-            background: "0000FF".to_owned(),
-        }));
+        let paint = Paint::of(
+            &Fill::Pattern(Pattern {
+                name: "ltHorz".to_owned(),
+                foreground: Colour::rgb("FF0000"),
+                background: Colour::rgb("0000FF"),
+            }),
+            &Theme::default(),
+        );
         // The light horizontal hatching is one row in eight.
         assert_eq!(paint.at_pixel(3, 7, 0.0, 0.0), Color::rgb(0xFF, 0, 0), "the line");
         assert_eq!(paint.at_pixel(3, 3, 0.0, 0.0), Color::rgb(0, 0, 0xFF), "and between them");
@@ -367,11 +420,14 @@ mod tests {
 
     #[test]
     fn a_hatching_repeats_every_eight_pixels() {
-        let paint = Paint::of(&Fill::Pattern(Pattern {
-            name: "ltHorz".to_owned(),
-            foreground: "FF0000".to_owned(),
-            background: "0000FF".to_owned(),
-        }));
+        let paint = Paint::of(
+            &Fill::Pattern(Pattern {
+                name: "ltHorz".to_owned(),
+                foreground: Colour::rgb("FF0000"),
+                background: Colour::rgb("0000FF"),
+            }),
+            &Theme::default(),
+        );
         assert_eq!(paint.at_pixel(0, 7, 0.0, 0.0), paint.at_pixel(0, 15, 0.0, 0.0));
         assert_eq!(paint.at_pixel(0, 7, 0.0, 0.0), paint.at_pixel(8, 7, 0.0, 0.0));
     }

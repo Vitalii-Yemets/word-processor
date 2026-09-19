@@ -47,8 +47,9 @@ impl Effects {
 /// A shadow, inside the shape or outside it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shadow {
-    /// Six hex digits, as everything else here says a colour.
-    pub colour: String,
+    /// The colour, stated or named from the theme, without its amount —
+    /// that is `alpha`, beside it.
+    pub colour: crate::colour::Colour,
     /// How solid that colour is, in hundred-thousandths: Word's own shadow is
     /// 40,000, which is to say two fifths.
     pub alpha: i32,
@@ -61,7 +62,7 @@ pub struct Shadow {
 /// A glow: a colour spreading out of the shape's edge.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Glow {
-    pub colour: String,
+    pub colour: crate::colour::Colour,
     pub alpha: i32,
     pub radius_emu: i64,
 }
@@ -88,10 +89,9 @@ pub fn read_effects(properties: &Element) -> Effects {
     Effects {
         outer_shadow: child(list, "outerShdw").map(read_shadow),
         inner_shadow: child(list, "innerShdw").map(read_shadow),
-        glow: child(list, "glow").map(|glow| Glow {
-            colour: colour_of(glow).unwrap_or_else(|| "000000".to_owned()),
-            alpha: alpha_of(glow),
-            radius_emu: number(glow, "rad"),
+        glow: child(list, "glow").map(|glow| {
+            let (colour, alpha) = colour_and_alpha(glow);
+            Glow { colour, alpha, radius_emu: number(glow, "rad") }
         }),
         soft_edge_emu: child(list, "softEdge").map_or(0, |edge| number(edge, "rad")),
         reflection: child(list, "reflection").map(|reflection| Reflection {
@@ -105,9 +105,10 @@ pub fn read_effects(properties: &Element) -> Effects {
 }
 
 fn read_shadow(element: &Element) -> Shadow {
+    let (colour, alpha) = colour_and_alpha(element);
     Shadow {
-        colour: colour_of(element).unwrap_or_else(|| "000000".to_owned()),
-        alpha: alpha_of(element),
+        colour,
+        alpha,
         blur_emu: number(element, "blurRad"),
         distance_emu: number(element, "dist"),
         direction: whole(element, "dir", 0),
@@ -168,33 +169,34 @@ fn shadow_element(name: &str, shadow: &Shadow) -> Element {
 }
 
 /// A colour with an amount of it, which is how the format says "black at two
-/// fifths".
-fn colour_element(colour: &str, alpha: i32) -> Element {
-    let mut element = Element::new("a:srgbClr", Some(crate::shapes::A));
-    element.set_attribute("val", colour);
+/// fifths": the amount goes back under the colour as the `alpha` shift it
+/// was read out of.
+fn colour_element(colour: &crate::colour::Colour, alpha: i32) -> Element {
+    let mut with = colour.clone();
     if alpha < 100_000 {
-        let mut amount = Element::new("a:alpha", Some(crate::shapes::A));
-        amount.set_attribute("val", &alpha.to_string());
-        element.push_element(amount);
+        with = with.shifted("alpha", alpha);
     }
-    element
+    crate::colour::colour_element(&with)
 }
 
 fn child<'a>(parent: &'a Element, local: &str) -> Option<&'a Element> {
     parent.child_elements().find(|child| child.local_name() == local)
 }
 
-fn colour_of(parent: &Element) -> Option<String> {
-    child(parent, "srgbClr")?.attribute_by_name("val").map(str::to_uppercase)
-}
-
-/// How solid the colour is, or solid when nothing says otherwise.
-fn alpha_of(parent: &Element) -> i32 {
-    child(parent, "srgbClr")
-        .and_then(|colour| child(colour, "alpha"))
-        .and_then(|alpha| alpha.attribute_by_name("val"))
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(100_000)
+/// The colour under an element and how solid it is — solid when nothing says
+/// otherwise — with the amount taken out of the colour's shifts, since it is
+/// drawn as transparency and not as a change of colour.
+fn colour_and_alpha(parent: &Element) -> (crate::colour::Colour, i32) {
+    let Some(mut colour) = crate::colour::read_colour(parent) else {
+        return (crate::colour::Colour::rgb("000000"), 100_000);
+    };
+    let alpha = colour
+        .shifts
+        .iter()
+        .find(|shift| shift.name == "alpha")
+        .map_or(100_000, |shift| shift.value);
+    colour.shifts.retain(|shift| shift.name != "alpha");
+    (colour, alpha)
 }
 
 fn number(element: &Element, name: &str) -> i64 {
@@ -220,6 +222,32 @@ mod tests {
         colour.set_attribute("val", "FF0000");
         let mut shadow = Element::new("a:outerShdw", Some(crate::shapes::A));
         shadow.push_element(colour);
-        assert_eq!(alpha_of(&shadow), 100_000);
+        assert_eq!(colour_and_alpha(&shadow), (crate::colour::Colour::rgb("FF0000"), 100_000));
+    }
+
+    #[test]
+    fn a_glow_named_from_the_theme_keeps_its_name_and_its_amount_apart() {
+        use crate::colour::{Base, Colour};
+        use crate::theme::Slot;
+
+        let mut named = Element::new("a:schemeClr", Some(crate::shapes::A));
+        named.set_attribute("val", "accent1");
+        let mut more = Element::new("a:satMod", Some(crate::shapes::A));
+        more.set_attribute("val", "175000");
+        named.push_element(more);
+        let mut amount = Element::new("a:alpha", Some(crate::shapes::A));
+        amount.set_attribute("val", "40000");
+        named.push_element(amount);
+        let mut glow = Element::new("a:glow", Some(crate::shapes::A));
+        glow.push_element(named);
+
+        let (colour, alpha) = colour_and_alpha(&glow);
+        assert_eq!(colour.base, Base::Scheme(Slot::Accent1));
+        assert_eq!(colour.shifts.len(), 1, "the amount is not a shift of the colour");
+        assert_eq!(alpha, 40_000);
+        // And written back, the amount is under the colour again.
+        let written = colour_element(&colour, alpha);
+        assert_eq!(colour_element(&Colour::rgb("FF0000"), 100_000).child_elements().count(), 0);
+        assert_eq!(written.child_elements().count(), 2);
     }
 }

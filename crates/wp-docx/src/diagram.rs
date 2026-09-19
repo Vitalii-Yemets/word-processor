@@ -47,10 +47,11 @@ pub(crate) mod language;
 /// in.
 pub(crate) mod styles;
 
+use crate::colour::Colour;
 use crate::group::{Group, Inside, Member};
 use crate::model::{Alignment, Paragraph, ParagraphProperties, Run, RunContent, RunProperties};
 use crate::shapes::Shape;
-use crate::theme::{Slot, Theme};
+use crate::theme::Theme;
 use crate::{Document, Error, EMU_PER_INCH};
 
 use language::{Definition, Drawn, Model};
@@ -1688,12 +1689,10 @@ fn read_drawn_shape(element: &Element, theme: &Theme, styling: &Styling) -> Vec<
     shape.fill = match (solid, crate::fills::read_fill(properties)) {
         // Stated as one colour, perhaps by a name in the theme with shifts
         // under it, which is followed here.
-        (Some(colour), _) => crate::fills::Fill::Solid(colour),
+        (Some(colour), _) => crate::fills::Fill::solid(&colour),
         (None, crate::fills::Fill::None) if !says_no_fill => match styled("fillRef") {
-            Some((index, Some(colour))) if index > 0 => crate::fills::Fill::Solid(colour),
-            Some((index, None)) if index > 0 => {
-                crate::fills::Fill::Solid(styling.accent().to_owned())
-            }
+            Some((index, Some(colour))) if index > 0 => crate::fills::Fill::solid(&colour),
+            Some((index, None)) if index > 0 => crate::fills::Fill::solid(styling.accent()),
             _ => crate::fills::Fill::None,
         },
         (None, other) => other,
@@ -1701,7 +1700,7 @@ fn read_drawn_shape(element: &Element, theme: &Theme, styling: &Styling) -> Vec<
     if let Some(line) = properties.child_elements().find(|child| child.local_name() == "ln") {
         let has_colour = line.child_elements().any(|child| child.local_name() == "solidFill");
         if has_colour {
-            shape.outline = colour_of(line, theme);
+            shape.outline = colour_of(line, theme).map(|colour| Colour::rgb(&colour));
             shape.outline_emu = line
                 .attribute(None, "w")
                 .and_then(|value| value.parse().ok())
@@ -1709,7 +1708,7 @@ fn read_drawn_shape(element: &Element, theme: &Theme, styling: &Styling) -> Vec<
         }
     } else if let Some((index, colour)) = styled("lnRef") {
         if index > 0 {
-            shape.outline = colour.or_else(|| Some(styling.accent().to_owned()));
+            shape.outline = Some(Colour::rgb(colour.as_deref().unwrap_or(styling.accent())));
             shape.outline_emu = crate::shapes::EMU_PER_POINT;
         }
     }
@@ -1928,152 +1927,15 @@ fn read_drawn_text(body: &Element, theme: &Theme, ink: Option<&str>) -> Vec<Para
     out
 }
 
-/// The colour an element names, whether it states one or names the theme's.
+/// The colour an element names, whether it states one or names the theme's,
+/// resolved against the theme with the shifts under it applied.
 ///
-/// Both ways carry the same shifts — lighter, darker, a different shade of the
-/// same hue — and they are applied here rather than dropped, because the shift
-/// is how one diagram is drawn in six colours from one accent.
+/// Resolved rather than carried, unlike a shape's own: a diagram's colours
+/// come through its colour list and quick style, which are read against the
+/// theme as they are, and a diagram is laid out again — colours and all —
+/// whenever its file changes.
 pub(crate) fn colour_of(parent: &Element, theme: &Theme) -> Option<String> {
-    fn search(element: &Element) -> Option<&Element> {
-        if matches!(element.local_name(), "srgbClr" | "schemeClr") {
-            return Some(element);
-        }
-        element.child_elements().find_map(search)
-    }
-
-    let named = search(parent)?;
-    let base = if named.local_name() == "srgbClr" {
-        named.attribute(None, "val")?.to_uppercase()
-    } else {
-        theme.color(drawing_slot(named.attribute(None, "val")?)?)
-    };
-    Some(shifted(&base, named))
-}
-
-/// The slot one of DrawingML's own colour names stands for.
-///
-/// Two vocabularies again: the drawing side says dk1 and lt1 where the text
-/// side says text1 and background1, and bg1 and tx1 where a theme means the
-/// same two the other way about.
-fn drawing_slot(name: &str) -> Option<Slot> {
-    Some(match name {
-        "dk1" | "tx1" => Slot::Dark1,
-        "lt1" | "bg1" => Slot::Light1,
-        "dk2" | "tx2" => Slot::Dark2,
-        "lt2" | "bg2" => Slot::Light2,
-        "accent1" => Slot::Accent1,
-        "accent2" => Slot::Accent2,
-        "accent3" => Slot::Accent3,
-        "accent4" => Slot::Accent4,
-        "accent5" => Slot::Accent5,
-        "accent6" => Slot::Accent6,
-        "hlink" => Slot::Hyperlink,
-        "folHlink" => Slot::FollowedHyperlink,
-        _ => return None,
-    })
-}
-
-/// A colour with the shifts written under it applied.
-///
-/// The shifts are stated in thousandths of a percent, and the hue in
-/// sixty-thousandths of a degree. Shade and tint are worked on the components
-/// as they are written rather than in light as it is measured, which is what
-/// the format asks for and is a shade off what a photometer would say.
-fn shifted(base: &str, named: &Element) -> String {
-    let digits =
-        |at: usize| u8::from_str_radix(base.get(at..at + 2).unwrap_or("00"), 16).unwrap_or(0);
-    let (mut red, mut green, mut blue) = (digits(0), digits(2), digits(4));
-
-    let value = |element: &Element| -> f32 {
-        element
-            .attribute(None, "val")
-            .and_then(|value| value.trim().parse::<f32>().ok())
-            .unwrap_or(0.0)
-            / 100_000.0
-    };
-
-    for shift in named.child_elements() {
-        match shift.local_name() {
-            "shade" => {
-                let by = value(shift).clamp(0.0, 1.0);
-                let darker = |component: u8| (f32::from(component) * by).round() as u8;
-                (red, green, blue) = (darker(red), darker(green), darker(blue));
-            }
-            "tint" => {
-                let by = value(shift).clamp(0.0, 1.0);
-                let lighter =
-                    |component: u8| (f32::from(component) * by + 255.0 * (1.0 - by)).round() as u8;
-                (red, green, blue) = (lighter(red), lighter(green), lighter(blue));
-            }
-            // The rest are said in hue, saturation and lightness, so the
-            // colour goes round into those and back again.
-            "lumMod" | "lumOff" | "satMod" | "satOff" | "hueOff" | "hueMod" => {
-                let (mut hue, mut saturation, mut lightness) = to_hsl(red, green, blue);
-                match shift.local_name() {
-                    "lumMod" => lightness *= value(shift),
-                    "lumOff" => lightness += value(shift),
-                    "satMod" => saturation *= value(shift),
-                    "satOff" => saturation += value(shift),
-                    // Sixty thousandths of a degree, and the hundred thousand
-                    // above has already divided it by a hundred thousand.
-                    "hueOff" => hue += value(shift) * 100_000.0 / 60_000.0,
-                    _ => hue *= value(shift),
-                }
-                let (r, g, b) = from_hsl(
-                    hue.rem_euclid(360.0),
-                    saturation.clamp(0.0, 1.0),
-                    lightness.clamp(0.0, 1.0),
-                );
-                (red, green, blue) = (r, g, b);
-            }
-            _ => {}
-        }
-    }
-    format!("{red:02X}{green:02X}{blue:02X}")
-}
-
-/// Hue in degrees, saturation and lightness as fractions.
-fn to_hsl(red: u8, green: u8, blue: u8) -> (f32, f32, f32) {
-    let (red, green, blue) =
-        (f32::from(red) / 255.0, f32::from(green) / 255.0, f32::from(blue) / 255.0);
-    let largest = red.max(green).max(blue);
-    let smallest = red.min(green).min(blue);
-    let lightness = (largest + smallest) / 2.0;
-    let span = largest - smallest;
-    if span <= f32::EPSILON {
-        return (0.0, 0.0, lightness);
-    }
-    let saturation = if lightness > 0.5 {
-        span / (2.0 - largest - smallest)
-    } else {
-        span / (largest + smallest)
-    };
-    let hue = if largest == red {
-        60.0 * ((green - blue) / span).rem_euclid(6.0)
-    } else if largest == green {
-        60.0 * ((blue - red) / span + 2.0)
-    } else {
-        60.0 * ((red - green) / span + 4.0)
-    };
-    (hue, saturation, lightness)
-}
-
-/// And back to the three components.
-fn from_hsl(hue: f32, saturation: f32, lightness: f32) -> (u8, u8, u8) {
-    let chroma = (1.0 - (2.0 * lightness - 1.0).abs()) * saturation;
-    let sector = hue / 60.0;
-    let second = chroma * (1.0 - (sector.rem_euclid(2.0) - 1.0).abs());
-    let (r, g, b) = match sector as u32 {
-        0 => (chroma, second, 0.0),
-        1 => (second, chroma, 0.0),
-        2 => (0.0, chroma, second),
-        3 => (0.0, second, chroma),
-        4 => (second, 0.0, chroma),
-        _ => (chroma, 0.0, second),
-    };
-    let lift = lightness - chroma / 2.0;
-    let component = |value: f32| ((value + lift) * 255.0).round().clamp(0.0, 255.0) as u8;
-    (component(r), component(g), component(b))
+    crate::colour::read_colour(parent).map(|colour| colour.resolve(theme))
 }
 
 /// What was laid out, as one drawing this program can draw: a shape for
@@ -2090,8 +1952,9 @@ fn group_of(drawn: &[Drawn], styling: &Styling) -> Group {
             width_emu: piece.width,
             height_emu: piece.height,
             rotation: (piece.rotation * 60000.0).round() as i32,
-            fill: fill.map_or(crate::fills::Fill::None, crate::fills::Fill::Solid),
-            outline: line,
+            fill: fill
+                .map_or(crate::fills::Fill::None, |colour| crate::fills::Fill::solid(&colour)),
+            outline: line.map(|colour| Colour::rgb(&colour)),
             outline_emu: crate::shapes::EMU_PER_POINT,
             name: words.join(" "),
             description: words.join(" "),
@@ -2151,6 +2014,7 @@ fn caption(text: &str, colour: &str, size: f64, level: u8, alignment: Alignment)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::Slot;
 
     const ROOM: i64 = EMU_PER_INCH * 6;
 
@@ -2388,7 +2252,7 @@ mod tests {
             .collect();
         assert_eq!(words, vec!["Step 0", "Step 1", "Step 2"]);
         let Inside::Shape(first) = &group.members[0].what else { panic!("a shape") };
-        assert_eq!(first.fill, crate::fills::Fill::Solid(Theme::default().color(Slot::Accent1)));
+        assert_eq!(first.fill, crate::fills::Fill::solid(&Theme::default().color(Slot::Accent1)));
     }
 
     #[test]
@@ -2406,7 +2270,7 @@ mod tests {
         let styling = Styling::read(None, None, &theme);
         let group = read_drawing(&parsed(&xml), &theme, &styling).expect("a drawing");
         let Inside::Shape(shape) = &group.members[0].what else { panic!("a shape") };
-        assert_eq!(shape.fill, crate::fills::Fill::Solid(theme.color(Slot::Accent2)));
+        assert_eq!(shape.fill, crate::fills::Fill::solid(&theme.color(Slot::Accent2)));
     }
 
     #[test]
@@ -2430,8 +2294,8 @@ mod tests {
         let styling = Styling::read(None, None, &theme);
         let group = read_drawing(&parsed(&xml), &theme, &styling).expect("a drawing");
         let Inside::Shape(shape) = &group.members[0].what else { panic!("a shape") };
-        assert_eq!(shape.fill, crate::fills::Fill::Solid(theme.color(Slot::Accent4)));
-        assert_eq!(shape.outline, Some(theme.color(Slot::Accent3)));
+        assert_eq!(shape.fill, crate::fills::Fill::solid(&theme.color(Slot::Accent4)));
+        assert_eq!(shape.outline, Some(Colour::rgb(&theme.color(Slot::Accent3))));
         // The words are in their own rectangle, in the font's colour.
         let words = &group.members[1];
         assert_eq!(words.x_emu, 10);
@@ -2457,26 +2321,6 @@ mod tests {
         let group = read_drawing(&parsed(&xml), &theme, &styling).expect("a drawing");
         let Inside::Shape(shape) = &group.members[0].what else { panic!("a shape") };
         assert!(matches!(shape.fill, crate::fills::Fill::Gradient(_)), "{:?}", shape.fill);
-    }
-
-    #[test]
-    fn a_colour_the_file_shifts_is_shifted() {
-        let lighter = shifted("4472C4", &parsed("<a:schemeClr xmlns:a=\"x\"><a:lumMod val=\"60000\"/><a:lumOff val=\"40000\"/></a:schemeClr>"));
-        assert_ne!(lighter, "4472C4");
-        let same = shifted("4472C4", &parsed("<a:schemeClr xmlns:a=\"x\"/>"));
-        assert_eq!(same, "4472C4", "a colour with nothing said under it is itself");
-        let black =
-            shifted("FFFFFF", &parsed("<a:srgbClr xmlns:a=\"x\"><a:shade val=\"0\"/></a:srgbClr>"));
-        assert_eq!(black, "000000");
-    }
-
-    #[test]
-    fn a_colour_goes_round_into_hue_and_lightness_and_comes_back_itself() {
-        for colour in [(0x44, 0x72, 0xC4), (255, 0, 0), (0, 0, 0), (255, 255, 255), (12, 200, 90)] {
-            let (hue, saturation, lightness) = to_hsl(colour.0, colour.1, colour.2);
-            let back = from_hsl(hue, saturation, lightness);
-            assert_eq!(back, colour, "{colour:?} came back as {back:?}");
-        }
     }
 
     #[test]

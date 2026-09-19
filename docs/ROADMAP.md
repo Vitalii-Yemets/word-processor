@@ -2779,7 +2779,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   does not select a box in the picture when a line is chosen, nor does
   clicking a box move the pane's caret.
 
-- [ ] **D26. A shape drawn in the theme's colours.** `a:schemeClr` where a
+- [x] **D26. A shape drawn in the theme's colours.** `a:schemeClr` where a
   colour is asked for. A diagram's drawing has this now — the slot and the
   shifts written under it, resolved against the document's theme — and every
   other shape does not: a shape Word filled with accent 1 rather than with
@@ -2792,6 +2792,64 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   when it is drawn, which is one more thing a fill can be and one more place
   that has to ask the theme. The arithmetic itself is done and tested; it is in
   the diagram module and belongs beside the theme.
+  *Done.* **A colour that is what the file said.** `wp-docx/src/colour.rs`:
+  a colour is a base — six hex digits, one of the theme's twelve slots, one
+  of the format's hundred and forty named colours, a system colour with the
+  value it was last seen with, or the placeholder a theme's style leaves
+  open — and the shifts written under it, by name and value in the order
+  written. It is resolved against a theme when it is drawn, not when it is
+  read, and written back as it came, shifts and all, including the ones this
+  program does not apply. The arithmetic moved here from the diagram module:
+  shade, tint, the six in hue, saturation and lightness, the absolute three,
+  the complement, the inverse and the grey. A fill's colours are these now —
+  the solid, every stop of a gradient, both colours of a hatching — and so
+  are the line round a shape, a shadow's, a glow's, and the sides and edge of
+  a solid shape. `Paint`, the effects and the depth are worked out against
+  the theme the layout engine now keeps whole, and a theme changed from the
+  Design tab recolours every shape that named it, which is what Word does.
+  **The fill a shape takes by number.** A shape from Word's gallery states
+  no fill and no line: `wps:style` says `fillRef idx="1"` in accent 1 and
+  `lnRef idx="2"` in accent 1 shaded by half, and the theme's format scheme
+  says what fill style one and line style two are. So `Fill::Styled` is one
+  more thing a fill can be — a number into the theme and a colour — and the
+  theme reads `fillStyleLst` and `lnStyleLst` with the placeholder kept,
+  fills the shape's colour in when asked, and writes them back so a theme
+  Word made keeps its gradients. A shape carries which line style its width
+  comes from when it states none, and the colour its words take when they
+  name none — `fontRef`, the white on a gallery shape — which the words are
+  laid out in. A shape made here is written as Word writes one: the style
+  references and nothing in the properties, so it changes with the theme in
+  Word as well. The line of a shape with one of its own over the style keeps
+  its thickness and takes the style's colour when it states none; a line
+  saying nothing anywhere is the theme's text colour, not black.
+  *Proven by:* `colour.rs` — a stated colour, a named one with its shifts
+  resolved against two themes, every shift, the round trip, the named and
+  system colours, and the placeholder filled in with the shape's shifts
+  first; `fills.rs` — a named colour kept as the name, a styled fill against
+  the theme, nothing said against nothing; `theme.rs` — the format scheme's
+  three fills and three lines; `shapes.rs` — a gallery shape written with
+  the references and nothing in the properties, read back the same, and
+  resolved to the blue and the darker blue against Office and to red against
+  a red theme, and a line of the shape's own over the style; `shapeeffects.rs`
+  — a glow named from the theme with its amount kept apart; `paint.rs` — a
+  named colour, a styled fill, a theme whose second fill style is a gradient
+  of the shape's colour; `editor/shapes.rs` — a shape from the gallery
+  painted in the Office blue, red the moment Design ▸ Colors ▸ Red is
+  chosen, its line a darker red, and the file saying the style and not a
+  colour; a line from the gallery in the first accent at the first line
+  style.
+  *Not done, and named:* the alpha under a fill's colour is carried and
+  written back but not drawn — a shape is drawn opaque; the gamma and
+  single-component shifts are carried and change nothing. The theme's
+  effect styles are still read as one shadow, not as the three lists, and
+  `effectRef` is always written as the second. The background fill styles
+  are neither read nor used. A text effect on words (`w14:`) has its own
+  `schemeClr` and is still read as six hex digits. A chart's and a diagram's
+  colours are resolved when they are read, as before, so a theme change
+  redraws them only because their parts are laid out again. The words in a
+  gallery shape are laid out from the top left, not centred as Word's
+  `anchor="ctr"` and centred paragraph put them, which was so before this
+  and is not a colour.
 
 - [ ] **D27. Drawing ink, and the media a document carries inside it.** What
   **D6** left.

@@ -1041,7 +1041,7 @@ impl Editor {
                         name: name.to_owned(),
                         width_emu: 1_828_800,
                         height_emu: 914_400,
-                        fill: wp_docx::fills::Fill::Solid(fill.to_owned()),
+                        fill: wp_docx::fills::Fill::solid(fill),
                         text: vec![wp_docx::model::Paragraph::text(name)],
                         anchor: Some(Anchor {
                             wrap: Wrap::None,
@@ -1069,7 +1069,7 @@ impl Editor {
                         name: name.to_owned(),
                         width_emu: 914_400,
                         height_emu: 548_640,
-                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                        fill: wp_docx::fills::Fill::solid("4472C4"),
                         text: vec![wp_docx::model::Paragraph::text(name)],
                         anchor: Some(Anchor {
                             wrap: Wrap::None,
@@ -1121,7 +1121,7 @@ impl Editor {
                     name: "Rectangle".to_owned(),
                     width_emu: 1_828_800,
                     height_emu: 1_143_000,
-                    fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                    fill: wp_docx::fills::Fill::solid("4472C4"),
                     text: vec![wp_docx::model::Paragraph::text("Chosen")],
                     anchor: Some(Anchor {
                         wrap: Wrap::Square,
@@ -1154,7 +1154,7 @@ impl Editor {
                         name: name.to_owned(),
                         width_emu: 1_143_000,
                         height_emu: 685_800,
-                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                        fill: wp_docx::fills::Fill::solid("4472C4"),
                         text: vec![wp_docx::model::Paragraph::text(name)],
                         rotation,
                         flipped_across: mirrored,
@@ -1215,7 +1215,7 @@ impl Editor {
                         name: name.to_owned(),
                         width_emu: 914_400,
                         height_emu: 685_800,
-                        fill: wp_docx::fills::Fill::Solid(fill.to_owned()),
+                        fill: wp_docx::fills::Fill::solid(fill),
                         text: vec![wp_docx::model::Paragraph::text(name)],
                         anchor: Some(Anchor {
                             wrap: Wrap::None,
@@ -1284,6 +1284,36 @@ impl Editor {
             // And the flowchart shapes alone. Most of them are the same box
             // with one edge changed, so the only way to tell whether one is
             // right is to look at it beside the others.
+            // Three shapes from the gallery with words in them, under the
+            // Red colour scheme: the fill, the line and the words all follow
+            // the theme, because none of them was ever a colour.
+            "themed" => {
+                use wp_docx::anchor::{Anchor, Placement, Wrap};
+                use wp_docx::model::Paragraph;
+
+                let red = wp_docx::gallery::COLOR_SCHEMES
+                    .iter()
+                    .find(|scheme| scheme.name == "Red")
+                    .expect("the Red scheme");
+                let _ = self.document.set_theme(&self.document.theme().with_colors(red));
+                for (index, (preset, words)) in
+                    [("rect", "Accent"), ("ellipse", "Shade"), ("roundRect", "Words")]
+                        .iter()
+                        .enumerate()
+                {
+                    let mut shape = wp_docx::shapes::Shape::preset(preset, 108.0, 72.0);
+                    shape.text = vec![Paragraph::text(words)];
+                    shape.anchor = Some(Anchor {
+                        wrap: Wrap::None,
+                        horizontal: Placement::Offset(index as i64 * 1_600_200),
+                        vertical: Placement::Offset(0),
+                        ..Anchor::default()
+                    });
+                    self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                    self.document.insert_shape(&shape);
+                }
+                self.relayout();
+            }
             "flowchart" => {
                 let shapes: Vec<wp_layout::geometry::Preset> = wp_layout::geometry::Preset::all()
                     .into_iter()
@@ -1319,8 +1349,8 @@ impl Editor {
                         preset: "roundRect".to_owned(),
                         width_emu: 1_143_000,
                         height_emu: 457_200,
-                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
-                        outline: Some("1F3864".to_owned()),
+                        fill: wp_docx::fills::Fill::solid("4472C4"),
+                        outline: Some(wp_docx::colour::Colour::rgb("1F3864")),
                         outline_emu: 9_525,
                         anchor: Some(floats(1_828_800, step)),
                         ..wp_docx::shapes::Shape::default()
@@ -1338,7 +1368,7 @@ impl Editor {
                         width_emu: 228_600,
                         height_emu: 228_600,
                         fill: wp_docx::fills::Fill::None,
-                        outline: Some("C00000".to_owned()),
+                        outline: Some(wp_docx::colour::Colour::rgb("C00000")),
                         outline_emu: 19_050,
                         tail_end: LineEnd { kind: EndKind::Triangle, ..LineEnd::default() },
                         joins: Joins {
@@ -1392,7 +1422,7 @@ impl Editor {
                     preset: "rect".to_owned(),
                     width_emu: across as i64 * CELL,
                     height_emu: rows * CELL,
-                    fill: wp_docx::fills::Fill::Solid("FFFFFF".to_owned()),
+                    fill: wp_docx::fills::Fill::solid("FFFFFF"),
                     outline: None,
                     anchor: Some(Anchor {
                         wrap: Wrap::None,
@@ -1414,7 +1444,7 @@ impl Editor {
                         // A line has no inside, so it has no fill and is drawn
                         // thick enough to see what is at the end of it.
                         fill: wp_docx::fills::Fill::None,
-                        outline: Some("1F3864".to_owned()),
+                        outline: Some(wp_docx::colour::Colour::rgb("1F3864")),
                         outline_emu: 28_575,
                         tail_end: LineEnd { kind: *kind, ..LineEnd::default() },
                         anchor: Some(Anchor {
@@ -1470,7 +1500,7 @@ impl Editor {
                 use wp_docx::shapeeffects::{Effects, Glow, Reflection, Shadow};
 
                 let shadow = |distance: i64, blur: i64| Shadow {
-                    colour: "000000".to_owned(),
+                    colour: wp_docx::colour::Colour::rgb("000000"),
                     alpha: 45_000,
                     blur_emu: blur,
                     distance_emu: distance,
@@ -1482,7 +1512,7 @@ impl Editor {
                     Effects { inner_shadow: Some(shadow(101_600, 101_600)), ..Effects::default() },
                     Effects {
                         glow: Some(Glow {
-                            colour: "FF0000".to_owned(),
+                            colour: wp_docx::colour::Colour::rgb("FF0000"),
                             alpha: 70_000,
                             radius_emu: 228_600,
                         }),
@@ -1507,7 +1537,7 @@ impl Editor {
                     preset: "rect".to_owned(),
                     width_emu: 3 * CELL,
                     height_emu: 2 * CELL + 457_200,
-                    fill: wp_docx::fills::Fill::Solid("FFFFFF".to_owned()),
+                    fill: wp_docx::fills::Fill::solid("FFFFFF"),
                     outline: None,
                     anchor: Some(Anchor {
                         wrap: Wrap::None,
@@ -1526,8 +1556,8 @@ impl Editor {
                         preset: "roundRect".to_owned(),
                         width_emu: 914_400,
                         height_emu: 685_800,
-                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
-                        outline: Some("1F3864".to_owned()),
+                        fill: wp_docx::fills::Fill::solid("4472C4"),
+                        outline: Some(wp_docx::colour::Colour::rgb("1F3864")),
                         outline_emu: 9_525,
                         effects,
                         anchor: Some(Anchor {
@@ -1990,7 +2020,7 @@ impl Editor {
                         Depth {
                             bevel_top: Some(bevel()),
                             extrusion_emu: 457_200,
-                            extrusion_colour: Some("2F528F".to_owned()),
+                            extrusion_colour: Some(wp_docx::colour::Colour::rgb("2F528F")),
                             material: "metal".to_owned(),
                             ..Depth::default()
                         },
@@ -2005,7 +2035,7 @@ impl Editor {
                     preset: "rect".to_owned(),
                     width_emu: 2 * CELL,
                     height_emu: 2 * CELL,
-                    fill: wp_docx::fills::Fill::Solid("FFFFFF".to_owned()),
+                    fill: wp_docx::fills::Fill::solid("FFFFFF"),
                     outline: None,
                     anchor: Some(Anchor {
                         wrap: Wrap::None,
@@ -2024,8 +2054,8 @@ impl Editor {
                         preset: "roundRect".to_owned(),
                         width_emu: 1_028_700,
                         height_emu: 800_100,
-                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
-                        outline: Some("1F3864".to_owned()),
+                        fill: wp_docx::fills::Fill::solid("4472C4"),
+                        outline: Some(wp_docx::colour::Colour::rgb("1F3864")),
                         outline_emu: 9_525,
                         depth,
                         scene,
@@ -2052,8 +2082,8 @@ impl Editor {
                     preset: "roundRect".to_owned(),
                     width_emu: 2_286_000,
                     height_emu: 1_143_000,
-                    fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
-                    outline: Some("1F3864".to_owned()),
+                    fill: wp_docx::fills::Fill::solid("4472C4"),
+                    outline: Some(wp_docx::colour::Colour::rgb("1F3864")),
                     outline_emu: 9_525,
                     anchor: Some(Anchor {
                         wrap: Wrap::None,
@@ -2094,8 +2124,8 @@ impl Editor {
                         preset: preset.word().to_owned(),
                         width_emu: 685_800,
                         height_emu: 548_640,
-                        fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
-                        outline: Some("1F3864".to_owned()),
+                        fill: wp_docx::fills::Fill::solid("4472C4"),
+                        outline: Some(wp_docx::colour::Colour::rgb("1F3864")),
                         outline_emu: 9_525,
                         anchor: Some(Anchor {
                             wrap: Wrap::None,
@@ -2115,24 +2145,25 @@ impl Editor {
                 // three kinds of gradient, and a row of hatchings. The only way
                 // to see that a shade is a shade rather than an average of one.
                 use wp_docx::anchor::{Anchor, Placement, Wrap};
+                use wp_docx::colour::Colour;
                 use wp_docx::fills::{Direction, Fill, Gradient, Pattern};
 
                 let run = |from: &str, to: &str, direction: Direction| {
                     Fill::Gradient(Gradient {
-                        stops: vec![(0, from.to_owned()), (100_000, to.to_owned())],
+                        stops: vec![(0, Colour::rgb(from)), (100_000, Colour::rgb(to))],
                         direction,
                     })
                 };
                 let hatch = |name: &str| {
                     Fill::Pattern(Pattern {
                         name: name.to_owned(),
-                        foreground: "1F3864".to_owned(),
-                        background: "FFFFFF".to_owned(),
+                        foreground: Colour::rgb("1F3864"),
+                        background: Colour::rgb("FFFFFF"),
                     })
                 };
 
                 let fills = [
-                    Fill::Solid("4472C4".to_owned()),
+                    Fill::solid("4472C4"),
                     run("4472C4", "FFFFFF", Direction::Linear(5_400_000)),
                     run("4472C4", "FFFFFF", Direction::Linear(0)),
                     run("4472C4", "FFFFFF", Direction::Linear(2_700_000)),
@@ -2154,7 +2185,7 @@ impl Editor {
                         width_emu: 1_028_700,
                         height_emu: 685_800,
                         fill: fill.clone(),
-                        outline: Some("1F3864".to_owned()),
+                        outline: Some(wp_docx::colour::Colour::rgb("1F3864")),
                         outline_emu: 9_525,
                         anchor: Some(Anchor {
                             wrap: Wrap::None,
@@ -2805,7 +2836,7 @@ impl Editor {
             preset: "rect".to_owned(),
             width_emu: across as i64 * CELL,
             height_emu: rows * CELL,
-            fill: wp_docx::fills::Fill::Solid("FFFFFF".to_owned()),
+            fill: wp_docx::fills::Fill::solid("FFFFFF"),
             outline: None,
             anchor: Some(Anchor {
                 wrap: Wrap::None,
@@ -2825,8 +2856,8 @@ impl Editor {
                 adjusts: adjusts.clone(),
                 width_emu: SHAPE,
                 height_emu: SHAPE,
-                fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
-                outline: Some("1F3864".to_owned()),
+                fill: wp_docx::fills::Fill::solid("4472C4"),
+                outline: Some(wp_docx::colour::Colour::rgb("1F3864")),
                 outline_emu: 9_525,
                 anchor: Some(Anchor {
                     wrap: Wrap::None,

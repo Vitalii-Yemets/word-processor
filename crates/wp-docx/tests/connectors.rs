@@ -87,7 +87,7 @@ fn a_connector_this_program_writes_carries_its_arrowhead() {
         preset: "bentConnector3".to_owned(),
         width_emu: 914_400,
         height_emu: 457_200,
-        outline: Some("1F3864".to_owned()),
+        outline: Some(wp_docx::colour::Colour::rgb("1F3864")),
         outline_emu: 19_050,
         tail_end: LineEnd { kind: EndKind::Triangle, ..LineEnd::default() },
         ..Shape::default()
@@ -213,7 +213,7 @@ fn what_a_shape_is_drawn_with_besides_its_fill_is_read() {
     let shape = document.shapes().into_iter().next().expect("the shape");
 
     let shadow = shape.effects.outer_shadow.clone().expect("the shadow");
-    assert_eq!(shadow.colour, "000000");
+    assert_eq!(shadow.colour, wp_docx::colour::Colour::rgb("000000"));
     assert_eq!(shadow.alpha, 40_000, "two fifths of a colour");
     assert_eq!(
         (shadow.blur_emu, shadow.distance_emu, shadow.direction),
@@ -240,7 +240,7 @@ fn a_shape_this_program_writes_carries_what_it_is_drawn_with() {
         height_emu: 457_200,
         effects: Effects {
             inner_shadow: Some(Shadow {
-                colour: "112233".to_owned(),
+                colour: wp_docx::colour::Colour::rgb("112233"),
                 alpha: 55_000,
                 blur_emu: 50_800,
                 distance_emu: 25_400,

@@ -48,12 +48,22 @@ pub struct Shape {
     pub adjusts: Vec<(String, i32)>,
     pub width_emu: i64,
     pub height_emu: i64,
-    /// What is inside it: nothing, one colour, a gradient or a hatching. See
-    /// [`crate::fills`].
+    /// What is inside it: nothing, one colour, a gradient, a hatching, or one
+    /// of the theme's fills by number. See [`crate::fills`].
     pub fill: crate::fills::Fill,
-    /// The colour of the line round it, and how thick that line is.
-    pub outline: Option<String>,
+    /// The colour of the line round it — stated, or named from the theme —
+    /// and how thick that line is. A thickness of nought with a line style
+    /// named is the theme's: see [`Shape::outline_points_in`].
+    pub outline: Option<crate::colour::Colour>,
     pub outline_emu: i64,
+    /// Which of the theme's line styles the line takes its thickness from
+    /// when it states none — `a:lnRef/@idx`, from one — and nought for a
+    /// shape that names no style.
+    pub line_style: u8,
+    /// The colour the words inside are drawn in when they name none of their
+    /// own: `a:fontRef`, which is what makes the words in a gallery shape
+    /// white on the shape's colour. Nothing means the automatic colour.
+    pub ink: Option<crate::colour::Colour>,
     /// What is drawn at the two ends of that line, which is what makes a
     /// connector an arrow. Nothing at either end for every shape that is not a
     /// line. See [`crate::lines`].
@@ -106,6 +116,8 @@ impl Default for Shape {
             fill: crate::fills::Fill::None,
             outline: None,
             outline_emu: 0,
+            line_style: 0,
+            ink: None,
             head_end: crate::lines::LineEnd::default(),
             tail_end: crate::lines::LineEnd::default(),
             effects: crate::shapeeffects::Effects::default(),
@@ -160,10 +172,26 @@ impl Shape {
         self.height_emu as f64 / EMU_PER_POINT as f64
     }
 
-    /// How thick its line is, in points.
+    /// How thick its line is, in points, when it states a thickness.
     #[must_use]
     pub fn outline_points(&self) -> f32 {
         self.outline_emu as f32 / EMU_PER_POINT as f32
+    }
+
+    /// How thick its line is against a theme: its own thickness, or the
+    /// thickness of the theme's line style it names, or three quarters of
+    /// a point, which is what a line with no thickness anywhere is drawn at.
+    #[must_use]
+    pub fn outline_points_in(&self, theme: &crate::theme::Theme) -> f32 {
+        let emu = if self.outline_emu > 0 {
+            self.outline_emu
+        } else {
+            match theme.line_width_emu(self.line_style) {
+                0 => 9525,
+                width => width,
+            }
+        };
+        emu as f32 / EMU_PER_POINT as f32
     }
 
     /// Whether anything is written inside it.
@@ -179,17 +207,24 @@ impl Shape {
     }
 
     /// A shape of a preset and a size in points, with Word's own colours.
+    ///
+    /// Word's, and named the way Word names them: the theme's first fill
+    /// style in the first accent, its second line style in that accent
+    /// darkened by half, and white words. None of them is a colour, so a
+    /// shape made here changes with the theme as one made in Word does.
     #[must_use]
     pub fn preset(preset: &str, width_points: f64, height_points: f64) -> Self {
+        use crate::colour::Colour;
+        use crate::theme::Slot;
         Self {
             preset: preset.to_owned(),
             width_emu: (width_points * EMU_PER_POINT as f64) as i64,
             height_emu: (height_points * EMU_PER_POINT as f64) as i64,
-            // The blue Word fills a new shape with, and the darker blue it
-            // draws round one.
-            fill: crate::fills::Fill::Solid("4472C4".to_owned()),
-            outline: Some("2F528F".to_owned()),
-            outline_emu: EMU_PER_POINT,
+            fill: crate::fills::Fill::Styled { index: 1, colour: Colour::scheme(Slot::Accent1) },
+            outline: Some(Colour::scheme(Slot::Accent1).shifted("shade", 50_000)),
+            outline_emu: 0,
+            line_style: 2,
+            ink: Some(Colour::scheme(Slot::Light1)),
             text: Vec::new(),
             name: "Shape".to_owned(),
             anchor: None,
@@ -213,7 +248,7 @@ impl Shape {
             width_emu: (width_points * EMU_PER_POINT as f64) as i64,
             height_emu: (height_points * EMU_PER_POINT as f64) as i64,
             fill: crate::fills::Fill::None,
-            outline: Some("000000".to_owned()),
+            outline: Some(crate::colour::Colour::rgb("000000")),
             outline_emu: EMU_PER_POINT,
             text: text.split('\n').map(Paragraph::text).collect(),
             name: "Text Box".to_owned(),
@@ -285,21 +320,51 @@ pub fn read_shape(drawing: &Element) -> Option<Shape> {
         }
         shape.adjusts = read_adjusts(geometry);
     }
-    shape.fill = properties.map(crate::fills::read_fill).unwrap_or_default();
+    // What the shape takes from the theme by number: `wps:style`, which is
+    // where a shape from Word's gallery keeps its fill, its line and the
+    // colour of its words. What the properties state comes first; the style
+    // answers for whatever they leave unsaid.
+    let style = child(wsp, "style");
+    let reference = |name: &str| -> (u8, Option<crate::colour::Colour>) {
+        let Some(element) = style.and_then(|style| child(style, name)) else { return (0, None) };
+        let index = element.attribute_by_name("idx").and_then(|idx| idx.parse().ok()).unwrap_or(0);
+        (index, crate::colour::read_colour(element))
+    };
+    let (fill_style, fill_colour) = reference("fillRef");
+    let (line_style, line_colour) = reference("lnRef");
+    shape.fill = match properties.and_then(crate::fills::read_fill_said) {
+        Some(fill) => fill,
+        None => match (fill_style, fill_colour) {
+            (index, Some(colour)) if index > 0 => crate::fills::Fill::Styled { index, colour },
+            _ => crate::fills::Fill::None,
+        },
+    };
     shape.effects = properties.map(crate::shapeeffects::read_effects).unwrap_or_default();
     shape.depth = properties.map(crate::depth::read_depth).unwrap_or_default();
     shape.scene = properties.map(crate::depth::read_scene).unwrap_or_default();
+    shape.line_style = line_style;
+    shape.ink = reference("fontRef").1;
 
-    if let Some(line) = properties.and_then(|properties| child(properties, "ln")) {
-        shape.outline_emu = line.attribute_by_name("w").and_then(|w| w.parse().ok()).unwrap_or(0);
-        shape.outline = solid_color(line);
-        shape.head_end = crate::lines::read_end(line, "headEnd");
-        shape.tail_end = crate::lines::read_end(line, "tailEnd");
-        // A line saying nothing about its colour is still a line: Word draws it
-        // in the theme's, and black is nearer that than nothing at all.
-        if shape.outline.is_none() && child(line, "noFill").is_none() {
-            shape.outline = Some("000000".to_owned());
+    match properties.and_then(|properties| child(properties, "ln")) {
+        Some(line) => {
+            shape.outline_emu =
+                line.attribute_by_name("w").and_then(|w| w.parse().ok()).unwrap_or(0);
+            shape.head_end = crate::lines::read_end(line, "headEnd");
+            shape.tail_end = crate::lines::read_end(line, "tailEnd");
+            // A line saying nothing about its colour is still a line, in the
+            // colour the style names; and one saying nothing anywhere is
+            // drawn in the theme's text colour, which is what Word does.
+            shape.outline = if child(line, "noFill").is_some() {
+                None
+            } else {
+                child(line, "solidFill")
+                    .and_then(crate::colour::read_colour)
+                    .or(line_colour)
+                    .or_else(|| Some(crate::colour::Colour::scheme(crate::theme::Slot::Dark1)))
+            };
         }
+        // No line of its own: the style's, if it names one.
+        None => shape.outline = if line_style > 0 { line_colour } else { None },
     }
 
     if let Some(content) = find(wsp, "txbxContent") {
@@ -426,25 +491,39 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     geometry.push_element(adjust_element(&shape.adjusts, "a"));
     properties.push_element(geometry);
 
-    properties.push_element(fill_element(&shape.fill));
+    // A fill the shape takes by number is said in its style, below, and not
+    // here.
+    if let Some(fill) = crate::fills::fill_element(&shape.fill) {
+        properties.push_element(fill);
+    }
 
-    let mut line = Element::new("a:ln", Some(A));
-    if shape.outline_emu > 0 {
-        line.set_attribute("w", &shape.outline_emu.to_string());
-    }
-    match &shape.outline {
-        Some(colour) => line.push_element(solid(colour)),
-        None => line.push_element(Element::new("a:noFill", Some(A))),
-    }
-    // The ends come after the fill of the line, which is the order the schema
-    // asks for: a document whose elements are in the wrong order is a document
-    // Word will not open at all.
-    for (name, end) in [("a:headEnd", shape.head_end), ("a:tailEnd", shape.tail_end)] {
-        if let Some(element) = crate::lines::end_element(name, end) {
-            line.push_element(element);
+    // The line is written when the shape says something of its own about it:
+    // a thickness, no line at all, or an end. A line that is the style's
+    // through and through is left to the style, which is how Word writes a
+    // shape from its gallery.
+    let has_ends = crate::lines::end_element("a:headEnd", shape.head_end).is_some()
+        || crate::lines::end_element("a:tailEnd", shape.tail_end).is_some();
+    let own_line =
+        shape.outline.is_none() || shape.outline_emu > 0 || shape.line_style == 0 || has_ends;
+    if own_line {
+        let mut line = Element::new("a:ln", Some(A));
+        if shape.outline_emu > 0 {
+            line.set_attribute("w", &shape.outline_emu.to_string());
         }
+        match &shape.outline {
+            Some(colour) => line.push_element(crate::colour::solid_fill(colour)),
+            None => line.push_element(Element::new("a:noFill", Some(A))),
+        }
+        // The ends come after the fill of the line, which is the order the
+        // schema asks for: a document whose elements are in the wrong order
+        // is a document Word will not open at all.
+        for (name, end) in [("a:headEnd", shape.head_end), ("a:tailEnd", shape.tail_end)] {
+            if let Some(element) = crate::lines::end_element(name, end) {
+                line.push_element(element);
+            }
+        }
+        properties.push_element(line);
     }
-    properties.push_element(line);
     // And what it is drawn with besides the two of them, which the schema
     // wants after the line and before anything three-dimensional.
     if let Some(list) = crate::shapeeffects::effects_element(&shape.effects) {
@@ -460,16 +539,36 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     }
     wsp.push_element(properties);
 
-    // The shape takes the theme's second effect style, which is what the
-    // Design tab's Effects gallery changes. Without this a shape is drawn flat
-    // however the theme is set — see [`crate::theme::Effect`].
+    // What the shape takes from the theme by number, in the order the schema
+    // wants: the line, the fill, the effect and the font. The effect is
+    // always the theme's second effect style, which is what the Design tab's
+    // Effects gallery changes; without it a shape is drawn flat however the
+    // theme is set — see [`crate::theme::Effect`].
     let mut style = Element::new("wps:style", Some(WPS));
-    let mut effect = Element::new("a:effectRef", Some(A));
-    effect.set_attribute("idx", "2");
-    let mut colour = Element::new("a:schemeClr", Some(A));
-    colour.set_attribute("val", "accent1");
-    effect.push_element(colour);
-    style.push_element(effect);
+    let accent = crate::colour::Colour::scheme(crate::theme::Slot::Accent1);
+    let reference = |name: &str, index: u8, colour: &crate::colour::Colour| {
+        let mut element = Element::new(name, Some(A));
+        element.set_attribute("idx", &index.to_string());
+        element.push_element(crate::colour::colour_element(colour));
+        element
+    };
+    style.push_element(reference(
+        "a:lnRef",
+        shape.line_style,
+        shape.outline.as_ref().unwrap_or(&accent),
+    ));
+    let (fill_index, fill_colour) = match &shape.fill {
+        crate::fills::Fill::Styled { index, colour } => (*index, colour),
+        _ => (0, &accent),
+    };
+    style.push_element(reference("a:fillRef", fill_index, fill_colour));
+    style.push_element(reference("a:effectRef", 2, &accent));
+    let mut font = Element::new("a:fontRef", Some(A));
+    font.set_attribute("idx", "minor");
+    font.push_element(crate::colour::colour_element(
+        shape.ink.as_ref().unwrap_or(&crate::colour::Colour::scheme(crate::theme::Slot::Dark1)),
+    ));
+    style.push_element(font);
     wsp.push_element(style);
 
     if !shape.text.is_empty() {
@@ -490,22 +589,6 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     wsp.push_element(body);
 
     wsp
-}
-
-/// A solid fill of one colour.
-fn solid(colour: &str) -> Element {
-    let mut fill = Element::new("a:solidFill", Some(A));
-    let mut value = Element::new("a:srgbClr", Some(A));
-    value.set_attribute("val", colour);
-    fill.push_element(value);
-    fill
-}
-
-/// The colour of an element's solid fill, if it has one.
-fn solid_color(parent: &Element) -> Option<String> {
-    let fill = child(parent, "solidFill")?;
-    let colour = child(fill, "srgbClr")?;
-    colour.attribute_by_name("val").map(|value| value.to_uppercase())
 }
 
 /// The values behind a shape's yellow handles, as the document gave them.
@@ -984,64 +1067,6 @@ fn replace_shape(
     false
 }
 
-/// The element that says what a shape is filled with.
-///
-/// Said rather than left out: a shape with no fill element at all takes the
-/// theme's, which is not the same as having none.
-fn fill_element(fill: &crate::fills::Fill) -> Element {
-    use crate::fills::{Direction, Fill};
-    match fill {
-        Fill::None => Element::new("a:noFill", Some(A)),
-        Fill::Solid(colour) => solid(colour),
-        Fill::Gradient(gradient) => {
-            let mut element = Element::new("a:gradFill", Some(A));
-            let mut stops = Element::new("a:gsLst", Some(A));
-            for (along, colour) in &gradient.stops {
-                let mut stop = Element::new("a:gs", Some(A));
-                stop.set_attribute("pos", &along.to_string());
-                let mut value = Element::new("a:srgbClr", Some(A));
-                value.set_attribute("val", colour);
-                stop.push_element(value);
-                stops.push_element(stop);
-            }
-            element.push_element(stops);
-
-            match gradient.direction {
-                Direction::Linear(angle) => {
-                    let mut line = Element::new("a:lin", Some(A));
-                    line.set_attribute("ang", &angle.to_string());
-                    line.set_attribute("scaled", "0");
-                    element.push_element(line);
-                }
-                Direction::Radial | Direction::Rectangular => {
-                    let mut path = Element::new("a:path", Some(A));
-                    path.set_attribute(
-                        "path",
-                        if gradient.direction == Direction::Radial { "circle" } else { "rect" },
-                    );
-                    element.push_element(path);
-                }
-            }
-            element
-        }
-        Fill::Pattern(pattern) => {
-            let mut element = Element::new("a:pattFill", Some(A));
-            element.set_attribute("prst", &pattern.name);
-            let mut front = Element::new("a:fgClr", Some(A));
-            let mut value = Element::new("a:srgbClr", Some(A));
-            value.set_attribute("val", &pattern.foreground);
-            front.push_element(value);
-            element.push_element(front);
-            let mut back = Element::new("a:bgClr", Some(A));
-            let mut value = Element::new("a:srgbClr", Some(A));
-            value.set_attribute("val", &pattern.background);
-            back.push_element(value);
-            element.push_element(back);
-            element
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1072,7 +1097,77 @@ mod tests {
         let shape = Shape::text_box(200.0, 80.0, "words");
         let read = read_shape(&shape_element(&shape, Some("w"))).expect("a shape");
         assert_eq!(read.fill, crate::fills::Fill::None, "a text box lets the page show through");
-        assert_eq!(read.outline.as_deref(), Some("000000"));
+        assert_eq!(read.outline, Some(crate::colour::Colour::rgb("000000")));
+    }
+
+    #[test]
+    fn a_gallery_shape_names_its_colours_from_the_theme_and_keeps_them_through_a_round_trip() {
+        use crate::colour::{Base, Colour};
+        use crate::theme::{Slot, Theme};
+
+        let shape = Shape::preset("rect", 100.0, 50.0);
+        let element = shape_element(&shape, Some("w"));
+        // Written as Word writes it: nothing about the fill or the line in the
+        // properties, and the style saying which of the theme's to take.
+        let properties = find(&element, "spPr").expect("properties");
+        assert!(child(properties, "solidFill").is_none());
+        assert!(child(properties, "ln").is_none());
+        let style = find(&element, "style").expect("a style");
+        assert_eq!(child(style, "fillRef").and_then(|r| r.attribute_by_name("idx")), Some("1"));
+        assert_eq!(child(style, "lnRef").and_then(|r| r.attribute_by_name("idx")), Some("2"));
+        assert!(child(style, "fontRef").is_some());
+
+        let read = read_shape(&element).expect("a shape");
+        assert_eq!(read.fill, shape.fill);
+        assert_eq!(read.outline, shape.outline);
+        assert_eq!(read.line_style, 2);
+        assert_eq!(read.ink, Some(Colour::scheme(Slot::Light1)));
+        let Some(outline) = &read.outline else { panic!("no outline") };
+        assert_eq!(outline.base, Base::Scheme(Slot::Accent1));
+
+        // Against the Office theme that is the blue and the darker blue.
+        let theme = Theme::default();
+        assert_eq!(read.fill.solid_hex(&theme), Some("4472C4".to_owned()));
+        assert_eq!(outline.resolve(&theme), "223962");
+        assert!((read.outline_points_in(&theme) - 1.0).abs() < 0.01, "line style two is a point");
+        // And against another theme, that theme's.
+        let mut red = Theme::default();
+        red.colors[4] = "C00000".to_owned();
+        assert_eq!(read.fill.solid_hex(&red), Some("C00000".to_owned()));
+    }
+
+    #[test]
+    fn a_line_of_the_shape_s_own_over_the_style_keeps_its_thickness_and_takes_the_style_s_colour() {
+        use crate::colour::{Base, Colour};
+        use crate::theme::Slot;
+
+        let mut shape = Shape::preset("ellipse", 100.0, 50.0);
+        shape.outline_emu = EMU_PER_POINT * 3;
+        let element = shape_element(&shape, Some("w"));
+        let properties = find(&element, "spPr").expect("properties");
+        let line = child(properties, "ln").expect("the line is the shape's own now");
+        assert_eq!(line.attribute_by_name("w"), Some("38100"));
+        let read = read_shape(&element).expect("a shape");
+        assert_eq!(read.outline_emu, EMU_PER_POINT * 3);
+        assert_eq!(read.outline, shape.outline);
+
+        // A line that says nothing about its colour takes the style's; one
+        // that says nothing anywhere is drawn in the text colour.
+        let text = "<w:drawing xmlns:w=\"w\" xmlns:wps=\"wps\" xmlns:a=\"a\"><wp:inline xmlns:wp=\"wp\">\
+            <wp:extent cx=\"914400\" cy=\"914400\"/></wp:inline>\
+            <wps:wsp><wps:spPr><a:prstGeom prst=\"rect\"/><a:ln w=\"12700\"/></wps:spPr>\
+            <wps:style><a:lnRef idx=\"1\"><a:schemeClr val=\"accent4\"/></a:lnRef>\
+            <a:fillRef idx=\"0\"><a:schemeClr val=\"accent1\"/></a:fillRef></wps:style></wps:wsp></w:drawing>";
+        let read =
+            read_shape(&wp_xml::tree::XmlTree::parse(text).expect("parses").root).expect("a shape");
+        assert_eq!(read.outline, Some(Colour::scheme(Slot::Accent4)));
+        assert_eq!(read.fill, crate::fills::Fill::None, "fill style nought is no fill");
+        let bare = text
+            .replace("<wps:style>", "<wps:style><a:lnRef idx=\"0\"/>")
+            .replace("<a:lnRef idx=\"1\"><a:schemeClr val=\"accent4\"/></a:lnRef>", "");
+        let read = read_shape(&wp_xml::tree::XmlTree::parse(&bare).expect("parses").root)
+            .expect("a shape");
+        assert_eq!(read.outline.map(|colour| colour.base), Some(Base::Scheme(Slot::Dark1)));
     }
 
     #[test]

@@ -19,9 +19,11 @@
 //!
 //! # What is read and what is not
 //!
-//! The colour scheme and the font scheme. Not the format scheme, which is the
-//! fills, lines and effects that shapes take from the theme — there are no
-//! shapes here to take them yet.
+//! The colour scheme and the font scheme, and of the format scheme the fills
+//! and the lines: a shape from Word's gallery says it takes fill style one and
+//! line style two, and what those are is written here, with a placeholder
+//! where the shape's own colour goes. The effect styles are read as far as the
+//! shadow the theme puts under a shape, and the background fills not at all.
 
 use wp_xml::tree::{Element, Node, XmlTree};
 
@@ -74,6 +76,36 @@ impl Slot {
             Self::Hyperlink => "hlink",
             Self::FollowedHyperlink => "folHlink",
         }
+    }
+
+    /// The name the drawing side gives it: `dk1`, `accent1`, `hlink`.
+    #[must_use]
+    pub fn drawing_name(self) -> &'static str {
+        self.element()
+    }
+
+    /// The slot one of DrawingML's own colour names stands for.
+    ///
+    /// Two vocabularies again: the drawing side says dk1 and lt1 where the
+    /// text side says text1 and background1, and bg1 and tx1 where a theme
+    /// means the same two the other way about.
+    #[must_use]
+    pub fn from_drawing(name: &str) -> Option<Self> {
+        Some(match name {
+            "dk1" | "tx1" => Self::Dark1,
+            "lt1" | "bg1" => Self::Light1,
+            "dk2" | "tx2" => Self::Dark2,
+            "lt2" | "bg2" => Self::Light2,
+            "accent1" => Self::Accent1,
+            "accent2" => Self::Accent2,
+            "accent3" => Self::Accent3,
+            "accent4" => Self::Accent4,
+            "accent5" => Self::Accent5,
+            "accent6" => Self::Accent6,
+            "hlink" => Self::Hyperlink,
+            "folHlink" => Self::FollowedHyperlink,
+            _ => return None,
+        })
     }
 
     /// The slot a `w:themeColor` names.
@@ -225,6 +257,39 @@ pub struct Theme {
     pub minor_font: String,
     /// The shadow the theme puts under a shape.
     pub effect: Effect,
+    /// The three fills a shape may take by number, `a:fillStyleLst`, each
+    /// with a placeholder where the shape's colour goes. See
+    /// [`crate::colour::Base::Placeholder`].
+    pub fill_styles: Vec<crate::fills::Fill>,
+    /// The three lines, `a:lnStyleLst`: how wide, and the colour with the
+    /// same placeholder.
+    pub line_styles: Vec<LineStyle>,
+}
+
+/// One of the theme's line styles.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LineStyle {
+    pub width_emu: i64,
+    pub colour: crate::colour::Colour,
+}
+
+impl LineStyle {
+    /// A line of the given width in the shape's own colour, which is what
+    /// every style in the Office theme is.
+    #[must_use]
+    pub fn plain(width_emu: i64) -> Self {
+        Self { width_emu, colour: placeholder_colour() }
+    }
+}
+
+/// The colour a style leaves for the shape to fill in.
+fn placeholder_colour() -> crate::colour::Colour {
+    crate::colour::Colour { base: crate::colour::Base::Placeholder, shifts: Vec::new() }
+}
+
+/// A solid fill of that colour.
+fn placeholder_fill() -> crate::fills::Fill {
+    crate::fills::Fill::Solid(placeholder_colour())
 }
 
 impl Default for Theme {
@@ -246,6 +311,16 @@ impl Default for Theme {
             major_font: "Calibri Light".to_owned(),
             minor_font: "Calibri".to_owned(),
             effect: Effect::None,
+            // The plainest format scheme: three fills of the shape's own
+            // colour and three lines of it, half a point, a point and a
+            // point and a half. The Office theme's second and third fills
+            // are gradients of that colour, which a document with no theme
+            // part does not get — see [`format_scheme`].
+            fill_styles: vec![placeholder_fill(); 3],
+            line_styles: [6350, 12_700, 19_050]
+                .iter()
+                .map(|width| LineStyle::plain(*width))
+                .collect(),
         }
     }
 }
@@ -265,6 +340,35 @@ impl Theme {
             FontSlot::Major => self.major_font.clone(),
             FontSlot::Minor => self.minor_font.clone(),
         }
+    }
+
+    /// One of the fills a shape takes by number, with the shape's colour
+    /// filled in where the style leaves a placeholder. The numbers are the
+    /// format's, from one; nought is no fill at all.
+    #[must_use]
+    pub fn fill_style(&self, index: u8, colour: &crate::colour::Colour) -> crate::fills::Fill {
+        let Some(style) = index.checked_sub(1).and_then(|at| self.fill_styles.get(usize::from(at)))
+        else {
+            return crate::fills::Fill::None;
+        };
+        style.filled_in(colour)
+    }
+
+    /// One of the lines a shape takes by number: its width, and its colour
+    /// with the shape's filled in. Nought is no line.
+    #[must_use]
+    pub fn line_style(&self, index: u8, colour: &crate::colour::Colour) -> Option<LineStyle> {
+        let style = index.checked_sub(1).and_then(|at| self.line_styles.get(usize::from(at)))?;
+        Some(LineStyle { width_emu: style.width_emu, colour: style.colour.filled_in(colour) })
+    }
+
+    /// How wide one of the lines a shape takes by number is.
+    #[must_use]
+    pub fn line_width_emu(&self, index: u8) -> i64 {
+        index
+            .checked_sub(1)
+            .and_then(|at| self.line_styles.get(usize::from(at)))
+            .map_or(0, |style| style.width_emu)
     }
 
     /// What a named colour actually comes out as, tint and shade applied.
@@ -312,6 +416,36 @@ impl Theme {
                 // The font scheme's name is what Word shows in the Fonts list,
                 // and it is not always the theme's own.
                 let _ = name;
+            }
+        }
+        // The fills and the lines a shape takes by number, as the theme
+        // writes them; a theme that leaves either list out keeps the plain
+        // three, so a shape that names style two still gets a line.
+        if let Some(scheme) = elements.and_then(|elements| child(elements, "fmtScheme")) {
+            if let Some(list) = child(scheme, "fillStyleLst") {
+                let fills: Vec<crate::fills::Fill> = list
+                    .child_elements()
+                    .map(|fill| crate::fills::read_fill_element(fill).unwrap_or_default())
+                    .collect();
+                if !fills.is_empty() {
+                    theme.fill_styles = fills;
+                }
+            }
+            if let Some(list) = child(scheme, "lnStyleLst") {
+                let lines: Vec<LineStyle> = list
+                    .child_elements()
+                    .filter(|line| line.local_name() == "ln")
+                    .map(|line| LineStyle {
+                        width_emu: line
+                            .attribute_by_name("w")
+                            .and_then(|value| value.trim().parse().ok())
+                            .unwrap_or(9525),
+                        colour: crate::colour::read_colour(line).unwrap_or_else(placeholder_colour),
+                    })
+                    .collect();
+                if !lines.is_empty() {
+                    theme.line_styles = lines;
+                }
             }
         }
         // The shadow the theme puts under a shape, read from the strongest of
@@ -546,38 +680,43 @@ fn font_scheme(theme: &Theme) -> Element {
     scheme
 }
 
-/// The plainest format scheme the schema will accept.
+/// The format scheme: the fills and lines a shape takes by number, as the
+/// theme has them, and the effects.
 ///
-/// Fills, lines and effects for shapes to take from the theme. There are no
-/// shapes here yet, so these are the simplest that satisfy the schema — three
-/// of each, as it requires — rather than the graduated fills Word writes.
+/// The fills and the lines are the theme's own, so a theme read from a file
+/// Word wrote goes back with its gradients. The background fills are the
+/// plainest the schema will accept — three of the shape's own colour — since
+/// nothing here takes one.
 fn format_scheme(theme: &Theme) -> Element {
     let mut scheme = Element::new("a:fmtScheme", Some(A));
     scheme.set_attribute("name", "Office");
 
-    let solid = |colour: &str| {
-        let mut fill = Element::new("a:solidFill", Some(A));
-        let mut reference = Element::new("a:schemeClr", Some(A));
-        reference.set_attribute("val", colour);
-        fill.push_element(reference);
-        fill
-    };
-
+    // The schema wants three of each; a theme with fewer is padded with the
+    // plain fill and with more keeps them all.
     let mut fills = Element::new("a:fillStyleLst", Some(A));
     let mut backgrounds = Element::new("a:bgFillStyleLst", Some(A));
-    for _ in 0..3 {
-        fills.push_element(solid("phClr"));
-        backgrounds.push_element(solid("phClr"));
+    for at in 0..theme.fill_styles.len().max(3) {
+        let fill = theme.fill_styles.get(at).cloned().unwrap_or_else(placeholder_fill);
+        fills.push_element(
+            crate::fills::fill_element(&fill)
+                .unwrap_or_else(|| crate::colour::solid_fill(&placeholder_colour())),
+        );
+        backgrounds.push_element(crate::colour::solid_fill(&placeholder_colour()));
     }
 
     let mut lines = Element::new("a:lnStyleLst", Some(A));
-    for width in [6350, 12700, 19050] {
+    for at in 0..theme.line_styles.len().max(3) {
+        let style = theme
+            .line_styles
+            .get(at)
+            .cloned()
+            .unwrap_or_else(|| LineStyle::plain([6350, 12_700, 19_050][at.min(2)]));
         let mut line = Element::new("a:ln", Some(A));
-        line.set_attribute("w", &width.to_string());
+        line.set_attribute("w", &style.width_emu.to_string());
         line.set_attribute("cap", "flat");
         line.set_attribute("cmpd", "sng");
         line.set_attribute("algn", "ctr");
-        line.push_element(solid("phClr"));
+        line.push_element(crate::colour::solid_fill(&style.colour));
         lines.push_element(line);
     }
 
@@ -686,6 +825,51 @@ mod tests {
 
             assert_eq!(Theme::parse(&root).effect, *effect, "{}", effect.label());
         }
+    }
+
+    #[test]
+    fn the_format_scheme_s_fills_and_lines_are_read_and_written_with_the_placeholder_kept() {
+        use crate::colour::{Base, Colour};
+        use crate::fills::{Direction, Fill, Gradient};
+
+        let mut theme = Theme::default();
+        assert_eq!(theme.fill_styles.len(), 3);
+        assert_eq!(theme.line_styles.len(), 3);
+        assert_eq!(theme.line_width_emu(2), 12_700);
+        assert_eq!(theme.line_width_emu(0), 0, "style nought is no line");
+
+        // A theme whose second fill is a gradient of the shape's colour, as
+        // the Office theme Word writes has.
+        let placeholder = |shift: &str, value: i32| Colour {
+            base: Base::Placeholder,
+            shifts: vec![crate::colour::Shift { name: shift.to_owned(), value }],
+        };
+        theme.fill_styles[1] = Fill::Gradient(Gradient {
+            stops: vec![(0, placeholder("tint", 67_000)), (100_000, placeholder("shade", 80_000))],
+            direction: Direction::Linear(5_400_000),
+        });
+        theme.line_styles[0].width_emu = 9525;
+
+        let scheme = format_scheme(&theme);
+        let mut root = Element::new("a:theme", Some(A));
+        let mut elements = Element::new("a:themeElements", Some(A));
+        elements.push_element(colour_scheme(&theme));
+        elements.push_element(font_scheme(&theme));
+        elements.push_element(scheme);
+        root.push_element(elements);
+        let back = Theme::parse(&root);
+        assert_eq!(back.fill_styles, theme.fill_styles);
+        assert_eq!(back.line_styles, theme.line_styles);
+
+        // Asked for by a shape, the placeholder is that shape's colour.
+        let mine = Colour::scheme(Slot::Accent3);
+        let Fill::Gradient(gradient) = back.fill_style(2, &mine) else { panic!("not a gradient") };
+        assert_eq!(gradient.stops[0].1.base, Base::Scheme(Slot::Accent3));
+        assert_eq!(gradient.stops[0].1.shifts[0].name, "tint");
+        let line = back.line_style(1, &mine).expect("a line");
+        assert_eq!(line.width_emu, 9525);
+        assert_eq!(line.colour, mine);
+        assert!(back.line_style(0, &mine).is_none());
     }
 
     fn theme_from(inner: &str) -> Theme {

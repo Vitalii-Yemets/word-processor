@@ -134,7 +134,7 @@ impl Theme {
             colors: scheme.colors.iter().map(|value| (*value).to_owned()).collect(),
             major_font: self.major_font.clone(),
             minor_font: self.minor_font.clone(),
-            effect: self.effect,
+            ..self.clone()
         }
     }
 
@@ -146,7 +146,7 @@ impl Theme {
             colors: self.colors.clone(),
             major_font: pair.major.to_owned(),
             minor_font: pair.minor.to_owned(),
-            effect: self.effect,
+            ..self.clone()
         }
     }
 }

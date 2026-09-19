@@ -53,12 +53,16 @@ impl Editor {
 
         let mut shape = Shape::preset(preset.word(), SHAPE_WIDTH, SHAPE_HEIGHT);
         shape.name = preset.label().to_owned();
-        // A line has no inside, so it has no fill and is drawn thicker — a
-        // hairline is a line nobody can see.
+        // A line has no inside, so it has no fill, and Word draws one in the
+        // first accent at the theme's first line style — half a point.
         if !preset.is_closed() {
+            use wp_docx::colour::Colour;
+            use wp_docx::theme::Slot;
             shape.fill = wp_docx::fills::Fill::None;
-            shape.outline = Some("2F528F".to_owned());
-            shape.outline_emu = wp_docx::shapes::EMU_PER_POINT * 2;
+            shape.outline = Some(Colour::scheme(Slot::Accent1));
+            shape.outline_emu = 0;
+            shape.line_style = 1;
+            shape.ink = Some(Colour::scheme(Slot::Dark1));
         }
 
         let changed = self.document.insert_shape(&shape);
@@ -94,5 +98,79 @@ impl Editor {
         self.relayout();
         self.reveal_caret();
         self.edited(changed, "Text box added")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wp_docx::colour::{Base, Colour};
+    use wp_docx::fills::Fill;
+    use wp_docx::gallery::COLOR_SCHEMES;
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::theme::Slot;
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Event};
+
+    fn library() -> &'static FontLibrary {
+        Box::leak(Box::new(FontLibrary::scan_system()))
+    }
+
+    fn editor() -> Editor {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Some words")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library(), document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor
+    }
+
+    /// The colour the first shape on the first page is filled with.
+    fn painted(editor: &Editor) -> wp_raster::Color {
+        editor.pages[0].shapes[0].fill.colour().expect("a colour")
+    }
+
+    #[test]
+    fn a_shape_from_the_gallery_names_the_theme_and_changes_with_it() {
+        let mut editor = editor();
+        let rectangle = Preset::all().iter().position(|preset| preset.word() == "rect").unwrap();
+        editor.choose_shape(rectangle);
+
+        let shape = editor.document.shapes().into_iter().next().expect("the shape");
+        assert_eq!(shape.fill, Fill::Styled { index: 1, colour: Colour::scheme(Slot::Accent1) });
+        assert_eq!(shape.outline.map(|colour| colour.base), Some(Base::Scheme(Slot::Accent1)));
+        assert_eq!(shape.ink, Some(Colour::scheme(Slot::Light1)));
+        assert_eq!(painted(&editor), wp_raster::Color::rgb(0x44, 0x72, 0xC4), "the Office blue");
+
+        // Design ▸ Colors ▸ Red: the shape is red now, and the line round it
+        // is a darker red, because neither of them was ever a colour.
+        let red = COLOR_SCHEMES.iter().position(|scheme| scheme.name == "Red").unwrap();
+        editor.choose_theme_colors(red);
+        assert_eq!(painted(&editor), wp_raster::Color::rgb(0xC0, 0, 0));
+        assert_eq!(editor.pages[0].shapes[0].outline, Some(wp_raster::Color::rgb(0x60, 0, 0)));
+
+        // And the file says what the shape said: the style, not a colour.
+        let bytes = editor.document.save().expect("saving");
+        let reopened = Document::open(&bytes).expect("reopening");
+        let shape = reopened.shapes().into_iter().next().expect("the shape");
+        assert_eq!(shape.fill, Fill::Styled { index: 1, colour: Colour::scheme(Slot::Accent1) });
+        assert_eq!(shape.line_style, 2);
+    }
+
+    #[test]
+    fn a_line_from_the_gallery_is_the_theme_s_first_line_style_in_the_first_accent() {
+        let mut editor = editor();
+        let line = Preset::all().iter().position(|preset| preset.word() == "line").unwrap();
+        editor.choose_shape(line);
+        let shape = editor.document.shapes().into_iter().next().expect("the shape");
+        assert_eq!(shape.fill, Fill::None);
+        assert_eq!(shape.outline, Some(Colour::scheme(Slot::Accent1)));
+        assert_eq!(shape.line_style, 1);
+        assert_eq!(
+            editor.pages[0].shapes[0].outline,
+            Some(wp_raster::Color::rgb(0x44, 0x72, 0xC4))
+        );
     }
 }

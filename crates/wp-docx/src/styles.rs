@@ -689,7 +689,7 @@ mod tests {
             colors: Slot::ALL.iter().map(|_| "112233".to_owned()).collect(),
             major_font: "Georgia".to_owned(),
             minor_font: "Verdana".to_owned(),
-            effect: crate::theme::Effect::None,
+            ..Theme::default()
         }
     }
 

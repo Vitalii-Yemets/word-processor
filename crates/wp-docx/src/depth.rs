@@ -28,11 +28,11 @@ pub struct Depth {
     /// How far back the shape goes, and what colour its sides are. A depth with
     /// no colour takes the shape's own fill, which is what Word does.
     pub extrusion_emu: i64,
-    pub extrusion_colour: Option<String>,
+    pub extrusion_colour: Option<crate::colour::Colour>,
     /// The line drawn round the whole solid, which is not the shape's outline:
     /// it follows the silhouette of the solid and not the edge of the face.
     pub contour_emu: i64,
-    pub contour_colour: Option<String>,
+    pub contour_colour: Option<crate::colour::Colour>,
     /// What it is made of, by the format's own name: `matte`, `plastic`,
     /// `metal` and the rest. What it changes is how sharply the bevel catches
     /// the light.
@@ -93,9 +93,9 @@ pub fn read_depth(properties: &Element) -> Depth {
         bevel_top: child(solid, "bevelT").map(read_bevel),
         bevel_bottom: child(solid, "bevelB").map(read_bevel),
         extrusion_emu: number(solid, "extrusionH"),
-        extrusion_colour: child(solid, "extrusionClr").and_then(colour_of),
+        extrusion_colour: child(solid, "extrusionClr").and_then(crate::colour::read_colour),
         contour_emu: number(solid, "contourW"),
-        contour_colour: child(solid, "contourClr").and_then(colour_of),
+        contour_colour: child(solid, "contourClr").and_then(crate::colour::read_colour),
         material: solid.attribute_by_name("prstMaterial").unwrap_or_default().to_owned(),
     }
 }
@@ -161,9 +161,7 @@ pub fn depth_element(depth: &Depth) -> Option<Element> {
     {
         if let Some(colour) = colour {
             let mut element = Element::new(name, Some(crate::shapes::A));
-            let mut value = Element::new("a:srgbClr", Some(crate::shapes::A));
-            value.set_attribute("val", colour);
-            element.push_element(value);
+            element.push_element(crate::colour::colour_element(colour));
             solid.push_element(element);
         }
     }
@@ -220,10 +218,6 @@ fn child<'a>(parent: &'a Element, local: &str) -> Option<&'a Element> {
     parent.child_elements().find(|child| child.local_name() == local)
 }
 
-fn colour_of(parent: &Element) -> Option<String> {
-    child(parent, "srgbClr")?.attribute_by_name("val").map(str::to_uppercase)
-}
-
 fn number(element: &Element, name: &str) -> i64 {
     element.attribute_by_name(name).and_then(|value| value.parse().ok()).unwrap_or(0)
 }
@@ -269,9 +263,9 @@ mod tests {
             }),
             bevel_bottom: None,
             extrusion_emu: 457_200,
-            extrusion_colour: Some("2F528F".to_owned()),
+            extrusion_colour: Some(crate::colour::Colour::rgb("2F528F")),
             contour_emu: 12_700,
-            contour_colour: Some("000000".to_owned()),
+            contour_colour: Some(crate::colour::Colour::rgb("000000")),
             material: "metal".to_owned(),
         };
         let written = depth_element(&depth).expect("a solid shape writes something");

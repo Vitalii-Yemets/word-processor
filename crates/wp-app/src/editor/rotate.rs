@@ -187,7 +187,7 @@ mod tests {
                 name: "Box".to_owned(),
                 width_emu: 914_400,
                 height_emu: 457_200,
-                fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                fill: wp_docx::fills::Fill::solid("4472C4"),
                 anchor: Some(wp_docx::anchor::Anchor {
                     wrap: wp_docx::anchor::Wrap::None,
                     horizontal: wp_docx::anchor::Placement::Offset(across),

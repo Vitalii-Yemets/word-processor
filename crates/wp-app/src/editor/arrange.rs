@@ -324,7 +324,7 @@ mod tests {
                 name: name.to_owned(),
                 width_emu: 914_400,
                 height_emu: 914_400,
-                fill: wp_docx::fills::Fill::Solid("4472C4".to_owned()),
+                fill: wp_docx::fills::Fill::solid("4472C4"),
                 anchor: Some(wp_docx::anchor::Anchor::default()),
                 ..wp_docx::shapes::Shape::default()
             };
