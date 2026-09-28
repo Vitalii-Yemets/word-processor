@@ -772,6 +772,7 @@
 = Saved {0}
 = Saved {0} as OpenDocument Text
 = Saved {0} as Rich Text Format
+= Saved {0} as a Word 97-2003 Document
 = Saved {0} as a web page
 = Saved {0} pages to {1}
 = Scale
@@ -1054,6 +1055,7 @@
 = Window
 = With
 = With one, the file itself cannot be read without it.
+= Word 97-2003 Document (*.doc)
 = Word 97-2003 Documents (*.doc)
 = Word Count
 = Word Document (*.docx)

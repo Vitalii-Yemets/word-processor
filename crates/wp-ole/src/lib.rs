@@ -772,15 +772,18 @@ fn header(
     // Version three, little-endian, five hundred and twelve byte sectors and
     // sixty-four byte mini-sectors: what Office writes and what every reader
     // of one has understood since 1995.
-    out[0x18..0x1A].copy_from_slice(&3u16.to_le_bytes());
-    out[0x1A..0x1C].copy_from_slice(&0x003Eu16.to_le_bytes());
+    // The minor version first and the major after it, as the format lays
+    // them out: written the other way round they said version 62, which a
+    // reader that checks turns away.
+    out[0x18..0x1A].copy_from_slice(&0x003Eu16.to_le_bytes());
+    out[0x1A..0x1C].copy_from_slice(&3u16.to_le_bytes());
     out[0x1C..0x1E].copy_from_slice(&0xFFFEu16.to_le_bytes());
     out[0x1E..0x20].copy_from_slice(&9u16.to_le_bytes());
     out[0x20..0x22].copy_from_slice(&6u16.to_le_bytes());
-    // Version three does not count its directory sectors, and says so with a
-    // nought; version four does. Written all the same, because a reader that
-    // wants it is happier with the truth than with a nought.
-    out[0x28..0x2C].copy_from_slice(&(directory_sectors as u32).to_le_bytes());
+    // Version three does not count its directory sectors: the format says
+    // the field must be nought, and a strict reader holds it to that.
+    let _ = directory_sectors;
+    out[0x28..0x2C].copy_from_slice(&0u32.to_le_bytes());
     out[0x2C..0x30].copy_from_slice(&(fat_sectors as u32).to_le_bytes());
     out[0x30..0x34].copy_from_slice(&first_directory.to_le_bytes());
     out[0x38..0x3C].copy_from_slice(&MINI_CUTOFF.to_le_bytes());
@@ -801,6 +804,21 @@ fn header(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The header's versions where the format puts them: the minor at 0x18
+    /// and the major at 0x1A. Written the other way round the file said it
+    /// was version sixty-two, which this reader never looked at and Word and
+    /// LibreOffice both refuse — every encrypted document and macro project
+    /// this program wrote went out that way until a `.doc` was held to
+    /// LibreOffice.
+    #[test]
+    fn the_header_says_version_three_where_the_format_says_it() {
+        let bytes = Builder::new().stream("A", vec![1; 10]).build();
+        assert_eq!(&bytes[0x18..0x1A], &0x003Eu16.to_le_bytes(), "the minor version");
+        assert_eq!(&bytes[0x1A..0x1C], &3u16.to_le_bytes(), "the major version");
+        assert_eq!(&bytes[0x1C..0x1E], &0xFFFEu16.to_le_bytes(), "the byte order");
+        assert_eq!(&bytes[0x28..0x2C], &[0, 0, 0, 0], "version three counts no directory sectors");
+    }
 
     #[test]
     fn something_that_is_not_a_compound_file_is_refused() {

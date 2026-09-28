@@ -84,6 +84,7 @@ fn main() -> ExitCode {
         (Some("text"), 2) => text(&arguments[1]),
         (Some("outline"), 2) => outline(&arguments[1]),
         (Some("roundtrip"), 3) => roundtrip(&arguments[1], &arguments[2]),
+        (Some("convert"), 3) => convert(&arguments[1], &arguments[2]),
         (Some("corpus"), 1) => corpus_command("corpus"),
         (Some("corpus"), 2) => corpus_command(&arguments[1]),
         (Some("fidelity"), 1) => fidelity_command("corpus"),
@@ -138,6 +139,9 @@ Usage: wp <command>
   text <file.docx>             print the document text
   outline <file.docx>          print the structure with formatting
   roundtrip <in> <out>         open and save, checking nothing changed
+  convert <in> <out>           open anything that opens, and write what the
+                               out file's extension says: .doc, .rtf, .odt,
+                               or a Word package
   corpus [directory]           open, save and compare every document in a
                                directory of real files (default: corpus/)
   fidelity [directory]         draw every document in it and score the pages
@@ -434,6 +438,32 @@ fn roundtrip(input: &str, output: &str) -> Result<(), String> {
         report_differences(&original, &saved);
         Err("the document changed on save".to_owned())
     }
+}
+
+/// Opens a document of any kind this program reads and writes it as the kind
+/// the output's name says.
+fn convert(input: &str, output: &str) -> Result<(), String> {
+    let document = open(input)?;
+    let extension = Path::new(output)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    let bytes = match extension.as_str() {
+        "doc" => wp_doc::save(&document),
+        "rtf" => wp_rtf::write(&document),
+        "odt" => wp_odt::save(&document).map_err(|error| format!("cannot save: {error}"))?,
+        _ => {
+            let mut document = document;
+            if let Some(kind) = wp_docx::kinds::Kind::of_extension(&extension) {
+                document.set_kind(kind);
+            }
+            document.save().map_err(|error| format!("cannot save: {error}"))?
+        }
+    };
+    write(output, &bytes)?;
+    outln!("{input} written as {output}: {} bytes", bytes.len());
+    Ok(())
 }
 
 /// Opens, saves and compares every document in a directory of real files.

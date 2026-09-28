@@ -2624,6 +2624,9 @@ language = Deutsch
 = Saved {0} as Rich Text Format
 > {0} im Rich-Text-Format gespeichert
 
+= Saved {0} as a Word 97-2003 Document
+> {0} als Word 97-2003-Dokument gespeichert
+
 = Saved {0} as a web page
 > {0} als Webseite gespeichert
 
@@ -3202,6 +3205,9 @@ language = Deutsch
 
 = With one, the file itself cannot be read without it.
 > Mit einem kann die Datei selbst ohne dieses nicht gelesen werden.
+
+= Word 97-2003 Document (*.doc)
+> Word 97-2003-Dokument (*.doc)
 
 = Word 97-2003 Documents (*.doc)
 > Word 97-2003-Dokumente (*.doc)

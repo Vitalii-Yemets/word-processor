@@ -153,6 +153,7 @@ pub const SAVE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
         label: "Word Macro-Enabled Document (*.docm)",
         pattern: "*.docm",
     },
+    wp_shell::dialog::FileFilter { label: "Word 97-2003 Document (*.doc)", pattern: "*.doc" },
     wp_shell::dialog::FileFilter { label: "Word Template (*.dotx)", pattern: "*.dotx" },
     wp_shell::dialog::FileFilter {
         label: "Word Macro-Enabled Template (*.dotm)",
@@ -340,6 +341,50 @@ impl Editor {
                 crate::messages::with("Saved {0} as a web page", &[&path.display().to_string()]);
             self.update_title();
             self.remember_recent(path);
+            return true;
+        }
+        // A Word 97-2003 document is written as one — the binary file, of
+        // what the model holds that it has a place for — rather than as the
+        // package with the old extension on it, which is what saving a `.doc`
+        // back used to do.
+        if is_doc_path(path) {
+            if self.document.password().is_some() {
+                let message = String::from(
+                    "Cannot save a document with a password as a Word 97-2003 Document: save it as a Word Document to keep the password",
+                );
+                wp_shell::dialog::show_error(&message);
+                self.status = message;
+                return false;
+            }
+            if self.document.has_macros() {
+                let question = crate::messages::with(
+                    "The following features cannot be saved in macro-free documents:\n\n    \u{2022} VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?",
+                    &[path.file_name().and_then(|name| name.to_str()).unwrap_or(UNTITLED)],
+                );
+                if !wp_shell::dialog::ask_yes_no(&question) {
+                    self.status = String::from("Not saved");
+                    return false;
+                }
+            }
+            let bytes = wp_doc::save(&self.document);
+            if let Err(error) = std::fs::write(path, &bytes) {
+                let message = crate::messages::with(
+                    "Cannot write {0}: {1}",
+                    &[&path.display().to_string(), &error.to_string()],
+                );
+                wp_shell::dialog::show_error(&message);
+                self.status = message;
+                return false;
+            }
+            let _ = self.document.mark_saved();
+            self.file = Some(path.to_path_buf());
+            self.status = crate::messages::with(
+                "Saved {0} as a Word 97-2003 Document",
+                &[&path.display().to_string()],
+            );
+            self.update_title();
+            self.remember_recent(path);
+            self.saved_to_disk();
             return true;
         }
         // A Rich Text file is written as one: what the model holds, as RTF,
@@ -1020,6 +1065,33 @@ mod tests {
         assert_eq!(editor.document_name(), "letter.odt");
         editor.document.set_caret(wp_docx::TextPosition::new(0, 1));
         assert!(editor.document.character_format_here().bold, "the bold was lost");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_word_97_document_is_saved_and_opened_as_one() {
+        let folder = folder("doc");
+        let path = folder.join("memo.doc");
+        let mut editor = editor("Dear reader");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        editor.document.extend_selection_to(wp_docx::TextPosition::new(0, 4));
+        editor.document.apply_run_formatting(&wp_docx::model::RunProperties {
+            bold: Some(true),
+            ..Default::default()
+        });
+        assert!(editor.write_document(&path));
+        let written = std::fs::read(&path).unwrap();
+        assert!(wp_doc::looks_binary(&written), "not a Word 97-2003 file");
+        assert!(editor.title.contains("[Compatibility Mode]"), "{}", editor.title);
+
+        let mut editor = self::editor("");
+        editor.open_path(&path);
+        assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 1));
+        assert!(editor.document.character_format_here().bold, "the bold was lost");
+        // And saved again where it came from, it is still one.
+        assert!(editor.save_now());
+        assert!(wp_doc::looks_binary(&std::fs::read(&path).unwrap()), "saved back as a package");
         let _ = std::fs::remove_dir_all(folder);
     }
 

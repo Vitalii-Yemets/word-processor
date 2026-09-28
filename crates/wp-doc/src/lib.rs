@@ -17,17 +17,20 @@
 //! pieces or not; paragraphs with their formatting and their styles; runs
 //! with theirs; tables; bulleted and numbered lists; links from fields;
 //! pictures — bitmaps and metafiles alike — from the data stream and the
-//! drawing store; the page size and margins. Not writing: a Word 97-2003
-//! file this program wrote could only be checked by Word, and is named in
-//! the roadmap as its own item.
+//! drawing store; the page size and margins.
+//!
+//! Writing: [`save`], a Word 97-2003 file of what the model holds that the
+//! format has a place for — see [`write`] for what that is and is not.
 
 #![forbid(unsafe_code)]
 
 pub mod fib;
 mod read;
 pub mod sprm;
+pub mod write;
 
 pub use read::{read, LinkFound, PictureFound, Reading, PICTURE_MARK};
+pub use write::write as save;
 
 use wp_docx::{Document, TextPosition};
 

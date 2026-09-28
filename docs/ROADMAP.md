@@ -5014,7 +5014,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the "Don't show this message again" box on the notice; and the
   italic the layout cannot draw without an italic face, which is the
   layout's.
-- [ ] **G8. Writing the binary `.doc`.** Word 97-2003 Document in Save As:
+- [x] **G8. Writing the binary `.doc`.** Word 97-2003 Document in Save As:
   the compound file written — header, FAT, directory, mini stream — and a
   document in it with one piece of text, its formatting pages and bin
   tables, a stylesheet of the styles used, the font table, the two lists,
@@ -5022,6 +5022,73 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   page. Reading it back is not the test; Word opening it is, and until
   something that is not this program can be made to open one here,
   LibreOffice reading it is what stands in.
+  *Done when:* a document of one of everything is saved as a `.doc`,
+  LibreOffice opens it and makes a `.docx` of it, and the `.docx` has the
+  text, the formatting, the heading, the two lists, the table, the link, the
+  picture and the margins that went in.
+  `wp_doc::save` writes Word 97's file (`crates/wp-doc/src/write.rs`). In the
+  `WordDocument` stream: the File Information Block — nine hundred bytes, its
+  ninety-three offset pairs, and the four fields the format calls reserved
+  that Word 97 still fills with where the text begins and ends — then the
+  text as one piece of two bytes a character, then the section's
+  properties, then the pages of character and of paragraph formatting, each
+  packed as full as it will go. In `1Table`: the piece table, the two bin
+  tables, the stylesheet, the font table, the section table, the field table,
+  the two lists with their nine levels each and the overrides a paragraph
+  names them by, and Word 97's five hundred bytes of document properties. In
+  `Data`, each picture behind the sixty-eight bytes that say how big it is
+  drawn, as a picture-frame shape whose one property names the store entry
+  that follows it, holding the PNG or the JPEG itself.
+  What the text holds: paragraphs, with alignment, indents twice over (the
+  Word 97 sprms and the Word 2000 ones, as Word writes a `.doc`), spacing,
+  line spacing, keeping, widow control, outline level, tab stops and list
+  membership; runs, with bold, italic, strike, double strike, capitals, small
+  capitals, hidden, underline of six kinds, size, font, colour, highlight,
+  raised and lowered, position and language; tabs, line, page and column
+  breaks, soft and non-breaking hyphens; tables of one level — cell marks,
+  row marks carrying the cell edges and single lines round every cell, as a
+  table made here has them; links as `HYPERLINK` fields with their three
+  marks and their entries in the field table; and pictures in the line. The
+  stylesheet has Normal, made of what the document's defaults resolve to,
+  the headings in the nine places Word keeps for them, Default Paragraph
+  Font, and every other style the text uses — with those they are based on —
+  after the fifteen fixed places. A document that ends in a table gets the
+  paragraph after it the format requires.
+  In the program: Word 97-2003 Document is third in Save As, where Word has
+  it; a `.doc` opened and saved goes back as one, in Compatibility Mode as
+  before; a document with macros is asked about as a macro-free save is; and
+  one with a password is refused with the reason, since the old format's
+  encryption is not written here. `wp convert <in> <out>` writes whatever
+  opens as whatever the output's extension says, `.doc` included.
+  *Proven by:* `crates/wp-doc/tests/writing.rs` — a document with a heading,
+  a paragraph of every kind of run formatting and a tab, two bulleted and two
+  numbered items, a two-by-two table with its column widths, a link over a
+  word, a PNG, Cyrillic, and margins of its own — written, checked to be a
+  compound file with Word 97's block, read back by this program's reader,
+  and then opened by LibreOffice and converted to a `.docx`, in which every
+  one of those is found as it went in: the heading's style, the run
+  formatting, the paragraph's alignment and indent, a bullet list and a
+  decimal one, the table's widths to the twip, the link's address and word,
+  the picture's bytes and size, and the margins. The editor's own test saves
+  a `.doc`, opens it, and saves it back as one.
+  *Found along the way:* every compound file this program wrote had its
+  header's two version numbers the wrong way round — the minor where the
+  major goes — and counted its directory sectors where version three must
+  write nought. This program's reader looks at neither; LibreOffice refused
+  the file outright, and did the same with LibreOffice's own `.doc` streams
+  put into a compound file here, which is how the fault was found. The same
+  header went on every encrypted `.docx` and every macro project in a
+  `.docm` this program saved; they are all right now, and `wp-ole` holds the
+  header to the format's layout. And a `.doc` opened and saved went back
+  under its own name as a `.docx` package.
+  *Not done:* Word itself opening the files — there is no Word here, and
+  LibreOffice stands in, as the item says. And what the model has that this
+  writer leaves out: headers and footers, footnotes and endnotes, comments,
+  tracked changes, bookmarks, fields other than links, sections after the
+  first, floating pictures, shapes, text boxes and charts, pictures that are
+  not PNG or JPEG, tables in tables, merged and shaded cells, paragraph
+  borders and shading, character spacing and scale, the summary information
+  streams, macros, and a password.
 - [ ] **G9. The rest of the Rich Text reader.** `.rtf` opens and reads its
   text, its formatting, its tables and its pictures; what it does not read is
   headers and footers, footnotes, sections and page setup, nested tables and

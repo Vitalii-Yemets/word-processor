@@ -1318,7 +1318,7 @@ fn apply_character(properties: &mut RunProperties, sprms: &[Sprm<'_>], fonts: &[
 }
 
 /// The language tag for a Windows language number, for the common ones.
-fn language_tag(number: u16) -> Option<&'static str> {
+pub(crate) fn language_tag(number: u16) -> Option<&'static str> {
     Some(match number {
         1033 => "en-US",
         2057 => "en-GB",

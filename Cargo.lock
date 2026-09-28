@@ -102,6 +102,7 @@ dependencies = [
  "wp-docx",
  "wp-image",
  "wp-ole",
+ "wp-raster",
  "wp-text",
 ]
 
