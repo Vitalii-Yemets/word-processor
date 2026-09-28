@@ -4535,7 +4535,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   heading, which this does not attempt; a line is a heading here by the one
   rule above. Word's Style Gallery button on the review dialog. And a link
   made during a review is made outright rather than marked: taking it back is
-  Reject All or the Remove Hyperlink command, not the Review tab.
+  Reject All or the Insert tab's Remove Link, not the Review tab.
 - [ ] **F11. Math AutoCorrect.** The tab that turns `\alpha` into α as it is
   typed, and the list behind it. It waits on the equation editor, which is
   where the result has to go. Named in **F5**.
