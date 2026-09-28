@@ -1414,6 +1414,30 @@ impl Editor {
                 self.document.set_hyphenation_zone(Some(360));
                 self.relayout();
             }
+            // The newer kinds of colour glyph, from the fonts the build image
+            // has fontTools write: a tree of paints of every kind, then the
+            // layers of the older kind, an Apple picture and three SVG
+            // drawings, each in a line of its own and large enough to see.
+            "colour" => {
+                self.document.set_caret(wp_docx::TextPosition::new(2, 0));
+                for (family, text) in [
+                    ("WP Colour One", "\u{E000}\u{E001}\u{E002}\u{E003}\u{E004}\u{E005}"),
+                    ("WP Colour One", "\u{E006}\u{E007}\u{E008}\u{E009}\u{E00A}\u{E00B}\u{E010}"),
+                    ("WP Colour Pictures", "\u{E000}\u{E001}\u{E002}"),
+                    ("WP Colour Drawings", "\u{E000}\u{E001}\u{E002}"),
+                ] {
+                    let from = self.document.caret();
+                    self.document.type_text(text);
+                    let to = self.document.caret();
+                    self.document.set_caret(from);
+                    self.document.extend_selection_to(to);
+                    self.document.set_font(family);
+                    self.document.set_size(40.0);
+                    self.document.set_caret(to);
+                    self.document.press_enter();
+                }
+                self.relayout();
+            }
             // A section written down the page: Japanese standing upright in
             // columns that go from right to left, with a Latin word lying on
             // its side, a year set across the column, and a gloss set as two

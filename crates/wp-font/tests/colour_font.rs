@@ -41,11 +41,11 @@ fn an_emoji_comes_back_as_a_picture() {
         assert!(bitmap.pixels_per_em > 0);
         // Every one of them is a PNG, and says so in its first eight bytes.
         assert_eq!(
-            &bitmap.png[..8],
+            &bitmap.data[..8],
             &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A],
             "{emoji} is not a PNG"
         );
-        assert!(bitmap.png.len() > 100, "{emoji} is an empty picture");
+        assert!(bitmap.data.len() > 100, "{emoji} is an empty picture");
     }
 }
 

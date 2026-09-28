@@ -142,6 +142,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk 
  && find /usr/share/fonts/opentype/noto -name '*.tt[cf]' ! -name 'NotoSansCJK-Regular.ttc' -delete \
  && rm -rf /var/lib/apt/lists/*
 
+# The newer kinds of colour glyph: a COLR version 1 font, whose glyphs are
+# trees of gradients, transforms and blend modes; an sbix font, Apple's
+# pictures per glyph; and an SVG font, a drawing per glyph. No font of any of
+# the three is packaged for this Debian, so fontTools - which is, and is an
+# implementation of the format that is not this program - writes them, from
+# tools/make-colour-fonts.py, the way LibreOffice writes the .doc files the
+# old-format readers are held to. Every glyph is in the private use area, so
+# none of them stands in for a real emoji anywhere else. Test fonts: nothing
+# of them reaches the product.
+COPY tools/make-colour-fonts.py /tmp/make-colour-fonts.py
+RUN apt-get update && apt-get install -y --no-install-recommends python3-fonttools \
+ && python3 /tmp/make-colour-fonts.py /usr/share/fonts/truetype/wp-colour \
+ && rm -rf /var/lib/apt/lists/* /tmp/make-colour-fonts.py
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

@@ -19,6 +19,7 @@
 #![forbid(unsafe_code)]
 
 mod canvas;
+pub mod compose;
 mod path;
 mod png;
 mod raster;

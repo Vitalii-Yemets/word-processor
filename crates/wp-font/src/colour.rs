@@ -18,11 +18,15 @@
 //! same idea. A bitmap is a photograph of a glyph: it does not scale, so a font
 //! holds several sizes and the nearest is used.
 //!
-//! **Drawings.** `SVG ` holds an SVG document per glyph, and Apple's `sbix`
-//! holds pictures the way `CBDT` does with the sizes listed rather than
-//! indexed. Neither is here: there is no font of either kind to hold a reader
-//! of it to, and a reader nobody has ever run is a claim rather than a feature.
-//! Both are named in the roadmap.
+//! Apple's `sbix` is the same idea again, with the sizes listed rather than
+//! indexed, a picture placed by its bottom edge rather than its top, and a
+//! glyph allowed to say it is the same picture as another.
+//!
+//! **Drawings.** `SVG ` holds SVG documents, each drawing one glyph or a run
+//! of them; what is read here is which document a glyph is in. Drawing it is
+//! the SVG reader's. And `COLR` version 1 is a drawing too, written as a tree
+//! of gradients and transforms rather than as a document: see
+//! [`crate::paint`].
 //!
 //! # What a palette is for
 //!
@@ -62,12 +66,37 @@ pub struct Bitmap<'a> {
     /// The size the picture was drawn for, in pixels to the em. A glyph asked
     /// for at another size is this one scaled.
     pub pixels_per_em: u16,
-    /// How far left of the pen the picture starts, and how far above the
-    /// baseline its top edge is, in the pixels of that size.
-    pub bearing_x: i8,
-    pub bearing_y: i8,
-    /// The picture itself. PNG, which every font of this kind uses.
-    pub png: &'a [u8],
+    /// How far right of the pen the picture starts, in the pixels of that
+    /// size.
+    pub bearing_x: i16,
+    /// How far above the baseline its top edge is — or its bottom edge, where
+    /// `from_bottom` says so, which is how `sbix` places a picture: the top
+    /// is then that and the picture's height.
+    pub bearing_y: i16,
+    pub from_bottom: bool,
+    /// The picture itself, in the format given.
+    pub data: &'a [u8],
+    pub format: ImageFormat,
+}
+
+/// What kind of picture a glyph is kept as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageFormat {
+    Png,
+    Jpeg,
+    Tiff,
+}
+
+/// Which SVG document draws a glyph, as the font keeps it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SvgDocument<'a> {
+    /// The document, as written — which may be compressed with gzip, and
+    /// then begins with the two bytes that say so.
+    pub data: &'a [u8],
+    /// The glyphs it draws: the one asked about is somewhere among them, and
+    /// is the element with the id `glyph` and its number.
+    pub first: GlyphId,
+    pub last: GlyphId,
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +133,7 @@ impl<'a> Palette<'a> {
     }
 
     /// One colour of the first palette.
-    fn colour(&self, index: u16) -> Option<Rgba> {
+    pub(crate) fn colour(&self, index: u16) -> Option<Rgba> {
         let index = usize::from(index);
         if index >= self.entries {
             return None;
@@ -360,7 +389,7 @@ fn read_image(piece: &[u8], format: u16, pixels_per_em: u16) -> Option<Bitmap<'_
             reader.skip(1).ok()?; // the advance, which hmtx says as well
             let length = reader.u32().ok()? as usize;
             let at = reader.position();
-            Some(Bitmap { pixels_per_em, bearing_x, bearing_y, png: piece.get(at..at + length)? })
+            Some(cbdt(pixels_per_em, bearing_x, bearing_y, piece.get(at..at + length)?))
         }
         // The same with the vertical metrics as well.
         18 => {
@@ -371,22 +400,139 @@ fn read_image(piece: &[u8], format: u16, pixels_per_em: u16) -> Option<Bitmap<'_
             reader.skip(4).ok()?;
             let length = reader.u32().ok()? as usize;
             let at = reader.position();
-            Some(Bitmap { pixels_per_em, bearing_x, bearing_y, png: piece.get(at..at + length)? })
+            Some(cbdt(pixels_per_em, bearing_x, bearing_y, piece.get(at..at + length)?))
         }
         // No metrics at all: the strike said them once for every glyph in it.
         19 => {
             let mut reader = Reader::new(piece);
             let length = reader.u32().ok()? as usize;
             let at = reader.position();
-            Some(Bitmap {
-                pixels_per_em,
-                bearing_x: 0,
-                bearing_y: pixels_per_em.min(127) as i8,
-                png: piece.get(at..at + length)?,
-            })
+            Some(cbdt(pixels_per_em, 0, pixels_per_em.min(127) as i8, piece.get(at..at + length)?))
         }
         _ => None,
     }
+}
+
+/// A picture of a `CBDT` font, which are all PNG placed by their top edge.
+fn cbdt(pixels_per_em: u16, bearing_x: i8, bearing_y: i8, png: &[u8]) -> Bitmap<'_> {
+    Bitmap {
+        pixels_per_em,
+        bearing_x: i16::from(bearing_x),
+        bearing_y: i16::from(bearing_y),
+        from_bottom: false,
+        data: png,
+        format: ImageFormat::Png,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bitmaps: sbix
+// ---------------------------------------------------------------------------
+
+/// A glyph's picture in Apple's table of them.
+///
+/// Every size the font holds lists every glyph, with an empty entry for one
+/// it has no picture of at that size; the nearest size that has one is taken,
+/// the same as for `CBDT`. An entry may say it is the same picture as another
+/// glyph's, which is followed once.
+pub(crate) fn sbix_bitmap(
+    table: &[u8],
+    glyph: GlyphId,
+    glyph_count: u16,
+    wanted: u16,
+) -> Option<Bitmap<'_>> {
+    sbix_entry(table, glyph, glyph_count, wanted, true)
+}
+
+fn sbix_entry(
+    table: &[u8],
+    glyph: GlyphId,
+    glyph_count: u16,
+    wanted: u16,
+    follow: bool,
+) -> Option<Bitmap<'_>> {
+    if glyph.0 >= glyph_count {
+        return None;
+    }
+    let mut reader = Reader::new(table);
+    reader.skip(4).ok()?; // version and flags
+    let strikes = reader.u32().ok()? as usize;
+
+    let mut best: Option<(u16, &[u8])> = None;
+    for index in 0..strikes.min(64) {
+        let mut offset = Reader::at(table, 8 + index * 4).ok()?;
+        let strike = offset.u32().ok()? as usize;
+        let mut header = Reader::at(table, strike).ok()?;
+        let pixels_per_em = header.u16().ok()?;
+        let entry = |number: usize| -> Option<usize> {
+            let mut at = Reader::at(table, strike + 4 + number * 4).ok()?;
+            Some(at.u32().ok()? as usize)
+        };
+        let from = entry(usize::from(glyph.0))?;
+        let to = entry(usize::from(glyph.0) + 1)?;
+        if to <= from + 8 || pixels_per_em == 0 {
+            continue;
+        }
+        let Some(piece) = table.get(strike.checked_add(from)?..strike.checked_add(to)?) else {
+            continue;
+        };
+        best = Some(match best {
+            Some(held) if nearer(held.0, pixels_per_em, wanted) => held,
+            _ => (pixels_per_em, piece),
+        });
+    }
+
+    let (pixels_per_em, piece) = best?;
+    let mut reader = Reader::new(piece);
+    let bearing_x = reader.i16().ok()?;
+    let bearing_y = reader.i16().ok()?;
+    let kind = reader.tag().ok()?;
+    let data = piece.get(8..)?;
+    let format = match &kind {
+        b"png " => ImageFormat::Png,
+        b"jpg " => ImageFormat::Jpeg,
+        b"tiff" => ImageFormat::Tiff,
+        // The same picture as another glyph's, followed once: a picture that
+        // points at a picture that points back is no picture.
+        b"dupe" if follow => {
+            let other = u16::from_be_bytes([*data.first()?, *data.get(1)?]);
+            return sbix_entry(table, GlyphId(other), glyph_count, wanted, false);
+        }
+        _ => return None,
+    };
+    Some(Bitmap { pixels_per_em, bearing_x, bearing_y, from_bottom: true, data, format })
+}
+
+// ---------------------------------------------------------------------------
+// Drawings: SVG
+// ---------------------------------------------------------------------------
+
+/// The SVG document that draws a glyph, if the font has one for it.
+pub(crate) fn svg_document(table: &[u8], glyph: GlyphId) -> Option<SvgDocument<'_>> {
+    let mut reader = Reader::new(table);
+    reader.skip(2).ok()?; // version
+    let list = reader.u32().ok()? as usize;
+    let mut header = Reader::at(table, list).ok()?;
+    let count = usize::from(header.u16().ok()?);
+    // The entries are in order of their glyphs and do not overlap.
+    let (mut low, mut high) = (0usize, count);
+    while low < high {
+        let middle = (low + high) / 2;
+        let mut entry = Reader::at(table, list + 2 + middle * 12).ok()?;
+        let first = entry.u16().ok()?;
+        let last = entry.u16().ok()?;
+        if glyph.0 < first {
+            high = middle;
+        } else if glyph.0 > last {
+            low = middle + 1;
+        } else {
+            let at = list.checked_add(entry.u32().ok()? as usize)?;
+            let length = entry.u32().ok()? as usize;
+            let data = table.get(at..at.checked_add(length)?)?;
+            return Some(SvgDocument { data, first: GlyphId(first), last: GlyphId(last) });
+        }
+    }
+    None
 }
 
 #[cfg(test)]

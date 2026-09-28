@@ -31,4 +31,4 @@ mod tables;
 pub use adler32::{adler32, Adler32};
 pub use crc32::{crc32, Crc32};
 pub use deflate::{compress, compress_stored, compress_zlib};
-pub use inflate::{inflate, inflate_limited, inflate_piece, inflate_zlib, Error};
+pub use inflate::{inflate, inflate_gzip, inflate_limited, inflate_piece, inflate_zlib, Error};

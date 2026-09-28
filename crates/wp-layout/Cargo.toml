@@ -17,6 +17,8 @@ wp-bidi = { path = "../wp-bidi" }
 wp-break = { path = "../wp-break" }
 wp-raster = { path = "../wp-raster" }
 wp-xml = { path = "../wp-xml" }
+wp-svg = { path = "../wp-svg" }
+wp-deflate = { path = "../wp-deflate" }
 
 [lints]
 workspace = true

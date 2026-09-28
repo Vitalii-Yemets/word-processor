@@ -3892,16 +3892,109 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   several. Drawing them all means keeping every layer's glyph in the cut-down
   font and writing one text run per colour — small work, and not work to do
   blind.
-- [ ] **E18. The rest of what a colour glyph can be.** Three things **E10**
+- [x] **E18. The rest of what a colour glyph can be.** Three things **E10**
   left. `COLR` version 1: the gradients, the transforms and the compositing
-  modes a layered glyph may be drawn with, which a font using them loses here
-  and shows flat. `sbix`: Apple's table of pictures per glyph per size, the
+  modes a layered glyph may be drawn with, which a font using them lost here
+  and showed flat. `sbix`: Apple's table of pictures per glyph per size, the
   same idea as `CBDT` with the sizes listed rather than indexed. `SVG `: a
   drawing per glyph, which needs the drawing language rather than a table —
   `wp-svg` is already here and would be what reads it. Each needs a font of
   its kind on the build image to be held to, which is the first thing to
   settle; and with the layers understood, a layered emoji can go into a PDF as
   its layers rather than as its base glyph.
+  *Done when:* a glyph of each kind draws on the screen and in a PDF as the
+  format says it draws, held at points where the format says what colour it
+  is.
+  **The fonts, settled first.** No font of any of the three kinds is packaged
+  for the build image's Debian, and data from anywhere else is not fetched
+  (**K3**). fontTools is packaged, and is an implementation of the format
+  that is not this one: so `tools/make-colour-fonts.py` has it write a
+  `COLR` version 1 font, an `sbix` font and an `SVG ` font while the image is
+  built, the way LibreOffice writes the `.doc` files the old-format readers
+  are held to. Every glyph is in the private use area, so none stands in for
+  a real emoji elsewhere, and what each glyph is drawn as is written down
+  beside it in the script.
+  **`COLR` version 1** (`crates/wp-font/src/paint.rs`): every one of the
+  thirty-two paint formats read into a tree — layers, solid colours in the
+  palette's colour or the text's, the three gradients and their runs of
+  colour, a glyph's outline as a clip, another colour glyph drawn here with
+  its own clip box, every transform turned into one matrix about its centre,
+  and the twenty-eight composite modes — with the glyph's clip box. The
+  angles of a sweep are written half a turn short, a bias of one, which is
+  what lets the format's number reach a whole turn: fontTools writes them
+  that way and so does every font made with it, though the draft of the
+  specification this was first written from did not say so, and the first
+  reading had every sweep start at -180°. A tree that points back into
+  itself or grows past any real glyph is refused.
+  **Painted** (`crates/wp-layout/src/colourglyph.rs`, on
+  `crates/wp-raster/src/compose.rs`): each node is a picture the size of the
+  glyph's box, kept only inside an outline, painted in a space its
+  transforms move, put onto another by its mode — the Porter–Duff operators
+  and the W3C blend modes, separable and not, premultiplied. The gradients
+  are the standard's: a linear one's colours run parallel to its third
+  point's line, a radial one is the two-circle gradient with the larger
+  distance winning and nothing painted where the radius is not positive, a
+  sweep runs anticlockwise from its first angle to its second and paints
+  nothing past it; and their colours are mixed as the format requires, in
+  linear light, premultiplied — which is why halfway from red to blue is 188
+  of each and not 128, and why a test that expected 128 was the thing that
+  was wrong.
+  **`sbix`** is read into the same picture a `CBDT` glyph is — the nearest
+  size, placed by its bottom edge, a glyph that is the same picture as
+  another followed once, PNG, JPEG and TIFF decoded by the decoders already
+  here. **`SVG `**: the document a glyph is in is found, decompressed with
+  gzip where it is — `wp-deflate` reads gzip now, held to what the system's
+  gzip writes — and the element `glyph` and its number drawn by a new
+  `wp_svg::Document`: groups, `use`, every transform, rectangles with round
+  corners, circles, ellipses, polygons and paths, fills of every CSS colour
+  and of `currentColor`, linear and radial gradients in either unit and
+  inheriting from the gradient they name, `opacity`, `fill-opacity`,
+  `fill-rule`, `clip-path`, `style`. Every kind comes out as one
+  `GlyphPicture` — pixels and where they go against the pen — which the
+  screen draws and the PDF carries, cached by size and by the colour of the
+  text, which a tree may name.
+  **In a PDF**, a glyph drawn as a tree, a picture or a drawing goes in as a
+  picture painted four times finer than the text, with its transparency; a
+  glyph of layers goes in as its layers, one run of text each in its own
+  colour, the layer glyphs carried in the cut font. What each stands for is
+  said around it as the stretch's own text, and under a picture the glyph
+  itself is written as text in no colour, which is what Poppler copies out.
+  Checked outside the repository in a container thrown away afterwards:
+  Poppler and MuPDF both draw a page of every glyph as the screen does, and
+  Poppler copies each of them out as its character. That check found a fault
+  in the test fonts rather than in the program — every glyph's left side
+  bearing written as nought, which FreeType places outlines by — and the
+  script now writes the true ones.
+  *Proven by:* `wp-font/tests/newer_colour.rs` — every kind of tree, the
+  transforms about their centres, the composites, the text's colour and the
+  palette's opacity, the older layers in the same table, Apple pictures by
+  size and by bottom edge with a duplicate and a TIFF, drawings found
+  compressed or not; `wp-layout/tests/colour_glyphs.rs` — each glyph painted
+  and held at points to the colour the format's own formula gives there, to
+  within two levels: the three gradients and both extend modes, the turn,
+  the skew, the composites, the text's colour, the borrowed glyph moved and
+  clipped, half transparency, an Apple picture stood on the baseline, three
+  SVG glyphs with their gradients, groups, uses and fades; `compose.rs` —
+  the operators, the blend modes, the runs and the three shapes of gradient;
+  `wp-svg`'s `document.rs` — colours, transforms, groups, gradients and their
+  inheritance, `use`, clips, reach; the gzip reader against gzip; and
+  `wp-pdf/tests/document.rs` — pictures drawn and masked, layers in order
+  and in their colours with their glyphs carried, and every one said and
+  written for copying. The proof picture shows every glyph of the three
+  fonts.
+  *Not done, and named:* a variable colour font's trees are painted at its
+  default — the deltas a `COLR` table keeps for its variable paints are read
+  past — and an `sbix` font's flag asking for its outlines to be drawn over
+  its pictures is not read. An SVG glyph's strokes, text, filters, masks,
+  patterns and embedded images are not drawn, nor a `viewBox` on its root;
+  gradients in SVG are mixed in the ordinary scale, which is SVG's default,
+  and `color-interpolation` is not read. In a PDF, a glyph of a font with no
+  outlines to carry — Noto Color Emoji is pictures and nothing else — is
+  said as its character only around the picture, which Acrobat reads and
+  Poppler and MuPDF do not, so it does not copy out there; MuPDF turned the
+  test fonts' private-use characters into U+FFFD, so what it copies of a
+  real emoji was not seen. A turned line still draws a picture glyph as its
+  layers, where it has them, and not otherwise.
 
 ## F — Proofing
 

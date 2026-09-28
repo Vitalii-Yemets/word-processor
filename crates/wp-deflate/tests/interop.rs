@@ -131,3 +131,32 @@ fn gzip_accepts_streams_produced_by_us() {
         let _ = std::fs::remove_file(&path);
     }
 }
+
+#[test]
+fn a_gzip_file_is_read_whole_header_and_trailer() {
+    // Written by gzip itself: once with the file's name in the header, which
+    // is one of the optional fields to read past, and once without.
+    let scratch = std::env::temp_dir().join("wp-deflate-gzip-read");
+    std::fs::create_dir_all(&scratch).expect("cannot create scratch directory");
+    let original = "<svg><path d=\"M0 0L10 10Z\"/></svg> Проверка ".repeat(300);
+    let path = scratch.join("drawing.svg");
+    std::fs::write(&path, &original).expect("cannot write scratch file");
+
+    for keep_name in [true, false] {
+        let mut command = Command::new("gzip");
+        command.arg("-c").arg(if keep_name { "-N" } else { "-n" }).arg(&path);
+        let output = command.output().expect("failed to run gzip");
+        assert!(output.status.success());
+        let named = output.stdout[3] & 0x08 != 0;
+        assert_eq!(named, keep_name, "the header does not say what it was asked to");
+        let read = wp_deflate::inflate_gzip(&output.stdout, 1 << 20).expect("read");
+        assert_eq!(read, original.as_bytes());
+
+        // A byte of the data changed is noticed by the checksum.
+        let mut spoiled = output.stdout.clone();
+        let last = spoiled.len() - 9;
+        spoiled[last] ^= 0x01;
+        assert!(wp_deflate::inflate_gzip(&spoiled, 1 << 20).is_err());
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+}

@@ -160,6 +160,7 @@ version = "0.0.1"
 dependencies = [
  "wp-bidi",
  "wp-break",
+ "wp-deflate",
  "wp-dict",
  "wp-docx",
  "wp-font",
@@ -167,6 +168,7 @@ dependencies = [
  "wp-raster",
  "wp-segment",
  "wp-shape",
+ "wp-svg",
  "wp-xml",
 ]
 

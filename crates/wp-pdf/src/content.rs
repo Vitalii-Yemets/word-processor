@@ -31,6 +31,9 @@ pub(crate) struct Drawing {
     /// The degrees of transparency it uses, which a PDF holds as a named state
     /// rather than as part of a colour.
     pub fades: Vec<(String, u8)>,
+    /// Which faces draw in colours of their own, asked once a face rather
+    /// than once a glyph: reading a font to ask is not free.
+    pub colour: std::collections::HashMap<usize, bool>,
 }
 
 /// A picture, taken apart the way a PDF holds one: the colours, and the
@@ -234,7 +237,13 @@ fn write_text(
         // A glyph a font keeps as a picture is drawn as a picture. There is no
         // outline to fill and no font to embed that would draw it: written as
         // text it would be nothing at all on the page.
-        if write_picture_glyph(out, first, library, height, drawing) {
+        if write_picture_glyph(out, first, names, library, height, drawing) {
+            index += 1;
+            continue;
+        }
+        // And a glyph drawn as layers of other glyphs is drawn as those
+        // layers, each in its own colour.
+        if write_layered_glyph(out, first, turn, names, library, height, drawing) {
             index += 1;
             continue;
         }
@@ -431,27 +440,44 @@ fn paint(colour: Color, drawing: &mut Drawing) -> String {
 fn write_picture_glyph(
     out: &mut String,
     glyph: &PositionedGlyph,
+    names: &BTreeMap<usize, String>,
     library: &FontLibrary,
     height: f32,
     drawing: &mut Drawing,
 ) -> bool {
-    let Some(font) = library.face(glyph.face).and_then(|face| face.font()) else { return false };
-    let wanted = glyph.size.round().clamp(1.0, f32::from(u16::MAX)) as u16;
-    let Some(bitmap) = font.bitmap(glyph.glyph, wanted) else { return false };
-    let Ok(image) = wp_image::png::decode(bitmap.png) else { return false };
-    if image.width == 0 || image.height == 0 {
+    if !has_colour(library, glyph.face, drawing) {
         return false;
     }
+    let Some(font) = library.face(glyph.face).and_then(|face| face.font()) else { return false };
+    // Painted or drawn four times finer than the text it stands in, which is
+    // what a picture has to be to print as sharply as the letters round it;
+    // a picture the font keeps comes at the nearest size it holds.
+    let pixels = (glyph.size * 4.0).clamp(16.0, 512.0);
+    let Some(picture) = wp_layout::colourglyph::picture_of(&font, glyph.glyph, pixels, glyph.color)
+    else {
+        return false;
+    };
+    if picture.width == 0 || picture.height == 0 {
+        return false;
+    }
+    let image =
+        wp_layout::Image { width: picture.width, height: picture.height, pixels: picture.pixels };
 
-    let scale = glyph.size / f32::from(bitmap.pixels_per_em.max(1));
+    let scale = glyph.size / picture.pixels_per_em.max(1.0);
     let width = image.width as f32 * scale;
     let tall = image.height as f32 * scale;
-    let left = glyph.x + f32::from(bitmap.bearing_x) * scale;
+    let left = glyph.x + picture.left * scale;
     // A PDF measures up from the foot of the page and places a picture by its
     // bottom edge; the layout measures down from the top and places a glyph by
     // its baseline.
-    let bottom = height - (glyph.baseline - f32::from(bitmap.bearing_y) * scale) - tall;
+    let bottom = height - (glyph.baseline - picture.top * scale) - tall;
 
+    // A picture is not text, and what it stands for is said beside it, so
+    // that copying the emoji out of the page gives the emoji.
+    let meant = actual_text(&font, glyph.glyph);
+    if let Some(meant) = &meant {
+        out.push_str(meant);
+    }
     let name = format!("Im{}", drawing.images.len());
     out.push_str(&format!(
         "q {} 0 0 {} {} {} cm /{name} Do Q\n",
@@ -460,7 +486,117 @@ fn write_picture_glyph(
         number(left),
         number(bottom),
     ));
+    // And the glyph itself, where the font can be carried, as text drawn in
+    // no colour at all: what the readers that ignore a stretch's own text
+    // for a picture copy out instead, through the font's table of what each
+    // glyph says. The mode is put back inside the same block, because it
+    // outlives the block that set it.
+    if font.has_outlines() {
+        if let Some(face) = names.get(&glyph.face) {
+            drawing.fonts.insert(face.clone());
+            out.push_str(&format!(
+                "BT 3 Tr /{face} {} Tf 1 0 0 1 {} {} Tm [<{:04X}>] TJ 0 Tr ET\n",
+                number(glyph.size),
+                number(glyph.x),
+                number(height - glyph.baseline),
+                glyph.glyph.0,
+            ));
+        }
+    }
+    if meant.is_some() {
+        out.push_str("EMC\n");
+    }
     drawing.images.push((name, take_apart(&image)));
+    true
+}
+
+/// The opening of a stretch of the page that says what text it stands for:
+/// the character the font maps to a glyph, for a glyph drawn some other way
+/// than as a glyph of text. `None` where the font maps nothing to it.
+fn actual_text(font: &wp_font::Font<'_>, glyph: wp_font::GlyphId) -> Option<String> {
+    let character = font
+        .character_map()
+        .pairs()
+        .into_iter()
+        .find(|(_, mapped)| *mapped == glyph)
+        .map(|(character, _)| character)?;
+    let mut text = String::from("FEFF");
+    let mut buffer = [0u16; 2];
+    for unit in character.encode_utf16(&mut buffer) {
+        text.push_str(&format!("{unit:04X}"));
+    }
+    Some(format!("/Span << /ActualText <{text}> >> BDC\n"))
+}
+
+/// Whether a face draws in colours of its own, asked of the font once.
+fn has_colour(library: &FontLibrary, face: usize, drawing: &mut Drawing) -> bool {
+    *drawing.colour.entry(face).or_insert_with(|| {
+        library.face(face).and_then(|entry| entry.font()).is_some_and(|font| font.has_colour())
+    })
+}
+
+/// A glyph drawn as layers of other glyphs, written as those layers: one
+/// run of text for each, in the layer's colour or the text's.
+///
+/// The layer glyphs are in the font the file carries — the font is cut with
+/// them in it — and they draw exactly as the screen draws them, in
+/// outlines. What they spell is said once for all of them, as the text the
+/// glyph stands for, so that copying the emoji out of the page gives the
+/// emoji and not a run of shapes nobody typed.
+#[allow(clippy::too_many_arguments)]
+fn write_layered_glyph(
+    out: &mut String,
+    glyph: &PositionedGlyph,
+    turn: Turn,
+    names: &BTreeMap<usize, String>,
+    library: &FontLibrary,
+    height: f32,
+    drawing: &mut Drawing,
+) -> bool {
+    if !has_colour(library, glyph.face, drawing) {
+        return false;
+    }
+    let Some(font) = library.face(glyph.face).and_then(|face| face.font()) else { return false };
+    let Some(layers) = font.colour_layers(glyph.glyph) else { return false };
+    let Some(name) = names.get(&glyph.face) else { return false };
+    if layers.is_empty() {
+        return false;
+    }
+
+    let meant = actual_text(&font, glyph.glyph);
+    if let Some(meant) = &meant {
+        out.push_str(meant);
+    }
+    let (a, b, c, d) = match turn {
+        Turn::None | Turn::Upright => (1.0, 0.0, 0.0, 1.0),
+        Turn::Down => (0.0, -1.0, 1.0, 0.0),
+        Turn::Up => (0.0, 1.0, -1.0, 0.0),
+        Turn::Over => (-1.0, 0.0, 0.0, -1.0),
+    };
+    drawing.fonts.insert(name.clone());
+    for layer in layers {
+        let colour = layer.colour.map_or(glyph.color, |colour| Color {
+            red: colour.red,
+            green: colour.green,
+            blue: colour.blue,
+            alpha: colour.alpha,
+        });
+        out.push_str(&paint(colour, drawing));
+        out.push_str(&format!(
+            "BT /{name} {} Tf {} {} {} {} {} {} Tm [<{:04X}>] TJ ET\n",
+            number(glyph.size),
+            number(a),
+            number(b),
+            number(c),
+            number(d),
+            number(glyph.x + glyph.shift_x),
+            number(height - glyph.baseline - glyph.shift_y),
+            layer.glyph.0,
+        ));
+    }
+    if meant.is_some() {
+        out.push_str("EMC\n");
+    }
     true
 }
 

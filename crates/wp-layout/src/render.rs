@@ -9,11 +9,12 @@
 
 use std::collections::HashMap;
 
-use wp_font::{GlyphId, PathCommand};
+use wp_font::GlyphId;
 use wp_raster::{Canvas, Color, Path, Point, Transform};
 
 use wp_docx::effects::Effect;
 
+use crate::colourglyph::{picture_of, GlyphPicture};
 use crate::device::Device;
 use crate::layout::{Drawing, GlyphEffect, Page, PlacedShape, PositionedGlyph, Turn};
 use crate::library::FontLibrary;
@@ -26,9 +27,13 @@ pub struct Renderer<'a> {
     outlines: HashMap<(usize, u16), Option<CachedOutline>>,
     /// Which glyphs a coloured glyph is drawn from, and in what.
     layers: HashMap<(usize, u16), Option<ColourLayers>>,
-    /// The pictures of a font that keeps its glyphs as pictures, decoded.
-    pictures: HashMap<(usize, u16), Option<CachedPicture>>,
+    /// The glyphs drawn as pictures — decoded, painted or drawn — keyed by
+    /// face, glyph, the size in whole pixels and the colour of the text, which
+    /// a tree of paints may name.
+    pictures: HashMap<PictureKey, Option<GlyphPicture>>,
 }
+
+type PictureKey = (usize, u16, u32, [u8; 4]);
 
 /// Which glyphs a coloured glyph is drawn from, and in what: `None` where the
 /// layer takes the colour of the text around it.
@@ -39,19 +44,6 @@ type ColourLayers = Vec<(GlyphId, Option<Color>)>;
 struct CachedOutline {
     path: Path,
     units_per_em: f32,
-}
-
-/// A glyph a font keeps as a picture, decoded to pixels.
-#[derive(Clone, Debug)]
-struct CachedPicture {
-    pixels: Vec<u8>,
-    width: usize,
-    height: usize,
-    /// The size the picture was drawn for, which is what says how far it has
-    /// to be scaled for the size the text is.
-    pixels_per_em: u16,
-    bearing_x: i8,
-    bearing_y: i8,
 }
 
 impl<'a> Renderer<'a> {
@@ -366,12 +358,12 @@ impl Renderer<'_> {
         // A picture is drawn square on or not at all: a turned emoji would
         // need the pixels turned with it, and nothing yet asks for one.
         if turn.is_none() {
-            if let Some(picture) = self.picture(glyph.face, glyph.glyph, glyph.size) {
-                let scale = glyph.size / f32::from(picture.pixels_per_em.max(1));
+            if let Some(picture) = self.picture(glyph.face, glyph.glyph, glyph.size, glyph.color) {
+                let scale = glyph.size / picture.pixels_per_em.max(1.0);
                 let width = (picture.width as f32 * scale).round().max(1.0) as usize;
                 let height = (picture.height as f32 * scale).round().max(1.0) as usize;
-                let left = x + f32::from(picture.bearing_x) * scale;
-                let top = baseline - f32::from(picture.bearing_y) * scale;
+                let left = x + picture.left * scale;
+                let top = baseline - picture.top * scale;
                 canvas.draw_pixels(
                     &picture.pixels,
                     picture.width,
@@ -434,28 +426,24 @@ impl Renderer<'_> {
     /// A font of pictures holds several sizes; the one nearest what is being
     /// drawn is taken, decoded, and then scaled to whatever size is wanted, so
     /// the decoding is paid for once however many times the emoji appears.
-    fn picture(&mut self, face: usize, glyph: GlyphId, size: f32) -> Option<&CachedPicture> {
-        let key = (face, glyph.0);
+    /// A glyph as a picture, at a size and against the colour of the text:
+    /// decoded from a font that keeps pictures, painted from a tree of
+    /// paints, or drawn from an SVG document. See [`crate::colourglyph`].
+    fn picture(
+        &mut self,
+        face: usize,
+        glyph: GlyphId,
+        size: f32,
+        text: Color,
+    ) -> Option<&GlyphPicture> {
+        let pixels = size.round().clamp(1.0, f32::from(u16::MAX));
+        let key = (face, glyph.0, pixels as u32, [text.red, text.green, text.blue, text.alpha]);
         if !self.pictures.contains_key(&key) {
-            let read = self.read_picture(face, glyph, size);
+            let font = self.library.face(face).and_then(|entry| entry.font());
+            let read = font.and_then(|font| picture_of(&font, glyph, pixels, text));
             self.pictures.insert(key, read);
         }
         self.pictures.get(&key)?.as_ref()
-    }
-
-    fn read_picture(&self, face: usize, glyph: GlyphId, size: f32) -> Option<CachedPicture> {
-        let font = self.library.face(face)?.font()?;
-        let wanted = size.round().clamp(1.0, f32::from(u16::MAX)) as u16;
-        let bitmap = font.bitmap(glyph, wanted)?;
-        let image = wp_image::png::decode(bitmap.png).ok()?;
-        Some(CachedPicture {
-            pixels: image.pixels,
-            width: image.width,
-            height: image.height,
-            pixels_per_em: bitmap.pixels_per_em,
-            bearing_x: bitmap.bearing_x,
-            bearing_y: bitmap.bearing_y,
-        })
     }
 
     /// The outline of a glyph in font units, read once and kept.
@@ -471,32 +459,7 @@ impl Renderer<'_> {
     fn read_outline(&self, face: usize, glyph: GlyphId) -> Option<CachedOutline> {
         let font = self.library.face(face)?.font()?;
         let outline = font.outline(glyph).ok()??;
-
-        let mut path = Path::new();
-        for command in &outline.commands {
-            match *command {
-                PathCommand::MoveTo(point) => {
-                    path.move_to(Point::new(point.x, point.y));
-                }
-                PathCommand::LineTo(point) => {
-                    path.line_to(Point::new(point.x, point.y));
-                }
-                PathCommand::QuadTo(control, point) => {
-                    path.quad_to(Point::new(control.x, control.y), Point::new(point.x, point.y));
-                }
-                PathCommand::CubicTo(first, second, point) => {
-                    path.cubic_to(
-                        Point::new(first.x, first.y),
-                        Point::new(second.x, second.y),
-                        Point::new(point.x, point.y),
-                    );
-                }
-                PathCommand::Close => {
-                    path.close();
-                }
-            }
-        }
-
+        let path = crate::colourglyph::path_of(&outline);
         Some(CachedOutline { path, units_per_em: f32::from(font.units_per_em()) })
     }
 

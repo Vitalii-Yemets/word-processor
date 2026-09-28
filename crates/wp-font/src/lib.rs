@@ -31,13 +31,14 @@ mod cmap;
 mod colour;
 mod glyf;
 mod name;
+pub mod paint;
 mod read;
 mod subset;
 mod vary;
 mod write;
 
 pub use cmap::CharacterMap;
-pub use colour::{Bitmap, Layer, Rgba};
+pub use colour::{Bitmap, ImageFormat, Layer, Rgba, SvgDocument};
 pub use glyf::{Outline, PathCommand, Point};
 pub use subset::{CutDown, Subroutines};
 pub use vary::{Axis, Instance};
@@ -237,6 +238,9 @@ pub struct Font<'a> {
     cpal: Option<TableRange>,
     cblc: Option<TableRange>,
     cbdt: Option<TableRange>,
+    /// Apple's pictures per glyph, and the SVG documents that draw glyphs.
+    sbix: Option<TableRange>,
+    svg: Option<TableRange>,
     /// Where this font has been set on its axes, already turned into the -1 to
     /// 1 the deltas are written against. `None` means where it was drawn.
     variations: Option<Vec<f32>>,
@@ -329,6 +333,8 @@ impl<'a> Font<'a> {
         let mut cpal = None;
         let mut cblc = None;
         let mut cbdt = None;
+        let mut sbix = None;
+        let mut svg = None;
         let mut cmap = None;
         let mut kern = None;
         let mut gsub = None;
@@ -369,6 +375,8 @@ impl<'a> Font<'a> {
                 b"CPAL" => cpal = Some(range),
                 b"CBLC" => cblc = Some(range),
                 b"CBDT" => cbdt = Some(range),
+                b"sbix" => sbix = Some(range),
+                b"SVG " => svg = Some(range),
                 b"cmap" => cmap = Some(range),
                 b"kern" => kern = Some(range),
                 b"GSUB" => gsub = Some(range),
@@ -433,6 +441,8 @@ impl<'a> Font<'a> {
             cpal,
             cblc,
             cbdt,
+            sbix,
+            svg,
             variations: None,
             kern,
             gsub,
@@ -688,21 +698,46 @@ impl<'a> Font<'a> {
         colour::layers_of(colr, self.raw_table(self.cpal), glyph)
     }
 
+    /// The tree of paints a glyph is drawn from, in a font whose layered
+    /// glyphs are of the newer kind. See [`paint`].
+    ///
+    /// `None` for a glyph the font draws some other way — as a list of
+    /// layers, a picture, or an outline.
+    #[must_use]
+    pub fn colour_glyph(&self, glyph: GlyphId) -> Option<paint::ColourGlyph> {
+        let colr = self.raw_table(self.colr)?;
+        paint::colour_glyph(colr, self.raw_table(self.cpal), glyph)
+    }
+
     /// The picture a glyph is kept as, in a font that keeps pictures.
     ///
     /// `pixels_per_em` is the size the text is being drawn at; the nearest
     /// size the font holds is given back, and it is the caller's to scale.
     #[must_use]
     pub fn bitmap(&self, glyph: GlyphId, pixels_per_em: u16) -> Option<Bitmap<'a>> {
-        let locations = self.raw_table(self.cblc)?;
-        let data = self.raw_table(self.cbdt)?;
-        colour::bitmap_of(locations, data, glyph, pixels_per_em)
+        if let (Some(locations), Some(data)) =
+            (self.raw_table(self.cblc), self.raw_table(self.cbdt))
+        {
+            if let Some(found) = colour::bitmap_of(locations, data, glyph, pixels_per_em) {
+                return Some(found);
+            }
+        }
+        colour::sbix_bitmap(self.raw_table(self.sbix)?, glyph, self.glyph_count, pixels_per_em)
+    }
+
+    /// The SVG document that draws a glyph, in a font that has them.
+    #[must_use]
+    pub fn svg_document(&self, glyph: GlyphId) -> Option<SvgDocument<'a>> {
+        colour::svg_document(self.raw_table(self.svg)?, glyph)
     }
 
     /// Whether this font draws in colours of its own rather than in the text's.
     #[must_use]
     pub fn has_colour(&self) -> bool {
-        self.colr.is_some() || (self.cblc.is_some() && self.cbdt.is_some())
+        self.colr.is_some()
+            || (self.cblc.is_some() && self.cbdt.is_some())
+            || self.sbix.is_some()
+            || self.svg.is_some()
     }
 
     /// The outline of a glyph, in font units.

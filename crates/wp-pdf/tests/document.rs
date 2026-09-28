@@ -360,3 +360,91 @@ fn a_line_of_japanese_carries_kilobytes_of_its_font_rather_than_megabytes() {
     // And the words come back out as the words.
     assert_eq!(text_of(&pdf).trim(), line);
 }
+
+/// A line in each of the three colour fonts the build image writes.
+fn colour_line() -> Vec<Page> {
+    let mut body = Body::default();
+    let mut runs = Vec::new();
+    for (family, text) in [
+        ("WP Colour One", "\u{E010}\u{E000}"),
+        ("WP Colour Pictures", "\u{E000}"),
+        ("WP Colour Drawings", "\u{E000}"),
+    ] {
+        let mut run = wp_docx::model::Run::text(text);
+        run.properties.font = Some(family.to_owned());
+        runs.push(run);
+    }
+    body.blocks.push(Block::Paragraph(Paragraph::from_runs(runs)));
+    let bytes = Document::create(&body).expect("a document").save().expect("saving");
+    let document = Document::open(&bytes).expect("reopening");
+    let mut engine = LayoutEngine::for_device(library(), Device::paper());
+    engine.layout_document(&document)
+}
+
+#[test]
+fn a_glyph_drawn_as_a_tree_a_picture_or_a_drawing_goes_in_as_a_picture() {
+    let pdf = wp_pdf::write(&colour_line(), library(), "Colour");
+    // The gradient glyph, the Apple picture and the SVG drawing, each drawn
+    // once.
+    let drawn: usize = streams(&pdf)
+        .iter()
+        .map(|stream| String::from_utf8_lossy(stream).matches(" Do Q").count())
+        .sum();
+    assert_eq!(drawn, 3);
+    // The two that are partly see-through carry how see-through as a
+    // picture of its own; the Apple picture is opaque all over.
+    assert_eq!(String::from_utf8_lossy(&pdf).matches("/SMask").count(), 2);
+    // And each says what character it stands for, so that it copies out as
+    // that character.
+    let said: usize = streams(&pdf)
+        .iter()
+        .map(|stream| String::from_utf8_lossy(stream).matches("/ActualText <FEFFE000>").count())
+        .sum();
+    assert_eq!(said, 3);
+    // With the glyph itself under each as text in no colour, for the readers
+    // that copy only text: all three fonts have outlines to carry.
+    let unseen: usize = streams(&pdf)
+        .iter()
+        .map(|stream| String::from_utf8_lossy(stream).matches(" 3 Tr ").count())
+        .sum();
+    assert_eq!(unseen, 3);
+    // And the mode is put back every time, or the text after would vanish.
+    let back: usize = streams(&pdf)
+        .iter()
+        .map(|stream| String::from_utf8_lossy(stream).matches(" 0 Tr ET").count())
+        .sum();
+    assert_eq!(back, 3);
+}
+
+#[test]
+fn a_glyph_drawn_as_layers_goes_in_as_its_layers_in_their_colours() {
+    let pdf = wp_pdf::write(&colour_line(), library(), "Colour");
+    let drawn: String = streams(&pdf)
+        .iter()
+        .map(|stream| String::from_utf8_lossy(stream).into_owned())
+        .filter(|stream| stream.contains(" Tf "))
+        .collect();
+    // Two runs, red and then blue, said together to be the one character.
+    assert!(drawn.contains("/ActualText <FEFFE010>"), "{drawn}");
+    let red = drawn.find("1 0 0 rg").expect("a red layer");
+    let blue = drawn.find("0 0 1 rg").expect("a blue layer");
+    assert!(red < blue, "the layers are drawn in the font's order");
+
+    // And the glyphs of the layers are in the font the file carries.
+    let whole = std::fs::read("/usr/share/fonts/truetype/wp-colour/wp-colour-one.ttf").unwrap();
+    let whole = wp_font::Font::parse(&whole).unwrap();
+    let layered = whole.glyph_for('\u{E010}').unwrap();
+    let layers = whole.colour_layers(layered).expect("layers");
+    let carried = streams(&pdf)
+        .into_iter()
+        .filter_map(|stream| {
+            let font = wp_font::Font::parse(&stream).ok()?;
+            (font.glyph_count() == whole.glyph_count()).then_some(stream)
+        })
+        .next()
+        .expect("the colour font is in the file");
+    let carried = wp_font::Font::parse(&carried).unwrap();
+    for layer in layers {
+        assert!(carried.outline(layer.glyph).unwrap().is_some(), "a layer's glyph is missing");
+    }
+}

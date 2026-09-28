@@ -1,11 +1,13 @@
-//! Just enough SVG to draw an icon.
+//! SVG, as much of it as two things need: an icon, and a glyph.
 //!
-//! # Why only enough
+//! # Why only as much
 //!
-//! SVG is an enormous format — filters, gradients, clipping, text, animation,
-//! scripting. None of that is wanted here. What is wanted is the one thing an
-//! icon set is made of: a viewBox and some filled outlines. So that is what
-//! this reads, and it says so rather than pretending to be an SVG renderer.
+//! SVG is an enormous format — filters, text, animation, scripting. An icon
+//! set is made of a viewBox and some filled outlines, and that is what a
+//! [`Drawing`] reads. A colour font's `SVG ` table is more: shapes grouped
+//! and transformed, filled with gradients, drawn again by `use`, faded and
+//! clipped as groups — and that is what a [`Document`] reads and draws. What
+//! neither reads is named in [`document`], rather than pretended.
 //!
 //! The document is parsed by `wp-xml`, the same parser the `.docx` parts go
 //! through; only the path data needs a reader of its own, and that is in
@@ -24,11 +26,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod document;
 pub mod path;
 
 use wp_raster::{Path, Transform};
 use wp_xml::tree::{Element, XmlTree};
 
+pub use document::Document;
 pub use path::parse as parse_path;
 
 /// Why a drawing could not be read.

@@ -182,10 +182,21 @@ impl Fonts {
 
     /// Writes each face into the file, cut down to what is used.
     fn embed(&mut self, writer: &mut Writer, library: &FontLibrary) {
-        for (face, glyphs) in &self.used {
+        for (face, used) in &self.used {
             let Some(name) = self.names.get(face) else { continue };
             let Some(entry) = library.face(*face) else { continue };
             let Some(font) = entry.font() else { continue };
+            // A glyph drawn as layers is written as its layers, so the
+            // glyphs of the layers have to be in the font the file carries.
+            let mut glyphs = used.clone();
+            if font.has_colour() {
+                for glyph in used {
+                    for layer in font.colour_layers(GlyphId(*glyph)).unwrap_or_default() {
+                        glyphs.insert(layer.glyph.0);
+                    }
+                }
+            }
+            let glyphs = &glyphs;
 
             // A font whose outlines are PostScript ones is cut down by
             // following the programs its glyphs are drawn by, subroutines and

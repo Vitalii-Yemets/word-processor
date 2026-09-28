@@ -6,6 +6,7 @@
 //! into gigabytes.
 
 use crate::adler32::Adler32;
+use crate::crc32::Crc32;
 use crate::tables::{CODE_LENGTH_ORDER, DISTANCE_BASE, DISTANCE_EXTRA, LENGTH_BASE, LENGTH_EXTRA};
 
 /// Why a stream could not be decompressed.
@@ -35,6 +36,10 @@ pub enum Error {
     InvalidZlibHeader,
     /// The trailing Adler-32 checksum of a zlib stream did not match.
     ChecksumMismatch,
+    /// The gzip header is corrupt or names a method other than DEFLATE.
+    InvalidGzipHeader,
+    /// The trailing CRC-32 or length of a gzip stream did not match.
+    GzipChecksumMismatch,
 }
 
 impl core::fmt::Display for Error {
@@ -50,6 +55,8 @@ impl core::fmt::Display for Error {
             Self::OutputLimitExceeded => "decompressed size limit exceeded",
             Self::InvalidZlibHeader => "corrupt zlib header",
             Self::ChecksumMismatch => "Adler-32 checksum mismatch",
+            Self::InvalidGzipHeader => "corrupt gzip header",
+            Self::GzipChecksumMismatch => "gzip CRC-32 or length mismatch",
         };
         f.write_str(text)
     }
@@ -491,5 +498,57 @@ pub fn inflate_zlib(data: &[u8], max_output: usize) -> Result<Vec<u8>, Error> {
         return Err(Error::ChecksumMismatch);
     }
 
+    Ok(out)
+}
+
+/// Decompresses a gzip stream of one member: the header RFC 1952 describes,
+/// the DEFLATE data, and the CRC-32 and length of what it held.
+///
+/// What an `SVG ` table's compressed documents are, and a `.gz` file. The
+/// optional fields of the header — an extra field, a name, a comment, a CRC of
+/// the header — are read past; only DEFLATE is a method.
+pub fn inflate_gzip(data: &[u8], max_output: usize) -> Result<Vec<u8>, Error> {
+    const TEXT_CRC: u8 = 0x02;
+    const EXTRA: u8 = 0x04;
+    const NAME: u8 = 0x08;
+    const COMMENT: u8 = 0x10;
+
+    if data.len() < 18 {
+        return Err(Error::UnexpectedEof);
+    }
+    if data[0] != 0x1F || data[1] != 0x8B || data[2] != 8 {
+        return Err(Error::InvalidGzipHeader);
+    }
+    let flags = data[3];
+    let mut at = 10usize;
+    if flags & EXTRA != 0 {
+        let length = usize::from(u16::from_le_bytes([
+            *data.get(at).ok_or(Error::UnexpectedEof)?,
+            *data.get(at + 1).ok_or(Error::UnexpectedEof)?,
+        ]));
+        at += 2 + length;
+    }
+    for field in [NAME, COMMENT] {
+        if flags & field != 0 {
+            let end = data.get(at..).and_then(|rest| rest.iter().position(|byte| *byte == 0));
+            at += end.ok_or(Error::UnexpectedEof)? + 1;
+        }
+    }
+    if flags & TEXT_CRC != 0 {
+        at += 2;
+    }
+    if at + 8 > data.len() {
+        return Err(Error::UnexpectedEof);
+    }
+
+    let out = inflate_limited(&data[at..data.len() - 8], max_output)?;
+    let trailer = &data[data.len() - 8..];
+    let crc = u32::from_le_bytes([trailer[0], trailer[1], trailer[2], trailer[3]]);
+    let length = u32::from_le_bytes([trailer[4], trailer[5], trailer[6], trailer[7]]);
+    let mut actual = Crc32::new();
+    actual.update(&out);
+    if actual.finish() != crc || length != out.len() as u32 {
+        return Err(Error::GzipChecksumMismatch);
+    }
     Ok(out)
 }
