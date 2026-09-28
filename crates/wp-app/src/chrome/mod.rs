@@ -333,6 +333,9 @@ pub enum Command {
     Thesaurus,
     /// One of them, by its place in the list.
     Synonym(u8),
+    /// One of the additional actions the right-click menu offers for what
+    /// was recognised under the pointer.
+    Action(u8),
     /// What the words selected are in another language, which is what
     /// Word's Translate offers first and its right-click menu offers too.
     TranslateSelection,

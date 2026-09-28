@@ -21,8 +21,9 @@
 //!
 //! # What is missing
 //!
-//! Word's Actions tab, for the same reason the switches it holds are: there
-//! is nothing behind them here; and the Math AutoCorrect tab's Recognized
+//! The Actions tab's recognisers that hand what they find to another program
+//! or to the internet — telephone numbers, stock symbols, people — and its
+//! Properties and More Actions buttons; the Math AutoCorrect tab's Recognized
 //! Functions, which the linear format here has no functions for. And on the
 //! AutoFormat
 //! tab, "Other paragraph styles" and "Plain text e-mail documents", which are
@@ -94,6 +95,13 @@ const WHOLE_BOLD_ITALIC: usize = 42;
 const WHOLE_HYPERLINKS: usize = 43;
 const WHOLE_PRESERVE: usize = 44;
 const WHOLE_STYLES: usize = 45;
+
+// The Actions tab.
+const TAB_ACTIONS: usize = 46;
+const ACTIONS_ON: usize = 47;
+const ACTIONS_AVAILABLE: usize = 48;
+const ACTION_DATES: usize = 49;
+const ACTION_MEASUREMENTS: usize = 50;
 
 // The Exceptions dialog: two tabs, each a box and a list.
 const TAB_FIRST_LETTER: usize = 0;
@@ -228,6 +236,12 @@ impl Editor {
             check("Internet and network paths with hyperlinks", rules.reformat.hyperlinks),
             Field::Group("Preserve".to_owned()),
             check("Styles", rules.reformat.keep_styles),
+            // --- Actions ----------------------------------------------------
+            Field::Tab("Actions".to_owned()),
+            check("Enable additional actions in the right-click menu", rules.actions.enabled),
+            Field::Group("Available actions".to_owned()),
+            check("Date", rules.actions.dates),
+            check("Measurement Converter", rules.actions.measurements),
         ];
 
         crate::chrome::dialog::check_rows(
@@ -280,6 +294,11 @@ impl Editor {
                 (WHOLE_HYPERLINKS, "a tick box"),
                 (WHOLE_PRESERVE, "a group"),
                 (WHOLE_STYLES, "a tick box"),
+                (TAB_ACTIONS, "a tab"),
+                (ACTIONS_ON, "a tick box"),
+                (ACTIONS_AVAILABLE, "a group"),
+                (ACTION_DATES, "a tick box"),
+                (ACTION_MEASUREMENTS, "a tick box"),
             ],
         );
 
@@ -344,6 +363,9 @@ impl Editor {
         whole.bold_italic = dialog.ticked(WHOLE_BOLD_ITALIC);
         whole.hyperlinks = dialog.ticked(WHOLE_HYPERLINKS);
         whole.keep_styles = dialog.ticked(WHOLE_STYLES);
+        rules.actions.enabled = dialog.ticked(ACTIONS_ON);
+        rules.actions.dates = dialog.ticked(ACTION_DATES);
+        rules.actions.measurements = dialog.ticked(ACTION_MEASUREMENTS);
     }
 
     /// The two tick boxes of the Exceptions dialog, onto the working copy.

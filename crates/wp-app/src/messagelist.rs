@@ -316,6 +316,29 @@ pub fn messages_in(text: &str) -> BTreeSet<String> {
             }
         }
     }
+    // A line of the right-click menu names its command first and its words
+    // second: `Entry::item(Command::Cut, "Cut", Icon::Scissors)`. The words
+    // are what the menu shows, and the menu translates what it shows.
+    let mut from = 0usize;
+    while let Some(at) = text[from..].find("Entry::item(") {
+        from += at + "Entry::item(".len();
+        let Some(comma) = text[from..].find(',') else { break };
+        let after = from + comma + 1;
+        let Some(quote) = text[after..].find(|character: char| !character.is_whitespace()) else {
+            continue;
+        };
+        if bytes.get(after + quote) != Some(&b'"') {
+            continue;
+        }
+        let Some(literal) = literal_at(text, after + quote) else { continue };
+        // Indented lines under a heading are indented with spaces the menu
+        // draws, not words to translate; and a label made at run time is not
+        // here to be found at all.
+        let literal = literal.trim().to_owned();
+        if literal.chars().count() > 1 && !is_a_name(&literal) {
+            out.insert(literal);
+        }
+    }
     out
 }
 

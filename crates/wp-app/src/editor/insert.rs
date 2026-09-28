@@ -2991,6 +2991,22 @@ ogg,lancre
                 // The menu the right button opens, over the middle of the page.
                 self.open_context_menu(560, 300);
             }
+            // The same menu over a measurement, with the Actions tab's
+            // additional actions switched on.
+            "menu-actions" => {
+                self.autocorrect.actions.enabled = true;
+                let end = self.document.paragraph_text(3).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(3, end));
+                self.document.type_text(" A pipe 5 inches long.");
+                self.relayout();
+                let text = self.document.paragraph_text(3).unwrap_or_default();
+                let at = text.find("5 inches").unwrap_or(0) + 1;
+                if let Some((x, y, _, height)) =
+                    self.caret_rect_at(wp_docx::TextPosition::new(3, at))
+                {
+                    self.open_context_menu(x as i32, (y + height / 2.0) as i32);
+                }
+            }
             "tip" => {
                 // A button with the pointer resting on it, which is the only
                 // way to see what a tip looks like without one.

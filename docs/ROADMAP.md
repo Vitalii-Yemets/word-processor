@@ -4580,9 +4580,55 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   as `<=` for ≤, which here would turn every `<=` in a paragraph once the
   first box is ticked; and the Recognized Functions button, since the linear
   format here has no functions for `sin` to be set upright as.
-- [ ] **F12. Word's Actions tab.** The menu a word offers when the program
+- [x] **F12. Word's Actions tab.** The menu a word offers when the program
   recognises what kind of thing it is — a date, an address, a name — and the
   actions it hangs off that. Named in **F5**.
+  *Done when:* with the Actions tab's box ticked, a right-click on "5 inches"
+  offers "Convert to 12.7 cm" and does it, and a right-click on a date offers
+  it written the other ways a date is written.
+  Word's actions mostly hand what they recognise to somebody else: a date to
+  the calendar, a telephone number to the address book, a stock symbol to a
+  web page of prices, a person to the messenger. This program talks to
+  nobody, and the module says so at the top. What is left is what can be done
+  inside the document, and that is what is here. Word's Measurement Converter:
+  a number with a unit after it — lengths, weights, volumes, speeds and
+  temperatures, in their symbols and their names, singular and plural — is
+  offered in the other system's units, the one or two that give a number a
+  person would write, to three figures and with the decimal mark the writer
+  used, or the machine's where they used none. And a date — in figures with
+  hyphens, slashes or points, or with the month by name in English or in the
+  machine's language — is offered written the machine's long way, its short
+  way, and the international way. A unit has to end where a word does, so "5
+  more" is not five metres of "ore", and "in" with a word after it is where
+  something is rather than inches.
+  The offers go on the right-click menu as Word's "Additional Actions", under
+  a heading the way the synonyms are, and one chosen replaces what was
+  recognised as one thing to undo. The Actions tab is the AutoCorrect
+  dialog's last: "Enable additional actions in the right-click menu", off as
+  Word ships it, and Date and Measurement Converter under "Available
+  actions", each with its switch in the settings file.
+  *Proven by:* `wp-app`'s tests: measurements found and not found — "5 more",
+  "10 items", a number inside a word, "3 in a row" — conversions each way for
+  every dimension with the decimal mark kept or taken from the machine, and
+  amounts written as a person would; dates found in every form, day or month
+  first as the machine writes them, the machine's own month names, and
+  impossible or half dates refused; nothing recognised until the tab says so,
+  nor away from the pointer. And through the menu: a conversion offered under
+  the heading, chosen, and undone in one step; a date rewritten; nothing
+  offered with the box off. `--picture … menu-actions` draws the menu over "5
+  inches" with its two conversions, and with `german` in front, in German —
+  looked at both ways.
+  *Found along the way:* the right-click menu's own lines were never in the
+  message catalogue — "Synonyms", "Add to Dictionary", "Insert Row", "Ignore
+  All" and the rest came out in English in a German interface — because the
+  list of messages is read from the source by the shape of the call, and a
+  menu line names its command before its words. The reader now takes the
+  words from there too, the menu looks a line indented under a heading up
+  without its indent, and the German is in.
+  *Not done:* Word's other recognisers — telephone numbers, financial
+  symbols, instant-messaging contacts, places — and the Actions tab's
+  Properties and More Actions buttons: each of them is a hand-off to another
+  program or to the internet, which is what this program does not do.
 - [ ] **F13. The Translator as a pane, and a second pair of languages.** Word
   translates from a pane with its own box to type in, which is the same want
   **F4** names for the thesaurus, and it translates between more than the one

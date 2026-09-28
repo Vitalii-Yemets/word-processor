@@ -8,6 +8,7 @@
 = ( )
 = (Ctrl)
 = (default)
+= (no spelling suggestions)
 = (no style)
 = (none)
 = (not matched)
@@ -34,12 +35,15 @@
 = Accept
 = Accept All
 = Accessibility
+= Actions
 = Add
 = Add Shape
 = Add Source
 = Add Users
 = Add new part
 = Add new part...
+= Add to Dictionary
+= Additional Actions
 = Address
 = Address Line 1
 = Advanced
@@ -99,6 +103,7 @@
 = Automatically add words to list
 = Automatically hyphenate document
 = Autosaved {0}
+= Available actions
 = Banded
 = Banded Columns
 = Banded Rows
@@ -133,6 +138,7 @@
 = Bound
 = Breaks
 = Bring Forward
+= Bring to Front
 = Browse
 = Bubble
 = Building Block Gallery
@@ -140,6 +146,7 @@
 = Building Blocks Organizer
 = Building blocks
 = Built-in Heading styles
+= Bullets
 = Cancel
 = Cannot add the comment: {0}
 = Cannot add the note: {0}
@@ -168,6 +175,8 @@
 = Change Colors
 = Change Password
 = Change how the text is corrected as you type
+= Change to {0}
+= Changed to “{0}”
 = Changes
 = Character
 = Character Spacing
@@ -231,6 +240,7 @@
 = Controls
 = Convert
 = Convert to Text
+= Convert to {0}
 = Copies
 = Copy
 = Correct TWo INitial CApitals
@@ -258,6 +268,7 @@
 = Dark Gray
 = Dark Mode
 = Data
+= Date
 = Date & Time
 = Date Picker
 = Default tab stops
@@ -316,6 +327,7 @@
 = Elision
 = Email
 = Enable Content
+= Enable additional actions in the right-click menu
 = Enable all macros (not recommended)
 = Enclose with characters
 = Encrypt Document
@@ -425,6 +437,7 @@
 = Hyphens (--) with dash (—)
 = INitial CAps
 = Ignore
+= Ignore All
 = Illustrations
 = Immediate
 = In
@@ -444,11 +457,13 @@
 = Ink to Text
 = Insert
 = Insert Alignment Tab
+= Insert Column
 = Insert Endnote
 = Insert Index
 = Insert Item After
 = Insert Item Before
 = Insert Picture
+= Insert Row
 = Insert Table
 = Insert content control
 = Insert line breaks
@@ -487,6 +502,7 @@
 = Link
 = Link to Previous
 = Links
+= Link…
 = List styles
 = Lock aspect ratio
 = Macro
@@ -512,6 +528,7 @@
 = Match Fields
 = Math AutoCorrect
 = Measure from
+= Measurement Converter
 = Media
 = Merge
 = Merge Cells
@@ -537,6 +554,7 @@
 = Navigation pane
 = New
 = New Address List
+= New Comment
 = New Window
 = New document from {0}
 = New documents based on this template
@@ -557,6 +575,7 @@
 = Nothing is restricted: tick one of the two boxes
 = Nothing was typed, so no diagram was drawn
 = Number format
+= Numbering
 = OK
 = Office display language
 = On
@@ -766,6 +785,7 @@
 = Selection Pane
 = Send Backward
 = Send E-mail Messages
+= Send to Back
 = Sentence should begin with a capital
 = Set
 = Set As Default
@@ -849,6 +869,7 @@
 = Switch Modes
 = Symbol
 = Symbols
+= Synonyms
 = Tab stop position
 = Tab stops
 = Table
@@ -918,6 +939,7 @@
 = There is no part of this document you may edit
 = There is nothing in the {0} gallery to choose from
 = Thesaurus
+= Thesaurus…
 = This document
 = This document also carries Visual Basic macros
 = This document carries macros. They are disabled until you say otherwise.

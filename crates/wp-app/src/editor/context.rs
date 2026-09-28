@@ -84,6 +84,7 @@ impl Editor {
         self.pending_issue = None;
         self.pending_spellings = Vec::new();
         self.pending_synonyms = Vec::new();
+        self.pending_actions = Vec::new();
         self.pending_word = None;
         let entries = self.context_entries(x, y);
         // The word the checker marked under the pointer, and what it might
@@ -240,6 +241,29 @@ impl Editor {
                     ));
                 }
                 entries.push(Entry::item(Command::Thesaurus, "    Thesaurus…", Icon::None));
+            }
+        }
+
+        // What the text under the pointer was recognised as, and what can be
+        // done with it: Word's Additional Actions, where the Actions tab has
+        // them on.
+        if let Some(at) = self.position_at(x, y) {
+            let offers = self.actions_at(at);
+            if !offers.is_empty() {
+                entries.push(Entry::line());
+                entries.push(
+                    Entry::item(Command::Action(0), "Additional Actions", Icon::Lightning)
+                        .only_if(false),
+                );
+                self.pending_actions.clear();
+                for (index, (offer, pending)) in offers.into_iter().enumerate().take(8) {
+                    entries.push(Entry::item(
+                        Command::Action(index as u8),
+                        format!("    {}", offer.label),
+                        Icon::None,
+                    ));
+                    self.pending_actions.push(pending);
+                }
             }
         }
 

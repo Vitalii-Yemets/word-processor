@@ -453,6 +453,9 @@ impl Settings {
         rules.headings = on("headings", rules.headings);
         rules.math_replace = on("math-replace", rules.math_replace);
         rules.math_outside = on("math-outside", rules.math_outside);
+        rules.actions.enabled = on("actions", rules.actions.enabled);
+        rules.actions.dates = on("action-dates", rules.actions.dates);
+        rules.actions.measurements = on("action-measurements", rules.actions.measurements);
         let whole = &mut rules.reformat;
         whole.headings = on("whole-headings", whole.headings);
         whole.numbered_lists = on("whole-numbered-lists", whole.numbered_lists);
@@ -495,6 +498,9 @@ impl Settings {
             ("headings", rules.headings),
             ("math-replace", rules.math_replace),
             ("math-outside", rules.math_outside),
+            ("actions", rules.actions.enabled),
+            ("action-dates", rules.actions.dates),
+            ("action-measurements", rules.actions.measurements),
             ("whole-headings", rules.reformat.headings),
             ("whole-numbered-lists", rules.reformat.numbered_lists),
             ("whole-bulleted-lists", rules.reformat.bulleted_lists),

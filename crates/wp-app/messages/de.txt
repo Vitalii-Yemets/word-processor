@@ -11,6 +11,9 @@ language = Deutsch
 = (default)
 > (Standard)
 
+= (no spelling suggestions)
+> (keine Rechtschreibvorschläge)
+
 = (no style)
 > (keine Formatvorlage)
 
@@ -89,6 +92,12 @@ language = Deutsch
 = Add new part...
 > Neue Komponente hinzufügen...
 
+= Add to Dictionary
+> Zum Wörterbuch hinzufügen
+
+= Additional Actions
+> Weitere Aktionen
+
 = Add Users
 > Benutzer hinzufügen
 
@@ -130,6 +139,9 @@ language = Deutsch
 
 = Accessibility
 > Barrierefreiheit
+
+= Actions
+> Aktionen
 
 = Add
 > Hinzufügen
@@ -281,6 +293,9 @@ language = Deutsch
 = Autosaved {0}
 > Automatisch gespeichert {0}
 
+= Available actions
+> Verfügbare Aktionen
+
 = AutoText
 > AutoText
 
@@ -386,6 +401,9 @@ language = Deutsch
 = Bring Forward
 > Eine Ebene nach vorne
 
+= Bring to Front
+> In den Vordergrund
+
 = Browse
 > Durchsuchen
 
@@ -476,6 +494,9 @@ language = Deutsch
 = Built-in Heading styles
 > Integrierte Formatvorlagen für Überschriften
 
+= Bullets
+> Aufzählungszeichen
+
 = Centred
 > Zentriert
 
@@ -487,6 +508,12 @@ language = Deutsch
 
 = Change how the text is corrected as you type
 > Ändern, wie Text während der Eingabe korrigiert wird
+
+= Change to {0}
+> Ändern in {0}
+
+= Changed to “{0}”
+> In „{0}“ geändert
 
 = Changes
 > Änderungen
@@ -701,6 +728,9 @@ language = Deutsch
 = Convert to Text
 > In Text konvertieren
 
+= Convert to {0}
+> Umrechnen in {0}
+
 = Copies
 > Exemplare
 
@@ -760,6 +790,9 @@ language = Deutsch
 
 = Data
 > Daten
+
+= Date
+> Datum
 
 = Date & Time
 > Datum und Uhrzeit
@@ -934,6 +967,9 @@ language = Deutsch
 
 = Enable Content
 > Inhalt aktivieren
+
+= Enable additional actions in the right-click menu
+> Weitere Aktionen im Kontextmenü aktivieren
 
 = Enable all macros (not recommended)
 > Alle Makros aktivieren (nicht empfohlen)
@@ -1259,6 +1295,9 @@ language = Deutsch
 = Ignore
 > Ignorieren
 
+= Ignore All
+> Alle ignorieren
+
 = Immediate
 > Direktbereich
 
@@ -1319,6 +1358,9 @@ language = Deutsch
 = Insert Alignment Tab
 > Tabstopp einfügen
 
+= Insert Column
+> Spalte einfügen
+
 = Insert content control
 > Inhaltssteuerelement einfügen
 
@@ -1336,6 +1378,9 @@ language = Deutsch
 
 = Insert Picture
 > Bild einfügen
+
+= Insert Row
+> Zeile einfügen
 
 = Insert Table
 > Tabelle einfügen
@@ -1447,6 +1492,9 @@ language = Deutsch
 
 = Links
 > Links
+
+= Link…
+> Link…
 
 = List styles
 > Listenformatvorlagen
@@ -2042,6 +2090,9 @@ language = Deutsch
 = Measure from
 > Messen von
 
+= Measurement Converter
+> Maßeinheitenumrechner
+
 = Media
 > Medien
 
@@ -2108,6 +2159,9 @@ language = Deutsch
 = New Address List
 > Neue Adressliste
 
+= New Comment
+> Neuer Kommentar
+
 = New documents based on this template
 > Neue Dokumente auf Basis dieser Vorlage
 
@@ -2143,6 +2197,9 @@ language = Deutsch
 
 = Number format
 > Zahlenformat
+
+= Numbering
+> Nummerierung
 
 = OK
 > OK
@@ -2579,6 +2636,9 @@ language = Deutsch
 = Send E-mail Messages
 > E-Mail-Nachrichten senden
 
+= Send to Back
+> In den Hintergrund
+
 = Sentence should begin with a capital
 > Satzanfang großschreiben
 
@@ -2777,6 +2837,9 @@ language = Deutsch
 = Symbols
 > Symbole
 
+= Synonyms
+> Synonyme
+
 = Tab stop position
 > Tabstoppposition
 
@@ -2932,6 +2995,9 @@ language = Deutsch
 
 = Thesaurus
 > Thesaurus
+
+= Thesaurus…
+> Thesaurus…
 
 = This machine's list of trusted issuers could not be read
 > Die Liste der vertrauenswürdigen Aussteller dieses Computers konnte nicht gelesen werden

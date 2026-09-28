@@ -610,8 +610,10 @@ impl Popup {
             }
             // A menu's rows are the program's words; a list of fonts or of
             // the person's own styles has nothing in the catalogue and comes
-            // back as it was.
-            let text = messages::translated(text);
+            // back as it was. A row indented under a heading is looked up
+            // without its indent, which is the menu's and not the words'.
+            let indent = text.len() - text.trim_start().len();
+            let text = format!("{}{}", &text[..indent], messages::translated(&text[indent..]));
             let line = engine.simple_line(&text, text_left, y + 15.0, 9.0, color);
             renderer.draw_onto(canvas, &line, 0.0, 0.0);
             if kind == Kind::Submenu {

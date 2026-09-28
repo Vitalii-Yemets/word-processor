@@ -1,6 +1,7 @@
 //! The editor: what the window shows, and what every command does to it.
 
 mod accessible;
+mod additional;
 pub(crate) mod align;
 mod appearance;
 mod arrange;
@@ -367,6 +368,8 @@ pub struct Editor {
     /// What each line of the open list of synonyms would put in place of the
     /// word, or nothing for a heading; and which word that is.
     pending_synonyms: Vec<Option<String>>,
+    /// What each of the right-click menu's additional actions would put in.
+    pending_actions: Vec<additional::Pending>,
     pending_word: Option<(usize, core::ops::Range<usize>)>,
     /// The bilingual dictionaries opened so far, by the languages each is from
     /// and to; nothing where there is none. See [`translate`].
@@ -834,6 +837,7 @@ impl Editor {
             ignored_findings: std::collections::HashSet::new(),
             thesauri: std::collections::HashMap::new(),
             pending_synonyms: Vec::new(),
+            pending_actions: Vec::new(),
             pending_word: None,
             bilinguals: std::collections::HashMap::new(),
             pending_translations: Vec::new(),

@@ -335,6 +335,10 @@ pub struct AutoCorrect {
     /// Whether it is used in the text as well as in an equation. Word ships
     /// it switched off: `\alpha` in a paragraph about LaTeX is meant.
     pub math_outside: bool,
+
+    /// The Actions tab: what is recognised in the text for the right-click
+    /// menu to offer something for.
+    pub actions: crate::actions::Recognisers,
 }
 
 /// Word's AutoFormat tab: what the AutoFormat command changes when it goes
@@ -437,6 +441,7 @@ impl Default for AutoCorrect {
                 .collect(),
             math_replace: true,
             math_outside: false,
+            actions: crate::actions::Recognisers::default(),
         }
     }
 }

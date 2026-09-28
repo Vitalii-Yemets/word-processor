@@ -332,6 +332,7 @@ impl Editor {
             Command::AddToDictionary => self.add_pending(),
             Command::Thesaurus => self.open_thesaurus(),
             Command::Synonym(index) => self.take_synonym(index as usize),
+            Command::Action(index) => self.take_action(index as usize),
             Command::TranslateSelection => self.translate_selection(),
             Command::AutoFormat => self.open_autoformat(),
             Command::AutoFormatNow => self.autoformat_now(),
