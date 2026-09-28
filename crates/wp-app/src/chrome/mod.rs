@@ -43,6 +43,7 @@ pub mod textpane;
 pub mod theme;
 pub mod tip;
 pub mod titlebar;
+pub mod translatorpane;
 pub mod userform;
 
 use wp_docx::model::Alignment;

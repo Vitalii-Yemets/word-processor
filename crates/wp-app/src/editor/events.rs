@@ -490,6 +490,14 @@ impl Editor {
                         Response::Ignored
                     };
                 }
+                if self.over_translator(self.pointer_x as i32) {
+                    return if self.translator_pane.scroll_by(-lines * super::PANE_STEP) {
+                        self.needs_redraw = true;
+                        Response::Redraw
+                    } else {
+                        Response::Ignored
+                    };
+                }
                 // Over the navigation pane the wheel scrolls the outline.
                 // The wheel over the styles pane scrolls its list.
                 if self.over_styles_pane(self.pointer_x as i32) {
@@ -672,6 +680,10 @@ impl Editor {
                 if self.find_has_keyboard() {
                     return self.type_into_find(character);
                 }
+                // And the Translator's box, while it has it.
+                if self.translator_has_keyboard() {
+                    return self.translator_character(character);
+                }
                 if self.show_navigation && self.navigation.searching {
                     return self.type_into_search(character);
                 }
@@ -703,6 +715,7 @@ impl Editor {
             Event::Compose { text, caret, attributes } => {
                 if self.typing_in_box()
                     || self.find_has_keyboard()
+                    || self.translator_has_keyboard()
                     || (self.show_navigation && self.navigation.searching)
                 {
                     return Response::Ignored;
@@ -712,6 +725,7 @@ impl Editor {
             Event::Commit(text) => {
                 if self.typing_in_box()
                     || self.find_has_keyboard()
+                    || self.translator_has_keyboard()
                     || (self.show_navigation && self.navigation.searching)
                 {
                     let mut response = Response::Ignored;
@@ -979,6 +993,12 @@ impl Editor {
         if self.over_text_pane(x) && (y as f32) > self.ribbon_bottom() {
             return self.text_pane_press(x, y);
         }
+        if self.over_translator(x) && (y as f32) > self.ribbon_bottom() {
+            return self.translator_press(x, y);
+        }
+        // A press anywhere else takes the keyboard back from the Translator's
+        // box, as a press outside any box does.
+        self.translator.typing = false;
         if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
             return self.restrict_pane_press(x, y);
         }
@@ -1539,6 +1559,12 @@ impl Editor {
             }
             return Response::Redraw;
         }
+        if self.over_translator(x) && (y as f32) > self.ribbon_bottom() {
+            if self.translator_hover(x, y) {
+                self.needs_redraw = true;
+            }
+            return Response::Redraw;
+        }
         if self.over_restrict_pane(x) && (y as f32) > self.ribbon_bottom() {
             let changed = self.restrict_pane_hover(x, y);
             if changed {
@@ -1687,7 +1713,7 @@ impl Editor {
             Choice::MergeField => Command::InsertMergeField,
             Choice::Correction => Command::Spelling,
             Choice::Synonym => Command::Thesaurus,
-            Choice::Translation => Command::Translate,
+            Choice::TranslatorLanguage => Command::Translate,
             Choice::Accessibility => Command::CheckAccessibility,
             // The menu the right button opens hangs where the pointer was, not
             // under a button of the ribbon.
@@ -1856,7 +1882,7 @@ impl Editor {
             | Choice::Correction
             | Choice::Synonym
             | Choice::Translate
-            | Choice::Translation
+            | Choice::TranslatorLanguage
             | Choice::Accessibility
             | Choice::Context
             | Choice::Group
@@ -1964,7 +1990,7 @@ impl Editor {
             Choice::Correction => self.choose_correction(index),
             Choice::Synonym => self.take_synonym(index),
             Choice::Translate => self.choose_translate(index),
-            Choice::Translation => self.take_translation(index),
+            Choice::TranslatorLanguage => self.choose_translator_language(index),
             Choice::Accessibility => self.choose_accessibility(index),
             Choice::Context => self.choose_context_entry(index),
             Choice::Group => self.choose_group_command(index),
@@ -2067,6 +2093,19 @@ impl Editor {
                     return self.step_box(command, key == Key::Up);
                 }
                 _ => return Response::Ignored,
+            }
+        }
+
+        // The Translator's box takes the keys that move about in it and
+        // edit it, while it has the keyboard.
+        if self.translator_has_keyboard()
+            && !modifiers.control
+            && self.popup.is_none()
+            && !self.showing_key_tips()
+        {
+            let response = self.translator_key(key);
+            if response != Response::Ignored {
+                return response;
             }
         }
 

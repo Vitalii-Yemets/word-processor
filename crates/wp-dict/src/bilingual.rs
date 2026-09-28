@@ -272,7 +272,11 @@ fn parse_entry(text: &str) -> Option<Meaning> {
         if trimmed.is_empty() {
             continue;
         }
-        if !line.starts_with(char::is_whitespace) {
+        // The German-English list sets a sense that begins with the field it
+        // belongs to in by a space — " [zool.] dog <n>" — and it is the
+        // translations all the same: the dog under "Hund" was lost for it.
+        let labelled = translations.is_empty() && trimmed.starts_with('[');
+        if !line.starts_with(char::is_whitespace) || labelled {
             // The translations, each with its own tags. "Geschlecht <neut>,
             // Familie <fem>" is two, and the first tag is the kind of word. A
             // dictionary written some other way has more lines at the margin,
@@ -719,6 +723,27 @@ mod tests {
         assert_eq!(happy[0].part_of_speech.as_deref(), Some("adj"));
         assert_eq!(happy[0].note.as_deref(), Some("über"));
         let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn a_sense_set_in_by_the_field_it_belongs_to_is_a_sense() {
+        // How the German-English list writes "Hund" the animal, which a
+        // reader that took translations only from the margin read as nothing.
+        let entry = "Hund /h\u{2C8}\u{28A}nt/ <masc, n, sg>\n [zool.] dog <n>, dawg <n>\n         \
+                     Note: used to represent American speech\n      \"einen Hund abrichten\"  - \
+                     train a dog\n see: {Hunde}, {Haushund}\n";
+        let meaning = parse_entry(entry).expect("the sense");
+        assert_eq!(meaning.translations, vec!["dog", "dawg"]);
+        assert_eq!(meaning.part_of_speech.as_deref(), Some("n"));
+        assert_eq!(meaning.note.as_deref(), Some("zool."));
+        assert_eq!(
+            meaning.examples,
+            vec![("einen Hund abrichten".to_owned(), "train a dog".to_owned())]
+        );
+        // And an example set in the same way after the translations is still
+        // an example, not more translations.
+        let entry = "Haus <n>\nhouse <n>\n [fig.] home\n";
+        assert_eq!(parse_entry(entry).expect("the sense").translations, vec!["house"]);
     }
 
     #[test]

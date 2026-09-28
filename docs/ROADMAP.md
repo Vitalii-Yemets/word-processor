@@ -4629,7 +4629,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   symbols, instant-messaging contacts, places — and the Actions tab's
   Properties and More Actions buttons: each of them is a hand-off to another
   program or to the internet, which is what this program does not do.
-- [ ] **F13. The Translator as a pane, and a second pair of languages.** Word
+- [x] **F13. The Translator as a pane, and a second pair of languages.** Word
   translates from a pane with its own box to type in, which is the same want
   **F4** names for the thesaurus, and it translates between more than the one
   pair on the build image — the same question as the spelling dictionaries':
@@ -4637,6 +4637,57 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   sentences is not part of this: it cannot be done on a machine without a
   model, and it will not be done by posting somebody's document somewhere.
   Named in **F6**.
+  *Done when:* Translate Selection opens a pane with the word in its box and
+  its senses under it, a German word typed into the box after turning the
+  languages round is looked up in German, and French and Russian are among
+  the languages the lists offer.
+  The pane is down the right, where the others are and sharing the strip with
+  them. At its top, From and To, each a list of the languages the machine has
+  dictionaries for — To offering only what there is a dictionary into from
+  the From — and the button between them that turns them round where the
+  machine has the pair the other way. Under them the box, which holds the
+  selection when Translate Selection opened the pane, or the word at the
+  caret, or nothing; which takes the keyboard when it is pressed and gives it
+  back when anything else is; and which is looked up as it changes. Under
+  that what the dictionary said, as the list under the button said it: the
+  whole stretch where the dictionary has it, else each word as a heading with
+  its senses under it, a long sense wrapped rather than cut off. A sense
+  chosen goes into the document — in place of its word while the box still
+  holds what came from the document and the document still has it there, in
+  the word's case, and at the caret when the box holds something typed. A
+  language the machine has no dictionary from stays the language the words
+  are in, and the pane says so and names the pairs there are, rather than
+  reading them as something else. Translate Selection is the pane now; the
+  list under the button it replaces is gone.
+  Where the data comes from is where it came from before: dictd's folders, the
+  folders the spelling dictionaries are looked for in, which include the one
+  beside the program, and `%APPDATA%\dictd` on Windows. The build image now
+  has German into English beside English into German, and FreeDict's English
+  into French, French into English and English into Russian, which are small
+  and written from Wiktionary — the other way FreeDict writes its entries.
+  *Proven by:* `wp-app`'s tests against those dictionaries: Translate Selection
+  opening the pane with the word, English into German, and a sense replacing
+  the word; three words each listed and a sense replacing its own word; a
+  word typed into the box — with a letter taken back — looked up, and its
+  sense put in at the caret, the typing never reaching the page; the button
+  turning English into German round and "Haus" found as "house"; the lists
+  offering English, French and German, French into English finding "chat" a
+  cat, and English into Russian answering in Cyrillic; no entry, and no
+  dictionary from Italian, each said with the pairs there are; and the pane
+  and the Text Pane taking each other's place and the page making room.
+  `wp-dict`'s real-file tests read every one of the new dictionaries for words
+  it must have and the word each must be. `--picture … translate` draws the
+  pane opened from a word of the welcome document, and `translator-typed` the
+  pane turned round with "Hund" typed in — both looked at.
+  *Found along the way:* the German-English list sets a sense that begins with
+  the field it belongs to in by a space — `[zool.] dog, dawg` under "Hund" —
+  and the reader took translations only from the margin, so "Hund" was a mine
+  car and a canine and never a dog. A labelled line where no translations have
+  been read yet is the translations now; `wp-dict` has a test in that shape.
+  *Not done:* the thesaurus as a pane, which **F4** named with this and is its
+  own item's to do; the Translator's Document tab, which in Word posts the
+  document to Microsoft; and more pairs than the image carries, which is a
+  question of which dictionaries a machine has and not of the reader.
 
 ## G — The files Word can open
 

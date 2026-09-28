@@ -121,6 +121,7 @@ mod theme_effects;
 mod themes;
 mod thesaurus;
 mod translate;
+mod translator;
 pub(crate) mod vertical;
 mod video;
 mod views;
@@ -375,7 +376,10 @@ pub struct Editor {
     /// and to; nothing where there is none. See [`translate`].
     bilinguals: std::collections::HashMap<(String, String), Option<wp_dict::bilingual::Bilingual>>,
     /// What each line of the list of meanings puts in place of which word.
-    pending_translations: Vec<Option<(usize, core::ops::Range<usize>, String)>>,
+    /// The Translator pane, whether it is open, and what it holds.
+    show_translator: bool,
+    translator: translator::Translator,
+    translator_pane: crate::chrome::translatorpane::TranslatorPane,
     /// The languages the Translator Preferences dialog offers, in its order.
     pending_targets: Vec<String>,
     /// The mistake a correction is being chosen for.
@@ -840,7 +844,9 @@ impl Editor {
             pending_actions: Vec::new(),
             pending_word: None,
             bilinguals: std::collections::HashMap::new(),
-            pending_translations: Vec::new(),
+            show_translator: false,
+            translator: translator::Translator::default(),
+            translator_pane: crate::chrome::translatorpane::TranslatorPane::new(),
             pending_targets: Vec::new(),
             pending_issue: None,
             recipients: wp_docx::merge::Recipients::default(),
@@ -1154,6 +1160,7 @@ impl Editor {
             - self.signature_pane_width()
             - self.mapping_pane_width()
             - self.text_pane_width()
+            - self.translator_pane_width()
             - self.compare_pane_width()
             - crate::chrome::SCROLLBAR_THICKNESS)
             .max(1.0)

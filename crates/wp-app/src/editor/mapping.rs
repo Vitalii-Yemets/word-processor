@@ -81,6 +81,7 @@ impl Editor {
         self.show_restrict = false;
         self.show_signatures = false;
         self.show_text_pane = false;
+        self.show_translator = false;
         self.show_mapping = true;
         self.mapping_row = None;
         self.clamp_scroll();

@@ -39,8 +39,8 @@ pub enum Choice {
     Synonym,
     /// Translate Selection, Translate Document, Translator Preferences.
     Translate,
-    /// What the words selected are in another language, sense by sense.
-    Translation,
+    /// The languages the Translator pane translates from, or into.
+    TranslatorLanguage,
 
     // --- What the buttons with an arrow drop -------------------------------
     /// Where an alignment tab goes.

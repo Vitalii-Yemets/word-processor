@@ -109,6 +109,29 @@ impl Pen<'_, '_, '_> {
         y - baseline + 15.0
     }
 
+    /// How tall a sentence broken to fit a width would come out, without
+    /// drawing it: what a row that holds one needs to know before it draws
+    /// what goes behind it.
+    pub fn wrapped_height(&mut self, text: &str, width: f32) -> f32 {
+        let mut lines = 0usize;
+        let mut line = String::new();
+        let colour = self.theme.text;
+        for word in text.split_whitespace() {
+            let wanted = if line.is_empty() { word.to_owned() } else { format!("{line} {word}") };
+            let measured = self.engine.simple_line(&wanted, 0.0, 0.0, TEXT, colour);
+            if measured.width > width && !line.is_empty() {
+                lines += 1;
+                line = word.to_owned();
+            } else {
+                line = wanted;
+            }
+        }
+        if !line.is_empty() {
+            lines += 1;
+        }
+        lines.saturating_sub(1) as f32 * LINE + 15.0
+    }
+
     /// One line, drawn where it is asked for rather than at the pen.
     fn put(&mut self, text: &str, x: f32, baseline: f32, colour: Color) {
         if baseline < self.top || baseline > self.bottom + LINE {

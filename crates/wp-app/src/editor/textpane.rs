@@ -116,6 +116,7 @@ impl Editor {
         self.show_restrict = false;
         self.show_signatures = false;
         self.show_mapping = false;
+        self.show_translator = false;
         self.show_text_pane = true;
         self.diagram_line = 0;
         self.diagram_caret = usize::MAX;

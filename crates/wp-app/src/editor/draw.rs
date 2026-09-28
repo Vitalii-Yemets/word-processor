@@ -1013,6 +1013,7 @@ impl Editor {
         self.draw_signature_pane();
         self.draw_mapping_pane();
         self.draw_text_pane();
+        self.draw_translator();
         self.draw_compare_pane();
         self.draw_drop_mark();
 

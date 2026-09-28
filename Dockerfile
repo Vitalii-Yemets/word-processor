@@ -164,6 +164,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-fonttoo
 RUN apt-get update && apt-get install -y --no-install-recommends hunspell-ru hunspell-fr-classical \
  && rm -rf /var/lib/apt/lists/*
 
+# More bilingual dictionaries, beside the English-German one above: German
+# into English, so that the pair goes both ways, and English with French both
+# ways and into Russian, so that the Translator is held to more than one pair
+# and to dictionaries FreeDict writes in more than one way. Test data again,
+# never shipped.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        dict-freedict-deu-eng \
+        dict-freedict-eng-fra \
+        dict-freedict-fra-eng \
+        dict-freedict-eng-rus \
+ && rm -rf /var/lib/apt/lists/*
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

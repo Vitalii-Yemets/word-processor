@@ -2522,7 +2522,7 @@ fn outline(canvas: &mut Canvas, x: f32, y: f32, width: f32, height: f32, colour:
 }
 
 /// The small triangle that says a list drops from here.
-fn chevron(canvas: &mut Canvas, x: f32, centre_y: f32, colour: Color) {
+pub(crate) fn chevron(canvas: &mut Canvas, x: f32, centre_y: f32, colour: Color) {
     for step in 0..4 {
         canvas.fill_rect(
             (x + step as f32) as i32,

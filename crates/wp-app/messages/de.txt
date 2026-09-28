@@ -1148,6 +1148,9 @@ language = Deutsch
 = Fractions (1/2) with fraction character
 > Brüche (1/2) durch Bruchzeichen
 
+= From
+> Von
+
 = From the template to this document
 > Von der Vorlage in dieses Dokument
 
@@ -1544,6 +1547,12 @@ language = Deutsch
 = No
 > Nein
 
+= No dictionary on this machine from {0} into {1}
+> Kein Wörterbuch auf diesem Computer von {0} nach {1}
+
+= No entry for “{0}” in the {1} dictionary
+> Kein Eintrag für „{0}“ im Wörterbuch {1}
+
 = No hyphenation patterns for this language are on this machine
 > Auf diesem Rechner gibt es keine Trennmuster für diese Sprache
 
@@ -1930,6 +1939,9 @@ language = Deutsch
 
 = Title at the foot
 > Titel am Fuß
+
+= To
+> Nach
 
 = Top of Page
 > Seitenanfang
@@ -3044,6 +3056,9 @@ language = Deutsch
 = Translate to
 > Übersetzen in
 
+= Translator
+> Übersetzer
+
 = Translator Preferences
 > Übersetzungseinstellungen
 
@@ -3052,6 +3067,9 @@ language = Deutsch
 
 = Type a New List...
 > Neue Liste eingeben...
+
+= Type a word to translate
+> Wort zum Übersetzen eingeben
 
 = Type one person, press Add, and type the next.
 > Eine Person eingeben, Hinzufügen drücken und die nächste eingeben.
@@ -3379,6 +3397,9 @@ language = Deutsch
 
 = {0} {1}
 > {0} {1}
+
+= {0} — no entry
+> {0} – kein Eintrag
 
 = {0}, {1} boxes
 > {0}, {1} Felder

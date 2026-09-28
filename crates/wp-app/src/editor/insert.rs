@@ -366,6 +366,18 @@ impl Editor {
                 self.document.set_caret(wp_docx::TextPosition::new(3, at + 1));
                 self.translate_selection();
             }
+            // The Translator pane opened empty, turned round to German into
+            // English, and a word typed into its box.
+            "translator-typed" => {
+                self.ribbon.tab = crate::chrome::ribbon::Tab::Review;
+                self.open_translator(String::new(), None);
+                if let Some((x, y)) = self.translator_pane_place(true) {
+                    self.translator_press(x, y);
+                }
+                for character in "Hund".chars() {
+                    self.translator_character(character);
+                }
+            }
             // The window on a screen of twice the density: everything twice
             // as many pixels across, sharp, and the same size to the eye.
             "hidpi" => {

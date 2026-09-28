@@ -1265,7 +1265,7 @@ impl Ribbon {
                     | Choice::Envelope
                     | Choice::Synonym
                     | Choice::Translate
-                    | Choice::Translation
+                    | Choice::TranslatorLanguage
                     | Choice::Label => String::new(),
                 };
                 let line = engine.simple_line(&text, left + 6.0, top + 17.0, 8.5, color);

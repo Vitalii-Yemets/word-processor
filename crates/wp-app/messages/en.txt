@@ -387,6 +387,7 @@
 = Formatting marks
 = Formula
 = Fractions (1/2) with fraction character
+= From
 = From the template to this document
 = From this document to the template
 = Gallery
@@ -562,6 +563,8 @@
 = Next
 = Next Footnote
 = No
+= No dictionary on this machine from {0} into {1}
+= No entry for “{0}” in the {1} dictionary
 = No hyphenation patterns for this language are on this machine
 = No names were typed
 = No numbers were typed, so no chart was drawn
@@ -971,6 +974,7 @@
 = This video is a file outside the document
 = Title
 = Title at the foot
+= To
 = Top
 = Top of Page
 = Total Row
@@ -980,6 +984,7 @@
 = Translate
 = Translate from
 = Translate to
+= Translator
 = Translator Preferences
 = Triangle
 = Trust Center
@@ -990,6 +995,7 @@
 = Two Lines in One...
 = Type
 = Type a New List...
+= Type a word to translate
 = Type one person, press Add, and type the next.
 = Type somebody first
 = Type the new name first
@@ -1131,6 +1137,7 @@
 = {0} was not kept
 = {0} words
 = {0} {1}
+= {0} — no entry
 = {0}, {1} boxes
 = {0}x{1} Table
 = “Straight quotes” with “smart quotes”
