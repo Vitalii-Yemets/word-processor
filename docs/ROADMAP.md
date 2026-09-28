@@ -4552,9 +4552,9 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   The list is Word's idea and its names are TeX's, which are Word's: the Greek
   alphabet with the `\var` twins (`\epsilon` ϵ and `\varepsilon` ε, `\phi` ϕ
   and `\varphi` φ, and so on), the operators, the relations, the arrows, the
-  big operators and roots, and the odd letters mathematics writes with — some
-  hundred and fifty names. It is the settings file's, written whole like the
-  replacement list, so a name taken off stays off.
+  big operators and roots, and the odd letters mathematics writes with — a
+  hundred and forty-five names. It is the settings file's, written whole like
+  the replacement list, so a name taken off stays off.
   The tab is Word's second, between AutoCorrect and AutoFormat As You Type:
   "Use Math AutoCorrect rules outside of math regions", off as Word ships it;
   "Replace text as you type"; the two boxes and the list, with Add and Delete
