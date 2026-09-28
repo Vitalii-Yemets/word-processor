@@ -7,7 +7,7 @@
 //! moving. So the marks are drawn over the page from the same ranges the
 //! selection is drawn from, and the layout knows nothing about them.
 
-use crate::messages::t;
+use crate::messages::{self, t};
 use wp_docx::proofing::{Dictionary, Issue, Kind};
 use wp_docx::TextPosition;
 use wp_shell::dialog::FileFilter;
@@ -91,7 +91,7 @@ impl Editor {
         if issue.suggestion.is_some() || issue.kind.is_spelling() {
             self.open_correction(&issue)
         } else {
-            self.report(&format!("{}: {}", issue.kind.message(), issue.text))
+            self.report(&format!("{}: {}", messages::translated(issue.kind.message()), issue.text))
         }
     }
 
@@ -129,7 +129,7 @@ impl Editor {
         self.pending_issue = Some(issue.clone());
         self.popup = Some(Popup::new(Choice::Correction, items, None, left, top, 300.0));
         self.needs_redraw = true;
-        self.report(issue.kind.message())
+        self.report(&messages::translated(issue.kind.message()))
     }
 
     /// Does what was chosen about the mistake.

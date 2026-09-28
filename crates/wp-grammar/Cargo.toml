@@ -6,5 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[dev-dependencies]
+# Used only by the tests, to hold every correction a rule offers to the
+# language's own word list.
+wp-dict = { path = "../wp-dict" }
+
 [lints]
 workspace = true

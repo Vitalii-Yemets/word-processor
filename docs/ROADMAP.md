@@ -4190,12 +4190,98 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   their own to be written by somebody who writes it. Named as **F8**.
   *Not done:* Word's style checks — passive voice, wordiness, clichés — which
   are advice rather than mistakes and are drawn in a third colour.
-- [ ] **F8. Grammar rules for other languages.** The engine in `wp-grammar`
+- [x] **F8. Grammar rules for other languages.** The engine in `wp-grammar`
   takes a pattern over words and says what it found; only English has a list.
   Each further language is a list of its own — the mistakes that show in a few
   words side by side, in that language, with what Word calls each — and a
   reader of the language to say which are mistakes. Russian, German and French
   first, being the languages this program's dictionaries already know.
+  *Done when:* "в течении года", "seid Jahren" and "je ai" are underlined in
+  blue in Russian, German and French text, each offering its correction, and
+  none of them is underlined in a language it is not a mistake in.
+  Each language is a module of its own in `wp-grammar` — English, Russian,
+  German, French — and `check` takes the language a text is in: the rules of
+  that language apply, only its primary tag counts (`de-AT` is German), and a
+  language with no list is not checked at all. The checker in `wp-docx` runs
+  every language a paragraph has, each over the stretches that say they are
+  in it; a stretch that says nothing is English, as it was.
+  Every rule is as narrow as the mistake, because a rule that fires on a
+  correct sentence teaches the writer to ignore the blue line. So a rule names
+  the words around the mistake that make it one. Russian: "в течении" before a
+  span of time and not before "реки", "одел" before a garment and not before a
+  child, "по приезду" and not "по окончанию" (which is right in "работы по
+  окончанию"), "согласно графика", "обоими руками", "ложил", "ехай", "ихний",
+  "более лучше", "никто иной как". German: "seid" before a span of time and
+  not before "dem Ziel", the comparative before "wie" but not "mehr wie" (which
+  is right in "nicht mehr wie früher"), "einzigste", "die selbe", "nichts desto
+  trotz", "irgend jemand", "wieder Willen", "ein Paar Tage" but not "ein Paar
+  Schuhe". French: the elision — "de", "le", "la", "je", "me", "te", "se",
+  "ne", "que" and the words ending in it, before a vowel, but not before an h,
+  which may be sounded, nor before "onze" or "oui", nor "la une", nor a letter
+  named in capitals as in "de A à Z" — "si il", "ce est", "quelque un", "quand
+  à moi", "sa va", "le plus meilleur", "malgré que", "pallier à", "voire même",
+  "au jour d’aujourd’hui", and "quelque soit" pointed out without a correction,
+  because which of "quel", "quelle", "quels" is right is for the noun after it
+  to say.
+  The engine gained two kinds of word in a pattern. A swap is a list of pairs:
+  the word matches the first of a pair, and the correction may put the second
+  in its place, which is how "ложил" becomes "клал" and "einzigste" "einzige"
+  without a rule for each form. A test is a function the word is put to, which
+  is how French says what begins with a vowel. A correction may also ask for a
+  word in small letters, which is what one written onto another wants: "Das
+  Selbe" is "Dasselbe".
+  The names the rules give are English, as the interface's words are, and are
+  translated as the interface is — a German reader of a French text sees
+  "Elision" named in German. They are Word's names where Word's English
+  grammar options have one for the same mistake ("Commonly confused words",
+  "Comparisons", "Words split", "Verb form"), and plain where it has none
+  ("Elision", "Word form").
+  *Proven by:* every rule carries a sentence with its mistake in it, and the
+  tests hold every rule of every language to finding that mistake in that
+  sentence with the whole list running — which found an English rule that
+  had never fired, "should of went", shadowed by "could of" and its kin — and
+  to leaving nothing to find once every correction is made. Every corrected
+  sentence is then looked up word by word in the dictionary for its language
+  that the build image now carries, Russian and French as well as English and
+  German, so that no correction puts a misspelling where a mistake was. The
+  narrowness is held to the sentences where each rule must stay quiet ("в
+  течении реки", "одела ребёнка", "ihr seid dem Ziel nahe", "ein Paar Schuhe",
+  "le héros", "de A à Z", "à la une"). The checker's own test is one paragraph
+  in four languages, each mistake found by its own language's rules and
+  English words in a French stretch left alone.
+  *Found along the way:* the spelling of German and French was mostly
+  unreadable, and no test knew, because the one test that looked every word
+  of a dictionary up looked up only English. Three things, all in `wp-dict`,
+  all fixed here. A word listed twice was one word with both sets of flags,
+  and German lists nearly every verb twice — once as a verb, once as a piece
+  only a compound may use — so "gehen", "tun", "warten" were not words. Each
+  entry is now asked on its own. A suffix that adds nothing was skipped as a
+  rule that does nothing, and French makes every singular noun with one:
+  "maison" is a stem that is no word until an affix is put on it, and the
+  affix is an empty ending. It is a rule now. And the flags a suffix carries
+  were read backwards for two suffixes in a row, and not at all for a suffix
+  and a prefix — which is how French allows the "l’" of "l’homme" and the "j’"
+  of "j’ai", through the suffix rather than the stem. Both now read the way
+  Hunspell reads them. The whole-list test now looks up every entry of all
+  four dictionaries, leaving out only the ones each affix file says are meant
+  to fail — its forbidden misspellings and its compound-only pieces, which are
+  a quarter of German's list — and at least ninety-seven in a hundred of the
+  rest must be words. Of German's rest, every one is.
+  Found as well: the names of the mistakes the checker reports — "Repeated
+  word", "Not in the dictionary" and the grammar's own — were not in the
+  message catalogue and came out in English in a German interface. They are
+  listed now, with their German, and the status line translates them as the
+  menu does.
+  *Not done:* a reader of each language to go over its list. All three are
+  written from the grammar books' lists of what is wrong, and held to each
+  language's dictionary and to the sentences above where they must stay quiet
+  — which is not the same as having been read by somebody who writes the
+  language every day.
+  *Not done:* the mistakes that need the sentence rather than a few words
+  side by side — the French subjunctive after "après que", the German case
+  after "wegen", Russian agreement of an adjective with a noun some words
+  away. Those need a part of speech for every word, which is what the English
+  list could not do either.
 - [x] **F4. Thesaurus.** Shift+F7, the button on the Review tab, and Synonyms
   on the right-click menu: the words that mean what the word at the caret
   means, grouped by which of its meanings they share, with the opposites

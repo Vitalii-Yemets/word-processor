@@ -156,6 +156,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-fonttoo
  && python3 /tmp/make-colour-fonts.py /usr/share/fonts/truetype/wp-colour \
  && rm -rf /var/lib/apt/lists/* /tmp/make-colour-fonts.py
 
+# Russian and French dictionaries, for the grammar rules of those languages:
+# every correction a rule offers is held to the language's own word list, so
+# that a rule cannot put a misspelling where a mistake was. Test data like the
+# English and German ones above, in a layer of its own so that adding them did
+# not mean installing everything above again.
+RUN apt-get update && apt-get install -y --no-install-recommends hunspell-ru hunspell-fr-classical \
+ && rm -rf /var/lib/apt/lists/*
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

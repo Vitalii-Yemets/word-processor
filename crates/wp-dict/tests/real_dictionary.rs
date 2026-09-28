@@ -4,19 +4,22 @@
 //! written for. Only a dictionary somebody else published proves it handles
 //! the shapes that actually occur: a hundred rules, conditions on every one,
 //! flags aliased to numbers, words that are forbidden, words that exist only
-//! inside a longer word. The Hunspell dictionaries for English and German are
-//! installed in the build container for this.
+//! inside a longer word. The Hunspell dictionaries for English, German,
+//! Russian and French are installed in the build container for this.
 
 use std::path::Path;
 
 const ENGLISH: &str = "/usr/share/hunspell/en_US.dic";
 const GERMAN: &str = "/usr/share/hunspell/de_DE.dic";
+const RUSSIAN: &str = "/usr/share/hunspell/ru_RU.dic";
+const FRENCH: &str = "/usr/share/hunspell/fr_FR.dic";
 
 fn read(path: &str) -> wp_dict::Dictionary {
     wp_dict::read_pair(Path::new(path)).unwrap_or_else(|error| {
         panic!(
             "cannot read {path}: {error}\n\
-             the build image should install hunspell-en-us and hunspell-de-de"
+             the build image should install hunspell-en-us, hunspell-de-de, \
+             hunspell-ru and hunspell-fr-classical"
         )
     })
 }
@@ -127,34 +130,118 @@ fn the_ordinals_are_right_by_the_dictionarys_own_rules() {
 
 #[test]
 fn the_whole_word_list_can_be_looked_up() {
-    // Every stem the file holds, asked for. A reader that mishandles one line
-    // of the format fails on whichever words happen to use it, and the only
-    // way to know is to ask for all of them.
-    let dictionary = read(ENGLISH);
-    let text = std::fs::read_to_string(ENGLISH).expect("the word list");
-    let mut asked = 0;
-    let mut known = 0;
+    // Every stem each file holds, asked for. A reader that mishandles one
+    // line of the format fails on whichever words happen to use it, and the
+    // only way to know is to ask for all of them — in every language, since
+    // each dictionary leans on a different part of the format. English alone
+    // passed this while German lost every verb listed twice and French every
+    // noun in the singular.
+    for path in [ENGLISH, GERMAN, RUSSIAN, FRENCH] {
+        let dictionary = read(path);
+        let text = std::fs::read_to_string(path).expect("the word list");
+        // The entries that are meant to fail: the misspellings the list holds
+        // in order to forbid them, and the pieces only a compound may use.
+        // German holds a quarter of its list in these. Read from the affix
+        // file by hand, so that the reader is not what decides which words
+        // it is excused.
+        let affix = std::fs::read_to_string(path.replace(".dic", ".aff")).expect("the affix file");
+        let long = affix.lines().any(|line| line.trim() == "FLAG long");
+        let excused: Vec<&str> = affix
+            .lines()
+            .filter_map(|line| {
+                let (key, value) = line.split_once(' ')?;
+                ["FORBIDDENWORD", "ONLYINCOMPOUND"].contains(&key).then(|| value.trim())
+            })
+            .collect();
+        let excused_by = |flags: &str| {
+            let characters: Vec<char> = flags.chars().collect();
+            let names: Vec<String> = if long {
+                characters.chunks(2).map(|pair| pair.iter().collect()).collect()
+            } else {
+                characters.iter().map(char::to_string).collect()
+            };
+            names.iter().any(|name| excused.contains(&name.as_str()))
+        };
 
-    for line in text.lines().skip(1) {
-        let entry = line.split(['\t', ' ']).next().unwrap_or_default();
-        let word = entry.split('/').next().unwrap_or_default();
-        if word.is_empty() || word.chars().any(char::is_numeric) {
-            continue;
+        let mut asked = 0;
+        let mut known = 0;
+        for line in text.lines().skip(1) {
+            let entry = line.split(['\t', ' ']).next().unwrap_or_default();
+            let (word, flags) = entry.split_once('/').unwrap_or((entry, ""));
+            if word.is_empty() || word.chars().any(char::is_numeric) || excused_by(flags) {
+                continue;
+            }
+            asked += 1;
+            if dictionary.spelled(word) {
+                known += 1;
+            }
         }
-        asked += 1;
-        if dictionary.spelled(word) {
-            known += 1;
-        }
+
+        assert!(asked > 10_000, "{path}");
+        // Not quite all of them: a stem flagged as needing an affix is no
+        // word on its own unless one of its affixes adds nothing.
+        assert!(
+            known * 100 / asked >= 97,
+            "{path}: only {known} of {asked} words in the list are words according to the reader"
+        );
     }
+}
 
-    assert!(asked > 10_000);
-    // Not all of them: a dictionary holds stems that are not words on their
-    // own — the ones flagged as needing an affix or as only ever part of a
-    // longer word — and those are supposed to fail.
-    assert!(
-        known * 100 / asked > 90,
-        "only {known} of {asked} words in the list are words according to the reader"
-    );
+#[test]
+fn a_word_listed_twice_is_two_words() {
+    // German lists its verbs once as verbs and again as pieces only a
+    // compound may use. The second must not take the first away.
+    let dictionary = read(GERMAN);
+    for word in ["gehen", "tun", "tat", "paar", "warten", "Wagen", "geht", "ging"] {
+        assert!(dictionary.spelled(word), "{word} is a word");
+    }
+    for wrong in ["gehn", "tatt", "wartn"] {
+        assert!(!dictionary.spelled(wrong), "{wrong} is not a word");
+    }
+}
+
+#[test]
+fn a_rule_that_adds_nothing_is_a_rule() {
+    // French lists a noun as a stem that is no word until an affix is put on
+    // it, and makes the singular with a suffix that adds nothing: "maison" is
+    // "maison" and an empty ending.
+    let dictionary = read(FRENCH);
+    for word in [
+        "maison",
+        "maisons",
+        "faim",
+        "vrai",
+        "vraie",
+        "vrais",
+        "gâteau",
+        "gâteaux",
+        "problème",
+        "problèmes",
+        "bien",
+        "tout",
+    ] {
+        assert!(dictionary.spelled(word), "{word} is a word");
+    }
+    // And the words French writes with an elided article or pronoun, which
+    // are prefixes to the dictionary.
+    for word in ["l'homme", "d'abord", "j'ai", "qu'il", "l\u{2019}homme"] {
+        assert!(dictionary.spelled(word), "{word} is a word");
+    }
+    for wrong in ["maisonn", "gâteaus", "problme", "vrae"] {
+        assert!(!dictionary.spelled(wrong), "{wrong} is not a word");
+    }
+}
+
+#[test]
+fn russian_is_read_in_its_own_letters() {
+    let dictionary = read(RUSSIAN);
+    for word in ["дом", "дома", "домами", "работал", "красивая", "течение", "течении", "кладёт"]
+    {
+        assert!(dictionary.spelled(word), "{word} is a word");
+    }
+    for wrong in ["карова", "сабака", "превет"] {
+        assert!(!dictionary.spelled(wrong), "{wrong} is not a word");
+    }
 }
 
 #[test]

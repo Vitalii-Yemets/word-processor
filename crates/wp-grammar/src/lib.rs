@@ -19,16 +19,30 @@
 //! # How a rule is written
 //!
 //! As a pattern over words: literal words, a choice of words, any word, a word
-//! that begins with a vowel sound. A rule matches a run of words with nothing
-//! but spaces between them — punctuation ends the run, because "I don't. No."
-//! is not a double negative. Each rule carries what to say about the match,
-//! which is the explanation Word gives, and what to put in its place where
-//! there is one right answer.
+//! that begins with a vowel sound, a word one of the language's own tests says
+//! yes to. A rule matches a run of words with nothing but spaces between them
+//! — punctuation ends the run, because "I don't. No." is not a double
+//! negative. Each rule carries what to say about the match, which is the name
+//! Word gives the mistake, and what to put in its place where there is one
+//! right answer. And each carries an example of the mistake it is for, which
+//! is how a reader of the list sees what it does and how the tests hold every
+//! rule to finding it.
 //!
-//! The rules are for English. A rule engine is the same for every language and
-//! the rules are not, and the rules for another language are another item.
+//! # Which languages
+//!
+//! English, Russian, German and French, each a list of its own in a module of
+//! its own: the engine is the same for every language and the mistakes are
+//! not. A rule is only ever a mistake in the language it was written for —
+//! "seid Jahren" is German and wrong, and means nothing in English — so a text
+//! is checked by the rules of the language it says it is in, and a language
+//! with no list is not checked at all.
 
 #![forbid(unsafe_code)]
+
+mod english;
+mod french;
+mod german;
+mod russian;
 
 /// One thing wrong, and where.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,7 +60,8 @@ pub struct Finding {
 /// One word of a pattern.
 #[derive(Clone, Copy, Debug)]
 enum Piece {
-    /// This word, in any case.
+    /// This word, in any case. Written in small letters, with a straight
+    /// apostrophe standing for either.
     Word(&'static str),
     /// One of these words, in any case.
     AnyOf(&'static [&'static str]),
@@ -57,6 +72,13 @@ enum Piece {
     /// A word that begins with a consonant sound, which is what "a" goes
     /// before.
     ConsonantSound,
+    /// The first word of one of these pairs, and `%1` in the replacement the
+    /// second word of the pair the first word of the match was: how "ложил"
+    /// becomes "клал" and "einzigste" becomes "einzige" without a rule for
+    /// each.
+    Swap(&'static [(&'static str, &'static str)]),
+    /// A word this test says yes to, given the word as it is written.
+    Test(fn(&str) -> bool),
 }
 
 /// One rule: what to look for, what to call it, what to put instead.
@@ -65,170 +87,60 @@ struct Rule {
     pattern: &'static [Piece],
     category: &'static str,
     /// A template for the replacement, where `$1` is the first word matched
-    /// and so on. `None` where the fix is the writer's to choose.
+    /// as it was written, and so on, and `%1` is it as the rule has it: what
+    /// a [`Piece::Swap`] puts in its place, or the word in small letters —
+    /// which is what a word joined onto another wants, "Das Selbe" being
+    /// "Dasselbe". `None` where the fix is the writer's to choose.
     replacement: Option<&'static str>,
+    /// A sentence with the mistake in it: for a reader of the list, and for
+    /// the tests, which hold every rule to finding it.
+    #[cfg_attr(not(test), allow(dead_code))]
+    example: &'static str,
 }
 
-/// The pronouns that take a verb in the singular.
-const HE_SHE_IT: &[&str] = &["he", "she", "it"];
-/// And those that take it in the plural.
-const THEY_WE_YOU: &[&str] = &["they", "we", "you"];
-/// A verb with "not" folded into it.
-const NEGATIVE_VERBS: &[&str] = &[
-    "don't",
-    "doesn't",
-    "didn't",
-    "can't",
-    "cannot",
-    "couldn't",
-    "won't",
-    "wouldn't",
-    "shouldn't",
-    "isn't",
-    "aren't",
-    "wasn't",
-    "weren't",
-    "haven't",
-    "hasn't",
-    "hadn't",
-    "ain't",
-];
-/// The words that make a negative a double one.
-const NEGATIVE_WORDS: &[&str] = &["no", "nothing", "nobody", "nowhere", "never", "none", "neither"];
-/// Verbs a "have" gets misheard after.
-const MODALS: &[&str] = &["could", "should", "would", "might", "must", "may"];
+/// The rules for a language, by its tag — `en-GB`, `ru`, `de-AT` — of which
+/// only the language counts: the mistakes are the same in every country that
+/// writes it.
+fn rules_for(language: &str) -> &'static [Rule] {
+    let primary = language.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
+    match primary.as_str() {
+        "en" => english::RULES,
+        "ru" => russian::RULES,
+        "de" => german::RULES,
+        "fr" => french::RULES,
+        _ => &[],
+    }
+}
 
-/// The rules for English.
-const ENGLISH: &[Rule] = &[
-    // --- Article use -------------------------------------------------------
-    Rule {
-        pattern: &[Piece::Word("a"), Piece::VowelSound],
-        category: "Article use",
-        replacement: Some("an $2"),
-    },
-    Rule {
-        pattern: &[Piece::Word("an"), Piece::ConsonantSound],
-        category: "Article use",
-        replacement: Some("a $2"),
-    },
-    // --- Verb form ---------------------------------------------------------
-    Rule {
-        pattern: &[Piece::AnyOf(MODALS), Piece::Word("of")],
-        category: "Verb form",
-        replacement: Some("$1 have"),
-    },
-    Rule {
-        pattern: &[Piece::AnyOf(HE_SHE_IT), Piece::Word("don't")],
-        category: "Subject-verb agreement",
-        replacement: Some("$1 doesn't"),
-    },
-    Rule {
-        pattern: &[Piece::AnyOf(HE_SHE_IT), Piece::Word("have")],
-        category: "Subject-verb agreement",
-        replacement: Some("$1 has"),
-    },
-    Rule {
-        pattern: &[Piece::AnyOf(HE_SHE_IT), Piece::Word("were")],
-        category: "Subject-verb agreement",
-        replacement: Some("$1 was"),
-    },
-    Rule {
-        pattern: &[Piece::AnyOf(THEY_WE_YOU), Piece::Word("was")],
-        category: "Subject-verb agreement",
-        replacement: Some("$1 were"),
-    },
-    Rule {
-        pattern: &[Piece::AnyOf(THEY_WE_YOU), Piece::Word("is")],
-        category: "Subject-verb agreement",
-        replacement: Some("$1 are"),
-    },
-    Rule {
-        pattern: &[Piece::AnyOf(THEY_WE_YOU), Piece::Word("has")],
-        category: "Subject-verb agreement",
-        replacement: Some("$1 have"),
-    },
-    Rule {
-        pattern: &[Piece::AnyOf(THEY_WE_YOU), Piece::Word("doesn't")],
-        category: "Subject-verb agreement",
-        replacement: Some("$1 don't"),
-    },
-    Rule {
-        pattern: &[Piece::Word("i"), Piece::Word("is")],
-        category: "Subject-verb agreement",
-        replacement: Some("I am"),
-    },
-    // --- Double negation ---------------------------------------------------
-    Rule {
-        pattern: &[Piece::AnyOf(NEGATIVE_VERBS), Piece::AnyOf(NEGATIVE_WORDS)],
-        category: "Double negation",
-        replacement: None,
-    },
-    Rule {
-        pattern: &[Piece::AnyOf(NEGATIVE_VERBS), Piece::Any, Piece::AnyOf(NEGATIVE_WORDS)],
-        category: "Double negation",
-        replacement: None,
-    },
-    // --- Commonly confused words -------------------------------------------
-    Rule {
-        pattern: &[Piece::Word("alot")],
-        category: "Commonly confused words",
-        replacement: Some("a lot"),
-    },
-    Rule {
-        pattern: &[Piece::Word("their"), Piece::AnyOf(&["is", "are", "was", "were"])],
-        category: "Commonly confused words",
-        replacement: Some("there $2"),
-    },
-    Rule {
-        pattern: &[Piece::Word("your"), Piece::Word("welcome")],
-        category: "Commonly confused words",
-        replacement: Some("you're welcome"),
-    },
-    Rule {
-        pattern: &[
-            Piece::AnyOf(&[
-                "better", "worse", "more", "less", "rather", "other", "bigger", "smaller", "fewer",
-                "greater", "higher", "lower", "later", "earlier", "faster", "slower", "longer",
-                "shorter", "larger",
-            ]),
-            Piece::Word("then"),
-        ],
-        category: "Commonly confused words",
-        replacement: Some("$1 than"),
-    },
-    Rule {
-        pattern: &[Piece::Word("irregardless")],
-        category: "Word choice",
-        replacement: Some("regardless"),
-    },
-    Rule {
-        pattern: &[
-            Piece::Word("for"),
-            Piece::Word("all"),
-            Piece::Word("intensive"),
-            Piece::Word("purposes"),
-        ],
-        category: "Commonly confused words",
-        replacement: Some("for all intents and purposes"),
-    },
-    Rule {
-        pattern: &[Piece::Word("could"), Piece::Word("care"), Piece::Word("less")],
-        category: "Commonly confused words",
-        replacement: Some("couldn't care less"),
-    },
-    Rule {
-        pattern: &[Piece::Word("should"), Piece::Word("of"), Piece::Word("went")],
-        category: "Verb form",
-        replacement: Some("should have gone"),
-    },
-    // --- Capitalization ----------------------------------------------------
-    Rule { pattern: &[Piece::Word("i")], category: "Capitalization", replacement: Some("I") },
-];
+/// Whether there are rules for a language at all.
+#[must_use]
+pub fn has_rules(language: &str) -> bool {
+    !rules_for(language).is_empty()
+}
+
+/// Every name a finding can be given, in every language: what a translator
+/// of the interface has to say in theirs.
+#[must_use]
+pub fn categories() -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for rules in [english::RULES, russian::RULES, german::RULES, french::RULES] {
+        for rule in rules {
+            if !out.contains(&rule.category) {
+                out.push(rule.category);
+            }
+        }
+    }
+    out
+}
 
 /// One word of the text, and where it is.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Token<'a> {
     text: &'a str,
+    /// The word in small letters and with a straight apostrophe, which is
+    /// what the patterns are written in: a word processor types the curly one
+    /// and a person may type either.
+    folded: String,
     start: usize,
     end: usize,
     /// Whether punctuation stands between this word and the one before, which
@@ -236,14 +148,18 @@ struct Token<'a> {
     after_punctuation: bool,
 }
 
-/// Every mistake the rules find in a text.
+/// Every mistake the rules for a language find in a text.
 #[must_use]
-pub fn check(text: &str) -> Vec<Finding> {
+pub fn check(text: &str, language: &str) -> Vec<Finding> {
+    let rules = rules_for(language);
+    if rules.is_empty() {
+        return Vec::new();
+    }
     let tokens = tokens_of(text);
     let mut out: Vec<Finding> = Vec::new();
 
     for at in 0..tokens.len() {
-        for rule in ENGLISH {
+        for rule in rules {
             let Some(matched) = matches_at(rule, &tokens, at) else { continue };
             let start = tokens[at].start;
             let end = tokens[at + matched - 1].end;
@@ -252,11 +168,9 @@ pub fn check(text: &str) -> Vec<Finding> {
             if out.iter().any(|found| found.start < end && start < found.end) {
                 continue;
             }
-            let replacement = rule.replacement.map(|template| {
-                let words: Vec<&str> =
-                    tokens[at..at + matched].iter().map(|token| token.text).collect();
-                fill(template, &words, &text[start..end])
-            });
+            let replacement = rule
+                .replacement
+                .map(|template| fill(template, rule, &tokens[at..at + matched], &text[start..end]));
             // A replacement that is what is there already is no finding: the
             // rule for "i" fires on "I", and "I" is right.
             if replacement.as_deref() == Some(&text[start..end]) {
@@ -276,13 +190,15 @@ fn matches_at(rule: &Rule, tokens: &[Token<'_>], at: usize) -> Option<usize> {
         if offset > 0 && token.after_punctuation {
             return None;
         }
-        let word = token.text;
+        let word = token.folded.as_str();
         let fits = match piece {
-            Piece::Word(wanted) => word.eq_ignore_ascii_case(wanted),
-            Piece::AnyOf(wanted) => wanted.iter().any(|one| word.eq_ignore_ascii_case(one)),
+            Piece::Word(wanted) => word == *wanted,
+            Piece::AnyOf(wanted) => wanted.contains(&word),
             Piece::Any => true,
-            Piece::VowelSound => vowel_sound(word) == Some(true),
-            Piece::ConsonantSound => vowel_sound(word) == Some(false),
+            Piece::VowelSound => vowel_sound(token.text) == Some(true),
+            Piece::ConsonantSound => vowel_sound(token.text) == Some(false),
+            Piece::Swap(pairs) => pairs.iter().any(|(from, _)| *from == word),
+            Piece::Test(test) => test(token.text),
         };
         if !fits {
             return None;
@@ -292,25 +208,52 @@ fn matches_at(rule: &Rule, tokens: &[Token<'_>], at: usize) -> Option<usize> {
 }
 
 /// Fills a replacement template in, keeping the case the writer used at the
-/// front of what is replaced.
-fn fill(template: &str, words: &[&str], original: &str) -> String {
+/// front of what is replaced and the apostrophe they typed.
+fn fill(template: &str, rule: &Rule, tokens: &[Token<'_>], original: &str) -> String {
     let mut out = String::new();
     let mut rest = template;
-    while let Some(at) = rest.find('$') {
+    while let Some(at) = rest.find(['$', '%']) {
         out.push_str(&rest[..at]);
+        let swapped = rest[at..].starts_with('%');
         let digits: String = rest[at + 1..].chars().take_while(char::is_ascii_digit).collect();
-        match digits.parse::<usize>() {
-            Ok(number) if number >= 1 && number <= words.len() => {
-                out.push_str(words[number - 1]);
+        let word = digits
+            .parse::<usize>()
+            .ok()
+            .filter(|number| (1..=tokens.len()).contains(number))
+            .map(|number| number - 1)
+            .and_then(|index| {
+                if !swapped {
+                    return Some(tokens[index].text.to_owned());
+                }
+                let Some(Piece::Swap(pairs)) = rule.pattern.get(index) else {
+                    return Some(tokens[index].folded.clone());
+                };
+                pairs
+                    .iter()
+                    .find(|(from, _)| *from == tokens[index].folded)
+                    .map(|(_, to)| (*to).to_owned())
+            });
+        match word {
+            Some(word) => {
+                out.push_str(&word);
                 rest = &rest[at + 1 + digits.len()..];
             }
-            _ => {
-                out.push('$');
+            None => {
+                out.push_str(&rest[at..=at]);
                 rest = &rest[at + 1..];
             }
         }
     }
     out.push_str(rest);
+
+    // The apostrophe the writer typed. A correction that brings one of its
+    // own — French's "d’abord", English's "doesn't" — brings it in the
+    // writer's shape where the words replaced had one to go by.
+    if original.contains('\u{2019}') {
+        out = out.replace('\'', "\u{2019}");
+    } else if original.contains('\'') {
+        out = out.replace('\u{2019}', "'");
+    }
 
     // A sentence that began "A apple" begins "An apple", not "an apple".
     let capital = original.chars().next().is_some_and(char::is_uppercase);
@@ -378,16 +321,18 @@ fn tokens_of(text: &str) -> Vec<Token<'_>> {
     let inside = |character: char| {
         character.is_alphanumeric() || character == '\'' || character == '\u{2019}'
     };
+    let token = |from: usize, to: usize, after_punctuation: bool| Token {
+        text: &text[from..to],
+        folded: text[from..to].to_lowercase().replace('\u{2019}', "'"),
+        start: from,
+        end: to,
+        after_punctuation,
+    };
     for (at, character) in text.char_indices() {
         match (inside(character), start) {
             (true, None) => start = Some(at),
             (false, Some(from)) => {
-                out.push(Token {
-                    text: &text[from..at],
-                    start: from,
-                    end: at,
-                    after_punctuation: punctuation_since_last,
-                });
+                out.push(token(from, at, punctuation_since_last));
                 start = None;
                 punctuation_since_last = !character.is_whitespace();
             }
@@ -400,12 +345,7 @@ fn tokens_of(text: &str) -> Vec<Token<'_>> {
         }
     }
     if let Some(from) = start {
-        out.push(Token {
-            text: &text[from..],
-            start: from,
-            end: text.len(),
-            after_punctuation: punctuation_since_last,
-        });
+        out.push(token(from, text.len(), punctuation_since_last));
     }
     out
 }
@@ -415,12 +355,130 @@ mod tests {
     use super::*;
 
     fn found(text: &str) -> Vec<(String, &'static str, Option<String>)> {
-        check(text)
+        found_in(text, "en")
+    }
+
+    fn found_in(text: &str, language: &str) -> Vec<(String, &'static str, Option<String>)> {
+        check(text, language)
             .into_iter()
             .map(|finding| {
                 (text[finding.start..finding.end].to_owned(), finding.category, finding.replacement)
             })
             .collect()
+    }
+
+    /// Every rule of every language, with the tag it is checked under.
+    fn every_rule() -> Vec<(&'static str, &'static Rule)> {
+        [
+            ("en", english::RULES),
+            ("ru", russian::RULES),
+            ("de", german::RULES),
+            ("fr", french::RULES),
+        ]
+        .into_iter()
+        .flat_map(|(language, rules)| rules.iter().map(move |rule| (language, rule)))
+        .collect()
+    }
+
+    #[test]
+    fn every_rule_finds_the_mistake_it_is_for() {
+        // Each rule's own example, checked with the whole list: a rule that
+        // matches its example only for another rule to have spoken first is a
+        // rule that never fires, and this is where that shows.
+        for (language, rule) in every_rule() {
+            let tokens = tokens_of(rule.example);
+            let place = (0..tokens.len())
+                .find_map(|at| matches_at(rule, &tokens, at).map(|length| (at, length)));
+            let Some((at, length)) = place else {
+                panic!("{language}: the rule for {:?} does not match its own example", rule.example)
+            };
+            let (start, end) = (tokens[at].start, tokens[at + length - 1].end);
+            let findings = check(rule.example, language);
+            assert!(
+                findings.iter().any(|finding| finding.start == start
+                    && finding.end == end
+                    && finding.category == rule.category),
+                "{language}: {:?} is not found as {:?} — another rule spoke first: {findings:?}",
+                rule.example,
+                rule.category,
+            );
+        }
+    }
+
+    #[test]
+    fn a_correction_is_not_itself_a_mistake() {
+        // The example with every correction made has nothing left to find.
+        // Where a rule offers none — a double negative, which half to keep
+        // being the writer's to say — there is nothing to hold it to.
+        for (language, rule) in
+            every_rule().into_iter().filter(|(_, rule)| rule.replacement.is_some())
+        {
+            let corrected = corrected(rule.example, language);
+            assert_eq!(
+                check(&corrected, language),
+                vec![],
+                "{language}: {:?} corrected to {corrected:?} is still found wanting",
+                rule.example
+            );
+        }
+    }
+
+    #[test]
+    fn a_correction_is_spelled_as_the_language_spells_it() {
+        // A rule that puts a misspelling where a mistake was has made the
+        // text worse, and a list written by somebody who does not write the
+        // language every day is exactly where that happens. So every example,
+        // corrected, is looked up word by word in the dictionary for its
+        // language that the build image carries.
+        let mut wrong = Vec::new();
+        for (language, path) in [
+            ("en", "/usr/share/hunspell/en_US.dic"),
+            ("ru", "/usr/share/hunspell/ru_RU.dic"),
+            ("de", "/usr/share/hunspell/de_DE.dic"),
+            ("fr", "/usr/share/hunspell/fr_FR.dic"),
+        ] {
+            let dictionary = wp_dict::read_pair(std::path::Path::new(path))
+                .unwrap_or_else(|error| panic!("cannot read {path}: {error}"));
+            for (_, rule) in every_rule().into_iter().filter(|(tag, _)| *tag == language) {
+                let corrected = corrected(rule.example, language);
+                for token in tokens_of(&corrected) {
+                    if !dictionary.spelled(token.text) {
+                        wrong.push(format!("{language}: {:?} in {corrected:?}", token.text));
+                    }
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "not words of the language: {wrong:#?}");
+    }
+
+    /// A text with every correction the rules offer made.
+    fn corrected(text: &str, language: &str) -> String {
+        let mut out = text.to_owned();
+        for finding in check(text, language).into_iter().rev() {
+            if let Some(replacement) = finding.replacement {
+                out.replace_range(finding.start..finding.end, &replacement);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_language_is_checked_by_its_own_rules_and_no_other() {
+        assert_eq!(found_in("I could of gone.", "en-GB").len(), 1);
+        assert_eq!(found_in("I could of gone.", "de-DE"), vec![]);
+        assert_eq!(found_in("Wir warten seid Jahren.", "en"), vec![]);
+        assert_eq!(found_in("Wir warten seid Jahren.", "de-CH").len(), 1);
+        assert_eq!(found_in("I could of gone.", "nl"), vec![], "a language with no list");
+        assert!(has_rules("ru-RU") && has_rules("fr-CA") && !has_rules("pl"));
+    }
+
+    #[test]
+    fn every_category_is_listed_for_translation() {
+        let listed = categories();
+        for (_, rule) in every_rule() {
+            assert!(listed.contains(&rule.category));
+        }
+        assert!(listed.contains(&"Elision") && listed.contains(&"Verb form"));
     }
 
     #[test]
@@ -470,6 +528,7 @@ mod tests {
             found("We should of known"),
             vec![("should of".to_owned(), "Verb form", Some("should have".to_owned()))]
         );
+        assert_eq!(found("I should of went.")[0].2, Some("should have gone".to_owned()));
     }
 
     #[test]
@@ -477,6 +536,15 @@ mod tests {
         assert_eq!(found("He don't care.")[0].2, Some("He doesn't".to_owned()));
         assert_eq!(found("they was there")[0].2, Some("they were".to_owned()));
         assert_eq!(found("She has left."), vec![]);
+    }
+
+    #[test]
+    fn the_apostrophe_a_word_processor_types_is_the_one_a_rule_knows() {
+        // Word turns the apostrophe curly as it is typed, and a rule written
+        // with a straight one must still see "don’t" — and give back the
+        // apostrophe the writer has.
+        assert_eq!(found("He don\u{2019}t care.")[0].2, Some("He doesn\u{2019}t".to_owned()));
+        assert_eq!(found("I don\u{2019}t know nothing.").len(), 1);
     }
 
     #[test]
@@ -519,5 +587,62 @@ mod tests {
         // same three words; the first rule to speak decides.
         let findings = found("he don't know nothing");
         assert_eq!(findings.len(), 1);
+    }
+
+    #[test]
+    fn a_capital_is_matched_in_every_alphabet() {
+        // The patterns are in small letters, and "Более" is "более" at the
+        // start of a sentence.
+        assert_eq!(found_in("Более лучше так.", "ru")[0].2, Some("Лучше".to_owned()));
+        assert_eq!(found_in("Das Selbe gilt hier.", "de")[0].2, Some("Dasselbe".to_owned()));
+    }
+
+    #[test]
+    fn a_russian_rule_is_as_narrow_as_the_mistake() {
+        // "В течении реки" is the river's current, and right; "в течении
+        // года" is a year's time, and wrong.
+        assert_eq!(found_in("Лодку сносило в течении реки.", "ru"), vec![]);
+        assert_eq!(
+            found_in("Он работал в течении года.", "ru"),
+            vec![(
+                "в течении года".to_owned(),
+                "Commonly confused words",
+                Some("в течение года".to_owned())
+            )]
+        );
+        assert_eq!(found_in("Он надел пальто.", "ru"), vec![]);
+        assert_eq!(found_in("Он одел пальто.", "ru")[0].2, Some("надел пальто".to_owned()));
+        assert_eq!(found_in("Она одела ребёнка.", "ru"), vec![], "одеть кого-то is right");
+    }
+
+    #[test]
+    fn a_german_rule_is_as_narrow_as_the_mistake() {
+        assert_eq!(found_in("Ihr seid dem Ziel nahe.", "de"), vec![], "seid is a verb here");
+        assert_eq!(found_in("Wir warten seid Jahren.", "de")[0].2, Some("seit Jahren".to_owned()));
+        assert_eq!(found_in("Ein Paar Schuhe.", "de"), vec![], "a pair, and a Paar");
+        assert_eq!(found_in("Ein Paar Tage.", "de")[0].2, Some("Ein paar Tage".to_owned()));
+        assert_eq!(found_in("Das ist besser als nichts.", "de"), vec![]);
+    }
+
+    #[test]
+    fn french_drops_the_vowel_before_a_vowel() {
+        assert_eq!(
+            found_in("Il parle de abord.", "fr"),
+            vec![("de abord".to_owned(), "Elision", Some("d\u{2019}abord".to_owned()))]
+        );
+        assert_eq!(found_in("Je ai faim.", "fr")[0].2, Some("J\u{2019}ai".to_owned()));
+        // The writer's apostrophe, where they typed one nearby to go by: none
+        // here, so the typographer's.
+        assert_eq!(found_in("Il le aime.", "fr")[0].2, Some("l\u{2019}aime".to_owned()));
+        // Not before an aspirated h, which the rule leaves alone, nor before
+        // the words that take no elision, nor before a capital letter named.
+        assert_eq!(found_in("Le héros de onze ans.", "fr"), vec![]);
+        assert_eq!(found_in("De A à Z.", "fr"), vec![]);
+        assert_eq!(found_in("Il est à la une.", "fr"), vec![]);
+        assert_eq!(
+            found_in("Je viendrai si il fait beau.", "fr")[0].2,
+            Some("s\u{2019}il".to_owned())
+        );
+        assert_eq!(found_in("Je viendrai si elle vient.", "fr"), vec![]);
     }
 }

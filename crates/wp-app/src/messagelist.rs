@@ -172,6 +172,14 @@ fn from_the_tables() -> BTreeSet<String> {
             out.insert(button.to_owned());
         }
     }
+    // What a right-click on an underlined word says the mistake is: the
+    // names of the kinds the checker finds, and of every kind the grammar
+    // rules find in every language they are written for. The name is the
+    // interface's and is said in the interface's language, whatever language
+    // the text it is about is in — as Word does it.
+    for message in wp_docx::proofing::Kind::every_message() {
+        out.insert(message.to_owned());
+    }
     out
 }
 

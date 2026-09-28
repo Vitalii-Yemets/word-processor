@@ -131,6 +131,9 @@ version = "0.0.1"
 [[package]]
 name = "wp-grammar"
 version = "0.0.1"
+dependencies = [
+ "wp-dict",
+]
 
 [[package]]
 name = "wp-hash"

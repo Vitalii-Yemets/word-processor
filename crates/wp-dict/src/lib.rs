@@ -165,8 +165,13 @@ struct Group {
 /// The words of a language and the rules for making their forms.
 #[derive(Clone, Debug, Default)]
 pub struct Dictionary {
-    /// Every stem, and the flags saying which rules it may take.
-    words: HashMap<String, Vec<Flag>>,
+    /// Every stem, and the flags saying which rules it may take — once for
+    /// each time the list holds it. Most words are there once. A word listed
+    /// twice with different flags is two words spelled alike, and each is
+    /// asked on its own: German lists "gehen" as a verb and again as a piece
+    /// only a compound may use, and folding the two into one would make the
+    /// verb a piece only a compound may use.
+    words: HashMap<String, Vec<Vec<Flag>>>,
     prefixes: HashMap<Flag, Group>,
     suffixes: HashMap<Flag, Group>,
     /// The flags that change what a stem is rather than what may be added to
@@ -232,7 +237,7 @@ impl Dictionary {
             if word.is_empty() || word.chars().all(|character| character.is_ascii_digit()) {
                 continue;
             }
-            dictionary.words.entry(word.to_lowercase()).or_default();
+            dictionary.hold(word.to_lowercase(), Vec::new());
         }
         dictionary
     }
@@ -252,8 +257,22 @@ impl Dictionary {
 
     /// Adds a word, as "Add to Dictionary" does.
     pub fn add(&mut self, word: &str) {
-        self.words.entry(word.to_lowercase()).or_default();
-        self.words.entry(word.to_owned()).or_default();
+        self.hold(word.to_lowercase(), Vec::new());
+        self.hold(word.to_owned(), Vec::new());
+    }
+
+    /// Keeps a word with its flags, beside whatever else the list holds under
+    /// the same spelling.
+    fn hold(&mut self, word: String, flags: Vec<Flag>) {
+        let held = self.words.entry(word).or_default();
+        if !held.contains(&flags) {
+            held.push(flags);
+        }
+    }
+
+    /// Every entry the list has for a spelling: the flags of each.
+    fn entries(&self, word: &str) -> &[Vec<Flag>] {
+        self.words.get(word).map_or(&[], Vec::as_slice)
     }
 
     /// Whether a word is spelled the way the language spells it.
@@ -351,10 +370,13 @@ impl Dictionary {
         }
         for end in from + self.compound_min.max(1)..=last {
             let piece = &word[edges[from]..edges[end]];
-            let Some(flags) = self.piece_flags(piece, same_case) else { continue };
+            let entries = self.piece_flags(piece, same_case);
             let next: Vec<usize> = places
                 .iter()
-                .filter(|place| **place < rule.len() && flags.contains(&rule[**place].flag))
+                .filter(|place| {
+                    **place < rule.len()
+                        && entries.iter().any(|flags| flags.contains(&rule[**place].flag))
+                })
                 .map(|place| if rule[*place].times == Times::Any { *place } else { place + 1 })
                 .collect();
             if next.is_empty() {
@@ -369,37 +391,42 @@ impl Dictionary {
     }
 
     /// The flags of a piece of a compound, if the word list holds it as a
-    /// word that may be one: its own spelling first, then in small letters.
-    fn piece_flags(&self, piece: &str, same_case: bool) -> Option<&Vec<Flag>> {
+    /// word that may be one — its own spelling first, then in small letters —
+    /// once for each entry that may.
+    fn piece_flags(&self, piece: &str, same_case: bool) -> Vec<&[Flag]> {
         let lower = piece.to_lowercase();
         let candidates: &[&str] = if same_case { &[piece] } else { &[piece, &lower] };
-        candidates.iter().find_map(|candidate| {
-            self.words.get(*candidate).filter(|flags| {
-                !self.has(flags, self.forbidden) && !self.has(flags, self.needs_affix)
-            })
-        })
+        for candidate in candidates {
+            let usable: Vec<&[Flag]> = self
+                .entries(candidate)
+                .iter()
+                .filter(|flags| {
+                    !self.has(flags, self.forbidden) && !self.has(flags, self.needs_affix)
+                })
+                .map(Vec::as_slice)
+                .collect();
+            if !usable.is_empty() {
+                return usable;
+            }
+        }
+        Vec::new()
     }
 
     /// Whether the dictionary holds this word itself, rather than as a form of
     /// something else.
     fn is_stem(&self, word: &str, same_case: bool, in_compound: bool) -> bool {
-        let Some(flags) = self.words.get(word) else { return false };
-        if self.has(flags, self.needs_affix) || self.has(flags, self.forbidden) {
-            return false;
-        }
-        if !in_compound && self.has(flags, self.only_in_compound) {
-            return false;
-        }
-        if !same_case && self.has(flags, self.keep_case) {
-            return false;
-        }
-        true
+        self.entries(word).iter().any(|flags| {
+            !self.has(flags, self.needs_affix)
+                && !self.has(flags, self.forbidden)
+                && (in_compound || !self.has(flags, self.only_in_compound))
+                && (same_case || !self.has(flags, self.keep_case))
+        })
     }
 
     /// Whether a word is one the dictionary explicitly forbids — a spelling
     /// that a rule would otherwise make and that nobody writes.
     fn forbidden_word(&self, word: &str) -> bool {
-        self.words.get(word).is_some_and(|flags| self.has(flags, self.forbidden))
+        self.entries(word).iter().any(|flags| self.has(flags, self.forbidden))
     }
 
     fn has(&self, flags: &[Flag], wanted: Option<Flag>) -> bool {
@@ -410,30 +437,39 @@ impl Dictionary {
     /// tried backwards.
     fn through_affixes(&self, word: &str, same_case: bool) -> bool {
         // A suffix on its own, and then a second suffix the first one allowed.
-        for (flag, group, stem) in self.strip_suffix(word) {
+        for (flag, group, rule, stem) in self.strip_suffix(word) {
             if self.stem_takes(&stem, flag, same_case) {
                 return true;
             }
-            // A prefix as well, where both rules allow the other end to be
-            // used: "unreadable" is "un" and "able" on "read".
-            if group.crossable {
-                for (prefix_flag, prefix_group, inner) in self.strip_prefix(&stem) {
-                    if prefix_group.crossable
-                        && self.stem_takes_both(&inner, prefix_flag, flag, same_case)
-                    {
-                        return true;
-                    }
+            // A prefix as well. Either both rules allow the other end to be
+            // used — "unreadable" is "un" and "able" on "read" — or one of the
+            // two carries the other's flag: French puts the "l’" of
+            // "l’homme" on through the suffix that makes the singular, which
+            // adds nothing and carries the flag of every elided article.
+            for (prefix_flag, prefix_group, prefix_rule, inner) in self.strip_prefix(&stem) {
+                let crossed = group.crossable
+                    && prefix_group.crossable
+                    && self.stem_takes_both(&inner, prefix_flag, flag, same_case);
+                let carried = (rule.carries.contains(&prefix_flag)
+                    && self.stem_takes(&inner, flag, same_case))
+                    || (prefix_rule.carries.contains(&flag)
+                        && self.stem_takes(&inner, prefix_flag, same_case));
+                if crossed || carried {
+                    return true;
                 }
             }
-            // Or a second suffix, where the first carries its flag.
-            for (second, _, inner) in self.strip_suffix(&stem) {
-                if self.carries(flag, &stem, second) && self.stem_takes(&inner, second, same_case) {
+            // Or a second suffix, inside this one, whose rule carries this
+            // one's flag: the suffix put on first is the one that says what
+            // may follow it.
+            for (second, _, inner_rule, inner) in self.strip_suffix(&stem) {
+                if inner_rule.carries.contains(&flag) && self.stem_takes(&inner, second, same_case)
+                {
                     return true;
                 }
             }
         }
 
-        for (flag, _, stem) in self.strip_prefix(word) {
+        for (flag, _, _, stem) in self.strip_prefix(word) {
             if self.stem_takes(&stem, flag, same_case) {
                 return true;
             }
@@ -442,38 +478,32 @@ impl Dictionary {
     }
 
     /// Every stem this word could be, with a suffix taken off it.
-    fn strip_suffix<'a>(&'a self, word: &'a str) -> Vec<(Flag, &'a Group, String)> {
+    fn strip_suffix<'a>(&'a self, word: &'a str) -> Vec<(Flag, &'a Group, &'a Rule, String)> {
         let mut out = Vec::new();
         for (flag, group) in &self.suffixes {
             for rule in &group.rules {
                 let Some(head) = word.strip_suffix(rule.add.as_str()) else { continue };
-                if rule.add.is_empty() && rule.strip.is_empty() {
-                    continue;
-                }
                 let stem = format!("{head}{}", rule.strip);
                 if stem.is_empty() || !ends_with(&stem, &rule.condition) {
                     continue;
                 }
-                out.push((*flag, group, stem));
+                out.push((*flag, group, rule, stem));
             }
         }
         out
     }
 
     /// The same at the other end.
-    fn strip_prefix<'a>(&'a self, word: &'a str) -> Vec<(Flag, &'a Group, String)> {
+    fn strip_prefix<'a>(&'a self, word: &'a str) -> Vec<(Flag, &'a Group, &'a Rule, String)> {
         let mut out = Vec::new();
         for (flag, group) in &self.prefixes {
             for rule in &group.rules {
                 let Some(tail) = word.strip_prefix(rule.add.as_str()) else { continue };
-                if rule.add.is_empty() && rule.strip.is_empty() {
-                    continue;
-                }
                 let stem = format!("{}{tail}", rule.strip);
                 if stem.is_empty() || !starts_with(&stem, &rule.condition) {
                     continue;
                 }
-                out.push((*flag, group, stem));
+                out.push((*flag, group, rule, stem));
             }
         }
         out
@@ -481,35 +511,21 @@ impl Dictionary {
 
     /// Whether a stem is a word that is allowed to take a given rule.
     fn stem_takes(&self, stem: &str, flag: Flag, same_case: bool) -> bool {
-        let Some(flags) = self.words.get(stem) else { return false };
-        if !flags.contains(&flag) || self.has(flags, self.forbidden) {
-            return false;
-        }
-        if !same_case && self.has(flags, self.keep_case) {
-            return false;
-        }
-        if self.has(flags, self.only_in_compound) {
-            return false;
-        }
-        true
+        self.entries(stem).iter().any(|flags| {
+            flags.contains(&flag)
+                && !self.has(flags, self.forbidden)
+                && (same_case || !self.has(flags, self.keep_case))
+                && !self.has(flags, self.only_in_compound)
+        })
     }
 
     fn stem_takes_both(&self, stem: &str, one: Flag, other: Flag, same_case: bool) -> bool {
-        let Some(flags) = self.words.get(stem) else { return false };
-        flags.contains(&one)
-            && flags.contains(&other)
-            && !self.has(flags, self.forbidden)
-            && (same_case || !self.has(flags, self.keep_case))
-    }
-
-    /// Whether the rule that made `form` from a stem itself allows a second
-    /// rule after it.
-    fn carries(&self, first: Flag, form: &str, second: Flag) -> bool {
-        let Some(group) = self.suffixes.get(&first) else { return false };
-        group
-            .rules
-            .iter()
-            .any(|rule| form.ends_with(rule.add.as_str()) && rule.carries.contains(&second))
+        self.entries(stem).iter().any(|flags| {
+            flags.contains(&one)
+                && flags.contains(&other)
+                && !self.has(flags, self.forbidden)
+                && (same_case || !self.has(flags, self.keep_case))
+        })
     }
 
     /// Whether a word is several words written as one, which is how German
@@ -547,14 +563,13 @@ impl Dictionary {
     fn compound_part(&self, part: &str, same_case: bool, first: bool) -> bool {
         let word = if same_case { part.to_owned() } else { part.to_lowercase() };
         for candidate in [word.clone(), part.to_lowercase(), capitalised(&part.to_lowercase())] {
-            let Some(flags) = self.words.get(&candidate) else { continue };
-            if self.has(flags, self.forbidden) {
-                continue;
-            }
-            let allowed = self.has(flags, self.compound)
-                || self.has(flags, self.compound_middle)
-                || (first && self.has(flags, self.compound_begin))
-                || (!first && self.has(flags, self.compound_end));
+            let allowed = self.entries(&candidate).iter().any(|flags| {
+                !self.has(flags, self.forbidden)
+                    && (self.has(flags, self.compound)
+                        || self.has(flags, self.compound_middle)
+                        || (first && self.has(flags, self.compound_begin))
+                        || (!first && self.has(flags, self.compound_end)))
+            });
             if allowed {
                 return true;
             }
@@ -568,9 +583,9 @@ impl Dictionary {
         }
         let lower = part.to_lowercase();
         [part.to_owned(), lower.clone(), capitalised(&lower)].iter().any(|candidate| {
-            self.words.get(candidate).is_some_and(|flags| {
-                self.has(flags, self.compound_end) || self.has(flags, self.compound)
-            })
+            self.entries(candidate)
+                .iter()
+                .any(|flags| self.has(flags, self.compound_end) || self.has(flags, self.compound))
         })
     }
 
@@ -709,7 +724,7 @@ impl Dictionary {
     /// suggestion — a rude word, or a spelling it knows but nobody means.
     #[must_use]
     pub fn suggestable(&self, word: &str) -> bool {
-        !self.words.get(word).is_some_and(|flags| self.has(flags, self.no_suggest))
+        !self.entries(word).iter().any(|flags| self.has(flags, self.no_suggest))
     }
 
     // -- Reading the files ---------------------------------------------------
@@ -903,12 +918,7 @@ impl Dictionary {
             if word.is_empty() {
                 continue;
             }
-            let held = self.words.entry(word).or_default();
-            for flag in flags {
-                if !held.contains(&flag) {
-                    held.push(flag);
-                }
-            }
+            self.hold(word, flags);
         }
     }
 
@@ -1382,6 +1392,56 @@ COMPOUNDRULE n*mp
         let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
         assert!(dictionary.spelled("foobar"));
         assert!(!dictionary.spelled("barfoo"));
+    }
+
+    #[test]
+    fn the_suffix_put_on_first_says_what_may_follow_it() {
+        // "drinkable" is "able" on "drink", and the rule that adds "able"
+        // allows an "s" after it; "drink" itself does not take the "s".
+        let affix = "SET UTF-8\nSFX X Y 1\nSFX X 0 able/Y .\n\nSFX Y Y 1\nSFX Y 0 s .\n";
+        let words = "1\ndrink/X\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(dictionary.spelled("drinkable"));
+        assert!(dictionary.spelled("drinkables"));
+        assert!(!dictionary.spelled("drinks"));
+    }
+
+    #[test]
+    fn a_suffix_that_adds_nothing_may_allow_a_prefix() {
+        // French, as it writes itself: "homme" is a stem that is no word until
+        // an affix is put on it, the singular is a suffix that adds nothing,
+        // and that suffix is what allows the elided article in front.
+        let affix = "\
+SET UTF-8
+FLAG long
+NEEDAFFIX ()
+PFX L' Y 1
+PFX L' 0 l' .
+
+SFX S. Y 2
+SFX S. 0 0/L' [^sxz]
+SFX S. 0 s [^sxz]
+";
+        let words = "1\nhomme/S.()\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(dictionary.spelled("homme"));
+        assert!(dictionary.spelled("hommes"));
+        assert!(dictionary.spelled("l'homme"));
+        assert!(!dictionary.spelled("l'hommes"), "the plural carries no article");
+        assert!(!dictionary.spelled("homm"));
+    }
+
+    #[test]
+    fn a_word_listed_twice_is_asked_twice() {
+        // One entry is a word, the other a piece only a compound may use:
+        // the word is still a word.
+        let affix = "SET UTF-8\nONLYINCOMPOUND o\nCOMPOUNDFLAG z\n";
+        let words = "2\ngehen\ngehen/oz\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(dictionary.spelled("gehen"));
+        let words = "1\ngehen/oz\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(!dictionary.spelled("gehen"), "and a piece alone is not");
     }
 
     #[test]

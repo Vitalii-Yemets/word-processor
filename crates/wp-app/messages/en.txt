@@ -74,6 +74,7 @@
 = Arrange
 = Arrange All
 = Art
+= Article use
 = As you type
 = AutoCorrect
 = AutoCorrect Exceptions
@@ -140,6 +141,7 @@
 = Cannot save: {0}
 = Cannot set that: {0}
 = Cannot write {0}: {1}
+= Capitalization
 = Capitalize first letter of sentences
 = Capitalize names of days
 = Caption
@@ -202,12 +204,14 @@
 = Comma-separated values
 = Comment
 = Comments
+= Commonly confused words
 = Compact
 = Company
 = Compare
 = Compare Documents
 = Compare Two Documents
 = Compare with
+= Comparisons
 = Compile error
 = Content Control Properties
 = Content control cannot be deleted
@@ -284,6 +288,7 @@
 = Don't correct
 = Don't hyphenate
 = Done
+= Double negation
 = Double strikethrough
 = Doughnut
 = Draft
@@ -298,6 +303,7 @@
 = Edit List
 = Editing
 = Effects
+= Elision
 = Email
 = Enable Content
 = Enable all macros (not recommended)
@@ -502,6 +508,7 @@
 = Modify
 = More Layout Options…
 = More Rotation Options…
+= More than one space
 = More users…
 = Move Down
 = Move Up
@@ -531,6 +538,7 @@
 = Nobody was typed, so no list was made
 = None
 = Normal
+= Not in the dictionary
 = Not saved
 = Nothing is restricted: tick one of the two boxes
 = Nothing was typed, so no diagram was drawn
@@ -675,6 +683,7 @@
 = Rename
 = Repeat Header Rows
 = Repeat as header row at the top of each page
+= Repeated word
 = Repeating Section
 = Repeating Section Content Control
 = Replace
@@ -740,6 +749,7 @@
 = Selection Pane
 = Send Backward
 = Send E-mail Messages
+= Sentence should begin with a capital
 = Set
 = Set As Default
 = Set Defaults
@@ -778,6 +788,7 @@
 = Sorted by {0}
 = Source
 = Space after
+= Space before punctuation
 = Space between cells
 = Spacing
 = Special Characters
@@ -801,6 +812,7 @@
 = Style for following paragraph
 = Style set: {0}
 = Styles
+= Subject-verb agreement
 = Subscript
 = Subset
 = Superscript
@@ -946,6 +958,7 @@
 = Use contextual alternates
 = Valid signatures
 = Validate
+= Verb form
 = Vertical
 = Vertical Box List
 = Vertical, left to right
@@ -981,14 +994,17 @@
 = Word Macro-Enabled Document (*.docm)
 = Word Macro-Enabled Template (*.dotm)
 = Word Template (*.dotx)
+= Word choice
 = Word documents
 = Word documents (*.docx;*.docm;*.dotx;*.dotm)
 = Word documents do not open in this program.
 = Word documents do not open in this program. Make Default registers it and opens the system's own page for choosing.
 = Word documents now open in this program
 = Word documents open in this program.
+= Word form
 = Word will now convert your PDF to an editable Word document. This may take a while. The resulting Word document will be optimized to allow you to edit the text, so it might not look exactly like the original PDF, especially if the original file contained lots of graphics.
 = WordArt
+= Words split
 = Wrap Text
 = Write & Insert Fields
 = XML Mapping

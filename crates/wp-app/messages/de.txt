@@ -209,6 +209,9 @@ language = Deutsch
 = Art
 > Bildrahmen
 
+= Article use
+> Artikelgebrauch
+
 = As you type
 > Während der Eingabe
 
@@ -400,6 +403,9 @@ language = Deutsch
 
 = Cannot write {0}: {1}
 > {0} kann nicht geschrieben werden: {1}
+
+= Capitalization
+> Groß-/Kleinschreibung
 
 = Capitalize first letter of sentences
 > Ersten Buchstaben im Satz großschreiben
@@ -647,11 +653,17 @@ language = Deutsch
 = Comments
 > Kommentare
 
+= Commonly confused words
+> Häufig verwechselte Wörter
+
 = Compare
 > Vergleichen
 
 = Compare with
 > Vergleichen mit
+
+= Comparisons
+> Vergleiche
 
 = Contents
 > Inhalt
@@ -839,6 +851,9 @@ language = Deutsch
 = Done
 > Fertig
 
+= Double negation
+> Doppelte Verneinung
+
 = Double strikethrough
 > Doppelt durchgestrichen
 
@@ -880,6 +895,9 @@ language = Deutsch
 
 = Effects
 > Effekte
+
+= Elision
+> Elision
 
 = Email
 > E-Mail
@@ -1997,6 +2015,9 @@ language = Deutsch
 = More Rotation Options…
 > Weitere Drehoptionen…
 
+= More than one space
+> Mehr als ein Leerzeichen
+
 = Move Down
 > Nach unten
 
@@ -2059,6 +2080,9 @@ language = Deutsch
 
 = Normal
 > Standard
+
+= Not in the dictionary
+> Nicht im Wörterbuch
 
 = Number format
 > Zahlenformat
@@ -2372,6 +2396,9 @@ language = Deutsch
 = Repeat as header row at the top of each page
 > Als Überschrift auf jeder Seite wiederholen
 
+= Repeated word
+> Wortwiederholung
+
 = Replace
 > Ersetzen
 
@@ -2486,6 +2513,9 @@ language = Deutsch
 = Send E-mail Messages
 > E-Mail-Nachrichten senden
 
+= Sentence should begin with a capital
+> Satzanfang großschreiben
+
 = Select
 > Markieren
 
@@ -2582,6 +2612,9 @@ language = Deutsch
 = Space after
 > Abstand nach
 
+= Space before punctuation
+> Leerzeichen vor Satzzeichen
+
 = Space between cells
 > Abstand zwischen Zellen
 
@@ -2626,6 +2659,9 @@ language = Deutsch
 
 = Styles
 > Formatvorlagen
+
+= Subject-verb agreement
+> Subjekt-Verb-Kongruenz
 
 = Subscript
 > Tiefgestellt
@@ -2897,6 +2933,9 @@ language = Deutsch
 = Validate
 > Prüfen
 
+= Verb form
+> Verbform
+
 = Video
 > Video
 
@@ -2978,6 +3017,9 @@ language = Deutsch
 = Word Template (*.dotx)
 > Word-Vorlage (*.dotx)
 
+= Word choice
+> Wortwahl
+
 = Word documents
 > Word-Dokumente
 
@@ -2996,11 +3038,17 @@ language = Deutsch
 = Word documents open in this program.
 > Word-Dokumente werden mit diesem Programm geöffnet.
 
+= Word form
+> Wortform
+
 = Word will now convert your PDF to an editable Word document. This may take a while. The resulting Word document will be optimized to allow you to edit the text, so it might not look exactly like the original PDF, especially if the original file contained lots of graphics.
 > Word konvertiert Ihr PDF jetzt in ein bearbeitbares Word-Dokument. Dies kann eine Weile dauern. Das entstehende Word-Dokument wird für die Textbearbeitung optimiert und sieht daher möglicherweise nicht genau wie das ursprüngliche PDF aus, besonders wenn die Ausgangsdatei viele Grafiken enthielt.
 
 = WordArt
 > WordArt
+
+= Words split
+> Getrennt- und Zusammenschreibung
 
 = Wrap Text
 > Textumbruch

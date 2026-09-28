@@ -21,7 +21,9 @@
 //!
 //! The mistakes that show in a handful of words side by side — "could of",
 //! "a apple", "he don't", a double negative — found by rules over the words,
-//! which is what [`wp_grammar`] holds. Not the grammar of the sentence: "which
+//! which is what [`wp_grammar`] holds, for English, Russian, German and
+//! French, each run by the rules of the language it is in. Not the grammar of
+//! the sentence: "which
 //! of these two verbs agrees with that noun" needs a parser of the language
 //! and a part of speech for every word, and is wrong often enough even then
 //! that a check which fires on half of what it should is worse than one that
@@ -57,6 +59,25 @@ impl Kind {
     #[must_use]
     pub fn is_spelling(self) -> bool {
         self == Self::UnknownWord
+    }
+
+    /// Everything [`Kind::message`] can say, for the interface's translators:
+    /// the names of the mistakes the rules find, in every language they are
+    /// written for, as well as the others.
+    #[must_use]
+    pub fn every_message() -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = [
+            Self::RepeatedWord,
+            Self::MissingCapital,
+            Self::SpaceBeforePunctuation,
+            Self::DoubleSpace,
+            Self::UnknownWord,
+        ]
+        .into_iter()
+        .map(Self::message)
+        .collect();
+        out.extend(wp_grammar::categories());
+        out
     }
 
     /// What to say about it.
@@ -520,30 +541,41 @@ pub fn check_paragraph(
         }
     }
 
-    // The grammar rules, which are for English: applied where the text says it
-    // is English or says nothing, and left alone where it says otherwise or
-    // asks not to be checked.
-    for finding in wp_grammar::check(text) {
-        let stretch = stretches
-            .iter()
-            .find(|stretch| finding.start >= stretch.start && finding.start < stretch.end);
-        if stretch.is_some_and(|stretch| stretch.no_proof) {
-            continue;
+    // The grammar rules, each language's own: a stretch is checked by the
+    // rules of the language it says it is in — English where it says nothing
+    // — and not at all where it asks not to be.
+    fn grammar_language(stretch: Option<&Stretch>) -> &str {
+        stretch.and_then(|stretch| stretch.language.as_deref()).unwrap_or("en")
+    }
+    let mut languages: Vec<&str> = Vec::new();
+    for stretch in stretches.iter().filter(|stretch| !stretch.no_proof) {
+        let language = grammar_language(Some(stretch));
+        if !languages.contains(&language) {
+            languages.push(language);
         }
-        let english = stretch
-            .and_then(|stretch| stretch.language.as_deref())
-            .is_none_or(|tag| tag.len() < 2 || tag[..2].eq_ignore_ascii_case("en"));
-        if !english {
-            continue;
+    }
+    if stretches.is_empty() {
+        languages.push("en");
+    }
+    for language in languages {
+        for finding in wp_grammar::check(text, language) {
+            let stretch = stretches
+                .iter()
+                .find(|stretch| finding.start >= stretch.start && finding.start < stretch.end);
+            if stretch.is_some_and(|stretch| stretch.no_proof)
+                || grammar_language(stretch) != language
+            {
+                continue;
+            }
+            out.push(Issue {
+                paragraph,
+                start: finding.start,
+                end: finding.end,
+                kind: Kind::Grammar(finding.category),
+                text: text[finding.start..finding.end].to_owned(),
+                suggestion: finding.replacement,
+            });
         }
-        out.push(Issue {
-            paragraph,
-            start: finding.start,
-            end: finding.end,
-            kind: Kind::Grammar(finding.category),
-            text: text[finding.start..finding.end].to_owned(),
-            suggestion: finding.replacement,
-        });
     }
 
     // And the spelling, when there is a dictionary to check it against — the
@@ -1095,13 +1127,43 @@ mod grammar {
     }
 
     #[test]
-    fn the_rules_are_for_english_and_leave_other_languages_alone() {
+    fn each_run_is_checked_by_the_rules_of_its_own_language() {
+        // English words in a French run are not English mistakes.
         let french = made_of(&[("Je could of gone.", Some("fr-FR"))]);
         assert_eq!(grammar(&french), vec![]);
         // Text that names no language is taken to be the default, which is
         // English.
         let unmarked = made_of(&[("I could of gone.", None)]);
         assert_eq!(grammar(&unmarked).len(), 1);
+
+        // And one paragraph in four languages is four lists of rules, each
+        // kept to its own words.
+        let mixed = made_of(&[
+            ("I could of gone, ", Some("en-GB")),
+            ("mais je ai faim, ", Some("fr-FR")),
+            ("wir warten seid Jahren ", Some("de-DE")),
+            ("и он одел пальто.", Some("ru-RU")),
+        ]);
+        assert_eq!(
+            grammar(&mixed),
+            vec![
+                ("could of".to_owned(), "Verb form", Some("could have".to_owned())),
+                ("je ai".to_owned(), "Elision", Some("j\u{2019}ai".to_owned())),
+                (
+                    "seid Jahren".to_owned(),
+                    "Commonly confused words",
+                    Some("seit Jahren".to_owned())
+                ),
+                (
+                    "одел пальто".to_owned(),
+                    "Commonly confused words",
+                    Some("надел пальто".to_owned())
+                ),
+            ]
+        );
+        // A language with no rules is not checked by somebody else's.
+        let dutch = made_of(&[("I could of gone.", Some("nl-NL"))]);
+        assert_eq!(grammar(&dutch), vec![]);
     }
 
     #[test]
@@ -1133,5 +1195,15 @@ mod grammar {
         // Drawn in the other colour, and offered no dictionary to be added to.
         assert!(!Kind::Grammar("Article use").is_spelling());
         assert_eq!(Kind::Grammar("Article use").message(), "Article use");
+    }
+
+    #[test]
+    fn everything_a_mistake_can_be_called_is_listed_for_translation() {
+        let listed = Kind::every_message();
+        for said in
+            ["Repeated word", "Not in the dictionary", "Article use", "Elision", "Words split"]
+        {
+            assert!(listed.contains(&said), "{said}");
+        }
     }
 }
