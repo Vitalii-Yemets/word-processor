@@ -12,18 +12,27 @@
 //!
 //! # What is here
 //!
-//! [`read`] turns a file into the document model — paragraphs with their
-//! formatting, runs with theirs, tables, lists, pictures, links — and
-//! [`open`] makes a document of it. [`write`] goes the other way. The text
-//! is in whatever code page the file says, read through [`wp_text`], and
-//! written back as the Western one with `\u` for the rest, which is how Word
-//! writes it too.
+//! [`read`] turns a file into the document model and [`open`] makes a
+//! document of it: paragraphs and runs with their formatting, borders and
+//! shading, and which way they run; tables, with cells merged either way,
+//! ruled and shaded, and tables inside them; lists; the stylesheet's styles
+//! of every kind, with their formatting; pictures — PNG, JPEG, the two
+//! metafiles and bitmaps — in the line or floating; drawings; links and every
+//! other field; bookmarks; comments; footnotes and endnotes; tracked
+//! insertions, deletions and changes of formatting; and the sections, each
+//! with its page and its own headers and footers. [`write`] goes the other
+//! way. The text is in whatever code page the file says, read through
+//! [`wp_text`], and written back as the Western one with `\u` for the rest,
+//! which is how Word writes it too.
 //!
 //! # What is not
 //!
-//! Headers and footers, footnotes, sections, nested tables, drawings other
-//! than pictures, metafile pictures, fields other than links, and the
-//! revision marks — each named in the roadmap rather than half read here.
+//! Pictures in text boxes, where the words are inside a drawing that no place
+//! in the document can be counted to; groups of drawings, WordArt, freeform
+//! drawings and Word 6's drawing objects; tracked changes to paragraph
+//! formatting and to paragraph marks; a field whose result runs over several
+//! paragraphs, which keeps its result as text; and frames. Each is named in
+//! the roadmap rather than half read here.
 
 #![forbid(unsafe_code)]
 
@@ -31,49 +40,47 @@ mod lexer;
 mod read;
 mod write;
 
-pub use read::{read, LinkFound, PictureFound, Reading, PICTURE_MARK};
+pub use read::{
+    read, BookmarkFound, CommentFound, FurnitureFound, LinkFound, NoteFound, PageSetup,
+    PictureFound, Reading, SectionFound, StyleFound, PICTURE_MARK,
+};
 pub use write::write;
 
-use wp_docx::{Document, Error, TextPosition};
+use wp_docx::notes::Kind;
+use wp_docx::sections::Start;
+use wp_docx::{Document, Error, StyleDefinition, StyleKind, TextPosition};
 
-/// Opens an RTF file as a document: everything [`read`] found, with the
-/// pictures put in where their marks were and the links laid over their
-/// text.
+/// Opens an RTF file as a document: everything [`read`] found, put where it
+/// belongs — the styles defined, the pictures in where their marks were, the
+/// links, bookmarks and comments laid over their text, the notes given their
+/// words, and the sections made with their pages and their headers and
+/// footers.
 pub fn open(bytes: &[u8]) -> Result<Document, Error> {
     let reading = read(bytes);
     let mut document = Document::create(&reading.body)?;
 
-    // The pictures, last first, so that putting one in does not move the
-    // marks of the ones after it in the same paragraph.
-    let mut pictures = reading.pictures;
-    pictures.sort_by_key(|one| std::cmp::Reverse((one.paragraph, one.offset)));
-    let mut links = reading.links;
-    for picture in pictures {
-        let start = TextPosition::new(picture.paragraph, picture.offset);
-        let end = TextPosition::new(picture.paragraph, picture.offset + PICTURE_MARK.len_utf8());
-        let before = document.paragraph_text(picture.paragraph).map_or(0, |text| text.len());
-        document.set_caret(start);
-        document.extend_selection_to(end);
-        document.delete_selection();
-        document.set_caret(start);
-        let _ = document.insert_picture(
-            &picture.bytes,
-            picture.extension,
-            picture.width_emu,
-            picture.height_emu,
-        );
-        // A picture is not the width of its mark in the text, so the links
-        // after it in the paragraph move by the difference.
-        let after = document.paragraph_text(picture.paragraph).map_or(0, |text| text.len());
-        for link in &mut links {
-            if link.paragraph == picture.paragraph && link.start >= picture.offset {
-                link.start = (link.start + after).saturating_sub(before);
-                link.end = (link.end + after).saturating_sub(before);
+    for style in &reading.styles {
+        let definition = StyleDefinition {
+            id: style.id.clone(),
+            name: style.name.clone(),
+            based_on: style.based_on.clone(),
+            next: style.next.clone(),
+            paragraph: style.paragraph.clone(),
+            run: style.run.clone(),
+        };
+        match style.kind {
+            StyleKind::Table => {
+                document.set_table_style_definition(&definition, &style.table_borders);
+            }
+            kind => {
+                document.set_style_of_kind(&definition, kind);
             }
         }
     }
 
-    for link in links {
+    put_pictures(&mut document, &reading.pictures, 0);
+
+    for link in &reading.links {
         if link.end <= link.start {
             continue;
         }
@@ -81,11 +88,180 @@ pub fn open(bytes: &[u8]) -> Result<Document, Error> {
         document.extend_selection_to(TextPosition::new(link.paragraph, link.end));
         document.add_hyperlink(&link.address, "");
     }
+    for bookmark in &reading.bookmarks {
+        document.set_caret(bookmark.start);
+        document.extend_selection_to(bookmark.end);
+        document.add_bookmark(&bookmark.name);
+    }
+    // The comments, and then their pictures, in the part they are all in:
+    // one after another, each as many paragraphs long as its words.
+    let mut written = Vec::new();
+    for comment in &reading.comments {
+        document.set_caret(comment.start);
+        document.extend_selection_to(comment.end);
+        let text = comment.body.plain_text();
+        if let Ok(id) = document.add_comment(text.trim(), &comment.author, &comment.date) {
+            if document.set_comment_body(id, &comment.body) {
+                written.push(comment);
+            }
+        }
+    }
+    document.clear_selection();
+    if let Some(part) = document.comments_part() {
+        put_pictures_in_entries(
+            &mut document,
+            &part,
+            0,
+            written.iter().map(|comment| (&comment.body, &comment.pictures)),
+        );
+    }
+    for note in &reading.notes {
+        let kind = if note.endnote { Kind::Endnote } else { Kind::Footnote };
+        document.put_note(kind, note.id, &note.body)?;
+    }
+    for kind in [Kind::Footnote, Kind::Endnote] {
+        let Some(part) = document.notes_part(kind) else { continue };
+        // After the two notes that are not notes: the separator line and
+        // the one a note carried over to the next page is set under.
+        let notes = reading.notes.iter().filter(|note| note.endnote == (kind == Kind::Endnote));
+        put_pictures_in_entries(
+            &mut document,
+            &part,
+            2,
+            notes.map(|note| (&note.body, &note.pictures)),
+        );
+    }
+
+    set_up_sections(&mut document, &reading.sections)?;
+    if reading.facing_pages {
+        document.set_different_odd_and_even(true);
+    }
 
     document.set_caret(TextPosition::default());
     document.clear_selection();
+    // None of that was anything a person did.
+    document.forget_history();
     let _ = document.mark_saved();
     Ok(document)
+}
+
+/// Makes the sections: the breaks first, each on the paragraph that ends its
+/// section, and then each section's page and its headers and footers, with
+/// the caret in it — which is what says which section a change is to.
+fn set_up_sections(document: &mut Document, sections: &[SectionFound]) -> Result<(), Error> {
+    for (index, section) in sections.iter().enumerate() {
+        let (Some(last), Some(next)) = (section.last_paragraph, sections.get(index + 1)) else {
+            continue;
+        };
+        document.end_section_at(last, next.page.start.unwrap_or(Start::NextPage));
+    }
+    let mut first = 0;
+    for section in sections {
+        document.set_caret(TextPosition::new(first, 0));
+        let page = &section.page;
+        if let Some((width, height)) = page.size() {
+            document.set_page_size(width, height);
+        } else if page.landscape == Some(true) {
+            document.set_landscape(true);
+        }
+        if page.margins.iter().any(Option::is_some) {
+            let (top, right, bottom, left) = document.page_margins();
+            let [new_top, new_right, new_bottom, new_left] = page.margins;
+            document.set_page_margins(
+                new_top.unwrap_or(top),
+                new_right.unwrap_or(right),
+                new_bottom.unwrap_or(bottom),
+                new_left.unwrap_or(left),
+            );
+        }
+        if page.header_distance.is_some() || page.footer_distance.is_some() {
+            let (header, footer) = document.furniture_distances();
+            document.set_furniture_distances(
+                page.header_distance.unwrap_or(header),
+                page.footer_distance.unwrap_or(footer),
+            );
+        }
+        if let Some(count) = page.columns.filter(|count| *count > 1) {
+            let (_, gap) = document.columns();
+            document.set_columns(count, page.column_gap.unwrap_or(gap));
+        }
+        if page.title_page == Some(true) {
+            document.set_different_first_page(true);
+        }
+        if let Some(numbering) = page.numbering {
+            document.set_page_numbering(numbering);
+        }
+        for furniture in &section.furniture {
+            document.set_furniture_body(furniture.kind, furniture.which, &furniture.body)?;
+        }
+        first = section.last_paragraph.map_or(first, |last| last + 1);
+    }
+    // The pictures in the headers and footers go into each one's own part,
+    // which is where the parts they need are named.
+    for (index, section) in sections.iter().enumerate() {
+        for furniture in section.furniture.iter().filter(|furniture| !furniture.pictures.is_empty())
+        {
+            let Some(part) = document.furniture_part_for(furniture.kind, index, furniture.which)
+            else {
+                continue;
+            };
+            if document.enter_part(&part) {
+                put_pictures(document, &furniture.pictures, 0);
+                document.leave_part();
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Puts pictures in where their marks are, first to last, in whichever part
+/// is being edited, `shift` paragraphs further on than they were counted.
+///
+/// Each mark is longer than the picture that takes its place, and the places
+/// of everything after it were counted with the picture, so each is where it
+/// should be once the ones before it are in.
+fn put_pictures(document: &mut Document, pictures: &[PictureFound], shift: usize) {
+    for picture in pictures {
+        let paragraph = picture.paragraph + shift;
+        let start = TextPosition::new(paragraph, picture.offset);
+        let end = TextPosition::new(paragraph, picture.offset + PICTURE_MARK.len_utf8());
+        document.set_caret(start);
+        document.extend_selection_to(end);
+        document.delete_selection();
+        document.set_caret(start);
+        let put = document.insert_picture(
+            &picture.bytes,
+            picture.extension,
+            picture.width_emu,
+            picture.height_emu,
+        );
+        if let (Ok(true), Some(anchor)) = (put, &picture.anchor) {
+            document.set_anchor_at(start, Some(anchor));
+        }
+    }
+    document.clear_selection();
+}
+
+/// The same for a part of entries one after another — the comments, or the
+/// notes of one kind — whose paragraphs are counted through the whole part:
+/// each entry's pictures are shifted past the paragraphs of the ones before
+/// it, and past `before` paragraphs that are not entries' at all.
+fn put_pictures_in_entries<'a>(
+    document: &mut Document,
+    part: &str,
+    before: usize,
+    entries: impl Iterator<Item = (&'a wp_docx::model::Body, &'a Vec<PictureFound>)>,
+) {
+    let entries: Vec<_> = entries.collect();
+    if entries.iter().all(|(_, pictures)| pictures.is_empty()) || !document.enter_part(part) {
+        return;
+    }
+    let mut shift = before;
+    for (body, pictures) in entries {
+        put_pictures(document, pictures, shift);
+        shift += body.paragraphs().len();
+    }
+    document.leave_part();
 }
 
 #[cfg(test)]

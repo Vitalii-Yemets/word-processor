@@ -552,3 +552,24 @@ fn an_edit_after_formatting_still_writes_a_readable_document() {
     assert_eq!(reopened.plain_text(), "one two!\nmore three");
     assert_eq!(bold_map(&reopened, 0), vec![("one ".to_owned(), false), ("two!".to_owned(), true)]);
 }
+
+#[test]
+fn a_paragraphs_side_borders_are_written_as_word_writes_them() {
+    use wp_docx::model::{Border, ParagraphBorders};
+    // The transitional names, which every reader knows: LibreOffice drops the
+    // sides of a box written with the strict schema's `w:start` and `w:end`.
+    let mut document = document_with(&["boxed"]);
+    let line = || Some(Border::line("single", 4, Some("0000FF")));
+    let borders =
+        ParagraphBorders { top: line(), start: line(), bottom: line(), end: line(), between: None };
+    assert!(document.set_borders_here(&borders));
+    let reopened = Document::open(&document.save().unwrap()).unwrap();
+    let xml = reopened.package().xml_part("word/document.xml").unwrap().unwrap();
+    assert!(
+        xml.contains("<w:left w:val=\"single\"") && xml.contains("<w:right w:val=\"single\""),
+        "{xml}"
+    );
+    assert!(!xml.contains("<w:start w:val=\"single\""), "{xml}");
+    let Block::Paragraph(paragraph) = &reopened.body().blocks[0] else { panic!("a paragraph") };
+    assert_eq!(paragraph.properties.borders, borders);
+}

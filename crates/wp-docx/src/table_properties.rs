@@ -60,7 +60,7 @@ impl CellAlignment {
 }
 
 /// The order the schema wants the children of `w:tblPr` in.
-const TABLE_PROPERTY_ORDER: &[&str] = &[
+pub(crate) const TABLE_PROPERTY_ORDER: &[&str] = &[
     "tblStyle",
     "tblpPr",
     "tblOverlap",

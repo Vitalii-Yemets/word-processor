@@ -25,6 +25,9 @@ pub enum Token {
     Character(char),
     /// One byte of ordinary text.
     Byte(u8),
+    /// `\binN` and the N bytes after it, which are data rather than text: a
+    /// picture written as it is instead of in hex.
+    Binary(Vec<u8>),
 }
 
 /// Reads the pieces one at a time.
@@ -84,6 +87,15 @@ impl<'a> Lexer<'a> {
             // One space after a control word is part of it, not text.
             if self.bytes.get(self.at) == Some(&b' ') {
                 self.at += 1;
+            }
+            // The bytes after `\bin` are taken as they are, whatever they
+            // are: a brace among them is data, not a group.
+            if word == "bin" {
+                let length = number.and_then(|n| usize::try_from(n).ok()).unwrap_or(0);
+                let end = self.at.saturating_add(length).min(self.bytes.len());
+                let data = self.bytes[self.at..end].to_vec();
+                self.at = end;
+                return Token::Binary(data);
             }
             return Token::Control(word, number);
         }
@@ -177,5 +189,10 @@ mod tests {
         );
         assert_eq!(all("a\r\nb"), vec![Token::Byte(b'a'), Token::Byte(b'b')]);
         assert_eq!(all("\\\r\n"), vec![Token::Control("par".to_owned(), None)]);
+    }
+
+    #[test]
+    fn binary_data_is_taken_whole() {
+        assert_eq!(all("\\bin3 {}\\x"), vec![Token::Binary(b"{}\\".to_vec()), Token::Byte(b'x')]);
     }
 }

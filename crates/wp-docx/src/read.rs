@@ -726,6 +726,14 @@ fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
                     endnote: child.local_name() == "endnoteReference",
                 });
             }
+            // A note's own mark, inside the note: it names no note, and the
+            // note it is in gives it its number.
+            "footnoteRef" | "endnoteRef" => {
+                content.push(RunContent::NoteReference {
+                    id: 0,
+                    endnote: child.local_name() == "endnoteRef",
+                });
+            }
             "br" => {
                 let kind = match child.attribute(Some(W), "type") {
                     Some("page") => BreakKind::Page,
@@ -825,18 +833,16 @@ fn read_alternate(element: &Element, content: &mut Vec<RunContent>) {
     }
 }
 
-/// Reads who changed a run's formatting, out of the run's own properties.
-///
-/// `w:rPr/w:rPrChange`. What is inside it — the `w:rPr` the run had before —
-/// is not read into the model: nothing here needs to know what the old
-/// formatting was, and rejecting the change puts it back from the file rather
-/// than from the model. See [`crate::model::FormatChange`].
+/// Reads who changed a run's formatting, out of the run's own properties,
+/// and what it was before: `w:rPr/w:rPrChange`, and the `w:rPr` inside it.
+/// See [`crate::model::FormatChange`].
 fn read_format_change(properties: &Element) -> Option<crate::model::FormatChange> {
     let change = properties.child(Some(W), "rPrChange")?;
     Some(crate::model::FormatChange {
         author: change.attribute(Some(W), "author").unwrap_or_default().to_owned(),
         date: change.attribute(Some(W), "date").unwrap_or_default().to_owned(),
         id: change.attribute(Some(W), "id").and_then(|text| text.parse().ok()).unwrap_or(0),
+        before: Box::new(change.child(Some(W), "rPr").map(read_run_properties).unwrap_or_default()),
     })
 }
 

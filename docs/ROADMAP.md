@@ -5089,14 +5089,100 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   not PNG or JPEG, tables in tables, merged and shaded cells, paragraph
   borders and shading, character spacing and scale, the summary information
   streams, macros, and a password.
-- [ ] **G9. The rest of the Rich Text reader.** `.rtf` opens and reads its
-  text, its formatting, its tables and its pictures; what it does not read is
-  headers and footers, footnotes, sections and page setup, nested tables and
-  cell merging, table and paragraph borders and shading, drawings (`\shp`)
-  and metafile pictures, fields other than links, bookmarks, comments and
-  revision marks, right-to-left text, and character and table styles. Each is
-  one more destination or one more control word in the same reader. Named in
-  **G3**.
+- [x] **G9. The rest of the Rich Text reader.** `.rtf` opened and read its
+  text, its formatting, its tables and its pictures; what it did not read
+  was headers and footers, footnotes, sections and page setup, nested tables
+  and cell merging, table and paragraph borders and shading, drawings
+  (`\shp`) and metafile pictures, fields other than links, bookmarks,
+  comments and revision marks, right-to-left text, and character and table
+  styles. Each is one more destination or one more control word in the same
+  reader. Named in **G3**.
+  *Done when:* a file LibreOffice writes from a document of one of
+  everything, and files cut down to the shape of what Word writes, open with
+  each of those where it was.
+  The reader keeps a stack of *stories* (`crates/wp-rtf/src/read.rs`): the
+  document's own text, and a header, a footer, a note, a comment or the
+  words in a text box, each read into paragraphs and tables of its own when
+  its group begins and put where it belongs when the group ends. Sections
+  end at `\sect` on the paragraph they end — one paragraph, not two, when a
+  writer ends the paragraph first — each with its paper, margins, turn,
+  columns, how it begins, where its header and footer sit, its page
+  numbering, a first page of its own, and its own headers and footers of the
+  three kinds; a section with none follows the one before it, and
+  `\facingp` gives left and right pages their own. Footnotes and endnotes,
+  starred or not, leave their mark in the sentence and their words,
+  formatted, in the notes. Comments take their range from `\atrfstart` and
+  `\atrfend`, and their author and date, Word's packed date decoded.
+  Bookmarks are named ranges. Tracked insertions, deletions and changes of
+  formatting carry their authors from `\revtbl`, their dates, and — for a
+  change of formatting — what the formatting was before, from `\oldcprops`.
+  Every field keeps its instruction on the runs of its result; a link is a
+  link, one to a place (`\l`) goes to the bookmark, and a drawing wrapped in
+  a `SHAPE` field is the drawing. Tables: cells merged across and down,
+  ruled, shaded and aligned down the cell; the row's lines, header rows and
+  heights; the table's style; tables inside cells to any depth, the inner
+  row described after it; and the columns worked out from every edge any
+  row has, so rows of different cells line up. Paragraph borders of every
+  line Word draws, `\box`, and shading with a pattern's percentage mixed
+  in. Pictures: EMF, WMF, bitmaps (given the file header they come without),
+  data after `\bin`, and the scale a picture was shown at; a picture a
+  drawing frames floats where the drawing was; and pictures in headers,
+  footers, notes and comments go into those parts, with relationships of
+  their own. Drawings: the shapes Word numbers, with their fill, line, size,
+  turn, flips, name, description, where they float and how text wraps round
+  them, and the words in a text box. Right-to-left paragraphs and runs,
+  with the page's left and right — alignment, indents, borders — made the
+  start and end the model keeps once the paragraph has said which way it
+  runs. The stylesheet's paragraph, character and table styles are defined in
+  the document with their formatting, what they are based on and what
+  follows them, and `\s`, `\cs` and `\ts` name them. Read as well: character
+  spacing, scale, raised and lowered text, kerning, underline colour, column
+  breaks, the oldest writers' page number (`\chpgn`), and the picture of an
+  embedded object. None of it is something to undo straight after opening.
+  *Proven by:* `crates/wp-rtf/tests/libreoffice.rs` — a document with a
+  footnote, an endnote, a bookmark, a comment, a tracked insertion and
+  deletion, a field, a boxed and shaded paragraph, a right-to-left one, a
+  character style and a paragraph style, a table with cells merged both ways,
+  a shaded cell with lines of its own and a table inside a cell, a text box,
+  a header, a footer with the page number, and a first page of its own, made
+  here, saved as a `.docx`, converted to RTF by LibreOffice and opened: each
+  is found where it went in. `crates/wp-rtf/tests/word.rs` — files in Word's
+  shape: two sections with their pages, all their headers and footers, their
+  numbering and how they begin; notes, comments and changes where they were;
+  styles of the three kinds; Word's table with its row described twice, a
+  merged header row, a style and a table inside a cell; cells merged down,
+  saved and read back; five drawings and a framed picture; the metafiles, a
+  bitmap and a picture after `\bin`; links to places and a table of
+  contents; borders, shading and direction; left and right both ways round;
+  a change of formatting saved and read back as one; pictures in a header, a
+  note and a comment; and a link that begins with a picture.
+  *Found along the way:* every footnote and endnote this program wrote
+  carried, inside the note, a reference to a note — to itself — where Word
+  writes the note's own mark, `w:footnoteRef`. LibreOffice would not open a
+  file with one in it at all, and a note that came from Word showed no
+  number where the notes are printed, because its own mark was not read.
+  Both are right now. A table written from the model lost its cells'
+  merges down, their own lines and their shading, which every reader of
+  another format builds its tables through. A paragraph's side borders and
+  a table's were written with the strict schema's names, `w:start` and
+  `w:end`, which LibreOffice drops from a paragraph; they are written as
+  Word writes them. A change of formatting kept only who made it; what the
+  formatting was before is in the model now, read from a `.docx` and
+  written back, so a run written out again from the model is still a change.
+  A link that began at a picture was moved to before it when the picture
+  went in. And LibreOffice's own RTF writes a change of formatting as its
+  date in the text, with no control word before it — which is what it says,
+  and what is read.
+  *Not done:* pictures in text boxes, whose words are inside a drawing that
+  no place in the document can be counted to; groups of drawings, WordArt,
+  freeform drawings and Word 6's drawing objects (`\do`); a drawing's
+  arrowheads, dashes, shadows and gradients; tracked changes to paragraph
+  formatting, to paragraph marks, and moves; the replies to a comment; a
+  field whose result runs over more than one paragraph — a table of
+  contents — which keeps its result as text, the links in it still links;
+  frames, character borders and shading, sections that run right to left,
+  line numbering, and a note marked with something other than its number.
+  And the RTF writer, which writes what **G3** says and none of this.
 - [ ] **G10. The rest of the web-page reader, and Web Layout view.** What a
   page from Word carries and this does not read: headers and footers,
   footnotes, comments, text boxes and shapes (VML) inside the conditional

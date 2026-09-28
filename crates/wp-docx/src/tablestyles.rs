@@ -83,6 +83,48 @@ impl Document {
         self.mark_modified();
         true
     }
+
+    /// Writes a table style that came from another program's file: a
+    /// definition like any other style's, and the lines it draws round and
+    /// through the cells.
+    ///
+    /// Unlike [`Document::add_table_style`], one already here is written
+    /// over: the file says what its own style looks like.
+    pub fn set_table_style_definition(
+        &mut self,
+        wanted: &crate::StyleDefinition,
+        borders: &crate::model::TableBorders,
+    ) -> bool {
+        let defined = self.set_style_of_kind(wanted, crate::StyleKind::Table);
+        if borders.is_empty() {
+            return defined;
+        }
+        let Some(mut tree) = self.styles_tree_for_tables() else { return defined };
+        let prefix = edit::prefix_for(&tree.root, crate::WORDPROCESSING_NAMESPACE);
+        let id = wanted.id.trim();
+        let Some(style) = tree.root.child_elements_mut().find(|style| {
+            style.is(Some(read::W), "style")
+                && style.attribute(Some(read::W), "styleId").is_some_and(|found| found == id)
+        }) else {
+            return defined;
+        };
+        if style.child(Some(read::W), "tblPr").is_none() {
+            style.push_element(Element::new(
+                &edit::name_with(prefix.as_deref(), "tblPr"),
+                Some(read::W),
+            ));
+        }
+        let properties = style.child_mut(Some(read::W), "tblPr").expect("just made");
+        properties.remove_children_named(Some(read::W), "tblBorders");
+        edit::insert_ordered(
+            properties,
+            edit::table_borders_element(borders, prefix.as_deref()),
+            crate::table_properties::TABLE_PROPERTY_ORDER,
+        );
+        self.save_styles_for_tables(&tree);
+        self.mark_modified();
+        true
+    }
 }
 
 /// A whole `w:style` element for one table style.

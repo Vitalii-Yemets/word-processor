@@ -149,3 +149,45 @@ fn nothing_happens_when_the_caret_is_not_in_a_table() {
     assert!(!document.distribute_columns());
     assert!(document.selected_cells().is_none());
 }
+
+#[test]
+fn merged_ruled_and_shaded_cells_are_written_from_the_model() {
+    use wp_docx::model::{Border, Table, TableBorders, TableCell, TableRow};
+    let top = || Some(Border::line("double", 6, Some("FF0000")));
+    let table = Table {
+        rows: vec![
+            TableRow {
+                cells: vec![
+                    TableCell::text("Tall"),
+                    TableCell {
+                        shading: Some("D9E2F3".to_owned()),
+                        borders: TableBorders { top: top(), ..TableBorders::default() },
+                        ..TableCell::text("Shaded")
+                    },
+                ],
+                ..TableRow::default()
+            },
+            TableRow {
+                cells: vec![
+                    TableCell { merged_upwards: true, ..TableCell::default() },
+                    TableCell::text("Plain"),
+                ],
+                ..TableRow::default()
+            },
+        ],
+        grid: vec![2000, 2000],
+        ..Table::default()
+    };
+    let mut body = Body::default();
+    body.blocks.push(Block::Table(Box::new(table)));
+    body.blocks.push(Block::Paragraph(Paragraph::text("after")));
+    let document = round_trip(&Document::create(&body).expect("a document"));
+    let table = table_of(&document);
+    assert!(!table.rows[0].cells[0].merged_upwards);
+    assert!(table.rows[1].cells[0].merged_upwards, "the merge was not written");
+    let shaded = &table.rows[0].cells[1];
+    assert_eq!(shaded.shading.as_deref(), Some("D9E2F3"));
+    assert_eq!(shaded.borders.top, top());
+    let xml = document.package().xml_part("word/document.xml").expect("there").expect("text");
+    assert!(xml.contains(r#"<w:vMerge w:val="restart"/>"#), "{xml}");
+}

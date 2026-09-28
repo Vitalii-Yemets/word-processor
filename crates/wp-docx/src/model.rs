@@ -1819,6 +1819,10 @@ pub struct FormatChange {
     pub date: String,
     /// The number the file gives it.
     pub id: i32,
+    /// What the formatting was before: the `w:rPr` inside the change, which
+    /// is what rejecting it puts back. Kept so that a run written out again
+    /// from the model is still a change, and still says what it changed.
+    pub before: Box<RunProperties>,
 }
 
 /// Which way a tracked change went.

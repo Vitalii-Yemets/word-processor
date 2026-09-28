@@ -184,6 +184,22 @@ impl Document {
         Ok(id)
     }
 
+    /// Writes a note whose mark is already in the text.
+    ///
+    /// What a file from another program needs: its notes arrive as marks
+    /// among the runs, numbered as the file numbered them, and each wants an
+    /// entry of that number with its own words — formatting, several
+    /// paragraphs and all — rather than a new mark at the caret.
+    pub fn put_note(
+        &mut self,
+        kind: Kind,
+        id: i32,
+        body: &crate::model::Body,
+    ) -> Result<bool, Error> {
+        self.write_note(kind, id, "")?;
+        Ok(self.set_note_body(kind, id, body))
+    }
+
     /// Takes a note out, mark and all.
     pub fn delete_note(&mut self, kind: Kind, id: i32) -> bool {
         let caret = self.caret();
@@ -283,7 +299,8 @@ impl Document {
     }
 
     /// Writes the part back, adding the relationship the first time.
-    fn save_notes_root(&mut self, kind: Kind, root: Element) -> Result<(), Error> {
+    fn save_notes_root(&mut self, kind: Kind, mut root: Element) -> Result<(), Error> {
+        own_marks(&mut root);
         let tree = XmlTree {
             standalone: Some(true),
             has_declaration: true,
@@ -475,6 +492,60 @@ impl Document {
         let entry = root
             .children_named(Some(read::W), kind.entry())
             .find(|element| element.attribute(Some(read::W), "id") == Some(wanted.as_str()))?;
-        Some(read::read_part(entry))
+        let mut body = read::read_part(entry);
+        // The mark that shows the note's number names no note in the file:
+        // it is the number of the note it is in, which is this one.
+        number_own_marks(&mut body.blocks, id);
+        Some(body)
+    }
+}
+
+/// Puts right the marks inside a note as its part is written.
+///
+/// Inside a note, the mark that shows its number is `w:footnoteRef`, which
+/// names no note: it is the number of the note it is in. A
+/// `w:footnoteReference` there is a note pointing at a note — at itself —
+/// which Word will not have and over which LibreOffice will not open the file
+/// at all. The model has one kind of mark for both, so the part is put right
+/// here, whichever way the note was written.
+fn own_marks(element: &mut Element) {
+    for child in element.child_elements_mut() {
+        let own = match child.local_name() {
+            "footnoteReference" if child.namespace.as_deref() == Some(read::W) => "footnoteRef",
+            "endnoteReference" if child.namespace.as_deref() == Some(read::W) => "endnoteRef",
+            _ => {
+                own_marks(child);
+                continue;
+            }
+        };
+        let prefix = child.name.split_once(':').map(|(prefix, _)| prefix.to_owned());
+        child.name = edit::name_with(prefix.as_deref(), own);
+        child.remove_namespaced_attribute(read::W, "id");
+    }
+}
+
+/// Gives a note's own marks, which name no note, the number of the note.
+fn number_own_marks(blocks: &mut [crate::model::Block], id: i32) {
+    for block in blocks {
+        match block {
+            crate::model::Block::Paragraph(paragraph) => {
+                for run in &mut paragraph.runs {
+                    for content in &mut run.content {
+                        if let RunContent::NoteReference { id: found, .. } = content {
+                            if *found == 0 {
+                                *found = id;
+                            }
+                        }
+                    }
+                }
+            }
+            crate::model::Block::Table(table) => {
+                for row in &mut table.rows {
+                    for cell in &mut row.cells {
+                        number_own_marks(&mut cell.blocks, id);
+                    }
+                }
+            }
+        }
     }
 }

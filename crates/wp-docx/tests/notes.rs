@@ -170,3 +170,47 @@ fn a_note_of_several_lines_keeps_them() {
     assert!(text.contains("first line"), "got {text:?}");
     assert!(text.contains("second line"));
 }
+
+#[test]
+fn inside_a_note_its_own_mark_is_written_as_word_writes_it() {
+    // A note that pointed at a note — itself — is what this program used to
+    // write, and LibreOffice would not open a file with one in it.
+    let mut document = document("A claim.");
+    document.set_caret(TextPosition::new(0, 8));
+    let id = document.add_note(Kind::Footnote, "Source: somewhere.").expect("adding");
+    let body = document.note_body(Kind::Footnote, id).expect("its words");
+    assert!(document.set_note_body(Kind::Footnote, id, &body));
+
+    let saved = round_trip(&document);
+    let part = saved.notes_part(Kind::Footnote).expect("the part");
+    let xml = saved.package().xml_part(&part).expect("there").expect("text");
+    assert!(xml.contains("<w:footnoteRef/>"), "{xml}");
+    assert!(!xml.contains("<w:footnoteReference"), "{xml}");
+
+    // And read as the note's own number, so the note shows it.
+    let body = saved.note_body(Kind::Footnote, id).expect("its words");
+    let Block::Paragraph(first) = &body.blocks[0] else { panic!("a paragraph") };
+    assert!(
+        first.runs[0]
+            .content
+            .contains(&wp_docx::model::RunContent::NoteReference { id, endnote: false }),
+        "{first:?}"
+    );
+}
+
+#[test]
+fn a_note_as_word_writes_it_shows_its_number() {
+    let mut document = document("A claim.");
+    document.set_caret(TextPosition::new(0, 8));
+    let id = document.add_note(Kind::Endnote, "Later.").expect("adding");
+    let body = round_trip(&document).note_body(Kind::Endnote, id).expect("its words");
+    let marks: Vec<_> = body
+        .paragraphs()
+        .iter()
+        .flat_map(|paragraph| paragraph.runs.iter())
+        .flat_map(|run| run.content.iter())
+        .filter(|content| matches!(content, wp_docx::model::RunContent::NoteReference { .. }))
+        .cloned()
+        .collect();
+    assert_eq!(marks, vec![wp_docx::model::RunContent::NoteReference { id, endnote: true }]);
+}

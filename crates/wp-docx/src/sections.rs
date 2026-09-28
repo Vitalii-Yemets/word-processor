@@ -474,7 +474,30 @@ impl Document {
         if !crate::position::split_paragraph(&mut self.tree_mut().root, caret, prefix.as_deref()) {
             return false;
         }
-        let ending = caret.paragraph;
+        self.end_section_quietly(caret.paragraph, start)
+    }
+
+    /// Makes a paragraph the last of its section, without splitting anything.
+    ///
+    /// What a file from another program needs, whose section breaks already
+    /// end paragraphs of their own: the paragraph takes the properties that
+    /// governed it, and what comes after it begins a section that starts the
+    /// way `start` says. Returns whether a break was made; the last paragraph
+    /// of the document cannot end a section before anything.
+    pub fn end_section_at(&mut self, paragraph: usize, start: Start) -> bool {
+        if paragraph + 1 >= self.paragraph_count() {
+            return false;
+        }
+        let caret = self.caret();
+        self.record(crate::history::EditKind::Structural, caret, false);
+        self.end_section_quietly(paragraph, start)
+    }
+
+    /// The part of a break both of the above share: the paragraph that ends
+    /// the first section takes a copy of the properties, and the ones that
+    /// govern after it take the break type.
+    fn end_section_quietly(&mut self, ending: usize, start: Start) -> bool {
+        let prefix = self.prefix();
         self.set_caret(crate::TextPosition::new(ending + 1, 0));
 
         // Whatever governs the caret now governs the second section: it keeps

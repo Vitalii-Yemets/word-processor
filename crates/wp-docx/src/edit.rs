@@ -961,8 +961,21 @@ pub fn run_element(run: &Run, prefix: Option<&str>) -> Element {
 pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> Element {
     let mut element = Element::new(&name_with(prefix, "r"), Some(W));
 
-    if !run.properties.is_empty() {
-        element.push_element(run_properties_element(&run.properties, prefix));
+    if !run.properties.is_empty() || run.format_change.is_some() {
+        let mut properties = run_properties_element(&run.properties, prefix);
+        // A tracked change to the formatting, last in the properties: who,
+        // when, and what they were before.
+        if let Some(change) = &run.format_change {
+            let mut record = Element::new(&name_with(prefix, "rPrChange"), Some(W));
+            record.set_namespaced_attribute(&name_with(prefix, "id"), W, &change.id.to_string());
+            record.set_namespaced_attribute(&name_with(prefix, "author"), W, &change.author);
+            if !change.date.is_empty() {
+                record.set_namespaced_attribute(&name_with(prefix, "date"), W, &change.date);
+            }
+            record.push_element(run_properties_element(&change.before, prefix));
+            properties.push_element(record);
+        }
+        element.push_element(properties);
     }
 
     for piece in &run.content {
@@ -1083,8 +1096,13 @@ pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> El
     element
 }
 
-/// Turns table borders into a `w:tblBorders`, in the order the schema wants.
 /// Turns paragraph borders into a `w:pBdr`.
+///
+/// The sides are written `w:left` and `w:right`, which is what Word writes
+/// and what the transitional schema — the one every `.docx` is in — names
+/// them. `w:start` and `w:end` are the strict schema's names: this program
+/// reads both, but LibreOffice drops a paragraph's side borders written that
+/// way.
 pub(crate) fn paragraph_borders_element(
     borders: &ParagraphBorders,
     prefix: Option<&str>,
@@ -1092,9 +1110,9 @@ pub(crate) fn paragraph_borders_element(
     let mut element = Element::new(&name_with(prefix, "pBdr"), Some(W));
     for (name, border) in [
         ("top", &borders.top),
-        ("start", &borders.start),
+        ("left", &borders.start),
         ("bottom", &borders.bottom),
-        ("end", &borders.end),
+        ("right", &borders.end),
         ("between", &borders.between),
     ] {
         let Some(border) = border else { continue };
@@ -1103,14 +1121,25 @@ pub(crate) fn paragraph_borders_element(
     element
 }
 
+/// Turns table borders into a `w:tblBorders`, in the order the schema wants.
 pub(crate) fn table_borders_element(borders: &TableBorders, prefix: Option<&str>) -> Element {
-    let mut element = Element::new(&name_with(prefix, "tblBorders"), Some(W));
+    borders_element("tblBorders", borders, prefix)
+}
 
+/// The same under another name: a cell's `w:tcBorders` has the same edges.
+pub(crate) fn borders_element(
+    local: &str,
+    borders: &TableBorders,
+    prefix: Option<&str>,
+) -> Element {
+    let mut element = Element::new(&name_with(prefix, local), Some(W));
+
+    // The transitional names, as for a paragraph's.
     for (name, border) in [
         ("top", &borders.top),
-        ("start", &borders.start),
+        ("left", &borders.start),
         ("bottom", &borders.bottom),
-        ("end", &borders.end),
+        ("right", &borders.end),
         ("insideH", &borders.inside_horizontal),
         ("insideV", &borders.inside_vertical),
     ] {
@@ -1323,7 +1352,26 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
         element.push_element(grid);
     }
 
-    for row in &table.rows {
+    // Which column of the grid each cell begins in, row by row: a cell
+    // merged with the ones below it says so only by the cell under it being
+    // a continuation, and that cell is found by its column.
+    let columns: Vec<Vec<u32>> = table
+        .rows
+        .iter()
+        .map(|row| {
+            let mut at = 0;
+            row.cells
+                .iter()
+                .map(|cell| {
+                    let column = at;
+                    at += cell.span.max(1);
+                    column
+                })
+                .collect()
+        })
+        .collect();
+
+    for (row_index, row) in table.rows.iter().enumerate() {
         let mut row_element = Element::new(&name_with(prefix, "tr"), Some(W));
 
         // What the row itself says: how tall it is, and whether it is repeated
@@ -1350,7 +1398,7 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
             row_element.push_element(row_properties);
         }
 
-        for cell in &row.cells {
+        for (cell_index, cell) in row.cells.iter().enumerate() {
             let mut cell_element = Element::new(&name_with(prefix, "tc"), Some(W));
 
             let mut cell_properties = Element::new(&name_with(prefix, "tcPr"), Some(W));
@@ -1373,15 +1421,36 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
             if cell.span > 1 {
                 cell_properties.push_element(valued(prefix, "gridSpan", &cell.span.to_string()));
             }
+            // A cell merged with the one above it, and the first of such a
+            // run, which the format marks as where the merge restarts.
+            let column = columns[row_index][cell_index];
+            let continued_below = table.rows.get(row_index + 1).is_some_and(|below| {
+                below
+                    .cells
+                    .iter()
+                    .zip(&columns[row_index + 1])
+                    .any(|(under, at)| *at == column && under.merged_upwards)
+            });
+            if cell.merged_upwards {
+                cell_properties.push_element(Element::new(&name_with(prefix, "vMerge"), Some(W)));
+            } else if continued_below {
+                cell_properties.push_element(valued(prefix, "vMerge", "restart"));
+            }
+            // Its own lines and its own colour, over whatever the table says.
+            if !cell.borders.is_empty() {
+                cell_properties.push_element(borders_element("tcBorders", &cell.borders, prefix));
+            }
+            if let Some(fill) = &cell.shading {
+                let mut shading = Element::new(&name_with(prefix, "shd"), Some(W));
+                shading.set_namespaced_attribute(&name_with(prefix, "val"), W, "clear");
+                shading.set_namespaced_attribute(&name_with(prefix, "color"), W, "auto");
+                shading.set_namespaced_attribute(&name_with(prefix, "fill"), W, fill);
+                cell_properties.push_element(shading);
+            }
             // Room this cell keeps clear inside itself, where it asks for
             // something other than the table's.
             if !cell.margins.is_empty() {
                 cell_properties.push_element(cell_margins_element("tcMar", &cell.margins, prefix));
-            }
-            // Written only when the text does not sit where a cell that says
-            // nothing puts it, which is at the top.
-            if cell.vertical != crate::table_properties::CellAlignment::Top {
-                cell_properties.push_element(valued(prefix, "vAlign", cell.vertical.word()));
             }
             // Written only when the text is turned, because the ordinary way up
             // is what a cell that says nothing means.
@@ -1391,6 +1460,12 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
                     "textDirection",
                     cell.direction.word(),
                 ));
+            }
+            // Written only when the text does not sit where a cell that says
+            // nothing puts it, which is at the top. After the direction,
+            // which is where the schema has it.
+            if cell.vertical != crate::table_properties::CellAlignment::Top {
+                cell_properties.push_element(valued(prefix, "vAlign", cell.vertical.word()));
             }
             cell_element.push_element(cell_properties);
 

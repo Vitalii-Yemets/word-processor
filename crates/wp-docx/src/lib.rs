@@ -1507,6 +1507,16 @@ impl Document {
 
     // --- Undo and redo ------------------------------------------------------
 
+    /// Forgets every step there is to undo or redo.
+    ///
+    /// For a document that was built by a reader of another format, whose
+    /// pictures, notes and sections went in one edit at a time: none of that is
+    /// anything a person did, and Undo straight after opening must not take a
+    /// picture out of the file.
+    pub fn forget_history(&mut self) {
+        self.history = History::default();
+    }
+
     #[must_use]
     pub fn can_undo(&self) -> bool {
         self.history.can_undo()
@@ -1844,6 +1854,16 @@ impl Document {
     /// properties nobody here has heard of, and rewriting a style whole would
     /// throw them away.
     pub fn set_style(&mut self, wanted: &StyleDefinition) -> bool {
+        self.set_style_of_kind(wanted, StyleKind::Paragraph)
+    }
+
+    /// The same for a style of any kind: a new one is made of that kind, and
+    /// one already there keeps the kind it has.
+    ///
+    /// What a file from another program needs, which brings its character
+    /// styles and its table styles with it as well as its paragraph styles.
+    /// A character style has no paragraph formatting to write, and none is.
+    pub fn set_style_of_kind(&mut self, wanted: &StyleDefinition, kind: StyleKind) -> bool {
         let id = wanted.id.trim();
         if id.is_empty() {
             return false;
@@ -1863,7 +1883,12 @@ impl Document {
             element.set_namespaced_attribute(
                 &edit::name_with(prefix.as_deref(), "type"),
                 read::W,
-                "paragraph",
+                match kind {
+                    StyleKind::Character => "character",
+                    StyleKind::Table => "table",
+                    StyleKind::Numbering => "numbering",
+                    StyleKind::Paragraph | StyleKind::Other => "paragraph",
+                },
             );
             element.set_namespaced_attribute(
                 &edit::name_with(prefix.as_deref(), "styleId"),
@@ -1902,18 +1927,20 @@ impl Document {
         }
 
         // And the formatting, into the style's own `pPr` and `rPr`.
-        let paragraph = child_or_new(element, "pPr", prefix.as_deref());
-        format::write_paragraph_properties(paragraph, &wanted.paragraph, prefix.as_deref());
-        // The borders and the shading are written apart from the rest,
-        // because a paragraph's are set from their own dialog and a style's
-        // come with the definition: the one writer that does both takes the
-        // properties rather than the paragraph round them.
-        format::write_borders_into(paragraph, &wanted.paragraph.borders, prefix.as_deref());
-        format::write_shading_into(
-            paragraph,
-            wanted.paragraph.shading.as_deref(),
-            prefix.as_deref(),
-        );
+        if kind != StyleKind::Character {
+            let paragraph = child_or_new(element, "pPr", prefix.as_deref());
+            format::write_paragraph_properties(paragraph, &wanted.paragraph, prefix.as_deref());
+            // The borders and the shading are written apart from the rest,
+            // because a paragraph's are set from their own dialog and a style's
+            // come with the definition: the one writer that does both takes the
+            // properties rather than the paragraph round them.
+            format::write_borders_into(paragraph, &wanted.paragraph.borders, prefix.as_deref());
+            format::write_shading_into(
+                paragraph,
+                wanted.paragraph.shading.as_deref(),
+                prefix.as_deref(),
+            );
+        }
         let run = child_or_new(element, "rPr", prefix.as_deref());
         format::write_run_properties(run, &wanted.run, prefix.as_deref());
 
