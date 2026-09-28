@@ -59,7 +59,7 @@ const ABOUT: usize = 0;
 const HOW: usize = 1;
 
 /// Which tab of the AutoCorrect dialog is AutoFormat's.
-const AUTOFORMAT_TAB: usize = 2;
+const AUTOFORMAT_TAB: usize = 3;
 
 impl Editor {
     /// Opens Word's AutoFormat dialog: now, or with a review.
@@ -618,7 +618,7 @@ mod tests {
         editor.open_autoformat();
         editor.finish_dialog(Answer::Named(OPTIONS));
         assert_eq!(editor.asking, Some(Asking::AutoCorrect));
-        assert_eq!(editor.dialog.as_ref().map(Dialog::current_tab), Some(AUTOFORMAT_TAB));
+        assert_eq!(editor.dialog.as_ref().map(Dialog::showing_tab), Some(AUTOFORMAT_TAB));
     }
 
     #[test]

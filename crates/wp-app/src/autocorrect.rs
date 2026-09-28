@@ -75,6 +75,169 @@ const USUAL: &[(&str, &str)] = &[
     ("its a", "it's a"),
 ];
 
+/// The names Math AutoCorrect starts with: `\alpha` for α and the rest.
+///
+/// Word's list is the names the linear format of its equation editor takes,
+/// which are TeX's: the Greek alphabet, with `\epsilon`, `\phi`, `\theta`,
+/// `\rho`, `\sigma` and `\pi` each beside a `\var` twin, the relations, the
+/// operators, the arrows, the big operators and the odd letters mathematics
+/// borrows. Not the whole of Word's list, which is some hundreds long and
+/// runs to the accents and the double-struck alphabets; these are the ones a
+/// person writing mathematics reaches for, and any other can be added.
+const MATH_USUAL: &[(&str, &str)] = &[
+    // The Greek alphabet.
+    ("\\alpha", "\u{3B1}"),
+    ("\\beta", "\u{3B2}"),
+    ("\\gamma", "\u{3B3}"),
+    ("\\delta", "\u{3B4}"),
+    ("\\epsilon", "\u{3F5}"),
+    ("\\varepsilon", "\u{3B5}"),
+    ("\\zeta", "\u{3B6}"),
+    ("\\eta", "\u{3B7}"),
+    ("\\theta", "\u{3B8}"),
+    ("\\vartheta", "\u{3D1}"),
+    ("\\iota", "\u{3B9}"),
+    ("\\kappa", "\u{3BA}"),
+    ("\\lambda", "\u{3BB}"),
+    ("\\mu", "\u{3BC}"),
+    ("\\nu", "\u{3BD}"),
+    ("\\xi", "\u{3BE}"),
+    ("\\pi", "\u{3C0}"),
+    ("\\varpi", "\u{3D6}"),
+    ("\\rho", "\u{3C1}"),
+    ("\\varrho", "\u{3F1}"),
+    ("\\sigma", "\u{3C3}"),
+    ("\\varsigma", "\u{3C2}"),
+    ("\\tau", "\u{3C4}"),
+    ("\\upsilon", "\u{3C5}"),
+    ("\\phi", "\u{3D5}"),
+    ("\\varphi", "\u{3C6}"),
+    ("\\chi", "\u{3C7}"),
+    ("\\psi", "\u{3C8}"),
+    ("\\omega", "\u{3C9}"),
+    ("\\Alpha", "\u{391}"),
+    ("\\Beta", "\u{392}"),
+    ("\\Gamma", "\u{393}"),
+    ("\\Delta", "\u{394}"),
+    ("\\Epsilon", "\u{395}"),
+    ("\\Zeta", "\u{396}"),
+    ("\\Eta", "\u{397}"),
+    ("\\Theta", "\u{398}"),
+    ("\\Iota", "\u{399}"),
+    ("\\Kappa", "\u{39A}"),
+    ("\\Lambda", "\u{39B}"),
+    ("\\Mu", "\u{39C}"),
+    ("\\Nu", "\u{39D}"),
+    ("\\Xi", "\u{39E}"),
+    ("\\Pi", "\u{3A0}"),
+    ("\\Rho", "\u{3A1}"),
+    ("\\Sigma", "\u{3A3}"),
+    ("\\Tau", "\u{3A4}"),
+    ("\\Upsilon", "\u{3A5}"),
+    ("\\Phi", "\u{3A6}"),
+    ("\\Chi", "\u{3A7}"),
+    ("\\Psi", "\u{3A8}"),
+    ("\\Omega", "\u{3A9}"),
+    // The operators.
+    ("\\times", "\u{D7}"),
+    ("\\div", "\u{F7}"),
+    ("\\pm", "\u{B1}"),
+    ("\\mp", "\u{2213}"),
+    ("\\cdot", "\u{22C5}"),
+    ("\\ast", "\u{2217}"),
+    ("\\star", "\u{22C6}"),
+    ("\\circ", "\u{2218}"),
+    ("\\bullet", "\u{2219}"),
+    ("\\oplus", "\u{2295}"),
+    ("\\ominus", "\u{2296}"),
+    ("\\otimes", "\u{2297}"),
+    ("\\oslash", "\u{2298}"),
+    ("\\odot", "\u{2299}"),
+    ("\\cup", "\u{222A}"),
+    ("\\cap", "\u{2229}"),
+    ("\\wedge", "\u{2227}"),
+    ("\\vee", "\u{2228}"),
+    ("\\neg", "\u{AC}"),
+    // The relations.
+    ("\\le", "\u{2264}"),
+    ("\\leq", "\u{2264}"),
+    ("\\ge", "\u{2265}"),
+    ("\\geq", "\u{2265}"),
+    ("\\ne", "\u{2260}"),
+    ("\\neq", "\u{2260}"),
+    ("\\approx", "\u{2248}"),
+    ("\\equiv", "\u{2261}"),
+    ("\\sim", "\u{223C}"),
+    ("\\simeq", "\u{2243}"),
+    ("\\cong", "\u{2245}"),
+    ("\\propto", "\u{221D}"),
+    ("\\ll", "\u{226A}"),
+    ("\\gg", "\u{226B}"),
+    ("\\subset", "\u{2282}"),
+    ("\\supset", "\u{2283}"),
+    ("\\subseteq", "\u{2286}"),
+    ("\\supseteq", "\u{2287}"),
+    ("\\in", "\u{2208}"),
+    ("\\ni", "\u{220B}"),
+    ("\\perp", "\u{22A5}"),
+    ("\\parallel", "\u{2225}"),
+    // The arrows.
+    ("\\rightarrow", "\u{2192}"),
+    ("\\to", "\u{2192}"),
+    ("\\leftarrow", "\u{2190}"),
+    ("\\uparrow", "\u{2191}"),
+    ("\\downarrow", "\u{2193}"),
+    ("\\leftrightarrow", "\u{2194}"),
+    ("\\updownarrow", "\u{2195}"),
+    ("\\Rightarrow", "\u{21D2}"),
+    ("\\Leftarrow", "\u{21D0}"),
+    ("\\Leftrightarrow", "\u{21D4}"),
+    ("\\mapsto", "\u{21A6}"),
+    // The big operators, and the roots.
+    ("\\sum", "\u{2211}"),
+    ("\\prod", "\u{220F}"),
+    ("\\coprod", "\u{2210}"),
+    ("\\int", "\u{222B}"),
+    ("\\iint", "\u{222C}"),
+    ("\\iiint", "\u{222D}"),
+    ("\\oint", "\u{222E}"),
+    ("\\sqrt", "\u{221A}"),
+    ("\\cbrt", "\u{221B}"),
+    ("\\qdrt", "\u{221C}"),
+    // The rest of what mathematics writes with.
+    ("\\infty", "\u{221E}"),
+    ("\\partial", "\u{2202}"),
+    ("\\nabla", "\u{2207}"),
+    ("\\forall", "\u{2200}"),
+    ("\\exists", "\u{2203}"),
+    ("\\emptyset", "\u{2205}"),
+    ("\\therefore", "\u{2234}"),
+    ("\\because", "\u{2235}"),
+    ("\\angle", "\u{2220}"),
+    ("\\degree", "\u{B0}"),
+    ("\\degc", "\u{2103}"),
+    ("\\degf", "\u{2109}"),
+    ("\\prime", "\u{2032}"),
+    ("\\hbar", "\u{210F}"),
+    ("\\ell", "\u{2113}"),
+    ("\\Re", "\u{211C}"),
+    ("\\Im", "\u{2111}"),
+    ("\\aleph", "\u{2135}"),
+    ("\\wp", "\u{2118}"),
+    ("\\dots", "\u{2026}"),
+    ("\\ldots", "\u{2026}"),
+    ("\\cdots", "\u{22EF}"),
+    ("\\vdots", "\u{22EE}"),
+    ("\\ddots", "\u{22F1}"),
+    ("\\langle", "\u{27E8}"),
+    ("\\rangle", "\u{27E9}"),
+    ("\\lfloor", "\u{230A}"),
+    ("\\rfloor", "\u{230B}"),
+    ("\\lceil", "\u{2308}"),
+    ("\\rceil", "\u{2309}"),
+    ("\\Vert", "\u{2016}"),
+];
+
 /// The abbreviations a full stop does not end a sentence after.
 ///
 /// Without these, "see e.g. the table" becomes "see e.g. The table", because a
@@ -163,6 +326,15 @@ pub struct AutoCorrect {
     /// The AutoFormat tab: what reformatting a whole document at once
     /// changes, which Word keeps apart from what happens as one types.
     pub reformat: Reformat,
+
+    // --- The Math AutoCorrect tab --------------------------------------------
+    /// What is typed — `\alpha` — and the character that goes in its place.
+    pub math: BTreeMap<String, String>,
+    /// Whether the list is used at all.
+    pub math_replace: bool,
+    /// Whether it is used in the text as well as in an equation. Word ships
+    /// it switched off: `\alpha` in a paragraph about LaTeX is meant.
+    pub math_outside: bool,
 }
 
 /// Word's AutoFormat tab: what the AutoFormat command changes when it goes
@@ -259,6 +431,12 @@ impl Default for AutoCorrect {
             add_first_letter_exceptions: true,
             add_initial_caps_exceptions: true,
             reformat: Reformat::default(),
+            math: MATH_USUAL
+                .iter()
+                .map(|(what, with)| ((*what).to_owned(), (*with).to_owned()))
+                .collect(),
+            math_replace: true,
+            math_outside: false,
         }
     }
 }
@@ -288,11 +466,13 @@ pub enum Kind {
     Table,
     /// A short line entered twice made into a heading.
     Heading,
+    /// A name on the Math AutoCorrect list made into its character.
+    Math,
 }
 
 impl Kind {
     /// Every rule, for the list of what the box can say.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Replacement,
         Self::DayName,
         Self::TwoInitials,
@@ -307,13 +487,14 @@ impl Kind {
         Self::BorderLine,
         Self::Table,
         Self::Heading,
+        Self::Math,
     ];
 
     /// What the box under the correction offers to undo, in Word's words.
     #[must_use]
     pub fn undo_label(self) -> &'static str {
         match self {
-            Self::Replacement | Self::Ordinal | Self::Fraction | Self::Dash => {
+            Self::Replacement | Self::Ordinal | Self::Fraction | Self::Dash | Self::Math => {
                 "Undo Automatic Corrections"
             }
             Self::DayName | Self::TwoInitials | Self::CapsLock | Self::SentenceCase => {
@@ -333,7 +514,9 @@ impl Kind {
     #[must_use]
     pub fn stop_label(self, word: &str) -> String {
         match self {
-            Self::Replacement => format!("Stop Automatically Correcting \u{201C}{word}\u{201D}"),
+            Self::Replacement | Self::Math => {
+                format!("Stop Automatically Correcting \u{201C}{word}\u{201D}")
+            }
             Self::DayName => "Stop Capitalizing Names of Days".to_owned(),
             Self::TwoInitials => format!("Stop Correcting \u{201C}{word}\u{201D}"),
             Self::CapsLock => "Stop Correcting Accidental Use of Caps Lock".to_owned(),
@@ -354,7 +537,7 @@ impl Kind {
     /// to, and so cannot be put in a list of messages ahead of time.
     #[must_use]
     pub fn names_the_word(self) -> bool {
-        matches!(self, Self::Replacement | Self::TwoInitials)
+        matches!(self, Self::Replacement | Self::TwoInitials | Self::Math)
     }
 }
 
@@ -620,6 +803,27 @@ impl AutoCorrect {
         })
     }
 
+    /// The character a name typed just before this point stands for, where
+    /// the Math AutoCorrect list has it: `\alpha` finished becomes α.
+    ///
+    /// `in_math` says whether the typing is in an equation, where the list is
+    /// always used; in the text it is used only where the tab says so. The
+    /// name is the last backslash and the letters after it, and it is finished
+    /// by whatever was typed after it that is not a letter.
+    #[must_use]
+    pub fn math_word(&self, before: &str, in_math: bool) -> Option<Correction> {
+        if !self.math_replace || !(in_math || self.math_outside) {
+            return None;
+        }
+        let slash = before.rfind('\\')?;
+        let name = &before[slash..];
+        if name.len() < 2 || !name[1..].chars().all(char::is_alphabetic) {
+            return None;
+        }
+        let with = self.math.get(name)?;
+        Some(Correction { taking: name.chars().count(), putting: with.clone(), kind: Kind::Math })
+    }
+
     /// Where the columns of a table typed as `+---+---+` begin and end: the
     /// byte offset of every plus sign, left to right.
     ///
@@ -791,6 +995,9 @@ impl AutoCorrect {
             Kind::BorderLine => self.border_lines = false,
             Kind::Table => self.tables = false,
             Kind::Heading => self.headings = false,
+            Kind::Math => {
+                self.math.remove(original);
+            }
         }
     }
 
@@ -1162,6 +1369,38 @@ mod tests {
         quiet.reformat.curly_quotes = false;
         assert_eq!(quiet.for_reformatting().fixes_in("\"a\""), vec![]);
         assert!(quiet.curly_quotes, "the typing rule is its own");
+    }
+
+    #[test]
+    fn a_math_name_is_its_character_in_an_equation() {
+        let rules = rules();
+        let greek = |before: &str| rules.math_word(before, true).map(|fix| fix.putting);
+        assert_eq!(greek("x = \\alpha"), Some("\u{3B1}".to_owned()));
+        assert_eq!(greek("\\Delta"), Some("\u{394}".to_owned()), "the capital is its own name");
+        assert_eq!(greek("\\varepsilon"), Some("\u{3B5}".to_owned()));
+        assert_eq!(greek("a \\le b \\to"), Some("\u{2192}".to_owned()));
+        assert_eq!(rules.math_word("\\infty", true).map(|fix| fix.taking), Some(6));
+        for not_one in ["alpha", "\\", "\\nosuchname", "\\alpha2", "a\\b c"] {
+            assert_eq!(greek(not_one), None, "{not_one:?}");
+        }
+    }
+
+    #[test]
+    fn a_math_name_in_the_text_is_left_alone_unless_the_tab_says_otherwise() {
+        let mut rules = rules();
+        assert_eq!(rules.math_word("\\alpha", false), None, "Word ships it off");
+        rules.math_outside = true;
+        assert!(rules.math_word("\\alpha", false).is_some());
+        rules.math_replace = false;
+        assert_eq!(rules.math_word("\\alpha", true), None, "the list switched off");
+    }
+
+    #[test]
+    fn stopping_a_math_correction_takes_the_name_off_the_list() {
+        let mut rules = rules();
+        rules.stop(Kind::Math, "\\alpha");
+        assert_eq!(rules.math_word("\\alpha", true), None);
+        assert!(rules.math_word("\\beta", true).is_some());
     }
 
     #[test]

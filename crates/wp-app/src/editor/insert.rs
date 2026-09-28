@@ -2512,8 +2512,25 @@ impl Editor {
             }
             "autoformat" => {
                 self.open_autocorrect();
-                // The second tab, so the other half can be photographed too.
-                self.dialog_key(wp_shell::Key::Tab, false, true);
+                // The As You Type tab, so the other half can be photographed
+                // too.
+                if let Some(dialog) = &mut self.dialog {
+                    dialog.show_tab(2);
+                }
+            }
+            // The equation strip with names typed into it, each made its
+            // character as it was finished.
+            "equation-typed" => {
+                self.run(super::Command::Equation);
+                for character in r"E = \sum \alpha_i \le \infty".chars() {
+                    self.type_into_find(character);
+                }
+            }
+            "math-autocorrect" => {
+                self.open_autocorrect();
+                if let Some(dialog) = &mut self.dialog {
+                    dialog.show_tab(1);
+                }
             }
             // The same, answered with Review Changes: the marks themselves.
             "autoformat-marked" => {
@@ -2523,7 +2540,7 @@ impl Editor {
             "autoformat-tab" => {
                 self.open_autocorrect();
                 if let Some(dialog) = &mut self.dialog {
-                    dialog.show_tab(2);
+                    dialog.show_tab(3);
                 }
             }
             "exceptions" => {

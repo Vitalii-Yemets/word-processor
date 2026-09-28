@@ -4536,9 +4536,50 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   rule above. Word's Style Gallery button on the review dialog. And a link
   made during a review is made outright rather than marked: taking it back is
   Reject All or the Insert tab's Remove Link, not the Review tab.
-- [ ] **F11. Math AutoCorrect.** The tab that turns `\alpha` into α as it is
+- [x] **F11. Math AutoCorrect.** The tab that turns `\alpha` into α as it is
   typed, and the list behind it. It waits on the equation editor, which is
   where the result has to go. Named in **F5**.
+  *Done when:* `\alpha+` typed into the equation strip reads `α+` before the
+  equation is finished, the tab's list can be added to and taken from, and
+  `\alpha` in a paragraph is left alone until the tab says otherwise.
+  The equation editor this waited on is the strip under Insert ▸ Equation,
+  which takes the linear format a line at a time; its parser already knew the
+  Greek letters by name when the equation was finished. What was missing was
+  the list and the typing: the strip now makes a name its character the moment
+  something that is not a letter follows it — `\alpha+` is `α+`, and `\beta`
+  stays `\beta` until it is finished, since it could still be `\betaxyz` — so
+  what the strip shows is what the equation will be.
+  The list is Word's idea and its names are TeX's, which are Word's: the Greek
+  alphabet with the `\var` twins (`\epsilon` ϵ and `\varepsilon` ε, `\phi` ϕ
+  and `\varphi` φ, and so on), the operators, the relations, the arrows, the
+  big operators and roots, and the odd letters mathematics writes with — some
+  hundred and fifty names. It is the settings file's, written whole like the
+  replacement list, so a name taken off stays off.
+  The tab is Word's second, between AutoCorrect and AutoFormat As You Type:
+  "Use Math AutoCorrect rules outside of math regions", off as Word ships it;
+  "Replace text as you type"; the two boxes and the list, with Add and Delete
+  beside it working on this list and not the other, and keeping the name's
+  case, since `\Delta` and `\delta` are two letters. With the first box
+  ticked, a name finished in the text becomes its character like any other
+  correction, and the box under it offers it back and offers to take the name
+  off the list.
+  *Proven by:* `wp-app`'s tests: names in the strip made characters as each is
+  finished and not before, an unknown name left alone, the strip following the
+  list's switch and a name added to it, and the equation put in; the text left
+  alone by default and corrected with the switch on, the box taking it back;
+  the tab adding and deleting on its own list in its own case and leaving the
+  other list alone, and its two boxes read back; the list written to the
+  settings file and read back whole. `AutoCorrect::math_word` has its own
+  tests, among them that the name is the last backslash and letters only.
+  `--picture … equation-typed` draws the strip part-way through
+  `E = \sum \alpha_i \le \infty`, and `math-autocorrect` the tab, both looked
+  at.
+  *Not done:* the rest of Word's list — the accents, the double-struck and
+  script alphabets, the brackets that build up, some hundred more names — any
+  of which can be added on the tab; the ASCII pairs Word's list also has, such
+  as `<=` for ≤, which here would turn every `<=` in a paragraph once the
+  first box is ticked; and the Recognized Functions button, since the linear
+  format here has no functions for `sin` to be set upright as.
 - [ ] **F12. Word's Actions tab.** The menu a word offers when the program
   recognises what kind of thing it is — a date, an address, a name — and the
   actions it hangs off that. Named in **F5**.

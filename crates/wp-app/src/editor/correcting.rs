@@ -127,6 +127,13 @@ impl Editor {
             }
         }
 
+        // `\alpha` finished becomes α, where the Math AutoCorrect tab says to
+        // do that outside an equation too.
+        if let Some(greek) = self.autocorrect.math_word(text, false) {
+            self.put_correction(word_end, &greek);
+            return;
+        }
+
         // `*bold*` closed: the marks go and the formatting comes.
         if let Some(emphasis) = self.autocorrect.emphasis(text) {
             self.put_emphasis(word_end, &emphasis);
@@ -1345,6 +1352,27 @@ mod tests {
         assert!(editor.correction_bar().is_some());
         press(&mut editor, Key::Escape);
         assert!(editor.corrected.is_none());
+    }
+
+    #[test]
+    fn a_math_name_in_the_text_is_left_alone_unless_the_tab_says_otherwise() {
+        let mut editor = editor();
+        type_out(&mut editor, "\\alpha is a command");
+        assert_eq!(text(&editor), "\\alpha is a command", "Word ships it off");
+
+        let mut editor = super::tests::editor();
+        editor.autocorrect.math_outside = true;
+        type_out(&mut editor, "An angle \\alpha of ");
+        assert_eq!(text(&editor), "An angle \u{3B1} of ");
+        // And the box offers it back, naming it.
+        reach_box(&mut editor, TextPosition::new(0, 9));
+        editor.open_correction_options();
+        assert_eq!(
+            editor.popup.as_ref().unwrap().item(STOP),
+            Some("Stop Automatically Correcting \u{201C}\\alpha\u{201D}")
+        );
+        editor.choose_correction_option(TAKE_BACK);
+        assert_eq!(text(&editor), "An angle \\alpha of ");
     }
 
     // --- Tables and headings as they are typed ---------------------------------

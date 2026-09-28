@@ -90,6 +90,23 @@ impl Editor {
                     bar.focus = if bar.focus == Focus::Find { Focus::Replace } else { Focus::Find };
                 }
             }
+            // In the equation strip a name on the Math AutoCorrect list
+            // becomes its character as soon as something that is not a letter
+            // follows it: `\alpha+` is `α+` before the equation is finished.
+            character if bar.purpose == Purpose::Equation => {
+                bar.type_character(character);
+                if !character.is_alphabetic() && !character.is_control() {
+                    let typed = bar.needle.clone();
+                    let before = &typed[..typed.len() - character.len_utf8()];
+                    if let Some(fix) = self.autocorrect.math_word(before, true) {
+                        let start =
+                            before.char_indices().rev().nth(fix.taking - 1).map_or(0, |(at, _)| at);
+                        if let Some(bar) = &mut self.find_bar {
+                            bar.needle = format!("{}{}{character}", &before[..start], fix.putting);
+                        }
+                    }
+                }
+            }
             character => {
                 if bar.type_character(character) {
                     self.count_matches();

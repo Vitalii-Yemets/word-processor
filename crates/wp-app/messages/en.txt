@@ -510,6 +510,7 @@
 = Mark Entry
 = Mark spelling mistakes as you type
 = Match Fields
+= Math AutoCorrect
 = Measure from
 = Media
 = Merge
@@ -989,6 +990,7 @@
 = Unprotect Document
 = Update Index
 = Update Table
+= Use Math AutoCorrect rules outside of math regions
 = Use a dark window
 = Use an Existing List...
 = Use contextual alternates

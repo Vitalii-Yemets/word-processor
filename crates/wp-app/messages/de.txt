@@ -2036,6 +2036,9 @@ language = Deutsch
 = Match Fields
 > Felder abgleichen
 
+= Math AutoCorrect
+> AutoKorrektur für Mathematik
+
 = Measure from
 > Messen von
 
@@ -3034,6 +3037,9 @@ language = Deutsch
 
 = Update Table
 > Tabelle aktualisieren
+
+= Use Math AutoCorrect rules outside of math regions
+> AutoKorrektur-Regeln für Mathematik außerhalb mathematischer Bereiche verwenden
 
 = Use a dark window
 > Dunkles Fenster verwenden

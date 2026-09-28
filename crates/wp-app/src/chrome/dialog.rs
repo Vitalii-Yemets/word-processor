@@ -1508,13 +1508,6 @@ impl Dialog {
         }
     }
 
-    /// Which of its tabs is showing.
-    #[cfg(test)]
-    #[must_use]
-    pub fn current_tab(&self) -> usize {
-        self.tab
-    }
-
     /// Shows one of the tabs, putting the keyboard on its first field.
     pub fn show_tab(&mut self, tab: usize) {
         if tab >= self.tabs().len() || tab == self.tab {

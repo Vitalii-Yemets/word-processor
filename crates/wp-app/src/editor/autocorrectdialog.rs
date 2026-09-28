@@ -21,8 +21,10 @@
 //!
 //! # What is missing
 //!
-//! Word's Math AutoCorrect and Actions tabs, for the same reason the switches
-//! they hold are: there is nothing behind them here. And on the AutoFormat
+//! Word's Actions tab, for the same reason the switches it holds are: there
+//! is nothing behind them here; and the Math AutoCorrect tab's Recognized
+//! Functions, which the linear format here has no functions for. And on the
+//! AutoFormat
 //! tab, "Other paragraph styles" and "Plain text e-mail documents", which are
 //! about kinds of document this program does not tell apart.
 
@@ -49,36 +51,49 @@ const WHAT: usize = 9;
 const WITH: usize = 10;
 const LIST: usize = 11;
 
+// The Math AutoCorrect tab: a switch, the list's switch, and a list like the
+// first tab's.
+const TAB_MATH: usize = 12;
+const MATH_OUTSIDE: usize = 13;
+const MATH_REPLACE: usize = 14;
+const MATH_PAIR_ROW: usize = 15;
+const MATH_WHAT: usize = 16;
+const MATH_WITH: usize = 17;
+const MATH_LIST: usize = 18;
+
+/// Which tab is the Math AutoCorrect one, which Add and Delete ask.
+const MATH_TAB: usize = 1;
+
 // The AutoFormat As You Type tab.
-const TAB_FORMAT: usize = 12;
-const REPLACE_AS_YOU_TYPE: usize = 13;
-const CURLY_QUOTES: usize = 14;
-const ORDINALS: usize = 15;
-const FRACTIONS: usize = 16;
-const DASHES: usize = 17;
-const BOLD_ITALIC: usize = 18;
-const HYPERLINKS: usize = 19;
-const APPLY_AS_YOU_TYPE: usize = 20;
-const AUTOMATIC_LISTS: usize = 21;
-const BORDER_LINES: usize = 22;
-const HEADINGS: usize = 23;
-const TABLES: usize = 24;
+const TAB_FORMAT: usize = 19;
+const REPLACE_AS_YOU_TYPE: usize = 20;
+const CURLY_QUOTES: usize = 21;
+const ORDINALS: usize = 22;
+const FRACTIONS: usize = 23;
+const DASHES: usize = 24;
+const BOLD_ITALIC: usize = 25;
+const HYPERLINKS: usize = 26;
+const APPLY_AS_YOU_TYPE: usize = 27;
+const AUTOMATIC_LISTS: usize = 28;
+const BORDER_LINES: usize = 29;
+const HEADINGS: usize = 30;
+const TABLES: usize = 31;
 
 // The AutoFormat tab: the same rules, for a whole document at once.
-const TAB_WHOLE: usize = 25;
-const WHOLE_APPLY: usize = 26;
-const WHOLE_HEADINGS: usize = 27;
-const WHOLE_NUMBERED: usize = 28;
-const WHOLE_BULLETED: usize = 29;
-const WHOLE_REPLACE: usize = 30;
-const WHOLE_QUOTES: usize = 31;
-const WHOLE_ORDINALS: usize = 32;
-const WHOLE_FRACTIONS: usize = 33;
-const WHOLE_DASHES: usize = 34;
-const WHOLE_BOLD_ITALIC: usize = 35;
-const WHOLE_HYPERLINKS: usize = 36;
-const WHOLE_PRESERVE: usize = 37;
-const WHOLE_STYLES: usize = 38;
+const TAB_WHOLE: usize = 32;
+const WHOLE_APPLY: usize = 33;
+const WHOLE_HEADINGS: usize = 34;
+const WHOLE_NUMBERED: usize = 35;
+const WHOLE_BULLETED: usize = 36;
+const WHOLE_REPLACE: usize = 37;
+const WHOLE_QUOTES: usize = 38;
+const WHOLE_ORDINALS: usize = 39;
+const WHOLE_FRACTIONS: usize = 40;
+const WHOLE_DASHES: usize = 41;
+const WHOLE_BOLD_ITALIC: usize = 42;
+const WHOLE_HYPERLINKS: usize = 43;
+const WHOLE_PRESERVE: usize = 44;
+const WHOLE_STYLES: usize = 45;
 
 // The Exceptions dialog: two tabs, each a box and a list.
 const TAB_FIRST_LETTER: usize = 0;
@@ -130,11 +145,19 @@ impl Editor {
     /// Add and Delete both move: a list that jumped back to the top every time
     /// a word was deleted would make deleting three of them a hunt.
     fn autocorrect_dialog(&self, chosen: usize) -> Dialog {
+        self.autocorrect_dialog_at(chosen, 0)
+    }
+
+    /// The same, with `math_chosen` the row the Math AutoCorrect list is on.
+    fn autocorrect_dialog_at(&self, chosen: usize, math_chosen: usize) -> Dialog {
         let rules = &self.editing_rules;
         let check = |label: &str, on: bool| Field::Check { label: label.to_owned(), on };
         let rows: Vec<(String, String)> =
             rules.replacements.iter().map(|(what, with)| (what.clone(), with.clone())).collect();
         let chosen = chosen.min(rows.len().saturating_sub(1));
+        let math_rows: Vec<(String, String)> =
+            rules.math.iter().map(|(what, with)| (what.clone(), with.clone())).collect();
+        let math_chosen = math_chosen.min(math_rows.len().saturating_sub(1));
 
         let fields = vec![
             // --- AutoCorrect ------------------------------------------------
@@ -155,6 +178,20 @@ impl Editor {
                 rows,
                 current: chosen,
                 scroll: chosen.saturating_sub(crate::chrome::dialog::PAIR_ROWS - 1),
+            },
+            // --- Math AutoCorrect -------------------------------------------
+            Field::Tab("Math AutoCorrect".to_owned()),
+            check("Use Math AutoCorrect rules outside of math regions", rules.math_outside),
+            check("Replace text as you type", rules.math_replace),
+            Field::Columns(2),
+            Field::Text { label: "Replace".to_owned(), value: String::new() },
+            Field::Text { label: "With".to_owned(), value: String::new() },
+            Field::Pairs {
+                label: "Replace".to_owned(),
+                second: "With".to_owned(),
+                rows: math_rows,
+                current: math_chosen,
+                scroll: math_chosen.saturating_sub(crate::chrome::dialog::PAIR_ROWS - 1),
             },
             // --- AutoFormat As You Type -------------------------------------
             Field::Tab("AutoFormat As You Type".to_owned()),
@@ -209,6 +246,13 @@ impl Editor {
                 (WHAT, "a box"),
                 (WITH, "a box"),
                 (LIST, "a list of pairs"),
+                (TAB_MATH, "a tab"),
+                (MATH_OUTSIDE, "a tick box"),
+                (MATH_REPLACE, "a tick box"),
+                (MATH_PAIR_ROW, "a row"),
+                (MATH_WHAT, "a box"),
+                (MATH_WITH, "a box"),
+                (MATH_LIST, "a list of pairs"),
                 (TAB_FORMAT, "a tab"),
                 (REPLACE_AS_YOU_TYPE, "a group"),
                 (CURLY_QUOTES, "a tick box"),
@@ -260,6 +304,10 @@ impl Editor {
         .button_on_tab(Answer::Named(ADD), 0)
         .button_on_tab(Answer::Named(DELETE), 0)
         .button_on_tab(Answer::Named(EXCEPTIONS), 0)
+        // And Add and Delete beside the Math AutoCorrect list as well, where
+        // they work on that list instead.
+        .button_on_tab(Answer::Named(ADD), MATH_TAB)
+        .button_on_tab(Answer::Named(DELETE), MATH_TAB)
     }
 
     /// Reads the switches out of the dialog and onto the working copy.
@@ -273,6 +321,8 @@ impl Editor {
         rules.day_names = dialog.ticked(DAY_NAMES);
         rules.caps_lock = dialog.ticked(CAPS_LOCK);
         rules.replace_text = dialog.ticked(REPLACE_TEXT);
+        rules.math_outside = dialog.ticked(MATH_OUTSIDE);
+        rules.math_replace = dialog.ticked(MATH_REPLACE);
         rules.curly_quotes = dialog.ticked(CURLY_QUOTES);
         rules.ordinals = dialog.ticked(ORDINALS);
         rules.fractions = dialog.ticked(FRACTIONS);
@@ -306,6 +356,9 @@ impl Editor {
     pub(super) fn autocorrect_dialog_button(&mut self, button: &str) -> Response {
         let Some(dialog) = self.dialog.clone() else { return Response::Ignored };
         self.read_autocorrect_dialog(&dialog);
+        if dialog.showing_tab() == MATH_TAB {
+            return self.math_list_button(button, &dialog);
+        }
 
         let chosen = match button {
             ADD => {
@@ -354,6 +407,42 @@ impl Editor {
         } else {
             rebuilt.show_tab(dialog.showing_tab());
         }
+        self.dialog = Some(rebuilt);
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// Add and Delete beside the Math AutoCorrect list.
+    ///
+    /// As beside the other list, except that what is typed keeps its case:
+    /// `\Delta` and `\delta` are two letters.
+    fn math_list_button(&mut self, button: &str, dialog: &Dialog) -> Response {
+        let math = &mut self.editing_rules.math;
+        let chosen = match button {
+            ADD => {
+                let what = dialog.said(MATH_WHAT).trim().to_owned();
+                let with = dialog.said(MATH_WITH).trim().to_owned();
+                if what.is_empty() || with.is_empty() {
+                    dialog.chose_pair(MATH_LIST)
+                } else {
+                    math.insert(what.clone(), with);
+                    math.keys().position(|key| *key == what).unwrap_or(0)
+                }
+            }
+            DELETE => {
+                if let Some((what, _)) = dialog.pair(MATH_LIST) {
+                    let what = what.to_owned();
+                    math.remove(&what);
+                }
+                dialog.chose_pair(MATH_LIST)
+            }
+            _ => return Response::Ignored,
+        };
+        let mut rebuilt = self.autocorrect_dialog_at(dialog.chose_pair(LIST), chosen);
+        if button != ADD {
+            rebuilt.carry_typing_from(dialog);
+        }
+        rebuilt.show_tab(MATH_TAB);
         self.dialog = Some(rebuilt);
         self.needs_redraw = true;
         Response::Redraw
@@ -595,6 +684,47 @@ mod tests {
 
         assert_eq!(editor.autocorrect.replacements.get("hte").map(String::as_str), Some("the"));
         assert_eq!(editor.autocorrect.on_word("hte").expect("a correction").putting, "the");
+    }
+
+    #[test]
+    fn the_math_tab_adds_and_deletes_on_its_own_list() {
+        let mut editor = editor();
+        editor.open_autocorrect();
+        editor.dialog.as_mut().unwrap().show_tab(MATH_TAB);
+        type_into(&mut editor, MATH_WHAT, "\\Ohm");
+        type_into(&mut editor, MATH_WITH, "\u{2126}");
+        editor.autocorrect_dialog_button(ADD);
+        assert_eq!(editor.dialog.as_ref().unwrap().showing_tab(), MATH_TAB, "the tab moved");
+
+        // Deleting the row that is chosen, which is the one just added.
+        let row = editor.dialog.as_ref().unwrap().pair(MATH_LIST).map(|(what, _)| what.to_owned());
+        assert_eq!(row.as_deref(), Some("\\Ohm"), "the new row is not the chosen one");
+        if let Some(Field::Pairs { rows, current, .. }) =
+            editor.dialog.as_mut().unwrap().fields.get_mut(MATH_LIST)
+        {
+            *current = rows.iter().position(|(what, _)| what == "\\alpha").expect("alpha");
+        }
+        editor.autocorrect_dialog_button(DELETE);
+        accept(&mut editor);
+
+        // Kept in its own case, and on its own list, not the other one.
+        assert_eq!(editor.autocorrect.math.get("\\Ohm").map(String::as_str), Some("\u{2126}"));
+        assert!(!editor.autocorrect.replacements.contains_key("\\ohm"));
+        assert!(!editor.autocorrect.math.contains_key("\\alpha"));
+        assert!(editor.autocorrect.replacements.contains_key("teh"), "the other list was touched");
+    }
+
+    #[test]
+    fn the_math_switches_are_the_tab_boxes() {
+        let mut editor = editor();
+        editor.open_autocorrect();
+        assert!(!editor.dialog.as_ref().unwrap().ticked(MATH_OUTSIDE), "Word ships it off");
+        assert!(editor.dialog.as_ref().unwrap().ticked(MATH_REPLACE));
+        tick(&mut editor, MATH_OUTSIDE, true);
+        tick(&mut editor, MATH_REPLACE, false);
+        accept(&mut editor);
+        assert!(editor.autocorrect.math_outside);
+        assert!(!editor.autocorrect.math_replace);
     }
 
     #[test]

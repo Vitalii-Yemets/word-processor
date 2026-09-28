@@ -210,6 +210,9 @@ impl Settings {
         let mut switches: BTreeMap<String, bool> = BTreeMap::new();
         let mut replacements: BTreeMap<String, String> = BTreeMap::new();
         let mut listed = false;
+        // The Math AutoCorrect list, kept the same way.
+        let mut math: BTreeMap<String, String> = BTreeMap::new();
+        let mut math_listed = false;
         let mut first_letter: Option<BTreeSet<String>> = None;
         let mut initial_caps: Option<BTreeSet<String>> = None;
         for line in text.lines() {
@@ -242,6 +245,7 @@ impl Settings {
                 // replacement leaves a file with nothing to read, and nothing
                 // to read is how a file that never mentioned them looks.
                 "replacements" => listed |= parse_flag(value) == Some(true),
+                "math-list" => math_listed |= parse_flag(value) == Some(true),
                 // The two lists of exceptions, written on one line each,
                 // because an exception is a single word with no spaces in it
                 // and no commas either.
@@ -269,6 +273,13 @@ impl Settings {
                     }
                     // A replacement's key is what is typed, which may be
                     // anything at all except an empty string.
+                    if let Some(what) = other.strip_prefix(MATH_PREFIX) {
+                        math_listed = true;
+                        if !what.is_empty() {
+                            math.insert(what.to_owned(), value.to_owned());
+                        }
+                        continue;
+                    }
                     if let Some(what) = other.strip_prefix(REPLACE_PREFIX) {
                         listed = true;
                         if !what.is_empty() {
@@ -289,8 +300,16 @@ impl Settings {
                 }
             }
         }
-        if !switches.is_empty() || listed || first_letter.is_some() || initial_caps.is_some() {
+        if !switches.is_empty()
+            || listed
+            || math_listed
+            || first_letter.is_some()
+            || initial_caps.is_some()
+        {
             let mut rules = Self::read_autocorrect(&switches, &replacements, listed);
+            if math_listed {
+                rules.math = math;
+            }
             if let Some(words) = first_letter {
                 rules.first_letter = words;
             }
@@ -398,6 +417,8 @@ impl Settings {
 const CORRECT_PREFIX: &str = "correct.";
 /// And a replacement, whose key is what is typed.
 const REPLACE_PREFIX: &str = "replace.";
+/// What a Math AutoCorrect entry's line begins with: `math.\alpha = α`.
+const MATH_PREFIX: &str = "math.";
 
 impl Settings {
     /// The corrections, as the file has them.
@@ -430,6 +451,8 @@ impl Settings {
         rules.border_lines = on("border-lines", rules.border_lines);
         rules.tables = on("tables", rules.tables);
         rules.headings = on("headings", rules.headings);
+        rules.math_replace = on("math-replace", rules.math_replace);
+        rules.math_outside = on("math-outside", rules.math_outside);
         let whole = &mut rules.reformat;
         whole.headings = on("whole-headings", whole.headings);
         whole.numbered_lists = on("whole-numbered-lists", whole.numbered_lists);
@@ -470,6 +493,8 @@ impl Settings {
             ("border-lines", rules.border_lines),
             ("tables", rules.tables),
             ("headings", rules.headings),
+            ("math-replace", rules.math_replace),
+            ("math-outside", rules.math_outside),
             ("whole-headings", rules.reformat.headings),
             ("whole-numbered-lists", rules.reformat.numbered_lists),
             ("whole-bulleted-lists", rules.reformat.bulleted_lists),
@@ -499,6 +524,14 @@ impl Settings {
         out.push_str("replacements = yes\n");
         for (what, with) in &rules.replacements {
             out.push_str(REPLACE_PREFIX);
+            out.push_str(what);
+            out.push_str(" = ");
+            out.push_str(with);
+            out.push('\n');
+        }
+        out.push_str("math-list = yes\n");
+        for (what, with) in &rules.math {
+            out.push_str(MATH_PREFIX);
             out.push_str(what);
             out.push_str(" = ");
             out.push_str(with);
@@ -572,6 +605,21 @@ mod tests {
             unknown: BTreeMap::new(),
         };
         assert_eq!(Settings::parse(&settings.to_text()), settings);
+    }
+
+    #[test]
+    fn the_math_list_is_written_whole_and_read_back_whole() {
+        // A name taken off and one put on, and the switches: all of it comes
+        // back, and a name taken off stays off rather than returning with the
+        // list a new file starts with.
+        let mut rules = crate::autocorrect::AutoCorrect::default();
+        rules.math.remove("\\alpha");
+        rules.math.insert("\\Ohm".to_owned(), "\u{2126}".to_owned());
+        rules.math_outside = true;
+        let settings = Settings { autocorrect: Some(rules.clone()), ..Settings::default() };
+        let read = Settings::parse(&settings.to_text()).autocorrect.expect("the corrections");
+        assert_eq!(read.math, rules.math);
+        assert!(read.math_outside);
     }
 
     #[test]
