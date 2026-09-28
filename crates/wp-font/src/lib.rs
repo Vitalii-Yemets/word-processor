@@ -32,12 +32,16 @@ mod colour;
 mod glyf;
 mod name;
 mod read;
+mod subset;
 mod vary;
+mod write;
 
 pub use cmap::CharacterMap;
 pub use colour::{Bitmap, Layer, Rgba};
 pub use glyf::{Outline, PathCommand, Point};
+pub use subset::{CutDown, Subroutines};
 pub use vary::{Axis, Instance};
+pub use write::assemble;
 
 use read::Reader;
 
@@ -204,6 +208,10 @@ impl VerticalMetrics {
 #[derive(Clone, Debug)]
 pub struct Font<'a> {
     data: &'a [u8],
+    /// Where this font's table directory begins in `data`: nought for a font
+    /// file, and somewhere further in for one font of a collection, whose
+    /// tables are still found by offsets from the start of the whole file.
+    directory: usize,
     /// Size of the design grid. Every measurement in the font is in these units.
     units_per_em: u16,
     /// Whether `loca` holds 16-bit or 32-bit offsets.
@@ -407,6 +415,7 @@ impl<'a> Font<'a> {
 
         Ok(Self {
             data,
+            directory: directory_offset,
             units_per_em,
             long_loca,
             vertical,
@@ -722,9 +731,12 @@ impl<'a> Font<'a> {
     ///
     /// Embedding a font in a PDF means building a smaller font out of the
     /// original's tables, and that needs them as they are.
+    ///
+    /// Read from this font's own directory, which for one font of a
+    /// collection is not the first thing in the file.
     #[must_use]
     pub fn table(&self, tag: &[u8; 4]) -> Option<&'a [u8]> {
-        let ranges = table_directory(self.data).ok()?;
+        let ranges = table_directory(self.data.get(self.directory..)?).ok()?;
         let (_, range) = ranges.iter().find(|(found, _)| found == tag)?;
         self.data.get(range.offset..range.offset + range.length)
     }
@@ -921,6 +933,48 @@ impl<'a> Font<'a> {
     #[must_use]
     pub fn has_postscript_outlines(&self) -> bool {
         self.cff.is_some()
+    }
+
+    /// The font's `CFF` table cut down to the glyphs given, and to whatever
+    /// they are built from: what a PDF carries in place of the whole font.
+    /// See [`subset`] for how, and why it is not what cutting a TrueType font
+    /// is.
+    ///
+    /// `None` for a font whose outlines are not in a `CFF` table, are in a
+    /// `CFF2` one, or cannot be followed; such a font is carried whole.
+    #[must_use]
+    pub fn cut_postscript(&self, keep: &std::collections::BTreeSet<u16>) -> Option<CutDown> {
+        let (range, second) = self.cff?;
+        if second {
+            return None;
+        }
+        let data = self.data.get(range.offset..range.offset.checked_add(range.length)?)?;
+        subset::cut(self, data, keep)
+    }
+
+    /// The glyph a CID names, in a font whose glyphs are named by CID: every
+    /// PostScript font for Chinese, Japanese or Korean.
+    ///
+    /// What a PDF reader asks of such a font, where the page names a glyph by
+    /// its CID and the font's own table says which glyph that is. `None` for
+    /// a font whose glyphs are not named that way, and for a CID it has no
+    /// glyph for.
+    #[must_use]
+    pub fn glyph_for_cid(&self, cid: u16) -> Option<GlyphId> {
+        let (range, second) = self.cff?;
+        if second {
+            return None;
+        }
+        let data = self.data.get(range.offset..range.offset.checked_add(range.length)?)?;
+        let table = cff::Cff::parse(data).ok()?;
+        if !table.cid {
+            return None;
+        }
+        // The first glyph is CID nought, and the table does not list it.
+        if cid == 0 {
+            return Some(GlyphId(0));
+        }
+        table.charset.as_ref()?.glyph_for(cid)
     }
 
     // --- Used by the outline reader ---------------------------------------

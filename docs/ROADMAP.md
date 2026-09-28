@@ -3700,13 +3700,92 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Not done:* hinting. The stem hints are counted, because the mask that
   follows them cannot be skipped without the count, and then thrown away — this
   program does not hint either kind of outline.
-- [ ] **E17. Cutting down a PostScript font.** A PDF carries the fonts it
+- [x] **E17. Cutting down a PostScript font.** A PDF carries the fonts it
   needs, and the TrueType ones are cut down to the glyphs the document uses; a
-  PostScript one goes in whole, which is a megabyte where twenty kilobytes
+  PostScript one went in whole, which is a megabyte where twenty kilobytes
   would do. Cutting one means rebuilding the `CFF` table: keeping the
   charstrings that are wanted, following the subroutines they call, renumbering
   what is left against the bias, and writing the INDEXes and dictionaries back
   out. The glyph numbering must not move, because the page refers to it.
+  *Done when:* a page set in a PostScript font carries a few kilobytes of it,
+  and every reader draws the page as before.
+  **Every glyph asked for is run, the way it would be drawn**
+  (`crates/wp-font/src/subset.rs`), and every subroutine it reaches is noted
+  with the place in the charstring its number was written. An accented letter
+  written the old way — `seac`, four numbers and `endchar` — brings the letter
+  and the accent it names. The subroutines nobody reached are dropped, the rest
+  numbered again from nought, and every call rewritten with its new number,
+  counted from the middle of the new list, whose bias is not the old one's.
+  A call is rewritten only where its number was written as a number right in
+  front of it and every run through it lands on the same new number — which is
+  how every subroutinizer writes one; where that is not so, the subroutines
+  keep their numbers and the ones nobody calls are emptied, and a font whose
+  charstrings cannot be followed at all goes in whole as before.
+  **The glyph numbering does not move — where the page refers to it.** A font
+  of named glyphs is named by place, so every glyph up to the last one wanted
+  stays where it was, drawing nothing if it was not wanted. A CID-keyed font —
+  every Chinese, Japanese and Korean one — is named by CID, and its own table
+  says which glyph a CID is: so the glyphs kept are written one after another,
+  each dictionary keeping its own subroutines cut the same way, and the table
+  gives each glyph the CID that is its place in the whole font, which is what
+  the page has always said. The difference is a quarter of a megabyte or six
+  kilobytes for a line of Japanese whose glyphs are spread across sixty-five
+  thousand. The cut table goes into an OpenType file with the header, the
+  metrics and the counts cut to match; the character map is left out, as it
+  is from a cut TrueType font.
+  **What went into the PDF, and why that.** A font of named glyphs goes in as
+  that OpenType file. A CID-keyed one goes in as the bare table, under
+  `CIDFontType0C`: the format allows either and says a reader finds the glyph
+  through the font's table either way, but FreeType does that only for the
+  bare table and takes the CID for the glyph's place inside an OpenType file —
+  and Poppler leaves it to FreeType. The first build of this drew the
+  Japanese in MuPDF and nothing at all in Poppler; the bare table draws in
+  both, and is what Acrobat has always written.
+  **Sizes.** The URW fonts go from eighty to a hundred and ten kilobytes to
+  ten for a line of text; Noto Sans CJK, a collection of 19.4 megabytes, to
+  6.7 kilobytes for a line of Japanese. A page of seven lines in five
+  PostScript fonts, Japanese and Korean among them, is a PDF of 48 kilobytes.
+  **Noto Sans CJK went into the build image** for this, the regular sans
+  only: the URW set is named glyphs and nothing else there is CID-keyed, and
+  the cutting of a font split between dictionaries could not be believed
+  without one.
+  *Proven by:* `tests/cutting.rs` — a Latin font cut to a line, its glyphs
+  drawn as the whole font draws them and its widths the same; every one of
+  the thirty-five URW fonts cut five ways, every kept glyph drawn as before; a
+  font for Japanese cut to a line and to a stride through all its
+  dictionaries, each glyph found by its CID the way a reader finds it;
+  `subset.rs`'s own tests on tables built for them — only the subroutines
+  reached kept and the calls saying their new numbers, an accented letter
+  bringing its two halves, a call whose number was not written in front of it
+  keeping every number, a CID-keyed font whose CIDs were not its places cut
+  to its glyphs and each named by its old place, a global call that would
+  need two new numbers keeping every number, Type 1 charstrings refused, a
+  truncated table refused without a panic; `wp-pdf/tests/document.rs` — a
+  word of Nimbus Roman carrying under sixteen kilobytes of it, and a line of
+  Japanese carrying the bare table cut to its glyphs, byte for byte, with its
+  words read back out. And checked outside the repository, in a container
+  thrown away afterwards: fontTools, whose charstring interpreter is not this
+  one, drew every glyph of every font cut into the sample PDF and found each
+  the same as in the whole font; Poppler and MuPDF both drew the page.
+  *Found along the way, and done:* a font taken from a collection had every
+  table looked up in the collection's first font, so a TrueType `.ttc` —
+  MS Gothic, SimSun, Meiryo — could not be cut and was left out of a PDF
+  altogether, text and all; its tables are now its own. `endchar` with the
+  four numbers of an accented letter and no width in front of it took the
+  first of them for a width and drew the letter without its accent; it now
+  takes a width only from one number or five, as FreeType does. And text
+  copied out of a page came back with the Kangxi radical where the ideograph
+  was, because the font draws both with one glyph and the radical comes first
+  in its map: the character a person writes is now preferred.
+  *Not done, and named:* a `CFF2` font — a variable PostScript font — still
+  goes in whole, and whether a reader draws it at all is the reader's
+  business: a PDF has no key for it, and carrying one means setting the
+  instance and writing it back out as `CFF`. The strings and glyph names of a
+  font of named glyphs are copied whole rather than cut. A charstring using
+  the arithmetic operators is not followed, and its font goes in whole. A
+  glyph that is a ligature has no entry in the text a reader copies out,
+  because what each glyph says is read back out of the font's own map, which
+  a ligature is not in.
 - [x] **E9. Variable fonts.** The axes, the named instances, and the deltas.
   *Done when:* a document set in a weight that exists only as a place on an
   axis is drawn at that weight, and measured at it.

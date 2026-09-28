@@ -255,11 +255,16 @@ fn a_postscript_font_goes_into_the_file_as_the_kind_it_is() {
     assert!(text.contains("/CIDFontType0"), "the descendant font is the wrong kind");
     assert!(!text.contains("/FontFile2"), "there is no font of the other kind in this document");
 
-    // And the font itself is really in there, whole and readable.
+    // And the font itself is really in there, cut down and readable — with no
+    // character map, which a page that names its glyphs by number does not
+    // need, so the H is found by its number in the whole font.
     let embedded = streams(&pdf).into_iter().max_by_key(Vec::len).expect("a font");
     let font = wp_font::Font::parse(&embedded).expect("the embedded font parses");
     assert!(font.has_postscript_outlines());
-    assert!(font.outline(font.glyph_for('H').unwrap()).unwrap().is_some());
+    let whole_data = std::fs::read("/usr/share/fonts/opentype/urw-base35/NimbusRoman-Regular.otf")
+        .expect("the whole font");
+    let whole = wp_font::Font::parse(&whole_data).unwrap();
+    assert!(font.outline(whole.glyph_for('H').unwrap()).unwrap().is_some());
 }
 
 #[test]
@@ -298,4 +303,60 @@ fn an_emoji_goes_into_the_file_as_the_picture_it_is() {
 
     // And the words are still words.
     assert!(text_of(&pdf).contains("Emoji"));
+}
+
+#[test]
+fn a_postscript_font_is_cut_down_to_what_the_page_uses() {
+    // The whole of Nimbus Roman is ninety-eight kilobytes; a word of it is
+    // a tenth of that, and every letter of the word is drawn in the file as
+    // the whole font draws it.
+    let pdf = wp_pdf::write(&laid_out_in("Nimbus Roman", "Hamburgefonstiv"), library(), "Nimbus");
+    let embedded = streams(&pdf).into_iter().max_by_key(Vec::len).expect("a font");
+    assert!(embedded.len() < 16_000, "the font went in at {} bytes", embedded.len());
+
+    let whole_path = "/usr/share/fonts/opentype/urw-base35/NimbusRoman-Regular.otf";
+    let whole_data = std::fs::read(whole_path).expect("the whole font");
+    let whole = wp_font::Font::parse(&whole_data).unwrap();
+    let cut = wp_font::Font::parse(&embedded).expect("the cut font parses");
+    for letter in "Hamburgefonstiv".chars() {
+        let glyph = whole.glyph_for(letter).unwrap();
+        assert_eq!(
+            cut.outline(glyph).unwrap(),
+            whole.outline(glyph).unwrap(),
+            "{letter} is drawn differently in the file"
+        );
+    }
+    // A letter the page does not use is not in it.
+    let unused = whole.glyph_for('Z').unwrap();
+    assert!(unused.0 >= cut.glyph_count() || cut.outline(unused).unwrap().is_none());
+}
+
+#[test]
+fn a_line_of_japanese_carries_kilobytes_of_its_font_rather_than_megabytes() {
+    // Noto Sans CJK is a collection of nineteen megabytes whose glyphs are
+    // named by CID. The page names each glyph by its place in the whole font,
+    // and the cut font's own table finds it from that.
+    let line = "縦書きの文章を右から左へ書く。";
+    let pdf = wp_pdf::write(&laid_out_in("Noto Sans CJK JP", line), library(), "Japanese");
+    assert!(pdf.len() < 60_000, "the file is {} bytes", pdf.len());
+    let text = String::from_utf8_lossy(&pdf).into_owned();
+    assert!(text.contains("/CIDFontType0 "), "the descendant font is the wrong kind");
+    // The bare table, which every reader looks a CID up in: see
+    // `wp_font::CutDown::table`.
+    assert!(text.contains("/Subtype /CIDFontType0C"), "the font went in as the wrong kind");
+
+    // What went in is the table cut to the glyphs of the line, byte for byte
+    // — which the font crate's own tests hold to drawing each of them as the
+    // whole font does, found by its CID.
+    let embedded = streams(&pdf).into_iter().max_by_key(Vec::len).expect("a font");
+    let whole_data =
+        std::fs::read("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc").expect("the font");
+    let whole = wp_font::Font::parse(&whole_data).unwrap();
+    let used =
+        line.chars().filter_map(|character| whole.glyph_for(character)).map(|g| g.0).collect();
+    let cut = whole.cut_postscript(&used).expect("the font can be cut");
+    assert!(cut.cid_keyed);
+    assert_eq!(embedded, cut.table);
+    // And the words come back out as the words.
+    assert_eq!(text_of(&pdf).trim(), line);
 }

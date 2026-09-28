@@ -187,15 +187,31 @@ impl Fonts {
             let Some(entry) = library.face(*face) else { continue };
             let Some(font) = entry.font() else { continue };
 
-            // A font whose outlines are PostScript ones cannot be cut down
-            // here — its glyphs are programs in a table of their own, and
-            // taking some of them out means rewriting the subroutines they
-            // share. It goes in whole instead, which is larger and right; a
-            // reader that gets half a CFF draws nothing.
+            // A font whose outlines are PostScript ones is cut down by
+            // following the programs its glyphs are drawn by, subroutines and
+            // all — see [`wp_font::Font::cut_postscript`]. One that cannot be
+            // cut that way goes in whole, which is larger and right: a reader
+            // that gets half a CFF draws nothing.
+            //
+            // A CID-keyed one goes in as the bare table, which is what the
+            // key says and what every reader finds its glyphs in by CID; an
+            // OpenType file around it would have FreeType, and Poppler with
+            // it, take the CID for the glyph's place and draw nothing. See
+            // [`wp_font::CutDown::table`].
             let whole = font.has_postscript_outlines();
+            let mut bare = false;
             let embedded = if whole {
-                let Some(file) = entry.file() else { continue };
-                file.to_vec()
+                match font.cut_postscript(glyphs) {
+                    Some(cut) if cut.cid_keyed => {
+                        bare = true;
+                        cut.table
+                    }
+                    Some(cut) => cut.font,
+                    None => {
+                        let Some(file) = entry.file() else { continue };
+                        file.to_vec()
+                    }
+                }
             } else {
                 let Some(subset) = subset::build(&font, glyphs) else { continue };
                 subset
@@ -208,7 +224,9 @@ impl Fonts {
             // A font stream says what it holds. The older kind says it by its
             // length; the newer one says it by name, and a reader that is not
             // told treats an OpenType file as bare PostScript and fails.
-            let stream = if whole {
+            let stream = if bare {
+                "/Subtype /CIDFontType0C".to_owned()
+            } else if whole {
                 "/Subtype /OpenType".to_owned()
             } else {
                 format!("/Length1 {}", embedded.len())
@@ -331,9 +349,23 @@ fn font_bounds(font: &wp_font::Font<'_>, scale: f32) -> String {
 /// which is a small program in a language of its own — this is the shape every
 /// PDF writer emits.
 fn unicode_map(font: &wp_font::Font<'_>, glyphs: &BTreeSet<u16>) -> String {
+    // A glyph several characters are drawn with is read back as the one a
+    // person writes. A font for Chinese draws the Kangxi radical for "text"
+    // with the glyph of the ideograph for it, and the radical comes first in
+    // the character map — so text copied out of the page came back as a
+    // character nobody typed.
     let mut back: BTreeMap<u16, char> = BTreeMap::new();
     for (character, glyph) in font.character_map().pairs() {
-        back.entry(glyph.0).or_insert(character);
+        match back.entry(glyph.0) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(character);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if stands_for_another(*entry.get()) && !stands_for_another(character) {
+                    entry.insert(character);
+                }
+            }
+        }
     }
 
     let mut pairs = String::new();
@@ -357,6 +389,17 @@ fn unicode_map(font: &wp_font::Font<'_>, glyphs: &BTreeSet<u16>) -> String {
          1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n\
          {count} beginbfchar\n{pairs}endbfchar\n\
          endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend"
+    )
+}
+
+/// Whether a character is one of those that stand for another and are drawn
+/// with its glyph: the radicals, which are the ideographs they are named
+/// after, and the compatibility ideographs and forms, kept only so that text
+/// in an older encoding could be carried over and come back unchanged.
+fn stands_for_another(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x2E80..=0x2FDF | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0x2F800..=0x2FA1F
     )
 }
 

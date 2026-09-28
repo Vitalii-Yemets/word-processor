@@ -128,6 +128,20 @@ RUN useradd --create-home --shell /bin/sh compositor
 RUN rustup target add x86_64-pc-windows-gnu \
  && rustup component add clippy rustfmt
 
+# A CID-keyed PostScript font: outlines in a CFF table whose glyphs are split
+# between several private dictionaries, each with subroutines of its own, and
+# a table saying which glyph belongs to which. It is what every Chinese,
+# Japanese and Korean .otf is, it is the one kind of CFF the URW set cannot
+# stand for, and it is where cutting a font down for a PDF matters most — a
+# collection of nineteen megabytes behind a page that uses forty ideographs.
+# The package holds the serif and the bold as well; only the regular sans is
+# kept, which is all the tests read. A test font like the rest: nothing of it
+# reaches the product. In a layer of its own, after the others, so that
+# adding it did not mean installing everything above it again.
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk \
+ && find /usr/share/fonts/opentype/noto -name '*.tt[cf]' ! -name 'NotoSansCJK-Regular.ttc' -delete \
+ && rm -rf /var/lib/apt/lists/*
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

@@ -49,24 +49,27 @@ use crate::read::Reader;
 use crate::{Bounds, Error, GlyphId};
 
 /// How deep one charstring may call another.
-const MAX_DEPTH: u8 = 10;
+pub(crate) const MAX_DEPTH: u8 = 10;
 
 /// The most numbers a charstring may leave on the stack. The format says
 /// forty-eight; more than that is a malformed font rather than a deep one.
-const MAX_STACK: usize = 48;
+pub(crate) const MAX_STACK: usize = 48;
 
 /// A CFF table, read far enough to draw any glyph in it.
 #[derive(Clone, Debug)]
 pub(crate) struct Cff<'a> {
-    charstrings: Index<'a>,
-    global: Index<'a>,
+    pub(crate) charstrings: Index<'a>,
+    pub(crate) global: Index<'a>,
     /// The subroutines and the dictionary a glyph belongs to. A plain font has
     /// one for all of them; a CID-keyed font has one per glyph, chosen by the
     /// `FDSelect` table.
-    private: Vec<Private<'a>>,
-    select: Option<FontSelect<'a>>,
-    /// Which SID each glyph's name is, which only `seac` needs.
-    charset: Option<Charset<'a>>,
+    pub(crate) private: Vec<Private<'a>>,
+    pub(crate) select: Option<FontSelect<'a>>,
+    /// Which SID each glyph's name is, which only `seac` needs — or, in a
+    /// CID-keyed font, which CID each glyph is.
+    pub(crate) charset: Option<Charset<'a>>,
+    /// Whether the glyphs are named by CID rather than by name.
+    pub(crate) cid: bool,
     /// The scale a font applies to its own design grid, where it is not the
     /// usual one. Written as the two diagonal entries.
     matrix: Option<(f64, f64)>,
@@ -79,8 +82,8 @@ pub(crate) struct Cff<'a> {
 
 /// One private dictionary: the local subroutines it names.
 #[derive(Clone, Copy, Debug, Default)]
-struct Private<'a> {
-    local: Option<Index<'a>>,
+pub(crate) struct Private<'a> {
+    pub(crate) local: Option<Index<'a>>,
 }
 
 impl<'a> Cff<'a> {
@@ -104,7 +107,8 @@ impl<'a> Cff<'a> {
         // A CID-keyed font says so by carrying a registry and ordering, and
         // keeps one private dictionary per group of glyphs rather than one for
         // the font.
-        let (private, select) = if top.get(KEY_ROS).is_some() {
+        let cid = top.get(KEY_ROS).is_some();
+        let (private, select) = if cid {
             Self::cid_dictionaries(data, &top, charstrings.count)?
         } else {
             (vec![Self::private_at(data, &top)?], None)
@@ -123,6 +127,7 @@ impl<'a> Cff<'a> {
             private,
             select,
             charset,
+            cid,
             matrix: top.matrix(),
             store: None,
         })
@@ -155,6 +160,7 @@ impl<'a> Cff<'a> {
             private,
             select,
             charset: None,
+            cid: false,
             matrix: top.matrix(),
             store,
         })
@@ -301,9 +307,9 @@ fn scale(outline: &mut Outline, x: f64, y: f64) {
 /// An INDEX: a list of byte strings, written as a count, an array of offsets,
 /// and the strings one after another.
 #[derive(Clone, Copy, Debug)]
-struct Index<'a> {
+pub(crate) struct Index<'a> {
     data: &'a [u8],
-    count: u32,
+    pub(crate) count: u32,
     offset_size: usize,
     offsets_at: usize,
     /// One before the first byte of the data, because the offsets are written
@@ -311,12 +317,12 @@ struct Index<'a> {
     base: usize,
     /// One past the last byte of the whole INDEX, which is where the next
     /// thing in the table begins.
-    end: usize,
+    pub(crate) end: usize,
 }
 
 impl<'a> Index<'a> {
     /// Reads one. `wide` is what tells CFF2's four-byte count from CFF's two.
-    fn parse(data: &'a [u8], at: usize, wide: bool) -> Result<Self, Error> {
+    pub(crate) fn parse(data: &'a [u8], at: usize, wide: bool) -> Result<Self, Error> {
         let mut reader = Reader::at(data, at)?;
         let count = if wide { reader.u32()? } else { u32::from(reader.u16()?) };
         if count == 0 {
@@ -344,7 +350,7 @@ impl<'a> Index<'a> {
     }
 
     /// One entry, by number.
-    fn get(&self, index: u32) -> Option<&'a [u8]> {
+    pub(crate) fn get(&self, index: u32) -> Option<&'a [u8]> {
         if index >= self.count {
             return None;
         }
@@ -360,7 +366,7 @@ impl<'a> Index<'a> {
     /// What a subroutine number is counted from. The format numbers them from
     /// the middle of the list outwards, so that the commonest ones are reached
     /// by a single small number.
-    fn bias(&self) -> i32 {
+    pub(crate) fn bias(&self) -> i32 {
         if self.count < 1240 {
             107
         } else if self.count < 33900 {
@@ -372,7 +378,7 @@ impl<'a> Index<'a> {
 }
 
 /// One offset out of an INDEX's array, which is one to four bytes wide.
-fn offset(data: &[u8], at: usize, size: usize) -> Result<usize, Error> {
+pub(crate) fn offset(data: &[u8], at: usize, size: usize) -> Result<usize, Error> {
     let end = at.checked_add(size).ok_or(Error::OutOfBounds)?;
     let bytes = data.get(at..end).ok_or(Error::OutOfBounds)?;
     Ok(bytes.iter().fold(0usize, |value, byte| (value << 8) | *byte as usize))
@@ -380,15 +386,15 @@ fn offset(data: &[u8], at: usize, size: usize) -> Result<usize, Error> {
 
 /// The keys of a dictionary that this reader asks about. A two-byte key is
 /// written with 12 in the high byte, exactly as the format writes it.
-const KEY_CHARSET: u16 = 15;
-const KEY_CHARSTRINGS: u16 = 17;
-const KEY_PRIVATE: u16 = 18;
-const KEY_SUBRS: u16 = 19;
-const KEY_MATRIX: u16 = 0x0C07;
-const KEY_VSTORE: u16 = 24;
-const KEY_ROS: u16 = 0x0C1E;
-const KEY_FDARRAY: u16 = 0x0C24;
-const KEY_FDSELECT: u16 = 0x0C25;
+pub(crate) const KEY_CHARSET: u16 = 15;
+pub(crate) const KEY_CHARSTRINGS: u16 = 17;
+pub(crate) const KEY_PRIVATE: u16 = 18;
+pub(crate) const KEY_SUBRS: u16 = 19;
+pub(crate) const KEY_MATRIX: u16 = 0x0C07;
+pub(crate) const KEY_VSTORE: u16 = 24;
+pub(crate) const KEY_ROS: u16 = 0x0C1E;
+pub(crate) const KEY_FDARRAY: u16 = 0x0C24;
+pub(crate) const KEY_FDSELECT: u16 = 0x0C25;
 
 /// A DICT: numbers followed by the key they belong to, over and over.
 ///
@@ -473,7 +479,7 @@ impl Dict {
 }
 
 /// A real number, written one decimal digit to a nibble.
-fn real(reader: &mut Reader<'_>) -> Result<f64, Error> {
+pub(crate) fn real(reader: &mut Reader<'_>) -> Result<f64, Error> {
     let mut text = String::new();
     'outer: loop {
         let byte = reader.u8()?;
@@ -497,7 +503,7 @@ fn real(reader: &mut Reader<'_>) -> Result<f64, Error> {
 
 /// Which private dictionary each glyph of a CID-keyed font belongs to.
 #[derive(Clone, Copy, Debug)]
-struct FontSelect<'a> {
+pub(crate) struct FontSelect<'a> {
     data: &'a [u8],
     at: usize,
     format: u8,
@@ -514,7 +520,7 @@ impl<'a> FontSelect<'a> {
     }
 
     /// The dictionary one glyph uses.
-    fn of(&self, glyph: u32) -> usize {
+    pub(crate) fn of(&self, glyph: u32) -> usize {
         match self.format {
             // One byte per glyph, in order.
             0 => self.data.get(self.at + 1 + glyph as usize).map_or(0, |value| *value as usize),
@@ -546,11 +552,11 @@ impl<'a> FontSelect<'a> {
 /// Only one thing here needs it — the old way of writing an accented letter,
 /// which names the letter and the accent rather than pointing at them.
 #[derive(Clone, Copy, Debug)]
-struct Charset<'a> {
-    data: &'a [u8],
-    at: usize,
-    format: u8,
-    glyphs: u32,
+pub(crate) struct Charset<'a> {
+    pub(crate) data: &'a [u8],
+    pub(crate) at: usize,
+    pub(crate) format: u8,
+    pub(crate) glyphs: u32,
 }
 
 impl<'a> Charset<'a> {
@@ -563,7 +569,7 @@ impl<'a> Charset<'a> {
     /// The glyph whose name is a given string, searched for rather than looked
     /// up: the table runs the other way, and this is asked for at most twice
     /// per accented letter.
-    fn glyph_for(&self, sid: u16) -> Option<GlyphId> {
+    pub(crate) fn glyph_for(&self, sid: u16) -> Option<GlyphId> {
         // Glyph nought is always ".notdef" and is not in the table.
         match self.format {
             0 => {
@@ -822,7 +828,16 @@ impl Machine<'_, '_> {
                 // The end, which may also be an accented letter written as the
                 // letter and the accent.
                 14 => {
-                    self.take_width(0);
+                    // A width in front of it is one number where there would
+                    // be none, or five where an accented letter has four —
+                    // which is how FreeType tells, and how the format means
+                    // it. Taking the first of four as a width lost the
+                    // accent off every accented letter that declared no
+                    // hints before it.
+                    if !self.width_seen && matches!(self.stack.len(), 1 | 5) {
+                        self.stack.remove(0);
+                    }
+                    self.width_seen = true;
                     if self.stack.len() >= 4 {
                         self.accented(pen)?;
                     }
@@ -1104,7 +1119,7 @@ fn shift(commands: &mut [PathCommand], dx: f32, dy: f32) {
 /// Only the accented-letter operator asks: it names its two halves by code.
 /// The printable range is in order and needs no table; the rest is the
 /// punctuation and the accents, and it is a table because the codes are not.
-fn standard_sid(code: f32) -> Option<u16> {
+pub(crate) fn standard_sid(code: f32) -> Option<u16> {
     let code = code as i32;
     if (32..=126).contains(&code) {
         return Some(code as u16 - 31);
