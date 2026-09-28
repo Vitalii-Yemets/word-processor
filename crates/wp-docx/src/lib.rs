@@ -2572,31 +2572,28 @@ impl Document {
         // The grid divides the text width evenly, in twentieths of a point.
         let text_width = 9360;
         let column_width = text_width / columns as i32;
+        self.put_table(&empty_table(rows, &vec![column_width; columns]), false)
+    }
 
-        // Every cell states the width of its column, which is what Word writes
-        // and what keeps a new table the width of the text. A cell's stated
-        // width is a preference rather than a measurement, and it is what
-        // AutoFit Contents clears to make the table hug what is in it: a table
-        // that stated nothing would collapse to its contents the moment it was
-        // made, which is not what asking for a three by three table means. See
-        // [`model::TableFit`].
-        let table = Table::from_rows(
-            (0..rows)
-                .map(|_| {
-                    TableRow::from_cells(
-                        (0..columns)
-                            .map(|_| TableCell {
-                                width: Some(column_width),
-                                ..TableCell::default()
-                            })
-                            .collect(),
-                    )
-                })
-                .collect(),
-        )
-        .with_grid(vec![column_width; columns])
-        .with_borders(model::TableBorders::grid());
+    /// Puts a table of one row in place of the paragraph the caret is in,
+    /// with columns of the widths given, in twentieths of a point.
+    ///
+    /// What AutoFormat makes of `+---+---+` and Enter: the line of plus signs
+    /// is not a paragraph any more but the table it drew, and the paragraph
+    /// after it is where Enter would have gone.
+    pub fn replace_paragraph_with_table(&mut self, widths: &[i32]) -> bool {
+        if widths.is_empty() || widths.len() > 63 {
+            return false;
+        }
+        let widths: Vec<i32> = widths.iter().map(|width| (*width).max(1)).collect();
+        self.put_table(&empty_table(1, &widths), true)
+    }
 
+    /// Puts a table after the paragraph the caret is in, or in its place,
+    /// with a paragraph after it — because a document that ends in a table
+    /// has nowhere to put the caret afterwards — and the caret in the first
+    /// cell, which is where a person expects to start typing.
+    fn put_table(&mut self, table: &Table, in_place: bool) -> bool {
         self.record(EditKind::Structural, self.caret, false);
 
         let prefix = self.prefix();
@@ -2610,15 +2607,18 @@ impl Document {
             return false;
         };
 
-        parent.insert_element(
-            position + 1,
-            edit::paragraph_element(&Paragraph::default(), prefix.as_deref()),
-        );
-        parent.insert_element(position + 1, edit::table_element(&table, prefix.as_deref()));
+        let at = if in_place {
+            parent.children.remove(position);
+            position
+        } else {
+            position + 1
+        };
+        parent
+            .insert_element(at, edit::paragraph_element(&Paragraph::default(), prefix.as_deref()));
+        parent.insert_element(at, edit::table_element(table, prefix.as_deref()));
 
-        // The caret goes into the first cell, which is where a person expects
-        // to start typing.
-        self.caret = TextPosition::new(self.caret.paragraph + 1, 0);
+        let first_cell = if in_place { self.caret.paragraph } else { self.caret.paragraph + 1 };
+        self.caret = TextPosition::new(first_cell, 0);
         self.anchor = None;
         self.modified = true;
         true
@@ -3143,6 +3143,31 @@ impl Document {
 /// Used where a chain of elements has to exist before something can be written
 /// at the bottom of it — `docDefaults`, then `rPrDefault`, then `rPr` — and
 /// where any of them may be missing in a document that never needed it.
+/// A table of empty cells with columns of the widths given.
+///
+/// Every cell states the width of its column, which is what Word writes and
+/// what keeps a new table the width it was asked for. A cell's stated width is
+/// a preference rather than a measurement, and it is what AutoFit Contents
+/// clears to make the table hug what is in it: a table that stated nothing
+/// would collapse to its contents the moment it was made, which is not what
+/// asking for a three by three table means. See [`model::TableFit`].
+fn empty_table(rows: usize, widths: &[i32]) -> Table {
+    Table::from_rows(
+        (0..rows)
+            .map(|_| {
+                TableRow::from_cells(
+                    widths
+                        .iter()
+                        .map(|width| TableCell { width: Some(*width), ..TableCell::default() })
+                        .collect(),
+                )
+            })
+            .collect(),
+    )
+    .with_grid(widths.to_vec())
+    .with_borders(model::TableBorders::grid())
+}
+
 fn child_or_new<'a>(parent: &'a mut Element, local: &str, prefix: Option<&str>) -> &'a mut Element {
     if parent.child(Some(WORDPROCESSING_NAMESPACE), local).is_none() {
         parent.push_element(Element::new(

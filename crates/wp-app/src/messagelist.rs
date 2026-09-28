@@ -180,6 +180,15 @@ fn from_the_tables() -> BTreeSet<String> {
     for message in wp_docx::proofing::Kind::every_message() {
         out.insert(message.to_owned());
     }
+    // What the AutoCorrect Options box offers: to take back what a rule did,
+    // and to stop the rule — where that line does not name the word, which
+    // is the one it was done to and cannot be listed ahead of time.
+    for kind in crate::autocorrect::Kind::ALL {
+        out.insert(kind.undo_label().to_owned());
+        if !kind.names_the_word() {
+            out.insert(kind.stop_label(""));
+        }
+    }
     out
 }
 

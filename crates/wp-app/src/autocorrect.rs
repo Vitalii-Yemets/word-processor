@@ -146,6 +146,12 @@ pub struct AutoCorrect {
     /// Three hyphens on a line of their own become a line under the paragraph
     /// above.
     pub border_lines: bool,
+    /// `+---+---+` and Enter become a table, one column for each stretch of
+    /// hyphens.
+    pub tables: bool,
+    /// A short line with no full stop, and Enter twice, becomes a heading.
+    /// Word ships it switched off, and so does this.
+    pub headings: bool,
 
     // --- The Exceptions dialog ------------------------------------------
     /// A word a person undoes the capitalising of straight after goes on the
@@ -156,7 +162,7 @@ pub struct AutoCorrect {
 }
 
 impl Default for AutoCorrect {
-    /// Everything on, which is how Word arrives.
+    /// Everything on but the headings, which is how Word arrives.
     fn default() -> Self {
         Self {
             replacements: USUAL
@@ -178,6 +184,8 @@ impl Default for AutoCorrect {
             bold_italic: true,
             hyperlinks: true,
             border_lines: true,
+            tables: true,
+            headings: false,
             add_first_letter_exceptions: true,
             add_initial_caps_exceptions: true,
         }
@@ -205,9 +213,31 @@ pub enum Kind {
     Hyperlink,
     /// Three hyphens on a line of their own made into a border.
     BorderLine,
+    /// `+---+---+` made into a table.
+    Table,
+    /// A short line entered twice made into a heading.
+    Heading,
 }
 
 impl Kind {
+    /// Every rule, for the list of what the box can say.
+    pub const ALL: [Self; 14] = [
+        Self::Replacement,
+        Self::DayName,
+        Self::TwoInitials,
+        Self::CapsLock,
+        Self::SentenceCase,
+        Self::Ordinal,
+        Self::Fraction,
+        Self::Dash,
+        Self::List,
+        Self::Emphasis,
+        Self::Hyperlink,
+        Self::BorderLine,
+        Self::Table,
+        Self::Heading,
+    ];
+
     /// What the box under the correction offers to undo, in Word's words.
     #[must_use]
     pub fn undo_label(self) -> &'static str {
@@ -222,6 +252,8 @@ impl Kind {
             Self::Emphasis => "Undo Automatic Formatting",
             Self::Hyperlink => "Undo Hyperlink",
             Self::BorderLine => "Undo Border Line",
+            Self::Table => "Undo Automatic Table",
+            Self::Heading => "Undo Automatic Heading Style",
         }
     }
 
@@ -242,7 +274,16 @@ impl Kind {
             Self::Emphasis => "Stop Automatically Formatting Bold and Italic".to_owned(),
             Self::Hyperlink => "Stop Automatically Creating Hyperlinks".to_owned(),
             Self::BorderLine => "Stop Automatically Creating Border Lines".to_owned(),
+            Self::Table => "Stop Automatically Creating Tables".to_owned(),
+            Self::Heading => "Stop Automatically Applying Heading Styles".to_owned(),
         }
+    }
+
+    /// Whether what the box offers to stop doing names the word it was done
+    /// to, and so cannot be put in a list of messages ahead of time.
+    #[must_use]
+    pub fn names_the_word(self) -> bool {
+        matches!(self, Self::Replacement | Self::TwoInitials)
     }
 }
 
@@ -508,6 +549,57 @@ impl AutoCorrect {
         })
     }
 
+    /// Where the columns of a table typed as `+---+---+` begin and end: the
+    /// byte offset of every plus sign, left to right.
+    ///
+    /// Word's rule: the line begins and ends with a plus sign, and between
+    /// each two there is a run of hyphens and nothing else. One stretch makes
+    /// a table of one column; the widths are where the plus signs fall on the
+    /// line, which only the layout knows.
+    #[must_use]
+    pub fn table_columns(&self, paragraph: &str) -> Option<Vec<usize>> {
+        if !self.tables {
+            return None;
+        }
+        let line = paragraph.trim_end();
+        if !line.starts_with('+') || !line.ends_with('+') || line.len() < 3 {
+            return None;
+        }
+        let edges: Vec<usize> =
+            line.char_indices().filter(|(_, c)| *c == '+').map(|(at, _)| at).collect();
+        let hyphens_between = edges.windows(2).all(|pair| {
+            let inside = &line[pair[0] + 1..pair[1]];
+            !inside.is_empty() && inside.chars().all(|c| c == '-')
+        });
+        let nothing_else = line.chars().all(|c| c == '+' || c == '-');
+        (edges.len() >= 2 && hyphens_between && nothing_else).then_some(edges)
+    }
+
+    /// The heading a line becomes when Enter is pressed twice after it: its
+    /// level, and how many tabs it began with — which set the level and go.
+    ///
+    /// Word's rule, as far as its text goes: a line that begins with a capital
+    /// and does not end with punctuation is a heading, Heading 1 as it stands
+    /// and one level down for each tab in front of it. That it is one line
+    /// long is the other half of the rule, and is the layout's to say.
+    #[must_use]
+    pub fn heading_level(&self, paragraph: &str) -> Option<(u8, usize)> {
+        if !self.headings {
+            return None;
+        }
+        let tabs = paragraph.chars().take_while(|c| *c == '\t').count();
+        let text = paragraph[tabs..].trim_end();
+        let first = text.chars().next()?;
+        let last = text.chars().last()?;
+        if tabs > 8 || !first.is_uppercase() || text.contains('\t') {
+            return None;
+        }
+        if matches!(last, '.' | ',' | ';' | ':' | '!' | '?' | '\u{2026}') {
+            return None;
+        }
+        Some((tabs as u8 + 1, tabs))
+    }
+
     /// Stops the rule that made a correction, which is what the box under
     /// the correction offers.
     ///
@@ -533,6 +625,8 @@ impl AutoCorrect {
             Kind::Emphasis => self.bold_italic = false,
             Kind::Hyperlink => self.hyperlinks = false,
             Kind::BorderLine => self.border_lines = false,
+            Kind::Table => self.tables = false,
+            Kind::Heading => self.headings = false,
         }
     }
 
@@ -849,6 +943,34 @@ mod tests {
         assert_eq!(rules.border_line("--- and"), None);
         let off = AutoCorrect { border_lines: false, ..AutoCorrect::default() };
         assert_eq!(off.border_line("---"), None);
+    }
+
+    #[test]
+    fn plus_signs_and_hyphens_are_a_table() {
+        let rules = rules();
+        assert_eq!(rules.table_columns("+---+------+"), Some(vec![0, 4, 11]));
+        assert_eq!(rules.table_columns("+--+"), Some(vec![0, 3]), "one column");
+        assert_eq!(rules.table_columns("+--+ "), Some(vec![0, 3]), "a space after it is no matter");
+        for not_one in ["+", "++", "+--", "--+", "+-- -+", "+--++", " +--+", "+==+", "a+--+"] {
+            assert_eq!(rules.table_columns(not_one), None, "{not_one:?}");
+        }
+        let mut off = rules.clone();
+        off.tables = false;
+        assert_eq!(off.table_columns("+---+"), None);
+    }
+
+    #[test]
+    fn a_short_line_with_no_full_stop_is_a_heading_where_that_is_switched_on() {
+        let mut rules = rules();
+        assert_eq!(rules.heading_level("Introduction"), None, "Word ships it off");
+        rules.headings = true;
+        assert_eq!(rules.heading_level("Introduction"), Some((1, 0)));
+        assert_eq!(rules.heading_level("\tWhat came before"), Some((2, 1)));
+        assert_eq!(rules.heading_level("\t\tSmaller still"), Some((3, 2)));
+        assert_eq!(rules.heading_level("Введение"), Some((1, 0)), "a capital in any alphabet");
+        for not_one in ["introduction", "It was late.", "Why?", "Note:", "", "\t", "Two\tparts"] {
+            assert_eq!(rules.heading_level(not_one), None, "{not_one:?}");
+        }
     }
 
     #[test]

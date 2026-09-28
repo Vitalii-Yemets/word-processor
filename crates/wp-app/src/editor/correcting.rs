@@ -25,12 +25,15 @@
 //! # The little box
 //!
 //! Word's AutoCorrect Options button: rest the pointer on a word that was just
-//! corrected and a small box with a lightning bolt appears under it, offering
-//! the word back, offering to stop making that correction, and offering the
+//! corrected and a thin blue bar appears under its first letter; move onto
+//! the bar and it becomes a small box with a lightning bolt, offering the
+//! word back, offering to stop making that correction, and offering the
 //! dialog. It is the answer to the correction that was noticed three words
-//! later, when Ctrl+Z would take back the three words first. The last
-//! correction is what it remembers, and it forgets when that correction is
-//! undone, or edited, or another is made.
+//! later, when Ctrl+Z would take back the three words first. The bar is there
+//! so that a pointer crossing a corrected word on its way somewhere else does
+//! not drop a button on the text; the box comes only to a pointer that went
+//! looking for it. The last correction is what it remembers, and it forgets
+//! when that correction is undone, or edited, or another is made.
 
 use wp_docx::model::{Border, NumberingReference, RunProperties};
 use wp_docx::TextPosition;
@@ -63,12 +66,23 @@ pub(super) struct Made {
     /// How deep the undo history was once it was made, which is how the box
     /// knows whether it is still the last thing done.
     pub depth: usize,
-    /// Whether the box is showing: it appears when the pointer rests on the
-    /// word, and stays while the pointer is on it or its list is open.
+    /// Whether the box is showing: it appears when the pointer reaches the
+    /// bar, and stays while the pointer is on it or on the word, or its list
+    /// is open.
     pub shown: bool,
     /// Whether the pointer is on the box.
     pub hot: bool,
+    /// Whether the thin blue bar is showing, which it does while the pointer
+    /// rests on the word and the box is not yet out.
+    pub bar: bool,
 }
+
+/// The thin blue bar: how wide and how tall it is, in pixels, and how much
+/// room round it still counts as being on it — it is small, and a pointer
+/// that has to land on three pixels exactly is a pointer that misses.
+const BAR_WIDTH: f32 = 10.0;
+const BAR_HEIGHT: f32 = 3.0;
+const BAR_SLACK: f32 = 3.0;
 
 /// The three lines of the box, top to bottom.
 const TAKE_BACK: usize = 0;
@@ -131,14 +145,19 @@ impl Editor {
         self.put_correction(word_end, &correction);
     }
 
-    /// What Enter does to the paragraph it is ending, before it ends it.
-    ///
+    /// What Enter does to the paragraph it is ending, before it ends it: a
+    /// line, a table or a heading, where the paragraph is one of those typed
+    /// out. Returns whether Enter's work is done.
+    pub(super) fn correct_paragraph_end(&mut self) -> bool {
+        self.make_border_line() || self.make_table() || self.make_heading()
+    }
+
     /// Three hyphens on a line of their own are not a paragraph: they are a
     /// line under the paragraph above, which is what Word makes of them. The
     /// hyphens go, the paragraph above gains the line, and the caret is left
     /// on the empty paragraph under it — which is where Enter would have put
-    /// it, so Enter has done its work. Returns whether it did.
-    pub(super) fn correct_paragraph_end(&mut self) -> bool {
+    /// it, so Enter has done its work.
+    fn make_border_line(&mut self) -> bool {
         let caret = self.document.caret();
         let Some(text) = self.document.paragraph_text(caret.paragraph) else { return false };
         let Some((style, size)) = self.autocorrect.border_line(&text) else { return false };
@@ -184,6 +203,145 @@ impl Editor {
             depth: self.document.undo_depth(),
             shown: false,
             hot: false,
+            bar: false,
+        });
+        self.relayout();
+        true
+    }
+
+    /// `+---+------+` and Enter: the line becomes a table of one row, a column
+    /// for each run of hyphens, as wide as the run is on the page — so the
+    /// table's lines fall where the plus signs were. The caret goes into the
+    /// first cell.
+    fn make_table(&mut self) -> bool {
+        let caret = self.document.caret();
+        let Some(text) = self.document.paragraph_text(caret.paragraph) else { return false };
+        let Some(edges) = self.autocorrect.table_columns(&text) else { return false };
+        if self.document.list_here().is_some() || self.document.table_here().is_some() {
+            return false;
+        }
+        let widths = self.column_widths_of(caret.paragraph, &edges);
+
+        self.document.begin_gesture();
+        let changed = self.document.replace_paragraph_with_table(&widths);
+        self.document.end_gesture();
+        if !changed {
+            return false;
+        }
+        self.made(Made {
+            paragraph: caret.paragraph,
+            start: 0,
+            end: 0,
+            original: text,
+            putting: String::new(),
+            ahead: String::new(),
+            kind: Kind::Table,
+            depth: self.document.undo_depth(),
+            shown: false,
+            hot: false,
+            bar: false,
+        });
+        self.relayout();
+        true
+    }
+
+    /// How wide each column of a table typed as plus signs is, in twentieths
+    /// of a point: the distance between two plus signs on the page.
+    ///
+    /// Where the line is not laid out as one line — too long for the page, or
+    /// not laid out at all — the widths are shared out by how many hyphens
+    /// each column has, across the width a new table is given.
+    fn column_widths_of(&self, paragraph: usize, edges: &[usize]) -> Vec<i32> {
+        let twips_per_pixel = 1440.0 / self.pixels_per_inch();
+        let places: Option<Vec<(f32, f32)>> = edges
+            .iter()
+            .map(|at| {
+                self.caret_rect_at(TextPosition::new(paragraph, *at)).map(|(x, y, _, _)| (x, y))
+            })
+            .collect();
+        if let Some(places) = places {
+            let one_line = places.iter().all(|(_, y)| (*y - places[0].1).abs() < 0.5);
+            let widths: Vec<i32> = places
+                .windows(2)
+                .map(|pair| ((pair[1].0 - pair[0].0).abs() * twips_per_pixel).round() as i32)
+                .collect();
+            if one_line && widths.iter().all(|width| *width > 0) {
+                return widths;
+            }
+        }
+        let runs: Vec<usize> = edges.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        let total: usize = runs.iter().sum::<usize>().max(1);
+        runs.iter().map(|run| (9360 * *run / total) as i32).collect()
+    }
+
+    /// A line entered twice becomes a heading, where that is switched on.
+    ///
+    /// Enter pressed in an empty paragraph under a line that is one line long,
+    /// begins with a capital and does not end with punctuation: the line takes
+    /// Heading 1, or Heading 2 for a line begun with one tab and so on down,
+    /// the tabs go, and the caret stays where it is, on the empty paragraph
+    /// under the heading — the second Enter has done its work.
+    fn make_heading(&mut self) -> bool {
+        let caret = self.document.caret();
+        if caret.paragraph == 0 || !self.autocorrect.headings {
+            return false;
+        }
+        if self.document.paragraph_text(caret.paragraph).is_none_or(|here| !here.is_empty()) {
+            return false;
+        }
+        let above = caret.paragraph - 1;
+        let Some(text) = self.document.paragraph_text(above) else { return false };
+        let Some((level, tabs)) = self.autocorrect.heading_level(&text) else { return false };
+        let style = format!("Heading{level}");
+
+        // Only a plain paragraph of the text: not one already given a style,
+        // nor one in a list or a table, where a short line is something else.
+        let plain = self.document.style_of(above).is_none_or(|id| id == "Normal");
+        if !plain
+            || self.document.paragraph_in_table(above)
+            || self.document.paragraph_in_table(caret.paragraph)
+            || !self.document.style_is_available(&style)
+        {
+            return false;
+        }
+        // One line long: where it begins and where it ends on the same line.
+        let (Some(first), Some(last)) = (
+            self.caret_rect_at(TextPosition::new(above, 0)),
+            self.caret_rect_at(TextPosition::new(above, text.len())),
+        ) else {
+            return false;
+        };
+        if (first.1 - last.1).abs() > 0.5 {
+            return false;
+        }
+        self.document.set_caret(TextPosition::new(above, 0));
+        let listed = self.document.list_here().is_some();
+        if listed {
+            self.document.set_caret(caret);
+            return false;
+        }
+
+        self.document.begin_gesture();
+        if tabs > 0 {
+            self.document.extend_selection_to(TextPosition::new(above, tabs));
+            self.document.delete_selection();
+        }
+        self.document.set_paragraph_style_here(Some(&style));
+        self.document.set_caret(caret);
+        self.document.end_gesture();
+
+        self.made(Made {
+            paragraph: above,
+            start: 0,
+            end: text.len() - tabs,
+            original: text.clone(),
+            putting: text[tabs..].to_owned(),
+            ahead: String::new(),
+            kind: Kind::Heading,
+            depth: self.document.undo_depth(),
+            shown: false,
+            hot: false,
+            bar: false,
         });
         self.relayout();
         true
@@ -240,6 +398,7 @@ impl Editor {
             depth: self.document.undo_depth(),
             shown: false,
             hot: false,
+            bar: false,
         });
         self.relayout();
         true
@@ -294,6 +453,7 @@ impl Editor {
             depth: self.document.undo_depth(),
             shown: false,
             hot: false,
+            bar: false,
         });
         self.relayout();
     }
@@ -354,6 +514,7 @@ impl Editor {
             depth: self.document.undo_depth(),
             shown: false,
             hot: false,
+            bar: false,
         });
         self.relayout();
     }
@@ -384,6 +545,7 @@ impl Editor {
             depth: self.document.undo_depth(),
             shown: false,
             hot: false,
+            bar: false,
         });
         self.relayout();
     }
@@ -404,10 +566,25 @@ impl Editor {
     fn correction_still_there(&self) -> bool {
         let Some(made) = &self.corrected else { return false };
         let Some(text) = self.document.paragraph_text(made.paragraph) else { return false };
-        made.end <= text.len()
+        let word = made.end <= text.len()
             && text.is_char_boundary(made.start)
             && text.is_char_boundary(made.end)
-            && text[made.start..made.end] == made.putting
+            && text[made.start..made.end] == made.putting;
+        // A table is still the one AutoFormat made while it begins where the
+        // line was and nothing has been typed into it: taking back a table
+        // with somebody's words in it would take the words too.
+        if made.kind == Kind::Table {
+            return word
+                && self.document.table_paragraphs_at(made.paragraph).is_some_and(
+                    |(first, last)| {
+                        first == made.paragraph
+                            && (first..=last).all(|at| {
+                                self.document.paragraph_text(at).is_some_and(|text| text.is_empty())
+                            })
+                    },
+                );
+        }
+        word
     }
 
     /// Where the box is, if there is one to draw.
@@ -429,11 +606,56 @@ impl Editor {
         Some(badge)
     }
 
-    /// Draws it, when there is one.
+    /// Draws it, when there is one — or the thin bar that comes before it.
     pub(super) fn draw_correction_badge(&mut self) {
-        let Some(badge) = self.correction_badge() else { return };
         let theme = self.theme;
-        badge.draw(&mut self.canvas, &mut self.chrome_engine, &mut self.renderer, &theme);
+        if let Some(badge) = self.correction_badge() {
+            badge.draw(&mut self.canvas, &mut self.chrome_engine, &mut self.renderer, &theme);
+            return;
+        }
+        let Some((left, top)) = self.correction_bar() else { return };
+        self.canvas.fill_rect(
+            left.round() as i32,
+            top.round() as i32,
+            BAR_WIDTH as i32,
+            BAR_HEIGHT as i32,
+            theme.accent,
+        );
+    }
+
+    /// Where the thin blue bar is, if it is showing: under the first letter
+    /// of the word, touching the bottom of its line.
+    pub(super) fn correction_bar(&self) -> Option<(f32, f32)> {
+        let made = self.corrected.as_ref()?;
+        if !made.bar || made.shown || !self.correction_still_there() {
+            return None;
+        }
+        let (x, y, _, height) =
+            self.caret_rect_at(TextPosition::new(made.paragraph, made.start))?;
+        let top = y + height;
+        if top < self.content_top() || top + BAR_HEIGHT > self.window_bottom() {
+            return None;
+        }
+        Some((x, top))
+    }
+
+    /// Whether a point is on the bar, or near enough to it to mean it.
+    fn over_correction_bar(&self, x: i32, y: i32) -> bool {
+        let Some(made) = &self.corrected else { return false };
+        if !made.bar || !self.correction_still_there() {
+            return false;
+        }
+        let Some((left, line_top, _, height)) =
+            self.caret_rect_at(TextPosition::new(made.paragraph, made.start))
+        else {
+            return false;
+        };
+        let x = crate::chrome::mirror::flip(x) as f32;
+        let (y, top) = (y as f32, line_top + height);
+        x >= left - BAR_SLACK
+            && x < left + BAR_WIDTH + BAR_SLACK
+            && y >= top
+            && y < top + BAR_HEIGHT + BAR_SLACK
     }
 
     /// Whether a point is on the box.
@@ -456,22 +678,30 @@ impl Editor {
         (y as f32) >= top && (y as f32) < top + height
     }
 
-    /// Shows the box under the pointer and lights it up under the pointer.
-    /// True when anything changed.
+    /// Follows the pointer: the bar while it rests on the word, the box once
+    /// it reaches the bar, the box lit while it is on it, and nothing once it
+    /// has left the word and the box both. True when anything changed.
     pub(super) fn follow_correction_badge(&mut self, x: i32, y: i32) -> bool {
-        if self.corrected.is_none() {
+        let Some(before) = self.corrected.as_ref().map(|made| (made.shown, made.hot, made.bar))
+        else {
             return false;
-        }
+        };
         let over_box = self.over_correction_badge(x, y);
         let open =
             self.popup.as_ref().is_some_and(|popup| popup.choice == Choice::AutoCorrectOption);
-        let shown = over_box || open || self.over_corrected_word(x, y);
+        let over_word = self.over_corrected_word(x, y);
+        let over_bar = self.over_correction_bar(x, y);
+
+        let shown = if before.0 { over_box || open || over_word } else { over_bar };
+        let bar = !shown && (over_word || (before.2 && over_bar));
+        let hot = shown && over_box;
         let Some(made) = &mut self.corrected else { return false };
-        if made.shown == shown && made.hot == over_box {
+        if (made.shown, made.hot, made.bar) == (shown, hot, bar) {
             return false;
         }
         made.shown = shown;
-        made.hot = over_box;
+        made.hot = hot;
+        made.bar = bar;
         true
     }
 
@@ -482,9 +712,10 @@ impl Editor {
         }
     }
 
-    /// Whether the box is showing, which is what Escape has to know.
+    /// Whether the box is showing, or the bar before it, which is what Escape
+    /// has to know.
     pub(super) fn offering_correction_options(&self) -> bool {
-        self.corrected.as_ref().is_some_and(|made| made.shown)
+        self.corrected.as_ref().is_some_and(|made| made.shown || made.bar)
     }
 
     /// Opens the box's list: the word back, the rule stopped, the dialog.
@@ -584,6 +815,22 @@ impl Editor {
             Kind::Hyperlink => {
                 self.document.set_caret(at);
                 self.document.remove_hyperlink()
+            }
+            Kind::Table => {
+                // The table goes, and the line of plus signs goes back into
+                // the paragraph that was made under it.
+                self.document.set_caret(at);
+                let removed = self.document.delete_table();
+                self.document.set_caret(at);
+                removed && self.document.type_text(&made.original)
+            }
+            Kind::Heading => {
+                // Back to the plain paragraph it was, tabs and all.
+                self.document.set_caret(at);
+                self.document.set_paragraph_style_here(None);
+                self.document.extend_selection_to(TextPosition::new(made.paragraph, made.end));
+                self.document.delete_selection();
+                self.document.type_text(&made.original)
             }
             Kind::Emphasis => {
                 // The formatting comes off, and the marks go back on.
@@ -921,26 +1168,54 @@ mod tests {
         (x, y)
     }
 
+    /// Points at the word, and then at the bar that appears under it, which
+    /// is what brings the box out.
+    fn reach_box(editor: &mut Editor, at: TextPosition) {
+        point_at(editor, at);
+        let (x, y) = editor.correction_bar().expect("the bar under the word");
+        editor.handle(Event::MouseMove {
+            x: (x + 2.0) as i32,
+            y: (y + 1.0) as i32,
+            held: false,
+            modifiers: Modifiers::default(),
+        });
+    }
+
     #[test]
-    fn the_box_appears_under_the_corrected_word_when_the_pointer_rests_on_it() {
+    fn a_bar_comes_first_and_the_box_when_the_pointer_reaches_it() {
         let mut editor = editor();
         type_out(&mut editor, "teh cat");
-        assert!(editor.correction_badge().is_none(), "it appeared before the pointer came");
+        assert!(editor.correction_bar().is_none(), "it appeared before the pointer came");
+        assert!(editor.correction_badge().is_none());
 
+        // Resting on the word: the thin bar under its first letter, and no box
+        // yet — a pointer crossing the word on its way elsewhere drops nothing
+        // on the text.
         point_at(&mut editor, TextPosition::new(0, 1));
+        let (bar_x, bar_y) = editor.correction_bar().expect("the bar");
+        let (word_x, word_y, _, height) = editor.caret_rect_at(TextPosition::new(0, 0)).unwrap();
+        assert!((bar_x - word_x).abs() < 0.5 && (bar_y - (word_y + height)).abs() < 0.5);
+        assert!(editor.correction_badge().is_none());
+
+        // Onto the bar: the box, with the lightning bolt.
+        reach_box(&mut editor, TextPosition::new(0, 1));
         let badge = editor.correction_badge().expect("the box");
         assert_eq!(badge.icon, Icon::Lightning);
+        assert!(editor.correction_bar().is_none(), "the bar became the box");
 
-        // And goes when the pointer leaves the word.
+        // Back on the word, the box stays; off the word and the box, it goes.
+        point_at(&mut editor, TextPosition::new(0, 1));
+        assert!(editor.correction_badge().is_some());
         point_at(&mut editor, TextPosition::new(0, 6));
         assert!(editor.correction_badge().is_none());
+        assert!(editor.correction_bar().is_none());
     }
 
     #[test]
     fn the_box_offers_the_word_back_and_gives_it() {
         let mut editor = editor();
         type_out(&mut editor, "teh cat");
-        point_at(&mut editor, TextPosition::new(0, 1));
+        reach_box(&mut editor, TextPosition::new(0, 1));
         editor.open_correction_options();
         let popup = editor.popup.as_ref().expect("the list");
         assert_eq!(popup.choice, Choice::AutoCorrectOption);
@@ -958,7 +1233,7 @@ mod tests {
     fn stopping_a_correction_takes_it_back_and_stops_it_for_good() {
         let mut editor = editor();
         type_out(&mut editor, "teh ");
-        point_at(&mut editor, TextPosition::new(0, 1));
+        reach_box(&mut editor, TextPosition::new(0, 1));
         editor.open_correction_options();
         editor.choose_correction_option(STOP);
         assert_eq!(text(&editor), "teh ");
@@ -980,7 +1255,7 @@ mod tests {
     fn the_box_takes_back_a_capital_and_names_what_it_undoes() {
         let mut editor = editor();
         type_out(&mut editor, "hello ");
-        point_at(&mut editor, TextPosition::new(0, 1));
+        reach_box(&mut editor, TextPosition::new(0, 1));
         editor.open_correction_options();
         assert_eq!(
             editor.popup.as_ref().unwrap().item(TAKE_BACK),
@@ -994,7 +1269,7 @@ mod tests {
     fn the_box_takes_a_list_back_and_puts_the_marker_back() {
         let mut editor = editor();
         type_out(&mut editor, "- milk");
-        point_at(&mut editor, TextPosition::new(0, 0));
+        reach_box(&mut editor, TextPosition::new(0, 0));
         editor.open_correction_options();
         assert_eq!(
             editor.popup.as_ref().unwrap().item(TAKE_BACK),
@@ -1012,7 +1287,7 @@ mod tests {
         press(&mut editor, Key::Enter);
         type_out(&mut editor, "---");
         press(&mut editor, Key::Enter);
-        point_at(&mut editor, TextPosition::new(0, 0));
+        reach_box(&mut editor, TextPosition::new(0, 0));
         editor.open_correction_options();
         editor.choose_correction_option(TAKE_BACK);
         editor.document.set_caret(TextPosition::new(0, 0));
@@ -1068,9 +1343,187 @@ mod tests {
     fn escape_puts_the_box_away() {
         let mut editor = editor();
         type_out(&mut editor, "teh ");
-        point_at(&mut editor, TextPosition::new(0, 1));
+        reach_box(&mut editor, TextPosition::new(0, 1));
         assert!(editor.correction_badge().is_some());
         press(&mut editor, Key::Escape);
         assert!(editor.corrected.is_none());
+
+        // And the bar, before it is a box.
+        type_out(&mut editor, "teh ");
+        point_at(&mut editor, TextPosition::new(0, 5));
+        assert!(editor.correction_bar().is_some());
+        press(&mut editor, Key::Escape);
+        assert!(editor.corrected.is_none());
+    }
+
+    // --- Tables and headings as they are typed ---------------------------------
+
+    #[test]
+    fn plus_signs_and_hyphens_and_enter_make_a_table_where_the_line_was() {
+        let mut editor = editor();
+        type_out(&mut editor, "Before");
+        press(&mut editor, Key::Enter);
+        type_out(&mut editor, "+----+--------+");
+        press(&mut editor, Key::Enter);
+
+        // The line is gone and a table of one row and two columns stands in
+        // its place, with the caret in its first cell and a paragraph after.
+        let place = editor.document.table_here().expect("a table at the caret");
+        assert_eq!((place.rows, place.columns, place.row, place.column), (1, 2, 0, 0));
+        assert_eq!(editor.document.caret(), TextPosition::new(1, 0));
+        assert_eq!(editor.document.paragraph_text(0).as_deref(), Some("Before"));
+        assert!(!editor.document.paragraph_in_table(0));
+        assert!(!text(&editor).contains('+'), "{:?}", text(&editor));
+        assert_eq!(editor.document.paragraph_count(), 4, "before, two cells, and one after");
+
+        // Each column as wide as its hyphens were on the page: the second
+        // twice the first, near enough — the plus signs take room of their
+        // own, the same on each side.
+        let grid = editor.document.table_grid_at(1);
+        assert_eq!(grid.len(), 2);
+        let ratio = grid[1] as f32 / grid[0] as f32;
+        assert!((1.6..2.1).contains(&ratio), "{grid:?}");
+        // Measured in the line's own font, not guessed: fifteen characters of
+        // an eleven-point font are an inch or so, nothing like the page.
+        assert!(grid.iter().sum::<i32>() < 3000, "{grid:?}");
+
+        // One undo takes it back and leaves what was typed.
+        editor.handle(Event::KeyDown {
+            key: Key::Letter('z'),
+            modifiers: Modifiers { control: true, ..Modifiers::default() },
+        });
+        assert!(editor.document.table_here().is_none());
+        assert_eq!(editor.document.paragraph_text(1).as_deref(), Some("+----+--------+"));
+    }
+
+    #[test]
+    fn a_line_of_one_column_is_a_table_of_one_column() {
+        let mut editor = editor();
+        type_out(&mut editor, "+------+");
+        press(&mut editor, Key::Enter);
+        let place = editor.document.table_here().expect("a table");
+        assert_eq!((place.rows, place.columns), (1, 1));
+    }
+
+    #[test]
+    fn a_table_is_not_made_while_it_is_switched_off() {
+        let mut editor = editor();
+        editor.autocorrect.tables = false;
+        type_out(&mut editor, "+---+---+");
+        press(&mut editor, Key::Enter);
+        assert!(editor.document.table_at(0).is_none());
+        assert_eq!(editor.document.paragraph_text(0).as_deref(), Some("+---+---+"));
+    }
+
+    #[test]
+    fn the_box_takes_a_table_back_and_puts_the_line_back() {
+        let mut editor = editor();
+        type_out(&mut editor, "+---+---+");
+        press(&mut editor, Key::Enter);
+        // Typing below the table, so an undo would take that first.
+        editor.document.set_caret(TextPosition::new(2, 0));
+        type_out(&mut editor, "after");
+        reach_box(&mut editor, TextPosition::new(0, 0));
+        editor.open_correction_options();
+        assert_eq!(editor.popup.as_ref().unwrap().item(TAKE_BACK), Some("Undo Automatic Table"));
+        editor.choose_correction_option(TAKE_BACK);
+        assert!(editor.document.table_at(0).is_none());
+        assert_eq!(editor.document.paragraph_text(0).as_deref(), Some("+---+---+after"));
+    }
+
+    #[test]
+    fn a_table_with_words_in_it_is_not_taken_back() {
+        let mut editor = editor();
+        type_out(&mut editor, "+---+---+");
+        press(&mut editor, Key::Enter);
+        type_out(&mut editor, "Name");
+        point_at(&mut editor, TextPosition::new(0, 0));
+        assert!(editor.correction_bar().is_none() && editor.correction_badge().is_none());
+    }
+
+    #[test]
+    fn a_line_entered_twice_becomes_a_heading_where_that_is_switched_on() {
+        let mut editor = editor();
+        editor.autocorrect.headings = true;
+        type_out(&mut editor, "Introduction");
+        press(&mut editor, Key::Enter);
+        press(&mut editor, Key::Enter);
+
+        assert_eq!(editor.document.style_of(0).as_deref(), Some("Heading1"));
+        assert_eq!(editor.document.paragraph_text(0).as_deref(), Some("Introduction"));
+        assert_eq!(editor.document.paragraph_count(), 2, "the second Enter made nothing");
+        assert_eq!(editor.document.caret(), TextPosition::new(1, 0));
+        assert_ne!(editor.document.style_of(1).as_deref(), Some("Heading1"));
+
+        // One undo: the plain line again, and the empty paragraph under it.
+        editor.handle(Event::KeyDown {
+            key: Key::Letter('z'),
+            modifiers: Modifiers { control: true, ..Modifiers::default() },
+        });
+        assert_ne!(editor.document.style_of(0).as_deref(), Some("Heading1"));
+        assert_eq!(editor.document.paragraph_count(), 2);
+    }
+
+    #[test]
+    fn a_tab_in_front_of_the_line_is_a_level_down() {
+        let mut editor = editor();
+        editor.autocorrect.headings = true;
+        editor.document.type_text("\tWhat came before");
+        press(&mut editor, Key::Enter);
+        press(&mut editor, Key::Enter);
+        assert_eq!(editor.document.style_of(0).as_deref(), Some("Heading2"));
+        assert_eq!(editor.document.paragraph_text(0).as_deref(), Some("What came before"));
+    }
+
+    #[test]
+    fn a_heading_is_not_made_of_a_sentence_or_while_switched_off() {
+        // Word ships it off: two Enters are two paragraphs.
+        let mut editor = editor();
+        type_out(&mut editor, "Introduction");
+        press(&mut editor, Key::Enter);
+        press(&mut editor, Key::Enter);
+        assert_eq!(editor.document.paragraph_count(), 3);
+        assert_ne!(editor.document.style_of(0).as_deref(), Some("Heading1"));
+
+        // And switched on, a line that ends a sentence is not one.
+        let mut editor = super::tests::editor();
+        editor.autocorrect.headings = true;
+        type_out(&mut editor, "It was late.");
+        press(&mut editor, Key::Enter);
+        press(&mut editor, Key::Enter);
+        assert_eq!(editor.document.paragraph_count(), 3);
+        assert_ne!(editor.document.style_of(0).as_deref(), Some("Heading1"));
+    }
+
+    #[test]
+    fn a_line_longer_than_a_line_is_not_a_heading() {
+        let mut editor = editor();
+        editor.autocorrect.headings = true;
+        let long = "A title that goes on ".repeat(12);
+        editor.document.type_text(long.trim_end());
+        editor.relayout();
+        press(&mut editor, Key::Enter);
+        press(&mut editor, Key::Enter);
+        assert_ne!(editor.document.style_of(0).as_deref(), Some("Heading1"));
+    }
+
+    #[test]
+    fn the_box_takes_a_heading_back() {
+        let mut editor = editor();
+        editor.autocorrect.headings = true;
+        editor.document.type_text("\tMethods");
+        press(&mut editor, Key::Enter);
+        press(&mut editor, Key::Enter);
+        type_out(&mut editor, "Body text");
+        reach_box(&mut editor, TextPosition::new(0, 1));
+        editor.open_correction_options();
+        assert_eq!(
+            editor.popup.as_ref().unwrap().item(TAKE_BACK),
+            Some("Undo Automatic Heading Style")
+        );
+        editor.choose_correction_option(TAKE_BACK);
+        assert_ne!(editor.document.style_of(0).as_deref(), Some("Heading2"));
+        assert_eq!(editor.document.paragraph_text(0).as_deref(), Some("\tMethods"));
+        assert_eq!(editor.document.paragraph_text(1).as_deref(), Some("Body text"));
     }
 }

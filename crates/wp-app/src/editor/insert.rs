@@ -285,6 +285,42 @@ impl Editor {
                 self.relayout();
                 self.open_correction_options();
             }
+            // The same word with the pointer resting on it: the thin bar
+            // under its first letter, which comes before the box.
+            "corrected-bar" => {
+                let end = self.document.paragraph_text(3).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(3, end));
+                for character in " teh cat".chars() {
+                    self.type_character(character);
+                }
+                if let Some(made) = &mut self.corrected {
+                    made.bar = true;
+                }
+                self.relayout();
+            }
+            // A table typed as plus signs and hyphens and a heading typed as a
+            // line entered twice, each made by the keystrokes that make it.
+            "typed-formats" => {
+                use wp_shell::{App, Event, Key, Modifiers};
+                let enter = Event::KeyDown { key: Key::Enter, modifiers: Modifiers::default() };
+                self.autocorrect.headings = true;
+                let end = self.document.paragraph_text(3).unwrap_or_default().len();
+                self.document.set_caret(wp_docx::TextPosition::new(3, end));
+                self.handle(enter.clone());
+                for character in "Results".chars() {
+                    self.type_character(character);
+                }
+                self.handle(enter.clone());
+                self.handle(enter.clone());
+                for character in "+------------+------------------------+".chars() {
+                    self.type_character(character);
+                }
+                self.handle(enter);
+                for character in "Name".chars() {
+                    self.type_character(character);
+                }
+                self.relayout();
+            }
             // A word looked up in the other language, with the list open, for
             // the same reason again.
             "translate" => {

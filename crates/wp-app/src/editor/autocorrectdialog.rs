@@ -21,10 +21,7 @@
 //!
 //! # What is missing
 //!
-//! Word's two "Automatically add words to list" boxes, which put a word on an
-//! exception list when a correction is undone straight after it is made. They
-//! are not drawn, because they are not done — see the roadmap. Word's Math
-//! AutoCorrect, AutoFormat and Actions tabs are missing for the same reason
+//! Word's Math AutoCorrect, AutoFormat and Actions tabs, for the same reason
 //! the switches they hold are: there is nothing behind them here.
 
 use std::collections::BTreeSet;
@@ -62,6 +59,8 @@ const HYPERLINKS: usize = 19;
 const APPLY_AS_YOU_TYPE: usize = 20;
 const AUTOMATIC_LISTS: usize = 21;
 const BORDER_LINES: usize = 22;
+const HEADINGS: usize = 23;
+const TABLES: usize = 24;
 
 // The Exceptions dialog: two tabs, each a box and a list.
 const TAB_FIRST_LETTER: usize = 0;
@@ -154,6 +153,8 @@ impl Editor {
             Field::Group("Apply as you type".to_owned()),
             check("Automatic bulleted and numbered lists", rules.automatic_lists),
             check("Border lines", rules.border_lines),
+            check("Built-in Heading styles", rules.headings),
+            check("Tables", rules.tables),
         ];
 
         crate::chrome::dialog::check_rows(
@@ -183,6 +184,8 @@ impl Editor {
                 (APPLY_AS_YOU_TYPE, "a group"),
                 (AUTOMATIC_LISTS, "a tick box"),
                 (BORDER_LINES, "a tick box"),
+                (HEADINGS, "a tick box"),
+                (TABLES, "a tick box"),
             ],
         );
 
@@ -228,6 +231,8 @@ impl Editor {
         rules.bold_italic = dialog.ticked(BOLD_ITALIC);
         rules.hyperlinks = dialog.ticked(HYPERLINKS);
         rules.border_lines = dialog.ticked(BORDER_LINES);
+        rules.headings = dialog.ticked(HEADINGS);
+        rules.tables = dialog.ticked(TABLES);
     }
 
     /// The two tick boxes of the Exceptions dialog, onto the working copy.

@@ -4398,12 +4398,72 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the build image, which is the same want as the spelling dictionaries'; the
   Translator pane as a pane, with its own text box, for the reason **F4**
   gives for the thesaurus.
-- [ ] **F9. The rest of AutoFormat As You Type.** Word's list has three lines
+- [x] **F9. The rest of AutoFormat As You Type.** Word's list has three lines
   this program has not: a table made from `+---+---+` and Enter, its built-in
   heading styles from a line typed and entered twice (which Word itself ships
   switched off), and the thin blue bar the pointer rests on before the
   correction box opens, which is one hover more than this does. Named in
   **F5**.
+  *Done when:* `+----+--------+` and Enter leave a table of two columns, the
+  second twice the first, with the caret in its first cell; "Introduction",
+  Enter, Enter leave a Heading 1 where that is switched on; and resting on a
+  corrected word shows the bar, and the box only once the pointer reaches it.
+  Tables: a line that begins and ends with a plus sign and has nothing but
+  hyphens between each two becomes, at Enter, a table of one row in the line's
+  place, a column for each run of hyphens, with the paragraph after it where
+  Enter would have gone and the caret in the first cell. Each column is as
+  wide as its run of hyphens was on the page — the distance between two plus
+  signs as the line was laid out, in the line's own font — so the table's
+  lines fall where the plus signs were, which is the point of drawing it that
+  way; a line too long to be one line shares the width out by hyphens instead.
+  `Document::replace_paragraph_with_table` puts it in, beside `insert_table`,
+  which now shares the building of an empty table with it.
+  Headings: Enter in an empty paragraph under a line that begins with a
+  capital, does not end with punctuation, is one line long on the page and is
+  a plain paragraph — no style, no list, not in a table — gives that line
+  Heading 1, or Heading 2 for a line begun with one tab and so on to Heading 9,
+  takes the tabs away, and leaves the caret where it was, on the empty
+  paragraph under the heading: the second Enter made nothing. Off until it is
+  switched on, as in Word, and never onto a style the document has locked.
+  Both are one gesture, so one undo takes each back and leaves what was
+  typed; both have their tick box on the AutoFormat As You Type tab, under
+  Word's own names, and their switch in the settings file; and both are
+  remembered like any other correction, so the box offers "Undo Automatic
+  Table" and "Undo Automatic Heading Style" and to stop doing it. Taken back
+  by the box after more typing, a table goes and its line of plus signs comes
+  back; a table somebody has typed into is not offered back at all, because
+  taking it back would take their words with it. A heading goes back to the
+  plain line, tabs and all.
+  The bar: resting the pointer on a corrected word shows a thin blue bar under
+  its first letter, and nothing more; moving onto the bar — or near enough, a
+  few pixels round it — turns it into the box. The box then stays while the
+  pointer is on it or on the word, and goes with both when the pointer leaves;
+  Escape puts either away.
+  *Proven by:* `wp-app`'s tests type each one a keystroke at a time through
+  the editor: the table's place, shape, caret and column widths — measured on
+  the page and so under three thousand twentieths of a point for a line of
+  fifteen characters, not spread across the page — and one undo; a table of
+  one column; the switch; the box taking a table back after typing below it,
+  and not offering one with a word in it. The heading, its level from a tab,
+  one undo, the switch off by default, a sentence left alone, a line longer
+  than a line left alone, and the box taking one back. The bar under the first
+  letter touching the line, no box until the bar, the box staying on the word
+  and going off both, Escape for either; and every older test of the box now
+  reaches it through the bar. The recognisers have tests of their own, down to
+  `+--++` and a capital in Cyrillic. `--picture … corrected-bar` draws the bar
+  and `typed-formats` a heading and a table typed into the welcome document,
+  both looked at.
+  *Found along the way:* nothing the box says was in the message catalogue —
+  "Undo Automatic Numbering", "Stop Replacing Fractions" and the rest came out
+  in English in a German interface. They are listed now with their German,
+  except the two that name the word they were about ("Stop Automatically
+  Correcting “teh”"), which cannot be listed ahead of time and still come out
+  in English. The dialog's note that the Exceptions dialog's two tick boxes
+  were not drawn was out of date since **F5** and is gone.
+  *Not done:* Word's exact heading rule, which it does not publish; this is
+  the rule its help describes — a capital, no closing punctuation, one line —
+  and a line Word would take and this would not, or the other way round, is
+  possible.
 - [ ] **F10. Word's AutoFormat tab.** Reformatting a whole document at once
   rather than as it is typed: the command, the dialog that asks what to
   change, and the review of what it did. Named in **F5**.

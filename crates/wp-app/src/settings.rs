@@ -428,6 +428,8 @@ impl Settings {
         rules.bold_italic = on("bold-italic", rules.bold_italic);
         rules.hyperlinks = on("hyperlinks", rules.hyperlinks);
         rules.border_lines = on("border-lines", rules.border_lines);
+        rules.tables = on("tables", rules.tables);
+        rules.headings = on("headings", rules.headings);
         rules.add_first_letter_exceptions =
             on("add-first-exceptions", rules.add_first_letter_exceptions);
         rules.add_initial_caps_exceptions =
@@ -455,6 +457,8 @@ impl Settings {
             ("bold-italic", rules.bold_italic),
             ("hyperlinks", rules.hyperlinks),
             ("border-lines", rules.border_lines),
+            ("tables", rules.tables),
+            ("headings", rules.headings),
             ("add-first-exceptions", rules.add_first_letter_exceptions),
             ("add-caps-exceptions", rules.add_initial_caps_exceptions),
         ] {

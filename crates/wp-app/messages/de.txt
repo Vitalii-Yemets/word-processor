@@ -446,6 +446,9 @@ language = Deutsch
 = Building blocks
 > Bausteine
 
+= Built-in Heading styles
+> Integrierte Formatvorlagen für Überschriften
+
 = Centred
 > Zentriert
 
@@ -1706,6 +1709,15 @@ language = Deutsch
 = Stop Protection
 > Schutz aufheben
 
+= Stop Replacing Fractions
+> Brüche nicht mehr ersetzen
+
+= Stop Replacing Hyphens with Dashes
+> Bindestriche nicht mehr durch Gedankenstriche ersetzen
+
+= Stop Superscripting Ordinals
+> Ordnungszahlen nicht mehr hochstellen
+
 = Stopping it asks for the password.
 > Zum Aufheben wird das Kennwort verlangt.
 
@@ -2639,6 +2651,33 @@ language = Deutsch
 = Start Merge
 > Seriendruck starten
 
+= Stop Auto-capitalizing First Letter of Sentences
+> Automatische Großschreibung am Satzanfang beenden
+
+= Stop Automatically Applying Heading Styles
+> Überschriften nicht mehr automatisch formatieren
+
+= Stop Automatically Creating Border Lines
+> Rahmenlinien nicht mehr automatisch erstellen
+
+= Stop Automatically Creating Hyperlinks
+> Hyperlinks nicht mehr automatisch erstellen
+
+= Stop Automatically Creating Lists
+> Listen nicht mehr automatisch erstellen
+
+= Stop Automatically Creating Tables
+> Tabellen nicht mehr automatisch erstellen
+
+= Stop Automatically Formatting Bold and Italic
+> Fett und kursiv nicht mehr automatisch formatieren
+
+= Stop Capitalizing Names of Days
+> Wochentage nicht mehr großschreiben
+
+= Stop Correcting Accidental Use of Caps Lock
+> Unbeabsichtigtes Verwenden der Feststelltaste nicht mehr korrigieren
+
 = Strikethrough
 > Durchgestrichen
 
@@ -2914,6 +2953,30 @@ language = Deutsch
 
 = Undo
 > Rückgängig
+
+= Undo Automatic Capitalization
+> Automatische Großschreibung rückgängig machen
+
+= Undo Automatic Corrections
+> Automatische Korrektur rückgängig machen
+
+= Undo Automatic Formatting
+> Automatische Formatierung rückgängig machen
+
+= Undo Automatic Heading Style
+> Automatische Überschrift rückgängig machen
+
+= Undo Automatic Numbering
+> Automatische Nummerierung rückgängig machen
+
+= Undo Automatic Table
+> Automatische Tabelle rückgängig machen
+
+= Undo Border Line
+> Rahmenlinie rückgängig machen
+
+= Undo Hyperlink
+> Hyperlink rückgängig machen
 
 = Update Index
 > Index aktualisieren
