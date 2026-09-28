@@ -317,3 +317,49 @@ fn a_formatting_change_counts_as_a_change() {
     embolden(&mut document);
     assert_eq!(document.revision_count(), 1);
 }
+
+#[test]
+fn a_paragraph_restyled_while_changes_are_tracked_is_a_change() {
+    // Word records a paragraph's formatting as well as a run's: a heading made
+    // of a line is something a reviewer is asked about.
+    let mut document = document("Introduction");
+    document.set_tracking_changes(true);
+    assert!(document.set_paragraph_style_here(Some("Heading1")));
+
+    assert_eq!(document.style_of(0).as_deref(), Some("Heading1"), "the style is on");
+    let changes = document.changes();
+    assert_eq!(changes.len(), 1, "{changes:?}");
+    assert_eq!(changes[0].kind, wp_docx::revisions::ChangeKind::Formatting);
+    assert_eq!(changes[0].author, "Ada Lovelace");
+    // It survives the file.
+    assert_eq!(round_trip(&document).revision_count(), 1);
+
+    // Rejected, the paragraph is what it was; accepted, it keeps the style
+    // and loses the record.
+    let mut rejected = round_trip(&document);
+    assert_eq!(rejected.resolve_all_revisions(Decision::Reject), 1);
+    assert_ne!(rejected.style_of(0).as_deref(), Some("Heading1"));
+    assert_eq!(document.resolve_all_revisions(Decision::Accept), 1);
+    assert_eq!(document.style_of(0).as_deref(), Some("Heading1"));
+    assert_eq!(document.revision_count(), 0);
+}
+
+#[test]
+fn a_paragraph_made_into_a_list_while_tracked_is_a_change_too() {
+    let mut document = document("milk");
+    document.set_tracking_changes(true);
+    assert!(document.set_list_here(Some(wp_docx::model::NumberingReference {
+        id: wp_docx::BULLET_LIST,
+        level: 0,
+    })));
+    assert_eq!(document.revision_count(), 1);
+    document.resolve_all_revisions(Decision::Reject);
+    assert!(document.list_here().is_none(), "the list stayed");
+}
+
+#[test]
+fn a_paragraph_restyled_with_changes_untracked_records_nothing() {
+    let mut document = document("Introduction");
+    assert!(document.set_paragraph_style_here(Some("Heading1")));
+    assert_eq!(document.revision_count(), 0);
+}

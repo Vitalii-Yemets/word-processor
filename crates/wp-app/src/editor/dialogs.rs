@@ -92,6 +92,10 @@ pub(super) enum Asking {
     PageBorders,
     /// Which corrections are made as text is typed.
     AutoCorrect,
+    /// Formatting the whole document at once: now, or with a review.
+    AutoFormat,
+    /// What to do with the changes AutoFormat marked for review.
+    AutoFormatReview,
     /// Which language to translate into.
     Translator,
     /// Which encoding a text file is in, when its bytes do not say.
@@ -257,6 +261,11 @@ impl Editor {
             Some(Asking::Encrypt) => self.apply_encryption(&dialog),
             Some(Asking::Options) => self.apply_options(&dialog),
             Some(Asking::AutoCorrect) => self.apply_autocorrect_dialog(&dialog),
+            Some(Asking::AutoFormat) => self.apply_autoformat_dialog(&dialog),
+            Some(Asking::AutoFormatReview) => {
+                let _ = dialog;
+                self.answer_autoformat_review(answer)
+            }
             Some(Asking::Translator) => self.apply_translator_preferences(&dialog),
             Some(Asking::TextOpen) => self.apply_text_open(&dialog),
             Some(Asking::TextSave) => self.apply_text_save(&dialog),
@@ -292,6 +301,10 @@ impl Editor {
                 Some(self.autocorrect_dialog_button(button))
             }
             (Some(Asking::Exceptions), ADD | DELETE) => Some(self.exceptions_dialog_button(button)),
+            // AutoFormat's Options… hands over to the tab its switches are on.
+            (Some(Asking::AutoFormat), super::autoformat::OPTIONS) => {
+                Some(self.autoformat_options())
+            }
             // Word's four buttons under the list of recipients, each of
             // which changes the list and leaves the dialog standing.
             (Some(Asking::NewList), super::mailings::ADD_RECIPIENT) => {

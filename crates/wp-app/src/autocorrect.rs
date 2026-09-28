@@ -100,8 +100,8 @@ const FRACTIONS: &[(&str, char)] =
 
 /// Which corrections are made.
 ///
-/// Word's four tabs, less the two that are about things this program does not
-/// have: AutoFormat (which reformats a whole document at once) and Actions
+/// Word's tabs, less the two that are about things this program does not
+/// have: Math AutoCorrect (which waits for the equation editor) and Actions
 /// (which offers to look a name up in an address book).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AutoCorrect {
@@ -159,6 +159,76 @@ pub struct AutoCorrect {
     pub add_first_letter_exceptions: bool,
     /// And the same for a word whose two capitals were undone.
     pub add_initial_caps_exceptions: bool,
+
+    /// The AutoFormat tab: what reformatting a whole document at once
+    /// changes, which Word keeps apart from what happens as one types.
+    pub reformat: Reformat,
+}
+
+/// Word's AutoFormat tab: what the AutoFormat command changes when it goes
+/// over a whole document. The same rules as the ones applied as one types,
+/// switched on and off apart from them — a person may want quotes curled in a
+/// pasted text file and not as they type, or the other way round.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reformat {
+    /// A short line with a blank line after it becomes a heading.
+    pub headings: bool,
+    /// A paragraph begun `1. ` becomes a numbered list. Word's "List styles".
+    pub numbered_lists: bool,
+    /// A paragraph begun `- ` or `* ` becomes a bulleted list.
+    pub bulleted_lists: bool,
+    pub curly_quotes: bool,
+    pub ordinals: bool,
+    pub fractions: bool,
+    pub dashes: bool,
+    pub bold_italic: bool,
+    pub hyperlinks: bool,
+    /// A paragraph that already has a style of its own keeps it: no heading
+    /// and no list is made of it.
+    pub keep_styles: bool,
+}
+
+impl Default for Reformat {
+    /// Everything on, which is how Word's tab arrives.
+    fn default() -> Self {
+        Self {
+            headings: true,
+            numbered_lists: true,
+            bulleted_lists: true,
+            curly_quotes: true,
+            ordinals: true,
+            fractions: true,
+            dashes: true,
+            bold_italic: true,
+            hyperlinks: true,
+            keep_styles: true,
+        }
+    }
+}
+
+/// One thing AutoFormat changes in a paragraph's words, found with the rest
+/// of them before any is made.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Fix {
+    /// These bytes become this text: a quote curled, a dash, an ordinal, a
+    /// fraction.
+    Text { start: usize, end: usize, putting: String },
+    /// `*bold*` or `_italic_`: the marks go and what was between them takes
+    /// the formatting.
+    Emphasis(Emphasis),
+    /// An address becomes a link to itself.
+    Link { start: usize, end: usize },
+}
+
+impl Fix {
+    /// The bytes of the paragraph it covers.
+    #[must_use]
+    pub fn span(&self) -> (usize, usize) {
+        match self {
+            Self::Text { start, end, .. } | Self::Link { start, end } => (*start, *end),
+            Self::Emphasis(emphasis) => (emphasis.open, emphasis.close + 1),
+        }
+    }
 }
 
 impl Default for AutoCorrect {
@@ -188,6 +258,7 @@ impl Default for AutoCorrect {
             headings: false,
             add_first_letter_exceptions: true,
             add_initial_caps_exceptions: true,
+            reformat: Reformat::default(),
         }
     }
 }
@@ -600,6 +671,99 @@ impl AutoCorrect {
         Some((tabs as u8 + 1, tabs))
     }
 
+    /// The rules AutoFormat goes over a document with: the AutoFormat tab's
+    /// switches in place of the ones for typing, and none of what only makes
+    /// sense of a word as it is typed — the replacement list, the capitals —
+    /// which Word's AutoFormat does not do either.
+    #[must_use]
+    pub fn for_reformatting(&self) -> Self {
+        let tab = &self.reformat;
+        Self {
+            replace_text: false,
+            two_initials: false,
+            sentence_case: false,
+            day_names: false,
+            caps_lock: false,
+            curly_quotes: tab.curly_quotes,
+            ordinals: tab.ordinals,
+            fractions: tab.fractions,
+            dashes: tab.dashes,
+            bold_italic: tab.bold_italic,
+            hyperlinks: tab.hyperlinks,
+            automatic_lists: tab.numbered_lists || tab.bulleted_lists,
+            border_lines: false,
+            tables: false,
+            headings: tab.headings,
+            ..self.clone()
+        }
+    }
+
+    /// Every change these rules make to a paragraph's words, found at once.
+    ///
+    /// The paragraph is read as if it were being typed: at every character
+    /// that could be a quote, the quote rule is asked, and at every place a
+    /// word ends — the end of the paragraph included — the rules for a
+    /// finished word are, with what came before as what was typed so far.
+    /// Where two would change the same characters the first found wins, as
+    /// the first would have when typing.
+    #[must_use]
+    pub fn fixes_in(&self, text: &str) -> Vec<Fix> {
+        let mut out: Vec<Fix> = Vec::new();
+        let mut keep = |fix: Fix| {
+            let (start, end) = fix.span();
+            let clear = out.iter().all(|other| {
+                let (from, to) = other.span();
+                end <= from || to <= start
+            });
+            if clear && start < end {
+                out.push(fix);
+            }
+        };
+
+        let places = text.char_indices().map(|(at, c)| (at, Some(c))).chain([(text.len(), None)]);
+        for (at, character) in places {
+            let before = &text[..at];
+            if let Some(character) = character {
+                if let Some(curled) = self.on_character(before, character) {
+                    if curled != character {
+                        keep(Fix::Text {
+                            start: at,
+                            end: at + character.len_utf8(),
+                            putting: curled.to_string(),
+                        });
+                    }
+                }
+                if !ends_a_word(character) {
+                    continue;
+                }
+                if character == ' ' {
+                    if let Some(dash) = self.dash_before(before) {
+                        keep(Fix::Text { start: at - 1, end: at, putting: dash.putting });
+                    }
+                }
+            }
+            if let Some(emphasis) = self.emphasis(before) {
+                keep(Fix::Emphasis(emphasis));
+                continue;
+            }
+            let word = before.rsplit(char::is_whitespace).next().unwrap_or_default();
+            if self.is_address(word) {
+                keep(Fix::Link { start: before.len() - word.len(), end: before.len() });
+                continue;
+            }
+            if let Some(correction) = self.on_word(before) {
+                let start = before
+                    .char_indices()
+                    .rev()
+                    .nth(correction.taking.saturating_sub(1))
+                    .map_or(0, |(at, _)| at);
+                keep(Fix::Text { start, end: before.len(), putting: correction.putting });
+            }
+        }
+        out.sort_by_key(|fix| fix.span().0);
+        out
+    }
+
     /// Stops the rule that made a correction, which is what the box under
     /// the correction offers.
     ///
@@ -667,6 +831,16 @@ impl AutoCorrect {
         let start: i32 = number.parse().ok()?;
         (start >= 1 && number.len() <= 3).then_some(start)
     }
+}
+
+/// Whether a character ends a word.
+///
+/// Word's list: a space, and the punctuation that closes a sentence or a
+/// clause. A hyphen does not, because a hyphenated word is one word.
+#[must_use]
+pub fn ends_a_word(character: char) -> bool {
+    character.is_whitespace()
+        || matches!(character, '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}' | '"' | '\'')
 }
 
 /// The word before the caret: everything after the last space.
@@ -943,6 +1117,51 @@ mod tests {
         assert_eq!(rules.border_line("--- and"), None);
         let off = AutoCorrect { border_lines: false, ..AutoCorrect::default() };
         assert_eq!(off.border_line("---"), None);
+    }
+
+    #[test]
+    fn a_whole_paragraph_is_read_as_if_it_were_typed() {
+        let rules = rules().for_reformatting();
+        let text = "He said \"it's the 21st\" - on *time* at www.example.com, 1/2 done";
+        let fixes = rules.fixes_in(text);
+        let texts: Vec<(&str, &str)> = fixes
+            .iter()
+            .filter_map(|fix| match fix {
+                Fix::Text { start, end, putting } => Some((&text[*start..*end], putting.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            vec![
+                ("\"", "\u{201C}"),
+                ("'", "\u{2019}"),
+                ("21st", "21\u{02E2}\u{1D57}"),
+                ("\"", "\u{201D}"),
+                ("-", "\u{2013}"),
+                ("1/2", "½"),
+            ]
+        );
+        assert!(fixes.iter().any(|fix| matches!(fix, Fix::Emphasis(emphasis) if emphasis.bold)));
+        assert!(fixes.iter().any(|fix| matches!(fix, Fix::Link { start, end }
+            if &text[*start..*end] == "www.example.com")));
+        // Nothing overlaps anything else.
+        for pair in fixes.windows(2) {
+            assert!(pair[0].span().1 <= pair[1].span().0, "{fixes:?}");
+        }
+    }
+
+    #[test]
+    fn reformatting_leaves_what_is_only_for_typing_alone() {
+        // The replacement list and the capitals are about a word as it is
+        // typed; a document gone over whole keeps its "teh" and its "monday".
+        let reformatting = rules().for_reformatting();
+        assert_eq!(reformatting.fixes_in("teh monday. and then"), vec![]);
+        // And each of the tab's switches turns its rule off there alone.
+        let mut quiet = rules();
+        quiet.reformat.curly_quotes = false;
+        assert_eq!(quiet.for_reformatting().fixes_in("\"a\""), vec![]);
+        assert!(quiet.curly_quotes, "the typing rule is its own");
     }
 
     #[test]

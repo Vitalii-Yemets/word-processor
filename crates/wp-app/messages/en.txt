@@ -68,6 +68,7 @@
 = Anybody who can open it can take that one off.
 = Anybody who can open the file can take this off.
 = Appearance
+= Apply
 = Apply as you type
 = Apply to
 = Area
@@ -82,11 +83,19 @@
 = AutoCorrect options
 = AutoCorrect...
 = AutoFit
+= AutoFormat
 = AutoFormat As You Type
+= AutoFormat Now
+= AutoFormat and review each change
+= AutoFormat found nothing to change
+= AutoFormat made {0} changes
+= AutoFormat now
+= AutoFormat...
 = AutoRecover file location
 = AutoText
 = Automatic
 = Automatic bulleted and numbered lists
+= Automatic bulleted lists
 = Automatically add words to list
 = Automatically hyphenate document
 = Autosaved {0}
@@ -359,6 +368,7 @@
 = Formatting
 = Formatting Marks
 = Formatting Restrictions
+= Formatting completed. You can now:
 = Formatting exceptions
 = Formatting limited to this document's styles
 = Formatting limited to {0} styles
@@ -404,6 +414,7 @@
 = Horizontal
 = Horizontal in Vertical
 = Horizontal in Vertical...
+= How
 = Hyphenate at
 = Hyphenate words in CAPS
 = Hyphenation
@@ -476,6 +487,7 @@
 = Link
 = Link to Previous
 = Links
+= List styles
 = Lock aspect ratio
 = Macro
 = Macro name
@@ -564,6 +576,7 @@
 = Opened {0}
 = Opened {0} as {1}
 = Options
+= Options...
 = Orange
 = Order
 = Ordinals (1st) with superscript
@@ -638,6 +651,7 @@
 = Points
 = Position
 = Postcode
+= Preserve
 = Preview
 = Preview Results
 = Previous
@@ -701,6 +715,7 @@
 = Results
 = Retry
 = Review
+= Review Changes
 = Reviewing Pane
 = Revised
 = Rich Text
@@ -1044,10 +1059,13 @@
 = Zoom
 = [ ]
 = [Text]
+= go through them on the Review tab
 = in this machine's store
+= keep every change
 = locked
 = off
 = on
+= take them all back
 = unsaved changes
 = { }
 = {0} added to the list
@@ -1092,3 +1110,4 @@
 = {0}, {1} boxes
 = {0}x{1} Table
 = “Straight quotes” with “smart quotes”
+= “{0}” will be formatted automatically.

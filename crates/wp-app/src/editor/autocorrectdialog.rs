@@ -21,8 +21,10 @@
 //!
 //! # What is missing
 //!
-//! Word's Math AutoCorrect, AutoFormat and Actions tabs, for the same reason
-//! the switches they hold are: there is nothing behind them here.
+//! Word's Math AutoCorrect and Actions tabs, for the same reason the switches
+//! they hold are: there is nothing behind them here. And on the AutoFormat
+//! tab, "Other paragraph styles" and "Plain text e-mail documents", which are
+//! about kinds of document this program does not tell apart.
 
 use std::collections::BTreeSet;
 
@@ -61,6 +63,22 @@ const AUTOMATIC_LISTS: usize = 21;
 const BORDER_LINES: usize = 22;
 const HEADINGS: usize = 23;
 const TABLES: usize = 24;
+
+// The AutoFormat tab: the same rules, for a whole document at once.
+const TAB_WHOLE: usize = 25;
+const WHOLE_APPLY: usize = 26;
+const WHOLE_HEADINGS: usize = 27;
+const WHOLE_NUMBERED: usize = 28;
+const WHOLE_BULLETED: usize = 29;
+const WHOLE_REPLACE: usize = 30;
+const WHOLE_QUOTES: usize = 31;
+const WHOLE_ORDINALS: usize = 32;
+const WHOLE_FRACTIONS: usize = 33;
+const WHOLE_DASHES: usize = 34;
+const WHOLE_BOLD_ITALIC: usize = 35;
+const WHOLE_HYPERLINKS: usize = 36;
+const WHOLE_PRESERVE: usize = 37;
+const WHOLE_STYLES: usize = 38;
 
 // The Exceptions dialog: two tabs, each a box and a list.
 const TAB_FIRST_LETTER: usize = 0;
@@ -155,6 +173,24 @@ impl Editor {
             check("Border lines", rules.border_lines),
             check("Built-in Heading styles", rules.headings),
             check("Tables", rules.tables),
+            // --- AutoFormat -------------------------------------------------
+            Field::Tab("AutoFormat".to_owned()),
+            Field::Group("Apply".to_owned()),
+            check("Built-in Heading styles", rules.reformat.headings),
+            check("List styles", rules.reformat.numbered_lists),
+            check("Automatic bulleted lists", rules.reformat.bulleted_lists),
+            Field::Group("Replace".to_owned()),
+            check(
+                "\u{201C}Straight quotes\u{201D} with \u{201C}smart quotes\u{201D}",
+                rules.reformat.curly_quotes,
+            ),
+            check("Ordinals (1st) with superscript", rules.reformat.ordinals),
+            check("Fractions (1/2) with fraction character", rules.reformat.fractions),
+            check("Hyphens (--) with dash (\u{2014})", rules.reformat.dashes),
+            check("*Bold* and _italic_ with real formatting", rules.reformat.bold_italic),
+            check("Internet and network paths with hyperlinks", rules.reformat.hyperlinks),
+            Field::Group("Preserve".to_owned()),
+            check("Styles", rules.reformat.keep_styles),
         ];
 
         crate::chrome::dialog::check_rows(
@@ -186,6 +222,20 @@ impl Editor {
                 (BORDER_LINES, "a tick box"),
                 (HEADINGS, "a tick box"),
                 (TABLES, "a tick box"),
+                (TAB_WHOLE, "a tab"),
+                (WHOLE_APPLY, "a group"),
+                (WHOLE_HEADINGS, "a tick box"),
+                (WHOLE_NUMBERED, "a tick box"),
+                (WHOLE_BULLETED, "a tick box"),
+                (WHOLE_REPLACE, "a group"),
+                (WHOLE_QUOTES, "a tick box"),
+                (WHOLE_ORDINALS, "a tick box"),
+                (WHOLE_FRACTIONS, "a tick box"),
+                (WHOLE_DASHES, "a tick box"),
+                (WHOLE_BOLD_ITALIC, "a tick box"),
+                (WHOLE_HYPERLINKS, "a tick box"),
+                (WHOLE_PRESERVE, "a group"),
+                (WHOLE_STYLES, "a tick box"),
             ],
         );
 
@@ -233,6 +283,17 @@ impl Editor {
         rules.border_lines = dialog.ticked(BORDER_LINES);
         rules.headings = dialog.ticked(HEADINGS);
         rules.tables = dialog.ticked(TABLES);
+        let whole = &mut rules.reformat;
+        whole.headings = dialog.ticked(WHOLE_HEADINGS);
+        whole.numbered_lists = dialog.ticked(WHOLE_NUMBERED);
+        whole.bulleted_lists = dialog.ticked(WHOLE_BULLETED);
+        whole.curly_quotes = dialog.ticked(WHOLE_QUOTES);
+        whole.ordinals = dialog.ticked(WHOLE_ORDINALS);
+        whole.fractions = dialog.ticked(WHOLE_FRACTIONS);
+        whole.dashes = dialog.ticked(WHOLE_DASHES);
+        whole.bold_italic = dialog.ticked(WHOLE_BOLD_ITALIC);
+        whole.hyperlinks = dialog.ticked(WHOLE_HYPERLINKS);
+        whole.keep_styles = dialog.ticked(WHOLE_STYLES);
     }
 
     /// The two tick boxes of the Exceptions dialog, onto the working copy.

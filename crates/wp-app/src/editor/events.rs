@@ -2179,6 +2179,8 @@ impl Editor {
                     // each one in the Symbol dialog, and working — which is the
                     // difference between a dialog that documents this program
                     // and one that describes some other program.
+                    // Word's key for AutoFormat Now.
+                    Key::Letter('k') => self.run(Command::AutoFormatNow),
                     Key::Letter('c') => self.insert_special_character("Copyright"),
                     Key::Letter('r') => self.insert_special_character("Registered"),
                     Key::Letter('t') => self.insert_special_character("Trademark"),

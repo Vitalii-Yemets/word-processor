@@ -191,6 +191,9 @@ language = Deutsch
 = Appearance
 > Darstellung
 
+= Apply
+> Übernehmen
+
 = Apply as you type
 > Während der Eingabe anwenden
 
@@ -233,8 +236,29 @@ language = Deutsch
 = AutoFit
 > AutoAnpassen
 
+= AutoFormat
+> AutoFormat
+
 = AutoFormat As You Type
 > AutoFormat während der Eingabe
+
+= AutoFormat Now
+> AutoFormat jetzt
+
+= AutoFormat and review each change
+> AutoFormat mit Überprüfung jeder Änderung
+
+= AutoFormat found nothing to change
+> AutoFormat hat nichts zu ändern gefunden
+
+= AutoFormat made {0} changes
+> AutoFormat hat {0} Änderungen vorgenommen
+
+= AutoFormat now
+> AutoFormat sofort
+
+= AutoFormat...
+> AutoFormat...
 
 = AutoRecover file location
 > Speicherort für AutoWiederherstellen-Dateien
@@ -244,6 +268,9 @@ language = Deutsch
 
 = Automatic bulleted and numbered lists
 > Automatische Aufzählung und Nummerierung
+
+= Automatic bulleted lists
+> Automatische Aufzählung
 
 = Automatically add words to list
 > Wörter automatisch zur Liste hinzufügen
@@ -1064,6 +1091,9 @@ language = Deutsch
 = Formatting Restrictions
 > Formatierungseinschränkungen
 
+= Formatting completed. You can now:
+> Formatierung abgeschlossen. Sie können jetzt:
+
 = Formatting exceptions
 > Ausnahmen bei der Formatierung
 
@@ -1198,6 +1228,9 @@ language = Deutsch
 
 = Horizontal in Vertical...
 > Horizontal in vertikal...
+
+= How
+> Wie
 
 = Hyphenate at
 > Trennen bei
@@ -1414,6 +1447,9 @@ language = Deutsch
 
 = Links
 > Links
+
+= List styles
+> Listenformatvorlagen
 
 = Lock aspect ratio
 > Seitenverhältnis sperren
@@ -1955,8 +1991,14 @@ language = Deutsch
 = [Text]
 > [Text]
 
+= go through them on the Review tab
+> sie auf der Registerkarte „Überprüfen“ durchgehen
+
 = in this machine's store
 > im Speicher dieses Rechners
+
+= keep every change
+> alle Änderungen behalten
 
 = locked
 > gesperrt
@@ -2150,6 +2192,9 @@ language = Deutsch
 = Options
 > Optionen
 
+= Options...
+> Optionen...
+
 = Order
 > Reihenfolge
 
@@ -2294,6 +2339,9 @@ language = Deutsch
 = Postcode
 > Postleitzahl
 
+= Preserve
+> Beibehalten
+
 = Preview
 > Vorschau
 
@@ -2437,6 +2485,9 @@ language = Deutsch
 
 = Review
 > Überprüfen
+
+= Review Changes
+> Änderungen überprüfen
 
 = Reviewing Pane
 > Überarbeitungsbereich
@@ -3131,6 +3182,9 @@ language = Deutsch
 = on
 > ein
 
+= take them all back
+> alle zurücknehmen
+
 = unsaved changes
 > nicht gespeicherte Änderungen
 
@@ -3262,4 +3316,7 @@ language = Deutsch
 
 = “Straight quotes” with “smart quotes”
 > „Gerade Anführungszeichen“ durch „typografische Anführungszeichen“
+
+= “{0}” will be formatted automatically.
+> „{0}“ wird automatisch formatiert.
 

@@ -336,6 +336,10 @@ pub enum Command {
     /// What the words selected are in another language, which is what
     /// Word's Translate offers first and its right-click menu offers too.
     TranslateSelection,
+    /// Word's AutoFormat: the dialog that asks whether to review.
+    AutoFormat,
+    /// And its AutoFormat Now, which does not ask.
+    AutoFormatNow,
     ShowProofing,
     LoadDictionary,
     CheckAccessibility,

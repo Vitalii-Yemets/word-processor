@@ -6,6 +6,7 @@ mod appearance;
 mod arrange;
 mod autocorrectdialog;
 mod autoevents;
+mod autoformat;
 pub(crate) mod autorecover;
 mod autoscroll;
 mod backstage;

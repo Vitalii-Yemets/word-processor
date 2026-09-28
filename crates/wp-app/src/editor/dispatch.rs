@@ -333,6 +333,8 @@ impl Editor {
             Command::Thesaurus => self.open_thesaurus(),
             Command::Synonym(index) => self.take_synonym(index as usize),
             Command::TranslateSelection => self.translate_selection(),
+            Command::AutoFormat => self.open_autoformat(),
+            Command::AutoFormatNow => self.autoformat_now(),
             Command::ShowProofing => self.toggle_proofing(),
             Command::LoadDictionary => self.load_dictionary(),
             Command::CheckAccessibility => self.open_accessibility(),

@@ -4464,9 +4464,78 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   the rule its help describes — a capital, no closing punctuation, one line —
   and a line Word would take and this would not, or the other way round, is
   possible.
-- [ ] **F10. Word's AutoFormat tab.** Reformatting a whole document at once
+- [x] **F10. Word's AutoFormat tab.** Reformatting a whole document at once
   rather than as it is typed: the command, the dialog that asks what to
   change, and the review of what it did. Named in **F5**.
+  *Done when:* a text typed elsewhere with straight quotes, `- ` lists, a
+  short line over a blank one and an address comes out of AutoFormat with
+  curly quotes, real lists, a heading and a link; and with a review, every one
+  of those is a tracked change that Reject All takes back.
+  The command is Word's two, kept off the ribbon as Word keeps them and among
+  the commands a person can put on it: AutoFormat…, which asks, and AutoFormat
+  Now, which does not and is on Word's Ctrl+Alt+K. The dialog names the
+  document and offers "AutoFormat now" or "AutoFormat and review each change",
+  with Options… handing over to the AutoCorrect dialog open at its new
+  AutoFormat tab.
+  The tab is Word's: Apply — Built-in Heading styles, List styles, Automatic
+  bulleted lists; Replace — the six rules the as-you-type tab has; Preserve —
+  Styles. Its switches are its own, in the settings file beside the typing
+  ones, and what it runs is the typing rules with the tab's switches in their
+  place and none of the rules that are only about a word as it is typed — the
+  replacement list, the capitals — which Word's AutoFormat does not apply
+  either (`AutoCorrect::for_reformatting`).
+  A paragraph's words are read as if they were being typed:
+  `AutoCorrect::fixes_in` walks the text asking the quote rule at every quote
+  and the word rules at every place a word ends, the end of the paragraph
+  included, and gives back every change at once, none overlapping another;
+  they are made from the last backwards, so each leaves the places of the rest
+  where they were found. Then what each paragraph is: `- `, `* ` or `• ` in
+  front makes a bulleted list and `1. ` or `1) ` a numbered one, `2. ` under
+  `1. ` continuing it rather than starting another at two, the marker taken
+  away as it is when typed; and a short line with a blank line under it — one
+  line on the page, begun with a capital, not ended with punctuation — takes
+  Heading 1, a level down for each tab in front of it, the blank line standing
+  for the second Enter of the typing rule. Not in a table, not in a list
+  already, and, while Preserve Styles is ticked, not a paragraph with a style
+  of its own. It is one thing to undo.
+  With a review, the same changes are made with changes tracked, and then
+  Word's question: Accept All, Reject All, or Review Changes. Reject All is
+  the AutoFormat undone. Accept All is that, and AutoFormat run again without
+  tracking, which is the same result with no marks — and unlike accepting every
+  change in the document it leaves somebody else's tracked changes for their
+  own review. Review Changes leaves the marks and opens the Review tab, whose
+  Accept and Reject go through them like any others; so does shutting the
+  dialog, which loses nothing.
+  *Proven by:* `wp-app`'s tests on documents built with no rules at all: every
+  kind of change made in one pass and one undo taking all of it back; the tab's
+  switches deciding and the typing switches having no say; no heading of a
+  line with text straight under it or of a sentence; a styled paragraph kept,
+  and not kept when the tab says not to; a review whose marks include
+  insertions, deletions and formatting and which Reject All undoes to the
+  letter; Accept All leaving no marks, and leaving another person's change
+  undecided; Review Changes on the Review tab; a document with nothing to
+  change told so and given no step to undo; Options… on the AutoFormat tab;
+  Ctrl+Alt+K. `AutoCorrect::fixes_in` has its own tests over a sentence with
+  every rule in it. `--picture … autoformat-dialog`, `autoformat-tab`,
+  `autoformat-review` and `autoformat-marked` draw the two dialogs, the tab and
+  a set of minutes after a review — struck straight quotes and curly ones put
+  in, `3rd` raised, the dash, `*nobody*` bold with its stars struck, the link,
+  the list markers struck and the lists drawn, the heading — all looked at.
+  *Found along the way:* a paragraph's formatting was never a tracked change.
+  A style, a list, an indent put on while changes were being tracked went on
+  unrecorded, where Word records it as a `w:pPrChange` that Reject puts back;
+  so a heading made in a tracked document could not be rejected. Every
+  paragraph change is recorded now while tracking is on, through the same
+  code a comparison already used to record a restyled paragraph, and the
+  revision tests hold a style and a list to being recorded, rejected,
+  accepted and kept through a save.
+  *Not done:* the tab's "Other paragraph styles" and "Plain text e-mail
+  documents", and the dialog's choice of General document, Letter or Email —
+  Word's way of telling a letter's inside address and closing from a
+  heading, which this does not attempt; a line is a heading here by the one
+  rule above. Word's Style Gallery button on the review dialog. And a link
+  made during a review is made outright rather than marked: taking it back is
+  Reject All or the Remove Hyperlink command, not the Review tab.
 - [ ] **F11. Math AutoCorrect.** The tab that turns `\alpha` into α as it is
   typed, and the list behind it. It waits on the equation editor, which is
   where the result has to go. Named in **F5**.

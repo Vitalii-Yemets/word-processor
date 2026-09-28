@@ -39,7 +39,7 @@ use wp_docx::model::{Border, NumberingReference, RunProperties};
 use wp_docx::TextPosition;
 use wp_shell::Response;
 
-use crate::autocorrect::{Correction, Emphasis, Kind};
+use crate::autocorrect::{ends_a_word, Correction, Emphasis, Kind};
 use crate::chrome::icons::Icon;
 use crate::chrome::pastebadge::{self, PasteBadge};
 use crate::chrome::popup::Row;
@@ -899,15 +899,6 @@ impl Editor {
         }
         text[..at].to_owned()
     }
-}
-
-/// Whether a character ends a word.
-///
-/// Word's list: a space, and the punctuation that closes a sentence or a
-/// clause. A hyphen does not, because a hyphenated word is one word.
-fn ends_a_word(character: char) -> bool {
-    character.is_whitespace()
-        || matches!(character, '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}' | '"' | '\'')
 }
 
 #[cfg(test)]

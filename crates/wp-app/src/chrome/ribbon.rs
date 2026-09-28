@@ -2406,6 +2406,10 @@ static OFF_RIBBON_COMMANDS: &[(Command, &str, Icon)] = &[
     (Command::PasteMerge, "Merge Formatting", Icon::Clipboard),
     (Command::PasteAsPicture, "Paste as Picture", Icon::Clipboard),
     (Command::PasteTextOnly, "Keep Text Only", Icon::Clipboard),
+    // Word keeps these two off the ribbon too, among the commands a person
+    // can put on it; Ctrl+Alt+K is the second.
+    (Command::AutoFormat, "AutoFormat...", Icon::Lightning),
+    (Command::AutoFormatNow, "AutoFormat Now", Icon::Lightning),
     // The three on the menu of a repeating section's item.
     (Command::RepeatItemBefore, "Insert Item Before", Icon::Outline),
     (Command::RepeatItemAfter, "Insert Item After", Icon::Outline),

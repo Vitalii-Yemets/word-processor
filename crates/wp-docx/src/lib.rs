@@ -2973,6 +2973,11 @@ impl Document {
 
         self.record(EditKind::Structural, self.caret, false);
         let prefix = self.prefix();
+        // While changes are tracked, a paragraph's formatting is one of them:
+        // what its properties said before is kept in a `w:pPrChange`, which is
+        // what rejecting it puts back. One number for the lot, as one press of
+        // a style is one change to review.
+        let recording = self.recording_formatting();
         let mut changed = false;
 
         for index in wanted {
@@ -2980,7 +2985,31 @@ impl Document {
             let Some(paragraph) = edit::element_at_path_mut(&mut self.tree.root, &path) else {
                 continue;
             };
+            let before = paragraph.child(Some(read::W), "pPr").cloned();
             change(paragraph, prefix.as_deref());
+            if let Some((reviser, id)) = &recording {
+                // The old properties back in place, and the new ones written
+                // over them by what keeps a record of the old.
+                let after = paragraph.child(Some(read::W), "pPr").cloned();
+                if let Some(at) = paragraph.position_of(Some(read::W), "pPr") {
+                    match before {
+                        Some(before) => {
+                            paragraph.children[at] = wp_xml::tree::Node::Element(before)
+                        }
+                        None => {
+                            paragraph.children.remove(at);
+                        }
+                    }
+                }
+                format::note_properties_change(
+                    paragraph,
+                    "pPr",
+                    after.as_ref(),
+                    reviser,
+                    *id,
+                    prefix.as_deref(),
+                );
+            }
             changed = true;
         }
 

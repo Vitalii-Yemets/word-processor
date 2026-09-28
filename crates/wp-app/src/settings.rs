@@ -430,6 +430,17 @@ impl Settings {
         rules.border_lines = on("border-lines", rules.border_lines);
         rules.tables = on("tables", rules.tables);
         rules.headings = on("headings", rules.headings);
+        let whole = &mut rules.reformat;
+        whole.headings = on("whole-headings", whole.headings);
+        whole.numbered_lists = on("whole-numbered-lists", whole.numbered_lists);
+        whole.bulleted_lists = on("whole-bulleted-lists", whole.bulleted_lists);
+        whole.curly_quotes = on("whole-curly-quotes", whole.curly_quotes);
+        whole.ordinals = on("whole-ordinals", whole.ordinals);
+        whole.fractions = on("whole-fractions", whole.fractions);
+        whole.dashes = on("whole-dashes", whole.dashes);
+        whole.bold_italic = on("whole-bold-italic", whole.bold_italic);
+        whole.hyperlinks = on("whole-hyperlinks", whole.hyperlinks);
+        whole.keep_styles = on("whole-keep-styles", whole.keep_styles);
         rules.add_first_letter_exceptions =
             on("add-first-exceptions", rules.add_first_letter_exceptions);
         rules.add_initial_caps_exceptions =
@@ -459,6 +470,16 @@ impl Settings {
             ("border-lines", rules.border_lines),
             ("tables", rules.tables),
             ("headings", rules.headings),
+            ("whole-headings", rules.reformat.headings),
+            ("whole-numbered-lists", rules.reformat.numbered_lists),
+            ("whole-bulleted-lists", rules.reformat.bulleted_lists),
+            ("whole-curly-quotes", rules.reformat.curly_quotes),
+            ("whole-ordinals", rules.reformat.ordinals),
+            ("whole-fractions", rules.reformat.fractions),
+            ("whole-dashes", rules.reformat.dashes),
+            ("whole-bold-italic", rules.reformat.bold_italic),
+            ("whole-hyperlinks", rules.reformat.hyperlinks),
+            ("whole-keep-styles", rules.reformat.keep_styles),
             ("add-first-exceptions", rules.add_first_letter_exceptions),
             ("add-caps-exceptions", rules.add_initial_caps_exceptions),
         ] {

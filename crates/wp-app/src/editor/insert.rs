@@ -321,6 +321,40 @@ impl Editor {
                 }
                 self.relayout();
             }
+            // Word's AutoFormat dialog, and what it asks after formatting a
+            // plain text for review, over the text with its changes marked.
+            "autoformat-dialog" => {
+                self.open_autoformat();
+            }
+            "autoformat-review" => {
+                use wp_docx::model::{Block, Body, Paragraph};
+                let mut body = Body::default();
+                for text in [
+                    "Minutes of the meeting",
+                    "",
+                    "The chair said \"we're on the 3rd draft\" - and *nobody* argued.",
+                    "The notes are at www.example.com for anyone who missed it.",
+                    "- agree the budget",
+                    "- book the hall",
+                    "1. first reading",
+                    "2. second reading",
+                ] {
+                    body.blocks.push(Block::Paragraph(Paragraph::text(text)));
+                }
+                if let Ok(document) = wp_docx::Document::create(&body) {
+                    self.set_document(document, None);
+                    self.relayout();
+                    self.run(super::Command::AutoFormat);
+                    if let Some(dialog) = &mut self.dialog {
+                        if let Some(crate::chrome::dialog::Field::Choice { current, .. }) =
+                            dialog.fields.get_mut(1)
+                        {
+                            *current = 1;
+                        }
+                    }
+                    self.finish_dialog(crate::chrome::dialog::Answer::Accept);
+                }
+            }
             // A word looked up in the other language, with the list open, for
             // the same reason again.
             "translate" => {
@@ -2480,6 +2514,17 @@ impl Editor {
                 self.open_autocorrect();
                 // The second tab, so the other half can be photographed too.
                 self.dialog_key(wp_shell::Key::Tab, false, true);
+            }
+            // The same, answered with Review Changes: the marks themselves.
+            "autoformat-marked" => {
+                self.set_view_option("autoformat-review")?;
+                self.finish_dialog(crate::chrome::dialog::Answer::Named("Review Changes"));
+            }
+            "autoformat-tab" => {
+                self.open_autocorrect();
+                if let Some(dialog) = &mut self.dialog {
+                    dialog.show_tab(2);
+                }
             }
             "exceptions" => {
                 self.open_autocorrect();
