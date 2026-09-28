@@ -840,6 +840,15 @@ mod against_a_real_dictionary {
     }
 
     #[test]
+    fn an_ordinal_is_underlined_only_when_it_is_wrong() {
+        // A checker that underlines "21st" is one the reader stops trusting;
+        // one that passes "11st" is no checker.
+        let dictionary = english();
+        let text = "The 21st and the 11th came before the 11st and the 22th.";
+        assert_eq!(marked(text, &dictionary), vec!["11st", "22th"]);
+    }
+
+    #[test]
     fn what_is_really_wrong_is_still_underlined() {
         let dictionary = english();
         let text = "I definately recieve teh letter.";

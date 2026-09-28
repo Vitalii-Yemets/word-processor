@@ -35,8 +35,10 @@
 //!
 //! The affixes, in full: stripping, conditions, cross products, the flags that
 //! say a stem is not a word on its own, is forbidden, or must keep its case.
-//! Compounding — the German habit of writing several words as one — as far as
-//! the simple flags express it.
+//! Compounding — the German habit of writing several words as one — as the
+//! simple flags express it, and as the patterns over flags do: `COMPOUNDRULE
+//! n*1t` is what makes `11th` a word and `11st` not one, and is how Hungarian
+//! and Korean write most of their compounds.
 //!
 //! Not the suggestions: what to offer in place of a word nobody knows is the
 //! next item, and the data it needs (`TRY`, `REP`, `MAP`, `KEY`) is read and
@@ -134,6 +136,24 @@ impl Match {
     }
 }
 
+/// One step of a compound rule: a flag the next piece of the word must carry,
+/// and how many pieces in a row may carry it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Step {
+    flag: Flag,
+    times: Times,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Times {
+    /// Exactly one piece.
+    Once,
+    /// `?`: one piece or none.
+    Maybe,
+    /// `*`: any number of pieces, none included.
+    Any,
+}
+
 /// Every rule sharing one flag, and whether they may be used with an affix at
 /// the other end of the word.
 #[derive(Clone, Debug, Default)]
@@ -163,6 +183,9 @@ pub struct Dictionary {
     compound_middle: Option<Flag>,
     compound_end: Option<Flag>,
     compound_min: usize,
+    /// The patterns over flags a word written as several may follow, each a
+    /// run of steps: `COMPOUNDRULE`.
+    compound_rules: Vec<Vec<Step>>,
     /// What a suggester will want, read here because this is where the file is
     /// read. See the note at the top.
     pub try_letters: String,
@@ -282,7 +305,79 @@ impl Dictionary {
         if self.through_affixes(word, same_case) {
             return true;
         }
-        self.compounded(word, same_case, 0)
+        self.compounded(word, same_case, 0) || self.compounded_by_rule(word, same_case)
+    }
+
+    /// Whether a word is pieces of the word list, one after another, whose
+    /// flags follow one of the dictionary's compound rules.
+    ///
+    /// Each rule is a small pattern over flags, and a word is read against it
+    /// the way a pattern is matched: piece by piece, keeping every place in
+    /// the rule the pieces so far could have reached, and dropping the word
+    /// the moment there is none. Only a word of two pieces or more is a
+    /// compound.
+    fn compounded_by_rule(&self, word: &str, same_case: bool) -> bool {
+        if self.compound_rules.is_empty() {
+            return false;
+        }
+        let edges: Vec<usize> = word.char_indices().map(|(at, _)| at).chain([word.len()]).collect();
+        self.compound_rules.iter().any(|rule| {
+            let start = reachable(rule, vec![0]);
+            self.rule_pieces(word, &edges, 0, rule, &start, 0, same_case)
+        })
+    }
+
+    /// The rest of a word, from one letter on, as pieces following a rule
+    /// from the places given.
+    #[allow(clippy::too_many_arguments)]
+    fn rule_pieces(
+        &self,
+        word: &str,
+        edges: &[usize],
+        from: usize,
+        rule: &[Step],
+        places: &[usize],
+        pieces: usize,
+        same_case: bool,
+    ) -> bool {
+        let last = edges.len() - 1;
+        if from == last {
+            return pieces >= 2 && places.contains(&rule.len());
+        }
+        // Deep enough for any number written in figures, and a bound on a
+        // word made to be read every way it could be cut.
+        if pieces > 16 {
+            return false;
+        }
+        for end in from + self.compound_min.max(1)..=last {
+            let piece = &word[edges[from]..edges[end]];
+            let Some(flags) = self.piece_flags(piece, same_case) else { continue };
+            let next: Vec<usize> = places
+                .iter()
+                .filter(|place| **place < rule.len() && flags.contains(&rule[**place].flag))
+                .map(|place| if rule[*place].times == Times::Any { *place } else { place + 1 })
+                .collect();
+            if next.is_empty() {
+                continue;
+            }
+            let next = reachable(rule, next);
+            if self.rule_pieces(word, edges, end, rule, &next, pieces + 1, same_case) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The flags of a piece of a compound, if the word list holds it as a
+    /// word that may be one: its own spelling first, then in small letters.
+    fn piece_flags(&self, piece: &str, same_case: bool) -> Option<&Vec<Flag>> {
+        let lower = piece.to_lowercase();
+        let candidates: &[&str] = if same_case { &[piece] } else { &[piece, &lower] };
+        candidates.iter().find_map(|candidate| {
+            self.words.get(*candidate).filter(|flags| {
+                !self.has(flags, self.forbidden) && !self.has(flags, self.needs_affix)
+            })
+        })
     }
 
     /// Whether the dictionary holds this word itself, rather than as a form of
@@ -624,6 +719,7 @@ impl Dictionary {
     fn read_affix(&mut self, text: &str) -> Vec<Vec<Flag>> {
         let mut aliases: Vec<Vec<Flag>> = Vec::new();
         let mut lines = text.lines().peekable();
+        let mut rules_counted = false;
 
         while let Some(line) = lines.next() {
             let line = line.split('#').next().unwrap_or_default().trim();
@@ -665,6 +761,19 @@ impl Dictionary {
                         self.compound_min = value;
                     }
                 }
+                "COMPOUNDRULE" => {
+                    // The first line says how many follow, and is not a rule
+                    // even where a rule of single flags would look the same.
+                    let Some(text) = rest.first() else { continue };
+                    if !rules_counted && text.chars().all(|character| character.is_ascii_digit()) {
+                        rules_counted = true;
+                        continue;
+                    }
+                    rules_counted = true;
+                    if let Some(rule) = self.compound_rule(text) {
+                        self.compound_rules.push(rule);
+                    }
+                }
                 "REP" => {
                     // The first line says how many follow; the rest are pairs.
                     if rest.len() >= 2 {
@@ -691,6 +800,40 @@ impl Dictionary {
             }
         }
         aliases
+    }
+
+    /// One compound rule: flags, each followed by nothing, `*` or `?`. A flag
+    /// of more than one character is written in brackets, `(aa)` or `(1001)`,
+    /// and so may a single one be.
+    fn compound_rule(&self, text: &str) -> Option<Vec<Step>> {
+        let characters: Vec<char> = text.chars().collect();
+        let mut steps = Vec::new();
+        let mut at = 0;
+        while at < characters.len() {
+            let written: String = if characters[at] == '(' {
+                let close = characters[at..].iter().position(|character| *character == ')')?;
+                let inner = characters[at + 1..at + close].iter().collect();
+                at += close + 1;
+                inner
+            } else {
+                at += 1;
+                characters[at - 1].to_string()
+            };
+            let flag = *self.flags_of(&written, &[]).first()?;
+            let times = match characters.get(at) {
+                Some('*') => {
+                    at += 1;
+                    Times::Any
+                }
+                Some('?') => {
+                    at += 1;
+                    Times::Maybe
+                }
+                _ => Times::Once,
+            };
+            steps.push(Step { flag, times });
+        }
+        (!steps.is_empty()).then_some(steps)
     }
 
     /// One group of affix rules: the header line, then as many rules as it
@@ -984,6 +1127,21 @@ pub(crate) fn search_paths() -> Vec<PathBuf> {
     paths
 }
 
+/// The places in a compound rule reachable from these without another piece:
+/// past every step that may be taken no times at all.
+fn reachable(rule: &[Step], mut places: Vec<usize>) -> Vec<usize> {
+    let mut at = 0;
+    while at < places.len() {
+        let place = places[at];
+        if place < rule.len() && rule[place].times != Times::Once && !places.contains(&(place + 1))
+        {
+            places.push(place + 1);
+        }
+        at += 1;
+    }
+    places
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1115,5 +1273,123 @@ house
         let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
         assert!(dictionary.spelled("haustür"));
         assert!(!dictionary.spelled("hausbaum"), "baum is not allowed to join one");
+    }
+    /// The ordinals the way the English dictionary writes them: a figure, any
+    /// number of figures, and an ending only some last figures take.
+    fn ordinals() -> Dictionary {
+        let affix = "\
+SET UTF-8
+COMPOUNDMIN 1
+ONLYINCOMPOUND c
+COMPOUNDRULE 2
+COMPOUNDRULE n*1t
+COMPOUNDRULE n*mp
+";
+        let words = "\
+11
+1/n1
+1st/p
+1th/tc
+2/nm
+2nd/p
+2th/tc
+3/nm
+3rd/p
+3th/tc
+4/nm
+4th/pt
+";
+        Dictionary::read(affix.as_bytes(), words.as_bytes()).expect("a dictionary")
+    }
+
+    #[test]
+    fn a_compound_rule_makes_the_ordinals_right() {
+        let dictionary = ordinals();
+        for right in ["11th", "12th", "13th", "111th", "21st", "22nd", "23rd", "34th", "4th"] {
+            assert!(dictionary.spelled(right), "{right} follows a rule");
+        }
+    }
+
+    #[test]
+    fn a_compound_rule_makes_the_wrong_ordinals_wrong() {
+        let dictionary = ordinals();
+        // "11st" is a figure and "1st": no rule lets the last piece carry `p`
+        // after a `1`. And "1th" is in the list only to be the end of a word.
+        for wrong in ["11st", "12nd", "13rd", "21th", "2rd", "1th", "st", "1st1"] {
+            assert!(!dictionary.spelled(wrong), "{wrong} follows no rule");
+        }
+    }
+
+    #[test]
+    fn the_first_compound_rule_line_is_how_many_follow() {
+        // A count that happens to be a flag of this dictionary: were it read
+        // as a rule, every word flagged `1` would join to itself.
+        let affix = "SET UTF-8\nCOMPOUNDMIN 1\nCOMPOUNDRULE 1\nCOMPOUNDRULE ab\n";
+        let words = "3\nx/1\ny/a\nz/b\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(dictionary.spelled("yz"));
+        assert!(!dictionary.spelled("xx"));
+        assert!(!dictionary.spelled("zy"), "a rule is read in order");
+    }
+
+    #[test]
+    fn a_step_may_be_taken_once_never_or_any_number_of_times() {
+        let affix =
+            "SET UTF-8\nCOMPOUNDMIN 1\nCOMPOUNDRULE 2\nCOMPOUNDRULE ab?c\nCOMPOUNDRULE da*\n";
+        let words = "4\nx/a\ny/b\nz/c\nw/d\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(dictionary.spelled("xz"), "the step marked ? left out");
+        assert!(dictionary.spelled("xyz"), "and taken");
+        assert!(!dictionary.spelled("xyyz"), "but not twice");
+        assert!(!dictionary.spelled("yz"), "the step with no mark is not optional");
+        assert!(dictionary.spelled("wx"));
+        assert!(dictionary.spelled("wxxx"), "the step marked * as often as wanted");
+        assert!(!dictionary.spelled("xw"));
+    }
+
+    #[test]
+    fn a_word_on_its_own_is_not_a_compound() {
+        // `a*` would take one piece, and no pieces at all; a compound is two.
+        let affix = "SET UTF-8\nCOMPOUNDMIN 1\nONLYINCOMPOUND c\nCOMPOUNDRULE 1\nCOMPOUNDRULE a*\n";
+        let words = "1\nx/ac\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(!dictionary.spelled("x"), "only in a compound");
+        assert!(dictionary.spelled("xx"));
+        assert!(dictionary.spelled("xxx"));
+    }
+
+    #[test]
+    fn compound_pieces_are_as_long_as_the_dictionary_says() {
+        let affix = "SET UTF-8\nCOMPOUNDMIN 3\nCOMPOUNDRULE 1\nCOMPOUNDRULE ab\n";
+        let words = "3\nhaus/a\ntür/b\nab/b\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(dictionary.spelled("haustür"), "counted in letters, not bytes");
+        assert!(!dictionary.spelled("hausab"), "two letters is too short a piece");
+    }
+
+    #[test]
+    fn long_and_numbered_flags_are_written_in_brackets_in_a_rule() {
+        let affix =
+            "SET UTF-8\nFLAG long\nCOMPOUNDMIN 1\nCOMPOUNDRULE 1\nCOMPOUNDRULE (aa)(bb)*(cc)\n";
+        let words = "3\nfoo/aa\nbar/bb\nbaz/cc\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(dictionary.spelled("foobaz"));
+        assert!(dictionary.spelled("foobarbarbaz"));
+        assert!(!dictionary.spelled("barbaz"));
+
+        let affix = "SET UTF-8\nFLAG num\nCOMPOUNDMIN 1\nCOMPOUNDRULE 1\nCOMPOUNDRULE (1001)(2)\n";
+        let words = "2\nfoo/1001\nbar/2,7\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(dictionary.spelled("foobar"));
+        assert!(!dictionary.spelled("barfoo"));
+    }
+
+    #[test]
+    fn a_forbidden_word_is_no_piece_of_a_compound() {
+        let affix = "SET UTF-8\nCOMPOUNDMIN 1\nFORBIDDENWORD !\nCOMPOUNDRULE 1\nCOMPOUNDRULE ab\n";
+        let words = "3\nx/a\ny/b!\nz/b\n";
+        let dictionary = Dictionary::read(affix.as_bytes(), words.as_bytes()).unwrap();
+        assert!(dictionary.spelled("xz"));
+        assert!(!dictionary.spelled("xy"));
     }
 }

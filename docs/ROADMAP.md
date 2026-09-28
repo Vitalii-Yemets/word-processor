@@ -4051,13 +4051,49 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   says which it is in, and one this cannot read is refused with the encoding
   named rather than read as rubbish — which would be a dictionary of words
   nobody ever typed.
-- [ ] **F7. The compound rules.** A dictionary may say how words join as a
+- [x] **F7. The compound rules.** A dictionary may say how words join as a
   pattern over flags rather than as a flag on each word: `COMPOUNDRULE n*1t`
   is what makes `11th` and `21st` right and `11st` wrong. English uses it only
   for the ordinal numbers; Hungarian and Korean use it for the language. The
   reader keeps the flags and ignores the patterns, so a word a pattern would
   allow is underlined. Reading the patterns is a small matcher over the flags
   of each piece, and the pieces are already found for the simple flags.
+  *Done when:* `11th`, `21st` and `1000th` are words by the English
+  dictionary's own rules, and `11st`, `21th` and `1th` are not.
+  The affix file's `COMPOUNDRULE` lines are read into rules of steps: a flag,
+  and whether the piece carrying it comes once, may be left out (`?`) or may
+  come any number of times (`*`). A flag longer than one character — a
+  dictionary with `FLAG long` or `FLAG num` — is written in brackets, `(aa)` or
+  `(1001)`, and read as the dictionary reads its flags everywhere else. The
+  first `COMPOUNDRULE` line is how many follow and is not a rule, even where a
+  count would also be a flag: English has a `1` flag and a rule count of `2`.
+  A word is matched the way a pattern is: cut into pieces of at least
+  `COMPOUNDMIN` letters, each a word of the list that is neither forbidden nor
+  in need of an affix, and read piece by piece against the rule, keeping every
+  place in the rule the pieces so far could have reached and giving the cut up
+  the moment there is none — so a long run of figures costs a lookup per
+  figure and no more. Only two pieces or more make a compound, and a word
+  marked `ONLYINCOMPOUND` — English's `1th`, `2th`, `3th` — is a piece and
+  nothing else. The pieces are looked up as written and then in small letters,
+  as every other word is. No affix is stripped from a piece, which is what
+  Hunspell does with these rules too.
+  *Proven by:* `wp-dict`'s own tests, against the ordinals written out as
+  English writes them and against rules made for the test: the count line
+  that is a flag, a step left out, taken once, taken three times, a word that
+  is only a piece, pieces too short by `COMPOUNDMIN` counted in letters rather
+  than bytes (`haustür`), bracketed long and numbered flags, a forbidden word
+  that may not be a piece; `real_dictionary.rs` against the English
+  dictionary on the machine (`1st` to `2024th` right, `11st`, `12nd`, `13rd`,
+  `21th`, `2rd`, `1th`, `3th`, `111st` wrong); and `wp-docx`'s checker
+  against the same dictionary, which underlines `11st` and `22th` in a
+  sentence and not `21st` or `11th`.
+  *Not done:* the other compound options a language like Hungarian needs
+  beside the rules — how many pieces a word may have (`COMPOUNDWORDMAX`), the
+  letters that may not meet across a join (`CHECKCOMPOUNDPATTERN`), a piece
+  repeated (`CHECKCOMPOUNDDUP`), the syllable counting of `COMPOUNDSYLLABLE`.
+  Neither Hungarian nor Korean is in the build image, so the rules are proven
+  against English and against rules written for the test, not against a
+  language that writes all its compounds this way.
 - [x] **F2. Spelling as Word does it.** As-you-type checking, the wavy line, the
   right-click list of suggestions, add to dictionary, ignore all, custom
   dictionaries, per-language settings, and the settings that turn it off.

@@ -109,6 +109,23 @@ fn german_writes_several_words_as_one() {
 }
 
 #[test]
+fn the_ordinals_are_right_by_the_dictionarys_own_rules() {
+    // English writes "11th" and "21st", and no word list holds every number:
+    // the affix file says which figures a number may end in before each
+    // ending, as `COMPOUNDRULE n*1t` and `COMPOUNDRULE n*mp`.
+    let dictionary = read(ENGLISH);
+    for right in [
+        "1st", "2nd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "101st", "112th",
+        "1000th", "2024th",
+    ] {
+        assert!(dictionary.spelled(right), "{right} is a word");
+    }
+    for wrong in ["11st", "12nd", "13rd", "21th", "2rd", "1th", "3th", "111st"] {
+        assert!(!dictionary.spelled(wrong), "{wrong} is not a word");
+    }
+}
+
+#[test]
 fn the_whole_word_list_can_be_looked_up() {
     // Every stem the file holds, asked for. A reader that mishandles one line
     // of the format fails on whichever words happen to use it, and the only
