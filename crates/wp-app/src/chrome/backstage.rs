@@ -201,7 +201,6 @@ impl Backstage {
 
     /// Follows the pointer. True when something has to be drawn again.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
-        let x = super::mirror::flip(x);
         let over = self.at(x, y);
         if over == self.hovered {
             return false;

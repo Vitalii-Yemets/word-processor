@@ -41,8 +41,9 @@ const FOOTER: f32 = 44.0;
 pub enum Hit {
     /// Open the recovered document at this place in the list.
     Open(usize),
-    /// Throw that one away.
-    Delete(usize),
+    /// Drop the menu of what can be done with that one: open it, save it
+    /// somewhere, throw it away, or say what was repaired in it.
+    Menu(usize),
     /// Shut the pane, which is what says the person is done with all of them.
     Close,
 }
@@ -87,9 +88,18 @@ impl RecoveryPane {
             .map(|(hit, ..)| *hit)
     }
 
+    /// Where a row's menu drops from: the left and the foot of its arrow, as
+    /// the pane was last drawn.
+    #[must_use]
+    pub fn menu_place(&self, index: usize) -> Option<(f32, f32)> {
+        self.placed
+            .iter()
+            .find(|(hit, ..)| *hit == Hit::Menu(index))
+            .map(|(_, left, top, _, height)| (*left, top + height))
+    }
+
     /// Follows the pointer. Whether the window has to be drawn again.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
-        let x = super::mirror::flip(x);
         let over = self.hit(x, y);
         if over == self.hovered {
             return false;
@@ -191,7 +201,7 @@ impl RecoveryPane {
             if self.opened == Some(index) {
                 canvas.fill_rect(4, y as i32, (width - 8.0) as i32, ROW as i32, theme.hover);
                 canvas.fill_rect(4, y as i32, 3, ROW as i32, theme.accent);
-            } else if matches!(self.hovered, Some(Hit::Open(at) | Hit::Delete(at)) if at == index) {
+            } else if matches!(self.hovered, Some(Hit::Open(at) | Hit::Menu(at)) if at == index) {
                 canvas.fill_rect(4, y as i32, (width - 8.0) as i32, ROW as i32, theme.hover);
             }
 
@@ -210,30 +220,33 @@ impl RecoveryPane {
             let when = engine.simple_line(&said, PADDING + 4.0, y + 34.0, 8.5, theme.dim_text);
             renderer.draw_within(canvas, &when, 0.0, y + 20.0, width - 40.0, ROW - 20.0);
 
-            // The cross that throws that copy away, shown when the row is
-            // under the pointer, as Word shows its menu arrow.
-            let delete = Hit::Delete(index);
-            let delete_left = width - 28.0;
-            if matches!(self.hovered, Some(Hit::Open(at) | Hit::Delete(at)) if at == index) {
-                if self.hovered == Some(delete) {
+            // The arrow that drops the row's menu — Open, Save As, Delete,
+            // Show Repairs — shown while the row is under the pointer or is
+            // the one being looked at, as Word shows it.
+            let menu = Hit::Menu(index);
+            let menu_left = width - 28.0;
+            let lit = matches!(self.hovered, Some(Hit::Open(at) | Hit::Menu(at)) if at == index);
+            if lit || self.opened == Some(index) {
+                if self.hovered == Some(menu) {
                     canvas.fill_rect(
-                        delete_left as i32 - 4,
+                        menu_left as i32 - 4,
                         (y + ROW / 2.0 - 11.0) as i32,
                         24,
                         22,
-                        theme.danger,
+                        theme.field,
+                    );
+                    outline(
+                        canvas,
+                        menu_left - 4.0,
+                        y + ROW / 2.0 - 11.0,
+                        24.0,
+                        22.0,
+                        theme.field_edge,
                     );
                 }
-                super::icons::draw_sized(
-                    canvas,
-                    super::icons::Icon::Close,
-                    delete_left,
-                    y + ROW / 2.0 - 5.0,
-                    10.0,
-                    theme.text,
-                );
+                super::dialog::chevron(canvas, menu_left + 5.0, y + ROW / 2.0, theme.text);
             }
-            self.placed.push((delete, delete_left - 4.0, y + ROW / 2.0 - 11.0, 24.0, 22.0));
+            self.placed.push((menu, menu_left - 4.0, y + ROW / 2.0 - 11.0, 24.0, 22.0));
             self.placed.push((open, 4.0, y, width - 40.0, ROW));
             y += ROW;
         }

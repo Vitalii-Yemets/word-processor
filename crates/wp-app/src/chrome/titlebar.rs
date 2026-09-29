@@ -105,7 +105,6 @@ impl TitleBar {
 
     /// Lights up whatever the pointer is over. Returns whether that changed.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
-        let x = super::mirror::flip(x);
         let window = self.window_button_at(x, y);
         let quick = self.quick_at(x, y);
         let changed = window != self.hovered_window || quick != self.hovered_quick;

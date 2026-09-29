@@ -79,7 +79,6 @@ impl TableGrid {
     /// Lights up as much of the grid as the pointer has reached. Returns
     /// whether that changed anything.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
-        let x = super::mirror::flip(x);
         let found = self.hit(x, y);
         // Sweeping off the grid leaves the last size lit rather than going
         // blank, because a pointer that strays a pixel should not undo a

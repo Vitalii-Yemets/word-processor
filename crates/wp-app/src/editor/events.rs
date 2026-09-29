@@ -1712,6 +1712,8 @@ impl Editor {
             Choice::Markup => return self.open_markup_menu(),
             Choice::Translate => return self.open_translate_menu(),
             Choice::BorderStyle => return self.open_border_styles(),
+            // The recovery pane's rows drop their own menus, from the row.
+            Choice::Recovered => return Response::Ignored,
             Choice::Font => Command::ChooseFont,
             Choice::Size => Command::ChooseSize,
             Choice::Style => Command::ChooseStyle,
@@ -1928,7 +1930,8 @@ impl Editor {
             | Choice::RestrictMode
             | Choice::MappedControl
             | Choice::GalleryBlock
-            | Choice::Label => (Vec::new(), None),
+            | Choice::Label
+            | Choice::Recovered => (Vec::new(), None),
             Choice::Zoom => {
                 let index = chrome::ZOOMS.iter().position(|value| (value - self.zoom).abs() < 0.5);
                 (chrome::ZOOMS.iter().map(|value| format!("{}%", *value as i32)).collect(), index)
@@ -2029,6 +2032,7 @@ impl Editor {
             }
             Choice::EraserKind => self.choose_eraser(index),
             Choice::Screenshot => self.choose_screenshot(index),
+            Choice::Recovered => self.choose_recovered(index),
             Choice::OutlineLevel => self.choose_outline_level(index),
             Choice::MatchField => self.choose_match_field(index),
             Choice::MatchColumn => self.choose_match_column(index),

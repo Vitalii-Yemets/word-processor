@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use wp_shell::Response;
 
 use crate::chrome::backstage::{Backstage, Contents, Hit, Place, Row};
+use crate::messages::t;
 
 use super::files::UNTITLED;
 use super::properties::Field;
@@ -74,7 +75,7 @@ impl Editor {
     }
 
     /// Word's Info: what this document is and what it says about itself.
-    fn info_page(&self) -> Contents {
+    pub(super) fn info_page(&self) -> Contents {
         let name = self.document_name();
         let properties = self.document.properties();
 
@@ -122,6 +123,21 @@ impl Editor {
         // can be asked to open read-only.
         rows.push(Row::new("Always Open Read-Only", self.read_only_note()));
         rows.push(super::sealing::signature_row(&self.document));
+        // Word's Manage Document, whose Recover Unsaved Documents is how the
+        // copies of work not saved are got back at any time, and not only on
+        // the next start.
+        let unsaved = super::autorecover::unsaved_copies(&self.recovery_name).len();
+        rows.push(Row::new(
+            "Manage Document",
+            match unsaved {
+                0 => t("No unsaved documents to recover").to_owned(),
+                1 => t("Recover unsaved documents: 1 copy kept").to_owned(),
+                many => crate::messages::with(
+                    "Recover unsaved documents: {0} copies kept",
+                    &[&many.to_string()],
+                ),
+            },
+        ));
 
         // The properties are lines to press, because in Word's Info they are
         // boxes to type in: the panel down the right of that page is the one
@@ -140,10 +156,10 @@ impl Editor {
             heading: name,
             facts,
             rows_heading: String::from("Properties"),
-            // The password, the read-only and the signatures are above the
-            // heading, because none of them is one of the document's
-            // properties.
-            rows_heading_at: 3,
+            // The password, the read-only, the signatures and the unsaved
+            // copies are above the heading, because none of them is one of
+            // the document's properties.
+            rows_heading_at: 4,
             rows,
             ..Contents::default()
         }
@@ -381,15 +397,14 @@ impl Editor {
             // of typing, which is where a title or an author is set.
             Place::Info => {
                 self.close_backstage();
-                // The first line is the password; the rest are the
+                // The first four lines are the password, the read-only, the
+                // signatures and the unsaved copies; the rest are the
                 // properties, in the order the page listed them.
-                // The first three lines are the password, the read-only and
-                // the signatures; the rest are the properties, in the order
-                // the page listed them.
-                match index.checked_sub(3) {
+                match index.checked_sub(4) {
                     None if index == 0 => self.open_encryption(),
                     None if index == 1 => self.open_read_only_settings(),
-                    None => self.report_signatures(),
+                    None if index == 2 => self.report_signatures(),
+                    None => self.recover_unsaved(),
                     Some(property) => self.choose_property(property),
                 }
             }
@@ -598,12 +613,13 @@ mod tests {
         let contents = editor.info_page();
         // The password and the signatures first, then every property, which
         // is the order Word puts them in on that page.
-        assert_eq!(contents.rows.len(), Field::ALL.len() + 3);
+        assert_eq!(contents.rows.len(), Field::ALL.len() + 4);
         assert_eq!(contents.rows[0].title, "Encrypt with Password");
         assert_eq!(contents.rows[1].title, "Always Open Read-Only");
         assert_eq!(contents.rows[2].title, "Digital Signatures");
-        assert_eq!(contents.rows[3].title, "Title");
-        assert_eq!(contents.rows_heading_at, 3, "the properties heading is under all three");
+        assert_eq!(contents.rows[3].title, "Manage Document");
+        assert_eq!(contents.rows[4].title, "Title");
+        assert_eq!(contents.rows_heading_at, 4, "the properties heading is under all four");
     }
 
     #[test]

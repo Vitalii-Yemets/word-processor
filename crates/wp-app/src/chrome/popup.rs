@@ -211,6 +211,9 @@ pub enum Choice {
     Orientation,
     /// How many columns the text runs down.
     Column,
+    /// What can be done with one of the copies the Document Recovery pane
+    /// lists: Word's menu on each of its rows.
+    Recovered,
 }
 
 /// The sizes offered, in points.
@@ -408,7 +411,6 @@ impl Popup {
     /// height once a menu has lines between its groups.
     #[must_use]
     pub fn hit(&self, x: i32, y: i32) -> Option<usize> {
-        let x = super::mirror::flip(x);
         if !self.covers(x, y) {
             return None;
         }
@@ -427,7 +429,6 @@ impl Popup {
 
     /// Lights up whatever the pointer is over. Returns whether that changed.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
-        let x = super::mirror::flip(x);
         let found = self.hit(x, y);
         let changed = found != self.hovered;
         self.hovered = found;
@@ -682,6 +683,23 @@ fn draw_arrow(canvas: &mut Canvas, left: f32, top: f32, row_height: f32, color: 
 mod tests {
 
     use super::*;
+
+    /// In a window read right to left the list is drawn turned about, and
+    /// the row under the pointer is the one drawn there: the point is turned
+    /// once, and not turned back by a second turn on the way in.
+    #[test]
+    fn a_turned_window_finds_and_lights_the_row_under_the_pointer() {
+        super::super::mirror::set(Some(1000.0));
+        let items = vec!["Cut".to_owned(), "Copy".to_owned()];
+        let mut popup = Popup::new(Choice::Context, items, None, 100.0, 50.0, 200.0);
+        // From 100 to 300 as the list sees itself: 700 to 900 on the window.
+        let (x, y) = (850, 57);
+        assert_eq!(popup.hit(x, y), Some(0), "the row where it is drawn");
+        assert!(popup.hover(x, y));
+        assert_eq!(popup.highlighted(), Some(0), "and lit");
+        assert_eq!(popup.hit(150, y), None, "and nothing where it is not");
+        super::super::mirror::set(None);
+    }
 
     /// A menu of three things with a line across the middle of it.
     fn menu() -> Popup {

@@ -61,6 +61,8 @@ pub(super) enum Asking {
     /// How much there is of the document. Word's Word Count: a dialog that
     /// tells rather than asks.
     WordCount,
+    /// What had to be repaired in a recovered copy: telling, not asking.
+    Repairs,
     /// What one of the document's own macros says. Another that tells: this
     /// program reads Visual Basic and does not run it.
     Macro,
@@ -279,7 +281,7 @@ impl Editor {
             Some(Asking::PageBorders) => self.apply_page_borders(&dialog),
             // Word's Symbol dialog is answered by its Insert button rather
             // than by OK, so there is nothing left to do when it shuts.
-            Some(Asking::Symbol) | Some(Asking::Inspector) => {
+            Some(Asking::Symbol) | Some(Asking::Inspector) | Some(Asking::Repairs) => {
                 // Dialogs that tell, or that have already done their work.
                 let _ = &dialog;
                 Response::Redraw

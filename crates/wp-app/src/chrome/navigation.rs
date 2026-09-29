@@ -249,7 +249,6 @@ impl Navigation {
 
     /// Lights up whatever the pointer is over. Returns whether that changed.
     pub fn hover(&mut self, x: i32, y: i32, top: f32, bottom: f32) -> bool {
-        let x = super::mirror::flip(x);
         let found = self.hit(x, y, top, bottom);
         let row = match found {
             Some(Hit::Row(index)) => Some(index),

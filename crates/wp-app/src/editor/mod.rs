@@ -763,6 +763,8 @@ pub struct Editor {
     recovery_written: bool,
     /// The Document Recovery pane, while there is anything to recover.
     recovery: Option<crate::chrome::recoverypane::RecoveryPane>,
+    /// The pane's row whose menu is dropped open.
+    recovery_menu: Option<usize>,
     /// What the strip along the bottom says about the last command.
     status: String,
     /// What the program remembers between one run and the next.
@@ -1018,6 +1020,7 @@ impl Editor {
             recovery_name: Self::new_recovery_name(),
             recovery_written: false,
             recovery: None,
+            recovery_menu: None,
             status: String::new(),
             title: String::new(),
             needs_redraw: true,

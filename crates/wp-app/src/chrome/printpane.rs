@@ -352,7 +352,6 @@ impl PrintPane {
 
     /// Follows the pointer. True when something has to be drawn again.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
-        let x = super::mirror::flip(x);
         let over = self.hit(x, y);
         let changed = over != self.hovered;
         self.hovered = over;

@@ -10,8 +10,12 @@ use wp_docx::Document;
 use wp_shell::Response;
 
 use super::autorecover::Recovered;
+use super::dialogs::Asking;
 use super::Editor;
+use crate::chrome::dialog::{Dialog, Field};
 use crate::chrome::recoverypane::{Hit, RecoveryPane};
+use crate::chrome::{Choice, Popup};
+use crate::messages::t;
 
 impl Editor {
     /// Shows the pane, if a run that did not end left anything behind.
@@ -31,6 +35,25 @@ impl Editor {
         self.needs_redraw = true;
     }
 
+    /// Word's Recover Unsaved Documents: the copies of work that was not
+    /// saved, in the same pane a start after a crash shows them in — at any
+    /// time, and not only then.
+    pub(super) fn recover_unsaved(&mut self) -> Response {
+        let copies = super::autorecover::unsaved_copies(&self.recovery_name);
+        if copies.is_empty() {
+            return self.report("There are no unsaved documents to recover");
+        }
+        let count = copies.len();
+        self.recovery = Some(RecoveryPane::new(copies));
+        self.status = match count {
+            1 => "1 unsaved document can be recovered".to_owned(),
+            many => format!("{many} unsaved documents can be recovered"),
+        };
+        self.relayout();
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
     /// Whether the pane is showing, which is what takes the left of the
     /// window from the navigation pane while it is.
     #[must_use]
@@ -43,10 +66,98 @@ impl Editor {
         let Some(pane) = &self.recovery else { return Response::Ignored };
         match pane.hit(x, y) {
             Some(Hit::Open(index)) => self.open_recovered(index),
-            Some(Hit::Delete(index)) => self.discard_recovered(index),
+            Some(Hit::Menu(index)) => self.open_recovered_menu(index),
             Some(Hit::Close) => self.close_recovery(),
             None => Response::Ignored,
         }
+    }
+
+    /// Drops a row's menu: Word's four things to do with a recovered copy.
+    fn open_recovered_menu(&mut self, index: usize) -> Response {
+        if self.close_popup_if(Choice::Recovered) {
+            return Response::Redraw;
+        }
+        let Some(pane) = &self.recovery else { return Response::Ignored };
+        let Some((left, top)) = pane.menu_place(index) else { return Response::Ignored };
+        let items =
+            [t("Open"), t("Save As…"), t("Delete"), t("Show Repairs")].map(str::to_owned).to_vec();
+        self.recovery_menu = Some(index);
+        self.popup = Some(Popup::new(Choice::Recovered, items, None, left, top, 160.0));
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// Does what was chosen from a row's menu.
+    pub(super) fn choose_recovered(&mut self, choice: usize) -> Response {
+        self.popup = None;
+        let Some(index) = self.recovery_menu.take() else { return Response::Ignored };
+        match choice {
+            0 => self.open_recovered(index),
+            1 => self.save_recovered_as(index),
+            2 => self.discard_recovered(index),
+            3 => self.show_repairs(index),
+            _ => Response::Ignored,
+        }
+    }
+
+    /// Opens a copy and asks where to keep it: Word's Save As on the pane.
+    /// Once it is kept, the copy has done its work and goes, as a copy does
+    /// whenever the work reaches the disk.
+    fn save_recovered_as(&mut self, index: usize) -> Response {
+        let Some(entry) = self.recovery.as_ref().and_then(|pane| pane.entries.get(index).cloned())
+        else {
+            return Response::Ignored;
+        };
+        self.open_recovered(index);
+        let opened = self.recovery.as_ref().is_some_and(|pane| pane.opened == Some(index));
+        if !opened {
+            return Response::Redraw;
+        }
+        if self.save_as_now() {
+            entry.remove();
+            if let Some(pane) = &mut self.recovery {
+                pane.remove(index);
+            }
+            if self.recovery.as_ref().is_some_and(|pane| pane.entries.is_empty()) {
+                self.recovery = None;
+            }
+            // Saved, and so not recovered work any more.
+            self.info_bar = None;
+            self.relayout();
+        }
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// Says what had to be repaired in a copy for it to open: Word's Show
+    /// Repairs. A copy is written whole by this program and read back by
+    /// it, so what there is to say is whether it opens as it was written,
+    /// or why it does not — a copy cut short by the program stopping in the
+    /// middle of writing it is one that does not, and nothing in it can be
+    /// put back.
+    fn show_repairs(&mut self, index: usize) -> Response {
+        let Some(entry) = self.recovery.as_ref().and_then(|pane| pane.entries.get(index).cloned())
+        else {
+            return Response::Ignored;
+        };
+        let said = match std::fs::read(&entry.copy) {
+            Err(error) => crate::messages::with(
+                "The copy of {0} could not be read: {1}. There is nothing in it to repair.",
+                &[&entry.name, &error.to_string()],
+            ),
+            Ok(bytes) => match Document::open(&bytes) {
+                Ok(_) => crate::messages::with(
+                    "The copy of {0} opens as it was written. Nothing had to be repaired.",
+                    &[&entry.name],
+                ),
+                Err(error) => crate::messages::with(
+                    "The copy of {0} is damaged and cannot be repaired: {1}.",
+                    &[&entry.name, &error.to_string()],
+                ),
+            },
+        };
+        let dialog = Dialog::message(t("Show Repairs"), vec![Field::note(&said)]);
+        self.ask(Asking::Repairs, dialog)
     }
 
     /// Opens one of the recovered copies, as the document being edited.
@@ -213,6 +324,59 @@ mod tests {
         editor.discard_recovered(0);
         assert!(!entry.copy.exists(), "the copy is off the disk");
         assert!(!editor.recovering(), "and the pane, having nothing left, is gone");
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// Each row drops Word's menu, and each of its four does what it says:
+    /// Show Repairs tells whether the copy opens as it was written or is
+    /// past repair, and Delete throws it away.
+    #[test]
+    fn a_row_s_menu_offers_what_word_s_does_and_each_does_it() {
+        let folder = folder("menu");
+        let good = copy_of(&folder, "sound", "Whole");
+        let bad = copy_of(&folder, "broken", "Cut short");
+        std::fs::write(&bad.copy, b"PK\x03\x04 and then nothing").expect("damaging it");
+        let mut editor = editor();
+        editor.show_recovered(vec![good.clone(), bad.clone()]);
+        editor.draw(1400, 900);
+
+        editor.open_recovered_menu(0);
+        if let Ok(directory) = std::env::var("WP_PROOFS") {
+            let picture = wp_raster::encode_png(editor.draw(1400, 900));
+            let _ = std::fs::create_dir_all(&directory);
+            let _ =
+                std::fs::write(std::path::Path::new(&directory).join("recovery-menu.png"), picture);
+        }
+        let popup = editor.popup.as_ref().expect("the menu");
+        assert_eq!(popup.choice, Choice::Recovered);
+        let items: Vec<&str> = (0..4).filter_map(|at| popup.item(at)).collect();
+        assert_eq!(items, ["Open", "Save As…", "Delete", "Show Repairs"]);
+
+        let said = |editor: &Editor| match editor.dialog.as_ref().map(|d| &d.fields[0]) {
+            Some(Field::Said { value, .. }) => value.clone(),
+            other => panic!("no repairs said: {other:?}"),
+        };
+        editor.choose_recovered(3);
+        assert!(said(&editor).contains("opens as it was written"), "{}", said(&editor));
+        editor.dialog = None;
+
+        editor.open_recovered_menu(1);
+        editor.choose_recovered(3);
+        assert!(said(&editor).contains("damaged and cannot be repaired"), "{}", said(&editor));
+        editor.dialog = None;
+
+        editor.open_recovered_menu(1);
+        editor.choose_recovered(2);
+        assert!(!bad.copy.exists(), "Delete takes the copy off the disk");
+        assert_eq!(editor.recovery.as_ref().map(|pane| pane.entries.len()), Some(1));
+
+        // Save As opens it and asks where; asked nowhere — there is no
+        // dialog here to answer — it is not saved, and the copy stays.
+        editor.draw(1400, 900);
+        editor.open_recovered_menu(0);
+        editor.choose_recovered(1);
+        assert!(editor.document.paragraph_text(0).is_some_and(|text| text.contains("Whole")));
+        assert!(good.copy.exists(), "not saved, so still the only copy of the work");
         let _ = std::fs::remove_dir_all(&folder);
     }
 

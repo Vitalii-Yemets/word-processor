@@ -541,6 +541,7 @@
 = Mail Merge Recipients
 = Mailings
 = Make Default
+= Manage Document
 = Manage Sources
 = Manage Styles
 = Manual Hyphenation
@@ -594,6 +595,7 @@
 = No names were typed
 = No numbers were typed, so no chart was drawn
 = No two of them say the same thing
+= No unsaved documents to recover
 = Nobody has been asked to sign.
 = Nobody was typed, so no list was made
 = None
@@ -730,6 +732,8 @@
 = Recipients
 = Recommended Minimum
 = Recover Text from Any File (*.*)
+= Recover unsaved documents: 1 copy kept
+= Recover unsaved documents: {0} copies kept
 = Rectangle
 = Red
 = Redo
@@ -783,6 +787,7 @@
 = Save
 = Save Address List
 = Save As
+= Save As…
 = Save AutoRecover information
 = Save Current Watermark to Gallery
 = Save Selection to AutoText Gallery
@@ -832,6 +837,7 @@
 = Show Marks
 = Show Markup
 = Show Preview
+= Show Repairs
 = Show changes
 = Show changes in
 = Show measurements in
@@ -951,6 +957,9 @@
 = The caret is not in a repeating section
 = The chart could not be drawn: {0}
 = The contents of this control cannot be edited
+= The copy of {0} could not be read: {1}. There is nothing in it to repair.
+= The copy of {0} is damaged and cannot be repaired: {1}.
+= The copy of {0} opens as it was written. Nothing had to be repaired.
 = The diagram could not be drawn
 = The diagram could not be drawn: {0}
 = The document is not encrypted.

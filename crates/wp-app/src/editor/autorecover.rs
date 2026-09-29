@@ -89,9 +89,23 @@ impl Recovered {
 /// own — so everything found belongs to a run that did not end.
 #[must_use]
 pub fn found() -> Vec<Recovered> {
+    let mine = format!("{}-", std::process::id());
+    copies(|stem| !stem.starts_with(&mine))
+}
+
+/// Every copy kept of work that was not saved, at any time: what a run that
+/// did not end left, and what "don't save" left in this run — Word's
+/// Recover Unsaved Documents. All but the copy of the document being
+/// edited now, which is not unsaved work left behind but work going on.
+#[must_use]
+pub fn unsaved_copies(current: &str) -> Vec<Recovered> {
+    copies(|stem| stem != current)
+}
+
+/// The copies in the folder whose names pass, newest first.
+fn copies(wanted: impl Fn(&str) -> bool) -> Vec<Recovered> {
     let Some(folder) = folder() else { return Vec::new() };
     let Ok(entries) = std::fs::read_dir(&folder) else { return Vec::new() };
-    let mine = format!("{}-", std::process::id());
     let mut out = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
@@ -100,8 +114,7 @@ pub fn found() -> Vec<Recovered> {
         }
         let stem =
             path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
-        // A copy this very run wrote is not a copy to recover from.
-        if stem.starts_with(&mine) {
+        if !wanted(&stem) {
             continue;
         }
         let Ok(text) = std::fs::read_to_string(&path) else { continue };
@@ -190,6 +203,18 @@ impl Editor {
         self.recovery_written = true;
     }
 
+    /// Leaves a copy of the work behind on "don't save", for it to be got
+    /// back later: at the next start, or from Manage Document.
+    ///
+    /// The copy left is this document's, and whatever is edited next is
+    /// copied under a name of its own — under the same one it would be
+    /// written over the first, which is what happened until it had one.
+    pub(super) fn keep_unsaved_copy(&mut self) {
+        self.write_recovery_copy();
+        self.recovery_written = false;
+        self.recovery_name = Self::new_recovery_name();
+    }
+
     /// Takes this run's copy away, which is what a document being saved and
     /// a program being closed properly both mean.
     pub(super) fn drop_recovery_copy(&mut self) {
@@ -212,7 +237,11 @@ impl Editor {
         let started = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
-        format!("{}-{started}", std::process::id())
+        // And a count, because one run can leave more than one copy behind
+        // — "don't save", then another document — within the same second.
+        static MADE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let made = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        format!("{}-{started}-{made}", std::process::id())
     }
 }
 
@@ -280,6 +309,49 @@ mod tests {
         std::fs::write(theirs.with_extension(SIDECAR), sidecar).expect("writing the sidecar");
         let _ = std::fs::remove_file(mine.with_extension(SIDECAR));
         theirs
+    }
+
+    /// "Don't save" leaves a copy, and the next document's copy does not
+    /// write over it; and it can be got back at once, from Manage Document,
+    /// without waiting for the next start.
+    #[test]
+    fn a_copy_left_by_dont_save_is_kept_apart_and_offered_at_any_time() {
+        in_a_folder_of_its_own("unsaved", || {
+            use wp_docx::model::{Block, Body, Paragraph};
+
+            let mut editor = editor_with_unsaved_work();
+            editor.keep_unsaved_copy();
+            let kept = folder().expect("the folder").join(format!(
+                "{}.docx",
+                unsaved_copies(&editor.recovery_name)
+                    .first()
+                    .and_then(|copy| copy
+                        .copy
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned()))
+                    .expect("the copy left")
+            ));
+            let first = std::fs::read(&kept).expect("the kept copy");
+
+            // The next document, with work of its own, copied in its turn.
+            let mut body = Body::default();
+            body.blocks.push(Block::Paragraph(Paragraph::text("The next document")));
+            let document = wp_docx::Document::create(&body).expect("a document");
+            editor.set_document(document, None);
+            editor.document.mark_modified();
+            editor.write_recovery_copy();
+            assert_eq!(std::fs::read(&kept).expect("still there"), first, "not written over");
+
+            // Offered now: the copy left, and not the one being written.
+            let offered = unsaved_copies(&editor.recovery_name);
+            assert_eq!(offered.len(), 1, "{offered:?}");
+            assert!(found().is_empty(), "and nothing this run left is a crash's to recover");
+            let info = editor.info_page();
+            assert_eq!(info.rows[3].title, "Manage Document");
+            assert_eq!(info.rows[3].note, "Recover unsaved documents: 1 copy kept");
+            editor.recover_unsaved();
+            assert_eq!(editor.recovery.as_ref().map(|pane| pane.entries.len()), Some(1));
+        });
     }
 
     #[test]

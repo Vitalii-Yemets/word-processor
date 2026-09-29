@@ -556,8 +556,7 @@ impl Editor {
             // The copy is left where the next start will find it.
             wp_shell::dialog::Answer::No => {
                 if self.keep_autosaved {
-                    self.write_recovery_copy();
-                    self.recovery_written = false;
+                    self.keep_unsaved_copy();
                 } else {
                     self.drop_recovery_copy();
                 }

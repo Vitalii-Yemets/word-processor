@@ -3539,3 +3539,30 @@ language = Deutsch
 = The whole screen
 > Der ganze Bildschirm
 
+= Manage Document
+> Dokument verwalten
+
+= No unsaved documents to recover
+> Keine nicht gespeicherten Dokumente wiederherzustellen
+
+= Recover unsaved documents: 1 copy kept
+> Nicht gespeicherte Dokumente wiederherstellen: 1 Kopie aufbewahrt
+
+= Recover unsaved documents: {0} copies kept
+> Nicht gespeicherte Dokumente wiederherstellen: {0} Kopien aufbewahrt
+
+= Save As…
+> Speichern unter…
+
+= Show Repairs
+> Reparaturen anzeigen
+
+= The copy of {0} could not be read: {1}. There is nothing in it to repair.
+> Die Kopie von {0} konnte nicht gelesen werden: {1}. Darin gibt es nichts zu reparieren.
+
+= The copy of {0} is damaged and cannot be repaired: {1}.
+> Die Kopie von {0} ist beschädigt und kann nicht repariert werden: {1}.
+
+= The copy of {0} opens as it was written. Nothing had to be repaired.
+> Die Kopie von {0} öffnet sich so, wie sie geschrieben wurde. Es musste nichts repariert werden.
+

@@ -157,7 +157,6 @@ impl Palette {
 
     /// Lights up whatever the pointer is over. Returns whether that changed.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
-        let x = super::mirror::flip(x);
         let found = self.hit(x, y);
         let changed = found != self.hovered;
         self.hovered = found;

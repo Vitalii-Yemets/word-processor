@@ -6561,11 +6561,58 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   directly, rather than through its style, are not carried into the copy.
   Linux has no program that asks for Word's format, and none is offered
   there.
-- [ ] **H15. The rest of Word's recent documents.** Its jump list has tasks
+- [x] **H15. The rest of Word's recent documents.** Its jump list has tasks
   and a pinned list of its own, which needs the shell's custom destination
   lists; its row menu offers Save As and Show Repairs; and Manage Document
   lists the copies of never-saved documents at any time, where this offers
   them at the next start and not after that. Named in **H7**.
+  *Done:* the row menu and Manage Document; and the jump list found, on
+  looking, to need nothing more.
+  **The jump list.** Looked at again, Word's has no tasks of its own —
+  what people ask for is a way to pin a new blank document there, which
+  it does not have — and its Pinned and Recent are the shell's own list of
+  a program's documents, the one a document is put on through
+  `SHAddToRecentDocs`, which **H7** does, pinned to by the person with the
+  pin the shell draws, which it draws for a program registered to open the
+  kind, which **G16** does. A custom destination list is for a program
+  whose list is not that one, and Word's is; so none is written.
+  **The row menu** (`crates/wp-app/src/chrome/recoverypane.rs`,
+  `crates/wp-app/src/editor/recovery.rs`): each row of the Document
+  Recovery pane drops Word's four — Open; Save As, which opens the copy
+  and asks where to keep it, after which the copy goes, as a copy does
+  when the work reaches the disk; Delete; and Show Repairs, which says
+  whether the copy opens as it was written or is damaged past repair and
+  why — in place of the cross that only threw one away.
+  **Manage Document** (`crates/wp-app/src/editor/backstage.rs`): a line
+  on the Info page under the signatures, saying how many copies of unsaved
+  work are kept, which opens them in the same pane at any time — what a
+  run that did not end left and what "don't save" left in this run, all
+  but the copy of the document being edited now. On the way, a fault:
+  the copy "don't save" left kept this run's name, so the next document
+  edited in the same run was copied over it; now it is left under its own
+  and the run goes on under a new one, counted, since two can come in one
+  second.
+  Also on the way, in a window read right to left: eleven parts of the
+  window — the menus, the mini toolbar, the find strip, the table grid, the
+  colour palette, the navigation, print, recovery and styles panes, the
+  File page and the title bar — turned the pointer about once to light
+  what was under it and then again in the function that looks, so they lit
+  what was mirror-opposite; and a menu and the mini toolbar did the same
+  twice over in the looking itself, so a press on a menu's row could miss
+  it. Each is turned once now.
+  *Proven by:* the menu's four, each doing what it says — a sound copy
+  and one cut short read by Show Repairs, one thrown away by Delete, and
+  one opened by Save As and kept where no dialog was there to say where;
+  the pane with the menu dropped, looked at; a copy left by "don't save"
+  still whole after the next document's copy, offered by Manage Document
+  and not taken for a crash's; and a menu in a turned window finding and
+  lighting the row under the pointer.
+  *Not done, and named here:* the jump list is as the shell makes it and
+  has not been seen on Windows, which the build image is not. Save As on
+  the pane opens the copy and then asks, so a Save As answered with
+  Cancel leaves the copy open as the document being edited. Show
+  Repairs can only say what this program's own reading of the copy says;
+  Word's repairs of a damaged file are Word's.
 
 ## I — The language of the interface
 

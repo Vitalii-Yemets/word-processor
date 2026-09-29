@@ -143,10 +143,12 @@ impl MiniBar {
     /// Which command a point is on, if any.
     #[must_use]
     pub fn hit(&self, x: i32, y: i32) -> Option<Command> {
-        let x = super::mirror::flip(x);
+        // Whether it is on the bar at all is asked where the window says it
+        // is; where along the bar, where the bar was drawn.
         if !self.covers(x, y) {
             return None;
         }
+        let x = super::mirror::flip(x);
         let mut left = self.left + PADDING;
         for part in PARTS {
             let width = part_width(part);
@@ -186,7 +188,6 @@ impl MiniBar {
 
     /// Follows the pointer. Returns whether anything about the bar changed.
     pub fn hover(&mut self, x: i32, y: i32) -> bool {
-        let x = super::mirror::flip(x);
         let found = self.hit(x, y);
         let inside = self.covers(x, y);
         let changed = found != self.hovered || (inside && !self.awake);
