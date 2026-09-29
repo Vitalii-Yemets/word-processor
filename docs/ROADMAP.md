@@ -6776,6 +6776,50 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   is right for a style somebody named themselves and wrong for the built-in
   ones. Done when the built-in names are recognised and translated and a
   style of one's own is left alone. Named in **I1**.
+  *Done:* both (`crates/wp-app/src/names.rs`).
+  **The styles.** Word writes its own styles' names into every file in
+  English, whatever it runs in, and shows them in its own language. Sixty-six
+  of them are known here by the name the file gives them, however it is
+  capitalised, with the name Word shows — "annotation text" is shown as
+  Comment Text — and that name is a message, translated like any other:
+  Standard, Überschrift 1, Titel, Zitat, Kein Leerraum, Listenabsatz and the
+  rest to a German. A style of one's own is shown as it was named, where
+  before every name was made title case. Wherever a style is named: the
+  gallery, the style box, the Styles pane, the restrict-formatting list,
+  Manage Styles and the Style Inspector. The style box, on the way, now
+  says the style's name at all: it said the identifier the paragraph
+  refers to it by, Heading1 for Heading 1.
+  **The languages.** A document's language is named in the status strip
+  and the Language list in the interface's language, a half at a time —
+  the language, and where the name says one the country or the way of
+  writing it — so "English" is translated once and not once for every
+  country. The Language list is in the order its names take in that
+  language, accents aside, as a dictionary orders words. Its last line, on
+  the way, said "{2713} Do not check spelling or grammar" — the number of
+  the tick written out rather than the tick — and now shows the tick, in
+  the language.
+  The tests' language is now each test's own: a test reading the
+  interface in German had been the language of every other test running
+  beside it, and one looking for an English menu item did not find it.
+  *Proven by:* the built-in names known however written and a style of
+  one's own left alone; in German, Überschrift 1, Standard, Kommentartext,
+  "Englisch (Vereinigtes Königreich)", "Deutsch (Österreich)", and the
+  Language list in German order; the style box saying Heading 1 and a
+  style of one's own as it was named, in the gallery too; the German
+  window, looked at. And the German names of every language and every
+  country in the list held to Debian's German for the ISO lists
+  (iso-codes, now in the build image as test data): all the countries
+  agree, and the languages but five, where Word's German is kept and the
+  test says so — Belarussisch, Galicisch, Mazedonisch, Nepalesisch and
+  Punjabi where ISO's translators write Weißrussisch, Galizisch,
+  Makedonisch, Nepali and Panjabi.
+  *Not done, and named here:* Word's German for the rarer styles — Word
+  has some hundreds of built-in styles, and the sixty-six here are the ones
+  a document commonly has; the rest are shown as the file names them. A
+  style name typed in German is not taken back to Word's English name,
+  there being nowhere here a style is chosen by typing its name. The
+  German names were checked against another's translation, not against a
+  German Word.
 - [ ] **I5. The letters Alt puts over the ribbon, in the language.** Word's
   key tips are the language's; these are English whatever is loaded, so a
   German pressing Alt sees letters that do not match the words under them.

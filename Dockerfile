@@ -242,6 +242,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN apt-get update && apt-get install -y --no-install-recommends xclip \
  && rm -rf /var/lib/apt/lists/*
 
+# The names of the world's languages and countries in other languages, as
+# Debian's translators give them: what the German catalogue's names of the
+# languages a document's text is marked as are held to, since a list of
+# names written from memory is a list nobody has checked. Test data; the
+# program reads its catalogue, not these. In a layer of its own.
+RUN apt-get update && apt-get install -y --no-install-recommends iso-codes \
+ && rm -rf /var/lib/apt/lists/*
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

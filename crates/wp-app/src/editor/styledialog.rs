@@ -254,12 +254,12 @@ impl Editor {
                     .styles()
                     .chain(id)
                     .iter()
-                    .map(|style| style.name.clone().unwrap_or_else(|| style.id.clone()))
+                    .map(|style| crate::names::shown(style.name.as_deref().unwrap_or(&style.id)))
                     .collect::<Vec<_>>()
                     .join(" ▸ ")
             })
             .filter(|text| !text.is_empty())
-            .unwrap_or_else(|| "Normal".to_owned());
+            .unwrap_or_else(|| crate::names::shown("Normal"));
 
         let said = |label: &str, value: String| Field::Said { label: label.to_owned(), value };
         let dialog = Dialog::message(

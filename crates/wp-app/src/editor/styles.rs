@@ -53,7 +53,7 @@ impl Editor {
         let body = styles.resolve_run(None, &Default::default());
         let mut out = vec![Entry {
             id: None,
-            name: "Normal".to_owned(),
+            name: crate::names::shown("Normal"),
             style: TextStyle {
                 bold: body.bold,
                 italic: body.italic,
@@ -80,7 +80,7 @@ impl Editor {
             // which they are. Word draws a padlock beside the name; this says
             // the word, because a padlock is a picture only a font that has
             // one can draw and the pane's text is drawn in the document's.
-            let name = style.name.clone().unwrap_or_else(|| style.id.clone());
+            let name = crate::names::shown(style.name.as_deref().unwrap_or(&style.id));
             let name = if limited && style.locked {
                 format!("{name} ({})", crate::messages::t("locked"))
             } else {
@@ -199,6 +199,33 @@ mod tests {
         let mut editor = Editor::new(library(), document, None);
         editor.handle(Event::Resized { width: 1400, height: 900 });
         editor
+    }
+
+    /// The style box names the paragraph's style as it is shown, and not by
+    /// the identifier the paragraph refers to it with: "Heading 1", not
+    /// "Heading1"; and a style of one's own as it was named, not
+    /// title-cased.
+    #[test]
+    fn the_style_box_says_the_style_s_name_and_not_its_identifier() {
+        let mut editor = editor();
+        editor.document.set_caret(wp_docx::TextPosition::new(0, 0));
+        assert_eq!(editor.toolbar_state().style.as_deref(), Some("Heading1"));
+        assert_eq!(editor.toolbar_state().style_name, "Heading 1");
+        editor.document.set_caret(wp_docx::TextPosition::new(1, 0));
+        assert_eq!(editor.toolbar_state().style_name, "Normal");
+
+        let own = wp_docx::StyleDefinition {
+            id: "Chapteropening".to_owned(),
+            name: "chapter opening".to_owned(),
+            based_on: None,
+            next: None,
+            paragraph: Default::default(),
+            run: Default::default(),
+        };
+        assert!(editor.document.set_style(&own));
+        assert!(editor.document.set_paragraph_style(1, Some("Chapteropening")));
+        assert_eq!(editor.toolbar_state().style_name, "chapter opening", "as it was named");
+        assert!(editor.style_gallery().iter().any(|sample| sample.name == "chapter opening"));
     }
 
     #[test]

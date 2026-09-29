@@ -25,6 +25,7 @@ pub mod messagelist;
 pub mod messages;
 #[cfg(test)]
 mod mirrored;
+mod names;
 mod sample;
 mod settings;
 #[cfg(all(test, target_os = "linux"))]

@@ -150,7 +150,7 @@ impl Editor {
         let body_size = self.document.styles().resolve_run(None, &Default::default());
         let mut out = vec![StyleSample {
             id: None,
-            name: "Normal".to_owned(),
+            name: crate::names::shown("Normal"),
             bold: false,
             italic: false,
             size: body_size.size_half_points as f32 / 2.0,
@@ -168,7 +168,7 @@ impl Editor {
             let resolved = self.document.styles().resolve_run(Some(&style.id), &Default::default());
             out.push(StyleSample {
                 id: Some(style.id.clone()),
-                name: title_case(&label),
+                name: crate::names::shown(&label),
                 bold: resolved.bold,
                 italic: resolved.italic,
                 size: resolved.size_half_points as f32 / 2.0,
@@ -193,20 +193,17 @@ impl Editor {
     }
 }
 
-/// Makes a style name look the way Word shows it: "heading 1" becomes
-/// "Heading 1".
-pub(super) fn title_case(name: &str) -> String {
-    let mut out = String::with_capacity(name.len());
-    let mut starting = true;
-    for character in name.chars() {
-        if starting {
-            out.extend(character.to_uppercase());
-        } else {
-            out.push(character);
-        }
-        starting = character == ' ';
+impl Editor {
+    /// What the style box says: the name of the paragraph's style as it is
+    /// shown — Word's own in the interface's language, the person's own as
+    /// they named it — and not the identifier the paragraph refers to it by.
+    pub(super) fn style_name_here(&self) -> String {
+        let name = self.document.style_here().map_or_else(
+            || "Normal".to_owned(),
+            |id| self.document.styles().get(&id).and_then(|style| style.name.clone()).unwrap_or(id),
+        );
+        crate::names::shown(&name)
     }
-    out
 }
 
 impl Editor {

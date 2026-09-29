@@ -687,6 +687,10 @@ pub struct ToolbarState {
     pub alignment: Alignment,
     /// The style of the paragraph the caret is in, if it has one.
     pub style: Option<String>,
+    /// What the style box says of it: its name, as it is shown — a
+    /// built-in style's in the interface's language. See
+    /// [`crate::names`].
+    pub style_name: String,
     /// The styles the gallery offers, which are the document's own.
     pub styles: Vec<StyleSample>,
     /// The font in use where the caret is, and its size in points.

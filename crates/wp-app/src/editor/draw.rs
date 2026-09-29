@@ -23,6 +23,7 @@ impl Editor {
             superscript: self.document.format_is_on(CharacterFormat::Superscript),
             alignment: self.document.alignment_here(),
             style: self.document.style_here(),
+            style_name: self.style_name_here(),
             styles: self.style_gallery(),
             font: self.document.font_here(),
             size: self.document.size_here(),
@@ -790,7 +791,7 @@ impl Editor {
             characters: text.chars().filter(|letter| *letter != '\n').count(),
             // What the text at the caret is actually marked as, which is what
             // a spelling checker would go by.
-            language: wp_docx::languages::name_of(&self.document.language_here()),
+            language: crate::names::language(&self.document.language_here()),
             zoom: self.zoom,
             modified: self.document.is_modified(),
             selected_characters: selected.chars().count(),

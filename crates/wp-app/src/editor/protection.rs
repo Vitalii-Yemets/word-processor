@@ -98,14 +98,14 @@ impl Editor {
             .iter()
             .map(|style| {
                 let name = style.name.clone().unwrap_or_else(|| style.id.clone());
-                (style.id.clone(), super::insert::title_case(&name))
+                (style.id.clone(), crate::names::shown(&name))
             })
             .collect();
         out.extend(
             self.document
                 .latent_styles()
                 .into_iter()
-                .map(|latent| (latent.name.clone(), super::insert::title_case(&latent.name))),
+                .map(|latent| (latent.name.clone(), crate::names::shown(&latent.name))),
         );
         out
     }

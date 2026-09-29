@@ -16,6 +16,7 @@ dependencies = [
  "wp-html",
  "wp-image",
  "wp-layout",
+ "wp-normal",
  "wp-odt",
  "wp-ole",
  "wp-opc",

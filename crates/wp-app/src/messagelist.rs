@@ -85,6 +85,17 @@ fn from_the_tables() -> BTreeSet<String> {
             out.insert(label.to_owned());
         }
     }
+    // The names Word shows its own styles by, and the two halves of the
+    // names of the languages text is marked as: the document's own words,
+    // shown in the interface's language. See [`crate::names`].
+    for (_, shown) in crate::names::BUILT_IN {
+        out.insert((*shown).to_owned());
+    }
+    for language in wp_docx::languages::LANGUAGES {
+        let (name, which) = crate::names::halves(language.name);
+        out.insert(name.to_owned());
+        out.extend(which.map(str::to_owned));
+    }
     // The buttons that carry a picture and no word are named nowhere but in
     // their tips, and the arrows in the groups' corners by their group; the
     // list of names above leaves both out, and their tips are what a person

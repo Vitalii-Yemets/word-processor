@@ -3566,3 +3566,468 @@ language = Deutsch
 = The copy of {0} opens as it was written. Nothing had to be repaired.
 > Die Kopie von {0} öffnet sich so, wie sie geschrieben wurde. Es musste nichts repariert werden.
 
+= Afrikaans
+> Afrikaans
+
+= Albanian
+> Albanisch
+
+= Arabic
+> Arabisch
+
+= Argentina
+> Argentinien
+
+= Armenian
+> Armenisch
+
+= Australia
+> Australien
+
+= Austria
+> Österreich
+
+= Azerbaijani
+> Aserbaidschanisch
+
+= Balloon Text
+> Sprechblasentext
+
+= Basque
+> Baskisch
+
+= Belarusian
+> Belarussisch
+
+= Belgium
+> Belgien
+
+= Bengali
+> Bengalisch
+
+= Block Text
+> Blocktext
+
+= Body Text
+> Textkörper
+
+= Bokmal
+> Bokmål
+
+= Book Title
+> Buchtitel
+
+= Bosnian
+> Bosnisch
+
+= Brazil
+> Brasilien
+
+= Bulgarian
+> Bulgarisch
+
+= Canada
+> Kanada
+
+= Catalan
+> Katalanisch
+
+= Chinese
+> Chinesisch
+
+= Closing
+> Grußformel
+
+= Comment Reference
+> Kommentarzeichen
+
+= Comment Subject
+> Kommentarthema
+
+= Comment Text
+> Kommentartext
+
+= Croatian
+> Kroatisch
+
+= Cyrillic
+> Kyrillisch
+
+= Czech
+> Tschechisch
+
+= Danish
+> Dänisch
+
+= Default Paragraph Font
+> Absatz-Standardschriftart
+
+= Do not check spelling or grammar
+> Rechtschreibung und Grammatik nicht prüfen
+
+= Dutch
+> Niederländisch
+
+= Egypt
+> Ägypten
+
+= Emphasis
+> Hervorhebung
+
+= Endnote Reference
+> Endnotenzeichen
+
+= Endnote Text
+> Endnotentext
+
+= English
+> Englisch
+
+= Estonian
+> Estnisch
+
+= Finnish
+> Finnisch
+
+= Footnote Reference
+> Fußnotenzeichen
+
+= Footnote Text
+> Fußnotentext
+
+= France
+> Frankreich
+
+= French
+> Französisch
+
+= Galician
+> Galicisch
+
+= Georgian
+> Georgisch
+
+= German
+> Deutsch
+
+= Germany
+> Deutschland
+
+= Greek
+> Griechisch
+
+= Gujarati
+> Gujarati
+
+= Heading 1
+> Überschrift 1
+
+= Heading 2
+> Überschrift 2
+
+= Heading 3
+> Überschrift 3
+
+= Heading 4
+> Überschrift 4
+
+= Heading 5
+> Überschrift 5
+
+= Heading 6
+> Überschrift 6
+
+= Heading 7
+> Überschrift 7
+
+= Heading 8
+> Überschrift 8
+
+= Heading 9
+> Überschrift 9
+
+= Hebrew
+> Hebräisch
+
+= Hindi
+> Hindi
+
+= Hungarian
+> Ungarisch
+
+= Hyperlink
+> Hyperlink
+
+= Icelandic
+> Isländisch
+
+= Index Heading
+> Indexüberschrift
+
+= India
+> Indien
+
+= Indonesian
+> Indonesisch
+
+= Intense Emphasis
+> Intensive Hervorhebung
+
+= Intense Quote
+> Intensives Zitat
+
+= Intense Reference
+> Intensiver Verweis
+
+= Ireland
+> Irland
+
+= Irish
+> Irisch
+
+= Italian
+> Italienisch
+
+= Japanese
+> Japanisch
+
+= Kannada
+> Kannada
+
+= Kazakh
+> Kasachisch
+
+= Khmer
+> Khmer
+
+= Korean
+> Koreanisch
+
+= Kyrgyz
+> Kirgisisch
+
+= Lao
+> Laotisch
+
+= Latin
+> Lateinisch
+
+= Latvian
+> Lettisch
+
+= Line Number
+> Zeilennummer
+
+= List
+> Liste
+
+= List Bullet
+> Aufzählungszeichen
+
+= List Number
+> Listennummer
+
+= List Paragraph
+> Listenabsatz
+
+= Lithuanian
+> Litauisch
+
+= Macedonian
+> Mazedonisch
+
+= Malay
+> Malaiisch
+
+= Malayalam
+> Malayalam
+
+= Maltese
+> Maltesisch
+
+= Marathi
+> Marathi
+
+= Mexico
+> Mexiko
+
+= Mongolian
+> Mongolisch
+
+= Nepali
+> Nepalesisch
+
+= New Zealand
+> Neuseeland
+
+= No List
+> Keine Liste
+
+= No Spacing
+> Kein Leerraum
+
+= Normal Table
+> Normale Tabelle
+
+= Norwegian
+> Norwegisch
+
+= Nynorsk
+> Nynorsk
+
+= Persian
+> Persisch
+
+= Placeholder Text
+> Platzhaltertext
+
+= Polish
+> Polnisch
+
+= Portugal
+> Portugal
+
+= Portuguese
+> Portugiesisch
+
+= Punjabi
+> Punjabi
+
+= Quote
+> Zitat
+
+= Revision
+> Überarbeitung
+
+= Romanian
+> Rumänisch
+
+= Russian
+> Russisch
+
+= Salutation
+> Anrede
+
+= Saudi Arabia
+> Saudi-Arabien
+
+= Serbian
+> Serbisch
+
+= Signature
+> Unterschrift
+
+= Simplified
+> vereinfacht
+
+= Sinhala
+> Singhalesisch
+
+= Slovak
+> Slowakisch
+
+= Slovenian
+> Slowenisch
+
+= South Africa
+> Südafrika
+
+= Spain
+> Spanien
+
+= Spanish
+> Spanisch
+
+= Strong
+> Fett
+
+= Subtitle
+> Untertitel
+
+= Subtle Emphasis
+> Schwache Hervorhebung
+
+= Subtle Reference
+> Schwacher Verweis
+
+= Swahili
+> Swahili
+
+= Swedish
+> Schwedisch
+
+= Switzerland
+> Schweiz
+
+= TOC 1
+> Verzeichnis 1
+
+= TOC 2
+> Verzeichnis 2
+
+= TOC 3
+> Verzeichnis 3
+
+= TOC 4
+> Verzeichnis 4
+
+= TOC 5
+> Verzeichnis 5
+
+= TOC 6
+> Verzeichnis 6
+
+= TOC 7
+> Verzeichnis 7
+
+= TOC 8
+> Verzeichnis 8
+
+= TOC 9
+> Verzeichnis 9
+
+= TOC Heading
+> Inhaltsverzeichnisüberschrift
+
+= Table Grid
+> Tabellenraster
+
+= Tamil
+> Tamil
+
+= Telugu
+> Telugu
+
+= Thai
+> Thai
+
+= Traditional
+> traditionell
+
+= Turkish
+> Türkisch
+
+= Ukrainian
+> Ukrainisch
+
+= United Kingdom
+> Vereinigtes Königreich
+
+= United States
+> Vereinigte Staaten
+
+= Urdu
+> Urdu
+
+= Uzbek
+> Usbekisch
+
+= Vietnamese
+> Vietnamesisch
+
+= Welsh
+> Walisisch
+
+= Zulu
+> Zulu
+

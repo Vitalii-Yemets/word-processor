@@ -2499,7 +2499,7 @@ pub fn field_text(choice: Choice, state: &ToolbarState) -> String {
     match choice {
         Choice::Font => state.font.clone().unwrap_or_else(|| "(default)".to_owned()),
         Choice::Size => super::format_size(state.size),
-        Choice::Style => state.style.clone().unwrap_or_else(|| "Normal".to_owned()),
+        Choice::Style => state.style_name.clone(),
         Choice::Zoom => format!("{}%", state.zoom.round() as i32),
         _ => String::new(),
     }

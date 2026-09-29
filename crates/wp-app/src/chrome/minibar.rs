@@ -311,7 +311,7 @@ impl MiniBar {
                 let text = match choice {
                     Choice::Font => state.font.clone().unwrap_or_else(|| t("(default)").to_owned()),
                     Choice::Size => super::format_size(state.size),
-                    Choice::Style => state.style.clone().unwrap_or_else(|| t("Normal").to_owned()),
+                    Choice::Style => state.style_name.clone(),
                     _ => String::new(),
                 };
                 let line = engine.simple_line(&text, left + 5.0, middle + 4.0, 8.5, color);

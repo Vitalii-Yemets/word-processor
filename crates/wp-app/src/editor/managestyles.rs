@@ -232,7 +232,7 @@ fn style_rows(document: &Document) -> Vec<TreeRow> {
         .all()
         .iter()
         .map(|style| {
-            let name = style.name.clone().unwrap_or_else(|| style.id.clone());
+            let name = crate::names::shown(style.name.as_deref().unwrap_or(&style.id));
             TreeRow::plain(&format!("{name} ({})", style.id))
         })
         .collect()

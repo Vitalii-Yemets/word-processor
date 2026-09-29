@@ -41,7 +41,7 @@
 //! translate. Windows and Word both have one for the same purpose.
 
 use std::collections::BTreeMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 /// The catalogues that come with the program.
 ///
@@ -85,16 +85,32 @@ struct State {
     known: BTreeMap<&'static str, &'static str>,
 }
 
-fn state() -> &'static Mutex<State> {
-    static STATE: OnceLock<Mutex<State>> = OnceLock::new();
-    STATE.get_or_init(|| {
-        Mutex::new(State {
+impl State {
+    fn english() -> Self {
+        Self {
             language: ENGLISH.to_owned(),
             mirrored: false,
             catalogue: BTreeMap::new(),
             known: BTreeMap::new(),
-        })
-    })
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn state() -> &'static Mutex<State> {
+    static STATE: std::sync::OnceLock<Mutex<State>> = std::sync::OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(State::english()))
+}
+
+/// In the tests, a language for each thread: the tests run side by side,
+/// and one that reads the interface in German must not be the reason
+/// another, looking for an English word on a button, does not find it.
+#[cfg(test)]
+fn state() -> &'static Mutex<State> {
+    thread_local! {
+        static STATE: &'static Mutex<State> = Box::leak(Box::new(Mutex::new(State::english())));
+    }
+    STATE.with(|state| *state)
 }
 
 /// The message as the person reads it.
@@ -420,12 +436,12 @@ fn accented(character: char) -> char {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// The language belongs to the whole program, so tests that change it
     /// go one at a time and put it back.
-    fn in_language<R>(code: &str, work: impl FnOnce() -> R) -> R {
+    pub(crate) fn in_language<R>(code: &str, work: impl FnOnce() -> R) -> R {
         static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
         let _held = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let was = language();

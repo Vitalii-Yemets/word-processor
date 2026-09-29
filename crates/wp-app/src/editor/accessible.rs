@@ -375,13 +375,15 @@ impl Editor {
             let rect = on_window((left, top, width, height));
             match command {
                 Command::Style(index) => {
-                    let name = gallery.get(index).map(|sample| sample.name.clone());
+                    let sample = gallery.get(index);
                     out.push((
                         Element {
                             id: STYLE_TILE + index as u64,
                             role: Role::ListItem,
-                            selected: name.is_some() && state.style == name,
-                            name: name.map(|name| translated(&name)).unwrap_or_default(),
+                            // The paragraph's style is said by identifier, as
+                            // the tile's is; the tile's name is only shown.
+                            selected: sample.is_some_and(|sample| sample.id == state.style),
+                            name: sample.map(|sample| sample.name.clone()).unwrap_or_default(),
                             rect,
                             enabled: true,
                             parent: Some(GALLERY),
