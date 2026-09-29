@@ -13,6 +13,7 @@
 
 use super::keys;
 use super::x11;
+use super::xim;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -85,7 +86,36 @@ struct State {
     alt_alone: bool,
     control_alone: bool,
     scale: f32,
+    /// The input method the keys go through, where one is running.
+    input_method: Option<InputMethod>,
 }
+
+/// The line to an X input method server, and the conversation on it: see
+/// [`xim`] for the protocol. The line itself is X's own — client messages
+/// between two windows, one each, with window properties for what is too
+/// long for a message.
+struct InputMethod {
+    protocol: xim::Xim,
+    /// The server's window, which owns the name it is known by.
+    server: u32,
+    /// The window the server talks on, once it has said which.
+    line: Option<u32>,
+    /// This program's end of the line: a window never shown.
+    own: u32,
+    xconnect: u32,
+    message: u32,
+    more: u32,
+    /// The pieces of a message the server sent in several.
+    pieces: Vec<u8>,
+    /// Which of the properties a long message goes in next.
+    next_property: u32,
+    /// When the key the server has not answered went to it.
+    asked_at: Option<Instant>,
+}
+
+/// How long a key sent to the input method may go unanswered before the
+/// input method is taken to be gone and the keys are typed without it.
+const INPUT_METHOD_PATIENCE: Duration = Duration::from_secs(3);
 
 thread_local! {
     static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
@@ -152,6 +182,7 @@ impl State {
             alt_alone: false,
             control_alone: false,
             scale,
+            input_method: None,
         })
     }
 
@@ -328,11 +359,18 @@ fn deliver(window: u32, event: Event) -> Response {
 }
 
 fn close_window(window: u32) {
-    with_state(|state| {
+    let actions = with_state(|state| {
         let _ = state.connection.destroy_window(window);
         let _ = state.connection.flush();
         state.windows.retain(|found| found.id != window);
-    });
+        state
+            .input_method
+            .as_mut()
+            .map(|method| method.protocol.remove_window(window))
+            .unwrap_or_default()
+    })
+    .unwrap_or_default();
+    perform(actions);
 }
 
 /// Opens the window and runs the event loop.
@@ -348,6 +386,7 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
     WINDOW.with(|slot| slot.set(window));
     deliver(window, Event::ScaleChanged { scale });
     deliver(window, Event::Resized { width: options.width, height: options.height });
+    start_input_method(window);
 
     let mut last_tick = Instant::now();
     loop {
@@ -365,6 +404,7 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
             for id in ids {
                 deliver(id, Event::Tick);
             }
+            check_input_method();
         }
         if with_state(|state| state.windows.is_empty()).unwrap_or(true) {
             break;
@@ -503,7 +543,15 @@ fn handle_packet(packet: &Packet) {
         | x11::BUTTON_RELEASE
         | x11::MOTION_NOTIFY
         | x11::LEAVE_NOTIFY => packet.u32_at(12),
-        x11::EXPOSE | x11::CLIENT_MESSAGE | x11::FOCUS_OUT => packet.u32_at(4),
+        x11::CLIENT_MESSAGE if is_input_method_window(packet.u32_at(4)) => {
+            input_method_message(packet);
+            return;
+        }
+        x11::DESTROY_NOTIFY if is_input_method_server(packet.u32_at(8)) => {
+            input_method_gone();
+            return;
+        }
+        x11::EXPOSE | x11::CLIENT_MESSAGE | x11::FOCUS_IN | x11::FOCUS_OUT => packet.u32_at(4),
         x11::CONFIGURE_NOTIFY | x11::DESTROY_NOTIFY => packet.u32_at(8),
         x11::SELECTION_REQUEST => {
             answer_selection_request(packet);
@@ -593,11 +641,32 @@ fn handle_packet(packet: &Packet) {
         x11::DESTROY_NOTIFY => {
             with_state(|state| state.windows.retain(|found| found.id != window));
         }
+        x11::FOCUS_IN | x11::FOCUS_OUT => {
+            let on = kind == x11::FOCUS_IN;
+            let actions = with_state(|state| {
+                state
+                    .input_method
+                    .as_mut()
+                    .map(|method| method.protocol.focus(window, on))
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+            perform(actions);
+        }
         _ => {}
     }
 }
 
 fn key_press(window: u32, packet: &Packet) {
+    if through_input_method(window, packet, true) {
+        return;
+    }
+    typed(window, packet);
+}
+
+/// A key press handled here: the input method did not take it, or gave it
+/// back, or there is none.
+fn typed(window: u32, packet: &Packet) {
     let state = packet.u16_at(28);
     let Some(keysym) = with_state(|s| s.keysym(packet.detail(), state)) else { return };
     if keys::is_alt(keysym) {
@@ -629,6 +698,13 @@ fn key_press(window: u32, packet: &Packet) {
 }
 
 fn key_release(window: u32, packet: &Packet) {
+    if through_input_method(window, packet, false) {
+        return;
+    }
+    released(window, packet);
+}
+
+fn released(window: u32, packet: &Packet) {
     let state = packet.u16_at(28);
     let Some(keysym) = with_state(|s| s.keysym(packet.detail(), state)) else { return };
     if keys::is_alt(keysym)
@@ -760,6 +836,15 @@ pub(crate) fn open_window(title: &str) -> bool {
             let scale = with_state(|state| state.scale).unwrap_or(1.0);
             deliver(window, Event::ScaleChanged { scale });
             deliver(window, Event::Resized { width: 1400, height: 900 });
+            let actions = with_state(|state| {
+                state
+                    .input_method
+                    .as_mut()
+                    .map(|method| method.protocol.add_window(window))
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+            perform(actions);
             true
         }
         _ => false,
@@ -885,7 +970,293 @@ pub(crate) fn system_code_pages() -> (u32, u32) {
 }
 
 /// There is no input method here yet, so there is nothing to place.
-pub(crate) fn place_composition(_x: i32, _y: i32, _height: i32) {}
+/// Tells the input method where the caret is, so that its list of
+/// candidates opens beside it: in the window's own pixels, at the foot of
+/// the caret.
+pub(crate) fn place_composition(x: i32, y: i32, height: i32) {
+    let window = WINDOW.with(Cell::get);
+    let actions = with_state(|state| {
+        let scale = state.window_index(window).map_or(state.scale, |i| state.windows[i].scale);
+        let method = state.input_method.as_mut()?;
+        let device = |value: i32| (value as f32 * scale).round().clamp(-32768.0, 32767.0) as i16;
+        Some(method.protocol.spot(window, device(x), device(y + height)))
+    })
+    .flatten()
+    .unwrap_or_default();
+    perform(actions);
+}
+
+// --- The input method -----------------------------------------------------------
+
+/// The name `XMODIFIERS` gives the input method: `@im=ibus` names `ibus`.
+/// Nothing where it names none, which is what every X program takes it to
+/// mean, and nothing for `none`.
+fn input_method_name(modifiers: &str) -> Option<String> {
+    let at = modifiers.find("@im=")?;
+    let rest = &modifiers[at + 4..];
+    let name = rest.split('@').next().unwrap_or("").trim();
+    (!name.is_empty() && name != "none").then(|| name.to_owned())
+}
+
+/// The locale the program runs in, as the input method is opened in it.
+fn locale_name() -> String {
+    ["LC_ALL", "LC_CTYPE", "LANG"]
+        .iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .find(|value| !value.is_empty())
+        .unwrap_or_else(|| "C".to_owned())
+}
+
+/// Finds the input method `XMODIFIERS` names and opens the line to it:
+/// the server's window is the owner of its name, a window of this
+/// program's own is the other end, and the server is asked to answer with
+/// the window it will talk on. Everything after goes through the event
+/// loop as it arrives.
+fn start_input_method(window: u32) {
+    let Some(name) = std::env::var("XMODIFIERS").ok().and_then(|value| input_method_name(&value))
+    else {
+        return;
+    };
+    with_state(|state| {
+        let connection = &mut state.connection;
+        let Ok(selection) = connection.atom(&format!("@server={name}")) else { return };
+        let server = match connection.selection_owner(selection) {
+            Ok(owner) if owner != 0 => owner,
+            _ => return,
+        };
+        let (Ok(xconnect), Ok(message), Ok(more)) = (
+            connection.atom("_XIM_XCONNECT"),
+            connection.atom("_XIM_PROTOCOL"),
+            connection.atom("_XIM_MOREDATA"),
+        ) else {
+            return;
+        };
+        let Ok(own) = connection.create_window(1, 1) else { return };
+        // Told when the server's window goes, which is the server gone.
+        let _ = connection.select_input(server, 0x0002_0000);
+        let event = connection.client_message(server, xconnect, [own, 0, 0, 0, 0]);
+        let _ = connection.send_event(server, 0, &event);
+        let _ = connection.flush();
+        let mut protocol = xim::Xim::new(&locale_name());
+        let _ = protocol.add_window(window);
+        state.input_method = Some(InputMethod {
+            protocol,
+            server,
+            line: None,
+            own,
+            xconnect,
+            message,
+            more,
+            pieces: Vec::new(),
+            next_property: 0,
+            asked_at: None,
+        });
+    });
+}
+
+fn is_input_method_window(window: u32) -> bool {
+    with_state(|state| state.input_method.as_ref().is_some_and(|method| method.own == window))
+        .unwrap_or(false)
+}
+
+fn is_input_method_server(window: u32) -> bool {
+    with_state(|state| {
+        state
+            .input_method
+            .as_ref()
+            .is_some_and(|method| method.server == window || method.line == Some(window))
+    })
+    .unwrap_or(false)
+}
+
+/// A client message on this program's end of the line: the server's
+/// answer to the opening, or a message, whole or in pieces, in the
+/// message itself or in a property it names.
+fn input_method_message(packet: &Packet) {
+    let actions = with_state(|state| {
+        let State { connection, input_method, .. } = state;
+        let Some(method) = input_method.as_mut() else { return Vec::new() };
+        let kind = packet.u32_at(8);
+        let data = packet.bytes.get(12..32).unwrap_or(&[]);
+        if kind == method.xconnect {
+            method.line = Some(packet.u32_at(12));
+            // Told when this window goes as well, if it is not the other.
+            let _ = connection.select_input(packet.u32_at(12), 0x0002_0000);
+            return vec![xim::Action::Send(method.protocol.connect())];
+        }
+        if kind == method.more {
+            method.pieces.extend_from_slice(data);
+            return Vec::new();
+        }
+        if kind != method.message {
+            return Vec::new();
+        }
+        if packet.detail() == 32 {
+            let length = packet.u32_at(12) as usize;
+            let property = packet.u32_at(16);
+            if let Ok((kind, format, bytes)) = connection.get_property(method.own, property, true) {
+                let taken = length.min(bytes.len());
+                method.pieces.extend_from_slice(&bytes[..taken]);
+                // A server adds each message to the end of the property,
+                // and says of each how long it is: what is past this one is
+                // the next, and goes back for the message that names it.
+                if taken < bytes.len() {
+                    let _ = connection.set_property(
+                        method.own,
+                        property,
+                        kind,
+                        format,
+                        &bytes[taken..],
+                    );
+                }
+            }
+        } else {
+            method.pieces.extend_from_slice(data);
+        }
+        // Whole messages, one after another; what is left over is the
+        // padding of the last client message.
+        let pieces = std::mem::take(&mut method.pieces);
+        let mut actions = Vec::new();
+        let mut at = 0;
+        while at + 4 <= pieces.len() {
+            let length = 4 + usize::from(u16::from_le_bytes([pieces[at + 2], pieces[at + 3]])) * 4;
+            if at + length > pieces.len() {
+                break;
+            }
+            actions.extend(method.protocol.receive(&pieces[at..at + length]));
+            at += length;
+            if pieces[at..].iter().all(|&byte| byte == 0) {
+                break;
+            }
+        }
+        // The server is there: a key still waiting has been waited for
+        // from now.
+        method.asked_at = method.protocol.is_waiting().then(Instant::now);
+        actions
+    })
+    .unwrap_or_default();
+    perform(actions);
+    // A server that refused what had to be agreed is no input method.
+    let failed = with_state(|state| {
+        state.input_method.as_ref().is_some_and(|method| method.protocol.has_failed())
+    })
+    .unwrap_or(false);
+    if failed {
+        input_method_gone();
+    }
+}
+
+/// Does what the conversation asks: sends, delivers, or types a key the
+/// input method gave back.
+fn perform(actions: Vec<xim::Action>) {
+    for action in actions {
+        match action {
+            xim::Action::Send(bytes) => {
+                with_state(|state| send_to_input_method(state, &bytes));
+            }
+            xim::Action::Deliver(window, event) => {
+                deliver(window, event);
+            }
+            xim::Action::Key(window, event) => {
+                let packet = Packet { bytes: event.to_vec() };
+                if packet.kind() == x11::KEY_PRESS {
+                    typed(window, &packet);
+                } else if packet.kind() == x11::KEY_RELEASE {
+                    released(window, &packet);
+                }
+            }
+        }
+    }
+}
+
+/// Puts a message on the line: in one client message where it fits, which
+/// is twenty bytes; otherwise in a property on the server's window, with a
+/// client message saying which and how long.
+fn send_to_input_method(state: &mut State, bytes: &[u8]) {
+    let State { connection, input_method, .. } = state;
+    let Some(method) = input_method.as_mut() else { return };
+    let Some(line) = method.line else { return };
+    if bytes.len() <= 20 {
+        let mut event = [0u8; 32];
+        event[0] = x11::CLIENT_MESSAGE;
+        event[1] = 8;
+        event[4..8].copy_from_slice(&line.to_le_bytes());
+        event[8..12].copy_from_slice(&method.message.to_le_bytes());
+        event[12..12 + bytes.len()].copy_from_slice(bytes);
+        let _ = connection.send_event(line, 0, &event);
+    } else {
+        // A property of its own for each message in flight, so that one
+        // the server has yet to read is not written over.
+        let name = format!("_WORD_PROCESSOR_XIM_{}", method.next_property % 16);
+        method.next_property = method.next_property.wrapping_add(1);
+        let Ok(property) = connection.atom(&name) else { return };
+        let _ = connection.set_property(line, property, x11::ATOM_STRING, 8, bytes);
+        let event = connection.client_message(
+            line,
+            method.message,
+            [bytes.len() as u32, property, 0, 0, 0],
+        );
+        let _ = connection.send_event(line, 0, &event);
+    }
+    let _ = connection.flush();
+}
+
+/// A key through the input method, if there is one and it takes the key.
+/// Whether it did: a key it took comes back if it is not wanted.
+fn through_input_method(window: u32, packet: &Packet, press: bool) -> bool {
+    let bits = packet.u16_at(28);
+    let outcome = with_state(|state| {
+        let keysym = state.keysym(packet.detail(), bits);
+        let method = state.input_method.as_mut()?;
+        let mut event = [0u8; 32];
+        event.copy_from_slice(packet.bytes.get(..32)?);
+        let (taken, actions) = method.protocol.key(window, &event, keysym, bits, press);
+        if method.protocol.is_waiting() && method.asked_at.is_none() {
+            method.asked_at = Some(Instant::now());
+        }
+        Some((taken, actions))
+    })
+    .flatten();
+    let Some((taken, actions)) = outcome else { return false };
+    perform(actions);
+    taken
+}
+
+/// An input method that has not answered a key for too long is taken to be
+/// gone, and the keys that waited on it are typed.
+fn check_input_method() {
+    let late = with_state(|state| {
+        state
+            .input_method
+            .as_ref()
+            .and_then(|method| method.asked_at)
+            .is_some_and(|asked| asked.elapsed() > INPUT_METHOD_PATIENCE)
+    })
+    .unwrap_or(false);
+    if late {
+        input_method_gone();
+    }
+}
+
+/// The input method went away: typing goes on without it, the keys that
+/// waited for it included.
+fn input_method_gone() {
+    let actions = with_state(|state| {
+        let mut method = state.input_method.take()?;
+        let _ = state.connection.destroy_window(method.own);
+        let _ = state.connection.flush();
+        Some(method.protocol.abandon())
+    })
+    .flatten()
+    .unwrap_or_default();
+    // Whatever was being composed will not be finished now.
+    let ids: Vec<u32> = with_state(|state| state.windows.iter().map(|window| window.id).collect())
+        .unwrap_or_default();
+    for id in ids {
+        deliver(id, Event::ComposeEnd);
+    }
+    perform(actions);
+}
 
 pub(crate) fn selection_changed() {}
 

@@ -176,6 +176,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         dict-freedict-eng-rus \
  && rm -rf /var/lib/apt/lists/*
 
+# An input method, and something to type into it with. uim-xim is an X
+# Input Method server, and byeoru the Korean input method it runs — one that
+# needs no dictionary, so what a key sequence composes is the same every
+# time — which is what the X shell's composing is held to: a program that
+# spoke only to a server of its own writing would be held to its own
+# reading of the protocol and nothing else. xdotool presses the keys through
+# the server's own test extension, so they arrive as a person's would. Test
+# tools like Xvfb and wtype: the shell speaks the protocol itself and links
+# to none of them. In a layer of its own, after the others.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        uim-xim \
+        uim-byeoru \
+        xdotool \
+ && rm -rf /var/lib/apt/lists/*
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

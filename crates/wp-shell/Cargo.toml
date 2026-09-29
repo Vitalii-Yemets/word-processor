@@ -10,6 +10,11 @@ license.workspace = true
 wp-deflate = { path = "../wp-deflate" }
 wp-raster = { path = "../wp-raster" }
 
+# The code pages text from an X input method may come in: compound text
+# switches between the East Asian national sets, and those are code pages.
+[target.'cfg(target_os = "linux")'.dependencies]
+wp-text = { path = "../wp-text" }
+
 # The workspace forbids unsafe everywhere else. Talking to an operating system
 # means calling C functions, which cannot be done any other way, so this one
 # crate allows it and keeps the surface as small as possible.

@@ -39,7 +39,8 @@ use wp_raster::Canvas;
 use super::keys;
 use crate::clipboard::Contents;
 use crate::{
-    App, Cursor, DragEffect, Error, Event, Modifiers, Response, WindowCommand, WindowOptions,
+    App, CompositionAttribute, Cursor, DragEffect, Error, Event, Modifiers, Response,
+    WindowCommand, WindowOptions,
 };
 
 use protocol as p;
@@ -58,6 +59,7 @@ struct Globals {
     output: u32,
     data_device_manager: u32,
     fractional_manager: u32,
+    text_input_manager: u32,
 }
 
 /// One buffer of the window's pixels, and whether the compositor has
@@ -91,6 +93,29 @@ struct Window {
     /// The object the compositor says the window's scale through, where it
     /// has one to say it with.
     fractional: u32,
+}
+
+/// The input method's line to this program: text-input, version 3.
+///
+/// On Wayland the input method is the compositor's to run, and the keys
+/// go to it before they come here — those it does not want come on as
+/// keys. What this program does is say, for the window with the keyboard,
+/// that it takes text and where its caret is; and take what the input
+/// method sends: the text being composed and the text committed, a batch
+/// at a time, each batch ended by `done`.
+#[derive(Debug, Default)]
+struct TextInput {
+    /// The object, where the compositor has the interface.
+    id: u32,
+    /// The window the input method is typing into, while one is.
+    surface: Option<u32>,
+    /// Where the caret was last said to be, in the window's own units.
+    rectangle: Option<(i32, i32, i32, i32)>,
+    /// What has come since the last `done`.
+    preedit: Option<(String, i32, i32)>,
+    commit: Option<String>,
+    /// Whether text being composed is showing.
+    composing: bool,
 }
 
 /// Everything the shell holds while it runs.
@@ -135,6 +160,8 @@ struct State {
     scale: f32,
     /// Set when the compositor asks the program to go away.
     closing: bool,
+    /// The input method's line to the window with the keyboard.
+    text_input: TextInput,
 }
 
 thread_local! {
@@ -222,6 +249,7 @@ impl State {
                 "wl_output" => globals.output = id,
                 "wl_data_device_manager" => globals.data_device_manager = id,
                 "wp_fractional_scale_manager_v1" => globals.fractional_manager = id,
+                "zwp_text_input_manager_v3" => globals.text_input_manager = id,
                 _ => {}
             }
         }
@@ -258,6 +286,7 @@ impl State {
             building: HashMap::new(),
             scale: 1.0,
             closing: false,
+            text_input: TextInput::default(),
         };
 
         // The keyboard and the pointer are asked for in `take_seat`, once
@@ -269,6 +298,16 @@ impl State {
                 p::wl_data_device_manager::GET_DATA_DEVICE,
             )
             .uint(state.data_device)
+            .uint(state.globals.seat);
+            state.connection.send(&request)?;
+        }
+        if state.globals.text_input_manager != 0 && state.globals.seat != 0 {
+            state.text_input.id = state.connection.make_id();
+            let request = Request::new(
+                state.globals.text_input_manager,
+                p::zwp_text_input_manager_v3::GET_TEXT_INPUT,
+            )
+            .uint(state.text_input.id)
             .uint(state.globals.seat);
             state.connection.send(&request)?;
         }
@@ -462,6 +501,7 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
             Some(Ok(Some(message))) => {
                 with_state(|state| state.handle(&message));
                 deliver_pending();
+                deliver_composition();
                 deliver_input();
                 follow_pointer();
             }
@@ -615,6 +655,10 @@ impl State {
         }
         if message.object == self.keyboard && self.keyboard != 0 {
             self.keyboard_event(message);
+            return;
+        }
+        if message.object == self.text_input.id && self.text_input.id != 0 {
+            self.text_input_event(message);
             return;
         }
         if message.object == self.pointer && self.pointer != 0 {
@@ -908,6 +952,130 @@ fn key_released(window: u32, keysym: u32) {
         && with_state(|state| core::mem::replace(&mut state.control_alone, false)).unwrap_or(false)
     {
         deliver(window, Event::ControlKey);
+    }
+}
+
+// --- The input method -------------------------------------------------------
+
+impl State {
+    fn text_input_event(&mut self, message: &Message) {
+        let mut arguments = message.arguments();
+        let id = self.text_input.id;
+        match message.opcode {
+            // The window has the keyboard: it takes text, ordinary text, and
+            // its caret is where it was last said to be.
+            p::zwp_text_input_v3::ENTER => {
+                let surface = arguments.uint();
+                self.text_input.surface = Some(surface);
+                self.text_input.preedit = None;
+                self.text_input.commit = None;
+                let _ = self.connection.send(&Request::new(id, p::zwp_text_input_v3::ENABLE));
+                let _ = self.connection.send(
+                    &Request::new(id, p::zwp_text_input_v3::SET_CONTENT_TYPE)
+                        .uint(p::zwp_text_input_v3::HINT_NONE)
+                        .uint(p::zwp_text_input_v3::PURPOSE_NORMAL),
+                );
+                if let Some(rectangle) = self.text_input.rectangle {
+                    self.send_cursor_rectangle(rectangle);
+                }
+                let _ = self.connection.send(&Request::new(id, p::zwp_text_input_v3::COMMIT));
+            }
+            p::zwp_text_input_v3::LEAVE => {
+                let surface = arguments.uint();
+                let _ = self.connection.send(&Request::new(id, p::zwp_text_input_v3::DISABLE));
+                let _ = self.connection.send(&Request::new(id, p::zwp_text_input_v3::COMMIT));
+                self.text_input.surface = None;
+                self.text_input.preedit = None;
+                self.text_input.commit = None;
+                // Whatever was being composed there will not be finished.
+                if core::mem::take(&mut self.text_input.composing) {
+                    COMPOSED.with(|slot| slot.borrow_mut().push((surface, Event::ComposeEnd)));
+                }
+            }
+            p::zwp_text_input_v3::PREEDIT_STRING => {
+                let text = arguments.string();
+                let begin = arguments.int();
+                let end = arguments.int();
+                self.text_input.preedit = Some((text, begin, end));
+            }
+            p::zwp_text_input_v3::COMMIT_STRING => {
+                self.text_input.commit = Some(arguments.string());
+            }
+            // The batch is over: the text committed goes in, and the text
+            // being composed is whatever the batch said — nothing, if it
+            // said nothing.
+            p::zwp_text_input_v3::DONE => {
+                let commit = self.text_input.commit.take().filter(|text| !text.is_empty());
+                let preedit = self.text_input.preedit.take().filter(|(text, ..)| !text.is_empty());
+                let Some(surface) = self.text_input.surface else { return };
+                let mut events = Vec::new();
+                if let Some(text) = commit {
+                    events.push(Event::Commit(text));
+                    self.text_input.composing = false;
+                }
+                match preedit {
+                    Some((text, begin, end)) => {
+                        events.push(composition(text, begin, end));
+                        self.text_input.composing = true;
+                    }
+                    None if self.text_input.composing => {
+                        events.push(Event::ComposeEnd);
+                        self.text_input.composing = false;
+                    }
+                    None => {}
+                }
+                COMPOSED.with(|slot| {
+                    slot.borrow_mut().extend(events.into_iter().map(|event| (surface, event)));
+                });
+            }
+            _ => {}
+        }
+    }
+
+    fn send_cursor_rectangle(&mut self, (x, y, width, height): (i32, i32, i32, i32)) {
+        let request = Request::new(self.text_input.id, p::zwp_text_input_v3::SET_CURSOR_RECTANGLE)
+            .int(x)
+            .int(y)
+            .int(width)
+            .int(height);
+        let _ = self.connection.send(&request);
+    }
+}
+
+/// The text being composed, as the window is given it. The input method
+/// says where its cursor is as a range of bytes of the text — nothing
+/// where it shows none — and a range that is not empty is the part being
+/// chosen for.
+fn composition(text: String, begin: i32, end: i32) -> Event {
+    let starts: Vec<usize> = text.char_indices().map(|(at, _)| at).collect();
+    let count = starts.len();
+    let character_at = |byte: i32| -> usize {
+        usize::try_from(byte)
+            .map_or(count, |byte| starts.iter().take_while(|&&at| at < byte).count())
+    };
+    let (from, to) = (character_at(begin), character_at(end));
+    let attributes = (0..count)
+        .map(|index| {
+            if from < to && (from..to).contains(&index) {
+                CompositionAttribute::Target
+            } else {
+                CompositionAttribute::Input
+            }
+        })
+        .collect();
+    Event::Compose { text, caret: to, attributes }
+}
+
+thread_local! {
+    /// What the input method sent, for the window it was sent for, handed on
+    /// once the state is free again.
+    static COMPOSED: RefCell<Vec<(u32, Event)>> = const { RefCell::new(Vec::new()) };
+}
+
+fn deliver_composition() {
+    let events: Vec<(u32, Event)> = COMPOSED.with(|slot| core::mem::take(&mut *slot.borrow_mut()));
+    for (surface, event) in events {
+        deliver(surface, event);
     }
 }
 
@@ -1532,7 +1700,24 @@ pub(crate) fn system_code_pages() -> (u32, u32) {
     (1252, 437)
 }
 
-pub(crate) fn place_composition(_x: i32, _y: i32, _height: i32) {}
+/// Tells the input method where the caret is, in the window's own units,
+/// so that its list of candidates opens beside it. Said only when it moved,
+/// and to the input method only while a window has the keyboard.
+pub(crate) fn place_composition(x: i32, y: i32, height: i32) {
+    with_state(|state| {
+        let rectangle = (x, y, 1, height.max(1));
+        if state.text_input.id == 0 || state.text_input.rectangle == Some(rectangle) {
+            return;
+        }
+        state.text_input.rectangle = Some(rectangle);
+        if state.text_input.surface.is_none() {
+            return;
+        }
+        state.send_cursor_rectangle(rectangle);
+        let id = state.text_input.id;
+        let _ = state.connection.send(&Request::new(id, p::zwp_text_input_v3::COMMIT));
+    });
+}
 
 pub(crate) fn selection_changed() {}
 

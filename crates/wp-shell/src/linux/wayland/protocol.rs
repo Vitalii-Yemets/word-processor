@@ -181,6 +181,31 @@ pub(crate) mod wp_fractional_scale_v1 {
     pub(crate) const PREFERRED_SCALE: u16 = 0;
 }
 
+/// The input method's side of the keyboard: text composed, and text
+/// committed, said to the window that has the keyboard.
+pub(crate) mod zwp_text_input_manager_v3 {
+    pub(crate) const GET_TEXT_INPUT: u16 = 1;
+}
+
+pub(crate) mod zwp_text_input_v3 {
+    pub(crate) const ENABLE: u16 = 1;
+    pub(crate) const DISABLE: u16 = 2;
+    pub(crate) const SET_CONTENT_TYPE: u16 = 5;
+    pub(crate) const SET_CURSOR_RECTANGLE: u16 = 6;
+    pub(crate) const COMMIT: u16 = 7;
+    // Events.
+    pub(crate) const ENTER: u16 = 0;
+    pub(crate) const LEAVE: u16 = 1;
+    pub(crate) const PREEDIT_STRING: u16 = 2;
+    pub(crate) const COMMIT_STRING: u16 = 3;
+    pub(crate) const DONE: u16 = 5;
+
+    /// What the text is for: nothing hinted, and ordinary text — which is
+    /// what a document is.
+    pub(crate) const HINT_NONE: u32 = 0;
+    pub(crate) const PURPOSE_NORMAL: u32 = 0;
+}
+
 /// What the interfaces are called where the compositor lists them, with the
 /// version this program speaks.
 pub(crate) const WANTED: &[(&str, u32)] = &[
@@ -191,4 +216,5 @@ pub(crate) const WANTED: &[(&str, u32)] = &[
     ("wl_output", 2),
     ("wl_data_device_manager", 3),
     ("wp_fractional_scale_manager_v1", 1),
+    ("zwp_text_input_manager_v3", 1),
 ];

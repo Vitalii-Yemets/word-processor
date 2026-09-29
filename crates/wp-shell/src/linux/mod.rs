@@ -32,6 +32,7 @@ pub(crate) mod keys;
 mod locale;
 mod wayland;
 pub(crate) mod x11;
+mod xim;
 mod xshell;
 
 use std::cell::Cell;

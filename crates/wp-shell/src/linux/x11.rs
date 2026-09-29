@@ -156,6 +156,7 @@ pub(crate) const BUTTON_PRESS: u8 = 4;
 pub(crate) const BUTTON_RELEASE: u8 = 5;
 pub(crate) const MOTION_NOTIFY: u8 = 6;
 pub(crate) const LEAVE_NOTIFY: u8 = 8;
+pub(crate) const FOCUS_IN: u8 = 9;
 pub(crate) const FOCUS_OUT: u8 = 10;
 pub(crate) const EXPOSE: u8 = 12;
 pub(crate) const DESTROY_NOTIFY: u8 = 17;
@@ -623,6 +624,17 @@ impl Connection {
             request = request.u32(value);
         }
         self.request(&request.finish(false))
+    }
+
+    /// Asks to be told of a window's events — another program's window
+    /// too, whose events every client may ask for separately.
+    pub(crate) fn select_input(&mut self, window: u32, mask: u32) -> Result<(), Failure> {
+        let request = Request::new(CHANGE_WINDOW_ATTRIBUTES, 0)
+            .u32(window)
+            .u32(0x0000_0800)
+            .u32(mask)
+            .finish(false);
+        self.request(&request)
     }
 
     /// Sets the pointer a window shows.

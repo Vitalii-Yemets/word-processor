@@ -6170,11 +6170,77 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   — because a Wayland client cannot place its own window. Printing is
   **A5**'s. The keymap reader takes the levels and the names and not
   compose sequences or dead keys, which belong to an input method.
-- [ ] **H9. Composing Chinese, Japanese and Korean on Linux.** The input
+- [x] **H9. Composing Chinese, Japanese and Korean on Linux.** The input
   method: XIM on X11 and `zwp_text_input_v3` on Wayland. Typed characters
   arrive on both today and compositions do not, which means the languages
   half the world writes in cannot be typed there at all. **H1** is the
   Windows half and is done. Named in **H6** and **H8**.
+  *Done:* both, raising the events **H1** made for Windows — the text
+  composed so far with its caret and how each character stands, the text
+  committed, and the end — so the editor, its ribbon boxes, panes and
+  dialogs take them as they already did.
+  **X11: the X Input Method protocol** (`crates/wp-shell/src/linux/xim.rs`),
+  written out against the X Consortium's specification. The server is the
+  one `XMODIFIERS` names, found as the owner of its name; the line to it is
+  X's own — client messages between a window of each, a property for what
+  does not fit in one, the pieces of a long message put together, and
+  several messages the server adds to one property taken one at a time as
+  their client messages come. On it: connect in this program's byte order,
+  open the input method in its locale, agree on UTF-8 or compound text,
+  ask which styles it offers and take on-the-spot — the text being composed
+  drawn by the program where it will go, as Word's is — or else the input
+  method's own window, or else only what it commits; an input context for
+  each window, focused and unfocused with it. Each key the server asks for
+  goes to it first, and the next waits while the server said to answer
+  first; what comes back is the key again, typed as before, text committed,
+  or the text being composed drawn, redrawn a range at a time and its caret
+  moved — each answered as the protocol says. A server that switches on
+  with a trigger key is sent nothing until one is pressed. The caret's
+  place goes to the server when it moves, so its list of candidates opens
+  beside it. Compound text is read: ASCII and the ISO 8859 halves this
+  program has tables for, GB 2312, JIS X 0208 and KS C 5601 through the
+  code pages that contain them, JIS X 0201, the UTF-8 segment, and the
+  extended segments naming Big5, GBK or UTF-8. A server that goes away, or
+  does not answer a key for three seconds, is let go: the keys that waited
+  are typed and typing goes on without it.
+  **Wayland: text-input, version 3.** On Wayland the input method is the
+  compositor's and has the keys before this program does. The window with
+  the keyboard says it takes ordinary text and where its caret is; each
+  batch of what the input method sends — text committed, then the text
+  being composed with its cursor as a range of bytes — is taken whole at
+  `done`, the text committed going in and the composition replaced; a range
+  that is not empty is shown as the part being chosen for.
+  *Proven by:* `crates/wp-shell/tests/x_input_method.rs` — the X shell on
+  Xvfb typing through uim-xim, a real X input method server, running byeoru,
+  its Korean input method, with xdotool pressing Shift+Space and g k s r m
+  f through the server's test extension: 한글 committed a syllable at a
+  time, ㅎ 하 한 shown as the first was built and 그 as the second, the
+  letters that spelled it never arriving as typed, and the space the input
+  method gave back typed; `crates/wp-app/src/xserver.rs` — the same through
+  the whole editor, the word in the document; `crates/wp-shell/tests/
+  wayland.rs` — the Wayland shell on sway, with an input method of the
+  test's own on sway's input-method protocol composing the same word:
+  shown as it grows, a chosen range marked, each syllable committed, and in
+  sway's own record of the conversation the window enabling text input and
+  its caret rectangle arriving; `crates/wp-shell/src/linux/xim.rs` — the
+  conversation message by message, a key held while one is unanswered, a
+  server that goes quiet giving the keys back, the style chosen from those
+  offered, and compound text in each of its sets.
+  *Found along the way:* a server writes each message after the last in the
+  same property and sends a client message for each; reading the whole
+  property for the first lost the second — the caret message after the
+  first letter — and the server then waited for an answer that never came.
+  The first message is taken and the rest written back, as Xlib does.
+  *Not done, and named here:* the text around the caret is not said to the
+  input method on either — X's string conversion, Wayland's surrounding
+  text — so an input method that reconverts committed text, or deletes
+  around the caret, cannot; the composition's own font; an X input method
+  that insists on over-the-spot, which is not taken; a Japanese or Chinese
+  input method run against the shell, uim's Korean being the one in the
+  build image — the protocol is the same, and the compound text of the
+  other scripts is held to their code pages; Wayland's input-method popup
+  for candidates, which is the input method's to make; and the Wayland
+  test's input method is the test's own, its other end being sway's relay.
 - [ ] **H10. Drag and drop between programs on Linux.** XDND on X11 and
   `wl_data_device`'s half of it on Wayland. The events exist inside the
   program — **H3** built them for Windows — and nothing on Linux raises them.

@@ -344,3 +344,290 @@ fn a_window_opens_paints_takes_typing_and_closes_on_a_real_compositor() {
         "and text put on the clipboard comes back"
     );
 }
+
+// --- Composing through the compositor's input method -------------------------
+
+/// An input method of the test's own, which is the other end the
+/// compositor relays between: it tells the compositor it composes text,
+/// and when a window asks for text it composes 한글 into it a letter at a
+/// time, as a Korean input method would, committing each syllable when the
+/// next begins. What is under test is the window's end; this only drives,
+/// the way `wtype` drives the keyboard, and the compositor between them is
+/// sway's own relay.
+mod input_method {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    /// The compositor's socket, spoken to the way the protocol says:
+    /// messages of an object, an opcode and a length, then arguments.
+    struct Wire {
+        stream: UnixStream,
+        inbox: Vec<u8>,
+    }
+
+    fn uint(value: u32) -> Vec<u8> {
+        value.to_ne_bytes().to_vec()
+    }
+
+    fn int(value: i32) -> Vec<u8> {
+        uint(value as u32)
+    }
+
+    fn string(text: &str) -> Vec<u8> {
+        let mut bytes = uint(text.len() as u32 + 1);
+        bytes.extend_from_slice(text.as_bytes());
+        bytes.push(0);
+        while bytes.len() % 4 != 0 {
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    impl Wire {
+        fn send(&mut self, object: u32, opcode: u16, arguments: &[Vec<u8>]) {
+            let body: Vec<u8> = arguments.concat();
+            let mut message = uint(object);
+            message.extend(uint(((8 + body.len() as u32) << 16) | u32::from(opcode)));
+            message.extend(body);
+            let _ = self.stream.write_all(&message);
+        }
+
+        /// The next event, or nothing once the wait is over.
+        fn event(&mut self, until: Instant) -> Option<(u32, u16, Vec<u8>)> {
+            loop {
+                if self.inbox.len() >= 8 {
+                    let word = |at: usize| {
+                        u32::from_ne_bytes([
+                            self.inbox[at],
+                            self.inbox[at + 1],
+                            self.inbox[at + 2],
+                            self.inbox[at + 3],
+                        ])
+                    };
+                    let (object, header) = (word(0), word(4));
+                    let length = (header >> 16) as usize;
+                    if length >= 8 && self.inbox.len() >= length {
+                        let body = self.inbox[8..length].to_vec();
+                        self.inbox.drain(..length);
+                        return Some((object, (header & 0xFFFF) as u16, body));
+                    }
+                }
+                let left = until.checked_duration_since(Instant::now())?;
+                let _ = self.stream.set_read_timeout(Some(left.max(Duration::from_millis(1))));
+                let mut chunk = [0u8; 4096];
+                match self.stream.read(&mut chunk) {
+                    Ok(0) => return None,
+                    Ok(count) => self.inbox.extend_from_slice(&chunk[..count]),
+                    Err(_) if Instant::now() < until => {}
+                    Err(_) => return None,
+                }
+            }
+        }
+    }
+
+    /// Reads a string argument at the start of a body.
+    fn string_at(body: &[u8]) -> String {
+        let length = u32::from_ne_bytes([body[0], body[1], body[2], body[3]]) as usize;
+        String::from_utf8_lossy(&body[4..4 + length.saturating_sub(1)]).into_owned()
+    }
+
+    /// Runs the input method until it has composed its word, or the time is
+    /// up; what went wrong, where something did.
+    pub(super) fn compose(runtime: &Path, display: &str) -> Result<(), String> {
+        let stream = UnixStream::connect(runtime.join(display))
+            .map_err(|error| format!("cannot reach the compositor: {error}"))?;
+        let mut wire = Wire { stream, inbox: Vec::new() };
+        let until = Instant::now() + Duration::from_secs(30);
+        // The registry, and a round trip for the list of what is offered.
+        wire.send(1, 1, &[uint(2)]);
+        wire.send(1, 0, &[uint(3)]);
+        let mut offered = Vec::new();
+        loop {
+            let (object, opcode, body) =
+                wire.event(until).ok_or("the compositor did not answer")?;
+            if object == 2 && opcode == 0 {
+                let name = u32::from_ne_bytes([body[0], body[1], body[2], body[3]]);
+                offered.push((name, string_at(&body[4..])));
+            }
+            if object == 3 {
+                break;
+            }
+        }
+        let name_of = |wanted: &str| {
+            offered.iter().find(|(_, interface)| interface == wanted).map(|(name, _)| *name)
+        };
+        let seat = name_of("wl_seat").ok_or("no seat")?;
+        let manager =
+            name_of("zwp_input_method_manager_v2").ok_or("the compositor has no input methods")?;
+        wire.send(2, 0, &[uint(seat), string("wl_seat"), uint(1), uint(4)]);
+        wire.send(2, 0, &[uint(manager), string("zwp_input_method_manager_v2"), uint(1), uint(5)]);
+        // The input method for the seat.
+        wire.send(5, 0, &[uint(4), uint(6)]);
+
+        let mut done = 0u32;
+        let mut active = false;
+        loop {
+            let (object, opcode, _) =
+                wire.event(until).ok_or("no window asked for text in time")?;
+            if object != 6 {
+                continue;
+            }
+            match opcode {
+                0 => active = true,
+                1 => active = false,
+                5 => {
+                    done += 1;
+                    if active {
+                        break;
+                    }
+                }
+                6 => return Err("another input method has the seat".to_owned()),
+                _ => {}
+            }
+        }
+        // The word, as a Korean input method builds it. Each step is one
+        // batch: what is committed, then what is being composed and where
+        // its cursor is — a range of bytes of it, which where it is not
+        // empty is the part being chosen for.
+        let steps: [(&str, &str, i32, i32); 7] = [
+            ("", "ㅎ", 3, 3),
+            ("", "하", 3, 3),
+            ("", "한", 3, 3),
+            ("한", "ㄱ", 3, 3),
+            ("", "그", 3, 3),
+            ("", "글", 0, 3),
+            ("글", "", -1, -1),
+        ];
+        for (commit, preedit, begin, end) in steps {
+            if !commit.is_empty() {
+                wire.send(6, 0, &[string(commit)]);
+            }
+            if !preedit.is_empty() {
+                wire.send(6, 1, &[string(preedit), int(begin), int(end)]);
+            }
+            wire.send(6, 3, &[uint(done)]);
+            std::thread::sleep(Duration::from_millis(150));
+            // Whatever the compositor said meanwhile is counted, so that
+            // the next batch names the state it follows.
+            while let Some((object, opcode, _)) =
+                wire.event(Instant::now() + Duration::from_millis(20))
+            {
+                if object == 6 && opcode == 5 {
+                    done += 1;
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(300));
+        Ok(())
+    }
+}
+
+/// What the program was given by the input method.
+#[derive(Default)]
+struct Composed {
+    shown: Vec<(String, usize, Vec<wp_shell::CompositionAttribute>)>,
+    committed: Vec<String>,
+    ended: u32,
+    typed: String,
+}
+
+/// A program that tells the input method where its caret is, keeps what it
+/// is given, and closes once the word is in or the time is up.
+struct Writer {
+    canvas: Canvas,
+    seen: std::rc::Rc<std::cell::RefCell<Composed>>,
+    started: Instant,
+}
+
+impl App for Writer {
+    fn handle(&mut self, event: Event) -> Response {
+        let mut seen = self.seen.borrow_mut();
+        match event {
+            Event::Compose { text, caret, attributes } => {
+                seen.shown.push((text, caret, attributes));
+                Response::Redraw
+            }
+            Event::Commit(text) => {
+                seen.committed.push(text);
+                Response::Redraw
+            }
+            Event::ComposeEnd => {
+                seen.ended += 1;
+                Response::Ignored
+            }
+            Event::Char(character) => {
+                seen.typed.push(character);
+                Response::Ignored
+            }
+            Event::Tick => {
+                let finished = seen.committed.concat() == "한글";
+                if finished || self.started.elapsed() > Duration::from_secs(30) {
+                    return Response::Close;
+                }
+                Response::Ignored
+            }
+            _ => Response::Ignored,
+        }
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.canvas = Canvas::new(width, height);
+        self.canvas.clear(Color::WHITE);
+        wp_shell::place_composition(120, 80, 18);
+        &self.canvas
+    }
+}
+
+#[test]
+fn text_composed_by_the_compositors_input_method_is_shown_and_committed() {
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(compositor) = Compositor::start("compose", 800, 600) else {
+        eprintln!("skipped: no compositor could be started on this machine");
+        return;
+    };
+    let method = {
+        let runtime = compositor.runtime.clone();
+        let display = compositor.display.clone();
+        std::thread::spawn(move || input_method::compose(&runtime, &display))
+    };
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Composed::default()));
+    let writer = Writer {
+        canvas: Canvas::new(1, 1),
+        seen: std::rc::Rc::clone(&seen),
+        started: Instant::now(),
+    };
+    let options = WindowOptions { title: "Writer".to_owned(), width: 600, height: 400 };
+    wp_shell::run(options, Box::new(writer)).expect("the window opens on the compositor");
+    let drove = method.join().expect("the input method ran");
+    let log = std::fs::read_to_string("/tmp/sway-test-err.log").unwrap_or_default();
+
+    let seen = std::rc::Rc::try_unwrap(seen).ok().expect("the shell let go").into_inner();
+    drove.expect("the input method composed its word");
+    assert_eq!(
+        seen.committed,
+        vec!["한".to_owned(), "글".to_owned()],
+        "each syllable is committed as the next begins: shown {:?}",
+        seen.shown
+    );
+    let shown: Vec<&str> = seen.shown.iter().map(|(text, _, _)| text.as_str()).collect();
+    assert_eq!(shown, ["ㅎ", "하", "한", "ㄱ", "그", "글"], "the syllable is shown as it grows");
+    assert!(seen
+        .shown
+        .iter()
+        .take(5)
+        .all(|(text, caret, attributes)| *caret == text.chars().count()
+            && attributes.iter().all(|mark| *mark == wp_shell::CompositionAttribute::Input)));
+    assert_eq!(
+        seen.shown[5],
+        ("글".to_owned(), 1, vec![wp_shell::CompositionAttribute::Target]),
+        "and a range of the text being chosen for is marked as such"
+    );
+    assert!(seen.typed.is_empty(), "nothing arrives as typed: {:?}", seen.typed);
+    assert!(
+        log.contains("set_cursor_rectangle(120, 80, 1, 18)"),
+        "the caret's place reached the compositor"
+    );
+    assert!(log.contains(".enable()"), "and text was asked for");
+}

@@ -277,6 +277,7 @@ fn share_of(rgb: &[u8], colour: (u8, u8, u8)) -> f32 {
 
 #[test]
 fn the_editor_comes_up_on_a_compositor_takes_typing_and_closes() {
+    let _display = crate::xserver::one_display_at_a_time();
     let Some(compositor) = Compositor::start(1400, 900) else {
         eprintln!("skipped: no compositor could be started on this machine");
         return;

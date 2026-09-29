@@ -21,6 +21,16 @@ use wp_shell::{accessibility, App, Cursor, Event, Response, WindowCommand, Windo
 use crate::editor::Editor;
 use crate::sample;
 
+/// One test on a display at a time: which display a program talks to is
+/// named by the environment, and the environment is the whole program's.
+/// The compositor's tests hold it too.
+pub(crate) static ONE_DISPLAY_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Holds [`ONE_DISPLAY_AT_A_TIME`], whatever a test before panicked with.
+pub(crate) fn one_display_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    ONE_DISPLAY_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// A virtual X server for the length of a test.
 struct Server {
     child: Child,
@@ -174,6 +184,7 @@ fn colours_in_rows(shot: &Shot, rows: std::ops::Range<usize>) -> Vec<((u8, u8, u
 
 #[test]
 fn the_editor_comes_up_on_a_real_server_and_closes_from_its_frame() {
+    let _display = one_display_at_a_time();
     let Some(_server) = Server::start(96, 1400, 900) else {
         eprintln!("skipped: Xvfb is not on this machine");
         return;
@@ -219,4 +230,120 @@ fn the_editor_comes_up_on_a_real_server_and_closes_from_its_frame() {
     // The caption bar along the top is drawn by the editor, not the server.
     let top = colours_in_rows(&shot, 0..8);
     assert_ne!(top[0].0, (0, 0, 0), "the caption bar is painted: {:?}", &top[..top.len().min(3)]);
+}
+
+/// The editor with a word typed into it through an input method: it keeps
+/// the document's text once the word is there, and closes.
+struct Composing {
+    editor: Editor,
+    text: Rc<RefCell<Option<String>>>,
+    composed: Rc<RefCell<bool>>,
+    started: Instant,
+}
+
+impl App for Composing {
+    fn handle(&mut self, event: Event) -> Response {
+        if matches!(&event, Event::Compose { text, .. } if !text.is_empty()) {
+            *self.composed.borrow_mut() = true;
+        }
+        if event == Event::Tick {
+            let text = self.editor.document.plain_text();
+            if text.contains("한글") || self.started.elapsed() > Duration::from_secs(60) {
+                *self.text.borrow_mut() = Some(text);
+                return Response::Close;
+            }
+        }
+        self.editor.handle(event)
+    }
+
+    fn cursor(&mut self, x: i32, y: i32) -> Cursor {
+        self.editor.cursor(x, y)
+    }
+
+    fn is_caption(&mut self, x: i32, y: i32) -> bool {
+        self.editor.is_caption(x, y)
+    }
+
+    fn switch_window(&mut self, index: usize) {
+        self.editor.switch_window(index);
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.editor.draw(width, height)
+    }
+}
+
+/// Korean typed on a real X server through a real input method — uim-xim
+/// and its Korean method, the keys pressed through the server's test
+/// extension — goes into the document: the chain from the key to the page,
+/// with nothing of it this program's own but the program.
+#[test]
+fn korean_typed_through_an_input_method_goes_into_the_document() {
+    let _display = one_display_at_a_time();
+    let Some(_server) = Server::start(88, 1400, 900) else {
+        eprintln!("skipped: Xvfb is not on this machine");
+        return;
+    };
+    let display = ":88";
+    let tools = Command::new("xdotool").arg("version").output().is_ok()
+        && Command::new("uim-xim").arg("--list").output().is_ok();
+    if !tools {
+        eprintln!("skipped: uim-xim or xdotool is not on this machine");
+        return;
+    }
+    let mut method = Command::new("uim-xim")
+        .arg("--engine=byeoru")
+        .env("DISPLAY", display)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the input method server starts");
+    std::thread::sleep(Duration::from_secs(2));
+    std::env::set_var("XMODIFIERS", "@im=uim");
+    std::env::set_var("LC_CTYPE", "ko_KR.UTF-8");
+
+    let keys = std::thread::spawn(move || {
+        let run = |arguments: &[&str]| {
+            Command::new("xdotool")
+                .args(arguments)
+                .env("DISPLAY", display)
+                .output()
+                .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+                .unwrap_or_default()
+        };
+        let window = run(&["search", "--sync", "--name", "Word Processor"]);
+        let window = window.lines().next().unwrap_or("").to_owned();
+        run(&["windowfocus", "--sync", &window]);
+        // The editor draws its first page before it takes keys in earnest.
+        std::thread::sleep(Duration::from_secs(3));
+        run(&["key", "--delay", "250", "shift+space"]);
+        run(&["type", "--delay", "250", "gksrmf"]);
+        run(&["key", "--delay", "250", "space"]);
+    });
+
+    let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
+    let mut body = wp_docx::model::Body::default();
+    body.blocks.push(wp_docx::model::Block::Paragraph(wp_docx::model::Paragraph::default()));
+    let document = Document::create(&body).expect("a blank document");
+    let editor = Editor::opened(library, document, None::<PathBuf>);
+    let text = Rc::new(RefCell::new(None));
+    let composed = Rc::new(RefCell::new(false));
+    let composing = Composing {
+        editor,
+        text: Rc::clone(&text),
+        composed: Rc::clone(&composed),
+        started: Instant::now(),
+    };
+    let options =
+        WindowOptions { title: "Document — Word Processor".to_owned(), width: 1400, height: 900 };
+    wp_shell::run(options, Box::new(composing)).expect("the editor's window opens");
+    keys.join().expect("the keys were pressed");
+    let _ = method.kill();
+    let _ = method.wait();
+    std::env::remove_var("XMODIFIERS");
+
+    let text = text.borrow().clone().unwrap_or_default();
+    assert!(text.contains("한글"), "the word is in the document: {text:?}");
+    assert!(!text.contains("gksrmf"), "and not the letters that spelled it: {text:?}");
+    assert!(*composed.borrow(), "the syllable was shown in the document as it was built");
 }
