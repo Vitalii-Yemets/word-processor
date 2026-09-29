@@ -47,7 +47,12 @@ use std::sync::Mutex;
 ///
 /// English is not among them: English is the key, so the catalogue for it
 /// would map every message to itself.
-const BUILT_IN: &[(&str, &str, &str)] = &[("de", "Deutsch", include_str!("../messages/de.txt"))];
+const BUILT_IN: &[(&str, &str, &str)] = &[
+    ("de", "Deutsch", include_str!("../messages/de.txt")),
+    // A language read right to left, whose catalogue says so of itself:
+    // the window in it is drawn turned about. See [`is_mirrored`].
+    ("he", "עברית", include_str!("../messages/he.txt")),
+];
 
 /// Every catalogue that travels with the program: its tag, its name, and
 /// what is in it.

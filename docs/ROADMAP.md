@@ -6769,7 +6769,7 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   puts in the long form and nothing offers the others. Numbers inside the
   document — a table's sums, a numbered list — are the document's and are
   written as the document says, not as the machine does.
-- [ ] **I4. The document's own words in the person's language.** Word shows
+- [x] **I4. The document's own words in the person's language.** Word shows
   the built-in style called "Heading 1" as "Überschrift 1" to a German, and
   names the document's language in the strip along the bottom in the
   program's language. Both are shown here as the document holds them, which
@@ -6850,13 +6850,75 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   always were. A letter only the language's keyboard has — Ü — is not
   offered, since the shells report a letter key by the Latin letter on it.
   The navigation pane's four tabs are too narrow for their German names.
-- [ ] **I6. A window that really reads right to left.** **I2** turns the
+- [x] **I6. A window that really reads right to left.** **I2** turns the
   window and proves it with a mirrored pseudo-language; what is missing is a
   real Arabic or Hebrew catalogue, which is a translation rather than a
   mechanism, and the handful of icons whose meaning is a direction — the
   indent buttons, the bullet arrows — which keep pointing the way they did
   because they are drawn from the icon catalogue rather than as paths. Word
   turns them. Named in **I2**.
+  *Done:* a Hebrew catalogue (`crates/wp-app/messages/he.txt`), every one
+  of the 1349 messages German has, offered among the interface languages
+  as עברית and turning the window, as its first lines say it does: Word's
+  own Hebrew words where they were known — בית, הוספה, עיצוב, פריסה,
+  הפניות, דברי דואר, סקירה, תצוגה for the tabs — and plain Hebrew where
+  not.
+  **The icons.** **I2** had it the wrong way round: an icon is drawn as
+  paths, and the canvas reflects every path about the window, so it was
+  every icon that was turned — the clipboard, the brush, the magnifying
+  glass back to front — and not the arrows alone. Now a picture of a thing
+  is reflected about its own middle first, so that the two cancel and it
+  comes out as drawn in its turned place, and only the icons whose meaning
+  is the way the text is read are left to the canvas and turned, as Word
+  turns them: the three lists, the two indents, undo and redo, the line
+  spacing, previous and next. Aligning left and right are not among them:
+  left is left in any language.
+  **The lines of text.** A line of the interface — a button's name, the
+  strip's page count, a message — had been turned round whole whenever it
+  began in a script read from the right. That is right for a line of
+  nothing but Hebrew and wrong for the rest: "עמוד 12 מתוך 40" said 21
+  and 04, a word of English in a message was spelt backwards, and a bracket
+  faced out, so the strip read ")בריטניה(" for the document's language.
+  Such a line now goes through the whole bidirectional algorithm
+  (`wp-bidi`, the one the page uses), with a bracket in a stretch read from
+  the right drawn as the other end of its pair; and in a window read right
+  to left it reads right to left whatever it starts with, as Windows reads
+  a window with that reading order — "{0} נשמר" with an English name for
+  the {0} is the name and then the word, read from the right, where a line
+  going by its first letter would put the word first. A document's own
+  words drawn alone, as a Font dialog's sample is, go the way their own
+  first letter says.
+  **The letters Alt puts over the ribbon** (**I5**) are worked out from
+  the words under them, and a key is named by the Latin letter on it: a
+  Hebrew word gives none, so a Hebrew window had a digit over nine things
+  and nothing over the rest. Where the words shown have no Latin letter
+  a command's letter is taken from its English words, and the tabs have
+  Word's own English letters, which are the ones somebody who knows Word
+  already has — H over בית, N over הוספה. And on the way, in English too:
+  the Table Layout tab had Word's L, which is the Developer tab's, and the
+  two are there together while the caret is in a table; it has A now.
+  On the way: a password box showed "{2022}" for each letter typed, the
+  number of the dot written out rather than the dot (since **J1**), and
+  now shows the dot; and **I4**'s entry is ticked, which its commit did not.
+  *Proven by:* in Hebrew, the window is turned, בית is Home and מודגש Bold,
+  every tab has Word's letter and N opens Insert, every command's letter
+  is in its English words, and more than nine things on it have a letter;
+  no two tabs with the same letter, the table tabs included; a picture
+  comes out as drawn in a turned window and undo turned; the page count
+  keeps its digits in order, the brackets close round the country, a
+  message of a window read from the right reads from the right and one of
+  a window read from the left from the left, and English stays English;
+  a password shown as a dot a letter. And the Hebrew window with its
+  letters and its strip along the bottom, looked at.
+  *Not done, and named here:* the Hebrew is this translator's and not
+  Microsoft's: Word's Hebrew words were used where they were known, and
+  nothing here was checked against a Hebrew Word. No Arabic catalogue: the
+  mechanism is the same, the translation is not done. The letters over the
+  ribbon in a Hebrew window are English letters, as a key is named by
+  them; what a Hebrew Word puts there was not checked. In a box to type
+  into, the caret is put as far from the start as the text before it is
+  wide, measured from the side the window reads from, which is right for
+  Hebrew typed there and wrong for English typed into a Hebrew window.
 
 ## J — Protection, collaboration and the rest of Word's features
 

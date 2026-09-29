@@ -938,6 +938,8 @@ impl Editor {
         }
         self.canvas.set_mirror(about);
         crate::chrome::mirror::set(about);
+        // And the interface's lines read its way, whatever they start with.
+        self.chrome_engine.set_interface_direction(about.map(|_| wp_bidi::Direction::RightToLeft));
 
         // A blink and nothing else: put back what the caret was drawn over and
         // draw it again, rather than drawing the window.

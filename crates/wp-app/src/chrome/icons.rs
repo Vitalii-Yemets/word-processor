@@ -32,7 +32,7 @@
 
 use std::cell::RefCell;
 
-use wp_raster::{Canvas, Color};
+use wp_raster::{Canvas, Color, Transform};
 use wp_svg::Drawing;
 
 #[cfg(test)]
@@ -82,10 +82,48 @@ pub fn draw_sized(canvas: &mut Canvas, icon: Icon, x: f32, y: f32, size: f32, co
         }
         let Some(drawing) = slot.as_ref() else { return };
 
+        // In a window read right to left the canvas reflects every path about
+        // the window. A picture has to come out the way it was drawn — a
+        // clipboard, a brush, a magnifying glass — so it is reflected about
+        // its own middle first and the two cancel, leaving it the right way
+        // round in its turned place. The few whose meaning is a direction are
+        // left to the canvas, and point the way the window reads.
+        let own_middle = canvas.mirror().is_some() && !points_the_reading_way(icon);
         for shape in drawing.placed(x, y, size) {
-            canvas.fill_path(&shape.outline, color);
+            if own_middle {
+                let about =
+                    Transform { a: -1.0, b: 0.0, c: 0.0, d: 1.0, e: 2.0 * x + size, f: 0.0 };
+                canvas.fill_path(&shape.outline.transformed(&about), color);
+            } else {
+                canvas.fill_path(&shape.outline, color);
+            }
         }
     });
+}
+
+/// Whether an icon's meaning is the direction the text is read in, and so
+/// is turned with a window read right to left, as Word turns it: the lists,
+/// whose marks stand at the start of the line; the indents, which push
+/// from the start; undoing and redoing, which go back and on; the line
+/// spacing's arrows, which stand before the lines; and going to the
+/// previous and the next thing. Aligning left or right is not among them —
+/// left is left in any language — and nor is any picture of a thing.
+#[must_use]
+pub fn points_the_reading_way(icon: Icon) -> bool {
+    matches!(
+        icon,
+        Icon::Bullets
+            | Icon::Numbering
+            | Icon::MultilevelList
+            | Icon::IndentMore
+            | Icon::IndentLess
+            | Icon::Undo
+            | Icon::Redo
+            | Icon::LineSpacing
+            | Icon::Previous
+            | Icon::Next
+            | Icon::NextFootnote
+    )
 }
 
 /// A band of colour under an icon, for the ones that carry one.
@@ -100,6 +138,52 @@ pub fn draw_color_band(canvas: &mut Canvas, x: f32, y: f32, size: f32, color: Co
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A window sixty-four wide, turned or not, with one icon on it.
+    fn painted(icon: Icon, x: f32, turned: bool) -> Canvas {
+        let mut canvas = Canvas::new(64, 24);
+        canvas.clear(Color::WHITE);
+        canvas.set_mirror(turned.then_some(64.0));
+        draw_sized(&mut canvas, icon, x, 2.0, 20.0, Color::BLACK);
+        canvas.set_mirror(None);
+        canvas
+    }
+
+    fn columns_reversed(canvas: &Canvas) -> Vec<Color> {
+        let mut out = Vec::new();
+        for y in 0..canvas.pixel_height() {
+            for x in (0..canvas.pixel_width()).rev() {
+                out.push(canvas.pixel(x, y));
+            }
+        }
+        out
+    }
+
+    fn all(canvas: &Canvas) -> Vec<Color> {
+        let mut out = Vec::new();
+        for y in 0..canvas.pixel_height() {
+            for x in 0..canvas.pixel_width() {
+                out.push(canvas.pixel(x, y));
+            }
+        }
+        out
+    }
+
+    /// In a window read right to left an icon goes where its place turns to
+    /// — at 4 in a window 64 wide, it is drawn from 40 — and a picture is
+    /// the same picture there, the right way round, where one whose meaning
+    /// is a direction is its mirror image.
+    #[test]
+    fn a_picture_keeps_its_way_round_in_a_turned_window_and_a_direction_turns() {
+        let brush = painted(Icon::Brush, 4.0, true);
+        assert_eq!(all(&brush), all(&painted(Icon::Brush, 40.0, false)), "the brush as drawn");
+
+        let undo = painted(Icon::Undo, 4.0, true);
+        assert_eq!(all(&undo), columns_reversed(&painted(Icon::Undo, 4.0, false)), "undo turned");
+        assert!(
+            points_the_reading_way(Icon::IndentMore) && !points_the_reading_way(Icon::AlignStart)
+        );
+    }
 
     /// Every drawing named in the catalogue has to read, at both sizes.
     ///

@@ -374,6 +374,16 @@ impl Photographing {
         found.is_some_and(|element| self.editor.accessible_invoke(element.id) != Response::Ignored)
     }
 
+    /// Whether the menu that is down offers a line by this name — which it
+    /// does once it has been drawn, and on a machine busy with other tests
+    /// that can be a few ticks after it was asked for.
+    fn offers(&mut self, name: &str) -> bool {
+        let elements = self.editor.accessible_elements();
+        elements
+            .iter()
+            .any(|element| element.role == accessibility::Role::MenuItem && element.name == name)
+    }
+
     /// What the status strip says.
     fn status(&mut self) -> String {
         let elements = self.editor.accessible_elements();
@@ -403,7 +413,7 @@ impl App for Photographing {
             match step {
                 0 if ticks > 10 && self.press(Role::TabItem, "Insert") => next(&self.shots),
                 1 if since > 2 && self.press(Role::Button, "Screenshot") => next(&self.shots),
-                2 if since > 2 => {
+                2 if since > 2 && self.offers("The whole screen") => {
                     let items = self.editor.accessible_elements();
                     self.shots.borrow_mut().offered = items
                         .iter()
@@ -424,7 +434,7 @@ impl App for Photographing {
                     next(&self.shots);
                 }
                 4 if since > 2 && self.press(Role::Button, "Screenshot") => next(&self.shots),
-                5 if since > 2 => {
+                5 if since > 2 && self.offers("Screen Clipping") => {
                     // The person thinks better of it: Escape, to slurp,
                     // which has the keyboard while the rectangle is dragged.
                     let (runtime, display) = (self.runtime.clone(), self.display.clone());

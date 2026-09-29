@@ -2482,7 +2482,7 @@ impl Dialog {
             | Field::Number { label, value, .. } => {
                 // What is shown, which for a password is one dot a letter.
                 let value = match &self.fields[index] {
-                    Field::Secret { .. } => "{2022}".repeat(value.chars().count()),
+                    Field::Secret { .. } => hidden(&value),
                     _ => value,
                 };
                 let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
@@ -2637,6 +2637,11 @@ impl Dialog {
     }
 }
 
+/// What a password box shows of what was typed into it: a dot a letter.
+fn hidden(value: &str) -> String {
+    "\u{2022}".repeat(value.chars().count())
+}
+
 /// A number with what it is measured in written after it.
 ///
 /// Word writes an inch as `1"`, with the mark against the digit, and a
@@ -2756,6 +2761,13 @@ mod tests {
                 },
             ],
         )
+    }
+
+    /// A dot a letter, and not the number of the dot written out, which is
+    /// what the box had been showing.
+    #[test]
+    fn a_password_is_shown_as_a_dot_a_letter() {
+        assert_eq!(super::hidden("pässwörd"), "••••••••");
     }
 
     #[test]

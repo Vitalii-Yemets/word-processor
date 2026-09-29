@@ -1,0 +1,4053 @@
+# The catalogue for עברית: Word's own Hebrew words, where this translator
+# knew Word's word for the same thing, and a plain Hebrew one where not.
+# A language read right to left: the window is drawn turned about.
+language = עברית
+direction = rtl
+
+= ( )
+> ( )
+
+= (Ctrl)
+> (Ctrl)
+
+= (default)
+> (ברירת מחדל)
+
+= (no spelling suggestions)
+> (אין הצעות איות)
+
+= (no style)
+> (ללא סגנון)
+
+= (none)
+> (ללא)
+
+= (not matched)
+> (לא הותאם)
+
+= *Bold* and _italic_ with real formatting
+> *מודגש* ו-_נטוי_ בעיצוב אמיתי
+
+= 1 word
+> מילה אחת
+
+= 1. Formatting restrictions
+> 1. הגבלות עיצוב
+
+= 100%
+> 100%
+
+= 100% Stacked Bar
+> עמודות אופקיות מוערמות 100%
+
+= 100% Stacked Column
+> עמודות מוערמות 100%
+
+= 2. Editing restrictions
+> 2. הגבלות עריכה
+
+= 3. Exceptions
+> 3. חריגים
+
+= 4. Start enforcement
+> 4. התחל אכיפה
+
+= < >
+> < >
+
+= A block has to have a name
+> לאבן בניין חייב להיות שם
+
+= A new document
+> מסמך חדש
+
+= A password that is lost cannot be recovered.
+> לא ניתן לשחזר סיסמה שאבדה.
+
+= A password to modify does not encrypt the file.
+> סיסמה לשינוי אינה מצפינה את הקובץ.
+
+= A repeating section goes round whole paragraphs that are side by side
+> מקטע חוזר מקיף פסקאות שלמות הסמוכות זו לזו
+
+= A rule under every heading
+> קו מתחת לכל כותרת
+
+= A to Z
+> א עד ת
+
+= AaBbCcDdEe
+> AaBbCcDdEe
+
+= Abort
+> בטל פעולה
+
+= Above
+> מעל
+
+= Accept
+> קבל
+
+= Accept All
+> קבל הכל
+
+= Accessibility
+> נגישות
+
+= Actions
+> פעולות
+
+= Add
+> הוסף
+
+= Add Shape
+> הוסף צורה
+
+= Add Source
+> הוסף מקור
+
+= Add Users
+> הוסף משתמשים
+
+= Add new part
+> הוסף חלק חדש
+
+= Add new part...
+> הוסף חלק חדש...
+
+= Add to Dictionary
+> הוסף למילון
+
+= Additional Actions
+> פעולות נוספות
+
+= Address
+> כתובת
+
+= Address Line 1
+> שורת כתובת 1
+
+= Advanced
+> מתקדם
+
+= Afrikaans
+> אפריקאנס
+
+= After:
+> אחרי:
+
+= Against a rule, to the right
+> מול קו, מימין
+
+= Albanian
+> אלבנית
+
+= Align
+> יישר
+
+= Align Left
+> יישור לשמאל
+
+= Align Right
+> יישור לימין
+
+= Alignment
+> יישור
+
+= All
+> הכל
+
+= All caps
+> כל האותיות רישיות
+
+= All files
+> כל הקבצים
+
+= All files (*.*)
+> כל הקבצים (*.*)
+
+= All styles
+> כל הסגנונות
+
+= Allow AutoFormat to override formatting restrictions
+> אפשר לעיצוב אוטומטי לעקוף הגבלות עיצוב
+
+= Allow character substitution
+> אפשר החלפת תווים
+
+= Allow only this kind of editing in the document
+> אפשר רק סוג עריכה זה במסמך
+
+= Allow overlap
+> אפשר חפיפה
+
+= Allow row to break across pages
+> אפשר לשורה להתפצל בין עמודים
+
+= Already in this document
+> כבר נמצא במסמך זה
+
+= Alt Text
+> טקסט חלופי
+
+= Always Open Read-Only
+> פתח תמיד לקריאה בלבד
+
+= Always open read-only
+> פתח תמיד לקריאה בלבד
+
+= Always show these on screen
+> הצג תמיד על המסך
+
+= An empty box takes the encryption off.
+> תיבה ריקה מסירה את ההצפנה.
+
+= Another block is called that already
+> אבן בניין אחרת כבר נקראת כך
+
+= Anybody who can open it can take that one off.
+> כל מי שיכול לפתוח אותו יכול להסיר זאת.
+
+= Anybody who can open the file can take this off.
+> כל מי שיכול לפתוח את הקובץ יכול להסיר זאת.
+
+= Appearance
+> מראה
+
+= Apply
+> החל
+
+= Apply as you type
+> החל תוך כדי הקלדה
+
+= Apply to
+> החל על
+
+= Arabic
+> ערבית
+
+= Area
+> שטח
+
+= Argentina
+> ארגנטינה
+
+= Armenian
+> ארמנית
+
+= Arrange
+> סדר
+
+= Arrange All
+> סדר הכל
+
+= Art
+> אומנות
+
+= Article use
+> שימוש בה' הידיעה
+
+= As you type
+> תוך כדי הקלדה
+
+= Asian Layout
+> פריסה אסייתית
+
+= Attach Template
+> צרף תבנית
+
+= Attach...
+> צרף...
+
+= Australia
+> אוסטרליה
+
+= Austria
+> אוסטריה
+
+= AutoCorrect
+> תיקון אוטומטי
+
+= AutoCorrect Exceptions
+> חריגים של תיקון אוטומטי
+
+= AutoCorrect Options...
+> אפשרויות תיקון אוטומטי...
+
+= AutoCorrect options
+> אפשרויות תיקון אוטומטי
+
+= AutoCorrect...
+> תיקון אוטומטי...
+
+= AutoFit
+> התאמה אוטומטית
+
+= AutoFormat
+> עיצוב אוטומטי
+
+= AutoFormat As You Type
+> עיצוב אוטומטי בעת ההקלדה
+
+= AutoFormat Now
+> עיצוב אוטומטי כעת
+
+= AutoFormat and review each change
+> עצב אוטומטית וסקור כל שינוי
+
+= AutoFormat found nothing to change
+> העיצוב האוטומטי לא מצא דבר לשנות
+
+= AutoFormat made {0} changes
+> העיצוב האוטומטי ביצע {0} שינויים
+
+= AutoFormat now
+> עיצוב אוטומטי כעת
+
+= AutoFormat...
+> עיצוב אוטומטי...
+
+= AutoRecover file location
+> מיקום קובץ השחזור האוטומטי
+
+= AutoText
+> טקסט אוטומטי
+
+= Automatic
+> אוטומטי
+
+= Automatic bulleted and numbered lists
+> רשימות תבליטים ומספור אוטומטיות
+
+= Automatic bulleted lists
+> רשימות תבליטים אוטומטיות
+
+= Automatically add words to list
+> הוסף מילים לרשימה באופן אוטומטי
+
+= Automatically hyphenate document
+> מקף את המסמך באופן אוטומטי
+
+= Automatically update document styles
+> עדכן סגנונות מסמך באופן אוטומטי
+
+= Autosaved {0}
+> נשמר אוטומטית {0}
+
+= Available actions
+> פעולות זמינות
+
+= Azerbaijani
+> אזרית
+
+= Balloon Text
+> טקסט בלון
+
+= Banded
+> בפסים
+
+= Banded Columns
+> עמודות מפוספסות
+
+= Banded Rows
+> שורות מפוספסות
+
+= Basic Block List
+> רשימת בלוקים בסיסית
+
+= Basic Cycle
+> מחזור בסיסי
+
+= Basic Process
+> תהליך בסיסי
+
+= Basic Pyramid
+> פירמידה בסיסית
+
+= Basque
+> בסקית
+
+= Before:
+> לפני:
+
+= Belarusian
+> בלארוסית
+
+= Belgium
+> בלגיה
+
+= Below
+> מתחת
+
+= Bengali
+> בנגלית
+
+= Between dashes
+> בין קווים מפרידים
+
+= Bibliographies
+> ביבליוגרפיות
+
+= Bibliography
+> ביבליוגרפיה
+
+= Bind the control to this node
+> קשר את הפקד לצומת זה
+
+= Black
+> שחור
+
+= Blank Page
+> עמוד ריק
+
+= Blank document
+> מסמך ריק
+
+= Block Authors
+> חסום מחברים
+
+= Block Quick Style Set switching
+> חסום החלפת ערכת סגנונות מהירים
+
+= Block Text
+> טקסט בלוק
+
+= Block Theme or Scheme switching
+> חסום החלפת ערכת נושא או ערכה
+
+= Blue
+> כחול
+
+= Body Text
+> גוף טקסט
+
+= Bokmal
+> בוקמול
+
+= Bold
+> מודגש
+
+= Book Title
+> כותרת ספר
+
+= Bookmark
+> סימניה
+
+= Bookmark name
+> שם סימניה
+
+= Border Painter
+> מברשת גבולות
+
+= Border Styles
+> סגנונות גבול
+
+= Border lines
+> קווי גבול
+
+= Borders
+> גבולות
+
+= Borders and Shading
+> גבולות והצללה
+
+= Borders…
+> גבולות…
+
+= Bosnian
+> בוסנית
+
+= Bottom
+> תחתון
+
+= Bottom of Page
+> תחתית העמוד
+
+= Bound
+> מאוגד
+
+= Brazil
+> ברזיל
+
+= Breaks
+> מעברים
+
+= Bring Forward
+> הבא קדימה
+
+= Bring to Front
+> הבא לחזית
+
+= Browse
+> עיון
+
+= Bubble
+> בועה
+
+= Building Block Gallery
+> גלריית אבני בניין
+
+= Building Block Gallery Content Control
+> פקד תוכן של גלריית אבני בניין
+
+= Building Blocks Organizer
+> מארגן אבני בניין
+
+= Building blocks
+> אבני בניין
+
+= Built-in Heading styles
+> סגנונות כותרת מובנים
+
+= Bulgarian
+> בולגרית
+
+= Bullets
+> תבליטים
+
+= Canada
+> קנדה
+
+= Cancel
+> ביטול
+
+= Cannot add the comment: {0}
+> לא ניתן להוסיף את ההערה: {0}
+
+= Cannot add the note: {0}
+> לא ניתן להוסיף את הערת השוליים: {0}
+
+= Cannot insert the picture: {0}
+> לא ניתן להוסיף את התמונה: {0}
+
+= Cannot make a document: {0}
+> לא ניתן ליצור מסמך: {0}
+
+= Cannot open {0}: {1}
+> לא ניתן לפתוח את {0}: {1}
+
+= Cannot read {0}
+> לא ניתן לקרוא את {0}
+
+= Cannot read {0}: {1}
+> לא ניתן לקרוא את {0}: {1}
+
+= Cannot save: {0}
+> לא ניתן לשמור: {0}
+
+= Cannot set that: {0}
+> לא ניתן להגדיר זאת: {0}
+
+= Cannot write {0}: {1}
+> לא ניתן לכתוב את {0}: {1}
+
+= Capitalization
+> אותיות רישיות
+
+= Capitalize first letter of sentences
+> הפוך את האות הראשונה במשפט לרישית
+
+= Capitalize names of days
+> הפוך שמות ימים לאותיות רישיות
+
+= Caption
+> כיתוב
+
+= Captions
+> כיתובים
+
+= Case changes
+> שינויי רישיות
+
+= Catalan
+> קטלאנית
+
+= Catalogues can be added in
+> ניתן להוסיף קטלוגים ב
+
+= Category
+> קטגוריה
+
+= Cell
+> תא
+
+= Cell Size
+> גודל תא
+
+= Cell margins
+> שולי תא
+
+= Center
+> מרכז
+
+= Centimeters
+> סנטימטרים
+
+= Centred
+> ממורכז
+
+= Certificate
+> אישור
+
+= Change Case
+> שנה רישיות
+
+= Change Colors
+> שנה צבעים
+
+= Change Password
+> שנה סיסמה
+
+= Change how the text is corrected as you type
+> שנה את אופן תיקון הטקסט בעת ההקלדה
+
+= Change to {0}
+> שנה ל-{0}
+
+= Changed to “{0}”
+> שונה ל-”{0}”
+
+= Changes
+> שינויים
+
+= Character
+> תו
+
+= Character Spacing
+> מרווח בין תווים
+
+= Character code
+> קוד תו
+
+= Chart
+> תרשים
+
+= Check
+> בדוק
+
+= Check Box
+> תיבת סימון
+
+= Check for Errors
+> בדוק אם קיימות שגיאות
+
+= Checked styles are currently allowed
+> הסגנונות המסומנים מותרים כעת
+
+= Chinese
+> סינית
+
+= Choose a column to sort by
+> בחר עמודה למיון
+
+= Choose a diagram to add a box to
+> בחר דיאגרמה שאליה תתווסף תיבה
+
+= Choose a diagram to type its words here.
+> בחר דיאגרמה כדי להקליד כאן את המילים שלה.
+
+= Choose a node of the part to bind a control to
+> בחר צומת של החלק שאליו ייקשר פקד
+
+= Choose commands from
+> בחר פקודות מתוך
+
+= Choose one to put it in, to refile it, or to take it away.
+> בחר אחד כדי להוסיף אותו, לתייק אותו מחדש או להסיר אותו.
+
+= Choose the ink first: Select, then drag round it
+> בחר תחילה את הדיו: בחר, ולאחר מכן גרור סביבו
+
+= Citation
+> ציטוט מקור
+
+= Citations & Bibliography
+> ציטוטים וביבליוגרפיה
+
+= City
+> עיר
+
+= Clear
+> נקה
+
+= Clear All
+> נקה הכל
+
+= Clear All Formatting
+> נקה את כל העיצוב
+
+= Click a shape or a picture first
+> לחץ תחילה על צורה או על תמונה
+
+= Clipboard
+> לוח
+
+= Close
+> סגור
+
+= Close Header and Footer
+> סגור כותרת עליונה ותחתונה
+
+= Close the Comparison
+> סגור את ההשוואה
+
+= Closing
+> סיום
+
+= Clustered Bar
+> עמודות אופקיות מקובצות
+
+= Clustered Column
+> עמודות מקובצות
+
+= Code
+> קוד
+
+= Color
+> צבע
+
+= Colored Fill - Accent 1
+> מילוי צבעוני - הדגשה 1
+
+= Colored Fill - Accent 2
+> מילוי צבעוני - הדגשה 2
+
+= Colored Fill - Accent 3
+> מילוי צבעוני - הדגשה 3
+
+= Colored Fill - Accent 4
+> מילוי צבעוני - הדגשה 4
+
+= Colored Fill - Accent 5
+> מילוי צבעוני - הדגשה 5
+
+= Colored Fill - Accent 6
+> מילוי צבעוני - הדגשה 6
+
+= Colorful - Accent Colors
+> צבעוני - צבעי הדגשה
+
+= Colors
+> צבעים
+
+= Column
+> עמודה
+
+= Columns
+> עמודות
+
+= Combine Revisions from Two Authors
+> שלב גרסאות משני מחברים
+
+= Combo Box
+> תיבה משולבת
+
+= Comma-separated files
+> קבצים מופרדים באמצעות פסיקים
+
+= Comma-separated values
+> ערכים מופרדים באמצעות פסיקים
+
+= Comment
+> הערה
+
+= Comment Reference
+> הפניה להערה
+
+= Comment Subject
+> נושא הערה
+
+= Comment Text
+> טקסט הערה
+
+= Comments
+> הערות
+
+= Commonly confused words
+> מילים שמתבלבלים ביניהן לעתים קרובות
+
+= Compact
+> דחוס
+
+= Company
+> חברה
+
+= Compare
+> השווה
+
+= Compare Documents
+> השוואת מסמכים
+
+= Compare Two Documents
+> השווה שני מסמכים
+
+= Compare with
+> השווה עם
+
+= Comparisons
+> השוואות
+
+= Compile error
+> שגיאת הידור
+
+= Confirm file format conversion on open
+> אשר המרת תבנית קובץ בעת הפתיחה
+
+= Content Control Properties
+> מאפייני פקד תוכן
+
+= Content control cannot be deleted
+> לא ניתן למחוק את פקד התוכן
+
+= Contents
+> תוכן
+
+= Contents cannot be edited
+> לא ניתן לערוך את התוכן
+
+= Context Menu
+> תפריט הקשר
+
+= Contour
+> מתאר
+
+= Controls
+> פקדים
+
+= Convert
+> המר
+
+= Convert File
+> המרת קובץ
+
+= Convert file from
+> המר קובץ מתוך
+
+= Convert to Text
+> המר לטקסט
+
+= Convert to {0}
+> המר ל-{0}
+
+= Copies
+> עותקים
+
+= Copy
+> העתק
+
+= Correct TWo INitial CApitals
+> תקן שתי אותיות רישיות בתחילת מילה
+
+= Correct accidental use of cAPS LOCK key
+> תקן שימוש בשוגג במקש CAPS LOCK
+
+= Countersign
+> חתום נגדית
+
+= Countersigned by {0}
+> נחתם נגדית על-ידי {0}
+
+= Country
+> מדינה
+
+= Cover Page
+> עמוד שער
+
+= Cover Pages
+> עמודי שער
+
+= Cover page taken off
+> עמוד השער הוסר
+
+= Create
+> צור
+
+= Create Graphic
+> צור גרפיקה
+
+= Create New Building Block
+> צור אבן בניין חדשה
+
+= Create a PDF
+> צור PDF
+
+= Croatian
+> קרואטית
+
+= Cross-reference
+> הפניה מקושרת
+
+= Ctrl+click to save the file
+> Ctrl+לחיצה לשמירת הקובץ
+
+= Current Position
+> המיקום הנוכחי
+
+= Custom Margins…
+> שוליים מותאמים אישית…
+
+= Custom Print
+> הדפסה מותאמת אישית
+
+= Custom XML Part:
+> חלק XML מותאם אישית:
+
+= Customize Quick Access Toolbar
+> התאמה אישית של סרגל הכלים לגישה מהירה
+
+= Customize Ribbon
+> התאמה אישית של רצועת הכלים
+
+= Customize the Ribbon
+> התאמה אישית של רצועת הכלים
+
+= Cut
+> גזור
+
+= Cyrillic
+> קירילי
+
+= Czech
+> צ'כית
+
+= Danish
+> דנית
+
+= Dark Gray
+> אפור כהה
+
+= Dark Mode
+> מצב כהה
+
+= Data
+> נתונים
+
+= Date
+> תאריך
+
+= Date & Time
+> תאריך ושעה
+
+= Date Picker
+> בורר תאריכים
+
+= Decrease Font Size
+> הקטן גודל גופן
+
+= Decrease Indent
+> הקטן כניסה
+
+= Default Paragraph Font
+> גופן ברירת מחדל של פסקה
+
+= Default tab stops
+> עצירות טאב המוגדרות כברירת מחדל
+
+= Delete
+> מחק
+
+= Delete Column
+> מחק עמודה
+
+= Delete Note
+> מחק הערת שוליים
+
+= Delete Repeating Section Item
+> מחק פריט מקטע חוזר
+
+= Delete Row
+> מחק שורה
+
+= Delete Table
+> מחק טבלה
+
+= Delete part
+> מחק חלק
+
+= Demote
+> הורד רמה
+
+= Description
+> תיאור
+
+= Design
+> עיצוב
+
+= Design Mode
+> מצב עיצוב
+
+= Design Mode is off
+> מצב עיצוב כבוי
+
+= Design Mode is on: the tags show each control's title, and typing in a placeholder changes the placeholder
+> מצב עיצוב פועל: התגים מציגים את הכותרת של כל פקד, והקלדה במציין מיקום משנה את מציין המיקום
+
+= Developer
+> מפתחים
+
+= Diamond
+> מעוין
+
+= Dictionaries
+> מילונים
+
+= Dictionaries on this machine
+> מילונים במחשב זה
+
+= Dictionary
+> מילון
+
+= Different First Page
+> עמוד ראשון שונה
+
+= Different Odd & Even Pages
+> עמודים זוגיים ואי-זוגיים שונים
+
+= Digital Signatures
+> חתימות דיגיטליות
+
+= Disable all macros except digitally signed macros
+> השבת את כל פקודות המאקרו פרט לפקודות מאקרו בעלות חתימה דיגיטלית
+
+= Disable all macros with notification
+> השבת את כל פקודות המאקרו עם הודעה
+
+= Disable all macros without notification
+> השבת את כל פקודות המאקרו ללא הודעה
+
+= Display
+> תצוגה
+
+= Distance
+> מרחק
+
+= Distance from text
+> מרחק מהטקסט
+
+= Distribute
+> פזר
+
+= Do not check spelling or grammar
+> אל תבדוק איות או דקדוק
+
+= Document
+> מסמך
+
+= Document Formatting
+> עיצוב מסמך
+
+= Document Info
+> מידע על המסמך
+
+= Document Recovery
+> שחזור מסמכים
+
+= Document Template
+> תבנית מסמך
+
+= Document template
+> תבנית מסמך
+
+= Don't add space between paragraphs of the same style
+> אל תוסיף רווח בין פסקאות בעלות אותו סגנון
+
+= Don't capitalize after
+> אל תהפוך לרישית אחרי
+
+= Don't correct
+> אל תתקן
+
+= Don't hyphenate
+> אל תמקף
+
+= Done
+> סיום
+
+= Double negation
+> שלילה כפולה
+
+= Double strikethrough
+> קו חוצה כפול
+
+= Doughnut
+> טבעת
+
+= Draft
+> טיוטה
+
+= Draw
+> ציור
+
+= Draw Table
+> שרטט טבלה
+
+= Drawing Tools
+> כלי ציור
+
+= Drop-Down List
+> רשימה נפתחת
+
+= Drop-down list properties
+> מאפייני רשימה נפתחת
+
+= Dutch
+> הולנדית
+
+= Edges
+> קצוות
+
+= Edit Anyway
+> ערוך בכל זאת
+
+= Edit Individual Documents
+> ערוך מסמכים בודדים
+
+= Edit List
+> ערוך רשימה
+
+= Editing
+> עריכה
+
+= Effects
+> אפקטים
+
+= Egypt
+> מצרים
+
+= Elision
+> השמטה
+
+= Email
+> דואר אלקטרוני
+
+= Emphasis
+> הדגשה
+
+= Enable Content
+> הפוך תוכן לזמין
+
+= Enable additional actions in the right-click menu
+> אפשר פעולות נוספות בתפריט הלחיצה הימנית
+
+= Enable all macros (not recommended)
+> הפוך את כל פקודות המאקרו לזמינות (לא מומלץ)
+
+= Enclose with characters
+> הקף בתווים
+
+= Encrypt Document
+> הצפן מסמך
+
+= Encrypt with Password
+> הצפן באמצעות סיסמה
+
+= End lines with
+> סיים שורות ב
+
+= Endnote Reference
+> הפניה להערת סיום
+
+= Endnote Text
+> טקסט הערת סיום
+
+= English
+> אנגלית
+
+= Enter adds a box, Tab hangs one under the last, Shift+Tab lifts it out.
+> Enter מוסיף תיבה, Tab תולה אחת מתחת לקודמת, Shift+Tab מוציא אותה החוצה.
+
+= Enter new password (optional)
+> הזן סיסמה חדשה (אופציונלי)
+
+= Envelopes
+> מעטפות
+
+= Equation
+> משוואה
+
+= Equations
+> משוואות
+
+= Eraser
+> מחק
+
+= Eraser: rub out part of a stroke. Escape to stop
+> מחק: מחק חלק מקו. Escape לעצירה
+
+= Eraser: touch a stroke to take it away. Escape to stop
+> מחק: גע בקו כדי להסיר אותו. Escape לעצירה
+
+= Estonian
+> אסטונית
+
+= Every column
+> כל עמודה
+
+= Every one of them has a name and an address
+> לכל אחד מהם יש שם וכתובת
+
+= Every style may be used again
+> ניתן להשתמש שוב בכל סגנון
+
+= Everyone
+> כולם
+
+= Everyone May Edit
+> כולם רשאים לערוך
+
+= Exceptions...
+> חריגים...
+
+= Export
+> ייצוא
+
+= Feedback
+> משוב
+
+= Fields
+> שדות
+
+= File
+> קובץ
+
+= File sharing
+> שיתוף קבצים
+
+= File types
+> סוגי קבצים
+
+= Filter
+> סנן
+
+= Find
+> חפש
+
+= Find Duplicates
+> חפש כפילויות
+
+= Find Next Region I Can Edit
+> חפש את האזור הבא שאני יכול לערוך
+
+= Finish
+> סיום
+
+= Finish & Merge
+> סיים ומזג
+
+= Finnish
+> פינית
+
+= First Column
+> עמודה ראשונה
+
+= First Letter
+> אות ראשונה
+
+= First Name
+> שם פרטי
+
+= Fit in line
+> התאם בשורה
+
+= Folder
+> תיקיה
+
+= Font
+> גופן
+
+= Font Color
+> צבע גופן
+
+= Font Size
+> גודל גופן
+
+= Fonts
+> גופנים
+
+= Font…
+> גופן…
+
+= Footer
+> כותרת תחתונה
+
+= Footer from Bottom:
+> כותרת תחתונה מלמטה:
+
+= Footers
+> כותרות תחתונות
+
+= Footnote
+> הערת שוליים
+
+= Footnote Reference
+> הפניה להערת שוליים
+
+= Footnote Text
+> טקסט הערת שוליים
+
+= Footnotes
+> הערות שוליים
+
+= Footnotes and endnotes
+> הערות שוליים והערות סיום
+
+= For the line of {0}
+> עבור השורה של {0}
+
+= Format
+> עיצוב
+
+= Format Page Numbers
+> עיצוב מספרי עמודים
+
+= Format Painter
+> מברשת עיצוב
+
+= Formatting
+> עיצוב
+
+= Formatting Marks
+> סימני עיצוב
+
+= Formatting Restrictions
+> הגבלות עיצוב
+
+= Formatting completed. You can now:
+> העיצוב הושלם. כעת באפשרותך:
+
+= Formatting exceptions
+> חריגי עיצוב
+
+= Formatting limited to this document's styles
+> העיצוב מוגבל לסגנונות של מסמך זה
+
+= Formatting limited to {0} styles
+> העיצוב מוגבל ל-{0} סגנונות
+
+= Formatting marks
+> סימני עיצוב
+
+= Formula
+> נוסחה
+
+= Fractions (1/2) with fraction character
+> שברים (1/2) עם תו שבר
+
+= France
+> צרפת
+
+= French
+> צרפתית
+
+= From
+> מתוך
+
+= From the template to this document
+> מהתבנית למסמך זה
+
+= From this document to the template
+> ממסמך זה לתבנית
+
+= Galician
+> גליסית
+
+= Gallery
+> גלריה
+
+= General
+> כללי
+
+= General Options
+> אפשרויות כלליות
+
+= Georgian
+> גאורגית
+
+= German
+> גרמנית
+
+= Germany
+> גרמניה
+
+= Glossaries
+> מילוני מונחים
+
+= Glossary
+> מילון מונחים
+
+= Go to Footer
+> עבור לכותרת תחתונה
+
+= Go to Header
+> עבור לכותרת עליונה
+
+= Gold
+> זהב
+
+= Greek
+> יוונית
+
+= Green
+> ירוק
+
+= Greeting
+> ברכה
+
+= Gridlines
+> קווי רשת
+
+= Group
+> קבץ
+
+= Gujarati
+> גוג'ראטית
+
+= Header
+> כותרת עליונה
+
+= Header & Footer
+> כותרת עליונה ותחתונה
+
+= Header Row
+> שורת כותרת
+
+= Header from Top:
+> כותרת עליונה מלמעלה:
+
+= Headers
+> כותרות עליונות
+
+= Headers and footers
+> כותרות עליונות ותחתונות
+
+= Heading 1
+> כותרת 1
+
+= Heading 2
+> כותרת 2
+
+= Heading 3
+> כותרת 3
+
+= Heading 4
+> כותרת 4
+
+= Heading 5
+> כותרת 5
+
+= Heading 6
+> כותרת 6
+
+= Heading 7
+> כותרת 7
+
+= Heading 8
+> כותרת 8
+
+= Heading 9
+> כותרת 9
+
+= Headings
+> כותרות
+
+= Headings down the middle
+> כותרות במרכז
+
+= Headings on a band
+> כותרות על רצועה
+
+= Hebrew
+> עברית
+
+= Height:
+> גובה:
+
+= Help
+> עזרה
+
+= Hexagon
+> משושה
+
+= Hidden
+> מוסתר
+
+= Hide White Space
+> הסתר רווח לבן
+
+= Hide spelling errors in this document only
+> הסתר שגיאות איות במסמך זה בלבד
+
+= Hierarchy
+> היררכיה
+
+= Highlight
+> צבע סימון טקסט
+
+= Highlight the regions I can edit
+> סמן את האזורים שאני יכול לערוך
+
+= Highlighter
+> מרקר
+
+= Highlighter: draw over the words. Escape to stop
+> מרקר: צייר מעל המילים. Escape לעצירה
+
+= Hindi
+> הינדי
+
+= Holding
+> מכיל
+
+= Home
+> בית
+
+= Horizontal
+> אופקי
+
+= Horizontal Ruler
+> סרגל אופקי
+
+= Horizontal Scroll Bar
+> פס גלילה אופקי
+
+= Horizontal in Vertical
+> אופקי בתוך אנכי
+
+= Horizontal in Vertical...
+> אופקי בתוך אנכי...
+
+= How
+> כיצד
+
+= Hungarian
+> הונגרית
+
+= Hyperlink
+> היפר-קישור
+
+= Hyphenate at
+> מקף ב
+
+= Hyphenate words in CAPS
+> מקף מילים באותיות רישיות
+
+= Hyphenation
+> מיקוף
+
+= Hyphenation Options...
+> אפשרויות מיקוף...
+
+= Hyphenation is complete
+> המיקוף הושלם
+
+= Hyphenation zone
+> אזור מיקוף
+
+= Hyphenation: automatic.
+> מיקוף: אוטומטי.
+
+= Hyphens (--) with dash (—)
+> מקפים (--) בקו מפריד (—)
+
+= INitial CAps
+> אותיות רישיות בתחילת מילה
+
+= Icelandic
+> איסלנדית
+
+= Ignore
+> התעלם
+
+= Ignore All
+> התעלם מהכל
+
+= Illustrations
+> איורים
+
+= Immediate
+> מיידי
+
+= In
+> ב
+
+= In Normal.dotm
+> ב-Normal.dotm
+
+= In brackets
+> בסוגריים
+
+= In the left margin
+> בשוליים השמאליים
+
+= In the right margin
+> בשוליים הימניים
+
+= In this document
+> במסמך זה
+
+= In use
+> בשימוש
+
+= Inches
+> אינצ'ים
+
+= Include textboxes, footnotes and endnotes
+> כלול תיבות טקסט, הערות שוליים והערות סיום
+
+= Increase Font Size
+> הגדל גודל גופן
+
+= Increase Indent
+> הגדל כניסה
+
+= Indentation
+> כניסה
+
+= Indents and Spacing
+> כניסות ומרווחים
+
+= Index
+> אינדקס
+
+= Index Heading
+> כותרת אינדקס
+
+= India
+> הודו
+
+= Indonesian
+> אינדונזית
+
+= Info
+> מידע
+
+= Ink to Shape
+> דיו לצורה
+
+= Ink to Text
+> דיו לטקסט
+
+= Insert
+> הוספה
+
+= Insert Alignment Tab
+> הוסף טאב יישור
+
+= Insert Column
+> הוסף עמודה
+
+= Insert Endnote
+> הוסף הערת סיום
+
+= Insert Index
+> הוסף אינדקס
+
+= Insert Item After
+> הוסף פריט אחרי
+
+= Insert Item Before
+> הוסף פריט לפני
+
+= Insert Picture
+> הוסף תמונה
+
+= Insert Row
+> הוסף שורה
+
+= Insert Table
+> הוסף טבלה
+
+= Insert content control
+> הוסף פקד תוכן
+
+= Insert line breaks
+> הוסף מעברי שורה
+
+= Intense Emphasis
+> הדגשה חזקה
+
+= Intense Quote
+> ציטוט חזק
+
+= Intense Reference
+> הפניה חזקה
+
+= Interface language
+> שפת ממשק
+
+= Internet and network paths with hyperlinks
+> נתיבי אינטרנט ורשת בהיפר-קישורים
+
+= Ireland
+> אירלנד
+
+= Irish
+> אירית
+
+= Italian
+> איטלקית
+
+= Italic
+> נטוי
+
+= Item added
+> הפריט נוסף
+
+= Item deleted
+> הפריט נמחק
+
+= Items, separated by semicolons
+> פריטים, מופרדים בנקודה-פסיק
+
+= Japanese
+> יפנית
+
+= Justify
+> יישור לשני הצדדים
+
+= Kannada
+> קנאדה
+
+= Kazakh
+> קזחית
+
+= Keep Source Formatting
+> שמור על עיצוב המקור
+
+= Keep Text Only
+> שמור טקסט בלבד
+
+= Keep lines together
+> שמור שורות יחד
+
+= Keep the last AutoRecovered version if I close without saving
+> שמור את הגרסה האחרונה שנשמרה אוטומטית אם אסגור ללא שמירה
+
+= Keep with next
+> שמור עם הבא
+
+= Kerning from
+> צמצום מ
+
+= Khmer
+> חמרית
+
+= Korean
+> קוריאנית
+
+= Kyrgyz
+> קירגיזית
+
+= Labels
+> תוויות
+
+= Language
+> שפה
+
+= Lao
+> לאו
+
+= Larger
+> גדול יותר
+
+= Last Column
+> עמודה אחרונה
+
+= Last Name
+> שם משפחה
+
+= Latin
+> לטיני
+
+= Latvian
+> לטבית
+
+= Layout
+> פריסה
+
+= Layouts
+> פריסות
+
+= Leader
+> תו מוביל
+
+= Left
+> שמאל
+
+= Left:
+> שמאל:
+
+= Legacy
+> מדור קודם
+
+= Legacy Tools
+> כלים מדור קודם
+
+= Lime
+> ליים
+
+= Limit consecutive hyphens to
+> הגבל מקפים רצופים ל
+
+= Limit formatting to a selection of styles
+> הגבל עיצוב למבחר סגנונות
+
+= Line
+> שורה
+
+= Line Number
+> מספר שורה
+
+= Line Numbers
+> מספרי שורות
+
+= Line and Page Breaks
+> מעברי שורה ועמוד
+
+= Line and Paragraph Spacing
+> מרווח בין שורות ופסקאות
+
+= Line with Markers
+> קו עם סמנים
+
+= Lines
+> קווים
+
+= Link
+> קישור
+
+= Link to Previous
+> קשר לקודם
+
+= Links
+> קישורים
+
+= Link…
+> קישור…
+
+= List
+> רשימה
+
+= List Bullet
+> רשימת תבליטים
+
+= List Number
+> רשימה ממוספרת
+
+= List Paragraph
+> פסקת רשימה
+
+= List styles
+> סגנונות רשימה
+
+= Lithuanian
+> ליטאית
+
+= Lock aspect ratio
+> נעל יחס גובה-רוחב
+
+= Macedonian
+> מקדונית
+
+= Macro
+> מאקרו
+
+= Macro name
+> שם מאקרו
+
+= Macro settings
+> הגדרות מאקרו
+
+= Macros
+> פקודות מאקרו
+
+= Macros are disabled without notification. The Trust Centre is where that is changed.
+> פקודות המאקרו מושבתות ללא הודעה. ניתן לשנות זאת במרכז האמון.
+
+= Macros are disabled. The bar across the top offers to enable them for this document.
+> פקודות המאקרו מושבתות. הסרגל בחלק העליון מציע להפוך אותן לזמינות עבור מסמך זה.
+
+= Macros are enabled for this document, for as long as it is open
+> פקודות המאקרו זמינות עבור מסמך זה, כל עוד הוא פתוח
+
+= Macros run without being asked about
+> פקודות המאקרו פועלות ללא שאלה
+
+= Mail Merge Recipients
+> נמעני מיזוג דואר
+
+= Mailings
+> דברי דואר
+
+= Make Default
+> הגדר כברירת מחדל
+
+= Malay
+> מלאית
+
+= Malayalam
+> מלאיאלאם
+
+= Maltese
+> מלטית
+
+= Manage Document
+> נהל מסמך
+
+= Manage Sources
+> נהל מקורות
+
+= Manage Styles
+> נהל סגנונות
+
+= Manual Hyphenation
+> מיקוף ידני
+
+= Manual...
+> ידני...
+
+= Mapping
+> מיפוי
+
+= Marathi
+> מראטהית
+
+= Margins
+> שוליים
+
+= Mark Citation
+> סמן ציטוט
+
+= Mark Entry
+> סמן ערך
+
+= Mark spelling mistakes as you type
+> סמן שגיאות איות בעת ההקלדה
+
+= Match Fields
+> התאם שדות
+
+= Math AutoCorrect
+> תיקון אוטומטי במתמטיקה
+
+= Measure from
+> מדוד מ
+
+= Measurement Converter
+> ממיר יחידות מידה
+
+= Media
+> מדיה
+
+= Merge
+> מזג
+
+= Merge Cells
+> מזג תאים
+
+= Merge Field
+> שדה מיזוג
+
+= Merge Formatting
+> מזג עיצוב
+
+= Mexico
+> מקסיקו
+
+= Millimeters
+> מילימטרים
+
+= Mirror indents
+> כניסות שיקוף
+
+= Modify
+> שנה
+
+= Mongolian
+> מונגולית
+
+= More Layout Options…
+> אפשרויות פריסה נוספות…
+
+= More Rotation Options…
+> אפשרויות סיבוב נוספות…
+
+= More than one space
+> יותר מרווח אחד
+
+= More users…
+> משתמשים נוספים…
+
+= Move Down
+> הזז למטה
+
+= Move Up
+> הזז למעלה
+
+= Move object with text
+> הזז אובייקט עם הטקסט
+
+= Moves
+> העברות
+
+= Multilevel List
+> רשימה מרובת רמות
+
+= My list has a header row
+> לרשימה שלי יש שורת כותרת
+
+= Name
+> שם
+
+= Names
+> שמות
+
+= Names separated by semicolons.
+> שמות מופרדים בנקודה-פסיק.
+
+= Navigation
+> ניווט
+
+= Navigation Pane
+> חלונית ניווט
+
+= Navigation pane
+> חלונית ניווט
+
+= Nepali
+> נפאלית
+
+= New
+> חדש
+
+= New Address List
+> רשימת כתובות חדשה
+
+= New Comment
+> הערה חדשה
+
+= New Window
+> חלון חדש
+
+= New Zealand
+> ניו זילנד
+
+= New document from {0}
+> מסמך חדש מתוך {0}
+
+= New documents based on this template
+> מסמכים חדשים המבוססים על תבנית זו
+
+= New name
+> שם חדש
+
+= Next
+> הבא
+
+= Next Footnote
+> הערת השוליים הבאה
+
+= No
+> לא
+
+= No List
+> ללא רשימה
+
+= No Spacing
+> ללא מרווח
+
+= No dictionary on this machine from {0} into {1}
+> אין במחשב זה מילון מ-{0} ל-{1}
+
+= No entry for “{0}” in the {1} dictionary
+> אין ערך עבור ”{0}” במילון {1}
+
+= No headings in this document
+> אין כותרות במסמך זה
+
+= No hyphenation patterns for this language are on this machine
+> אין במחשב זה תבניות מיקוף לשפה זו
+
+= No names were typed
+> לא הוקלדו שמות
+
+= No numbers were typed, so no chart was drawn
+> לא הוקלדו מספרים, ולכן לא צויר תרשים
+
+= No two of them say the same thing
+> אין שניים מהם שאומרים אותו דבר
+
+= No unsaved documents to recover
+> אין מסמכים שלא נשמרו לשחזור
+
+= Nobody has been asked to sign.
+> לא התבקש איש לחתום.
+
+= Nobody has commented on this document
+> איש לא הגיב על מסמך זה
+
+= Nobody was typed, so no list was made
+> לא הוקלד איש, ולכן לא נוצרה רשימה
+
+= None
+> ללא
+
+= Normal
+> רגיל
+
+= Normal Table
+> טבלה רגילה
+
+= Norwegian
+> נורווגית
+
+= Not in the dictionary
+> לא במילון
+
+= Not saved
+> לא נשמר
+
+= Nothing found
+> לא נמצא דבר
+
+= Nothing is restricted: tick one of the two boxes
+> דבר אינו מוגבל: סמן אחת משתי התיבות
+
+= Nothing was typed, so no diagram was drawn
+> לא הוקלד דבר, ולכן לא צוירה דיאגרמה
+
+= Number format
+> תבנית מספר
+
+= Numbering
+> מספור
+
+= Nynorsk
+> נינורשק
+
+= OK
+> אישור
+
+= Office display language
+> שפת התצוגה של Office
+
+= On
+> מופעל
+
+= On a grey band
+> על רצועה אפורה
+
+= On the list
+> ברשימה
+
+= One File for Each Letter
+> קובץ אחד לכל מכתב
+
+= One Page
+> עמוד אחד
+
+= One or more margins are outside the printable area.
+> שוליים אחדים או יותר נמצאים מחוץ לאזור ההדפסה.
+
+= One stretch you may edit, selected
+> קטע אחד שאתה רשאי לערוך, נבחר
+
+= Only macros signed by somebody trusted may run. The Trust Centre is where that is set.
+> רק פקודות מאקרו בחתימה של גורם מהימן רשאיות לפעול. הדבר נקבע במרכז האמון.
+
+= Open
+> פתח
+
+= Open a dictionary
+> פתח מילון
+
+= Open documents at
+> פתח מסמכים ב
+
+= Open read-only
+> פתח לקריאה בלבד
+
+= OpenDocument Text (*.odt)
+> טקסט OpenDocument ‏(*.odt)
+
+= OpenType Features
+> תכונות OpenType
+
+= Opened read-only
+> נפתח לקריאה בלבד
+
+= Opened {0}
+> {0} נפתח
+
+= Opened {0} as {1}
+> {0} נפתח כ-{1}
+
+= Options
+> אפשרויות
+
+= Options...
+> אפשרויות...
+
+= Orange
+> כתום
+
+= Order
+> סדר
+
+= Ordinals (1st) with superscript
+> מספרים סודרים (1st) בכתב עילי
+
+= Organizer
+> מארגן
+
+= Orientation
+> כיוון
+
+= Original
+> מקור
+
+= Outline
+> חלוקה לרמות
+
+= Outline level
+> רמת חלוקה
+
+= Outside
+> בחוץ
+
+= Oval
+> אליפסה
+
+= PDF Files (*.pdf)
+> קובצי PDF ‏(*.pdf)
+
+= PDF documents (*.pdf)
+> מסמכי PDF ‏(*.pdf)
+
+= Page 1
+> עמוד 1
+
+= Page 1 of 4
+> עמוד 1 מתוך 4
+
+= Page Background
+> רקע עמוד
+
+= Page Borders
+> גבולות עמוד
+
+= Page Break
+> מעבר עמוד
+
+= Page Color
+> צבע עמוד
+
+= Page Margins
+> שולי עמוד
+
+= Page Movement
+> תנועת עמודים
+
+= Page Number
+> מספר עמוד
+
+= Page Numbers
+> מספרי עמודים
+
+= Page Numbers at the Foot
+> מספרי עמודים בתחתית
+
+= Page Numbers at the Top
+> מספרי עמודים בראש
+
+= Page Numbers in the Margin
+> מספרי עמודים בשוליים
+
+= Page Reference
+> הפניה לעמוד
+
+= Page Setup
+> הגדרת עמוד
+
+= Page Width
+> רוחב עמוד
+
+= Page break before
+> מעבר עמוד לפני
+
+= Page display
+> תצוגת עמודים
+
+= Page number at the foot: {0}
+> מספר עמוד בתחתית: {0}
+
+= Page number at the top: {0}
+> מספר עמוד בראש: {0}
+
+= Page number in the margin: {0}
+> מספר עמוד בשוליים: {0}
+
+= Page number: {0}
+> מספר עמוד: {0}
+
+= Page {0}
+> עמוד {0}
+
+= Page {0} of {1}
+> עמוד {0} מתוך {1}
+
+= Pages
+> עמודים
+
+= Pages:
+> עמודים:
+
+= Pagination
+> עימוד
+
+= Paper
+> נייר
+
+= Paper size
+> גודל נייר
+
+= Paragraph
+> פסקה
+
+= Paragraph Spacing
+> מרווח פסקאות
+
+= Paragraph Spacing for the whole document
+> מרווח פסקאות עבור המסמך כולו
+
+= Paragraph formatting
+> עיצוב פסקה
+
+= Paragraph…
+> פסקה…
+
+= Password
+> סיסמה
+
+= Password to modify
+> סיסמה לשינוי
+
+= Password to modify (optional)
+> סיסמה לשינוי (אופציונלי)
+
+= Password to open
+> סיסמה לפתיחה
+
+= Paste
+> הדבקה
+
+= Paste as Picture
+> הדבק כתמונה
+
+= Paste function
+> פונקציית הדבקה
+
+= Pen
+> עט
+
+= Pen put down
+> העט הונח
+
+= Pen: draw on the page. Escape to stop
+> עט: צייר על העמוד. Escape לעצירה
+
+= Pencil
+> עיפרון
+
+= Pencil: draw on the page. Escape to stop
+> עיפרון: צייר על העמוד. Escape לעצירה
+
+= Pentagon
+> מחומש
+
+= Persian
+> פרסית
+
+= Picas
+> פייקות
+
+= Picture
+> תמונה
+
+= Pictures
+> תמונות
+
+= Pictures (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
+> תמונות (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.emf;*.wmf)
+
+= Pie
+> עוגה
+
+= Pink
+> ורוד
+
+= Placeholder Text
+> טקסט מציין מיקום
+
+= Plain
+> פשוט
+
+= Plain Text
+> טקסט רגיל
+
+= Plain Text (*.txt)
+> טקסט רגיל (*.txt)
+
+= Plain, in the middle
+> פשוט, באמצע
+
+= Plain, to the left
+> פשוט, משמאל
+
+= Plain, to the right
+> פשוט, מימין
+
+= Point Eraser
+> מחק נקודתי
+
+= Points
+> נקודות
+
+= Polish
+> פולנית
+
+= Portugal
+> פורטוגל
+
+= Portuguese
+> פורטוגזית
+
+= Position
+> מיקום
+
+= Postcode
+> מיקוד
+
+= Preserve
+> שמור
+
+= Preview
+> תצוגה מקדימה
+
+= Preview Results
+> תצוגה מקדימה של התוצאות
+
+= Previous
+> הקודם
+
+= Print
+> הדפס
+
+= Print All Pages
+> הדפס את כל העמודים
+
+= Print Current Page
+> הדפס עמוד נוכחי
+
+= Print Documents
+> הדפס מסמכים
+
+= Print Layout
+> פריסת הדפסה
+
+= Print One Sided
+> הדפסה חד-צדדית
+
+= Print Selection
+> הדפס בחירה
+
+= Print on Both Sides
+> הדפסה דו-צדדית
+
+= Printing stopped after {0} sheets
+> ההדפסה נעצרה לאחר {0} גיליונות
+
+= Project
+> פרוייקט
+
+= Promote
+> הגבה רמה
+
+= Proofing
+> הגהה
+
+= Properties
+> מאפיינים
+
+= Protect
+> הגן
+
+= Punjabi
+> פנג'אבית
+
+= Purple
+> סגול
+
+= Purpose
+> מטרה
+
+= Put one and its key in this folder, or use one the machine holds:
+> שים אחד ואת המפתח שלו בתיקיה זו, או השתמש באחד שהמחשב מחזיק:
+
+= Put the caret in a content control first
+> מקם תחילה את הסמן בתוך פקד תוכן
+
+= Quick Access Toolbar
+> סרגל הכלים לגישה מהירה
+
+= Quick Parts
+> חלקים מהירים
+
+= Quote
+> ציטוט
+
+= Radar with Markers
+> מכ"ם עם סמנים
+
+= Read Mode
+> מצב קריאה
+
+= Read-Only Recommended
+> מומלץ לקריאה בלבד
+
+= Recently used
+> בשימוש לאחרונה
+
+= Recipients
+> נמענים
+
+= Recommended Minimum
+> מינימום מומלץ
+
+= Recover Text from Any File (*.*)
+> שחזר טקסט מקובץ כלשהו (*.*)
+
+= Recover unsaved documents: 1 copy kept
+> שחזר מסמכים שלא נשמרו: נשמר עותק אחד
+
+= Recover unsaved documents: {0} copies kept
+> שחזר מסמכים שלא נשמרו: נשמרו {0} עותקים
+
+= Rectangle
+> מלבן
+
+= Red
+> אדום
+
+= Redo
+> בצע שוב
+
+= Reenter password to confirm
+> הזן שוב את הסיסמה לאישור
+
+= References
+> הפניות
+
+= Registered. Choose this program in the page that opened
+> נרשם. בחר תוכנית זו בדף שנפתח
+
+= Reject
+> דחה
+
+= Reject All
+> דחה הכל
+
+= Relative to the page or the text
+> ביחס לעמוד או לטקסט
+
+= Remove
+> הסר
+
+= Remove Current Cover Page
+> הסר את עמוד השער הנוכחי
+
+= Remove Link
+> הסר קישור
+
+= Remove Location
+> הסר מיקום
+
+= Remove Table
+> הסר טבלה
+
+= Rename
+> שנה שם
+
+= Repeat Header Rows
+> חזור על שורות כותרת
+
+= Repeat as header row at the top of each page
+> חזור כשורת כותרת בראש כל עמוד
+
+= Repeated word
+> מילה חוזרת
+
+= Repeating Section
+> מקטע חוזר
+
+= Repeating Section Content Control
+> פקד תוכן של מקטע חוזר
+
+= Replace
+> החלף
+
+= Replace as you type
+> החלף בעת ההקלדה
+
+= Replace text as you type
+> החלף טקסט בעת ההקלדה
+
+= Replaced one of "{0}"
+> הוחלף מופע אחד של "{0}"
+
+= Requested signatures
+> חתימות מבוקשות
+
+= Reset
+> אפס
+
+= Reset Graphic
+> אפס גרפיקה
+
+= Restrict Editing
+> הגבל עריכה
+
+= Restricted to
+> מוגבל ל
+
+= Restricted to: {0}
+> מוגבל ל: {0}
+
+= Restricted to: {0}, formatting limited
+> מוגבל ל: {0}, העיצוב מוגבל
+
+= Results
+> תוצאות
+
+= Retry
+> נסה שוב
+
+= Review
+> סקירה
+
+= Review Changes
+> סקור שינויים
+
+= Reviewing Pane
+> חלונית סקירה
+
+= Revised
+> מתוקן
+
+= Revision
+> גרסה
+
+= Rich Text
+> טקסט עשיר
+
+= Rich Text Format (*.rtf)
+> תבנית טקסט עשיר (*.rtf)
+
+= Right
+> ימין
+
+= Right to Left
+> מימין לשמאל
+
+= Right:
+> ימין:
+
+= Romanian
+> רומנית
+
+= Rotate
+> סובב
+
+= Row
+> שורה
+
+= Rows & Columns
+> שורות ועמודות
+
+= Ruler
+> סרגל
+
+= Rulers
+> סרגלים
+
+= Rules
+> כללים
+
+= Run
+> הפעל
+
+= Russian
+> רוסית
+
+= Said
+> פלט
+
+= Salutation
+> פתיחה
+
+= Saudi Arabia
+> ערב הסעודית
+
+= Save
+> שמור
+
+= Save Address List
+> שמור רשימת כתובות
+
+= Save As
+> שמירה בשם
+
+= Save As…
+> שמירה בשם…
+
+= Save AutoRecover information
+> שמור מידע לשחזור אוטומטי
+
+= Save Current Watermark to Gallery
+> שמור את סימן המים הנוכחי בגלריה
+
+= Save Selection to AutoText Gallery
+> שמור את הבחירה בגלריית הטקסט האוטומטי
+
+= Save Selection to Cover Page Gallery
+> שמור את הבחירה בגלריית עמודי השער
+
+= Save Selection to Page Number Gallery
+> שמור את הבחירה בגלריית מספרי העמודים
+
+= Save Selection to Quick Part Gallery
+> שמור את הבחירה בגלריית החלקים המהירים
+
+= Save as
+> שמירה בשם
+
+= Save as PDF
+> שמור כ-PDF
+
+= Save documents
+> שמור מסמכים
+
+= Save the document before signing it.
+> שמור את המסמך לפני חתימתו.
+
+= Save the file
+> שמור את הקובץ
+
+= Saved
+> נשמר
+
+= Saved {0}
+> {0} נשמר
+
+= Saved {0} as OpenDocument Text
+> {0} נשמר כטקסט OpenDocument
+
+= Saved {0} as Rich Text Format
+> {0} נשמר בתבנית טקסט עשיר
+
+= Saved {0} as a Word 97-2003 Document
+> {0} נשמר כמסמך Word 97-2003
+
+= Saved {0} as a web page
+> {0} נשמר כדף אינטרנט
+
+= Saved {0} pages to {1}
+> {0} עמודים נשמרו ב-{1}
+
+= Scale
+> קנה מידה
+
+= Scatter
+> פיזור
+
+= Screen Clipping
+> גזירת מסך
+
+= Screenshot
+> צילום מסך
+
+= Search document
+> חפש במסמך
+
+= Section: {0}
+> מקטע: {0}
+
+= Select
+> בחר
+
+= Select Recipients
+> בחר נמענים
+
+= Select part of the document, then tick who may edit it.
+> בחר חלק מהמסמך, ולאחר מכן סמן מי רשאי לערוך אותו.
+
+= Select the characters to set across the line first
+> בחר תחילה את התווים שיוצבו לרוחב השורה
+
+= Select the characters to set as two lines first
+> בחר תחילה את התווים שיוצבו כשתי שורות
+
+= Select the part of the document they may edit first
+> בחר תחילה את חלק המסמך שהם רשאים לערוך
+
+= Selection Pane
+> חלונית בחירה
+
+= Send Backward
+> שלח אחורה
+
+= Send E-mail Messages
+> שלח הודעות דואר אלקטרוני
+
+= Send to Back
+> שלח לרקע
+
+= Sentence should begin with a capital
+> משפט צריך להתחיל באות רישית
+
+= Serbian
+> סרבית
+
+= Set
+> הגדר
+
+= Set As Default
+> הגדר כברירת מחדל
+
+= Set Defaults
+> הגדר ברירות מחדל
+
+= Set as Default
+> הגדר כברירת מחדל
+
+= Setting
+> הגדרה
+
+= Settings…
+> הגדרות…
+
+= Shaded
+> מוצלל
+
+= Shading
+> הצללה
+
+= Shapes
+> צורות
+
+= Show
+> הצג
+
+= Show All Regions I Can Edit
+> הצג את כל האזורים שאני יכול לערוך
+
+= Show Marks
+> הצג סימנים
+
+= Show Markup
+> הצג סימון
+
+= Show Preview
+> הצג תצוגה מקדימה
+
+= Show Repairs
+> הצג תיקונים
+
+= Show changes
+> הצג שינויים
+
+= Show changes in
+> הצג שינויים ב
+
+= Show measurements in
+> הצג מידות ב
+
+= Show/Hide Formatting Marks
+> הצג/הסתר סימני עיצוב
+
+= Side to Side
+> זה לצד זה
+
+= Sign
+> חתום
+
+= Sign the document
+> חתום על המסמך
+
+= Sign this line
+> חתום על שורה זו
+
+= Signature
+> חתימה
+
+= Signature Line
+> שורת חתימה
+
+= Signatures
+> חתימות
+
+= Signed as
+> נחתם בתור
+
+= Signed by {0}
+> נחתם על-ידי {0}
+
+= Simplified
+> מפושטת
+
+= Single File Web Page (*.mht;*.mhtml)
+> דף אינטרנט בקובץ יחיד (*.mht;*.mhtml)
+
+= Sinhala
+> סינהלית
+
+= Size
+> גודל
+
+= Slovak
+> סלובקית
+
+= Slovenian
+> סלובנית
+
+= Small caps
+> אותיות רישיות קטנות
+
+= Smaller
+> קטן יותר
+
+= SmartArt
+> SmartArt
+
+= SmartArt Design
+> עיצוב SmartArt
+
+= SmartArt Styles
+> סגנונות SmartArt
+
+= Sort
+> מיין
+
+= Sort by
+> מיין לפי
+
+= Sort, filter and check
+> מיין, סנן ובדוק
+
+= Sorted by {0}
+> ממוין לפי {0}
+
+= Source
+> מקור
+
+= South Africa
+> דרום אפריקה
+
+= Space after
+> רווח אחרי
+
+= Space before punctuation
+> רווח לפני סימן פיסוק
+
+= Space between cells
+> רווח בין תאים
+
+= Spacing
+> מרווח
+
+= Spain
+> ספרד
+
+= Spanish
+> ספרדית
+
+= Special Characters
+> תווים מיוחדים
+
+= Spelling
+> איות
+
+= Split
+> פצל
+
+= Split Cells
+> פצל תאים
+
+= Stacked Area
+> שטח מוערם
+
+= Stacked Bar
+> עמודות אופקיות מוערמות
+
+= Stacked Column
+> עמודות מוערמות
+
+= Stacked Line
+> קו מוערם
+
+= Start Enforcing Protection
+> התחל לאכוף הגנה
+
+= Start Mail Merge
+> התחל מיזוג דואר
+
+= Start Merge
+> התחל מיזוג
+
+= Status Bar
+> שורת מצב
+
+= Stop Auto-capitalizing First Letter of Sentences
+> הפסק להפוך אוטומטית את האות הראשונה במשפט לרישית
+
+= Stop Automatically Applying Heading Styles
+> הפסק להחיל סגנונות כותרת באופן אוטומטי
+
+= Stop Automatically Creating Border Lines
+> הפסק ליצור קווי גבול באופן אוטומטי
+
+= Stop Automatically Creating Hyperlinks
+> הפסק ליצור היפר-קישורים באופן אוטומטי
+
+= Stop Automatically Creating Lists
+> הפסק ליצור רשימות באופן אוטומטי
+
+= Stop Automatically Creating Tables
+> הפסק ליצור טבלאות באופן אוטומטי
+
+= Stop Automatically Formatting Bold and Italic
+> הפסק לעצב מודגש ונטוי באופן אוטומטי
+
+= Stop Capitalizing Names of Days
+> הפסק להפוך שמות ימים לרישיים
+
+= Stop Correcting Accidental Use of Caps Lock
+> הפסק לתקן שימוש בשוגג ב-Caps Lock
+
+= Stop Protection
+> הפסק הגנה
+
+= Stop Replacing Fractions
+> הפסק להחליף שברים
+
+= Stop Replacing Hyphens with Dashes
+> הפסק להחליף מקפים בקווים מפרידים
+
+= Stop Superscripting Ordinals
+> הפסק להציג מספרים סודרים בכתב עילי
+
+= Stopping it asks for the password.
+> ההפסקה דורשת את הסיסמה.
+
+= Strikethrough
+> קו חוצה
+
+= Stroke Eraser
+> מחק קווים
+
+= Strong
+> חזק
+
+= Style
+> סגנון
+
+= Style Set
+> ערכת סגנונות
+
+= Style based on
+> סגנון מבוסס על
+
+= Style for following paragraph
+> סגנון לפסקה הבאה
+
+= Style set: {0}
+> ערכת סגנונות: {0}
+
+= Styles
+> סגנונות
+
+= Subject-verb agreement
+> התאמה בין נושא לנשוא
+
+= Subscript
+> כתב תחתי
+
+= Subset
+> קבוצת משנה
+
+= Subtitle
+> כותרת משנה
+
+= Subtle Emphasis
+> הדגשה עדינה
+
+= Subtle Reference
+> הפניה עדינה
+
+= Superscript
+> כתב עילי
+
+= Suppress line numbers
+> הסתר מספרי שורות
+
+= Swahili
+> סווהילית
+
+= Swedish
+> שוודית
+
+= Switch Modes
+> החלף מצבים
+
+= Switzerland
+> שווייץ
+
+= Symbol
+> סמל
+
+= Symbols
+> סמלים
+
+= Synonyms
+> מילים נרדפות
+
+= TOC 1
+> תוכן עניינים 1
+
+= TOC 2
+> תוכן עניינים 2
+
+= TOC 3
+> תוכן עניינים 3
+
+= TOC 4
+> תוכן עניינים 4
+
+= TOC 5
+> תוכן עניינים 5
+
+= TOC 6
+> תוכן עניינים 6
+
+= TOC 7
+> תוכן עניינים 7
+
+= TOC 8
+> תוכן עניינים 8
+
+= TOC 9
+> תוכן עניינים 9
+
+= TOC Heading
+> כותרת תוכן עניינים
+
+= Tab stop position
+> מיקום עצירת טאב
+
+= Tab stops
+> עצירות טאב
+
+= Table
+> טבלה
+
+= Table Design
+> עיצוב טבלה
+
+= Table Grid
+> טבלת רשת
+
+= Table Layout
+> פריסת טבלה
+
+= Table Properties
+> מאפייני טבלה
+
+= Table Style Options
+> אפשרויות סגנון טבלה
+
+= Table Styles
+> סגנונות טבלה
+
+= Table of Authorities
+> טבלת אסמכתאות
+
+= Table of Contents
+> תוכן עניינים
+
+= Table of Figures
+> טבלת איורים
+
+= Tables
+> טבלאות
+
+= Tables of Contents
+> תוכני עניינים
+
+= Tabs
+> טאבים
+
+= Tabs…
+> טאבים…
+
+= Tag
+> תג
+
+= Tamil
+> טמילית
+
+= Tell me what you want to do
+> ספר לי מה ברצונך לעשות
+
+= Telugu
+> טלוגו
+
+= Template
+> תבנית
+
+= Templates
+> תבניות
+
+= Templates and Add-ins
+> תבניות ותוספות
+
+= Text
+> טקסט
+
+= Text Box
+> תיבת טקסט
+
+= Text Boxes
+> תיבות טקסט
+
+= Text Direction
+> כיוון טקסט
+
+= Text Effects and Typography
+> אפקטי טקסט וטיפוגרפיה
+
+= Text Files (*.txt)
+> קובצי טקסט (*.txt)
+
+= Text Highlight Color
+> צבע סימון טקסט
+
+= Text Pane
+> חלונית טקסט
+
+= Text Wrapping
+> גלישת טקסט
+
+= Text boxes
+> תיבות טקסט
+
+= Text direction
+> כיוון טקסט
+
+= Text encoding
+> קידוד טקסט
+
+= Text files
+> קובצי טקסט
+
+= Text formatting
+> עיצוב טקסט
+
+= Text from File
+> טקסט מקובץ
+
+= Thai
+> תאית
+
+= That ink is not a shape this program can see
+> הדיו הזה אינו צורה שתוכנית זו יכולה לזהות
+
+= That ink is not writing this program can read
+> הדיו הזה אינו כתב שתוכנית זו יכולה לקרוא
+
+= That is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
+> זו אינה תמונה שתוכנית זו יכולה לקרוא. PNG, ‏JPEG, ‏BMP, ‏GIF, ‏TIFF וקובצי המטא כן.
+
+= That is not a watermark any more
+> זה כבר אינו סימן מים
+
+= That is not well-formed XML, so it cannot be a part
+> זה אינו XML תקין, ולכן אינו יכול להיות חלק
+
+= That line is no longer in this document
+> השורה הזו כבר אינה במסמך זה
+
+= That part has no identifier, so it cannot be taken out
+> לחלק הזה אין מזהה, ולכן לא ניתן להוציא אותו
+
+= That style could not be changed
+> לא ניתן היה לשנות את הסגנון הזה
+
+= That watermark is no longer saved
+> סימן המים הזה כבר אינו שמור
+
+= The author asked for it to be opened read-only.
+> המחבר ביקש שייפתח לקריאה בלבד.
+
+= The caret is not in a repeating section
+> הסמן אינו נמצא במקטע חוזר
+
+= The chart could not be drawn: {0}
+> לא ניתן היה לצייר את התרשים: {0}
+
+= The contents of this control cannot be edited
+> לא ניתן לערוך את התוכן של פקד זה
+
+= The copy of {0} could not be read: {1}. There is nothing in it to repair.
+> לא ניתן היה לקרוא את העותק של {0}: {1}. אין בו דבר לתקן.
+
+= The copy of {0} is damaged and cannot be repaired: {1}.
+> העותק של {0} פגום ולא ניתן לתקן אותו: {1}.
+
+= The copy of {0} opens as it was written. Nothing had to be repaired.
+> העותק של {0} נפתח כפי שנכתב. לא היה צורך לתקן דבר.
+
+= The diagram could not be drawn
+> לא ניתן היה לצייר את הדיאגרמה
+
+= The diagram could not be drawn: {0}
+> לא ניתן היה לצייר את הדיאגרמה: {0}
+
+= The document is not encrypted.
+> המסמך אינו מוצפן.
+
+= The document is unreadable without it.
+> לא ניתן לקרוא את המסמך בלעדיה.
+
+= The file could not be saved
+> לא ניתן היה לשמור את הקובץ
+
+= The file types could not be registered
+> לא ניתן היה לרשום את סוגי הקבצים
+
+= The file types were registered
+> סוגי הקבצים נרשמו
+
+= The files below were recovered.
+> הקבצים שלהלן שוחזרו.
+
+= The following features cannot be saved in macro-free documents:\n\n    • VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?
+> לא ניתן לשמור את התכונות הבאות במסמכים ללא פקודות מאקרו:\n\n    • פרוייקט VBA\n\nכדי לשמור קובץ עם תכונות אלה, בחר 'לא', ולאחר מכן בחר סוג קובץ התומך בפקודות מאקרו ברשימת סוגי הקבצים.\n\nכדי להמשיך לשמור כמסמך ללא פקודות מאקרו, בחר 'כן'.\n\nלשמור את {0} כמסמך ללא פקודות מאקרו?
+
+= The headings a new document starts with
+> הכותרות שבהן מתחיל מסמך חדש
+
+= The last item of a repeating section stays
+> הפריט האחרון של מקטע חוזר נשאר
+
+= The letter goes to everybody ticked.
+> המכתב נשלח לכל מי שסומן.
+
+= The list was not saved, so nothing is merged
+> הרשימה לא נשמרה, ולכן דבר אינו ממוזג
+
+= The next stretch you may edit
+> הקטע הבא שאתה רשאי לערוך
+
+= The part was added
+> החלק נוסף
+
+= The part was deleted
+> החלק נמחק
+
+= The same headings, closer together
+> אותן כותרות, צפופות יותר
+
+= The selection is saved to the {0} gallery.
+> הבחירה נשמרת בגלריה {0}.
+
+= The two passwords are not the same
+> שתי הסיסמאות אינן זהות
+
+= The whole screen
+> המסך כולו
+
+= The words are open; the formatting is limited to this document's styles.
+> הטקסט פתוח; העיצוב מוגבל לסגנונות של מסמך זה.
+
+= The {0} theme
+> ערכת הנושא {0}
+
+= Themes
+> ערכות נושא
+
+= There is no certificate on this machine to sign with.
+> אין במחשב זה אישור לחתימה.
+
+= There is no part of this document you may edit
+> אין חלק במסמך זה שאתה רשאי לערוך
+
+= There is nothing in the {0} gallery to choose from
+> אין בגלריה {0} דבר לבחירה
+
+= Thesaurus
+> מילון נרדפות
+
+= Thesaurus…
+> מילון נרדפות…
+
+= This document
+> מסמך זה
+
+= This document also carries Visual Basic macros
+> מסמך זה מכיל גם פקודות מאקרו של Visual Basic
+
+= This document carries macros. They are disabled until you say otherwise.
+> מסמך זה מכיל פקודות מאקרו. הן מושבתות עד שתחליט אחרת.
+
+= This document carries no custom XML. Add a part from a file to bind controls to it.
+> מסמך זה אינו מכיל XML מותאם אישית. הוסף חלק מקובץ כדי לקשר אליו פקדים.
+
+= This document fixes its style set — Review ▸ Restrict Editing lifts it
+> מסמך זה קובע את ערכת הסגנונות שלו — סקירה ▸ הגבל עריכה מסיר זאת
+
+= This document fixes its theme — Review ▸ Restrict Editing lifts it
+> מסמך זה קובע את ערכת הנושא שלו — סקירה ▸ הגבל עריכה מסיר זאת
+
+= This document has never been saved, so it is not in a folder yet
+> מסמך זה מעולם לא נשמר, ולכן הוא עדיין אינו בתיקיה
+
+= This document has no pages
+> אין במסמך זה עמודים
+
+= This document has no watermark to save
+> אין במסמך זה סימן מים לשמירה
+
+= This document is encrypted. An empty box takes that off.
+> מסמך זה מוצפן. תיבה ריקה מסירה זאת.
+
+= This document is not signed.
+> מסמך זה אינו חתום.
+
+= This document is open read-only.
+> מסמך זה פתוח לקריאה בלבד.
+
+= This document is protected from editing.
+> מסמך זה מוגן מפני עריכה.
+
+= This document limits formatting to its styles — Review ▸ Restrict Editing lifts it
+> מסמך זה מגביל את העיצוב לסגנונות שלו — סקירה ▸ הגבל עריכה מסיר זאת
+
+= This document only
+> מסמך זה בלבד
+
+= This document was opened read-only: save a copy
+> מסמך זה נפתח לקריאה בלבד: שמור עותק
+
+= This document was recovered after the program stopped.
+> מסמך זה שוחזר לאחר שהתוכנית נעצרה.
+
+= This document, before
+> מסמך זה, לפני
+
+= This machine would not give the random bytes a password needs
+> מחשב זה לא סיפק את הבתים האקראיים שסיסמה זקוקה להם
+
+= This machine would not sign with that certificate
+> מחשב זה לא חתם באמצעות אישור זה
+
+= This machine's list of trusted issuers could not be read
+> לא ניתן היה לקרוא את רשימת המנפיקים המהימנים של מחשב זה
+
+= This one
+> זה
+
+= This person
+> אדם זה
+
+= This program can open Word documents.
+> תוכנית זו יכולה לפתוח מסמכי Word.
+
+= This signs the line of {0}.
+> פעולה זו חותמת על השורה של {0}.
+
+= This signs the signature of {0}.
+> פעולה זו חותמת על החתימה של {0}.
+
+= This signs the whole document.
+> פעולה זו חותמת על המסמך כולו.
+
+= This stretch is locked
+> קטע זה נעול
+
+= This stretch may only be edited by {0}
+> רק {0} רשאי לערוך קטע זה
+
+= This video is a file outside the document
+> סרטון זה הוא קובץ מחוץ למסמך
+
+= Title
+> כותרת
+
+= Title at the foot
+> כותרת בתחתית
+
+= To
+> אל
+
+= Top
+> עליון
+
+= Top of Page
+> ראש העמוד
+
+= Total Row
+> שורת סכום
+
+= Track Changes
+> עקוב אחר שינויים
+
+= Tracking
+> מעקב
+
+= Traditional
+> מסורתית
+
+= Training
+> הדרכה
+
+= Translate
+> תרגם
+
+= Translate from
+> תרגם מ
+
+= Translate to
+> תרגם ל
+
+= Translator
+> מתרגם
+
+= Translator Preferences
+> העדפות מתרגם
+
+= Triangle
+> משולש
+
+= Trust Center
+> מרכז האמון
+
+= Trust This Folder
+> סמוך על תיקיה זו
+
+= Trusted locations
+> מיקומים מהימנים
+
+= Turkish
+> טורקית
+
+= Turquoise
+> טורקיז
+
+= Two Lines in One
+> שתי שורות באחת
+
+= Two Lines in One...
+> שתי שורות באחת...
+
+= Type
+> סוג
+
+= Type a New List...
+> הקלד רשימה חדשה...
+
+= Type a word to translate
+> הקלד מילה לתרגום
+
+= Type in the box above to search
+> הקלד בתיבה שלמעלה כדי לחפש
+
+= Type one person, press Add, and type the next.
+> הקלד אדם אחד, לחץ על 'הוסף' והקלד את הבא.
+
+= Type somebody first
+> הקלד תחילה מישהו
+
+= Type the new name first
+> הקלד תחילה את השם החדש
+
+= Type the numbers: title; name=value; name=value
+> הקלד את המספרים: כותרת; שם=ערך; שם=ערך
+
+= Type the points: title; x=y:size; x=y:size
+> הקלד את הנקודות: כותרת; x=y:גודל; x=y:גודל
+
+= Type the points: title; x=y; x=y
+> הקלד את הנקודות: כותרת; x=y; x=y
+
+= Type what a row has to hold
+> הקלד מה שורה צריכה להכיל
+
+= Type what the boxes say, with semicolons between them
+> הקלד את הטקסט של התיבות, עם נקודה-פסיק ביניהן
+
+= Type your text here
+> הקלד כאן את הטקסט שלך
+
+= Ukrainian
+> אוקראינית
+
+= Underline
+> קו תחתון
+
+= Undo
+> בטל
+
+= Undo Automatic Capitalization
+> בטל הפיכה אוטומטית לרישיות
+
+= Undo Automatic Corrections
+> בטל תיקונים אוטומטיים
+
+= Undo Automatic Formatting
+> בטל עיצוב אוטומטי
+
+= Undo Automatic Heading Style
+> בטל סגנון כותרת אוטומטי
+
+= Undo Automatic Numbering
+> בטל מספור אוטומטי
+
+= Undo Automatic Table
+> בטל טבלה אוטומטית
+
+= Undo Border Line
+> בטל קו גבול
+
+= Undo Hyperlink
+> בטל היפר-קישור
+
+= United Kingdom
+> בריטניה
+
+= United States
+> ארצות הברית
+
+= Unprotect Document
+> בטל הגנת מסמך
+
+= Update Index
+> עדכן אינדקס
+
+= Update Table
+> עדכן טבלה
+
+= Urdu
+> אורדו
+
+= Use Math AutoCorrect rules outside of math regions
+> השתמש בכללי התיקון האוטומטי במתמטיקה מחוץ לאזורים מתמטיים
+
+= Use a dark window
+> השתמש בחלון כהה
+
+= Use an Existing List...
+> השתמש ברשימה קיימת...
+
+= Use contextual alternates
+> השתמש בחלופות תלויות הקשר
+
+= Uzbek
+> אוזבקית
+
+= Valid signatures
+> חתימות חוקיות
+
+= Validate
+> אמת
+
+= Verb form
+> צורת פועל
+
+= Vertical
+> אנכי
+
+= Vertical Box List
+> רשימת תיבות אנכית
+
+= Vertical Ruler
+> סרגל אנכי
+
+= Vertical Scroll Bar
+> פס גלילה אנכי
+
+= Vertical, left to right
+> אנכי, משמאל לימין
+
+= Video
+> וידאו
+
+= Vietnamese
+> וייטנאמית
+
+= View
+> תצוגה
+
+= View Gridlines
+> הצג קווי רשת
+
+= Views
+> תצוגות
+
+= Visual Basic Editor
+> עורך Visual Basic
+
+= Watch
+> מעקב
+
+= Watermark
+> סימן מים
+
+= Watermarks
+> סימני מים
+
+= Web Layout
+> פריסת אינטרנט
+
+= Web Page (*.htm;*.html)
+> דף אינטרנט (*.htm;*.html)
+
+= Web Page, Filtered (*.htm;*.html)
+> דף אינטרנט, מסונן (*.htm;*.html)
+
+= Web Pages (*.htm;*.html;*.mht;*.mhtml)
+> דפי אינטרנט (*.htm;*.html;*.mht;*.mhtml)
+
+= Welsh
+> ולשית
+
+= What a document's own macros may do
+> מה פקודות המאקרו של מסמך רשאיות לעשות
+
+= What a paragraph looks like before anything is applied to it.
+> כיצד נראית פסקה לפני שמוחל עליה דבר.
+
+= What is trusted
+> מה מהימן
+
+= What's New
+> מה חדש
+
+= When correcting spelling
+> בעת תיקון איות
+
+= Where it goes
+> לאן הוא הולך
+
+= Where the comparison goes
+> לאן הולכת ההשוואה
+
+= White space
+> רווח לבן
+
+= White space between pages
+> רווח לבן בין עמודים
+
+= Widow/Orphan control
+> בקרה על שורה בודדת
+
+= Width
+> רוחב
+
+= Width:
+> רוחב:
+
+= Window
+> חלון
+
+= With
+> עם
+
+= With one, the file itself cannot be read without it.
+> עם סיסמה, לא ניתן לקרוא את הקובץ עצמו בלעדיה.
+
+= Word 97-2003 Document (*.doc)
+> מסמך Word 97-2003 ‏(*.doc)
+
+= Word 97-2003 Documents (*.doc)
+> מסמכי Word 97-2003 ‏(*.doc)
+
+= Word Count
+> ספירת מילים
+
+= Word Document (*.docx)
+> מסמך Word ‏(*.docx)
+
+= Word Macro-Enabled Document (*.docm)
+> מסמך Word התומך בפקודות מאקרו (*.docm)
+
+= Word Macro-Enabled Template (*.dotm)
+> תבנית Word התומכת בפקודות מאקרו (*.dotm)
+
+= Word Template (*.dotx)
+> תבנית Word ‏(*.dotx)
+
+= Word Templates (*.dotx;*.dotm;*.dot)
+> תבניות Word ‏(*.dotx;*.dotm;*.dot)
+
+= Word choice
+> בחירת מילים
+
+= Word documents
+> מסמכי Word
+
+= Word documents (*.docx;*.docm;*.dotx;*.dotm)
+> מסמכי Word ‏(*.docx;*.docm;*.dotx;*.dotm)
+
+= Word documents do not open in this program.
+> מסמכי Word אינם נפתחים בתוכנית זו.
+
+= Word documents do not open in this program. Make Default registers it and opens the system's own page for choosing.
+> מסמכי Word אינם נפתחים בתוכנית זו. 'הגדר כברירת מחדל' רושם אותה ופותח את הדף של המערכת לבחירה.
+
+= Word documents now open in this program
+> מסמכי Word נפתחים כעת בתוכנית זו
+
+= Word documents open in this program.
+> מסמכי Word נפתחים בתוכנית זו.
+
+= Word form
+> צורת מילה
+
+= Word will now convert your PDF to an editable Word document. This may take a while. The resulting Word document will be optimized to allow you to edit the text, so it might not look exactly like the original PDF, especially if the original file contained lots of graphics.
+> Word ימיר כעת את קובץ ה-PDF שלך למסמך Word הניתן לעריכה. פעולה זו עשויה להימשך זמן מה. מסמך ה-Word שיתקבל יותאם כך שתוכל לערוך את הטקסט, ולכן ייתכן שלא ייראה בדיוק כמו קובץ ה-PDF המקורי, במיוחד אם הקובץ המקורי הכיל גרפיקה רבה.
+
+= WordArt
+> WordArt
+
+= Words split
+> פיצול מילים
+
+= Wrap Text
+> גלישת טקסט
+
+= Write & Insert Fields
+> כתוב והוסף שדות
+
+= XML Mapping
+> מיפוי XML
+
+= XML Mapping Pane
+> חלונית מיפוי XML
+
+= XML files (*.xml)
+> קובצי XML ‏(*.xml)
+
+= Yellow
+> צהוב
+
+= Yes
+> כן
+
+= Yes, Start Enforcing Protection
+> כן, התחל לאכוף הגנה
+
+= You may edit one stretch of this document.
+> אתה רשאי לערוך קטע אחד של מסמך זה.
+
+= You may edit {0} stretches of this document.
+> אתה רשאי לערוך {0} קטעים של מסמך זה.
+
+= You may edit, and every change is recorded.
+> אתה רשאי לערוך, וכל שינוי נרשם.
+
+= You may fill in the form and change nothing else.
+> אתה רשאי למלא את הטופס ולא לשנות דבר מלבד זאת.
+
+= You may leave comments and change nothing else.
+> אתה רשאי להשאיר הערות ולא לשנות דבר מלבד זאת.
+
+= Your permissions
+> ההרשאות שלך
+
+= Z to A
+> ת עד א
+
+= Zoom
+> זום
+
+= Zulu
+> זולו
+
+= [ ]
+> [ ]
+
+= [Text]
+> [טקסט]
+
+= go through them on the Review tab
+> עבור עליהם בכרטיסיה 'סקירה'
+
+= in this machine's store
+> במאגר של מחשב זה
+
+= keep every change
+> שמור כל שינוי
+
+= locked
+> נעול
+
+= off
+> כבוי
+
+= on
+> מופעל
+
+= take them all back
+> בטל את כולם
+
+= unsaved changes
+> שינויים שלא נשמרו
+
+= { }
+> { }
+
+= {0} added to the list
+> {0} נוסף לרשימה
+
+= {0} characters
+> {0} תווים
+
+= {0} chart, {1} points
+> תרשים {0}, {1} נקודות
+
+= {0} copied
+> {0} הועתק
+
+= {0} could not be opened
+> לא ניתן היה לפתוח את {0}
+
+= {0} could not be opened: {1}
+> לא ניתן היה לפתוח את {0}: {1}
+
+= {0} could not be read
+> לא ניתן היה לקרוא את {0}
+
+= {0} deleted
+> {0} נמחק
+
+= {0} did not open. Try the password again.
+> {0} לא נפתח. נסה שוב את הסיסמה.
+
+= {0} is a control that cannot be deleted
+> {0} הוא פקד שלא ניתן למחוק
+
+= {0} is encrypted.
+> {0} מוצפן.
+
+= {0} is no longer in the template
+> {0} כבר אינו בתבנית
+
+= {0} is not a picture this program can read. PNG, JPEG, BMP, GIF, TIFF and the metafiles are.
+> {0} אינו תמונה שתוכנית זו יכולה לקרוא. PNG, ‏JPEG, ‏BMP, ‏GIF, ‏TIFF וקובצי המטא כן.
+
+= {0} is not trusted any more
+> {0} אינו מהימן עוד
+
+= {0} is reserved.
+> {0} שמור.
+
+= {0} is trusted
+> {0} מהימן
+
+= {0} left in, {1} left out
+> {0} נכללו, {1} הושמטו
+
+= {0} left out as copies of somebody already on the list
+> {0} הושמטו כעותקים של מישהו שכבר ברשימה
+
+= {0} may edit this
+> {0} רשאי לערוך זאת
+
+= {0} may no longer edit this
+> {0} אינו רשאי עוד לערוך זאת
+
+= {0} of them are short of something: this one has no {1}
+> ל-{0} מהם חסר משהו: לזה אין {1}
+
+= {0} of {1}
+> {0} מתוך {1}
+
+= {0} on the list
+> {0} ברשימה
+
+= {0} point
+> {0} נקודות
+
+= {0} put in
+> {0} הוכנס
+
+= {0} ran
+> {0} הופעל
+
+= {0} recipients typed
+> הוקלדו {0} נמענים
+
+= {0} recovered
+> {0} שוחזר
+
+= {0} refiled
+> {0} תויק מחדש
+
+= {0} renamed
+> שמו של {0} שונה
+
+= {0} selected
+> {0} נבחרו
+
+= {0} set for this and every new document
+> {0} הוגדר עבור מסמך זה ועבור כל מסמך חדש
+
+= {0} set for this document only
+> {0} הוגדר עבור מסמך זה בלבד
+
+= {0} stopped: {1}
+> {0} נעצר: {1}
+
+= {0} stretches you may edit, selected
+> {0} קטעים שאתה רשאי לערוך, נבחרו
+
+= {0} styles allowed
+> {0} סגנונות מותרים
+
+= {0} styles taken from the template
+> {0} סגנונות נלקחו מהתבנית
+
+= {0} was not kept
+> {0} לא נשמר
+
+= {0} words
+> {0} מילים
+
+= {0} {1}
+> {0} {1}
+
+= {0} — no entry
+> {0} — אין ערך
+
+= {0}, {1} boxes
+> {0}, {1} תיבות
+
+= {0}x{1} Table
+> טבלה {0}x{1}
+
+= “Straight quotes” with “smart quotes”
+> "מירכאות ישרות" ב"מירכאות חכמות"
+
+= “{0}” will be formatted automatically.
+> ”{0}” יעוצב באופן אוטומטי.
+

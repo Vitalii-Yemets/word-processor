@@ -33,45 +33,73 @@ use super::Editor;
 /// that match nothing a German is looking at. Worked out over every tab in
 /// one fixed order, so that a tab's letter does not move when a tab of
 /// tables comes and goes.
+///
+/// A language whose tabs are not all named in letters a key is named by —
+/// Hebrew, where only SmartArt's two keep a Latin word — has Word's
+/// English letters too: the letters would come from the English names
+/// either way, and these are the ones somebody who knows Word already has.
 #[must_use]
 pub(super) fn tab_key_tip(tab: Tab) -> String {
-    if crate::messages::language() == crate::messages::ENGLISH {
+    let every: Vec<Tab> = Tab::ALL.iter().chain(Tab::CONTEXTUAL.iter()).copied().collect();
+    let in_keys = every.iter().all(|each| in_latin(crate::messages::t(each.label())));
+    if crate::messages::language() == crate::messages::ENGLISH || !in_keys {
         return tab.key_tip().to_owned();
     }
-    let every: Vec<Tab> = Tab::ALL.iter().chain(Tab::CONTEXTUAL.iter()).copied().collect();
-    let labels: Vec<&str> = every.iter().map(|each| crate::messages::t(each.label())).collect();
+    let labels: Vec<&str> =
+        every.iter().map(|each| keyable(crate::messages::t(each.label()), each.label())).collect();
     let letters = keytips::assign(&labels);
     every.iter().position(|each| *each == tab).map(|at| letters[at].clone()).unwrap_or_default()
 }
 
 impl Editor {
-    /// What a command's button says, in the interface's language, for its
-    /// letter to be taken from: the words on the button where it has any,
+    /// What a command's letter is taken from: what its button says, in the
+    /// interface's language — the words on the button where it has any,
     /// else what its tip calls it, else the group its corner arrow is in; a
     /// squeezed group's button says the group's name, and a tile of the
-    /// gallery its style's.
-    fn shown_label(&self, command: Command) -> String {
-        match command {
+    /// gallery its style's. In a language written in letters no key is
+    /// named by, the English words the letters are then taken from.
+    fn key_label(&self, command: Command) -> String {
+        let (english, shown) = match command {
             Command::ExpandGroup(index) => {
                 let groups = self.ribbon.groups();
-                return groups.get(usize::from(index)).map_or_else(
-                    || "?".to_owned(),
-                    |group| crate::messages::t(group.label).to_owned(),
-                );
+                let label = groups.get(usize::from(index)).map_or("?", |group| group.label);
+                (label.to_owned(), crate::messages::t(label).to_owned())
             }
             Command::Style(index) => {
-                return self
-                    .style_gallery()
-                    .get(index)
-                    .map_or_else(|| "?".to_owned(), |sample| sample.name.clone());
+                let gallery = self.style_gallery();
+                let sample = gallery.get(index);
+                let english = sample.and_then(|sample| sample.id.clone());
+                let english = english.unwrap_or_else(|| "Normal".to_owned());
+                (english, sample.map_or_else(|| "?".to_owned(), |sample| sample.name.clone()))
             }
-            _ => {}
-        }
-        crate::chrome::ribbon::name_of(command)
-            .or_else(|| tip::label_of(command))
-            .or_else(|| crate::chrome::ribbon::launcher_of(command))
-            .map_or_else(|| "?".to_owned(), crate::messages::translated)
+            _ => {
+                let label = crate::chrome::ribbon::name_of(command)
+                    .or_else(|| tip::label_of(command))
+                    .or_else(|| crate::chrome::ribbon::launcher_of(command))
+                    .unwrap_or("?");
+                (label.to_owned(), crate::messages::translated(label))
+            }
+        };
+        keyable(&shown, &english).to_owned()
     }
+}
+
+/// The words a letter can be taken from: those shown, where they are
+/// written in letters a key is named by — the shells name a letter key by
+/// the Latin letter on it — else the English ones, so that a window in
+/// Hebrew still has a letter over everything and not a digit over nine
+/// things and nothing over the rest.
+fn keyable<'a>(shown: &'a str, english: &'a str) -> &'a str {
+    if in_latin(shown) {
+        shown
+    } else {
+        english
+    }
+}
+
+/// Whether words have a letter in them that a key is named by.
+fn in_latin(words: &str) -> bool {
+    words.chars().any(|letter| letter.is_ascii_alphabetic())
 }
 
 /// How far the letters have been followed.
@@ -171,7 +199,7 @@ impl Editor {
         // Worked out from the labels as they are shown, in the interface's
         // language: a letter is only any use if it is in the word under it.
         let labels: Vec<String> =
-            places.iter().map(|(command, ..)| self.shown_label(*command)).collect();
+            places.iter().map(|(command, ..)| self.key_label(*command)).collect();
         let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
         let letters = keytips::assign(&labels);
         places
@@ -251,6 +279,19 @@ mod tests {
         assert_eq!(letter(Tab::Insert).as_deref(), Some("N"));
     }
 
+    /// No two tabs share a letter, the ones that come and go included: the
+    /// table tabs are there beside the Developer tab while the caret is in
+    /// a table, and Table Layout had its L.
+    #[test]
+    fn no_two_tabs_have_the_same_letter() {
+        let every: Vec<Tab> = Tab::ALL.iter().chain(Tab::CONTEXTUAL.iter()).copied().collect();
+        for (at, tab) in every.iter().enumerate() {
+            for other in &every[at + 1..] {
+                assert_ne!(tab.key_tip(), other.key_tip(), "{tab:?} and {other:?}");
+            }
+        }
+    }
+
     /// In German, each tab's letter and each command's is in the German
     /// word under it, all different; and a tab's letter opens it.
     #[test]
@@ -282,9 +323,52 @@ mod tests {
                 let _ = std::fs::write(path, picture);
             }
             for (command, letter, ..) in editor.command_tips() {
-                let label = editor.shown_label(command);
+                let label = editor.key_label(command);
                 assert!(letter.is_empty() || in_word(&letter, &label), "{letter} over {label}");
             }
+        });
+    }
+
+    /// In Hebrew the window reads from the right, and the letters over the
+    /// tabs and the commands are Latin ones, from the English words — the
+    /// keys are named by them — and not digits over nine things and nothing
+    /// over the rest: over the tabs Word's own, H over בית and N over
+    /// הוספה, which opens it.
+    #[test]
+    fn in_hebrew_the_letters_come_from_the_english_words() {
+        crate::messages::tests::in_language("he", || {
+            assert!(crate::messages::is_mirrored());
+            assert_eq!(t("Home"), "בית");
+            assert_eq!(t("Bold"), "מודגש");
+            let mut editor = editor();
+            let tips = editor.tab_tips();
+            for (tab, letter, ..) in &tips {
+                assert_eq!(letter, tab.key_tip(), "over {}", t(tab.label()));
+            }
+            let (_, insert, ..) =
+                tips.iter().find(|(tab, ..)| *tab == Tab::Insert).expect("Insert");
+            assert_eq!(insert, "N");
+            editor.toggle_key_tips();
+            editor.press_key_tip(insert.chars().next().expect("a letter").to_ascii_lowercase());
+            assert_eq!(editor.ribbon.tab, Tab::Insert, "the letter opens the tab it is over");
+            editor.paint(1400, 900);
+            if let Ok(directory) = std::env::var("WP_PROOFS") {
+                let picture = wp_raster::encode_png(editor.canvas());
+                let _ = std::fs::create_dir_all(&directory);
+                let path = std::path::Path::new(&directory).join("key-tips-hebrew.png");
+                let _ = std::fs::write(path, picture);
+            }
+            let commands = editor.command_tips();
+            for (command, letter, ..) in &commands {
+                let label = editor.key_label(*command);
+                let in_word = letter.chars().all(|c| c.is_ascii_digit())
+                    || label.to_uppercase().contains(letter.as_str());
+                assert!(in_latin(&label) && in_word, "{letter} over {label}");
+            }
+            let lettered = commands.iter().filter(|(_, letter, ..)| {
+                !letter.is_empty() && letter.chars().any(|c| c.is_ascii_uppercase())
+            });
+            assert!(lettered.count() > 9, "more than nine things have a letter");
         });
     }
 }

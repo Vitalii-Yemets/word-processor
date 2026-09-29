@@ -7,6 +7,7 @@ name = "wp-app"
 version = "0.0.1"
 dependencies = [
  "wp-asn1",
+ "wp-bidi",
  "wp-cipher",
  "wp-crypt",
  "wp-dict",

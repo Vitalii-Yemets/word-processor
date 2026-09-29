@@ -188,7 +188,9 @@ impl Tab {
             // it takes a letter nothing else has.
             Self::HeaderFooter => "E",
             Self::TableDesign => "T",
-            Self::TableLayout => "L",
+            // Not Word's L, which is the Developer tab's, and the two are
+            // both there while the caret is in a table.
+            Self::TableLayout => "A",
             // Word reaches the diagram tabs through J too; here each takes a
             // letter nothing else has.
             Self::SmartArtDesign => "D",

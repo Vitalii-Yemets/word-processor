@@ -36,6 +36,8 @@ wp-normal = { path = "../wp-normal" }
 wp-asn1 = { path = "../wp-asn1" }
 wp-rsa = { path = "../wp-rsa" }
 wp-sign = { path = "../wp-sign" }
+# Which way a line of the interface reads, in a window read right to left.
+wp-bidi = { path = "../wp-bidi" }
 
 [lints]
 workspace = true

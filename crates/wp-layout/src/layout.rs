@@ -1984,6 +1984,9 @@ pub struct LayoutEngine<'a> {
     generation: u64,
     /// How many blocks of the body the last layout of a document placed.
     placed: usize,
+    /// Which way a line of interface text reads, where the interface says:
+    /// see [`LayoutEngine::set_interface_direction`].
+    interface_direction: Option<wp_bidi::Direction>,
 }
 
 impl<'a> LayoutEngine<'a> {
@@ -2028,6 +2031,7 @@ impl<'a> LayoutEngine<'a> {
             passes: 0,
             generation: 0,
             placed: 0,
+            interface_direction: None,
         }
     }
 
@@ -2143,6 +2147,19 @@ impl<'a> LayoutEngine<'a> {
         }
     }
 
+    /// Says which way the interface reads, for the lines of it drawn here —
+    /// see [`Self::styled_line`] — or `None` for each line to go the way its
+    /// own first letter says.
+    ///
+    /// A message of a window read right to left reads right to left
+    /// whatever it starts with: "{0} נשמר" with an English name in it is
+    /// the name and then the word, read from the right, and a line that
+    /// took its direction from the name would put the word first. Windows
+    /// does the same with a window's reading order.
+    pub fn set_interface_direction(&mut self, direction: Option<wp_bidi::Direction>) {
+        self.interface_direction = direction;
+    }
+
     /// The same, on an engine that is being kept and used again.
     pub fn set_outline(&mut self, depth: Option<u8>) {
         if self.outline != depth {
@@ -2233,14 +2250,12 @@ impl<'a> LayoutEngine<'a> {
             ..RunStyle::plain(face, size, color)
         };
 
-        // A line of interface text is one direction throughout — a button's
-        // name, a font's name, a measurement — so its direction is taken from
-        // the text itself rather than through the whole algorithm, which needs
-        // a paragraph to work on.
-        let mut glyphs = self.shape(text, &style, 0);
-        if wp_bidi::Direction::from_text(text).is_right_to_left() {
-            glyphs.reverse();
-        }
+        // A line of interface text reads the way the interface does, where
+        // it says; else the way its own first letter does.
+        let direction =
+            self.interface_direction.unwrap_or_else(|| wp_bidi::Direction::from_text(text));
+        let glyphs = self.shape(text, &style, 0);
+        let glyphs = self.in_drawing_order(text, glyphs, &style, direction);
 
         let mut pen = x;
         for glyph in glyphs {
@@ -2311,10 +2326,10 @@ impl<'a> LayoutEngine<'a> {
         let mut page = Page::default();
         let Some(style) = self.style_for(properties) else { return page };
 
-        let mut glyphs = self.shape(text, &style, 0);
-        if wp_bidi::Direction::from_text(text).is_right_to_left() {
-            glyphs.reverse();
-        }
+        // The document's own text, so the way its own first letter says.
+        let glyphs = self.shape(text, &style, 0);
+        let glyphs =
+            self.in_drawing_order(text, glyphs, &style, wp_bidi::Direction::from_text(text));
 
         let mut pen = x;
         let baseline = baseline - style.raise;
@@ -5950,6 +5965,46 @@ impl<'a> LayoutEngine<'a> {
     /// as what a Latin reader calls a closing bracket. The same goes for the
     /// comparisons and the guillemets. Only the drawing changes: the document
     /// still holds what was typed, so the caret and a copy are unaffected.
+    /// The glyphs of a line of text standing on its own, in the order they
+    /// are drawn from the left.
+    ///
+    /// By the whole of the bidirectional algorithm, where the line had been
+    /// turned round whenever it began in a script read from the right. A
+    /// line of Hebrew with a number in it, or a word of English, or a
+    /// bracket, is not that line backwards: the number keeps its digits in
+    /// order and the word its letters — page 12 of 40 does not say 21 and
+    /// 04 — and a bracket in a stretch read from the right is drawn as the
+    /// other end of its pair, as on the page. See [`Self::mirror_glyphs`].
+    fn in_drawing_order(
+        &mut self,
+        text: &str,
+        mut glyphs: Vec<ShapedGlyph>,
+        style: &RunStyle,
+        direction: wp_bidi::Direction,
+    ) -> Vec<ShapedGlyph> {
+        let levels = wp_bidi::levels(text, direction);
+        let base = u8::from(direction.is_right_to_left());
+        let glyph_levels: Vec<u8> =
+            glyphs.iter().map(|glyph| levels.get(glyph.offset).copied().unwrap_or(base)).collect();
+        for (glyph, level) in glyphs.iter_mut().zip(&glyph_levels) {
+            if level % 2 == 0 {
+                continue;
+            }
+            let Some(mirror) = wp_bidi::mirrored(glyph.character) else { continue };
+            let mut buffer = [0u8; 4];
+            let drawn = self.shape(mirror.encode_utf8(&mut buffer), style, glyph.offset);
+            if let Some(chosen) = drawn.first() {
+                *glyph = ShapedGlyph {
+                    face: chosen.face,
+                    glyph: chosen.glyph,
+                    advance: chosen.advance,
+                    ..*glyph
+                };
+            }
+        }
+        wp_bidi::reorder(&glyph_levels).into_iter().map(|at| glyphs[at]).collect()
+    }
+
     fn mirror_glyphs(&mut self, items: &mut [Item], levels: &[u8], styles: &[RunStyle]) {
         for (item, level) in items.iter_mut().zip(levels) {
             if level % 2 == 0 {
