@@ -580,6 +580,9 @@ unsafe fn read_data(data: *mut ComObject) -> (Contents, Vec<PathBuf>) {
         rtf: bytes_of(data, formats.rtf).map(cut),
         png: bytes_of(data, formats.png),
         dib: bytes_of(data, CF_DIB),
+        // Word's own object comes in a drag as a storage, which this does
+        // not ask for: what is dropped is taken from the other formats.
+        document: None,
     };
     (contents, files)
 }

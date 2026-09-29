@@ -99,6 +99,9 @@ pub struct Entry {
     left: u32,
     right: u32,
     child: u32,
+    /// The class of object a storage holds — what program it is — as the
+    /// sixteen bytes of its identifier; noughts where none was said.
+    pub class: [u8; 16],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -369,6 +372,7 @@ fn parse_entry(bytes: &[u8]) -> Entry {
         left: u32_at(68),
         right: u32_at(72),
         child: u32_at(76),
+        class: bytes[80..96].try_into().unwrap_or([0; 16]),
     }
 }
 
@@ -414,6 +418,8 @@ fn lay_out(items: &[Item], written: &mut Vec<Written>) -> Vec<usize> {
 pub struct Builder {
     /// The things at the top of the file, in the order they were added.
     items: Vec<Item>,
+    /// The class of object the whole file holds, said on its root.
+    class: [u8; 16],
 }
 
 #[derive(Clone, Debug)]
@@ -464,6 +470,14 @@ impl Builder {
         self
     }
 
+    /// Says what class of object the file holds — which program's — by the
+    /// sixteen bytes of its identifier, in the order the file keeps them.
+    /// An object embedded in another program's document is known by this.
+    pub fn class(&mut self, class: [u8; 16]) -> &mut Self {
+        self.class = class;
+        self
+    }
+
     /// Adds anything at all at the top of the file, storages inside storages
     /// included.
     pub fn item(&mut self, item: Item) -> &mut Self {
@@ -479,7 +493,7 @@ impl Builder {
         // each storage. The order in the file does not matter — the trees
         // below do — but it has to be settled before anything can point at
         // anything.
-        let mut written: Vec<Written> = vec![Written::root()];
+        let mut written: Vec<Written> = vec![Written { class: self.class, ..Written::root() }];
         let top = lay_out(&self.items, &mut written);
         written[0].child = tree(&mut written, &top);
 
@@ -692,6 +706,8 @@ struct Written {
     left: u32,
     right: u32,
     child: u32,
+    /// The class of object a storage holds, which only the root is given.
+    class: [u8; 16],
 }
 
 impl Written {
@@ -705,6 +721,7 @@ impl Written {
             left: NO_ENTRY,
             right: NO_ENTRY,
             child: NO_ENTRY,
+            class: [0; 16],
         }
     }
 
@@ -718,6 +735,7 @@ impl Written {
             left: NO_ENTRY,
             right: NO_ENTRY,
             child: NO_ENTRY,
+            class: [0; 16],
         }
     }
 
@@ -749,6 +767,7 @@ impl Written {
         out[68..72].copy_from_slice(&self.left.to_le_bytes());
         out[72..76].copy_from_slice(&self.right.to_le_bytes());
         out[76..80].copy_from_slice(&self.child.to_le_bytes());
+        out[80..96].copy_from_slice(&self.class);
         out[116..120].copy_from_slice(&self.start.to_le_bytes());
         out[120..128].copy_from_slice(&self.size.to_le_bytes());
         out
@@ -818,6 +837,19 @@ mod tests {
         assert_eq!(&bytes[0x1A..0x1C], &3u16.to_le_bytes(), "the major version");
         assert_eq!(&bytes[0x1C..0x1E], &0xFFFEu16.to_le_bytes(), "the byte order");
         assert_eq!(&bytes[0x28..0x2C], &[0, 0, 0, 0], "version three counts no directory sectors");
+    }
+
+    /// The class of object the file holds, on its root, where a program
+    /// that is handed an embedded object looks to see whose it is.
+    #[test]
+    fn the_root_says_the_class_it_is_given() {
+        let class = [7u8, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let bytes = Builder::new().class(class).stream("Package", vec![1; 10]).build();
+        let file = CompoundFile::open(bytes).expect("a compound file");
+        assert_eq!(file.entries()[0].kind, EntryKind::Root);
+        assert_eq!(file.entries()[0].class, class);
+        let stream = file.entries().iter().find(|entry| entry.name == "Package").expect("it");
+        assert_eq!(stream.class, [0; 16], "a stream has none");
     }
 
     #[test]

@@ -273,6 +273,7 @@ version = "0.0.1"
 dependencies = [
  "wp-deflate",
  "wp-image",
+ "wp-ole",
  "wp-raster",
  "wp-text",
 ]

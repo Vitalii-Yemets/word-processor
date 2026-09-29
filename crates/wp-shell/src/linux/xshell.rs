@@ -106,6 +106,33 @@ struct State {
     /// What this program is dragging, while it is, for the program it is
     /// let go on to ask for.
     dragged: Option<Contents>,
+    /// What is being handed over in pieces, to programs that asked for
+    /// more than one property should carry.
+    transfers: Vec<Transfer>,
+}
+
+/// How much of a selection goes in one property. Anything bigger is handed
+/// over in pieces of this size — `INCR`, in the conventions' own word — so
+/// that no request to the server has to carry the lot, and a program on a
+/// server without big requests can take it too.
+const INCR_CHUNK: usize = 256 * 1024;
+
+/// How long a program taking a selection in pieces may leave a piece
+/// untaken before it is given up on.
+const INCR_PATIENCE: Duration = Duration::from_secs(30);
+
+/// A selection being handed over in pieces: to whom, in which property,
+/// as what, and how far it has got.
+#[derive(Debug)]
+struct Transfer {
+    requestor: u32,
+    property: u32,
+    kind: u32,
+    data: Vec<u8>,
+    sent: usize,
+    /// Whether the empty piece that says the end has been written.
+    ended: bool,
+    last: Instant,
 }
 
 /// The version of the drag and drop protocol spoken: the fifth, in which
@@ -238,6 +265,7 @@ impl State {
             input_method: None,
             incoming: None,
             dragged: None,
+            transfers: Vec::new(),
         })
     }
 
@@ -483,6 +511,7 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
                 deliver(id, Event::Tick);
             }
             check_input_method();
+            with_state(forget_stalled_transfers);
             // Joined once the window is up, so that finding the bus does
             // not keep the window from coming up.
             if !accessible {
@@ -735,6 +764,13 @@ fn handle_packet(packet: &Packet) {
         }
         x11::SELECTION_CLEAR => {
             with_state(|state| state.owned = None);
+            return;
+        }
+        x11::PROPERTY_NOTIFY => {
+            // The property a piece was written into, taken: the next.
+            if packet.u8_at(16) == PROPERTY_DELETED {
+                with_state(|state| next_piece(state, packet.u32_at(4), packet.u32_at(8)));
+            }
             return;
         }
         x11::MAPPING_NOTIFY => {
@@ -1595,8 +1631,14 @@ fn dropped(state: &mut State, window: u32, time: u32) -> Option<Event> {
                     .then(|| fetch_from(state, window, selection, format, time))
                     .flatten()
             };
-            let contents =
-                Contents { text, html: fetch(html), rtf: fetch(rtf), png: fetch(png), dib: None };
+            let contents = Contents {
+                text,
+                html: fetch(html),
+                rtf: fetch(rtf),
+                png: fetch(png),
+                dib: None,
+                document: None,
+            };
             if !contents.is_empty() {
                 event = Some(Event::DataDropped {
                     contents,
@@ -1920,6 +1962,7 @@ pub(crate) fn clipboard_contents() -> Contents {
             rtf: fetch_selection(state, window, atoms.2),
             png: fetch_selection(state, window, atoms.3),
             dib: None,
+            document: None,
         }
     })
     .unwrap_or_default()
@@ -1973,10 +2016,68 @@ fn fetch_from(
     }
     let (kind, _, bytes) = state.connection.get_property(window, property, true).ok()?;
     if kind == incr {
-        // Handed over in pieces, which this does not take.
-        return None;
+        // Too big for one property, so handed over in pieces: taking the
+        // property off, which was just done, asks for the first, and each
+        // piece taken asks for the next, until an empty one says that was
+        // all.
+        return take_pieces(state, window, property);
     }
     Some(bytes)
+}
+
+/// The pieces of a selection handed over with `INCR`, put together. Each
+/// arrives as the property being written again, which the window hears of
+/// since it asks for its property changes; a piece is waited for as long
+/// as the owner keeps writing them.
+fn take_pieces(state: &mut State, window: u32, property: u32) -> Option<Vec<u8>> {
+    let mut whole = Vec::new();
+    let mut kept = Vec::new();
+    let mut last = Instant::now();
+    let taken = loop {
+        if last.elapsed() > Duration::from_secs(2) {
+            break None;
+        }
+        let Ok(Some(packet)) = state.connection.read_packet(Some(Duration::from_millis(100)))
+        else {
+            continue;
+        };
+        let written = packet.kind() == x11::PROPERTY_NOTIFY
+            && packet.u32_at(4) == window
+            && packet.u32_at(8) == property
+            && packet.u8_at(16) != PROPERTY_DELETED;
+        if !written {
+            if packet.kind() == x11::SELECTION_REQUEST {
+                answer_selection_request_in(state, &packet);
+            } else if packet.kind() == x11::PROPERTY_NOTIFY && packet.u8_at(16) == PROPERTY_DELETED
+            {
+                // Something of this program's own being handed over in
+                // pieces meanwhile goes on.
+                next_piece(state, packet.u32_at(4), packet.u32_at(8));
+            } else {
+                kept.push(packet);
+            }
+            continue;
+        }
+        last = Instant::now();
+        let Ok((kind, _, piece)) = state.connection.get_property(window, property, true) else {
+            break None;
+        };
+        let _ = state.connection.flush();
+        // Told of a writing that is no longer there — the INCR itself,
+        // heard before the answer and already taken — and not a piece: a
+        // piece, even the empty last one, has a type.
+        if kind == 0 {
+            continue;
+        }
+        if piece.is_empty() {
+            break Some(core::mem::take(&mut whole));
+        }
+        whole.extend_from_slice(&piece);
+    };
+    for packet in kept.into_iter().rev() {
+        state.connection.push_front(packet);
+    }
+    taken
 }
 
 fn answer_selection_request(packet: &Packet) {
@@ -2045,8 +2146,38 @@ fn answer_selection_request_in(state: &mut State, packet: &Packet) {
         } else {
             None
         };
+        let incr = atoms.incr;
         if let Some((kind, format, data)) = answer {
-            if state.connection.set_property(requestor, property, kind, format, &data).is_ok() {
+            if format == 8 && data.len() > INCR_CHUNK {
+                // Too big for one property: the size first, as INCR, and
+                // then a piece each time the program takes the last. It is
+                // told of its property being taken by asking for its
+                // window's property changes.
+                let size = u32::try_from(data.len()).unwrap_or(u32::MAX).to_le_bytes();
+                let ours = state.window_index(requestor).is_some();
+                let started = (ours
+                    || state.connection.select_input(requestor, PROPERTY_CHANGE).is_ok())
+                    && state.connection.set_property(requestor, property, incr, 32, &size).is_ok();
+                if started {
+                    state.transfers.retain(|transfer| {
+                        (transfer.requestor, transfer.property) != (requestor, property)
+                    });
+                    state.transfers.push(Transfer {
+                        requestor,
+                        property,
+                        kind,
+                        data,
+                        sent: 0,
+                        ended: false,
+                        last: Instant::now(),
+                    });
+                    given = property;
+                }
+            } else if state
+                .connection
+                .set_property(requestor, property, kind, format, &data)
+                .is_ok()
+            {
                 given = property;
             }
         }
@@ -2060,6 +2191,68 @@ fn answer_selection_request_in(state: &mut State, packet: &Packet) {
     event[20..24].copy_from_slice(&given.to_le_bytes());
     let _ = state.connection.send_event(requestor, 0, &event);
     let _ = state.connection.flush();
+}
+
+/// The event mask that tells of a window's properties changing.
+const PROPERTY_CHANGE: u32 = 0x0040_0000;
+
+/// A property notification's state when the property was taken off.
+const PROPERTY_DELETED: u8 = 1;
+
+/// Writes the next piece of a selection being handed over, now that the
+/// program taking it has taken the last: the rest in pieces, then an empty
+/// one to say that was all, after whose taking the transfer is over.
+fn next_piece(state: &mut State, requestor: u32, property: u32) {
+    let Some(at) = state
+        .transfers
+        .iter()
+        .position(|transfer| (transfer.requestor, transfer.property) == (requestor, property))
+    else {
+        return;
+    };
+    let transfer = &mut state.transfers[at];
+    transfer.last = Instant::now();
+    if transfer.ended {
+        state.transfers.remove(at);
+        // The window is no longer watched, unless something else is still
+        // being handed to it.
+        if !state.transfers.iter().any(|other| other.requestor == requestor)
+            && state.window_index(requestor).is_none()
+        {
+            let _ = state.connection.select_input(requestor, 0);
+        }
+        let _ = state.connection.flush();
+        return;
+    }
+    let end = (transfer.sent + INCR_CHUNK).min(transfer.data.len());
+    let piece = transfer.data[transfer.sent..end].to_vec();
+    transfer.sent = end;
+    transfer.ended = piece.is_empty();
+    let kind = transfer.kind;
+    let _ = state.connection.set_property(requestor, property, kind, 8, &piece);
+    let _ = state.connection.flush();
+}
+
+/// Gives up on selections handed over in pieces that have stopped being
+/// taken — the program that asked has gone, or forgotten.
+fn forget_stalled_transfers(state: &mut State) {
+    let stalled: Vec<u32> = state
+        .transfers
+        .iter()
+        .filter(|transfer| transfer.last.elapsed() > INCR_PATIENCE)
+        .map(|transfer| transfer.requestor)
+        .collect();
+    if stalled.is_empty() {
+        return;
+    }
+    state.transfers.retain(|transfer| transfer.last.elapsed() <= INCR_PATIENCE);
+    for requestor in stalled {
+        if !state.transfers.iter().any(|other| other.requestor == requestor)
+            && state.window_index(requestor).is_none()
+        {
+            let _ = state.connection.select_input(requestor, 0);
+        }
+    }
 }
 
 /// The page of an "HTML Format" payload, which is what a program on this

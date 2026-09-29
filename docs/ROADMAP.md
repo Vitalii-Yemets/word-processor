@@ -6500,12 +6500,67 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   open to a program — and there nothing moves. The portal of version
   1.16 offers screenshots only beside a permission dialog, which the
   test image has from xdg-desktop-portal-gtk.
-- [ ] **H14. The rest of the clipboard.** Word's own native format — the
+- [x] **H14. The rest of the clipboard.** Word's own native format — the
   package it puts on the clipboard beside the others — which this program
   neither writes nor reads, so a paste between two copies of Word carries
   more than a paste from here does; and a selection handed over in pieces
   (`INCR` on X11), which today is declined rather than taken. Named in **H2**
   and **H6**.
+  *Done:* both.
+  **Word's own format** (`crates/wp-shell/src/embedded.rs`): what Word
+  offers beside its text, Rich Text and HTML is the copy as an object —
+  "Embed Source", which its Paste Special calls a Microsoft Word Document
+  Object — with an "Object Descriptor" saying whose it is. The object is a
+  compound file whose root names the class `Word.Document.12`, with the
+  `\x01CompObj` stream naming it in words ([MS-OLEDS]), the `\x01Ole`
+  stream of an embedded rather than linked object, and the document itself
+  as a `.docx` package in a `Package` stream. A copy now goes that way too,
+  from the package the copied paragraphs were already made into — which
+  now carries this document's styles, their defaults and the lists they
+  number with, so the Rich Text and HTML written from it do as well: until
+  now a paragraph in a style of this document's went out in a new
+  document's style of that name, or in none. A paste takes the package out
+  of an object Word put there, by
+  its class or its names, before anything else, since it is the whole of
+  what was copied. `wp-ole` now reads and writes the class a storage
+  names. A drag from Word carries the object as a storage, which a drop
+  does not ask for; the drop is taken from the other formats as before.
+  **Pieces on X** (`crates/wp-shell/src/linux/xshell.rs`): a selection
+  handed over as `INCR` is taken — the property taken off asks for the
+  first piece, each piece taken asks for the next, an empty one ends it,
+  and a notification of a writing already taken is told from a piece by
+  its type. And one bigger than a quarter of a megabyte is handed over
+  that way: its size first, then a piece each time the program asking
+  takes the last, its window's property changes asked for meanwhile and
+  given back after, and given up on if half a minute passes untaken.
+  *Proven by:* `crates/wp-shell/tests/x_clipboard.rs` against xclip on
+  Xvfb, both ways round, three megabytes of lines each different: taken
+  whole and in order from xclip, which hands that much over in pieces —
+  the test fails with pieces declined, so it does — and given whole to
+  xclip in pieces of this program's. `tools/check-clipboard-wine.sh` runs
+  `crates/wp-shell/examples/ole-clipboard.rs` under Wine, whose OLE
+  clipboard and storage are Windows' interfaces written by somebody else:
+  the copy put on the clipboard by the shell was offered by OLE as a
+  storage, which is how Word asks for it, and read there — the class
+  Word's, the package the one copied, the streams' names and kind — and
+  the descriptor read with Word's class and name; and a storage made by
+  OLE's own writer, holding a package and put on the clipboard as Word
+  puts one, was read back by the shell as the document in it. The editor's
+  own tests: a copy's package carrying a style this document made, as
+  this document has it; and a document on the clipboard pasted before the
+  Rich Text beside it, with what Rich Text from here would not have said.
+  The test of the editor read through AT-SPI was made to open its find
+  strip before the window's first tick: it could be asked for the strip's
+  parts in the moment before the strip was first drawn.
+  *Not done, and named here:* Word itself has not pasted what this program
+  copies, nor copied what this program pasted — there is no Word in the
+  build image — so what is held to is the format as documented and as OLE
+  reads and writes it. Whether Word pastes an object from another program
+  as the document in it or as an embedded object is Word's to decide;
+  Paste Special offers it either way. The lists a paragraph numbers with
+  directly, rather than through its style, are not carried into the copy.
+  Linux has no program that asks for Word's format, and none is offered
+  there.
 - [ ] **H15. The rest of Word's recent documents.** Its jump list has tasks
   and a pinned list of its own, which needs the shell's custom destination
   lists; its row menu offers Save As and Show Repairs; and Manage Document

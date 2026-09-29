@@ -1811,8 +1811,14 @@ impl State {
                     .into_iter()
                     .find_map(&mut read)
                     .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
-                let contents =
-                    Contents { text, html: read(HTML), rtf: read(RTF), png: read(PNG), dib: None };
+                let contents = Contents {
+                    text,
+                    html: read(HTML),
+                    rtf: read(RTF),
+                    png: read(PNG),
+                    dib: None,
+                    document: None,
+                };
                 (!contents.is_empty()).then_some(Event::DataDropped {
                     contents,
                     x,
@@ -2237,6 +2243,7 @@ pub(crate) fn clipboard_contents() -> Contents {
         rtf: state.paste(RTF),
         png: state.paste(PNG),
         dib: None,
+        document: None,
     })
     .unwrap_or_default()
 }

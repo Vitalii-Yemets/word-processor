@@ -2360,6 +2360,20 @@ pub(crate) fn clipboard_set_contents(contents: &crate::clipboard::Contents) -> b
     if let Some(dib) = &contents.dib {
         items.push((CLIPBOARD_DIB, dib.clone()));
     }
+    // The copy as a Word document of its own, the way Word offers one: the
+    // object, and what says whose it is. See [`crate::embedded`].
+    if let Some(package) = &contents.document {
+        for (name, bytes) in [
+            ("Embed Source", crate::embedded::embed_source(package)),
+            ("Object Descriptor", crate::embedded::object_descriptor("Word Processor")),
+        ] {
+            // SAFETY: the name outlives the call.
+            let format = unsafe { RegisterClipboardFormatW(wide(name).as_ptr()) };
+            if format != 0 {
+                items.push((format, bytes));
+            }
+        }
+    }
     if items.is_empty() {
         return false;
     }
@@ -2409,6 +2423,7 @@ pub(crate) fn clipboard_contents() -> crate::clipboard::Contents {
         let html = RegisterClipboardFormatW(wide("HTML Format").as_ptr());
         let rtf = RegisterClipboardFormatW(wide("Rich Text Format").as_ptr());
         let png = RegisterClipboardFormatW(wide("PNG").as_ptr());
+        let embed_source = RegisterClipboardFormatW(wide("Embed Source").as_ptr());
         if OpenClipboard(core::ptr::null_mut()) == 0 {
             return contents;
         }
@@ -2440,6 +2455,10 @@ pub(crate) fn clipboard_contents() -> crate::clipboard::Contents {
         contents.rtf = read(rtf).map(text_bytes);
         contents.png = read(png);
         contents.dib = read(CLIPBOARD_DIB);
+        // Word's object, which the clipboard hands over as the compound
+        // file's bytes: the document in it, if it is Word's.
+        contents.document =
+            read(embed_source).and_then(|bytes| crate::embedded::package_of(&bytes));
         CloseClipboard();
     }
     contents

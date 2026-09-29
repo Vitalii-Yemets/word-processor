@@ -35,6 +35,9 @@ impl Editor {
         let Some(fragment) = self.fragment_document(blocks) else { return contents };
         contents.rtf = Some(wp_rtf::write(&fragment));
         contents.html = Some(cf_html(&wp_html::write(&fragment, "clip.htm", None)));
+        // And as a Word document of its own, which is Word's own format and
+        // carries what the other two cannot.
+        contents.document = fragment.save().ok();
         // A picture copied on its own goes as a picture too, which is how it
         // lands in a program that only takes pictures.
         if let Some(held) = self.only_picture(blocks) {
@@ -59,6 +62,10 @@ impl Editor {
         }
         let body = wp_docx::model::Body { blocks: body_blocks };
         let mut document = Document::create(&body).ok()?;
+        // With this document's styles, so that a heading copied is a heading
+        // as this document has it wherever it lands, and not whatever a new
+        // document's style of the name looks like.
+        document.update_styles_from(&self.document);
         // Last first, so that putting one in does not move the marks after it
         // in the same paragraph.
         for picture in held.into_iter().rev() {
@@ -195,11 +202,16 @@ impl Editor {
                 return (text, blocks.clone());
             }
         }
-        // Rich Text first, since it is what Word itself puts on the
-        // clipboard and what says most; then HTML, which a browser or a
-        // mail program puts there.
-        let foreign =
-            contents.rtf.as_deref().and_then(|rtf| wp_rtf::open(rtf).ok()).or_else(|| {
+        // Word's own document first, where Word put one, since it is the
+        // whole of what was copied; then Rich Text, which Word puts there
+        // too and which says most of the rest; then HTML, which a browser
+        // or a mail program puts there.
+        let foreign = contents
+            .document
+            .as_deref()
+            .and_then(|package| Document::open(package).ok())
+            .or_else(|| contents.rtf.as_deref().and_then(|rtf| wp_rtf::open(rtf).ok()))
+            .or_else(|| {
                 contents.html.as_deref().and_then(|html| {
                     let page = html_of(html);
                     wp_html::open_html(&page, None).ok()
@@ -491,6 +503,67 @@ mod tests {
         assert!(html.contains("<!--StartFragment-->"), "{html}");
         assert!(html.contains("Dear"), "{html}");
         assert!(contents.png.is_none() && contents.dib.is_none());
+    }
+
+    /// The copy goes as a Word document of its own too, carrying the
+    /// document's styles: a paragraph in a style this document made is in
+    /// that style, as this document has it, in the copy.
+    #[test]
+    fn a_copy_goes_out_as_a_word_document_with_the_styles_it_uses() {
+        let mut editor = editor("Kept as it was");
+        let style = wp_docx::StyleDefinition {
+            id: "Pullquote".to_owned(),
+            name: "Pullquote".to_owned(),
+            based_on: None,
+            next: None,
+            paragraph: wp_docx::model::ParagraphProperties::default(),
+            run: wp_docx::model::RunProperties {
+                italic: Some(true),
+                size_half_points: Some(36),
+                ..Default::default()
+            },
+        };
+        assert!(editor.document.set_style(&style));
+        assert!(editor.document.set_paragraph_style(0, Some("Pullquote")));
+        editor.document.select_all();
+        let text = editor.document.selected_text();
+        let blocks = editor.document.copy_selection();
+        let contents = editor.clipboard_contents_of_selection(&text, &blocks);
+
+        let package = contents.document.expect("the copy as a document");
+        let copy = Document::open(&package).expect("a .docx that opens");
+        assert_eq!(copy.plain_text().trim_end(), "Kept as it was");
+        assert_eq!(copy.paragraph_styles(), vec![Some("Pullquote".to_owned())]);
+        let resolved = copy.styles().resolve_run(Some("Pullquote"), &Default::default());
+        assert!(resolved.italic && resolved.size_half_points == 36, "{resolved:?}");
+    }
+
+    /// What Word put on the clipboard as a document of its own is what is
+    /// pasted, before its Rich Text: the document says everything.
+    #[test]
+    fn a_word_document_on_the_clipboard_is_pasted_before_its_rich_text() {
+        let mut editor = editor("");
+        let mut body = Body::default();
+        let mut paragraph = Paragraph::text("From the document");
+        paragraph.runs[0].properties.underline = Some(wp_docx::model::Underline::Double);
+        body.blocks.push(Block::Paragraph(paragraph));
+        let package = Document::create(&body).expect("a document").save().expect("saved");
+        let rtf = br"{\rtf1\ansi\pard From the Rich Text\par}".to_vec();
+        let contents = Contents {
+            text: Some("From the document".to_owned()),
+            rtf: Some(rtf),
+            document: Some(package),
+            ..Contents::default()
+        };
+        let (text, blocks) = editor.take_contents(contents);
+        assert_eq!(text, "From the document");
+        let Block::Paragraph(paragraph) = &blocks[0] else { panic!("a paragraph") };
+        assert_eq!(paragraph.plain_text(), "From the document");
+        assert_eq!(
+            paragraph.runs[0].properties.underline,
+            Some(wp_docx::model::Underline::Double),
+            "what Rich Text from here would not have said"
+        );
     }
 
     #[test]

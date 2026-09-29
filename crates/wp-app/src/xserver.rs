@@ -478,14 +478,20 @@ impl App for ReadAloud {
             return Response::Close;
         }
         // The find strip is opened at once, the way a person would with
-        // Ctrl+F, so that there is a box on the window to be written into.
-        if event == Event::Tick && !self.searching {
+        // Ctrl+F, so that there is a box on the window to be written into —
+        // as soon as the window has its size, which is before the first
+        // tick, and so before a screen reader can ask what the window holds
+        // and be told of a strip not yet drawn.
+        let sized = matches!(event, Event::Resized { .. });
+        let response = self.editor.handle(event);
+        if sized && !self.searching {
             self.searching = true;
             let control = wp_shell::Modifiers { control: true, ..wp_shell::Modifiers::default() };
             self.editor
                 .handle(Event::KeyDown { key: wp_shell::Key::Letter('f'), modifiers: control });
+            return Response::Redraw;
         }
-        self.editor.handle(event)
+        response
     }
 
     fn cursor(&mut self, x: i32, y: i32) -> Cursor {

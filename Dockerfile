@@ -234,6 +234,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         slurp \
  && rm -rf /var/lib/apt/lists/*
 
+# Another program's clipboard on X, for what is too big to go in one piece:
+# xclip hands a selection over in pieces (INCR) once it is bigger than a
+# request should carry, and takes one handed over that way, so the X
+# shell's pieces are held to it both ways round. A test tool; the shell
+# speaks the conventions itself. In a layer of its own, after the others.
+RUN apt-get update && apt-get install -y --no-install-recommends xclip \
+ && rm -rf /var/lib/apt/lists/*
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

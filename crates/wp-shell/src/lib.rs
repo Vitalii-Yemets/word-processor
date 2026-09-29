@@ -24,10 +24,14 @@ use wp_raster::Canvas;
 // their own.
 pub mod certificates;
 
+// Word's own clipboard format, which is a Windows one; built on every
+// machine for its tests.
 #[cfg(windows)]
 mod com;
 #[cfg(windows)]
 mod dragdrop;
+#[cfg(any(windows, test))]
+mod embedded;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]
@@ -1161,6 +1165,12 @@ pub mod clipboard {
         /// `CF_DIB`: a bitmap's information header and pixels, without the
         /// file header a `.bmp` file starts with.
         pub dib: Option<Vec<u8>>,
+        /// What was copied as a Word document of its own, a `.docx`
+        /// package: Word's own format, which on Windows goes as the
+        /// embedded object Word offers beside the rest ("Embed Source",
+        /// with its "Object Descriptor"), and comes back out of one Word
+        /// put there. Nothing on Linux, where no program asks for it.
+        pub document: Option<Vec<u8>>,
     }
 
     impl Contents {
@@ -1172,6 +1182,7 @@ pub mod clipboard {
                 && self.rtf.is_none()
                 && self.png.is_none()
                 && self.dib.is_none()
+                && self.document.is_none()
         }
     }
 

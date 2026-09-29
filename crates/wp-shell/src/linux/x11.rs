@@ -168,6 +168,7 @@ pub(crate) const SELECTION_REQUEST: u8 = 30;
 pub(crate) const SELECTION_NOTIFY: u8 = 31;
 pub(crate) const CLIENT_MESSAGE: u8 = 33;
 pub(crate) const MAPPING_NOTIFY: u8 = 34;
+pub(crate) const PROPERTY_NOTIFY: u8 = 28;
 
 /// The events a window asks to be told of.
 pub(crate) const EVENT_MASK: u32 = 0x0000_0001 // KeyPress
