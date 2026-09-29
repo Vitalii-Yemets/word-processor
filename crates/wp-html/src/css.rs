@@ -13,12 +13,12 @@ pub type Declaration = (String, String);
 
 /// One rule of a `<style>` block: what it selects, and what it says.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Rule {
+pub struct Rule {
     /// The tag it names, if it names one: `p` in `p.MsoNormal`.
-    tag: Option<String>,
+    pub tag: Option<String>,
     /// The class it names, if it names one.
-    class: Option<String>,
-    declarations: Vec<Declaration>,
+    pub class: Option<String>,
+    pub declarations: Vec<Declaration>,
 }
 
 /// What Word says about one level of one list: `@list l0:level1`.
@@ -34,6 +34,11 @@ pub struct ListLevel {
 pub struct Sheet {
     rules: Vec<Rule>,
     pub lists: Vec<ListLevel>,
+    /// The `@page` rules, by the name after `@page` — Word's section names,
+    /// `WordSection1` — or none.
+    pub pages: Vec<(String, Vec<Declaration>)>,
+    /// The `@font-face` rules: what the page says about each of its fonts.
+    pub fonts: Vec<Vec<Declaration>>,
 }
 
 impl Sheet {
@@ -51,6 +56,19 @@ impl Sheet {
 
             if let Some(list) = selectors.strip_prefix("@list ") {
                 self.read_list_rule(list.trim(), body);
+                continue;
+            }
+            if let Some(name) = selectors.strip_prefix("@page") {
+                // `@page:first` and the like are about pages of a kind, which
+                // a section does not describe.
+                let name = name.trim();
+                if !name.contains(':') {
+                    self.pages.push((name.to_owned(), parse_declarations(body)));
+                }
+                continue;
+            }
+            if selectors == "@font-face" {
+                self.fonts.push(parse_declarations(body));
                 continue;
             }
             if selectors.starts_with('@') {
@@ -110,6 +128,33 @@ impl Sheet {
             if rule.tag.as_deref().is_none_or(|wanted| wanted == tag) {
                 out.extend(rule.declarations.iter().cloned());
             }
+        }
+        out
+    }
+
+    /// Every rule for a tag or a class, in the order written.
+    #[must_use]
+    pub fn rules(&self) -> &[Rule] {
+        &self.rules
+    }
+
+    /// What the `@page` rule of that name says, over what the one with no
+    /// name says.
+    #[must_use]
+    pub fn page(&self, name: &str) -> Vec<Declaration> {
+        let mut out: Vec<Declaration> = self
+            .pages
+            .iter()
+            .filter(|(held, _)| held.is_empty())
+            .flat_map(|(_, declarations)| declarations.iter().cloned())
+            .collect();
+        if !name.is_empty() {
+            out.extend(
+                self.pages
+                    .iter()
+                    .filter(|(held, _)| held.eq_ignore_ascii_case(name))
+                    .flat_map(|(_, declarations)| declarations.iter().cloned()),
+            );
         }
         out
     }
@@ -245,6 +290,12 @@ pub fn colour(value: &str) -> Option<String> {
         _ => return None,
     };
     Some(named.to_owned())
+}
+
+/// A value with the quotes round it taken off: `"Heading 1 Char"`.
+#[must_use]
+pub fn unquote(value: &str) -> String {
+    value.trim().trim_matches(|c| c == '"' || c == '\'').trim().to_owned()
 }
 
 /// The first family of a `font-family` list, without its quotes: `"Times

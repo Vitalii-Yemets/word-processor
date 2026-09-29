@@ -3033,6 +3033,19 @@ ogg,lancre
                 self.show_mini_bar(520, 380);
             }
             other => {
+                // One of the View tab's ways of looking at the document.
+                if let Some(name) = other.strip_prefix("view=") {
+                    let view = match name {
+                        "print" => super::views::View::Print,
+                        "web" => super::views::View::Web,
+                        "draft" => super::views::View::Draft,
+                        "outline" => super::views::View::Outline,
+                        "read" => super::views::View::Reading,
+                        unknown => return Err(format!("no view called {unknown:?}")),
+                    };
+                    self.set_view(view);
+                    return Ok(());
+                }
                 if let Some(percent) = other.strip_prefix("zoom=") {
                     let wanted: f32 = percent
                         .parse()

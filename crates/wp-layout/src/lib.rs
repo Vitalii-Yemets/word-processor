@@ -52,6 +52,6 @@ pub use layout::{
     PageMetrics, PlacedCell, PlacedImage, PlacedInk, PlacedPath, PlacedShape, PositionedGlyph,
     TextStyle, Turn,
 };
-pub use library::{Face, FontLibrary};
+pub use library::{Face, FontLibrary, Likeness};
 pub use render::Renderer;
 pub use wp_image::Image;

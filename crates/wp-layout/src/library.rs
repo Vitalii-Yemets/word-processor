@@ -21,6 +21,17 @@ use std::path::{Path, PathBuf};
 
 use wp_font::{CharacterMap, Font, GlyphId, TableRange};
 
+/// What kind of face should stand in for a missing one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Likeness {
+    /// Without serifs, which is also what a font nothing is known about gets.
+    Sans,
+    /// With serifs.
+    Serif,
+    /// Every letter the same width.
+    Mono,
+}
+
 /// One font face that can be drawn with.
 #[derive(Debug)]
 pub struct Face {
@@ -264,11 +275,26 @@ impl FontLibrary {
         self.default_face(bold, italic)
     }
 
+    /// Whether a family is on the machine at all, in any weight or slant.
+    #[must_use]
+    pub fn has_family(&self, family: &str) -> bool {
+        let wanted = normalize(family);
+        self.faces.iter().any(|face| normalize(&face.family) == wanted)
+    }
+
     /// A reasonable face when the document's own choice is unavailable.
     #[must_use]
     pub fn default_face(&self, bold: bool, italic: bool) -> Option<usize> {
+        self.default_face_like(Likeness::Sans, bold, italic)
+    }
+
+    /// The same, of the kind the missing font was: a font with serifs stands
+    /// in for one with serifs, and a typewriter's for a typewriter's, which
+    /// keeps a page looking like itself in a way any one default cannot.
+    #[must_use]
+    pub fn default_face_like(&self, like: Likeness, bold: bool, italic: bool) -> Option<usize> {
         // Families likely to be present and to cover a broad range of scripts.
-        const PREFERRED: &[&str] = &[
+        const SANS: &[&str] = &[
             "dejavusans",
             "liberationsans",
             "notosans",
@@ -278,8 +304,35 @@ impl FontLibrary {
             "calibri",
             "freesans",
         ];
+        const SERIF: &[&str] = &[
+            "liberationserif",
+            "dejavuserif",
+            "notoserif",
+            "timesnewroman",
+            "times",
+            "georgia",
+            "cambria",
+            "freeserif",
+        ];
+        const MONO: &[&str] = &[
+            "liberationmono",
+            "dejavusansmono",
+            "notosansmono",
+            "couriernew",
+            "courier",
+            "consolas",
+            "freemono",
+        ];
+        let first: &[&str] = match like {
+            Likeness::Sans => SANS,
+            Likeness::Serif => SERIF,
+            Likeness::Mono => MONO,
+        };
+        // The kind asked for first, and then the ordinary default.
+        let preferred =
+            first.iter().chain(if like == Likeness::Sans { [].iter() } else { SANS.iter() });
 
-        for wanted in PREFERRED {
+        for wanted in preferred {
             if let Some(index) = self.faces.iter().position(|face| {
                 normalize(&face.family) == *wanted && face.bold == bold && face.italic == italic
             }) {

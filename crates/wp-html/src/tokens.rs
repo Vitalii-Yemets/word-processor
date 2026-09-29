@@ -24,12 +24,20 @@ pub enum Token {
     Text(String),
     /// The inside of a `<style>` element, as written.
     Style(String),
-    /// `<!--[if gte mso 9]> ... <![endif]-->`, a comment, or `<!DOCTYPE>`:
-    /// nothing the page shows.
+    /// A comment, or `<!DOCTYPE>`: nothing the page shows.
     Comment,
+    /// `<!--[if gte vml 1]> ... <![endif]-->`: what only a reader that knows
+    /// the thing named is shown — Word's drawings in VML, its table styles,
+    /// its document settings — with the condition and what it holds.
+    Hidden {
+        condition: String,
+        inner: String,
+    },
     /// `<![if !supportLists]>`: what follows, up to `<![endif]>`, is shown
     /// only by a reader that does not know the thing named — which Word
     /// uses for the bullet of a list it has already described another way.
+    /// `<!--[if !supportLists]-->` is the same, written so as to be a comment
+    /// to a reader that knows no conditions at all.
     ConditionalOpen(String),
     ConditionalClose,
 }
@@ -66,10 +74,44 @@ impl<'a> Tokenizer<'a> {
         Some(Token::Text(decode_entities(&rest[..end])))
     }
 
+    /// A comment that is a condition: `rest` is what follows `<!--`.
+    fn conditional_comment(&mut self, rest: &str) -> Option<Token> {
+        // `<!--[endif]-->`, the end of one written as a comment.
+        if rest.starts_with("[endif]-->") {
+            self.at += 1 + 3 + "[endif]-->".len();
+            return Some(Token::ConditionalClose);
+        }
+        let inside = rest.strip_prefix("[if ")?;
+        let close = inside.find(']')?;
+        let condition = inside[..close].trim().to_owned();
+        let after = &inside[close + 1..];
+        // `<!--[if !supportLists]-->`: what follows is shown to everyone but
+        // the reader that knows the thing.
+        if after.starts_with("-->") {
+            self.at += 1 + 3 + "[if ".len() + close + 1 + 3;
+            return Some(Token::ConditionalOpen(condition));
+        }
+        // `<!--[if gte vml 1]> ... <![endif]-->`: shown only to that reader.
+        let body = after.strip_prefix('>')?;
+        let (inner, used) = match body.find("<![endif]-->") {
+            Some(end) => (&body[..end], end + "<![endif]-->".len()),
+            None => match body.find("-->") {
+                Some(end) => (&body[..end], end + 3),
+                None => (body, body.len()),
+            },
+        };
+        let inner = inner.to_owned();
+        self.at += 1 + 3 + "[if ".len() + close + 1 + 1 + used;
+        Some(Token::Hidden { condition, inner })
+    }
+
     /// Something beginning with `<`; `after` is what follows it.
     fn markup(&mut self, after: &str) -> Option<Token> {
         // Comments, the conditional ones among them, and the doctype.
         if let Some(rest) = after.strip_prefix("!--") {
+            if let Some(token) = self.conditional_comment(rest) {
+                return Some(token);
+            }
             let end = rest.find("-->").map_or(rest.len(), |found| found + 3);
             self.at += 1 + 3 + end;
             return Some(Token::Comment);
@@ -408,12 +450,29 @@ mod tests {
             tokens,
             vec![
                 Token::Comment,
-                Token::Comment,
+                Token::Hidden {
+                    condition: "gte mso 9".to_owned(),
+                    inner: "<xml><o:x/></xml>".to_owned()
+                },
                 Token::Style("p {x}".to_owned()),
                 Token::ConditionalOpen("!supportLists".to_owned()),
                 Token::Text("·".to_owned()),
                 Token::ConditionalClose,
                 Token::Text("a".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_condition_written_as_a_comment_is_a_condition() {
+        assert_eq!(
+            all("<!--[if !supportLists]-->\u{b7}<!--[endif]-->a<!-- plain -->"),
+            vec![
+                Token::ConditionalOpen("!supportLists".to_owned()),
+                Token::Text("\u{b7}".to_owned()),
+                Token::ConditionalClose,
+                Token::Text("a".to_owned()),
+                Token::Comment,
             ]
         );
     }

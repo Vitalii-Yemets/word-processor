@@ -38,14 +38,34 @@ pub struct Page {
 /// it.
 #[must_use]
 pub fn write(document: &Document, name: &str, title: Option<&str>) -> Page {
+    write_page(document, name, title, false)
+}
+
+/// Writes the document as Word's "Web Page, Filtered": the same page with
+/// everything only Office reads left out — the Office namespaces and every
+/// `mso-` property — which is a page for a browser rather than one to be
+/// opened in Word again as the document it was.
+#[must_use]
+pub fn write_filtered(document: &Document, name: &str, title: Option<&str>) -> Page {
+    write_page(document, name, title, true)
+}
+
+fn write_page(document: &Document, name: &str, title: Option<&str>, filtered: bool) -> Page {
     let folder = format!("{}_files", name.rsplit_once('.').map_or(name, |(stem, _)| stem));
-    let mut writer = Writer { out: String::new(), folder, pictures: Vec::new(), counts: [0, 0] };
+    let mut writer =
+        Writer { out: String::new(), folder, pictures: Vec::new(), counts: [0, 0], filtered };
     let body = document.body();
     let links = document.hyperlinks();
 
-    writer.out.push_str(
-        "<html xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:w=\"urn:schemas-microsoft-com:office:word\" xmlns=\"http://www.w3.org/TR/REC-html40\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta name=\"Generator\" content=\"Word Processor\">\n",
-    );
+    if filtered {
+        writer.out.push_str(
+            "<html>\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta name=\"Generator\" content=\"Word Processor (filtered)\">\n",
+        );
+    } else {
+        writer.out.push_str(
+            "<html xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:w=\"urn:schemas-microsoft-com:office:word\" xmlns=\"http://www.w3.org/TR/REC-html40\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n<meta name=\"Generator\" content=\"Word Processor\">\n",
+        );
+    }
     writer.out.push_str(&format!("<title>{}</title>\n", escape(title.unwrap_or(name))));
     writer.out.push_str("<style>\n");
     writer.out.push_str("p.MsoNormal, li.MsoNormal, div.MsoNormal {margin:0in 0in 8pt 0in; line-height:107%; font-size:11pt; font-family:Calibri, sans-serif;}\n");
@@ -139,6 +159,8 @@ struct Writer {
     folder: String,
     pictures: Vec<PictureFile>,
     counts: [u32; 2],
+    /// Whether what only Office reads is left out.
+    filtered: bool,
 }
 
 impl Writer {
@@ -192,7 +214,9 @@ impl Writer {
                 LineRule::AtLeast => style.push(format!("line-height:{}pt", pt(spacing.value))),
                 LineRule::Exact => {
                     style.push(format!("line-height:{}pt", pt(spacing.value)));
-                    style.push("mso-line-height-rule:exactly".to_owned());
+                    if !self.filtered {
+                        style.push("mso-line-height-rule:exactly".to_owned());
+                    }
                 }
             }
         }
@@ -291,9 +315,11 @@ impl Writer {
             match content {
                 RunContent::Text(text) => self.out.push_str(&escape(text)),
                 RunContent::Tab | RunContent::PositionTab(_) => {
-                    self.out.push_str(
-                        "<span style=\"mso-tab-count:1\">&nbsp;&nbsp;&nbsp;&nbsp;</span>",
-                    );
+                    self.out.push_str(if self.filtered {
+                        "&nbsp;&nbsp;&nbsp;&nbsp;"
+                    } else {
+                        "<span style=\"mso-tab-count:1\">&nbsp;&nbsp;&nbsp;&nbsp;</span>"
+                    });
                 }
                 RunContent::Break(BreakKind::Line) => self.out.push_str("<br>"),
                 RunContent::Break(BreakKind::Page | BreakKind::Column) => {

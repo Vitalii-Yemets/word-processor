@@ -84,7 +84,10 @@ fn main() -> ExitCode {
         (Some("text"), 2) => text(&arguments[1]),
         (Some("outline"), 2) => outline(&arguments[1]),
         (Some("roundtrip"), 3) => roundtrip(&arguments[1], &arguments[2]),
-        (Some("convert"), 3) => convert(&arguments[1], &arguments[2]),
+        (Some("convert"), 3) => convert(&arguments[1], &arguments[2], false),
+        (Some("convert"), 4) if arguments[3] == "--filtered" => {
+            convert(&arguments[1], &arguments[2], true)
+        }
         (Some("corpus"), 1) => corpus_command("corpus"),
         (Some("corpus"), 2) => corpus_command(&arguments[1]),
         (Some("fidelity"), 1) => fidelity_command("corpus"),
@@ -139,9 +142,12 @@ Usage: wp <command>
   text <file.docx>             print the document text
   outline <file.docx>          print the structure with formatting
   roundtrip <in> <out>         open and save, checking nothing changed
-  convert <in> <out>           open anything that opens, and write what the
+  convert <in> <out> [--filtered]
+                               open anything that opens, and write what the
                                out file's extension says: .doc, .rtf, .odt,
-                               or a Word package
+                               .htm (its pictures in a folder beside it, or
+                               Word's Web Page, Filtered with --filtered),
+                               .mht, or a Word package
   corpus [directory]           open, save and compare every document in a
                                directory of real files (default: corpus/)
   fidelity [directory]         draw every document in it and score the pages
@@ -442,14 +448,34 @@ fn roundtrip(input: &str, output: &str) -> Result<(), String> {
 
 /// Opens a document of any kind this program reads and writes it as the kind
 /// the output's name says.
-fn convert(input: &str, output: &str) -> Result<(), String> {
+fn convert(input: &str, output: &str, filtered: bool) -> Result<(), String> {
     let document = open(input)?;
     let extension = Path::new(output)
         .extension()
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
         .unwrap_or_default();
+    let name = Path::new(output).file_name().and_then(|name| name.to_str()).unwrap_or(output);
     let bytes = match extension.as_str() {
+        // A web page, with its pictures in the folder Word names after it.
+        "htm" | "html" => {
+            let page = if filtered {
+                wp_html::write_filtered(&document, name, None)
+            } else {
+                wp_html::write(&document, name, None)
+            };
+            let folder = Path::new(output).parent().map(Path::to_path_buf).unwrap_or_default();
+            for picture in &page.pictures {
+                let target = folder.join(&picture.name);
+                if let Some(parent) = target.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::write(&target, &picture.bytes)
+                    .map_err(|error| format!("cannot write {}: {error}", target.display()))?;
+            }
+            page.html.into_bytes()
+        }
+        "mht" | "mhtml" => wp_html::write_mht(&document, name, None),
         "doc" => wp_doc::save(&document),
         "rtf" => wp_rtf::write(&document),
         "odt" => wp_odt::save(&document).map_err(|error| format!("cannot save: {error}"))?,

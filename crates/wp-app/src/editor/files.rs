@@ -147,6 +147,10 @@ pub const DOCUMENT_FILTERS: &[wp_shell::dialog::FileFilter] = &[
 /// And the ones Save As offers, which are the kinds a document can be made
 /// into, in the order Word lists them. The extension follows the kind chosen:
 /// that is what "Save as type" means.
+/// Word's "Web Page, Filtered": the same extension as a web page, told apart
+/// only by being the type chosen in the list.
+const FILTERED_PAGE: &str = "Web Page, Filtered (*.htm;*.html)";
+
 pub const SAVE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
     wp_shell::dialog::FileFilter { label: "Word Document (*.docx)", pattern: "*.docx" },
     wp_shell::dialog::FileFilter {
@@ -162,6 +166,7 @@ pub const SAVE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
     wp_shell::dialog::FileFilter { label: "Rich Text Format (*.rtf)", pattern: "*.rtf" },
     wp_shell::dialog::FileFilter { label: "Plain Text (*.txt)", pattern: "*.txt" },
     wp_shell::dialog::FileFilter { label: "Web Page (*.htm;*.html)", pattern: "*.htm;*.html" },
+    wp_shell::dialog::FileFilter { label: FILTERED_PAGE, pattern: "*.htm;*.html" },
     wp_shell::dialog::FileFilter {
         label: "Single File Web Page (*.mht;*.mhtml)",
         pattern: "*.mht;*.mhtml",
@@ -292,6 +297,12 @@ impl Editor {
     /// macros is asked about first, in Word's words, when there are macros
     /// to lose.
     pub(super) fn write_document(&mut self, path: &Path) -> bool {
+        self.write_document_as(path, false)
+    }
+
+    /// The same, as a filtered web page when that is what was asked for: see
+    /// [`wp_html::write_filtered`].
+    pub(super) fn write_document_as(&mut self, path: &Path, filtered: bool) -> bool {
         // A text file is written through its own dialog, which asks how, and
         // is not written until that is answered: see [`super::textfiles`].
         if super::textfiles::is_text_path(path) {
@@ -310,7 +321,11 @@ impl Editor {
                     std::fs::write(path, wp_html::write_mht(&self.document, name, title))
                 }
                 WebKind::Page => {
-                    let page = wp_html::write(&self.document, name, title);
+                    let page = if filtered {
+                        wp_html::write_filtered(&self.document, name, title)
+                    } else {
+                        wp_html::write(&self.document, name, title)
+                    };
                     let folder = path.parent().map(Path::to_path_buf).unwrap_or_default();
                     let mut written = std::fs::write(path, page.html.as_bytes());
                     for picture in &page.pictures {
@@ -552,8 +567,18 @@ impl Editor {
     /// name is not, and the dialog opens where the folder is rather than
     /// wherever it happened to be last.
     pub(super) fn save_into(&mut self, suggested: &Path) -> bool {
-        match wp_shell::dialog::save_file(t("Save as"), &readable(SAVE_FILTERS), Some(suggested)) {
-            Some(path) => self.write_document(&path),
+        let chosen = wp_shell::dialog::save_file_typed(
+            t("Save as"),
+            &readable(SAVE_FILTERS),
+            Some(suggested),
+        );
+        match chosen {
+            Some((path, kind)) => {
+                let filtered = kind
+                    .and_then(|index| SAVE_FILTERS.get(index))
+                    .is_some_and(|filter| filter.label == FILTERED_PAGE);
+                self.write_document_as(&path, filtered)
+            }
             None => {
                 self.status = String::from("Not saved");
                 false
@@ -1160,6 +1185,27 @@ mod tests {
         editor.open_path(&single);
         assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
         assert!(has_picture(&editor), "the picture did not come back from inside the file");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn web_page_filtered_is_its_own_type_in_save_as_and_leaves_office_out() {
+        // Offered beside the web page, with the same extension: the type
+        // chosen is what tells them apart.
+        let filtered = SAVE_FILTERS.iter().position(|filter| filter.label == FILTERED_PAGE);
+        let plain = SAVE_FILTERS.iter().position(|filter| filter.label.starts_with("Web Page ("));
+        assert_eq!(filtered.map(|at| at - 1), plain, "it follows the web page in the list");
+        assert_eq!(SAVE_FILTERS[filtered.expect("offered")].pattern, "*.htm;*.html");
+
+        let folder = folder("filtered");
+        let path = folder.join("plain.htm");
+        let mut editor = editor("Dear reader");
+        assert!(editor.write_document_as(&path, true));
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(!written.contains("mso-") && !written.contains("xmlns:w"), "{written}");
+        let mut editor = self::editor("");
+        editor.open_path(&path);
+        assert_eq!(editor.document.plain_text().trim_end(), "Dear reader");
         let _ = std::fs::remove_dir_all(folder);
     }
 

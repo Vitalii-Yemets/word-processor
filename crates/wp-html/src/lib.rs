@@ -13,10 +13,25 @@
 //!
 //! [`read`] turns a page into the document model; [`open_html`] and
 //! [`open_mht`] make documents of a page and of a single-file page, with
-//! the pictures fetched from beside the page or from inside the file;
-//! [`write`] goes the other way, and [`write_mht`] wraps the result as one
-//! file. The page's bytes are read in whatever encoding its `<meta>` names,
-//! through [`wp_text`].
+//! the pictures fetched from beside the page or from inside the file.
+//! What a page from Word carries is read with it: the notes and the comments
+//! at its end, its drawings in VML, its styles of every kind and its table
+//! styles in the block only Office reads, its fonts, its sections with their
+//! pages and the headers and footers in the file beside it, its tables inside
+//! tables, merged, ruled and shaded, its boxed paragraphs, its text that runs
+//! right to left, and the colour of its page. [`write`] goes the other way,
+//! [`write_filtered`] leaves out what only Office reads, and [`write_mht`]
+//! wraps the result as one file. The page's bytes are read in whatever
+//! encoding its `<meta>` names, through [`wp_text`].
+//!
+//! # What is not
+//!
+//! The fonts a page fetches from elsewhere, which `@font-face` can name; the
+//! tracked changes a page from Word marks with `<ins>` and `<del>`, which are
+//! read as underlined and struck through; fields, whose results are read as
+//! text; groups of drawings, WordArt and freeform drawings; pictures in text
+//! boxes; and the comments LibreOffice writes, as comments of HTML's own.
+//! Each is named in the roadmap rather than half read here.
 
 #![forbid(unsafe_code)]
 
@@ -28,10 +43,15 @@ mod write;
 
 use std::path::Path;
 
-pub use read::{read, LinkFound, PictureFound, Reading, PICTURE_MARK};
-pub use write::{escape, write, Page, PictureFile};
+pub use read::{
+    read, BookmarkFound, CommentFound, FurnitureFound, FurnitureLink, FurniturePart, LinkFound,
+    NoteFound, PageSetup, PictureFound, Reading, SectionFound, StyleFound, PICTURE_MARK,
+};
+pub use write::{escape, write, write_filtered, Page, PictureFile};
 
-use wp_docx::{Document, Error, TextPosition};
+use wp_docx::furniture::{Furniture, Which};
+use wp_docx::notes::Kind;
+use wp_docx::{Document, Error, StyleDefinition, StyleKind, TextPosition};
 use wp_text::Encoding;
 
 /// The text of a page's bytes, in the encoding the page names or the one
@@ -154,57 +174,38 @@ pub fn write_mht(document: &Document, name: &str, title: Option<&str>) -> Vec<u8
     out.into_bytes()
 }
 
-/// A document from what was read, with the pictures fetched and put in
-/// where their marks were and the links laid over their text.
+/// A document from what was read: the styles and the fonts defined, the
+/// pictures fetched and put in where their marks were, the links, bookmarks
+/// and comments laid over their text, the notes given their words, and the
+/// sections made with their pages and their headers and footers — Word's
+/// fetched from the file beside the page they are in.
 fn assemble(reading: Reading, fetch: impl Fn(&str) -> Option<Vec<u8>>) -> Result<Document, Error> {
     let mut document = Document::create(&reading.body)?;
 
-    // The pictures, last first, so that putting one in does not move the
-    // marks of the ones after it in the same paragraph.
-    let mut pictures = reading.pictures;
-    pictures.sort_by_key(|one| std::cmp::Reverse((one.paragraph, one.offset)));
-    let mut links = reading.links;
-    for picture in pictures {
-        let start = TextPosition::new(picture.paragraph, picture.offset);
-        let end = TextPosition::new(picture.paragraph, picture.offset + PICTURE_MARK.len_utf8());
-        let before = document.paragraph_text(picture.paragraph).map_or(0, |text| text.len());
-        document.set_caret(start);
-        document.extend_selection_to(end);
-        document.delete_selection();
-        document.set_caret(start);
-        if let Some(bytes) = fetch(&picture.source) {
-            let extension = match wp_image::Format::detect(&bytes) {
-                Some(wp_image::Format::Png) => "png",
-                Some(wp_image::Format::Jpeg) => "jpeg",
-                Some(wp_image::Format::Gif) => "gif",
-                Some(wp_image::Format::Bmp) => "bmp",
-                Some(wp_image::Format::Tiff) => "tiff",
-                Some(wp_image::Format::Emf) => "emf",
-                Some(wp_image::Format::Wmf) => "wmf",
-                None => "bin",
-            };
-            // The size the page asked for, or the picture's own at
-            // ninety-six to the inch.
-            let (width, height) = match (picture.width_emu, picture.height_emu) {
-                (Some(width), Some(height)) => (width, height),
-                _ => wp_image::decode(&bytes)
-                    .map(|image| (image.width as i64 * 9525, image.height as i64 * 9525))
-                    .unwrap_or((96 * 9525, 96 * 9525)),
-            };
-            let _ = document.insert_picture(&bytes, extension, width, height);
-        }
-        // A picture is not the width of its mark in the text — and one that
-        // could not be fetched is nothing — so the links after it move.
-        let after = document.paragraph_text(picture.paragraph).map_or(0, |text| text.len());
-        for link in &mut links {
-            if link.paragraph == picture.paragraph && link.start >= picture.offset {
-                link.start = (link.start + after).saturating_sub(before);
-                link.end = (link.end + after).saturating_sub(before);
+    for style in &reading.styles {
+        let definition = StyleDefinition {
+            id: style.id.clone(),
+            name: style.name.clone(),
+            based_on: style.based_on.clone(),
+            next: style.next.clone(),
+            paragraph: style.paragraph.clone(),
+            run: style.run.clone(),
+        };
+        match style.kind {
+            StyleKind::Table => {
+                document.set_table_style_definition(&definition, &style.table_borders);
+            }
+            kind => {
+                document.set_style_of_kind(&definition, kind);
             }
         }
     }
+    if !reading.fonts.is_empty() {
+        document.set_font_table(&reading.fonts)?;
+    }
 
-    for link in links {
+    put_pictures(&mut document, &reading.pictures, 0, &fetch);
+    for link in &reading.links {
         if link.end <= link.start {
             continue;
         }
@@ -212,16 +213,237 @@ fn assemble(reading: Reading, fetch: impl Fn(&str) -> Option<Vec<u8>>) -> Result
         document.extend_selection_to(TextPosition::new(link.paragraph, link.end));
         document.add_hyperlink(&link.address, "");
     }
-    if let Some(title) = reading.title {
+    for bookmark in &reading.bookmarks {
+        document.set_caret(bookmark.start);
+        document.extend_selection_to(bookmark.end);
+        document.add_bookmark(&bookmark.name);
+    }
+
+    // The comments, and then their pictures, in the part they are all in.
+    let mut written = Vec::new();
+    for comment in &reading.comments {
+        document.set_caret(comment.start);
+        document.extend_selection_to(comment.end);
+        let text = comment.body.plain_text();
+        if let Ok(id) = document.add_comment(text.trim(), &comment.author, &comment.date) {
+            if document.set_comment_body(id, &comment.body) {
+                written.push(comment);
+            }
+        }
+    }
+    document.clear_selection();
+    if let Some(part) = document.comments_part() {
+        let entries = written.iter().map(|comment| (&comment.body, &comment.pictures));
+        put_pictures_in_entries(&mut document, &part, 0, entries, &fetch);
+    }
+    for note in &reading.notes {
+        let kind = if note.endnote { Kind::Endnote } else { Kind::Footnote };
+        document.put_note(kind, note.id, &note.body)?;
+    }
+    for kind in [Kind::Footnote, Kind::Endnote] {
+        let Some(part) = document.notes_part(kind) else { continue };
+        // After the two entries that are not notes: the rule above them and
+        // the one a note carried over to the next page is set under.
+        let notes = reading.notes.iter().filter(|note| note.endnote == (kind == Kind::Endnote));
+        let entries = notes.map(|note| (&note.body, &note.pictures));
+        put_pictures_in_entries(&mut document, &part, 2, entries, &fetch);
+    }
+
+    set_up_sections(&mut document, &reading, &fetch)?;
+    if let Some(colour) = &reading.page_colour {
+        document.set_page_color(Some(colour));
+    }
+    if let Some(title) = &reading.title {
         let mut properties = document.properties();
-        properties.title = title;
+        properties.title.clone_from(title);
         let _ = document.set_properties(&properties);
     }
 
     document.set_caret(TextPosition::default());
     document.clear_selection();
+    // None of that was anything a person did.
+    document.forget_history();
     let _ = document.mark_saved();
     Ok(document)
+}
+
+/// Makes the sections: the breaks first, each on the paragraph that ends its
+/// section, and then each section's page and its headers and footers, with
+/// the caret in it — which is what says which section a change is to.
+fn set_up_sections(
+    document: &mut Document,
+    reading: &Reading,
+    fetch: &impl Fn(&str) -> Option<Vec<u8>>,
+) -> Result<(), Error> {
+    let sections = &reading.sections;
+    for (index, section) in sections.iter().enumerate() {
+        let (Some(last), Some(next)) = (section.last_paragraph, sections.get(index + 1)) else {
+            continue;
+        };
+        document.end_section_at(last, next.start);
+    }
+    // Word's headers and footers are in a file of their own, read once.
+    let mut files: Vec<(String, Reading)> = Vec::new();
+    let mut facing = false;
+    let mut first = 0;
+    for (index, section) in sections.iter().enumerate() {
+        document.set_caret(TextPosition::new(first, 0));
+        let page = &section.page;
+        if let (Some(width), Some(height)) = (page.width, page.height) {
+            document.set_page_size(width, height);
+        }
+        if page.margins.iter().any(Option::is_some) {
+            let (top, right, bottom, left) = document.page_margins();
+            let [new_top, new_right, new_bottom, new_left] = page.margins;
+            document.set_page_margins(
+                new_top.unwrap_or(top),
+                new_right.unwrap_or(right),
+                new_bottom.unwrap_or(bottom),
+                new_left.unwrap_or(left),
+            );
+        }
+        if page.header_distance.is_some() || page.footer_distance.is_some() {
+            let (header, footer) = document.furniture_distances();
+            document.set_furniture_distances(
+                page.header_distance.unwrap_or(header),
+                page.footer_distance.unwrap_or(footer),
+            );
+        }
+        if let Some((count, gap)) = page.columns {
+            document.set_columns(count, gap);
+        }
+        if page.title_page {
+            document.set_different_first_page(true);
+        }
+
+        // Each header and footer, and the pictures in it — which go into its
+        // own part, where the parts they need are named. A picture of Word's
+        // file of headers is beside that file, not beside the page.
+        let mut placed: Vec<(Furniture, Which, Vec<PictureFound>, String)> = Vec::new();
+        for furniture in &section.furniture {
+            document.set_furniture_body(furniture.kind, furniture.which, &furniture.body)?;
+            let pictures = furniture.pictures.clone();
+            placed.push((furniture.kind, furniture.which, pictures, String::new()));
+        }
+        for link in &section.linked {
+            if !files.iter().any(|(url, _)| *url == link.url) {
+                let Some(bytes) = fetch(&link.url) else { continue };
+                files.push((link.url.clone(), read(&decode_page(&bytes))));
+            }
+            let Some((_, file)) = files.iter().find(|(url, _)| *url == link.url) else {
+                continue;
+            };
+            let Some(part) = file.furniture.iter().find(|part| part.id == link.id) else {
+                continue;
+            };
+            document.set_furniture_body(link.kind, link.which, &part.body)?;
+            facing |= link.which == Which::Even;
+            let pictures = part.pictures.clone();
+            placed.push((link.kind, link.which, pictures, link.url.clone()));
+        }
+        for (kind, which, pictures, file) in placed {
+            if pictures.is_empty() {
+                continue;
+            }
+            let Some(part) = document.furniture_part_for(kind, index, which) else { continue };
+            if document.enter_part(&part) {
+                let beside_file = |source: &str| fetch(&beside(&file, source));
+                put_pictures(document, &pictures, 0, &beside_file);
+                document.leave_part();
+            }
+        }
+        first = section.last_paragraph.map_or(first, |last| last + 1);
+    }
+    if facing {
+        document.set_different_odd_and_even(true);
+    }
+    Ok(())
+}
+
+/// Puts pictures in where their marks are, first to last, in whichever part
+/// is being edited, `shift` paragraphs further on than they were counted.
+///
+/// Each mark is longer than the picture that takes its place, and the places
+/// of everything after it were counted with the picture, so each is where it
+/// should be once the ones before it are in. A picture that cannot be found
+/// leaves nothing where its mark was.
+fn put_pictures(
+    document: &mut Document,
+    pictures: &[PictureFound],
+    shift: usize,
+    fetch: &impl Fn(&str) -> Option<Vec<u8>>,
+) {
+    for picture in pictures {
+        let paragraph = picture.paragraph + shift;
+        let start = TextPosition::new(paragraph, picture.offset);
+        let end = TextPosition::new(paragraph, picture.offset + PICTURE_MARK.len_utf8());
+        document.set_caret(start);
+        document.extend_selection_to(end);
+        document.delete_selection();
+        document.set_caret(start);
+        let Some(bytes) = fetch(&picture.source) else { continue };
+        let extension = match wp_image::Format::detect(&bytes) {
+            Some(wp_image::Format::Png) => "png",
+            Some(wp_image::Format::Jpeg) => "jpeg",
+            Some(wp_image::Format::Gif) => "gif",
+            Some(wp_image::Format::Bmp) => "bmp",
+            Some(wp_image::Format::Tiff) => "tiff",
+            Some(wp_image::Format::Emf) => "emf",
+            Some(wp_image::Format::Wmf) => "wmf",
+            None => "bin",
+        };
+        // The size the page asked for, or the picture's own at ninety-six to
+        // the inch.
+        let (width, height) = match (picture.width_emu, picture.height_emu) {
+            (Some(width), Some(height)) => (width, height),
+            _ => wp_image::decode(&bytes)
+                .map(|image| {
+                    let pixels = |value: usize| i64::try_from(value).unwrap_or(96) * 9525;
+                    (pixels(image.width), pixels(image.height))
+                })
+                .unwrap_or((96 * 9525, 96 * 9525)),
+        };
+        let put = document.insert_picture(&bytes, extension, width, height);
+        if let (Ok(true), Some(anchor)) = (put, &picture.anchor) {
+            document.set_anchor_at(start, Some(anchor));
+        }
+    }
+    document.clear_selection();
+}
+
+/// The same for a part of entries one after another — the comments, or the
+/// notes of one kind — whose paragraphs are counted through the whole part:
+/// each entry's pictures are shifted past the paragraphs of the ones before
+/// it, and past `before` paragraphs that are not entries' at all.
+fn put_pictures_in_entries<'a>(
+    document: &mut Document,
+    part: &str,
+    before: usize,
+    entries: impl Iterator<Item = (&'a wp_docx::model::Body, &'a Vec<PictureFound>)>,
+    fetch: &impl Fn(&str) -> Option<Vec<u8>>,
+) {
+    let entries: Vec<_> = entries.collect();
+    if entries.iter().all(|(_, pictures)| pictures.is_empty()) || !document.enter_part(part) {
+        return;
+    }
+    let mut shift = before;
+    for (body, pictures) in entries {
+        put_pictures(document, pictures, shift, fetch);
+        shift += body.paragraphs().len();
+    }
+    document.leave_part();
+}
+
+/// A source named in one file, as a place beside the page: `image001.png`
+/// in `page_files/header.htm` is `page_files/image001.png`.
+fn beside(file: &str, source: &str) -> String {
+    if file.is_empty() || source.contains("://") || source.starts_with("data:") {
+        return source.to_owned();
+    }
+    match file.rsplit_once('/') {
+        Some((folder, _)) => format!("{folder}/{source}"),
+        None => source.to_owned(),
+    }
 }
 
 /// The bytes a `data:` URI holds, if the source is one.

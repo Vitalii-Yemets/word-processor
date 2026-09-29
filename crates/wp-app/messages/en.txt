@@ -1039,6 +1039,7 @@
 = Watermarks
 = Web Layout
 = Web Page (*.htm;*.html)
+= Web Page, Filtered (*.htm;*.html)
 = Web Pages (*.htm;*.html;*.mht;*.mhtml)
 = What a document's own macros may do
 = What a paragraph looks like before anything is applied to it.

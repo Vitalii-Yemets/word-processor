@@ -1924,6 +1924,11 @@ pub struct LayoutEngine<'a> {
     /// The level of the last heading passed, so the body text under it can be
     /// indented one step further in.
     outline_heading: u8,
+    /// Whether the document is being shown as a browser would show it: see
+    /// [`LayoutEngine::set_web`].
+    web: bool,
+    /// The document's font table, by family in lower case.
+    font_table: HashMap<String, wp_docx::fonts::FontEntry>,
     /// Word's automatic hyphenation, as the document has it set.
     hyphenation: Hyphenation,
     /// Whether the paragraph whose items are being built may have its words
@@ -2008,6 +2013,8 @@ impl<'a> LayoutEngine<'a> {
             merge_record: Vec::new(),
             outline: None,
             outline_heading: 0,
+            web: false,
+            font_table: HashMap::new(),
             hyphenation: Hyphenation::default(),
             hyphenating: false,
             vertical: false,
@@ -2119,6 +2126,21 @@ impl<'a> LayoutEngine<'a> {
     pub fn with_outline(mut self, depth: Option<u8>) -> Self {
         self.set_outline(depth);
         self
+    }
+
+    /// Lays the document out as a browser would show it: Word's Web Layout.
+    ///
+    /// One sheet as wide as the paper it is given and as long as the text,
+    /// in one column, whatever the sections say — a page on the web has no
+    /// pages, so no page breaks, no sections on paper of their own, no
+    /// headers or footers, no borders round the paper and no numbers down
+    /// its margin. The notes come after the text, where a page saved from the
+    /// document has them.
+    pub fn set_web(&mut self, on: bool) {
+        if self.web != on {
+            self.web = on;
+            self.measured.clear();
+        }
     }
 
     /// The same, on an engine that is being kept and used again.
@@ -2416,6 +2438,13 @@ impl<'a> LayoutEngine<'a> {
         if self.generation != generation {
             self.generation = generation;
             self.measured.clear();
+            // What the document says about its fonts, for the ones the
+            // machine does not have.
+            self.font_table = document
+                .font_table()
+                .into_iter()
+                .map(|entry| (entry.name.to_lowercase(), entry))
+                .collect();
         }
         self.placed = 0;
 
@@ -2436,6 +2465,7 @@ impl<'a> LayoutEngine<'a> {
         // no room and no pages.
         let footnotes = document.notes(wp_docx::notes::Kind::Footnote);
         let body = document.body();
+        let metrics = if self.web { PageMetrics { columns: 1, ..metrics } } else { metrics };
         // The pages of a section written down the page were turned before
         // they were given out, and the engine places text into the box they
         // were laid out in: so back into the box they go, until the end.
@@ -2455,6 +2485,16 @@ impl<'a> LayoutEngine<'a> {
         // mistaken for the body — see [`Measured`].
         self.keeping = true;
         let mut pages = self.layout_body_from(&body, document, metrics, previous);
+        if self.web {
+            // The notes are not the document's own paragraphs, whose
+            // measurements are kept.
+            self.keeping = false;
+            self.finish_web_page(&mut pages, document, metrics);
+            Self::rejoin_connectors(&mut pages);
+            self.fill_shapes(&mut pages, document);
+            mark_videos(&mut pages);
+            return pages;
+        }
         for _ in 0..2 {
             let reserved = if footnotes.is_empty() {
                 Vec::new()
@@ -2517,7 +2557,7 @@ impl<'a> LayoutEngine<'a> {
     /// or the document's where the page belongs to no section it knows.
     fn paper_of_page(&self, page: usize, document: &Document, metrics: PageMetrics) -> PageMetrics {
         let sections = document.sections();
-        if sections.len() <= 1 {
+        if sections.len() <= 1 || self.web {
             return metrics;
         }
         self.page_sections
@@ -2739,7 +2779,8 @@ impl<'a> LayoutEngine<'a> {
         let is_the_document = sections
             .last()
             .is_some_and(|last| last.end_block == body.blocks.len() && sections.len() > 1);
-        if !is_the_document {
+        // A page on the web is one stretch of text, whatever its sections.
+        if !is_the_document || self.web {
             let whole = Stretch {
                 blocks: 0..body.blocks.len(),
                 metrics,
@@ -2960,7 +3001,10 @@ impl<'a> LayoutEngine<'a> {
         let indent_end = resolved.indent_end as f32 / TWIPS_PER_POINT * scale;
         let indent_first = first_twips as f32 / TWIPS_PER_POINT * scale;
 
-        if resolved.page_break_before && !pages.last().is_some_and(|page| page.glyphs.is_empty()) {
+        if resolved.page_break_before
+            && !self.web
+            && !pages.last().is_some_and(|page| page.glyphs.is_empty())
+        {
             self.start_page(pages, y, column, area);
         }
 
@@ -3337,6 +3381,22 @@ impl<'a> LayoutEngine<'a> {
             // A drawing wrapped above and below pushes the text past its foot,
             // which is the whole of what that wrapping means.
             *y = self.past_top_and_bottom_floats(page_index, *y);
+
+            // A line that ends with a page break sends what follows to the top
+            // of a new page, and one that ends with a column break to the top
+            // of the next column. Only in the document's own flow: a cell, a
+            // header or a note has no page to break, and a page on the web
+            // has none at all.
+            let broken = next
+                .checked_sub(1)
+                .and_then(|last| items.get(last))
+                .and_then(|item| item.hard_break.filter(|kind| *kind != BreakKind::Line));
+            if let Some(kind) = broken.filter(|_| !self.web && area.bottom_limit.is_finite()) {
+                if kind == BreakKind::Page {
+                    *column = area.columns.saturating_sub(1);
+                }
+                self.start_page(pages, y, column, area);
+            }
 
             // Whether this line ended with a hyphen: it went on past its
             // last word, and that word carried one.
@@ -5504,10 +5564,35 @@ impl<'a> LayoutEngine<'a> {
             }
         }
     }
+    /// Chooses a face for a family, bold or not, italic or not.
+    ///
+    /// A family the machine does not have is looked up in the document's
+    /// font table: the other name it goes by is tried, and failing that a
+    /// face of the same kind stands in — one with serifs for one with serifs,
+    /// a typewriter's for a typewriter's. See [`wp_docx::fonts`].
+    fn choose_face(&self, family: Option<&str>, bold: bool, italic: bool) -> Option<usize> {
+        use wp_docx::fonts::FontClass;
+        let entry = family
+            .filter(|wanted| !self.library.has_family(wanted))
+            .and_then(|wanted| self.font_table.get(&wanted.to_lowercase()));
+        let Some(entry) = entry else {
+            return self.library.select(family, bold, italic);
+        };
+        if let Some(alt) = entry.alt_name.as_deref().filter(|alt| self.library.has_family(alt)) {
+            return self.library.select(Some(alt), bold, italic);
+        }
+        let like = match (entry.class, entry.fixed_pitch) {
+            (_, Some(true)) | (FontClass::Modern, _) => crate::library::Likeness::Mono,
+            (FontClass::Roman, _) => crate::library::Likeness::Serif,
+            _ => crate::library::Likeness::Sans,
+        };
+        self.library.default_face_like(like, bold, italic)
+    }
+
     /// Chooses a face and works out the metrics for one set of run properties.
     fn style_for(&mut self, properties: &ResolvedRunProperties) -> Option<RunStyle> {
         let face =
-            self.library.select(properties.font.as_deref(), properties.bold, properties.italic)?;
+            self.choose_face(properties.font.as_deref(), properties.bold, properties.italic)?;
 
         // A superscript is set smaller and lifted, a subscript smaller and
         // dropped. Word uses about two thirds of the size and a third of the
@@ -8687,6 +8772,17 @@ impl LayoutEngine<'_> {
 ///
 /// The lines are deliberately not copied: a header is drawn on the page but is
 /// not part of the text, so a click in it must not put the caret there.
+/// How far down a page what is on it reaches: its lines, its pictures, its
+/// drawings, its cells and the rules and bands drawn with them.
+fn content_bottom(page: &Page) -> f32 {
+    let lines = page.lines.iter().map(|line| line.baseline + line.descent);
+    let images = page.images.iter().map(|image| image.y + image.height);
+    let shapes = page.shapes.iter().map(|shape| shape.y + shape.height);
+    let cells = page.cells.iter().map(|cell| cell.y + cell.height);
+    let decorations = page.decorations.iter().map(|decoration| decoration.y + decoration.height);
+    lines.chain(images).chain(shapes).chain(cells).chain(decorations).fold(0.0, f32::max)
+}
+
 fn merge_page(page: &mut Page, from: Page, offset: f32) {
     let first = page.glyphs.len();
     for mut glyph in from.glyphs {
@@ -8876,6 +8972,49 @@ impl LayoutEngine<'_> {
     }
 
     /// Draws the footnotes of each page at its foot, under a short rule.
+    /// Ends the one sheet of a page on the web: the footnotes and then the
+    /// endnotes after the text, under a rule, and the sheet as long as all of
+    /// it and its bottom margin.
+    fn finish_web_page(&mut self, pages: &mut [Page], document: &Document, metrics: PageMetrics) {
+        let Some(last) = pages.len().checked_sub(1) else { return };
+        let scale = self.pixels_per_point();
+        let left = metrics.margin_left * scale;
+        let width = metrics.text_width() * scale;
+        let mut y = pages.iter().map(content_bottom).fold(metrics.margin_top * scale, f32::max);
+
+        let mut notes = document.notes(wp_docx::notes::Kind::Footnote);
+        notes.extend(document.notes(wp_docx::notes::Kind::Endnote));
+        if !notes.is_empty() {
+            y += SEPARATOR_SPACE * scale;
+            pages[last].decorations.push(Decoration {
+                x: left,
+                y: y - SEPARATOR_SPACE * scale * 0.5,
+                width: width / 3.0,
+                height: 1.0,
+                color: self.automatic_line,
+            });
+        }
+        for note in notes {
+            let Some(body) = document.note_body(note.kind, note.id) else { continue };
+            let area = Placement {
+                left,
+                text_width: width,
+                page_width: pages[last].width,
+                page_height: pages[last].height,
+                ..self.note_area(metrics)
+            };
+            let mut scratch = vec![Page {
+                width: pages[last].width,
+                height: pages[last].height,
+                ..Page::default()
+            }];
+            let height = self.lay_out_note(&body, document, area, &mut scratch);
+            merge_page(&mut pages[last], scratch.remove(0), y);
+            y += height;
+        }
+        pages[last].height = y + metrics.margin_bottom * scale;
+    }
+
     fn place_footnotes(
         &mut self,
         pages: &mut [Page],

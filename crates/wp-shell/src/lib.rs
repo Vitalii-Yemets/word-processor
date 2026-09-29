@@ -700,6 +700,34 @@ pub mod dialog {
         }
     }
 
+    /// Asks where to save a file, and which of the types in the list it is to
+    /// be saved as, counted from nought — where the desktop's dialog says.
+    ///
+    /// Two types can share an extension, as a web page and a filtered one do,
+    /// and then the name alone does not say which was meant. The dialogs of
+    /// Linux desktops do not say which type was chosen, and there the answer
+    /// is only the name.
+    #[must_use]
+    pub fn save_file_typed(
+        title: &str,
+        filters: &[FileFilter],
+        suggested: Option<&Path>,
+    ) -> Option<(PathBuf, Option<usize>)> {
+        #[cfg(windows)]
+        {
+            crate::platform::choose_file_typed(title, filters, suggested, true)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            crate::platform::choose_file(title, filters, suggested, true).map(|path| (path, None))
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = (title, filters, suggested);
+            None
+        }
+    }
+
     /// Asks whether to save changes before throwing them away.
     #[must_use]
     pub fn ask_to_save(name: &str) -> Answer {

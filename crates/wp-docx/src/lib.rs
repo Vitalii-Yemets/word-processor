@@ -65,6 +65,7 @@ pub mod fields;
 pub mod figures;
 pub mod fills;
 pub mod floating;
+pub mod fonts;
 mod format;
 pub mod forms;
 pub mod formula;

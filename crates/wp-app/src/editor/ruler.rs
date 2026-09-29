@@ -73,7 +73,11 @@ impl Editor {
 
         let grab =
             rulers::hit_horizontal(horizontal, &stops, x, y).map(Grab::Horizontal).or_else(|| {
-                rulers::hit_vertical(self.pane_width(), vertical, x, y).map(Grab::Vertical)
+                // Web layout draws no side ruler to take hold of.
+                (self.view != super::views::View::Web)
+                    .then(|| rulers::hit_vertical(self.pane_width(), vertical, x, y))
+                    .flatten()
+                    .map(Grab::Vertical)
             });
         let Some(grab) = grab else { return false };
 

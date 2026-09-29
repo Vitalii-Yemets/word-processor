@@ -5183,14 +5183,109 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   frames, character borders and shading, sections that run right to left,
   line numbering, and a note marked with something other than its number.
   And the RTF writer, which writes what **G3** says and none of this.
-- [ ] **G10. The rest of the web-page reader, and Web Layout view.** What a
-  page from Word carries and this does not read: headers and footers,
+- [x] **G10. The rest of the web-page reader, and Web Layout view.** What a
+  page from Word carried and this did not read: headers and footers,
   footnotes, comments, text boxes and shapes (VML) inside the conditional
-  comments this reader walks past; nested tables, cell merging, borders and
+  comments this reader walked past; nested tables, cell merging, borders and
   shading; character and table styles; `@font-face`; right-to-left text. And
   two of Word's own: "Web Page, Filtered", which is this page with the `mso-`
   properties left out and is a tick box away, and Web Layout view, which
   shows a page as a browser would rather than on paper. Named in **G4**.
+  *Done when:* a page cut down to the shape of what Word writes, a single
+  file of one with its headers beside it, and a page LibreOffice writes from
+  a document of one of everything open with each of those where it was; a
+  document saves as a filtered page; and Web Layout shows a document as one
+  sheet the width of the window, the way a browser shows the page.
+  The reader (`crates/wp-html/src/read.rs`) reads into *stories* as the RTF
+  reader does: the page's own text, and a division that is a note, a comment
+  or a header, read the same way and put where it belongs when it ends. A
+  conditional comment is no longer a comment to walk past but what it holds:
+  VML drawings — text boxes with their words, rectangles, rounded ones,
+  ovals, lines and the shapes Word numbers, with their fill, line, size,
+  turn, flips, where they float, what they are measured from and how text
+  wraps round them — and pictures in frames at the size the VML gives, with
+  the plainer copies Word writes for other readers (`v:shape`, `v:shapes`,
+  `<![if !vml]>`) not read a second time; and the table styles Word keeps in
+  a style block only Office reads. Every `<![if !support…]>` and
+  `<![if !mso]>` is the fallback it is, and a tag inside one is only
+  something for its end to close. Footnotes and endnotes as Word's Web Page
+  writes them, as its filtered page does and as LibreOffice does, the
+  number written for other readers left out; comments with their range,
+  author, date and words; bookmarks, and links to them. Tables inside cells,
+  `colspan` and `rowspan` made the spans and the cells merged down that the
+  model has, the columns from every width the rows and `<col>` give, lines
+  from Word's precise `mso-border-alt` over the rounded ones it writes for
+  browsers, `border=1`, shading, alignment down the cell, header rows and
+  heights. A paragraph's own lines and shading, and a division's — Word's
+  box round several paragraphs — for each paragraph in it. Right-to-left
+  paragraphs and runs from `dir` and `direction`, with the page's left and
+  right made the start and end the model keeps, and `align` counted above
+  the rules for a tag and below the element's own style. Word's styles —
+  every `Mso` class and every rule with `mso-style-name`, paragraph,
+  character and table, with what they are based on and what follows them —
+  defined in the document and named by the paragraphs, runs and tables that
+  use them. Sections from Word's `WordSection` divisions and their `@page`
+  rules: paper, turn, margins, where the header and footer sit, columns, a
+  first page of its own, and the headers and footers named in the file
+  beside the page, fetched from beside it or from inside a single file, with
+  the pictures in them. The colour of the page, and each run's language.
+  `@font-face` becomes the document's font table — another name a font goes
+  by, its kind of letter, its PANOSE numbers — which `wp-docx` now reads and
+  writes (`crates/wp-docx/src/fonts.rs`), and which the layout goes on when
+  the machine lacks a font: the other name first, then a face of the same
+  kind, one with serifs for one with serifs and a typewriter's for a
+  typewriter's, where before every missing font was drawn without serifs.
+  That serves every `.docx` from Word as well, whose font table says the same.
+  `wp_html::write_filtered` is Word's "Web Page, Filtered": the same page
+  without the Office namespaces or any `mso-` property. Save As offers it
+  after Web Page, told apart from it by the type chosen in the list, which
+  the Windows dialog now says (`wp_shell::dialog::save_file_typed`); `wp
+  convert <in> <out>.htm --filtered` writes it too. Web Layout lays the
+  document out as one sheet the width of the window in one column, whatever
+  its sections say, with no page breaks, no headers or footers, no borders
+  round the paper and no line numbers, the notes after the text, and the
+  sheet as long as its text and at least as tall as the window; it fills the
+  window from its left edge with no desk round it, and the side ruler, which
+  has no page to measure, is not drawn.
+  *Proven by:* `crates/wp-html/tests/word.rs` — Word's notes, comment and
+  bookmark; styles of every kind, the fonts, a right-to-left paragraph and
+  Word's box round two paragraphs; Word's table with a cell across and one
+  down, shading, precise lines and a table inside a cell; a single-file page
+  of two sections with their pages, a header, a footer and a first-page
+  header from the file beside it and a picture in the header; a text box, an
+  oval and a picture from their VML, their copies not read twice; and a
+  filtered page with nothing only Office reads. `crates/wp-html/tests/
+  libreoffice.rs` — a document of one of everything as a `.docx`, written as
+  a page by LibreOffice and opened: its notes where they were, its bookmark,
+  its header, its page, its boxed and shaded paragraph, its right-to-left
+  one, and its table with its merges, lines, colours and inner table.
+  `crates/wp-layout/tests/web.rs` — page and column breaks, none in a table
+  cell, a document on the web as one sheet in one column with no header and
+  its note after the text, and missing fonts stood in for by what the table
+  says. And the editor's own: Web Layout filling the window and scrolling no
+  further than its text, and Save As offering the filtered page and writing
+  one.
+  *Found along the way:* a page break or a column break in a paragraph —
+  every Ctrl+Enter, and every page break in a file from Word — never began a
+  page or a column; the layout drew it as the end of a line. It does now, in
+  the document's own text; a cell, a header or a note has no page to break.
+  Web layout was paper as tall as a page can be, so the view scrolled
+  almost for ever past the text; a document of several sections was laid out
+  on each section's paper, in its columns, with its headers drawn off the
+  side of the sheet; and the sheet sat on a desk wider than the window. The
+  rulers measured the document's margins in every view, not the ones the
+  view lays the text out with. And `wp convert` to a `.htm` wrote a Word
+  package under that name.
+  *Not done:* fonts a page fetches from elsewhere, which `@font-face` can
+  name as well as describe; the tracked changes a page from Word marks with
+  `<ins>` and `<del>`, which read as underlined and struck through; fields,
+  whose results read as text; groups of drawings, WordArt and freeform
+  drawings, and a drawing's arrowheads, dashes and gradients; pictures in
+  text boxes; the comments LibreOffice writes, as comments of HTML's own,
+  and its floating frames. On Linux the file dialogs do not say which type
+  was chosen, so a filtered page is written there by `wp convert` only. And
+  endnotes in print layout, which the layout counts but draws nowhere; Web
+  Layout draws them after the text.
 - [ ] **G11. The rest of the `.doc` reader.** Headers and footers, footnotes,
   endnotes and comments; sections past the first; nested tables, cell merging,
   borders and shading; drawings that are not pictures; bookmarks; fields other

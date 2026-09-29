@@ -1,6 +1,5 @@
 //! Putting the window on screen: the pages, then the furniture around them.
 
-use wp_layout::PageMetrics;
 use wp_raster::Canvas;
 
 use crate::chrome::rulers::{Indents, Measurements};
@@ -490,7 +489,9 @@ impl Editor {
     /// agree exactly: a marker drawn a pixel from where it can be grabbed is a
     /// marker that cannot be dragged.
     pub(super) fn ruler_measurements(&self) -> (Measurements, rulers::Vertical) {
-        let metrics = PageMetrics::from_document(&self.document);
+        // The margins of the sheet the view lays the text out on, which in
+        // print layout are the document's and in web layout the window's.
+        let metrics = self.view_metrics();
         let pixels_per_inch = self.pixels_per_inch();
         let scale = pixels_per_inch / POINTS_PER_INCH;
         // The page being looked at, not the first one: the side ruler describes
@@ -560,14 +561,18 @@ impl Editor {
             &theme,
         );
 
-        rulers::draw_vertical(
-            &mut self.canvas,
-            &mut self.chrome_engine,
-            &mut self.renderer,
-            pane,
-            vertical,
-            &theme,
-        );
+        // A page on the web has no height to measure, and Word shows no side
+        // ruler in web layout.
+        if self.view != super::views::View::Web {
+            rulers::draw_vertical(
+                &mut self.canvas,
+                &mut self.chrome_engine,
+                &mut self.renderer,
+                pane,
+                vertical,
+                &theme,
+            );
+        }
     }
 
     /// Draws the frame and the eight handles round the chosen drawing.

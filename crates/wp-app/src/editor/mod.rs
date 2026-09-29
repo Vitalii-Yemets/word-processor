@@ -1218,7 +1218,10 @@ impl Editor {
         // The origin is where the page's own coordinates start, which is above
         // the visible band when the top margin has been trimmed away.
         let width = self.pages.get(index).map_or(0.0, |page| page.width);
-        let x = self.content_left() + ((self.viewport_width() - width) / 2.0).max(PAGE_GAP)
+        // A page on the web fills the window from its left edge, with no desk
+        // round it; a sheet of paper sits in the middle of the desk.
+        let gap = if self.view == views::View::Web { 0.0 } else { PAGE_GAP };
+        let x = self.content_left() + ((self.viewport_width() - width) / 2.0).max(gap)
             - self.scroll_across;
         (x, y - trim_top)
     }
@@ -1291,7 +1294,8 @@ impl Editor {
             return 0.0;
         }
         let widest = self.pages.iter().fold(0.0f32, |widest, page| widest.max(page.width));
-        (widest + PAGE_GAP * 2.0 - self.viewport_width()).max(0.0)
+        let desk = if self.view == views::View::Web { 0.0 } else { PAGE_GAP * 2.0 };
+        (widest + desk - self.viewport_width()).max(0.0)
     }
 
     fn clamp_across(&mut self) {
@@ -1650,6 +1654,7 @@ impl Editor {
         self.engine.set_table_gridlines(self.show_table_gridlines);
         self.engine.set_marks(self.show_marks);
         self.engine.set_outline(self.outline_for_layout());
+        self.engine.set_web(self.view == views::View::Web);
         // A letter being previewed shows one recipient's values in place of the
         // names of its merge fields.
         let record = self.preview_record.map(|at| self.recipients.record(at)).unwrap_or_default();
@@ -1661,6 +1666,14 @@ impl Editor {
         let metrics = self.view_metrics();
         let previous = core::mem::take(&mut self.pages);
         self.pages = self.engine.layout_document_again(&self.document, metrics, previous);
+        // A short page on the web still fills the window, as a browser's does:
+        // there is no desk below it.
+        if self.view == views::View::Web {
+            let window = self.viewport_height() - self.page_gap();
+            if let Some(page) = self.pages.last_mut() {
+                page.height = page.height.max(window);
+            }
+        }
         self.recheck_proofing();
         // Every other window is now showing pages worked out before this.
         self.other_windows_are_stale();
@@ -2151,6 +2164,29 @@ mod tests {
         assert!(
             editor.pages[0].width > printed,
             "a window 1200 wide should give a sheet wider than A4"
+        );
+    }
+
+    #[test]
+    fn web_layout_fills_the_window_and_scrolls_no_further_than_its_text() {
+        let mut editor = editor(3);
+        editor.set_view(super::views::View::Web);
+        let page = &editor.pages[0];
+        // As wide as the window, from its left edge, with no desk round it.
+        assert!(
+            (page.width - editor.viewport_width()).abs() < 2.0,
+            "{} {}",
+            page.width,
+            editor.viewport_width()
+        );
+        assert_eq!(editor.page_origin(0).0, editor.content_left());
+        assert_eq!(editor.across_limit(), 0.0, "a page on the web does not scroll sideways");
+        // As tall as the window at least, and no taller than its text needs.
+        assert!(page.height >= editor.viewport_height() - editor.page_gap() - 1.0);
+        let (extent, visible) = editor.scroll_extent();
+        assert!(
+            extent <= visible + editor.page_gap() * 3.0,
+            "{extent} to scroll through three lines"
         );
     }
 

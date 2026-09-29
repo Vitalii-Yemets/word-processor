@@ -147,7 +147,7 @@ impl App for Editor {
                     None => Cursor::Arrow,
                 };
             }
-            if fx < left + crate::chrome::VERTICAL_WIDTH {
+            if fx < left + crate::chrome::VERTICAL_WIDTH && self.view != super::views::View::Web {
                 return if rulers::hit_vertical(left, vertical, x, y).is_some() {
                     Cursor::ResizeVertical
                 } else {

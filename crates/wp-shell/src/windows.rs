@@ -1671,6 +1671,18 @@ pub(crate) fn choose_file(
     suggested: Option<&std::path::Path>,
     saving: bool,
 ) -> Option<std::path::PathBuf> {
+    choose_file_typed(title, filters, suggested, saving).map(|(path, _)| path)
+}
+
+/// The same, with which of the types in the list was chosen, counted from
+/// nought: two types can share an extension, as a web page and a filtered
+/// one do, and then the name alone does not say which was meant.
+pub(crate) fn choose_file_typed(
+    title: &str,
+    filters: &[crate::dialog::FileFilter],
+    suggested: Option<&std::path::Path>,
+    saving: bool,
+) -> Option<(std::path::PathBuf, Option<usize>)> {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
     let filter = filter_string(filters);
@@ -1760,7 +1772,8 @@ pub(crate) fn choose_file(
             path.set_extension(extension);
         }
     }
-    Some(path)
+    let chosen = arguments.filter_index.checked_sub(1).map(|index| index as usize);
+    Some((path, chosen))
 }
 
 /// Whether a filter's pattern - `*.docx`, or `*.dotx;*.dotm` - names an

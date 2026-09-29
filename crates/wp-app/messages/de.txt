@@ -3164,6 +3164,9 @@ language = Deutsch
 = Web Page (*.htm;*.html)
 > Webseite (*.htm;*.html)
 
+= Web Page, Filtered (*.htm;*.html)
+> Webseite, gefiltert (*.htm;*.html)
+
 = Web Pages (*.htm;*.html;*.mht;*.mhtml)
 > Webseiten (*.htm;*.html;*.mht;*.mhtml)
 
