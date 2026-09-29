@@ -517,6 +517,19 @@ will crawl. This has to be fixed before the document gets bigger, not after.
   before the window is drawn. Drawings floating beside the text are compared
   page by page and their pages moved along, but no test puts one through an
   edit.
+- [ ] **B7. Searching in one pass.** `find_all` asks for each paragraph's text
+  from the root of the tree, so a search over N paragraphs visits about N²/2
+  of them: a document of ten thousand short paragraphs makes fifty million
+  visits to learn that a word is not there, and the interface waits for it.
+  Use the sequential walk `position::paragraphs` already has, and look at
+  Find Next and Replace All for the same shape. Review R22.
+- [ ] **B8. A large table that can be typed in.** With a table of three
+  hundred rows every keystroke costs 0.4–0.7 s — inside the table and in the
+  paragraphs before and after it, because the table is one block to
+  **B6**'s checkpoints and is laid out twice, and `tablefit` walks every
+  cell's text on every layout. A cache of row measurements keyed on the
+  row's content, laying out only the row that changed, and checkpoints
+  inside the table. Review T59; the cost of measuring was named in **C29**.
 
 ## C — The interface Word has
 
@@ -1042,6 +1055,9 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
 
   **Repeat Header Rows** writes `w:tblHeader`, which is what makes the first row
   come back at the top of every page the table runs onto.
+  *Corrected on 29 September 2026:* the flag is written and read back, and
+  nothing in the layout reads it, so the header does not come back; the
+  review of tables found it (T42), and **C62** is where it will.
 
   **Convert to Text** turns the table back into paragraphs, one per row with the
   cells tabbed apart, which is Word's own separator and what makes the result
@@ -1854,6 +1870,10 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Not done:* Word measures the pieces of a justified line together, so the
   spaces come out the same width on both sides of a drawing; each piece here is
   justified within itself.
+  *Corrected on 29 September 2026:* the first line of a paragraph is laid out
+  before the drawing anchored in it is registered, and runs under the drawing
+  where the lines after it go round; found by two reviews (R21, #10), and
+  **E19**'s.
 
 - [x] **C46. The three flags at the foot of the Position tab.** Move object with
   text, Allow overlap and Lock anchor. Each is one attribute and none of them is
@@ -1924,6 +1944,247 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   *Not done:* Word's option to switch smart cut and paste off, which is in
   Options > Advanced behind a Settings button of its own, along with adjusting
   paragraph spacing on paste and adjusting table formatting on paste.
+
+The items from **C48** on come from the reviews of 29 September 2026 — of
+the interface (findings U01–U48), of tables (T01–T60) and of the model and
+the files (R01–R22 and #1–#14) — which are kept outside the repository, in
+`docs/.reviews/`, with the pictures they were made from. Their order of
+work is in *The order of the work* at the end.
+
+- [ ] **C48. Undo that tells the truth.** Two ways the history lies. After a
+  save, undo restores the `modified` flag the step recorded, which is the
+  old save point's: the tree says A, the flag says nothing changed, and the
+  next save writes the package that still holds AB. And a step recorded in
+  a header is put back into whichever tree is loaded: undo after leaving
+  the header switches the part's name without loading its XML, so a
+  paragraph of the header lands in the body, and the redo snapshot is taken
+  from the wrong part too. Tie "saved" to a revision of the history rather
+  than to a flag; load the part a step belongs to before putting it back.
+  Reviews R12, R13.
+- [ ] **C49. Merging and splitting cells without losing anything.** Merge
+  Cells drops the text of every cell but the first when merging sideways,
+  hides it in `vMerge` continuations when merging down, and leaves the caret
+  in the next cell — or, when the whole table is merged, outside the table.
+  Split Cells has no dialog, splits only what was merged, and after a
+  whole-table merge leaves the lower rows' `vMerge` behind, a ragged table.
+  Tab walks into the invisible continuations. Word keeps every cell's
+  paragraphs in the merged cell, puts the caret there, splits any cell by a
+  count of rows and columns, and Tab skips what is not drawn. Reviews T30,
+  T31, T21, T60.
+- [ ] **C50. Shift+arrows in a table select cells.** They extend a text
+  selection through every cell between, in file order; the selection is
+  drawn as cells but acted on as text, so Delete, typing, Enter and paste
+  after Shift+Down empty the intermediate cells of their only paragraph — a
+  file Word calls damaged — and Bold lands on cells the drawing never
+  showed. Go through `select_cells`, as Shift+click does; refuse a text
+  range that crosses a cell boundary in `remove_range` and `press_enter`;
+  and hold to it that a cell always has a paragraph. Review T14.
+- [ ] **C51. Outline view draws.** Switching to Outline hangs the release
+  build and panics the debug one — "attempt to add with overflow" in
+  `fill_rect`, from a page given a height of `f32::MAX / 4` and a rectangle
+  drawn the whole of it. Find the rectangle, clip it to the window, and add
+  the test that was missing: every view draws. Review U32.
+- [ ] **C52. The pointer is an arrow over the furniture.** Over a dialog's
+  body and its OK button the pointer is an I-beam, and over the desk beside
+  the page too, because `cursor()` has no branch for the dialog or the
+  panes and falls through to the nearest line of text. Over tabs, buttons,
+  menus, galleries, the mini toolbar and the navigation pane it is a hand,
+  which is a browser's answer and not Word's: Word shows an arrow over all
+  of them, and a hand only over a link under Ctrl. Review U07.
+- [ ] **C53. Dialogs that fit, read and stay put.** The Font dialog's sample
+  is drawn in the document's automatic colour, black, on the dark theme's
+  field, so it cannot be read; the Paragraph dialog is 716 px tall in a
+  900 px window and covers the ribbon (Word's is 552); a dialog is not
+  centred again when the window is resized, so its foot goes under the
+  status bar; one dialog shows "0,00 cm" and "0.00" in the same column; the
+  Style Inspector ignores the measurement unit; and the dialog's own
+  heading promises a dimmed document that is not dimmed. Review U09. Word's
+  own answer to the first — light dialogs in every theme — is **C76**'s.
+- [ ] **C54. The keys Word has.** Ctrl+= zooms in; in Word it is subscript,
+  and Ctrl+Shift+= superscript. Missing altogether: Ctrl+G and F5 (Go To,
+  which **C59** builds), F4 (repeat), F8 (extend selection), Shift+F3
+  (change case), Ctrl+F1 (collapse the ribbon, **C73**), F6 (move between
+  panes), F10 (key tips), Ctrl+Q, Ctrl+1/2/5, Ctrl+[ and Ctrl+],
+  Ctrl+Shift+< and >, Ctrl+W. Reviews U33, U34.
+- [ ] **C55. The dialog launchers, as Word draws them and where.** Word's is
+  a 16 px square with a border and an arrow pointing down and right, in the
+  text colour; ours is a 9 px corner in the dim colour with the arrow
+  pointing up and right, and easy to miss. Word has one on Clipboard, Page
+  Setup, Footnotes and Tracking as well, opening the Clipboard pane, the
+  Page Setup dialog (which exists), the Footnote and Endnote dialog and the
+  Track Changes options; the first and the third do not exist here and are
+  part of this item. Reviews U01, U02.
+- [ ] **C56. The page in the dark theme, and the theme's colours.** In Word's
+  black theme the page is dark, the same tone as the desk with a grey
+  border, and View → Switch Modes turns the page white while the chrome
+  stays black; Options has "Disable dark mode" to keep it white. Here the
+  page is a lighter grey than the desk, and Switch Modes switches the whole
+  theme. So: a flag of its own for the dark page, remembered; Switch Modes
+  toggles that and the automatic text colour; the option in General. And
+  the tones measured on Word's window: title bar, ribbon, desk, status bar,
+  the pressed button (grey with a border, not the accent), the Backstage
+  rail (grey with a blue mark, not solid blue), panes and menus. The
+  comment at the head of `theme.rs` says Word keeps a white page in a dark
+  window; Word offers both, and the comment goes with the code. Reviews
+  U04, U05, U31 (the rail; the rest of U31 is **C8**'s and **J6**'s).
+- [ ] **C57. A status bar that answers.** Word's is buttons: the page goes to
+  the navigation pane's Pages, the word count to Word Count, the spelling
+  icon to the Editor, the language to the Language dialog, the zoom figure
+  to the Zoom dialog; three view buttons; "12 of 208 words" while text is
+  selected; a right-click menu of twenty-five lines with the values beside
+  them. Here the left half is text that ignores a click, and the menu has
+  seven lines. Two things to find on the way: the same file counts 208
+  words in Word and 236 here, and the language of a document that names
+  none is English (United States) there and English (United Kingdom) here.
+  Reviews U08, U39, U46.
+- [ ] **C58. The style gallery as Word draws it.** Light tiles in every
+  theme with "AaBbCcDc" set in the style's own font, size, colour and
+  weight, the name under it with ¶ for a paragraph style, the current one
+  framed rather than filled, six tiles at 1400 px with up, down and More,
+  and More opening three rows and Create a Style, Clear Formatting, Apply
+  Styles. And the live preview: the paragraph shown in a style while the
+  pointer rests on its tile, and put back when it leaves — for this gallery
+  and, in the same stroke, for fonts, colours and themes. Reviews U03, U24.
+- [ ] **C59. Find and Replace, and Go To.** Word's Ctrl+F opens the
+  navigation pane on its results; Ctrl+H the Find and Replace dialog with
+  its three tabs — Find, Replace, Go To — and More. Here both go to one bar
+  under the ribbon, and Go To does not exist by any name. Reviews U37, U45.
+- [ ] **C60. "Tell me what you want to do" does something.** The box is
+  drawn and takes a text pointer, and a click on it is ignored. Word's
+  searches the commands and drops a list of them. Search the ribbon's
+  groups and the menus behind the buttons, and run what is chosen. Review
+  U25.
+- [ ] **C61. A table pasted is a table.** A table from Excel or Word comes in
+  through Rich Text or HTML as a `Block::Table`, and pasting drops every
+  block that is not a paragraph and says "Nothing was pasted" — not even the
+  text arrives unless Keep Text Only is chosen. Copying cells gives one
+  paragraph a cell, and dragging cells moves text. Paste a table as a
+  table, nested when the caret is in a cell; copy cells as cells; then
+  Word's choices when pasting into a table — nest, merge, new rows,
+  overwrite cells. Reviews T44, T52, T54; **H2**'s entry, which said tables
+  come as their paragraphs, is corrected there.
+- [ ] **C62. A row taller than what is left of the page, and the header
+  again.** A row is placed whole on this page or whole on the next, so a
+  row taller than a page goes off the bottom of the paper and is never
+  seen; Allow row to break across pages is read and written and not laid
+  out. And Repeat Header Rows writes `w:tblHeader`, which nothing in the
+  layout reads, so the header never comes back — **C16** claimed otherwise
+  and is corrected. Reviews T41, T42.
+- [ ] **C63. The lines between cells.** A cell's own right border is written
+  to the file and never drawn: `draw_row_borders` draws top, bottom and
+  start only, so the Border Painter's vertical stroke on the right of a
+  cell is invisible. Where two cells' borders meet, the stronger does not
+  win as Word's rules say; the painter paints one edge a press rather than
+  along a drag; and a vertically merged cell is laid out as several
+  rectangles, so its vertical alignment, its selection and its caret are
+  those of the pieces. Reviews T34, T46, T47.
+- [ ] **C64. Backspace, Ctrl+Shift+Enter and Enter, as Word has them in a
+  table.** Backspace on selected rows, columns or a whole table deletes
+  them (Delete empties them); Ctrl+Shift+Enter splits the table before the
+  row, and Split Table is on the Layout tab; Enter at the start of the
+  first cell of a table that opens the document puts a paragraph above it.
+  Here Backspace empties, Ctrl+Shift+Enter puts a column break in the cell,
+  and Enter splits the cell's paragraph. Reviews T23, T27, T22.
+- [ ] **C65. One step back for a dialog, and borders on the cells.** OK in
+  Table Properties writes eleven undo steps and a table style two; and
+  Borders… in that dialog, and Home → Borders with the caret in a cell, put
+  borders on the paragraph rather than on the cells. Reviews T38, T39.
+- [ ] **C66. Selecting and inserting by the count.** Dragging along the
+  selection bar takes one column and along the top one row, because the
+  anchor is a cell and not a whole row; inserting above with three rows
+  selected inserts one; a width typed in Cell Size widens one cell and
+  cannot narrow it, where Word sets the column; and the four pixels inside
+  a cell's left edge are the column line, so a press there starts a drag
+  and no press selects the cell. Reviews T06, T32, T35, T05.
+- [ ] **C67. A table that reaches past the margin, and the drags with
+  modifiers.** The last line and the size handle cannot take a table past
+  the right margin: the other columns shrink instead. Shift, Ctrl and
+  Ctrl+Shift on a border drag do nothing (only the column beside; the
+  columns to the right in proportion; the columns to the right equal), and
+  Alt shows nothing on the ruler; the size handle changes only widths, and
+  Shift does not keep the proportions; a border cannot be dragged in a row
+  with a merged cell, or for the selected cells alone. Reviews T17, T11,
+  T16, T12, T13.
+- [ ] **C68. The Table menu, and the commands the Layout tab is short of.**
+  Insert → Table is a grid alone: no live preview on the page, no Insert
+  Table dialog with AutoFit and defaults, no Draw Table from outside a
+  table, no Convert Text to Table, no Quick Tables. Convert to Text offers
+  no separator. Delete has no Delete Cells… with its shift, there is no
+  Insert Cells…, no Distribute Rows. The context menu is five flat lines
+  where Word's has Insert ▸, Delete Cells…, Split Cells…, Border Styles ▸,
+  Text Direction…, Table Properties…, and the mini toolbar has no Insert and
+  Delete. A table goes after the paragraph rather than at the caret,
+  leaving an empty paragraph above it, and the ribbon stays on Home where
+  Word opens Table Design. Reviews T01, T03, T33, T37, T02, T36.
+- [ ] **C69. The table style gallery, and Borders and Shading.** Five names
+  in a list where Word has a hundred tiles with pictures and a live
+  preview, Modify, New, Clear; no Shading on the Design tab; Borders with
+  three choices where Word has fourteen; no Border Styles gallery with pen
+  style, weight and colour; no Borders and Shading dialog with its preview
+  and Apply to. Reviews T29, T43.
+- [ ] **C70. What the rulers know of a table, and a table that floats.** The
+  rulers show no column and row markers; the move handle cannot make a
+  table float or drop it into a cell; a floating table from Word
+  (`w:tblpPr`) is laid out in the flow; Table Properties has no wrapping,
+  Positioning, unit choice, Column tab, Previous and Next, or cell Options.
+  Reviews T19, T18, T48, T40.
+- [ ] **C71. The small things in tables.** The pointer over the handles and
+  the column bar; ¤ for the cell mark and the end-of-row mark when marks
+  show; a picture in a cell limited to the cell's width, not the page's;
+  Alt+Shift+Up and Down moving rows, Alt+Home/End/PgUp/PgDn, Alt+5 on the
+  keypad selecting the table, Ctrl+click adding a cell. Reviews T10, T50,
+  T56, T25, T08, T07.
+- [ ] **C72. Icons in Office's colours, and the arrows on the buttons.** The
+  icons are Fluent's, monochrome; Word's are coloured, and Paste, Format
+  Painter, Highlight, Shapes and Chart are not known at a glance. Word's
+  own drawings are not licensed and are not copied: what can be done is
+  colour where Word has it (Paste's board, the painter's bristles, the
+  lists' and indents' blue, Shading's band), the menu arrow on Underline,
+  Text Effects, Highlight, Font Colour, Shading, Borders and Pictures, the
+  shapes where ours differ (Grow and Shrink Font, Change Case,
+  Strikethrough, Sort), and the buttons that are not on Word's ribbon at
+  all — Asian Layout, Remove Link, Format Page Numbers — taken off the top
+  level. And the large buttons are 60–70 px wide against Word's 42–55,
+  which is why the Insert tab's Text and Symbols groups are squeezed at
+  1400 px where Word's are not. Reviews U06, U27.
+- [ ] **C73. The ribbon's shape.** Picture Format and Shape Format contextual
+  tabs when a drawing is chosen (Word opens the tab on insert), with the
+  coloured heading Word gives contextual tabs; the ribbon collapsing — the
+  chevron in its corner, Ctrl+F1, a double click on a tab; key tips as
+  yellow badges under the tab names rather than grey ones over them, with
+  digits over the Quick Access Toolbar; Undo's drop-down list of steps and
+  the toolbar's customize arrow; Draw and Developer hidden by default as
+  Word hides them. Reviews U26, U29, U28, U30.
+- [ ] **C74. The pop-ups as Word has them.** The mini toolbar in two rows,
+  in Word's order, placed above the selection rather than on it; the
+  context menu with Paragraph… and Synonyms ▸ and without Styles, Bullets
+  and Numbering; the bullet library as a grid of glyphs with None, Change
+  List Level and Define New Bullet; the line spacing menu with its values
+  ticked and Line Spacing Options…; the Layout Options button beside a
+  chosen picture and the anchor mark; Paste Options as tiles with Set
+  Default Paste…; ScreenTips light, with a bold title and a line of
+  description. Reviews U17, U18, U21, U22, U23, U19, U20.
+- [ ] **C75. The pointer's shapes, and three clicks.** Word's pointers that
+  are not here: the mirrored arrow in the selection bar, the four-way move
+  over a drawing and a table's handle, the diagonals over corner handles,
+  the drag-text pointer, the hand over a link under Ctrl, Click-and-Type's
+  alignment marks; ours has five shapes. A third click in the selection
+  bar selects the document, not the paragraph. A double click in the
+  header area did not open the header in a test and the plain wheel did
+  not scroll — both to be verified first — and while a header is edited
+  the body is not drawn at all where Word greys it. Reviews U10, U11, U12,
+  U13, U15, U16.
+- [ ] **C76. Read Mode, Page Setup and the dialogs' windows.** Read Mode is
+  Word's two columns at 140 % with arrows either side and its own File,
+  Tools and View, no caret; Page Setup has Margins, Paper and Layout with
+  Gutter, orientation pictures, Multiple pages, a preview and Apply to; the
+  Font dialog lists fonts, styles and sizes under the boxes and has Text
+  Effects…; and dialogs are windows that can be dragged, light in every
+  theme, with a system frame. Reviews U36, U44, U42, U41.
+- [ ] **C77. Panes, rulers and contrast.** The navigation pane closed by
+  default, three tabs, an 18 pt heading with ▾ and ✕ and a search box with
+  its own menu; rulers off by default and Alt showing the margins' sizes
+  during a drag; Windows' high-contrast setting. Reviews U38, U40, U47.
 
 ## D — Pictures and drawings
 
@@ -3995,6 +4256,15 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   test fonts' private-use characters into U+FFFD, so what it copies of a
   real emoji was not seen. A turned line still draws a picture glyph as its
   layers, where it has them, and not otherwise.
+- [ ] **E19. The first line beside a floating drawing.** The room for a line
+  is worked out before `place_line` registers the drawing anchored in that
+  line, so the first line of a paragraph that begins with a square-wrapped
+  shape runs under the shape and the lines after it go round; Top and
+  Bottom likewise places the first line before stepping down. Register the
+  line's own drawings before its width is chosen, or lay the line out once
+  more, with a bound on the passes. The wrapping test's helper skipped the
+  first line, which is why it passed. Reviews R21, #10; **C45** did not
+  name it.
 
 ## F — Proofing
 
@@ -5813,6 +6083,47 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   one. The installer and the uninstaller finding the program running and
   saying so is written against what Windows says of a file in use and is
   not run by either check.
+- [ ] **G17. A budget for a hostile package.** Numbers taken from a file
+  decide how much memory is asked for, with no ceiling but the type's. A
+  package inflates every part into memory at once, so 64 parts of 256 MB of
+  zeros pass the 512 MB per-entry limit together; a compound file's DIFAT
+  chain is followed round a cycle for four billion steps and its FAT count
+  reserves terabytes; an Agile encryption header's block size sizes a
+  buffer and its spin count sizes the work, both before the password is
+  even checked. One budget across the parts of a package, cycle checks and
+  counts bounded by the file's length in the compound reader, and the
+  encryption parameters checked against what is supported before a byte
+  is allocated. Reviews R09/#2, R04, R05.
+- [ ] **G18. A budget for a hostile picture or text file.** A 75-byte TIFF
+  of one pixel with SamplesPerPixel in the millions allocates for the
+  millions; an HTML cell with `colspan="4294967295"` resizes a vector to
+  that; an RTF `\itap2147483647` pushes two billion table levels; a PDF of
+  a million nested `[` and an XML of a hundred thousand nested `w:sdt`
+  recurse until the stack goes. Limits checked before the allocation or
+  the recursion, and a test each. Reviews R06/#3, R07, R08, R10, R11.
+- [ ] **G19. Properties in the order the schema wants, and identifiers that
+  are unique.** The writer has the ordered lists and does not always use
+  them: `contextualSpacing` before `ind`, `strike` before `caps`, `w`
+  before `spacing`, `tblBorders` and `tblLayout` before `tblCellSpacing`;
+  `sectPr`'s order leaves out the header and footer references, so adding
+  a first-page header puts `titlePg` between them. And every drawing,
+  shape, chart, ink, diagram and group is written with `wp:docPr id="1"`.
+  LibreOffice opens all of it; whether Word does is **K4**'s to say, and
+  this item is not closed until it has. Reviews #8/R20, #9/R19, #12, #13.
+- [ ] **G20. What the reader keeps and the writer drops.** A run's theme
+  colour, theme font and text effect are read into the model and not
+  written from it, so text pasted with Keep Source Formatting stops
+  following the document's theme; a table's `tblInd` and `tblLook` are
+  read and, when the table is built from the model, not written. Make the
+  writer symmetrical with the reader and test it as a round trip through
+  the model. Reviews #7/R17, #11.
+- [ ] **G21. An unedited document saved as it came.** `Document::save` on a
+  document nobody changed rebuilds the zip, so the file's bytes change on a
+  save that changed nothing — a LibreOffice file of 5 580 bytes comes back
+  as 6 093. Keep the original archive's bytes for a save without edits, and
+  the original compressed streams of the untouched parts for a save with
+  them; **K1**'s "identical" is then reachable for a file this program did
+  not make. Review #4.
 
 ## H — The system around the window
 
@@ -5879,9 +6190,10 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   through the contents rather than the system.
   *Not done, and named here:* Word's own native format (the package it
   puts on the clipboard beside the others), which this program neither
-  writes nor reads; tables pasted from Rich Text or HTML come as their
-  paragraphs, since pasting keeps only paragraphs (**D**-stage work on
-  pasting tables); a picture's alpha in the bitmap it goes out as is
+  writes nor reads; tables pasted from Rich Text or HTML were said here to
+  come as their paragraphs, and come as nothing — the paste drops the block
+  and says nothing was pasted, which the review of tables found (T44) and
+  **C61** takes up; a picture's alpha in the bitmap it goes out as is
   written but not every program reads it; the Linux clipboard, which is
   **H6**'s.
 - [x] **H3. Drag and drop.** Between programs as well as within the document,
@@ -6613,6 +6925,31 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   Cancel leaves the copy open as the document being edited. Show
   Repairs can only say what this program's own reading of the copy says;
   Word's repairs of a damaged file are Word's.
+- [ ] **H16. A save that cannot destroy the file it replaces.** The document
+  is written straight over its own path with `std::fs::write`, which
+  truncates first; a disk that fills or a process that dies during the
+  write leaves an empty or partial file where the document was, and the
+  message says only that saving failed. Write to a temporary file beside
+  the target, finish and sync it, then rename it into place; clear the
+  modified flag only after the rename. The same for every format that goes
+  out through this path. Reviews #1, R16.
+- [ ] **H17. What the clipboard carries within the program.** Copying a
+  picture and pasting it reports success and pastes nothing, because the
+  run writer skips `Picture`, `Chart`, `Ink`, `Diagram`, `Group` and
+  `Math`: a cut-and-paste of a picture loses it, and a dragged one too. A
+  selection copied over a tracked deletion takes the wrong stretch, because
+  `slice` counts deleted runs the caret does not, and a paste turns the
+  deleted words into plain text. And after pasting a shape the caret stays
+  before it, because the length is counted in plain text where a shape is
+  a byte to the caret. Reviews #5/R14, #6/R15, #14/R18.
+- [ ] **H18. UI Automation's tables, as COM lays them out.** `RootVtbl` and
+  `ItemVtbl` glue Simple, Fragment and FragmentRoot into one table and
+  `QueryInterface` hands out one pointer for all three, where each inherits
+  `IUnknown` on its own: a client calling `Navigate` on the Fragment lands
+  in `get_provider_options` with a direction for an out-pointer, and writes
+  through it. One table per interface, and the right pointer from
+  `QueryInterface`, on the same object. Review R03; found against the
+  Windows SDK headers.
 
 ## I — The language of the interface
 
@@ -8470,6 +8807,17 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   themselves are moved about, and nothing here writes `w:qFormat` — a
   document's own idea of what it is for survives a round trip untouched, but
   cannot yet be changed from inside this program.
+- [ ] **J34. A signature is only as good as what it covers.** The package's
+  parts are checked against the first `Manifest` in the whole signature,
+  signed or not: an unsigned `<Object><Manifest/></Object>` put before the
+  real one, with the real `SignedInfo` and signature value left as they
+  are, passes every part — a changed `document.xml` or `vbaProject.bin` is
+  reported Good, and **L6**'s trust lets the macros run. And a trusted
+  publisher is matched by the certificate's Subject string, which anyone
+  can put on a certificate of their own. Take part references only from
+  manifests inside the objects that were verified, refuse ambiguous
+  identifiers, and trust a fingerprint or a public key, showing the Subject
+  only. Reviews R01, R02.
 
 ## K — Proving it against Word rather than against ourselves
 
@@ -8639,6 +8987,18 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   normalization changes what the text says and nothing here asks for it.
   **E14** wants pattern data and is still open, but it is now the only one of
   these left without an answer to where data comes from: this is the shape.
+- [ ] **K4. Word on this machine.** A copy of Word is installed here, without
+  a licence: it opens and prints but does not edit, and its COM automation
+  answers — `Documents.Open` and `ExportAsFixedFormat` were tried on
+  `dist/demo.docx` and gave a two-page PDF. That is two questions **K1**
+  and **K2** could not ask: does Word open a file this program wrote
+  without offering to repair it, and what does Word's page look like. A
+  script on the host (Docker cannot see Word) that takes a directory of
+  documents, opens each in Word, records repair prompts and errors, prints
+  to PDF, and hands the pages to **K2**'s comparison; a `WINWORD` that
+  outlives `Quit` is ended by its PID. Run against what **G19**–**G21**
+  write, and against the corpus. Not a test in `cargo test`: the machine
+  with Word is not the build image.
 
 ## L — Visual Basic for Applications
 
@@ -9450,6 +9810,36 @@ named here* paragraph is the record of what a piece of work left behind; the
 item it turns into is where that gets finished. Nothing is closed by deciding
 against it.
 
+**The queue from 29 September 2026.** Every item from the first queue was
+closed, and four reviews of that day — the interface, tables, and two of the
+model and the files, kept in `docs/.reviews/` outside the repository — gave
+the next one. It is worked in this order, by harm first and then by what a
+person who knows Word notices first:
+
+1. *Crashes and lost data:* **C51**, **H16**, **C48**, **H17**, **C49**,
+   **C50**, **J34**.
+2. *Word as the judge:* **K4**.
+3. *Files Word opens without a word:* **G19**, **G20**, **G21** — each
+   checked with **K4**.
+4. *The interface, the small things that matter:* **C52**, **C53**, **C54**,
+   **C55**, **C56**, **C57**, **C58**, **C59**, **C60**.
+5. *Tables:* **C61**, **C62**, **B8**, **C63**, **C64**, **C65**, **C66**,
+   **C67**, **C68**, **C69**, **C70**, **C71**.
+6. *The interface, the large things:* **C72**, **C73**, **C74**, **C75**,
+   **C76**, **C77**.
+7. *Hostile files:* **G17**, **G18**, **H18**.
+8. *Layout and speed:* **E19**, **B7**.
+9. *The tails:* the 176 *Not done* paragraphs of the closed items, read
+   through one by one, the ones the items above do not already cover
+   turned into items of their own, and the ones that need something this
+   machine has not got — a printer, a licence — named as such.
+10. *Last, by decision:* what needs the printer (**A**'s tails), and the
+    Arabic catalogue and the rest of a window read right to left (**I**'s).
+
+Each item is closed as before: tests, `./x.sh check` on both targets, the
+entry here ticked in the same commit, a Windows build. An interface item
+also gets a picture of ours beside the review's picture of Word, looked at.
+
 ---
 
 ## Where the work stands
@@ -9479,8 +9869,17 @@ control, a chart or a colleague's tracked change beside the edit comes through
 untouched.
 
 **It prints**, on Windows through the spooler and on Linux through CUPS, and
-writes a PDF; what is left in the queue above is the tail each block named
-as not done, one item to a tail.
+writes a PDF.
+
+**What is in the queue is what four reviews found**, on 29 September 2026,
+once every item of the first queue was closed: a save that can destroy the
+file it replaces, an undo that lies after a save, a signature check that an
+unsigned manifest gets past, tables that lose text when cells are merged, an
+interface that a person who knows Word finds strange in forty ways and
+tables in sixty. The order they are taken in is in *The order of the work*,
+and the reviews themselves are in `docs/.reviews/`, outside the repository.
+Behind them wait the tails the closed items named as not done, one item to
+a tail.
 
 [MS-DOC]: https://learn.microsoft.com/openspecs/office_file_formats/ms-doc/
 [MS-CFB]: https://learn.microsoft.com/openspecs/windows_protocols/ms-cfb/
