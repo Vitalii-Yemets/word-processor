@@ -376,6 +376,7 @@ impl Editor {
             Command::DiagramSmaller => self.resize_diagram(false),
             Command::Macros => self.open_macros(),
             Command::XmlMapping => self.open_mapping(),
+            Command::DocumentTemplate => self.open_templates_dialog(),
             Command::OnlineVideo => self.start_video(),
             Command::Equation => self.start_equation(),
             Command::Rules => self.open_rules(),

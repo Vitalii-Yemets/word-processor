@@ -487,7 +487,7 @@ impl Document {
     /// has to start one. The default is the pair Word's own blank template
     /// carries, so a document that gains its first list gains the same two
     /// definitions it would have had from the beginning.
-    fn numbering_tree(&self) -> Option<XmlTree> {
+    pub(crate) fn numbering_tree(&self) -> Option<XmlTree> {
         crate::related_tree(
             self.package(),
             self.main_part(),
@@ -499,7 +499,7 @@ impl Document {
 
     /// Writes the numbering part back, and reads it again so that what the
     /// document says about its lists and what it draws them from agree.
-    fn save_numbering_tree(&mut self, tree: &XmlTree) {
+    pub(crate) fn save_numbering_tree(&mut self, tree: &XmlTree) {
         let Ok(xml) = tree.to_xml() else { return };
         let main_part = self.main_part().to_owned();
         let target = self
@@ -578,7 +578,7 @@ fn list_with_shape(root: &Element, levels: &[Shape]) -> Option<i32> {
 }
 
 /// A number nothing of that kind is using yet.
-fn spare_id(root: &Element, element: &str, attribute: &str) -> i32 {
+pub(crate) fn spare_id(root: &Element, element: &str, attribute: &str) -> i32 {
     root.children_named(Some(W), element)
         .filter_map(|found| numeric_attribute(found, attribute))
         .max()

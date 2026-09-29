@@ -1956,6 +1956,11 @@ static DEVELOPER_GROUPS: &[Group] = &[
         items: &[Item::Large(Command::Macros, Icon::Macros, "Macros")],
         launcher: None,
     },
+    Group {
+        label: "Templates",
+        items: &[Item::Large(Command::DocumentTemplate, Icon::BlankPage, "Document Template")],
+        launcher: None,
+    },
 ];
 
 static VIEW_GROUPS: &[Group] = &[

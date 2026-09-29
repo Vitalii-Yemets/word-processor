@@ -20,6 +20,8 @@
 //! it later. File ▸ Open on a template opens the template itself, for editing
 //! it.
 
+use std::collections::HashMap;
+
 use wp_opc::{TargetMode, MAIN_DOCUMENT_MACRO_TEMPLATE_CONTENT_TYPE};
 use wp_xml::tree::Element;
 
@@ -272,6 +274,218 @@ impl Document {
         document.modified = false;
         Ok(document)
     }
+
+    /// Whether the document takes its styles from its template each time it
+    /// is opened: Word's "Automatically update document styles".
+    #[must_use]
+    pub fn links_styles(&self) -> bool {
+        self.setting_is_on("linkStyles")
+    }
+
+    /// Says whether it does.
+    pub fn set_links_styles(&mut self, on: bool) -> bool {
+        self.set_setting_flag("linkStyles", on)
+    }
+
+    /// Takes a template's styles over the document's own, which is what an
+    /// attached template that updates the document's styles does: every
+    /// style the template has, replacing the document's of the same
+    /// identifier or joining them, the defaults they are all built on, and
+    /// the lists the styles number with, carried into the document's own
+    /// numbering under numbers of its own. The document's other styles stay.
+    /// Says how many styles and defaults changed.
+    pub fn update_styles_from(&mut self, template: &Document) -> usize {
+        let Some(source) = template.styles_tree() else { return 0 };
+        let Some(mut tree) = self.styles_tree() else { return 0 };
+        let template_numbering = template.numbering_tree();
+        let mut numbering = self.numbering_tree();
+        let mut carried: HashMap<String, String> = HashMap::new();
+        let mut numbering_changed = false;
+        let mut changed = 0;
+        if let Some(defaults) = source.root.child(Some(read::W), "docDefaults") {
+            if tree.root.child(Some(read::W), "docDefaults") != Some(defaults) {
+                let at = tree.root.position_of(Some(read::W), "docDefaults").unwrap_or(0);
+                tree.root.remove_children_named(Some(read::W), "docDefaults");
+                tree.root.insert_element(at, defaults.clone());
+                changed += 1;
+            }
+        }
+        for style in source.root.children_named(Some(read::W), "style") {
+            let Some(id) = style.attribute(Some(read::W), "styleId").map(str::to_owned) else {
+                continue;
+            };
+            let mut style = style.clone();
+            // The list the document's own style of the name numbers with,
+            // which is the template's already if the styles were taken before.
+            let existing = tree
+                .root
+                .children_named(Some(read::W), "style")
+                .find(|held| {
+                    held.attribute(Some(read::W), "styleId")
+                        .is_some_and(|found| found.eq_ignore_ascii_case(&id))
+                })
+                .and_then(list_of)
+                .map(str::to_owned);
+            if let (Some(from), Some(into)) = (&template_numbering, &mut numbering) {
+                numbering_changed |= carry_list(
+                    &mut style,
+                    &from.root,
+                    &mut into.root,
+                    existing.as_deref(),
+                    &mut carried,
+                );
+            }
+            let same = tree.root.children_named(Some(read::W), "style").any(|held| {
+                held.attribute(Some(read::W), "styleId")
+                    .is_some_and(|found| found.eq_ignore_ascii_case(&id))
+                    && *held == style
+            });
+            if same {
+                continue;
+            }
+            crate::remove_style(&mut tree.root, &id);
+            tree.root.push_element(style);
+            changed += 1;
+        }
+        if changed == 0 && !numbering_changed {
+            return 0;
+        }
+        self.styles =
+            crate::styles::Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
+        self.save_styles_tree(&tree);
+        if numbering_changed {
+            if let Some(numbering) = numbering {
+                self.save_numbering_tree(&numbering);
+            }
+        }
+        self.mark_modified();
+        changed
+    }
+}
+
+/// Sets an attribute of the WordprocessingML namespace, as it is already
+/// written or with the usual prefix.
+fn set_w(element: &mut Element, local: &str, value: &str) {
+    let found = element.attributes.iter_mut().find(|attribute| {
+        attribute.namespace.as_deref() == Some(read::W)
+            && attribute.name.rsplit(':').next() == Some(local)
+    });
+    match found {
+        Some(attribute) => attribute.value = value.to_owned(),
+        None => element.set_namespaced_attribute(&format!("w:{local}"), read::W, value),
+    }
+}
+
+/// Carries the list a style numbers with from a template's numbering into
+/// the document's: its definition and its list, under numbers the document
+/// is not using, and the style pointed at them. A list already carried for
+/// another style is pointed at again rather than carried twice. Says
+/// whether the document's numbering changed.
+fn carry_list(
+    style: &mut Element,
+    from: &Element,
+    into: &mut Element,
+    existing: Option<&str>,
+    carried: &mut HashMap<String, String>,
+) -> bool {
+    let Some(reference) = style
+        .child_mut(Some(read::W), "pPr")
+        .and_then(|properties| properties.child_mut(Some(read::W), "numPr"))
+        .and_then(|numbering| numbering.child_mut(Some(read::W), "numId"))
+    else {
+        return false;
+    };
+    let Some(wanted) = reference.attribute(Some(read::W), "val").map(str::to_owned) else {
+        return false;
+    };
+    if wanted == "0" {
+        return false;
+    }
+    if let Some(done) = carried.get(&wanted) {
+        set_w(reference, "val", done);
+        return false;
+    }
+    let Some(list) = from
+        .children_named(Some(read::W), "num")
+        .find(|list| list.attribute(Some(read::W), "numId") == Some(wanted.as_str()))
+    else {
+        return false;
+    };
+    let Some(abstract_id) = list
+        .child(Some(read::W), "abstractNumId")
+        .and_then(|element| element.attribute(Some(read::W), "val"))
+    else {
+        return false;
+    };
+    let Some(definition) = from.children_named(Some(read::W), "abstractNum").find(|definition| {
+        definition.attribute(Some(read::W), "abstractNumId") == Some(abstract_id)
+    }) else {
+        return false;
+    };
+    // The document's style already numbering with a list defined the same —
+    // the template's, taken the last time the document was opened — keeps
+    // it, rather than the document gaining the same list again each time.
+    if let Some(existing) = existing {
+        if definition_of(into, existing).is_some_and(|held| same_definition(held, definition)) {
+            set_w(reference, "val", existing);
+            carried.insert(wanted, existing.to_owned());
+            return false;
+        }
+    }
+    let new_abstract = crate::numbering::spare_id(into, "abstractNum", "abstractNumId").to_string();
+    let new_list = crate::numbering::spare_id(into, "num", "numId").to_string();
+    let mut definition = definition.clone();
+    set_w(&mut definition, "abstractNumId", &new_abstract);
+    // Its own identity, so that Word does not take it for the one it came
+    // from if both meet in one document.
+    definition.remove_children_named(Some(read::W), "nsid");
+    let mut list = list.clone();
+    set_w(&mut list, "numId", &new_list);
+    if let Some(pointer) = list.child_mut(Some(read::W), "abstractNumId") {
+        set_w(pointer, "val", &new_abstract);
+    }
+    // The definitions come before the lists in a numbering part.
+    let at = into.position_of(Some(read::W), "num").unwrap_or(into.children.len());
+    into.insert_element(at, definition);
+    into.push_element(list);
+    set_w(reference, "val", &new_list);
+    carried.insert(wanted, new_list);
+    true
+}
+
+/// The list a style numbers with, if it does.
+fn list_of(style: &Element) -> Option<&str> {
+    style
+        .child(Some(read::W), "pPr")?
+        .child(Some(read::W), "numPr")?
+        .child(Some(read::W), "numId")?
+        .attribute(Some(read::W), "val")
+}
+
+/// The definition a list of a numbering part is drawn from.
+fn definition_of<'a>(numbering: &'a Element, list: &str) -> Option<&'a Element> {
+    let abstract_id = numbering
+        .children_named(Some(read::W), "num")
+        .find(|found| found.attribute(Some(read::W), "numId") == Some(list))?
+        .child(Some(read::W), "abstractNumId")?
+        .attribute(Some(read::W), "val")?;
+    numbering
+        .children_named(Some(read::W), "abstractNum")
+        .find(|found| found.attribute(Some(read::W), "abstractNumId") == Some(abstract_id))
+}
+
+/// Whether two list definitions say the same, whatever they are numbered and
+/// whatever identity they carry.
+fn same_definition(one: &Element, other: &Element) -> bool {
+    let plain = |definition: &Element| {
+        let mut definition = definition.clone();
+        definition
+            .attributes
+            .retain(|attribute| attribute.name.rsplit(':').next() != Some("abstractNumId"));
+        definition.remove_children_named(Some(read::W), "nsid");
+        definition
+    };
+    plain(one) == plain(other)
 }
 
 /// A path as Word writes it into a relationship: `file:///C:\Users\...`.
@@ -367,6 +581,83 @@ mod tests {
         let document = document();
         assert_eq!(document.kind(), Kind::Document);
         assert!(!document.has_macros());
+    }
+
+    #[test]
+    fn a_templates_styles_are_taken_over_the_documents_own() {
+        use crate::model::{NumberingReference, ParagraphProperties, RunProperties};
+        use crate::numbering::Shape;
+        use crate::styles::StyleDefinition;
+
+        // The template: a red Heading 1, a style of its own, and a list
+        // style numbering with a list of arrows.
+        let mut template = document();
+        let arrows = template.list_shaped(&[Shape::bullet("\u{27A2}")]).expect("a list");
+        let mut heading =
+            StyleDefinition::of(template.styles().get("Heading1").expect("Heading 1"));
+        heading.run.color = Some("C00000".to_owned());
+        assert!(template.set_style(&heading));
+        assert!(template.set_style(&StyleDefinition {
+            id: "Pullquote".to_owned(),
+            name: "Pullquote".to_owned(),
+            based_on: Some("Normal".to_owned()),
+            next: None,
+            paragraph: ParagraphProperties::default(),
+            run: RunProperties { italic: Some(true), ..RunProperties::default() },
+        }));
+        assert!(template.set_style(&StyleDefinition {
+            id: "Arrows".to_owned(),
+            name: "Arrows".to_owned(),
+            based_on: Some("Normal".to_owned()),
+            next: None,
+            paragraph: ParagraphProperties::default(),
+            run: RunProperties::default(),
+        }));
+        // Its numbering written into it the way a list style carries it.
+        let mut tree = template.styles_tree().expect("styles");
+        let style = tree
+            .root
+            .child_elements_mut()
+            .find(|style| style.attribute(Some(read::W), "styleId") == Some("Arrows"))
+            .expect("the style");
+        crate::format::set_paragraph_numbering(
+            style,
+            Some(NumberingReference { id: arrows, level: 0 }),
+            Some("w"),
+        );
+        template.styles = crate::styles::Styles::parse(&tree.root);
+        template.save_styles_tree(&tree);
+
+        // The document: a style of its own, which stays.
+        let mut document = document();
+        assert!(document.set_style(&StyleDefinition {
+            id: "Mine".to_owned(),
+            name: "Mine".to_owned(),
+            based_on: Some("Normal".to_owned()),
+            next: None,
+            paragraph: ParagraphProperties::default(),
+            run: RunProperties { bold: Some(true), ..RunProperties::default() },
+        }));
+        assert!(!document.links_styles());
+        assert!(document.set_links_styles(true));
+        assert!(document.links_styles());
+
+        let changed = document.update_styles_from(&template);
+        assert!(changed >= 3, "{changed}");
+        let styles = document.styles();
+        assert_eq!(styles.get("Heading1").and_then(|s| s.run.color.as_deref()), Some("C00000"));
+        assert_eq!(styles.get("Pullquote").and_then(|s| s.run.italic), Some(true));
+        assert_eq!(styles.get("Mine").and_then(|s| s.run.bold), Some(true), "the document's own");
+        // The list came with the style that numbers with it, as arrows.
+        let list = styles
+            .get("Arrows")
+            .and_then(|s| s.paragraph.numbering.as_ref())
+            .expect("the style numbers")
+            .id;
+        let level = document.numbering().level(list, 0).expect("the list is the document's");
+        assert_eq!(level.text, "\u{27A2}");
+        // Taking them again changes nothing.
+        assert_eq!(document.update_styles_from(&template), 0);
     }
 
     #[test]

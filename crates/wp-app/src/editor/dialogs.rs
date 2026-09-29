@@ -100,6 +100,8 @@ pub(super) enum Asking {
     Translator,
     /// Which kind of file to read a file as: Word's Convert File.
     Convert,
+    /// The document's template, and whether its styles are the template's.
+    Templates,
     /// Which encoding a text file is in, when its bytes do not say.
     TextOpen,
     /// Which encoding to write a text file in, and how to end its lines.
@@ -272,6 +274,7 @@ impl Editor {
             Some(Asking::Translator) => self.apply_translator_preferences(&dialog),
             Some(Asking::TextOpen) => self.apply_text_open(&dialog),
             Some(Asking::Convert) => self.apply_conversion(&dialog),
+            Some(Asking::Templates) => self.apply_templates(&dialog),
             Some(Asking::TextSave) => self.apply_text_save(&dialog),
             Some(Asking::PageBorders) => self.apply_page_borders(&dialog),
             // Word's Symbol dialog is answered by its Insert button rather
@@ -299,6 +302,10 @@ impl Editor {
         use super::tabsdialog::{CLEAR, CLEAR_ALL, SET};
 
         match (self.asking, button) {
+            // Attach… chooses a template and leaves the dialog standing.
+            (Some(Asking::Templates), super::templates::ATTACH) => {
+                Some(self.attach_template_pressed())
+            }
             // Add and Delete change a list and leave the dialog standing;
             // Exceptions hands over to a dialog of its own and comes back.
             (Some(Asking::AutoCorrect), ADD | DELETE | EXCEPTIONS) => {

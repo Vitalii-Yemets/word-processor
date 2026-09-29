@@ -81,6 +81,8 @@
 = Art
 = Article use
 = As you type
+= Attach Template
+= Attach...
 = AutoCorrect
 = AutoCorrect Exceptions
 = AutoCorrect Options...
@@ -102,6 +104,7 @@
 = Automatic bulleted lists
 = Automatically add words to list
 = Automatically hyphenate document
+= Automatically update document styles
 = Autosaved {0}
 = Available actions
 = Banded
@@ -307,6 +310,8 @@
 = Document Formatting
 = Document Info
 = Document Recovery
+= Document Template
+= Document template
 = Don't add space between paragraphs of the same style
 = Don't capitalize after
 = Don't correct
@@ -895,6 +900,9 @@
 = Tabs…
 = Tag
 = Tell me what you want to do
+= Template
+= Templates
+= Templates and Add-ins
 = Text
 = Text Box
 = Text Boxes
@@ -1067,6 +1075,7 @@
 = Word Macro-Enabled Document (*.docm)
 = Word Macro-Enabled Template (*.dotm)
 = Word Template (*.dotx)
+= Word Templates (*.dotx;*.dotm;*.dot)
 = Word choice
 = Word documents
 = Word documents (*.docx;*.docm;*.dotx;*.dotm)
@@ -1141,6 +1150,7 @@
 = {0} stopped: {1}
 = {0} stretches you may edit, selected
 = {0} styles allowed
+= {0} styles taken from the template
 = {0} was not kept
 = {0} words
 = {0} {1}

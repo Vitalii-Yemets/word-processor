@@ -230,6 +230,12 @@ language = Deutsch
 = As you type
 > Während der Eingabe
 
+= Attach Template
+> Vorlage anfügen
+
+= Attach...
+> Anfügen...
+
 = AutoCorrect
 > AutoKorrektur
 
@@ -289,6 +295,9 @@ language = Deutsch
 
 = Automatically hyphenate document
 > Automatische Silbentrennung
+
+= Automatically update document styles
+> Dokumentformatvorlagen automatisch aktualisieren
 
 = Autosaved {0}
 > Automatisch gespeichert {0}
@@ -907,6 +916,12 @@ language = Deutsch
 
 = Document Recovery
 > Dokumentwiederherstellung
+
+= Document Template
+> Dokumentvorlage
+
+= Document template
+> Dokumentvorlage
 
 = Don't add space between paragraphs of the same style
 > Keinen Abstand zwischen Absätzen gleicher Formatvorlage einfügen
@@ -2915,6 +2930,15 @@ language = Deutsch
 = Tell me what you want to do
 > Was möchten Sie tun?
 
+= Template
+> Vorlage
+
+= Templates
+> Vorlagen
+
+= Templates and Add-ins
+> Dokumentvorlagen und Add-Ins
+
 = Text
 > Text
 
@@ -3242,6 +3266,9 @@ language = Deutsch
 = Word Template (*.dotx)
 > Word-Vorlage (*.dotx)
 
+= Word Templates (*.dotx;*.dotm;*.dot)
+> Word-Vorlagen (*.dotx;*.dotm;*.dot)
+
 = Word choice
 > Wortwahl
 
@@ -3409,6 +3436,9 @@ language = Deutsch
 
 = {0} styles allowed
 > {0} Formatvorlagen erlaubt
+
+= {0} styles taken from the template
+> {0} Formatvorlagen aus der Vorlage übernommen
 
 = {0} was not kept
 > {0} wurde nicht behalten

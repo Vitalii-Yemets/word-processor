@@ -637,6 +637,10 @@ impl Editor {
             "textsave" => {
                 self.begin_text_save(std::path::Path::new("letter.txt"));
             }
+            // Word's Templates and Add-ins, off the Developer tab.
+            "templates" => {
+                self.open_templates_dialog();
+            }
             // Word's Convert File, over a file of rich text, as "Confirm file
             // format conversion on open" asks it.
             "convert" => {

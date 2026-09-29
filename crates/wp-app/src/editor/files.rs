@@ -848,7 +848,11 @@ impl Editor {
         let said =
             |error: &dyn std::fmt::Display| format!("Cannot open {}: {error}", path.display());
         let opened = match kind {
-            FileKind::Word | FileKind::Text => Document::open(&bytes).map_err(|error| said(&error)),
+            // A Word document that says so takes its template's styles as it
+            // opens. See [`super::templates`].
+            FileKind::Word | FileKind::Text => Document::open(&bytes)
+                .map(super::templates::with_template_styles)
+                .map_err(|error| said(&error)),
             FileKind::Word97 => wp_doc::open(&bytes).map_err(|error| said(&error)),
             FileKind::Rtf => wp_rtf::open(&bytes).map_err(|error| said(&error)),
             FileKind::WebPage => {

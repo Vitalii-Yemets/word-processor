@@ -5669,11 +5669,44 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   "Show all" box, the list here showing every kind always; and, on Linux,
   the Open dialog saying which type was chosen, which the system's dialog
   does not tell — there Recover Text is reached through Convert File.
-- [ ] **G15. A document that takes its styles from its template.** Word's
+- [x] **G15. A document that takes its styles from its template.** Word's
   Developer ▸ Document Template ▸ Automatically update: the attached template
   is read on opening and its styles are applied over the document's own.
   **G1** attaches the template and does not do this, which is the other half
   of what an attachment is for.
+  *Done:* `wp-docx` says and sets whether a document takes its styles from
+  its template (`links_styles`, `set_links_styles`: Word's `w:linkStyles`
+  in the settings) and takes them (`update_styles_from`): every style the
+  template has over the document's of the same identifier, or joining
+  them, and the defaults they are built on; the lists the styles number
+  with carried into the document's own numbering under numbers of its own,
+  and on the next opening recognised as the same lists rather than carried
+  again; the document's other styles left as they are
+  (`crates/wp-docx/src/kinds.rs`). The editor takes them as a Word document
+  that says so opens and its template can be read, and does not count that
+  as a change (`crates/wp-app/src/editor/templates.rs`). The Developer tab
+  has Word's Templates group and its Document Template button, which opens
+  Templates and Add-ins: the template's path, Attach… to choose another,
+  and "Automatically update document styles"; OK points the document at
+  the template in the box, says whether it takes its styles, and when it
+  does takes them at once, as Word does. `--picture … templates` draws it.
+  *Proven by:* `crates/wp-docx/src/kinds.rs` — a template's red Heading 1,
+  a style of its own and a list style numbering with arrows taken over a
+  document's styles, the document's own style kept, the arrows the
+  document's, and taking them again changing nothing;
+  `crates/wp-app/src/editor/templates.rs` — a document that links its
+  styles opening with its template's and unchanged, one that does not
+  opening with its own, and the dialog attaching a template and taking its
+  styles.
+  *Found along the way:* taking a list style's numbering again on every
+  opening would have given the document the same list once more each time;
+  a list defined the same is now the one it keeps.
+  *Not done, and named here:* the rest of Templates and Add-ins — global
+  templates and add-ins, the XML Schema and XML Expansion Packs pages, and
+  "Attach to all new e-mail messages" — which this program has nothing for;
+  a template at a web address rather than a path, which is not fetched; and
+  the Normal template and a template's building blocks, which stay named in
+  **G1**.
 - [ ] **G16. An installer, and the file kinds it claims.** Double-clicking a
   `.docx` should open it here, and double-clicking a `.dotx` should make a new
   document from it; both are the shell's associations, and associations are

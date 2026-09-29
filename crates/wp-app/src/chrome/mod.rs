@@ -457,6 +457,9 @@ pub enum Command {
     /// Word's XML Mapping pane: the data a document carries, and binding a
     /// control to a node of it.
     XmlMapping,
+    /// Word's Document Template: the template the document is attached to,
+    /// and whether its styles are the template's.
+    DocumentTemplate,
     /// Which set of styles the whole document is formatted with.
     StyleSet,
 }
