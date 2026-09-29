@@ -452,6 +452,7 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
     start_input_method(window);
 
     let mut last_tick = Instant::now();
+    let mut accessible = false;
     loop {
         let packet =
             with_state(|state| state.connection.next_event(Duration::from_millis(TICK_MILLIS)));
@@ -468,16 +469,98 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
                 deliver(id, Event::Tick);
             }
             check_input_method();
+            // Joined once the window is up, so that finding the bus does
+            // not keep the window from coming up.
+            if !accessible {
+                accessible = true;
+                super::atspi::start();
+            }
         }
         if with_state(|state| state.windows.is_empty()).unwrap_or(true) {
             break;
         }
+        super::atspi::pump(&mut Reading(WINDOW.with(Cell::get)));
         present_dirty();
     }
 
     STATE.with(|slot| slot.borrow_mut().take());
     APPLICATION.with(|slot| slot.borrow_mut().take());
     Ok(())
+}
+
+/// A window as a screen reader reads it: see [`super::atspi`].
+struct Reading(u32);
+
+impl Reading {
+    fn application<R>(&self, work: impl FnOnce(&mut dyn App) -> R) -> Option<R> {
+        let index = with_state(|state| state.window_index(self.0)).flatten();
+        if let Some(index) = index {
+            with_application(|app| app.switch_window(index));
+        }
+        with_application(work)
+    }
+
+    /// What pressing or selecting asked for, done.
+    fn answered(&self, response: Option<Response>) {
+        if response == Some(Response::Redraw) {
+            with_state(|state| {
+                if let Some(index) = state.window_index(self.0) {
+                    state.windows[index].dirty = true;
+                }
+            });
+        }
+    }
+}
+
+impl super::atspi::Window for Reading {
+    fn title(&mut self) -> String {
+        with_state(|state| title_of(state, self.0)).unwrap_or_default()
+    }
+
+    fn origin(&mut self) -> (i32, i32) {
+        with_state(|state| state.connection.translate(self.0, 0, 0).ok())
+            .flatten()
+            .unwrap_or((0, 0))
+    }
+
+    fn size(&mut self) -> (i32, i32) {
+        with_state(|state| {
+            state.window_index(self.0).map(|index| {
+                let window = &state.windows[index];
+                (window.width as i32, window.height as i32)
+            })
+        })
+        .flatten()
+        .unwrap_or((0, 0))
+    }
+
+    fn scale(&mut self) -> f32 {
+        with_state(|state| state.window_index(self.0).map(|index| state.windows[index].scale))
+            .flatten()
+            .unwrap_or(1.0)
+    }
+
+    fn elements(&mut self) -> Vec<crate::accessibility::Element> {
+        self.application(|app| app.accessible_elements()).unwrap_or_default()
+    }
+
+    fn text(&mut self) -> Option<crate::accessibility::TextState> {
+        self.application(|app| app.accessible_text()).flatten()
+    }
+
+    fn rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
+        self.application(|app| app.accessible_rects(start, end)).unwrap_or_default()
+    }
+
+    fn invoke(&mut self, id: u64) {
+        let response = self.application(|app| app.accessible_invoke(id));
+        self.answered(response);
+    }
+
+    fn select(&mut self, start: usize, end: usize) {
+        let response = self.application(|app| app.accessible_select(start, end));
+        self.answered(response);
+    }
 }
 
 /// Draws every window that asked to be drawn again.
@@ -1324,7 +1407,10 @@ fn input_method_gone() {
     perform(actions);
 }
 
-pub(crate) fn selection_changed() {}
+/// The screen reader is told on the loop's next turn: see [`super::atspi`].
+pub(crate) fn selection_changed() {
+    super::atspi::note_selection_changed();
+}
 
 pub(crate) fn set_frame_appearance(_dark: bool, _border: (u8, u8, u8), _caption: (u8, u8, u8)) {}
 

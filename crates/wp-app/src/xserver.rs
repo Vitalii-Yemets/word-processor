@@ -461,3 +461,135 @@ fn text_dragged_from_another_program_goes_into_the_document() {
     let text = text.borrow().clone().unwrap_or_default();
     assert!(text.contains("dropped in from GTK"), "the drop is in the document: {text:?}");
 }
+
+/// The editor as a screen reader reads it, closing once the reader is done.
+struct ReadAloud {
+    editor: Editor,
+    finished: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    started: Instant,
+}
+
+impl App for ReadAloud {
+    fn handle(&mut self, event: Event) -> Response {
+        let finished = self.finished.load(std::sync::atomic::Ordering::SeqCst);
+        if event == Event::Tick && (finished || self.started.elapsed() > Duration::from_secs(90)) {
+            return Response::Close;
+        }
+        self.editor.handle(event)
+    }
+
+    fn cursor(&mut self, x: i32, y: i32) -> Cursor {
+        self.editor.cursor(x, y)
+    }
+
+    fn is_caption(&mut self, x: i32, y: i32) -> bool {
+        self.editor.is_caption(x, y)
+    }
+
+    fn switch_window(&mut self, index: usize) {
+        self.editor.switch_window(index);
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.editor.draw(width, height)
+    }
+
+    fn accessible_elements(&mut self) -> Vec<accessibility::Element> {
+        self.editor.accessible_elements()
+    }
+
+    fn accessible_invoke(&mut self, id: u64) -> Response {
+        self.editor.accessible_invoke(id)
+    }
+
+    fn accessible_text(&mut self) -> Option<accessibility::TextState> {
+        self.editor.accessible_text()
+    }
+
+    fn accessible_select(&mut self, start: usize, end: usize) -> Response {
+        self.editor.accessible_select(start, end)
+    }
+
+    fn accessible_rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
+        self.editor.accessible_rects(start, end)
+    }
+}
+
+/// The whole editor read through AT-SPI by a screen reader's library: the
+/// ribbon's tabs and buttons, and the document's text.
+#[test]
+fn a_screen_reader_reads_the_editor_through_at_spi() {
+    let _display = one_display_at_a_time();
+    let Some(_server) = Server::start(91, 1400, 900) else {
+        eprintln!("skipped: Xvfb is not on this machine");
+        return;
+    };
+    let atspi = Command::new("python3")
+        .args([
+            "-c",
+            "import gi; gi.require_version('Atspi', '2.0'); from gi.repository import Atspi",
+        ])
+        .status()
+        .is_ok_and(|status| status.success());
+    let bus = Command::new("dbus-daemon")
+        .args(["--session", "--print-address=1", "--nofork", "--nopidfile"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let (Ok(mut bus), true) = (bus, atspi) else {
+        eprintln!("skipped: no session bus or no Atspi on this machine");
+        return;
+    };
+    let mut address = String::new();
+    let _ = std::io::BufRead::read_line(
+        &mut std::io::BufReader::new(bus.stdout.take().expect("the address")),
+        &mut address,
+    );
+    let address = address.trim().to_owned();
+    std::env::remove_var("XMODIFIERS");
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", &address);
+
+    let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reader = {
+        let finished = std::sync::Arc::clone(&finished);
+        let address = address.clone();
+        std::thread::spawn(move || {
+            let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/atspi-reader.py");
+            let output = Command::new("python3")
+                .arg(script)
+                .args(["Word Processor", "Italic"])
+                .env("DBUS_SESSION_BUS_ADDRESS", &address)
+                .env("DISPLAY", ":91")
+                .stderr(Stdio::null())
+                .output();
+            finished.store(true, std::sync::atomic::Ordering::SeqCst);
+            output.map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        })
+    };
+
+    let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
+    let mut body = wp_docx::model::Body::default();
+    body.blocks.push(wp_docx::model::Block::Paragraph(wp_docx::model::Paragraph::text(
+        "Read aloud on Linux.",
+    )));
+    let document = Document::create(&body).expect("a document");
+    let editor = Editor::opened(library, document, None::<PathBuf>);
+    let reading = ReadAloud { editor, finished, started: Instant::now() };
+    let options =
+        WindowOptions { title: "Document — Word Processor".to_owned(), width: 1400, height: 900 };
+    wp_shell::run(options, Box::new(reading)).expect("the editor's window opens");
+    let said = reader.join().expect("the reader ran").expect("the reader's output");
+    std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+    let _ = bus.kill();
+    let _ = bus.wait();
+    let has = |wanted: &str| said.lines().any(|line| line.starts_with(wanted));
+
+    assert!(has("node 0 application | Word Processor"), "{said}");
+    assert!(has("node 1 frame | Document — Word Processor"), "{said}");
+    assert!(has("node 2 page tab | Home | selected"), "the Home tab, chosen: {said}");
+    assert!(has("node 2 page tab | Insert"), "{said}");
+    assert!(has("node 2 toggle button | Italic"), "{said}");
+    assert!(has("text Read aloud on Linux."), "the document's text: {said}");
+    assert!(has("pressed"), "{said}");
+    assert!(has("done"), "{said}");
+}

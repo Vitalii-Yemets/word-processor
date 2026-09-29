@@ -6292,9 +6292,58 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   own windows are; the ask action, which neither side offers; and on
   Wayland a picture of what is dragged under the pointer, where the
   compositor shows its own.
-- [ ] **H11. AT-SPI: what a screen reader on Linux is told.** The Windows
+- [x] **H11. AT-SPI: what a screen reader on Linux is told.** The Windows
   half is **H4**; this is the same information over the other desktop's
   interface, which is D-Bus and is not in this program yet. Named in **H6**.
+  *Done:* D-Bus, and AT-SPI over it, on both Linux shells.
+  **D-Bus** (`crates/wp-shell/src/linux/dbus.rs`), written out against the
+  specification: the wire format both ways for every type but the file
+  descriptor, in either byte order, aligned as it says; a bus reached by the
+  address the desktop gives, by path or by abstract name; the EXTERNAL
+  authentication a local socket takes; a name taken; calls sent and their
+  answers waited for while whatever else arrives is kept; and what has
+  arrived handed over without waiting.
+  **AT-SPI** (`crates/wp-shell/src/linux/atspi.rs`). Once the window is up
+  the session bus is asked for the accessibility bus — which starts it, as
+  a desktop does — and the application's tree is given to the registry
+  there. The tree is what UI Automation is told on Windows, from the same
+  accessibility methods on the application: the application, its window
+  by its title, and each control — the ribbon's tabs as page tabs, chosen
+  or not; its buttons and its toggles, on or off, with their access keys,
+  each of which a screen reader presses; the document as document text
+  with the keyboard, editable and of many lines; and words. Each object
+  says its role, name, states, parent, children, interfaces and place, on
+  the screen or in the window; the document is read by character, word,
+  sentence and line, its caret and selection read and set, and any
+  stretch's place given; the whole tree comes at once to a reader that
+  asks for it that way. And the screen reader is told: when the caret
+  moves and the selection changes, and — looked over after every press or
+  selection it asks for and every third of a second otherwise — when a
+  control is turned on or off, chosen, given the keyboard or renamed, and
+  when controls come and go, as a tab chosen brings its own buttons, which
+  is how a screen reader's copy of the tree stays the program's.
+  *Proven by:* `crates/wp-shell/tests/x_accessibility.rs` and
+  `crates/wp-shell/tests/wayland.rs` — a session bus of the test's own, the
+  accessibility bus started on it as a desktop's is, and
+  `tools/atspi-reader.py` reading the window through Atspi, the library
+  Orca is written on, on Xvfb and on sway: the tree with each role, name
+  and state; the document's text, caret, selection, a word at an offset
+  and a character's place; a toggle pressed, the program asked to press it
+  and nothing else, and the reader then knowing it is on; a selection made
+  and the program asked for it; and the caret's move heard.
+  `crates/wp-app/src/xserver.rs` — the whole editor read the same way: the
+  ribbon's tabs with Home chosen, its toggles, and the document's text.
+  *Not done, and named here:* one window is described, the one the program
+  last heard from, where Word's several windows would each be a frame; on
+  Wayland a place on the screen is the window's own, since Wayland does not
+  tell a program where its window is; the offset at a point is not found,
+  there being no way yet to ask the layout; the keys pressed are not told
+  to the registry, which is how Orca echoes what is typed; and the controls
+  are looked over whenever there is an accessibility bus, not only while a
+  screen reader is listening. Orca itself is not run: Atspi is its library,
+  and what Orca would say of what Atspi reads is Orca's. Lines as the
+  layout breaks them, a range's attributes and the rest of **H4**'s list
+  stay **H12**'s.
 - [ ] **H12. The rest of what a screen reader is told.** Lines as the layout
   breaks them rather than paragraphs; the attributes of a range — bold, font,
   size — which every one of today answers "not supported"; the panes,

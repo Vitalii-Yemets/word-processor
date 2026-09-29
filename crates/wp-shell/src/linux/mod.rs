@@ -25,7 +25,9 @@
 //! same goes for the documents the desktop remembers and which program
 //! opens which kind of file; see [`files`].
 
+mod atspi;
 mod cups;
+mod dbus;
 mod dialogs;
 mod files;
 pub(crate) mod keys;

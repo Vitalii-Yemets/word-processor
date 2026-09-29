@@ -1001,3 +1001,161 @@ fn a_drag_let_go_on_its_own_window_says_where_on_the_compositor() {
         seen.effect
     );
 }
+
+// --- What a screen reader is told -------------------------------------------
+
+/// A window that says it has a toggle, a button and a document, and does
+/// what it is asked; closes once the reader is done.
+struct Readable {
+    canvas: Canvas,
+    invoked: std::rc::Rc<std::cell::RefCell<Vec<u64>>>,
+    bold: bool,
+    selection: (usize, usize),
+    finished: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    started: Instant,
+}
+
+impl App for Readable {
+    fn handle(&mut self, event: Event) -> Response {
+        let finished = self.finished.load(std::sync::atomic::Ordering::SeqCst);
+        if event == Event::Tick && (finished || self.started.elapsed() > Duration::from_secs(60)) {
+            return Response::Close;
+        }
+        Response::Ignored
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.canvas = Canvas::new(width, height);
+        self.canvas.clear(Color::WHITE);
+        &self.canvas
+    }
+
+    fn accessible_elements(&mut self) -> Vec<wp_shell::accessibility::Element> {
+        use wp_shell::accessibility::{Element, Role};
+        let element = |id: u64, role: Role, name: &str, selected: bool, focused: bool| Element {
+            id,
+            role,
+            name: name.to_owned(),
+            access_key: String::new(),
+            rect: (100, 200, 60, 24),
+            selected,
+            enabled: true,
+            focused,
+        };
+        vec![
+            element(3, Role::Toggle, "Bold", self.bold, false),
+            element(4, Role::Button, "Save", false, false),
+            element(5, Role::Document, "Document", false, true),
+        ]
+    }
+
+    fn accessible_invoke(&mut self, id: u64) -> Response {
+        self.invoked.borrow_mut().push(id);
+        if id == 3 {
+            self.bold = !self.bold;
+        }
+        Response::Redraw
+    }
+
+    fn accessible_text(&mut self) -> Option<wp_shell::accessibility::TextState> {
+        Some(wp_shell::accessibility::TextState {
+            text: "Hello world. Second paragraph".to_owned(),
+            selection: self.selection,
+        })
+    }
+
+    fn accessible_select(&mut self, start: usize, end: usize) -> Response {
+        self.selection = (start, end);
+        wp_shell::selection_changed();
+        Response::Redraw
+    }
+
+    fn accessible_rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
+        (start..end).map(|at| (100 + 10 * at as i32, 200, 10, 20)).collect()
+    }
+}
+
+#[test]
+fn a_screen_reader_reads_the_window_on_the_compositor() {
+    use std::io::BufRead;
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let atspi = Command::new("python3")
+        .args([
+            "-c",
+            "import gi; gi.require_version('Atspi', '2.0'); from gi.repository import Atspi",
+        ])
+        .status()
+        .is_ok_and(|status| status.success());
+    let Ok(mut bus) = Command::new("dbus-daemon")
+        .args(["--session", "--print-address=1", "--nofork", "--nopidfile"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        eprintln!("skipped: no session bus on this machine");
+        return;
+    };
+    let mut address = String::new();
+    let _ =
+        std::io::BufReader::new(bus.stdout.take().expect("the address")).read_line(&mut address);
+    let address = address.trim().to_owned();
+    let stop_bus = |mut bus: Child| {
+        let _ = bus.kill();
+        let _ = bus.wait();
+    };
+    if !atspi {
+        stop_bus(bus);
+        eprintln!("skipped: no Atspi on this machine");
+        return;
+    }
+    let Some(compositor) = Compositor::start("read", 800, 600) else {
+        stop_bus(bus);
+        eprintln!("skipped: no compositor could be started on this machine");
+        return;
+    };
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", &address);
+    let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reader = {
+        let finished = std::sync::Arc::clone(&finished);
+        let address = address.clone();
+        std::thread::spawn(move || {
+            let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/atspi-reader.py");
+            let output = Command::new("python3")
+                .arg(script)
+                .args(["Word Processor", "Bold"])
+                .env("DBUS_SESSION_BUS_ADDRESS", &address)
+                .stderr(Stdio::null())
+                .output();
+            finished.store(true, std::sync::atomic::Ordering::SeqCst);
+            output.map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        })
+    };
+    let invoked = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let readable = Readable {
+        canvas: Canvas::new(1, 1),
+        invoked: std::rc::Rc::clone(&invoked),
+        bold: false,
+        selection: (6, 11),
+        finished,
+        started: Instant::now(),
+    };
+    let options = WindowOptions { title: "Readable".to_owned(), width: 500, height: 300 };
+    wp_shell::run(options, Box::new(readable)).expect("the window opens on the compositor");
+    let said = reader.join().expect("the reader ran").expect("the reader's output");
+    std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+    drop(compositor);
+    stop_bus(bus);
+    let has = |wanted: &str| said.lines().any(|line| line.starts_with(wanted));
+
+    assert!(has("node 0 application | Word Processor"), "{said}");
+    assert!(has("node 1 frame | Readable"), "{said}");
+    assert!(has("node 2 toggle button | Bold"), "{said}");
+    assert!(has("node 2 document text | Document | focused"), "{said}");
+    assert!(has("text Hello world. Second paragraph"), "{said}");
+    assert!(has("selection 6 11"), "{said}");
+    assert!(has("word world 6 11"), "{said}");
+    assert!(has("extents 100 200 10 20"), "{said}");
+    assert!(has("checked yes"), "{said}");
+    assert!(has("event caret 5"), "{said}");
+    assert_eq!(*invoked.borrow(), vec![3]);
+}

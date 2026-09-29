@@ -203,6 +203,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gir1.2-gtk-3.0 \
  && rm -rf /var/lib/apt/lists/*
 
+# What a screen reader on Linux reads a program through: the accessibility
+# bus and its registry (at-spi2-core), and the library a screen reader
+# reads it with (Atspi, which Orca is written on), reached from Python —
+# tools/atspi-reader.py walks what the program says of itself, reads its
+# text and presses its buttons, the way a screen reader would. The program
+# speaks D-Bus and AT-SPI itself; test tools, nothing of them reaches the
+# product. In a layer of its own, after the others.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        at-spi2-core \
+        gir1.2-atspi-2.0 \
+ && rm -rf /var/lib/apt/lists/*
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

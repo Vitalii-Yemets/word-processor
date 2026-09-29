@@ -93,6 +93,8 @@ struct Window {
     /// The object the compositor says the window's scale through, where it
     /// has one to say it with.
     fractional: u32,
+    /// What the window is called, as a screen reader is told.
+    title: String,
 }
 
 /// The input method's line to this program: text-input, version 3.
@@ -412,6 +414,7 @@ impl State {
             dirty: true,
             buffers: Vec::new(),
             fractional,
+            title: title.to_owned(),
         });
         Ok(surface)
     }
@@ -534,6 +537,7 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
     deliver(window, Event::ScaleChanged { scale });
 
     let mut last_tick = Instant::now();
+    let mut accessible = false;
     loop {
         let message =
             with_state(|state| state.connection.next_message(Duration::from_millis(TICK_MILLIS)));
@@ -556,7 +560,14 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
             for id in ids {
                 deliver(id, Event::Tick);
             }
+            // Joined once the window is up, so that finding the bus does
+            // not keep the window from coming up.
+            if !accessible {
+                accessible = true;
+                super::atspi::start();
+            }
         }
+        super::atspi::pump(&mut Reading(WINDOW.with(Cell::get)));
         // Being asked to close is a question for the application, whether
         // it came from the compositor or from the program's own button.
         if with_state(|state| core::mem::replace(&mut state.closing, false)) == Some(true) {
@@ -574,6 +585,76 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
     STATE.with(|slot| slot.borrow_mut().take());
     APPLICATION.with(|slot| slot.borrow_mut().take());
     Ok(())
+}
+
+/// A window as a screen reader reads it: see [`super::atspi`]. Where it is
+/// on the screen is the one thing Wayland does not tell a program, so its
+/// places are given as the window's own.
+struct Reading(u32);
+
+impl Reading {
+    fn application<R>(&self, work: impl FnOnce(&mut dyn App) -> R) -> Option<R> {
+        let index = with_state(|state| state.window_index(self.0)).flatten();
+        if let Some(index) = index {
+            with_application(|app| app.switch_window(index));
+        }
+        with_application(work)
+    }
+
+    fn answered(&self, response: Option<Response>) {
+        if response == Some(Response::Redraw) {
+            with_state(|state| {
+                if let Some(index) = state.window_index(self.0) {
+                    state.windows[index].dirty = true;
+                }
+            });
+        }
+    }
+
+    fn window<R>(&self, read: impl FnOnce(&Window) -> R) -> Option<R> {
+        with_state(|state| state.window_index(self.0).map(|index| read(&state.windows[index])))
+            .flatten()
+    }
+}
+
+impl super::atspi::Window for Reading {
+    fn title(&mut self) -> String {
+        self.window(|window| window.title.clone()).unwrap_or_default()
+    }
+
+    fn origin(&mut self) -> (i32, i32) {
+        (0, 0)
+    }
+
+    fn size(&mut self) -> (i32, i32) {
+        self.window(|window| (window.width as i32, window.height as i32)).unwrap_or((0, 0))
+    }
+
+    fn scale(&mut self) -> f32 {
+        self.window(|window| window.scale).unwrap_or(1.0)
+    }
+
+    fn elements(&mut self) -> Vec<crate::accessibility::Element> {
+        self.application(|app| app.accessible_elements()).unwrap_or_default()
+    }
+
+    fn text(&mut self) -> Option<crate::accessibility::TextState> {
+        self.application(|app| app.accessible_text()).flatten()
+    }
+
+    fn rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
+        self.application(|app| app.accessible_rects(start, end)).unwrap_or_default()
+    }
+
+    fn invoke(&mut self, id: u64) {
+        let response = self.application(|app| app.accessible_invoke(id));
+        self.answered(response);
+    }
+
+    fn select(&mut self, start: usize, end: usize) {
+        let response = self.application(|app| app.accessible_select(start, end));
+        self.answered(response);
+    }
 }
 
 /// Hands an event to the application for a window, and acts on the answer.
@@ -1919,6 +2000,7 @@ pub(crate) fn set_window_title(title: &str) {
     with_state(|state| {
         let Some(index) = state.window_index(window) else { return };
         let toplevel = state.windows[index].toplevel;
+        title.clone_into(&mut state.windows[index].title);
         let _ = state
             .connection
             .send(&Request::new(toplevel, p::xdg_toplevel::SET_TITLE).string(title));
@@ -1958,7 +2040,10 @@ pub(crate) fn place_composition(x: i32, y: i32, height: i32) {
     });
 }
 
-pub(crate) fn selection_changed() {}
+/// The screen reader is told on the loop's next turn: see [`super::atspi`].
+pub(crate) fn selection_changed() {
+    super::atspi::note_selection_changed();
+}
 
 pub(crate) fn set_frame_appearance(_dark: bool, _border: (u8, u8, u8), _caption: (u8, u8, u8)) {}
 
