@@ -691,12 +691,14 @@
 = No Spacing
 = No dictionary on this machine from {0} into {1}
 = No entry for “{0}” in the {1} dictionary
+= No headings in this document
 = No hyphenation patterns for this language are on this machine
 = No names were typed
 = No numbers were typed, so no chart was drawn
 = No two of them say the same thing
 = No unsaved documents to recover
 = Nobody has been asked to sign.
+= Nobody has commented on this document
 = Nobody was typed, so no list was made
 = None
 = Normal
@@ -704,6 +706,7 @@
 = Norwegian
 = Not in the dictionary
 = Not saved
+= Nothing found
 = Nothing is restricted: tick one of the two boxes
 = Nothing was typed, so no diagram was drawn
 = Number format
@@ -764,6 +767,7 @@
 = Page number at the top: {0}
 = Page number in the margin: {0}
 = Page number: {0}
+= Page {0}
 = Page {0} of {1}
 = Pages
 = Pages:
@@ -1140,6 +1144,7 @@
 = This document fixes its style set — Review ▸ Restrict Editing lifts it
 = This document fixes its theme — Review ▸ Restrict Editing lifts it
 = This document has never been saved, so it is not in a folder yet
+= This document has no pages
 = This document has no watermark to save
 = This document is encrypted. An empty box takes that off.
 = This document is not signed.
@@ -1188,6 +1193,7 @@
 = Type
 = Type a New List...
 = Type a word to translate
+= Type in the box above to search
 = Type one person, press Add, and type the next.
 = Type somebody first
 = Type the new name first

@@ -4031,3 +4031,21 @@ language = Deutsch
 = Zulu
 > Zulu
 
+= No headings in this document
+> Dieses Dokument enthält keine Überschriften
+
+= Nobody has commented on this document
+> Zu diesem Dokument gibt es keine Kommentare
+
+= Nothing found
+> Nichts gefunden
+
+= Page {0}
+> Seite {0}
+
+= This document has no pages
+> Dieses Dokument hat keine Seiten
+
+= Type in the box above to search
+> Geben Sie oben einen Suchbegriff ein
+

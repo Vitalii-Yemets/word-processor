@@ -320,7 +320,7 @@ impl Navigation {
                     contents.headings.len(),
                     current,
                     theme,
-                    "No headings in this document",
+                    t("No headings in this document"),
                     |index| {
                         let heading = &contents.headings[index];
                         (12.0 + f32::from(heading.level) * 12.0, heading.text.clone())
@@ -337,8 +337,8 @@ impl Navigation {
                     contents.pages,
                     current_page,
                     theme,
-                    "This document has no pages",
-                    |index| (12.0, format!("Page {}", index + 1)),
+                    t("This document has no pages"),
+                    |index| (12.0, messages::with("Page {0}", &[&(index + 1).to_string()])),
                 );
             }
             Section::Comments => {
@@ -350,7 +350,7 @@ impl Navigation {
                     contents.notes.len(),
                     None,
                     theme,
-                    "Nobody has commented on this document",
+                    t("Nobody has commented on this document"),
                     |index| {
                         let note = &contents.notes[index];
                         (12.0, format!("{}: {}", note.author, note.text))
@@ -359,9 +359,9 @@ impl Navigation {
             }
             Section::Results => {
                 let empty = if self.search.is_empty() {
-                    "Type in the box above to search"
+                    t("Type in the box above to search")
                 } else {
-                    "Nothing found"
+                    t("Nothing found")
                 };
                 self.draw_rows(
                     canvas,

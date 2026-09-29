@@ -334,7 +334,7 @@ impl Editor {
                     id: TAB_BASE + index,
                     role: Role::TabItem,
                     name: t(tab.label()).to_owned(),
-                    access_key: tab.key_tip().to_owned(),
+                    access_key: super::keytips::tab_key_tip(tab),
                     rect: on_window((left, strip_top, width, TAB_HEIGHT)),
                     selected: tab == self.ribbon.tab,
                     enabled: true,
@@ -525,7 +525,7 @@ impl Editor {
         let row_name = |index: usize| -> String {
             match section {
                 Section::Headings => contents.headings[index].text.clone(),
-                Section::Pages => format!("Page {}", index + 1),
+                Section::Pages => crate::messages::with("Page {0}", &[&(index + 1).to_string()]),
                 Section::Results => contents.found[index].context.clone(),
                 Section::Comments => {
                     let note = &contents.notes[index];

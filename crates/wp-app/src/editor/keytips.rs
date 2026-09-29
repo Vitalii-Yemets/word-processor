@@ -23,6 +23,57 @@ use crate::chrome::{keytips, tip, Command};
 
 use super::Editor;
 
+/// The letter over a tab.
+///
+/// In English, Word's own letters, which a person who knows Word has in
+/// their fingers — H for Home, N for Insert: see [`Tab::key_tip`]. In any
+/// other language they are worked out from the tabs' names as that language
+/// has them, as the commands' letters are, so that the letter over a tab is
+/// in the word under it: English letters over German words are letters
+/// that match nothing a German is looking at. Worked out over every tab in
+/// one fixed order, so that a tab's letter does not move when a tab of
+/// tables comes and goes.
+#[must_use]
+pub(super) fn tab_key_tip(tab: Tab) -> String {
+    if crate::messages::language() == crate::messages::ENGLISH {
+        return tab.key_tip().to_owned();
+    }
+    let every: Vec<Tab> = Tab::ALL.iter().chain(Tab::CONTEXTUAL.iter()).copied().collect();
+    let labels: Vec<&str> = every.iter().map(|each| crate::messages::t(each.label())).collect();
+    let letters = keytips::assign(&labels);
+    every.iter().position(|each| *each == tab).map(|at| letters[at].clone()).unwrap_or_default()
+}
+
+impl Editor {
+    /// What a command's button says, in the interface's language, for its
+    /// letter to be taken from: the words on the button where it has any,
+    /// else what its tip calls it, else the group its corner arrow is in; a
+    /// squeezed group's button says the group's name, and a tile of the
+    /// gallery its style's.
+    fn shown_label(&self, command: Command) -> String {
+        match command {
+            Command::ExpandGroup(index) => {
+                let groups = self.ribbon.groups();
+                return groups.get(usize::from(index)).map_or_else(
+                    || "?".to_owned(),
+                    |group| crate::messages::t(group.label).to_owned(),
+                );
+            }
+            Command::Style(index) => {
+                return self
+                    .style_gallery()
+                    .get(index)
+                    .map_or_else(|| "?".to_owned(), |sample| sample.name.clone());
+            }
+            _ => {}
+        }
+        crate::chrome::ribbon::name_of(command)
+            .or_else(|| tip::label_of(command))
+            .or_else(|| crate::chrome::ribbon::launcher_of(command))
+            .map_or_else(|| "?".to_owned(), crate::messages::translated)
+    }
+}
+
 /// How far the letters have been followed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Level {
@@ -106,11 +157,10 @@ impl Editor {
     /// The tabs, their letters, and where each sits.
     #[must_use]
     fn tab_tips(&self) -> Vec<(Tab, String, f32, f32)> {
-        // Word's own letters, not worked-out ones: see [`Tab::key_tip`].
         self.ribbon
             .tab_places()
             .into_iter()
-            .map(|(tab, left, width)| (tab, tab.key_tip().to_owned(), left, width))
+            .map(|(tab, left, width)| (tab, tab_key_tip(tab), left, width))
             .collect()
     }
 
@@ -118,8 +168,11 @@ impl Editor {
     #[must_use]
     fn command_tips(&self) -> Vec<(Command, String, f32, f32, f32, f32)> {
         let places = self.ribbon.command_places();
-        let labels: Vec<&str> =
-            places.iter().map(|(command, ..)| tip::label_of(*command).unwrap_or("?")).collect();
+        // Worked out from the labels as they are shown, in the interface's
+        // language: a letter is only any use if it is in the word under it.
+        let labels: Vec<String> =
+            places.iter().map(|(command, ..)| self.shown_label(*command)).collect();
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
         let letters = keytips::assign(&labels);
         places
             .into_iter()
@@ -165,5 +218,73 @@ impl Editor {
                 &theme,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+
+    use super::*;
+    use crate::messages::t;
+
+    fn editor() -> Editor {
+        let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Text")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let mut editor = Editor::new(library, Document::open(&bytes).expect("reopening"), None);
+        editor.paint(1400, 900);
+        editor
+    }
+
+    /// In English, Word's own letters over the tabs.
+    #[test]
+    fn in_english_the_tabs_have_word_s_letters() {
+        let editor = editor();
+        let tips = editor.tab_tips();
+        let letter =
+            |wanted: Tab| tips.iter().find(|(tab, ..)| *tab == wanted).map(|t| t.1.clone());
+        assert_eq!(letter(Tab::Home).as_deref(), Some("H"));
+        assert_eq!(letter(Tab::Insert).as_deref(), Some("N"));
+    }
+
+    /// In German, each tab's letter and each command's is in the German
+    /// word under it, all different; and a tab's letter opens it.
+    #[test]
+    fn in_german_each_letter_is_in_the_german_word_under_it() {
+        crate::messages::tests::in_language("de", || {
+            let mut editor = editor();
+            let in_word = |letter: &str, word: &str| {
+                letter.chars().all(|c| c.is_ascii_digit()) || word.to_uppercase().contains(letter)
+            };
+            let tips = editor.tab_tips();
+            let mut seen = Vec::new();
+            for (tab, letter, ..) in &tips {
+                assert!(in_word(letter, t(tab.label())), "{letter} over {}", t(tab.label()));
+                assert!(!seen.contains(letter), "{letter} twice");
+                seen.push(letter.clone());
+            }
+            let (_, insert, ..) =
+                tips.iter().find(|(tab, ..)| *tab == Tab::Insert).expect("Einfügen");
+            assert_ne!(insert, "N", "not English's letter over a German word");
+
+            editor.toggle_key_tips();
+            editor.press_key_tip(insert.chars().next().expect("a letter").to_ascii_lowercase());
+            assert_eq!(editor.ribbon.tab, Tab::Insert, "the letter opens the tab it is over");
+            editor.paint(1400, 900);
+            if let Ok(directory) = std::env::var("WP_PROOFS") {
+                let picture = wp_raster::encode_png(editor.canvas());
+                let _ = std::fs::create_dir_all(&directory);
+                let path = std::path::Path::new(&directory).join("key-tips-german.png");
+                let _ = std::fs::write(path, picture);
+            }
+            for (command, letter, ..) in editor.command_tips() {
+                let label = editor.shown_label(command);
+                assert!(letter.is_empty() || in_word(&letter, &label), "{letter} over {label}");
+            }
+        });
     }
 }
