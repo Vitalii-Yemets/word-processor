@@ -162,6 +162,44 @@ struct State {
     closing: bool,
     /// The input method's line to the window with the keyboard.
     text_input: TextInput,
+    /// A drag over one of the windows, while it is.
+    drag_over: Option<DragOver>,
+    /// This program's own drag, while it is being given.
+    dragging: Option<Dragging>,
+}
+
+/// A drag over one of this program's windows: the offer it comes as, and
+/// what this program makes of it.
+#[derive(Debug)]
+struct DragOver {
+    offer: u32,
+    surface: u32,
+    /// The formats it can be had in.
+    formats: Vec<String>,
+    /// Whether it is files, said as their addresses.
+    files: bool,
+    /// Whether this program takes any of the formats.
+    accepted: bool,
+    /// What the compositor settled on between the two programs: a copy or
+    /// a move.
+    action: u32,
+    /// Where it is, in the window's own units.
+    at: (i32, i32),
+    /// Whether it is this program's own drag, come back over its window.
+    own: bool,
+}
+
+/// This program's drag while it is being given.
+#[derive(Debug)]
+struct Dragging {
+    source: u32,
+    contents: Contents,
+    action: u32,
+    dropped: bool,
+    finished: bool,
+    cancelled: bool,
+    /// Where it was let go, when that was on one of this program's windows.
+    landed: Option<(u32, i32, i32)>,
 }
 
 thread_local! {
@@ -287,6 +325,8 @@ impl State {
             scale: 1.0,
             closing: false,
             text_input: TextInput::default(),
+            drag_over: None,
+            dragging: None,
         };
 
         // The keyboard and the pointer are asked for in `take_seat`, once
@@ -501,7 +541,7 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
             Some(Ok(Some(message))) => {
                 with_state(|state| state.handle(&message));
                 deliver_pending();
-                deliver_composition();
+                deliver_handed_on();
                 deliver_input();
                 follow_pointer();
             }
@@ -665,8 +705,16 @@ impl State {
             self.pointer_event(message);
             return;
         }
-        if message.object == self.data_device || self.building.contains_key(&message.object) {
+        let dragged_over = self.drag_over.as_ref().is_some_and(|over| over.offer == message.object);
+        if message.object == self.data_device
+            || self.building.contains_key(&message.object)
+            || dragged_over
+        {
             self.clipboard_event(message);
+            return;
+        }
+        if self.dragging.as_ref().is_some_and(|dragging| dragging.source == message.object) {
+            self.drag_source_event(message);
             return;
         }
         if message.object == self.data_source {
@@ -989,7 +1037,7 @@ impl State {
                 self.text_input.commit = None;
                 // Whatever was being composed there will not be finished.
                 if core::mem::take(&mut self.text_input.composing) {
-                    COMPOSED.with(|slot| slot.borrow_mut().push((surface, Event::ComposeEnd)));
+                    HANDED_ON.with(|slot| slot.borrow_mut().push((surface, Event::ComposeEnd)));
                 }
             }
             p::zwp_text_input_v3::PREEDIT_STRING => {
@@ -1024,7 +1072,7 @@ impl State {
                     }
                     None => {}
                 }
-                COMPOSED.with(|slot| {
+                HANDED_ON.with(|slot| {
                     slot.borrow_mut().extend(events.into_iter().map(|event| (surface, event)));
                 });
             }
@@ -1067,13 +1115,13 @@ fn composition(text: String, begin: i32, end: i32) -> Event {
 }
 
 thread_local! {
-    /// What the input method sent, for the window it was sent for, handed on
-    /// once the state is free again.
-    static COMPOSED: RefCell<Vec<(u32, Event)>> = const { RefCell::new(Vec::new()) };
+    /// What the input method and the drags of other programs sent, for the
+    /// window it was sent for, handed on once the state is free again.
+    static HANDED_ON: RefCell<Vec<(u32, Event)>> = const { RefCell::new(Vec::new()) };
 }
 
-fn deliver_composition() {
-    let events: Vec<(u32, Event)> = COMPOSED.with(|slot| core::mem::take(&mut *slot.borrow_mut()));
+fn deliver_handed_on() {
+    let events: Vec<(u32, Event)> = HANDED_ON.with(|slot| core::mem::take(&mut *slot.borrow_mut()));
     for (surface, event) in events {
         deliver(surface, event);
     }
@@ -1444,6 +1492,36 @@ const TEXT: &str = "text/plain;charset=utf-8";
 const HTML: &str = "text/html";
 const RTF: &str = "text/rtf";
 const PNG: &str = "image/png";
+/// Files, as a list of their addresses.
+const URI_LIST: &str = "text/uri-list";
+
+/// Writes what another program asked for into the end of the pipe the
+/// compositor handed over, and closes it. The other program is reading;
+/// if it has stopped, the write fails and that is all.
+fn write_to(fd: std::os::fd::OwnedFd, bytes: &[u8]) {
+    use std::io::Write;
+    let mut file = std::fs::File::from(fd);
+    let _ = file.write_all(bytes);
+}
+
+/// Reads one end of a pair until the other program closes its end, or
+/// stops writing for too long: what has arrived by then is what there is.
+fn read_until_closed(reader: &mut std::os::unix::net::UnixStream) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let _ = reader.set_read_timeout(Some(Duration::from_millis(1500)));
+    let deadline = Instant::now() + Duration::from_millis(1500);
+    let mut bytes = Vec::new();
+    while Instant::now() < deadline {
+        let mut chunk = [0u8; 4096];
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(count) => bytes.extend_from_slice(&chunk[..count]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => break,
+        }
+    }
+    (!bytes.is_empty()).then_some(bytes)
+}
 
 impl State {
     fn clipboard_event(&mut self, message: &Message) {
@@ -1465,7 +1543,47 @@ impl State {
                     self.offer_formats = self.building.remove(&id).unwrap_or_default();
                     self.offer = id;
                 }
+                p::wl_data_device::ENTER => {
+                    let serial = arguments.uint();
+                    let surface = arguments.uint();
+                    let x = arguments.fixed();
+                    let y = arguments.fixed();
+                    let offer = arguments.uint();
+                    self.drag_entered(serial, surface, (x.round() as i32, y.round() as i32), offer);
+                }
+                p::wl_data_device::MOTION => {
+                    let _time = arguments.uint();
+                    let x = arguments.fixed().round() as i32;
+                    let y = arguments.fixed().round() as i32;
+                    if let Some(over) = &mut self.drag_over {
+                        over.at = (x, y);
+                        if over.accepted && !over.files && !over.own {
+                            let event = Event::DataDragOver { x, y };
+                            HANDED_ON.with(|slot| slot.borrow_mut().push((over.surface, event)));
+                        }
+                    }
+                }
+                p::wl_data_device::LEAVE => {
+                    if let Some(over) = self.drag_over.take() {
+                        if over.accepted && !over.files && !over.own {
+                            let event = Event::DataDragLeft;
+                            HANDED_ON.with(|slot| slot.borrow_mut().push((over.surface, event)));
+                        }
+                        let _ = self
+                            .connection
+                            .send(&Request::new(over.offer, p::wl_data_offer::DESTROY));
+                    }
+                }
+                p::wl_data_device::DROP => self.drag_dropped(),
                 _ => {}
+            }
+            return;
+        }
+        // What the compositor settled on for a drag over a window.
+        if message.opcode == p::wl_data_offer::ACTION {
+            if let Some(over) = self.drag_over.as_mut().filter(|over| over.offer == message.object)
+            {
+                over.action = arguments.uint();
             }
             return;
         }
@@ -1495,17 +1613,7 @@ impl State {
                     PNG => contents.png.clone(),
                     _ => contents.text.clone().map(String::into_bytes),
                 };
-                // The other program is reading the other end of a pipe; if
-                // it has stopped reading, the write fails and that is all.
-                use std::io::Write;
-                use std::os::fd::{AsRawFd, FromRawFd};
-                // SAFETY: the descriptor was handed over by the compositor
-                // and is owned here; the file closes it.
-                let mut file = unsafe { <std::fs::File as FromRawFd>::from_raw_fd(fd.as_raw_fd()) };
-                core::mem::forget(fd);
-                if let Some(bytes) = bytes {
-                    let _ = file.write_all(&bytes);
-                }
+                write_to(fd, bytes.as_deref().unwrap_or_default());
             }
             p::wl_data_source::CANCELLED => {
                 // Somebody else owns the clipboard now.
@@ -1517,6 +1625,152 @@ impl State {
             }
             _ => {}
         }
+    }
+
+    /// A drag came over a window: what it offers, whether this program
+    /// takes it, and — to the compositor — which format it would ask for and
+    /// that a move or a copy would both do, a move rather.
+    fn drag_entered(&mut self, serial: u32, surface: u32, at: (i32, i32), offer: u32) {
+        if let Some(old) = self.drag_over.take() {
+            let _ = self.connection.send(&Request::new(old.offer, p::wl_data_offer::DESTROY));
+        }
+        let formats = self.building.remove(&offer).unwrap_or_default();
+        let own = self.dragging.is_some();
+        let files = !own && formats.iter().any(|format| format == URI_LIST);
+        let wanted = if files {
+            Some(URI_LIST)
+        } else {
+            [TEXT, "text/plain", "UTF8_STRING", HTML, RTF, PNG]
+                .into_iter()
+                .find(|wanted| formats.iter().any(|format| format == wanted))
+        };
+        let accepted = wanted.is_some();
+        let mut request = Request::new(offer, p::wl_data_offer::ACCEPT).uint(serial);
+        request = match wanted {
+            Some(format) => request.string(format),
+            // No format: the protocol's null string.
+            None => request.uint(0),
+        };
+        let _ = self.connection.send(&request);
+        let _ = self.connection.send(
+            &Request::new(offer, p::wl_data_offer::SET_ACTIONS)
+                .uint(if accepted { p::dnd_action::COPY | p::dnd_action::MOVE } else { 0 })
+                .uint(if accepted { p::dnd_action::MOVE } else { 0 }),
+        );
+        if accepted && !files && !own {
+            let event = Event::DataDragOver { x: at.0, y: at.1 };
+            HANDED_ON.with(|slot| slot.borrow_mut().push((surface, event)));
+        }
+        self.drag_over = Some(DragOver {
+            offer,
+            surface,
+            formats,
+            files,
+            accepted,
+            action: p::dnd_action::MOVE,
+            at,
+            own,
+        });
+    }
+
+    /// The drag was let go on a window. Another program's: what it carries
+    /// is read in the formats this program takes, and the offer finished.
+    /// This program's own, come back: where it landed is noted for the drag
+    /// to say, and nothing is read — the program giving it is this one, busy
+    /// giving it.
+    fn drag_dropped(&mut self) {
+        let Some(over) = self.drag_over.take() else { return };
+        let (x, y) = over.at;
+        if over.own {
+            if let Some(dragging) = &mut self.dragging {
+                dragging.landed = Some((over.surface, x, y));
+            }
+        } else if over.accepted {
+            let offered = |format: &str| over.formats.iter().any(|known| known == format);
+            let event = if over.files {
+                let list = self.read_offer(over.offer, URI_LIST).unwrap_or_default();
+                let paths = super::files::paths_of_uri_list(&String::from_utf8_lossy(&list));
+                (!paths.is_empty()).then_some(Event::FilesDropped { paths, x, y })
+            } else {
+                let mut read = |format: &str| {
+                    offered(format).then(|| self.read_offer(over.offer, format)).flatten()
+                };
+                let text = [TEXT, "text/plain", "UTF8_STRING"]
+                    .into_iter()
+                    .find_map(&mut read)
+                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+                let contents =
+                    Contents { text, html: read(HTML), rtf: read(RTF), png: read(PNG), dib: None };
+                (!contents.is_empty()).then_some(Event::DataDropped {
+                    contents,
+                    x,
+                    y,
+                    copying: over.action != p::dnd_action::MOVE,
+                })
+            };
+            if let Some(event) = event {
+                HANDED_ON.with(|slot| slot.borrow_mut().push((over.surface, event)));
+            }
+        }
+        if over.accepted {
+            let _ = self.connection.send(&Request::new(over.offer, p::wl_data_offer::FINISH));
+        }
+        let _ = self.connection.send(&Request::new(over.offer, p::wl_data_offer::DESTROY));
+    }
+
+    /// The compositor, about this program's own drag: which format the
+    /// window under it would take, what it wants the data in, what was
+    /// settled on, and how it ended.
+    fn drag_source_event(&mut self, message: &Message) {
+        let mut arguments = message.arguments();
+        match message.opcode {
+            p::wl_data_source::SEND => {
+                let format = arguments.string();
+                let Some(fd) = self.connection.take_fd() else { return };
+                let Some(dragging) = &self.dragging else { return };
+                let contents = &dragging.contents;
+                let bytes = match format.as_str() {
+                    HTML => contents.html.clone(),
+                    RTF => contents.rtf.clone(),
+                    PNG => contents.png.clone(),
+                    _ => contents.text.clone().map(String::into_bytes),
+                };
+                write_to(fd, bytes.as_deref().unwrap_or_default());
+            }
+            p::wl_data_source::ACTION => {
+                if let Some(dragging) = &mut self.dragging {
+                    dragging.action = arguments.uint();
+                }
+            }
+            p::wl_data_source::DND_DROP_PERFORMED => {
+                if let Some(dragging) = &mut self.dragging {
+                    dragging.dropped = true;
+                }
+            }
+            p::wl_data_source::DND_FINISHED => {
+                if let Some(dragging) = &mut self.dragging {
+                    dragging.finished = true;
+                }
+            }
+            p::wl_data_source::CANCELLED => {
+                if let Some(dragging) = &mut self.dragging {
+                    dragging.cancelled = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Reads a drag's offer in one format.
+    fn read_offer(&mut self, offer: u32, format: &str) -> Option<Vec<u8>> {
+        let (mut reader, writer) = std::os::unix::net::UnixStream::pair().ok()?;
+        use std::os::fd::AsRawFd;
+        let request = Request::new(offer, p::wl_data_offer::RECEIVE)
+            .string(format)
+            .with_fd(writer.as_raw_fd());
+        self.connection.send(&request).ok()?;
+        drop(writer);
+        read_until_closed(&mut reader)
     }
 
     /// Reads what another program has put on the clipboard, in one format.
@@ -1537,22 +1791,7 @@ impl State {
         // This program must let go of its end of the pair, or the read
         // below would wait for itself to write.
         drop(writer);
-        // The other program may be slow or may never answer: what has
-        // arrived by then is what there is.
-        let _ = reader.set_read_timeout(Some(Duration::from_millis(1500)));
-        let deadline = Instant::now() + Duration::from_millis(1500);
-        let mut bytes = Vec::new();
-        use std::io::Read;
-        while Instant::now() < deadline {
-            let mut chunk = [0u8; 4096];
-            match reader.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(count) => bytes.extend_from_slice(&chunk[..count]),
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => break,
-            }
-        }
-        (!bytes.is_empty()).then_some(bytes)
+        read_until_closed(&mut reader)
     }
 
     /// Puts something on the clipboard, in every format it has.
@@ -1723,8 +1962,120 @@ pub(crate) fn selection_changed() {}
 
 pub(crate) fn set_frame_appearance(_dark: bool, _border: (u8, u8, u8), _caption: (u8, u8, u8)) {}
 
-pub(crate) fn start_drag(_contents: &Contents) -> DragEffect {
-    DragEffect::None
+/// Gives the contents to the compositor as a drag from the window the
+/// button went down in, and follows it until it is let go or given up —
+/// the compositor carries it, and says where it went and what was done
+/// with it.
+pub(crate) fn start_drag(contents: &Contents) -> DragEffect {
+    let surface = WINDOW.with(Cell::get);
+    let started = with_state(|state| state.begin_drag(surface, contents)).unwrap_or(false);
+    if !started {
+        return DragEffect::None;
+    }
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
+        let message =
+            with_state(|state| state.connection.next_message(Duration::from_millis(TICK_MILLIS)));
+        match message {
+            Some(Ok(Some(message))) => {
+                with_state(|state| state.handle(&message));
+            }
+            Some(Ok(None)) => {}
+            Some(Err(_)) | None => break,
+        }
+        let over = with_state(|state| {
+            state.dragging.as_ref().is_none_or(|dragging| {
+                dragging.cancelled
+                    || dragging.finished
+                    || (dragging.landed.is_some() && dragging.dropped)
+            })
+        })
+        .unwrap_or(true);
+        if over || Instant::now() > deadline {
+            break;
+        }
+    }
+    with_state(|state| {
+        let Some(dragging) = state.dragging.take() else { return DragEffect::None };
+        let _ = state.connection.send(&Request::new(dragging.source, p::wl_data_source::DESTROY));
+        if let Some((_, x, y)) = dragging.landed {
+            return DragEffect::DroppedOnSelf {
+                x,
+                y,
+                copying: dragging.action == p::dnd_action::COPY,
+            };
+        }
+        if dragging.cancelled || !dragging.dropped {
+            return DragEffect::None;
+        }
+        if dragging.action == p::dnd_action::MOVE {
+            DragEffect::Move
+        } else {
+            DragEffect::Copy
+        }
+    })
+    .unwrap_or(DragEffect::None)
+}
+
+impl State {
+    /// Offers the contents in every format they have, and asks the
+    /// compositor to start the drag — which it does only for the button
+    /// press it last told this program of.
+    fn begin_drag(&mut self, surface: u32, contents: &Contents) -> bool {
+        if self.data_device == 0 || self.globals.data_device_manager == 0 || contents.is_empty() {
+            return false;
+        }
+        let source = self.connection.make_id();
+        let request = Request::new(
+            self.globals.data_device_manager,
+            p::wl_data_device_manager::CREATE_DATA_SOURCE,
+        )
+        .uint(source);
+        if self.connection.send(&request).is_err() {
+            return false;
+        }
+        let mut formats = Vec::new();
+        if contents.text.is_some() {
+            formats.extend([TEXT, "text/plain", "UTF8_STRING", "TEXT", "STRING"]);
+        }
+        if contents.html.is_some() {
+            formats.push(HTML);
+        }
+        if contents.rtf.is_some() {
+            formats.push(RTF);
+        }
+        if contents.png.is_some() {
+            formats.push(PNG);
+        }
+        for format in formats {
+            let _ = self
+                .connection
+                .send(&Request::new(source, p::wl_data_source::OFFER).string(format));
+        }
+        let _ = self.connection.send(
+            &Request::new(source, p::wl_data_source::SET_ACTIONS)
+                .uint(p::dnd_action::COPY | p::dnd_action::MOVE),
+        );
+        let request = Request::new(self.data_device, p::wl_data_device::START_DRAG)
+            .uint(source)
+            .uint(surface)
+            // No picture under the pointer: the compositor's own.
+            .uint(0)
+            .uint(self.pointer_serial);
+        if self.connection.send(&request).is_err() {
+            return false;
+        }
+        self.dragging = Some(Dragging {
+            source,
+            contents: contents.clone(),
+            action: 0,
+            dropped: false,
+            finished: false,
+            cancelled: false,
+            landed: None,
+        });
+        true
+    }
 }
 
 pub(crate) fn clipboard_set_contents(contents: &Contents) -> bool {

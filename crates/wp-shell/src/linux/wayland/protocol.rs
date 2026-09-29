@@ -144,25 +144,44 @@ pub(crate) mod wl_data_device_manager {
 }
 
 pub(crate) mod wl_data_device {
+    pub(crate) const START_DRAG: u16 = 0;
     pub(crate) const SET_SELECTION: u16 = 1;
     // Events.
     pub(crate) const DATA_OFFER: u16 = 0;
+    pub(crate) const ENTER: u16 = 1;
+    pub(crate) const LEAVE: u16 = 2;
+    pub(crate) const MOTION: u16 = 3;
+    pub(crate) const DROP: u16 = 4;
     pub(crate) const SELECTION: u16 = 5;
 }
 
 pub(crate) mod wl_data_offer {
+    pub(crate) const ACCEPT: u16 = 0;
     pub(crate) const RECEIVE: u16 = 1;
     pub(crate) const DESTROY: u16 = 2;
+    pub(crate) const FINISH: u16 = 3;
+    pub(crate) const SET_ACTIONS: u16 = 4;
     // Events.
     pub(crate) const OFFER: u16 = 0;
+    pub(crate) const ACTION: u16 = 2;
 }
 
 pub(crate) mod wl_data_source {
     pub(crate) const OFFER: u16 = 0;
     pub(crate) const DESTROY: u16 = 1;
+    pub(crate) const SET_ACTIONS: u16 = 2;
     // Events.
     pub(crate) const SEND: u16 = 1;
     pub(crate) const CANCELLED: u16 = 2;
+    pub(crate) const DND_DROP_PERFORMED: u16 = 3;
+    pub(crate) const DND_FINISHED: u16 = 4;
+    pub(crate) const ACTION: u16 = 5;
+}
+
+/// What a drag may do with what it carries, as the data device numbers it.
+pub(crate) mod dnd_action {
+    pub(crate) const COPY: u32 = 1;
+    pub(crate) const MOVE: u32 = 2;
 }
 
 pub(crate) mod wl_output {

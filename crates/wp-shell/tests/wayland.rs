@@ -37,6 +37,11 @@ impl Compositor {
     /// it makes belongs to that user; this program, being root, may still
     /// connect to it, which is the whole of why that works.
     fn start(name: &str, width: u32, height: u32) -> Option<Self> {
+        Self::start_with(name, width, height, "")
+    }
+
+    /// Starts one with lines of its configuration added.
+    fn start_with(name: &str, width: u32, height: u32, extra: &str) -> Option<Self> {
         let runtime =
             std::env::temp_dir().join(format!("wp-wayland-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&runtime);
@@ -52,7 +57,7 @@ impl Compositor {
 default_floating_border none
 gaps inner 0
 output HEADLESS-1 resolution {width}x{height}
-"
+{extra}"
         )
         .ok()?;
         drop(file);
@@ -345,37 +350,32 @@ fn a_window_opens_paints_takes_typing_and_closes_on_a_real_compositor() {
     );
 }
 
-// --- Composing through the compositor's input method -------------------------
+// --- The test's own clients of the compositor --------------------------------
 
-/// An input method of the test's own, which is the other end the
-/// compositor relays between: it tells the compositor it composes text,
-/// and when a window asks for text it composes 한글 into it a letter at a
-/// time, as a Korean input method would, committing each syllable when the
-/// next begins. What is under test is the window's end; this only drives,
-/// the way `wtype` drives the keyboard, and the compositor between them is
-/// sway's own relay.
-mod input_method {
+/// A client of the compositor spoken to on the wire, for the test's own
+/// input method and its own pointer: messages of an object, an opcode and a
+/// length, then arguments, the way the protocol says.
+mod client {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::path::Path;
     use std::time::{Duration, Instant};
 
-    /// The compositor's socket, spoken to the way the protocol says:
-    /// messages of an object, an opcode and a length, then arguments.
-    struct Wire {
+    pub(super) struct Wire {
         stream: UnixStream,
         inbox: Vec<u8>,
+        next: u32,
     }
 
-    fn uint(value: u32) -> Vec<u8> {
+    pub(super) fn uint(value: u32) -> Vec<u8> {
         value.to_ne_bytes().to_vec()
     }
 
-    fn int(value: i32) -> Vec<u8> {
+    pub(super) fn int(value: i32) -> Vec<u8> {
         uint(value as u32)
     }
 
-    fn string(text: &str) -> Vec<u8> {
+    pub(super) fn string(text: &str) -> Vec<u8> {
         let mut bytes = uint(text.len() as u32 + 1);
         bytes.extend_from_slice(text.as_bytes());
         bytes.push(0);
@@ -385,8 +385,60 @@ mod input_method {
         bytes
     }
 
+    /// Reads a string argument at the start of a body.
+    fn string_at(body: &[u8]) -> String {
+        let length = u32::from_ne_bytes([body[0], body[1], body[2], body[3]]) as usize;
+        String::from_utf8_lossy(&body[4..4 + length.saturating_sub(1)]).into_owned()
+    }
+
     impl Wire {
-        fn send(&mut self, object: u32, opcode: u16, arguments: &[Vec<u8>]) {
+        /// Connects, and binds the globals asked for by their interface at
+        /// the version given; their objects, in the order asked.
+        pub(super) fn connect(
+            runtime: &Path,
+            display: &str,
+            wanted: &[(&str, u32)],
+        ) -> Result<(Self, Vec<u32>), String> {
+            let stream = UnixStream::connect(runtime.join(display))
+                .map_err(|error| format!("cannot reach the compositor: {error}"))?;
+            let mut wire = Self { stream, inbox: Vec::new(), next: 4 };
+            let until = Instant::now() + Duration::from_secs(10);
+            // The registry, and a round trip for the list of what is offered.
+            wire.send(1, 1, &[uint(2)]);
+            wire.send(1, 0, &[uint(3)]);
+            let mut offered = Vec::new();
+            loop {
+                let (object, opcode, body) =
+                    wire.event(until).ok_or("the compositor did not answer")?;
+                if object == 2 && opcode == 0 {
+                    let name = u32::from_ne_bytes([body[0], body[1], body[2], body[3]]);
+                    offered.push((name, string_at(&body[4..])));
+                }
+                if object == 3 {
+                    break;
+                }
+            }
+            let mut objects = Vec::new();
+            for (interface, version) in wanted {
+                let name = offered
+                    .iter()
+                    .find(|(_, offered)| offered == interface)
+                    .map(|(name, _)| *name)
+                    .ok_or_else(|| format!("the compositor has no {interface}"))?;
+                let id = wire.new_id();
+                wire.send(2, 0, &[uint(name), string(interface), uint(*version), uint(id)]);
+                objects.push(id);
+            }
+            Ok((wire, objects))
+        }
+
+        pub(super) fn new_id(&mut self) -> u32 {
+            let id = self.next;
+            self.next += 1;
+            id
+        }
+
+        pub(super) fn send(&mut self, object: u32, opcode: u16, arguments: &[Vec<u8>]) {
             let body: Vec<u8> = arguments.concat();
             let mut message = uint(object);
             message.extend(uint(((8 + body.len() as u32) << 16) | u32::from(opcode)));
@@ -395,7 +447,7 @@ mod input_method {
         }
 
         /// The next event, or nothing once the wait is over.
-        fn event(&mut self, until: Instant) -> Option<(u32, u16, Vec<u8>)> {
+        pub(super) fn event(&mut self, until: Instant) -> Option<(u32, u16, Vec<u8>)> {
             loop {
                 if self.inbox.len() >= 8 {
                     let word = |at: usize| {
@@ -426,52 +478,40 @@ mod input_method {
             }
         }
     }
+}
 
-    /// Reads a string argument at the start of a body.
-    fn string_at(body: &[u8]) -> String {
-        let length = u32::from_ne_bytes([body[0], body[1], body[2], body[3]]) as usize;
-        String::from_utf8_lossy(&body[4..4 + length.saturating_sub(1)]).into_owned()
-    }
+// --- Composing through the compositor's input method -------------------------
+
+/// An input method of the test's own, which is the other end the
+/// compositor relays between: it tells the compositor it composes text,
+/// and when a window asks for text it composes 한글 into it a letter at a
+/// time, as a Korean input method would, committing each syllable when the
+/// next begins. What is under test is the window's end; this only drives,
+/// the way `wtype` drives the keyboard, and the compositor between them is
+/// sway's own relay.
+mod input_method {
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    use super::client::{int, string, uint, Wire};
 
     /// Runs the input method until it has composed its word, or the time is
     /// up; what went wrong, where something did.
     pub(super) fn compose(runtime: &Path, display: &str) -> Result<(), String> {
-        let stream = UnixStream::connect(runtime.join(display))
-            .map_err(|error| format!("cannot reach the compositor: {error}"))?;
-        let mut wire = Wire { stream, inbox: Vec::new() };
+        let (mut wire, objects) =
+            Wire::connect(runtime, display, &[("wl_seat", 1), ("zwp_input_method_manager_v2", 1)])?;
+        let (seat, manager) = (objects[0], objects[1]);
         let until = Instant::now() + Duration::from_secs(30);
-        // The registry, and a round trip for the list of what is offered.
-        wire.send(1, 1, &[uint(2)]);
-        wire.send(1, 0, &[uint(3)]);
-        let mut offered = Vec::new();
-        loop {
-            let (object, opcode, body) =
-                wire.event(until).ok_or("the compositor did not answer")?;
-            if object == 2 && opcode == 0 {
-                let name = u32::from_ne_bytes([body[0], body[1], body[2], body[3]]);
-                offered.push((name, string_at(&body[4..])));
-            }
-            if object == 3 {
-                break;
-            }
-        }
-        let name_of = |wanted: &str| {
-            offered.iter().find(|(_, interface)| interface == wanted).map(|(name, _)| *name)
-        };
-        let seat = name_of("wl_seat").ok_or("no seat")?;
-        let manager =
-            name_of("zwp_input_method_manager_v2").ok_or("the compositor has no input methods")?;
-        wire.send(2, 0, &[uint(seat), string("wl_seat"), uint(1), uint(4)]);
-        wire.send(2, 0, &[uint(manager), string("zwp_input_method_manager_v2"), uint(1), uint(5)]);
         // The input method for the seat.
-        wire.send(5, 0, &[uint(4), uint(6)]);
+        let method = wire.new_id();
+        wire.send(manager, 0, &[uint(seat), uint(method)]);
 
         let mut done = 0u32;
         let mut active = false;
         loop {
             let (object, opcode, _) =
                 wire.event(until).ok_or("no window asked for text in time")?;
-            if object != 6 {
+            if object != method {
                 continue;
             }
             match opcode {
@@ -502,19 +542,19 @@ mod input_method {
         ];
         for (commit, preedit, begin, end) in steps {
             if !commit.is_empty() {
-                wire.send(6, 0, &[string(commit)]);
+                wire.send(method, 0, &[string(commit)]);
             }
             if !preedit.is_empty() {
-                wire.send(6, 1, &[string(preedit), int(begin), int(end)]);
+                wire.send(method, 1, &[string(preedit), int(begin), int(end)]);
             }
-            wire.send(6, 3, &[uint(done)]);
+            wire.send(method, 3, &[uint(done)]);
             std::thread::sleep(Duration::from_millis(150));
             // Whatever the compositor said meanwhile is counted, so that
             // the next batch names the state it follows.
             while let Some((object, opcode, _)) =
                 wire.event(Instant::now() + Duration::from_millis(20))
             {
-                if object == 6 && opcode == 5 {
+                if object == method && opcode == 5 {
                     done += 1;
                 }
             }
@@ -630,4 +670,334 @@ fn text_composed_by_the_compositors_input_method_is_shown_and_committed() {
         "the caret's place reached the compositor"
     );
     assert!(log.contains(".enable()"), "and text was asked for");
+}
+
+// --- Dragging and dropping between programs ---------------------------------
+
+/// A pointer of the test's own — the compositor's virtual pointer, which is
+/// how a program without a mouse moves one — so that a drag can be made the
+/// way a hand makes it: pressed on one window, carried, let go on another.
+mod pointer {
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    use super::client::{uint, Wire};
+
+    pub(super) struct Pointer {
+        wire: Wire,
+        id: u32,
+        extent: (u32, u32),
+        started: Instant,
+    }
+
+    impl Pointer {
+        pub(super) fn new(
+            runtime: &Path,
+            display: &str,
+            width: u32,
+            height: u32,
+        ) -> Result<Self, String> {
+            let (mut wire, objects) = Wire::connect(
+                runtime,
+                display,
+                &[("wl_seat", 1), ("zwlr_virtual_pointer_manager_v1", 1)],
+            )?;
+            let id = wire.new_id();
+            wire.send(objects[1], 0, &[uint(objects[0]), uint(id)]);
+            Ok(Self { wire, id, extent: (width, height), started: Instant::now() })
+        }
+
+        fn time(&self) -> u32 {
+            self.started.elapsed().as_millis() as u32
+        }
+
+        fn move_to(&mut self, (x, y): (i32, i32)) {
+            let time = self.time();
+            let (width, height) = self.extent;
+            self.wire.send(
+                self.id,
+                1,
+                &[uint(time), uint(x as u32), uint(y as u32), uint(width), uint(height)],
+            );
+            self.wire.send(self.id, 4, &[]);
+        }
+
+        fn button(&mut self, pressed: bool) {
+            let time = self.time();
+            self.wire.send(self.id, 2, &[uint(time), uint(0x110), uint(u32::from(pressed))]);
+            self.wire.send(self.id, 4, &[]);
+        }
+
+        /// Pressed at one point, carried a step at a time to another, and
+        /// let go there.
+        pub(super) fn drag(&mut self, from: (i32, i32), to: (i32, i32)) {
+            self.move_to(from);
+            std::thread::sleep(Duration::from_millis(300));
+            self.button(true);
+            for step in 1..=12 {
+                std::thread::sleep(Duration::from_millis(80));
+                self.move_to((
+                    from.0 + (to.0 - from.0) * step / 12,
+                    from.1 + (to.1 - from.1) * step / 12,
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(400));
+            self.button(false);
+        }
+    }
+}
+
+/// Where the windows go: the peer at the right, this program's at the
+/// left, both floating so that where each is is known.
+const PLACES: &str = "for_window [title=\"^dnd peer\"] floating enable, move absolute position 500 0, resize set 300 300
+for_window [title=\"^Hand \"] floating enable, move absolute position 0 0, resize set 400 300
+";
+
+/// The peer, as a client of the compositor, and what it says.
+fn peer(
+    compositor: &Compositor,
+    arguments: &[&str],
+) -> Option<(Child, std::sync::mpsc::Receiver<String>)> {
+    use std::io::{BufRead, BufReader};
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/dnd-peer.py");
+    let mut child = compositor
+        .client("python3")
+        .arg(script)
+        .args(arguments)
+        .env("GDK_BACKEND", "wayland")
+        .env("NO_AT_BRIDGE", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let out = child.stdout.take()?;
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(out).lines().map_while(Result::ok) {
+            let _ = sender.send(line);
+        }
+    });
+    let first = receiver.recv_timeout(Duration::from_secs(15)).ok();
+    if first.as_deref() != Some("ready") {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    }
+    Some((child, receiver))
+}
+
+fn gtk_is_here() -> bool {
+    Command::new("python3")
+        .args(["-c", "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk"])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// What the program saw.
+#[derive(Default)]
+struct Handled {
+    over: Vec<(i32, i32)>,
+    dropped: Option<(wp_shell::clipboard::Contents, i32, i32, bool)>,
+    files: Option<(Vec<PathBuf>, i32, i32)>,
+    effect: Option<wp_shell::DragEffect>,
+}
+
+/// A program that takes drops, or gives a drag once the button is held
+/// and the pointer moves, and closes when it has what it came for.
+struct Hand {
+    canvas: Canvas,
+    seen: std::rc::Rc<std::cell::RefCell<Handled>>,
+    gives: Option<wp_shell::clipboard::Contents>,
+    pressed: bool,
+    started: Instant,
+    done_at: Option<Instant>,
+}
+
+impl App for Hand {
+    fn handle(&mut self, event: Event) -> Response {
+        match event {
+            Event::DataDragOver { x, y } => self.seen.borrow_mut().over.push((x, y)),
+            Event::DataDropped { contents, x, y, copying } => {
+                self.seen.borrow_mut().dropped = Some((contents, x, y, copying));
+                self.done_at = Some(Instant::now());
+            }
+            Event::FilesDropped { paths, x, y } => {
+                self.seen.borrow_mut().files = Some((paths, x, y));
+                self.done_at = Some(Instant::now());
+            }
+            Event::MouseDown { .. } => self.pressed = true,
+            Event::MouseMove { held: true, .. } if self.pressed => {
+                self.pressed = false;
+                if let Some(contents) = self.gives.take() {
+                    let effect = wp_shell::start_drag(&contents);
+                    self.seen.borrow_mut().effect = Some(effect);
+                    self.done_at = Some(Instant::now());
+                }
+            }
+            Event::Tick => {
+                let settled =
+                    self.done_at.is_some_and(|at| at.elapsed() > Duration::from_millis(1500));
+                if settled || self.started.elapsed() > Duration::from_secs(40) {
+                    return Response::Close;
+                }
+            }
+            _ => {}
+        }
+        Response::Ignored
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.canvas = Canvas::new(width, height);
+        self.canvas.clear(Color::WHITE);
+        &self.canvas
+    }
+}
+
+/// Runs this program's window, with the test's pointer making one drag
+/// once the windows are up; what the program saw.
+fn drag_on(
+    compositor: &Compositor,
+    title: &str,
+    gives: Option<wp_shell::clipboard::Contents>,
+    from: (i32, i32),
+    to: (i32, i32),
+) -> Handled {
+    let mover = {
+        let runtime = compositor.runtime.clone();
+        let display = compositor.display.clone();
+        std::thread::spawn(move || {
+            let mut pointer = pointer::Pointer::new(&runtime, &display, 1000, 600)
+                .expect("the compositor gives the test a pointer");
+            // The window mapped, placed and drawn.
+            std::thread::sleep(Duration::from_millis(2500));
+            pointer.drag(from, to);
+            std::thread::sleep(Duration::from_millis(3000));
+        })
+    };
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Handled::default()));
+    let hand = Hand {
+        canvas: Canvas::new(1, 1),
+        seen: std::rc::Rc::clone(&seen),
+        gives,
+        pressed: false,
+        started: Instant::now(),
+        done_at: None,
+    };
+    let options = WindowOptions { title: format!("Hand {title}"), width: 400, height: 300 };
+    wp_shell::run(options, Box::new(hand)).expect("the window opens on the compositor");
+    mover.join().expect("the pointer moved");
+    std::rc::Rc::try_unwrap(seen).ok().expect("the shell let go").into_inner()
+}
+
+/// What the peer said, until it has said nothing for a moment.
+fn said(receiver: &std::sync::mpsc::Receiver<String>) -> Vec<String> {
+    let mut lines = Vec::new();
+    while let Ok(line) = receiver.recv_timeout(Duration::from_secs(3)) {
+        lines.push(line);
+    }
+    lines
+}
+
+#[test]
+fn text_dragged_from_another_program_is_dropped_on_the_window() {
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !gtk_is_here() {
+        eprintln!("skipped: GTK is not on this machine");
+        return;
+    }
+    let Some(compositor) = Compositor::start_with("drop-text", 1000, 600, PLACES) else {
+        eprintln!("skipped: no compositor could be started on this machine");
+        return;
+    };
+    let (mut peer, told) =
+        peer(&compositor, &["source", "text", "dragged from GTK"]).expect("the peer is up");
+    let seen = drag_on(&compositor, "taker", None, (650, 150), (200, 120));
+    let told = said(&told);
+    let _ = peer.kill();
+    let _ = peer.wait();
+
+    let (contents, x, y, _) = seen.dropped.expect("the drop arrived");
+    assert_eq!(contents.text.as_deref(), Some("dragged from GTK"));
+    assert_eq!((x, y), (200, 120), "where it was let go");
+    assert!(!seen.over.is_empty(), "the place it would land was followed on the way");
+    assert!(
+        told.iter().any(|line| line.starts_with("action ") && line != "action none"),
+        "and the giver was told it was taken: {told:?}"
+    );
+}
+
+#[test]
+fn a_file_dragged_from_another_program_arrives_as_its_path_on_the_window() {
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !gtk_is_here() {
+        eprintln!("skipped: GTK is not on this machine");
+        return;
+    }
+    let Some(compositor) = Compositor::start_with("drop-file", 1000, 600, PLACES) else {
+        eprintln!("skipped: no compositor could be started on this machine");
+        return;
+    };
+    let file = std::env::temp_dir().join(format!("wp wayland dnd {}.txt", std::process::id()));
+    std::fs::write(&file, b"a file").expect("a file to drag");
+    let (mut peer, _told) = peer(&compositor, &["source", "file", &file.display().to_string()])
+        .expect("the peer is up");
+    let seen = drag_on(&compositor, "taker of files", None, (650, 150), (150, 100));
+    let _ = peer.kill();
+    let _ = peer.wait();
+    let _ = std::fs::remove_file(&file);
+
+    let (paths, x, y) = seen.files.expect("the files arrived");
+    assert_eq!(paths, vec![file]);
+    assert_eq!((x, y), (150, 100));
+}
+
+#[test]
+fn text_dragged_out_of_the_window_is_taken_by_another_program() {
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !gtk_is_here() {
+        eprintln!("skipped: GTK is not on this machine");
+        return;
+    }
+    let Some(compositor) = Compositor::start_with("drag-out", 1000, 600, PLACES) else {
+        eprintln!("skipped: no compositor could be started on this machine");
+        return;
+    };
+    let (mut peer, told) = peer(&compositor, &["target"]).expect("the peer is up");
+    let contents = wp_shell::clipboard::Contents {
+        text: Some("dragged out of the shell".to_owned()),
+        ..wp_shell::clipboard::Contents::default()
+    };
+    let seen = drag_on(&compositor, "giver", Some(contents), (150, 150), (650, 150));
+    let told = said(&told);
+    let _ = peer.kill();
+    let _ = peer.wait();
+
+    assert!(
+        told.contains(&"text dragged out of the shell".to_owned()),
+        "the other program took the text: {told:?}"
+    );
+    assert!(
+        matches!(seen.effect, Some(wp_shell::DragEffect::Move | wp_shell::DragEffect::Copy)),
+        "and the drag says it was taken: {:?}",
+        seen.effect
+    );
+}
+
+#[test]
+fn a_drag_let_go_on_its_own_window_says_where_on_the_compositor() {
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(compositor) = Compositor::start_with("drag-home", 1000, 600, PLACES) else {
+        eprintln!("skipped: no compositor could be started on this machine");
+        return;
+    };
+    let contents = wp_shell::clipboard::Contents {
+        text: Some("stays home".to_owned()),
+        ..wp_shell::clipboard::Contents::default()
+    };
+    let seen = drag_on(&compositor, "home", Some(contents), (60, 60), (300, 220));
+    assert!(
+        matches!(seen.effect, Some(wp_shell::DragEffect::DroppedOnSelf { x: 300, y: 220, .. })),
+        "{:?}",
+        seen.effect
+    );
 }

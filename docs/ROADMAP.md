@@ -6241,10 +6241,57 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   other scripts is held to their code pages; Wayland's input-method popup
   for candidates, which is the input method's to make; and the Wayland
   test's input method is the test's own, its other end being sway's relay.
-- [ ] **H10. Drag and drop between programs on Linux.** XDND on X11 and
+- [x] **H10. Drag and drop between programs on Linux.** XDND on X11 and
   `wl_data_device`'s half of it on Wayland. The events exist inside the
   program — **H3** built them for Windows — and nothing on Linux raises them.
   Named in **H6** and **H8**.
+  *Done:* both directions on both, raising **H3**'s events and answering
+  its one call, so the editor takes and gives drags on Linux as it does on
+  Windows.
+  **X11: XDND**, version 5, in the X shell. Every window says it takes
+  drops. A drag coming over one is told, position by position, whether it
+  would be taken and as a copy or a move — a move where the giver asks for
+  one — while the window is told where it would land; let go, what it
+  carries is asked for as the drop's own selection in the formats this
+  program takes — the words, HTML, Rich Text, a picture — or, for files,
+  their addresses, read back as paths with their escapes undone; and the
+  giver is told it is done and what was done. Giving a drag: the formats
+  offered, the selection taken, the pointer taken for the length of it; the
+  window that takes drops under the pointer found through the window
+  manager's frames, told the drag has come and where it is, one position
+  at a time as it answers; let go where it was taken, the drop is made and
+  the selection served until the taker says it has finished — a copy or a
+  move — and let go on one of this program's own windows it is where it
+  landed; Escape gives it up.
+  **Wayland: the data device.** A drag over a window: which format would
+  be asked for, and that a copy or a move would do, a move rather; where it
+  is as it moves; let go, what it carries read, and the offer finished.
+  Giving one: a source in every format the contents have, copy or move,
+  started from the button press that began it; the compositor's answers
+  followed until the drop is finished or cancelled; and come back over its
+  own window, where it landed, without asking itself for what it carries.
+  Along the way: reading a pipe the compositor hands over, and writing one,
+  are one function each, for the clipboard and the drags alike, the last
+  unsafe line in that code gone with it.
+  *Proven by:* `crates/wp-shell/tests/x_drag_and_drop.rs` and
+  `crates/wp-shell/tests/wayland.rs` — against GTK, which is somebody
+  else's reading of both protocols (`tools/dnd-peer.py`, a window that
+  gives a drag or takes a drop and says what it was), on Xvfb with xdotool
+  moving the pointer and on sway with a virtual pointer of the test's own:
+  text dragged from GTK dropped where it was let go, the place followed on
+  the way, and GTK told it was taken; a file dragged from GTK arriving as
+  its path, spaces and all; text dragged out taken by GTK — on X as a move,
+  so the original is to come out; and a drag let go on its own window
+  saying where. `crates/wp-app/src/xserver.rs` — the whole editor on Xvfb,
+  text dragged from GTK going into the document.
+  *Not done, and named here:* as on Windows, the mark following the
+  pointer while this window's own drag is back over it, and a drag out of
+  a file; a drop handed over in pieces (`INCR` on X), which a large picture
+  would be, and which is refused as the clipboard refuses it — **H14**'s;
+  a window that stands in for another (`XdndProxy`), which some desktops'
+  own windows are; the ask action, which neither side offers; and on
+  Wayland a picture of what is dragged under the pointer, where the
+  compositor shows its own.
 - [ ] **H11. AT-SPI: what a screen reader on Linux is told.** The Windows
   half is **H4**; this is the same information over the other desktop's
   interface, which is D-Bus and is not in this program yet. Named in **H6**.

@@ -70,6 +70,43 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
+/// The files a `text/uri-list` names: its `file:` addresses, a line each,
+/// with the escapes an address is written with taken out. Lines that begin
+/// with `#` are comments.
+pub(crate) fn paths_of_uri_list(list: &str) -> Vec<std::path::PathBuf> {
+    list.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter_map(|line| line.strip_prefix("file://"))
+        .map(|rest| {
+            // A host may stand before the path: `file://host/path`.
+            let path =
+                if rest.starts_with('/') { rest } else { &rest[rest.find('/').unwrap_or(0)..] };
+            std::path::PathBuf::from(unescape(path))
+        })
+        .collect()
+}
+
+/// An address's percent escapes, as the bytes they stand for.
+fn unescape(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let digit = |byte: u8| char::from(byte).to_digit(16);
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' && at + 2 < bytes.len() {
+            if let (Some(high), Some(low)) = (digit(bytes[at + 1]), digit(bytes[at + 2])) {
+                out.push((high * 16 + low) as u8);
+                at += 3;
+                continue;
+            }
+        }
+        out.push(bytes[at]);
+        at += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// A path as a `file:` address, with everything that is not allowed in one
 /// written as a percent escape.
 fn file_uri(path: &Path) -> String {

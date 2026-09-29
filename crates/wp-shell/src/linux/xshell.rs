@@ -68,6 +68,19 @@ struct Atoms {
     image_png: u32,
     incr: u32,
     own_property: u32,
+    xdnd_aware: u32,
+    xdnd_enter: u32,
+    xdnd_position: u32,
+    xdnd_status: u32,
+    xdnd_leave: u32,
+    xdnd_drop: u32,
+    xdnd_finished: u32,
+    xdnd_selection: u32,
+    xdnd_type_list: u32,
+    xdnd_action_copy: u32,
+    xdnd_action_move: u32,
+    text_uri_list: u32,
+    text_plain: u32,
 }
 
 /// Everything the shell holds while it runs.
@@ -88,6 +101,33 @@ struct State {
     scale: f32,
     /// The input method the keys go through, where one is running.
     input_method: Option<InputMethod>,
+    /// Another program's drag, while it is over one of the windows.
+    incoming: Option<Incoming>,
+    /// What this program is dragging, while it is, for the program it is
+    /// let go on to ask for.
+    dragged: Option<Contents>,
+}
+
+/// The version of the drag and drop protocol spoken: the fifth, in which
+/// the drop's target says what it did with what it was given.
+const XDND_VERSION: u32 = 5;
+
+/// A drag another program is giving, while it is over one of this
+/// program's windows.
+#[derive(Debug)]
+struct Incoming {
+    source: u32,
+    window: u32,
+    /// Whether what is dragged is files, said as their addresses.
+    files: bool,
+    /// The formats it is offered in.
+    types: Vec<u32>,
+    /// Whether this program takes any of them.
+    accepted: bool,
+    /// What the source asked for: a copy, or a move.
+    action: u32,
+    /// Where it is, in the application's pixels.
+    at: (i32, i32),
 }
 
 /// The line to an X input method server, and the conversation on it: see
@@ -167,6 +207,19 @@ impl State {
             image_png: atom("image/png")?,
             incr: atom("INCR")?,
             own_property: atom("WORD_PROCESSOR_SELECTION")?,
+            xdnd_aware: atom("XdndAware")?,
+            xdnd_enter: atom("XdndEnter")?,
+            xdnd_position: atom("XdndPosition")?,
+            xdnd_status: atom("XdndStatus")?,
+            xdnd_leave: atom("XdndLeave")?,
+            xdnd_drop: atom("XdndDrop")?,
+            xdnd_finished: atom("XdndFinished")?,
+            xdnd_selection: atom("XdndSelection")?,
+            xdnd_type_list: atom("XdndTypeList")?,
+            xdnd_action_copy: atom("XdndActionCopy")?,
+            xdnd_action_move: atom("XdndActionMove")?,
+            text_uri_list: atom("text/uri-list")?,
+            text_plain: atom("text/plain")?,
         };
         let keymap = connection.keyboard_mapping()?;
         let cursor_font = connection.open_font("cursor")?;
@@ -183,6 +236,8 @@ impl State {
             control_alone: false,
             scale,
             input_method: None,
+            incoming: None,
+            dragged: None,
         })
     }
 
@@ -211,6 +266,14 @@ impl State {
         })?;
         connection.set_property(id, x11::ATOM_WM_NAME, x11::ATOM_STRING, 8, title.as_bytes())?;
         connection.set_property(id, atoms.net_wm_name, atoms.utf8_string, 8, title.as_bytes())?;
+        // Takes drops, in the fifth version of the protocol.
+        connection.set_property(
+            id,
+            atoms.xdnd_aware,
+            x11::ATOM_ATOM,
+            32,
+            &XDND_VERSION.to_le_bytes(),
+        )?;
         let class = connection.atom("WM_CLASS")?;
         connection.set_property(
             id,
@@ -628,6 +691,9 @@ fn handle_packet(packet: &Packet) {
                 let logical_height = (height as f32 / scale).round().max(1.0) as u32;
                 deliver(window, Event::Resized { width: logical_width, height: logical_height });
             }
+        }
+        x11::CLIENT_MESSAGE if is_drop_message(packet.u32_at(8)) => {
+            drop_message(window, scale, packet);
         }
         x11::CLIENT_MESSAGE => {
             let (protocols, delete) =
@@ -1262,7 +1328,420 @@ pub(crate) fn selection_changed() {}
 
 pub(crate) fn set_frame_appearance(_dark: bool, _border: (u8, u8, u8), _caption: (u8, u8, u8)) {}
 
-pub(crate) fn start_drag(_contents: &Contents) -> DragEffect {
+// --- Dragging and dropping ---------------------------------------------------------
+//
+// XDND, the protocol every X desktop drags by: client messages between the
+// program giving the drag and the window it is over — the drag has come,
+// where it is now, whether it would be taken and how, it has gone, it was
+// let go — and the thing itself handed over as a selection of its own,
+// `XdndSelection`, in whichever format the taker asks for.
+
+/// Whether a client message is one of a drag's.
+fn is_drop_message(kind: u32) -> bool {
+    with_state(|state| {
+        let atoms = &state.atoms;
+        [atoms.xdnd_enter, atoms.xdnd_position, atoms.xdnd_leave, atoms.xdnd_drop].contains(&kind)
+    })
+    .unwrap_or(false)
+}
+
+/// A client message word: the protocol's `data.l[index]`.
+fn word(packet: &Packet, index: usize) -> u32 {
+    packet.u32_at(12 + index * 4)
+}
+
+/// The formats a drop is taken in, text first as the richest of them is
+/// asked for afterwards.
+fn taken_formats(atoms: &Atoms) -> [u32; 7] {
+    [
+        atoms.utf8_string,
+        atoms.text_plain_utf8,
+        atoms.text_plain,
+        x11::ATOM_STRING,
+        atoms.text_html,
+        atoms.text_rtf,
+        atoms.image_png,
+    ]
+}
+
+/// Another program's drag, over one of this program's windows.
+fn drop_message(window: u32, scale: f32, packet: &Packet) {
+    let kind = packet.u32_at(8);
+    let event = with_state(|state| {
+        let atoms = &state.atoms;
+        if kind == atoms.xdnd_enter {
+            let source = word(packet, 0);
+            let types: Vec<u32> = if word(packet, 1) & 1 != 0 {
+                let list = atoms.xdnd_type_list;
+                state
+                    .connection
+                    .get_property(source, list, false)
+                    .map(|(_, _, bytes)| {
+                        bytes
+                            .chunks_exact(4)
+                            .map(|four| u32::from_le_bytes([four[0], four[1], four[2], four[3]]))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                (2..5).map(|index| word(packet, index)).filter(|atom| *atom != 0).collect()
+            };
+            let atoms = &state.atoms;
+            let files = types.contains(&atoms.text_uri_list);
+            let accepted = files || taken_formats(atoms).iter().any(|atom| types.contains(atom));
+            state.incoming = Some(Incoming {
+                source,
+                window,
+                files,
+                types,
+                accepted,
+                action: atoms.xdnd_action_copy,
+                at: (0, 0),
+            });
+            return None;
+        }
+        if kind == atoms.xdnd_position {
+            let (copy, moving, status) =
+                (atoms.xdnd_action_copy, atoms.xdnd_action_move, atoms.xdnd_status);
+            let root = word(packet, 2);
+            let asked = word(packet, 4);
+            let (left, top) = state.connection.translate(window, 0, 0).unwrap_or((0, 0));
+            let x = (root >> 16) as i16 as i32 - left;
+            let y = (root & 0xFFFF) as i16 as i32 - top;
+            let at = to_logical(scale, x, y);
+            // Said of the window it came into, or of none.
+            let incoming = state.incoming.as_mut().filter(|incoming| incoming.window == window)?;
+            incoming.at = at;
+            // A move where one is asked for; a copy otherwise, which is
+            // every other action a source could name.
+            incoming.action = if asked == moving { moving } else { copy };
+            let (source, accepted, action, files) =
+                (incoming.source, incoming.accepted, incoming.action, incoming.files);
+            let flags = if accepted { 0b11 } else { 0b10 };
+            let answer = state.connection.client_message(
+                source,
+                status,
+                [window, flags, 0, 0, if accepted { action } else { 0 }],
+            );
+            let _ = state.connection.send_event(source, 0, &answer);
+            let _ = state.connection.flush();
+            return (accepted && !files).then_some(Event::DataDragOver { x: at.0, y: at.1 });
+        }
+        if kind == atoms.xdnd_leave {
+            let incoming = state.incoming.take()?;
+            return (incoming.accepted && !incoming.files).then_some(Event::DataDragLeft);
+        }
+        if kind == atoms.xdnd_drop {
+            let time = word(packet, 2);
+            return dropped(state, window, time);
+        }
+        None
+    })
+    .flatten();
+    if let Some(event) = event {
+        deliver(window, event);
+    }
+}
+
+/// The drag was let go on a window: what it carried is asked for, in the
+/// formats this program takes, and the source told it is done with.
+fn dropped(state: &mut State, window: u32, time: u32) -> Option<Event> {
+    let incoming = state.incoming.take()?;
+    let finished = state.atoms.xdnd_finished;
+    let selection = state.atoms.xdnd_selection;
+    let mut event = None;
+    if incoming.accepted {
+        let (x, y) = incoming.at;
+        if incoming.files {
+            let list = state.atoms.text_uri_list;
+            let paths = fetch_from(state, window, selection, list, time)
+                .map(|bytes| super::files::paths_of_uri_list(&String::from_utf8_lossy(&bytes)))
+                .unwrap_or_default();
+            if !paths.is_empty() {
+                event = Some(Event::FilesDropped { paths, x, y });
+            }
+        } else {
+            let offered = |atom: u32| incoming.types.contains(&atom);
+            let [utf8, plain_utf8, plain, string, html, rtf, png] = taken_formats(&state.atoms);
+            let mut text = None;
+            for format in [utf8, plain_utf8, plain] {
+                if text.is_none() && offered(format) {
+                    text = fetch_from(state, window, selection, format, time)
+                        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+                }
+            }
+            if text.is_none() && offered(string) {
+                text = fetch_from(state, window, selection, string, time)
+                    .map(|bytes| bytes.iter().map(|b| char::from(*b)).collect());
+            }
+            let mut fetch = |format: u32| {
+                offered(format)
+                    .then(|| fetch_from(state, window, selection, format, time))
+                    .flatten()
+            };
+            let contents =
+                Contents { text, html: fetch(html), rtf: fetch(rtf), png: fetch(png), dib: None };
+            if !contents.is_empty() {
+                event = Some(Event::DataDropped {
+                    contents,
+                    x,
+                    y,
+                    copying: incoming.action != state.atoms.xdnd_action_move,
+                });
+            }
+        }
+    }
+    let success = u32::from(event.is_some());
+    let action = if event.is_some() { incoming.action } else { 0 };
+    let answer =
+        state.connection.client_message(incoming.source, finished, [window, success, action, 0, 0]);
+    let _ = state.connection.send_event(incoming.source, 0, &answer);
+    let _ = state.connection.flush();
+    event
+}
+
+/// A window that takes drops, under a point on the screen, and the
+/// version of the protocol it speaks: the deepest window there that says it
+/// takes them, which is the program's own window under a window manager's
+/// frame.
+fn aware_window_at(state: &mut State, x: i16, y: i16) -> Option<(u32, u32)> {
+    let aware = state.atoms.xdnd_aware;
+    let mut current = state.connection.setup.root;
+    for _ in 0..16 {
+        let child = state.connection.child_at(current, x, y).ok()?;
+        if child == 0 {
+            return None;
+        }
+        if let Ok((kind, 32, bytes)) = state.connection.get_property(child, aware, false) {
+            if kind == x11::ATOM_ATOM && bytes.len() >= 4 {
+                return Some((child, u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])));
+            }
+        }
+        current = child;
+    }
+    None
+}
+
+/// The window a drag is over, as the drag sees it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Over {
+    window: u32,
+    version: u32,
+    /// Whether it is one of this program's own windows.
+    own: bool,
+}
+
+/// Gives the contents to the desktop as a drag, until it is let go or
+/// given up. The window's own button press has the pointer already; it is
+/// taken outright for the length of the drag, so that the drag follows it
+/// across the screen.
+pub(crate) fn start_drag(contents: &Contents) -> DragEffect {
+    let window = WINDOW.with(Cell::get);
+    let (effect, kept) = with_state(|state| drag_out(state, window, contents))
+        .unwrap_or((DragEffect::None, Vec::new()));
+    // What arrived meanwhile and was not the drag's goes back to the loop.
+    with_state(|state| {
+        for packet in kept.into_iter().rev() {
+            state.connection.push_front(packet);
+        }
+    });
+    effect
+}
+
+fn drag_out(state: &mut State, window: u32, contents: &Contents) -> (DragEffect, Vec<Packet>) {
+    let atoms = &state.atoms;
+    let (selection, type_list, enter, position, status, leave, drop, finished) = (
+        atoms.xdnd_selection,
+        atoms.xdnd_type_list,
+        atoms.xdnd_enter,
+        atoms.xdnd_position,
+        atoms.xdnd_status,
+        atoms.xdnd_leave,
+        atoms.xdnd_drop,
+        atoms.xdnd_finished,
+    );
+    let (copy_action, move_action) = (atoms.xdnd_action_copy, atoms.xdnd_action_move);
+    let mut types = Vec::new();
+    if contents.text.is_some() {
+        types.extend([
+            atoms.utf8_string,
+            atoms.text_plain_utf8,
+            atoms.text_plain,
+            x11::ATOM_STRING,
+        ]);
+    }
+    if contents.html.is_some() {
+        types.push(atoms.text_html);
+    }
+    if contents.rtf.is_some() {
+        types.push(atoms.text_rtf);
+    }
+    if contents.png.is_some() {
+        types.push(atoms.image_png);
+    }
+    if types.is_empty() {
+        return (DragEffect::None, Vec::new());
+    }
+    state.dragged = Some(contents.clone());
+    let connection = &mut state.connection;
+    let list: Vec<u8> = types.iter().flat_map(|atom| atom.to_le_bytes()).collect();
+    let _ = connection.set_property(window, type_list, x11::ATOM_ATOM, 32, &list);
+    let _ = connection.set_selection_owner(selection, window);
+    // Motion and the button's release, wherever the pointer goes.
+    let cursor = state.cursor_id(Cursor::Hand).unwrap_or(0);
+    let _ = state.connection.grab_pointer(window, 0x0008 | 0x0040, cursor);
+    let _ = state.connection.flush();
+
+    let mut over: Option<Over> = None;
+    let mut accepted = false;
+    let mut accepted_action = 0u32;
+    let mut awaiting_status = false;
+    let mut pending_position: Option<(u32, u32)> = None;
+    let mut copying = false;
+    let mut last_root = (0i16, 0i16);
+    let mut kept = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(120);
+    let mut effect = DragEffect::None;
+
+    // The messages to the window under the pointer.
+    let send = |state: &mut State, to: u32, kind: u32, data: [u32; 5]| {
+        let event = state.connection.client_message(to, kind, data);
+        let _ = state.connection.send_event(to, 0, &event);
+        let _ = state.connection.flush();
+    };
+    let enter_data = |version: u32| {
+        let more = u32::from(types.len() > 3);
+        let first = |index: usize| types.get(index).copied().unwrap_or(0);
+        [window, (version.min(XDND_VERSION) << 24) | more, first(0), first(1), first(2)]
+    };
+
+    while Instant::now() < deadline {
+        let Ok(Some(packet)) = state.connection.read_packet(Some(Duration::from_millis(50))) else {
+            continue;
+        };
+        match packet.kind() {
+            x11::MOTION_NOTIFY => {
+                let (root_x, root_y) = (packet.i16_at(20), packet.i16_at(22));
+                last_root = (root_x, root_y);
+                copying = packet.u16_at(28) & 0x4 != 0;
+                let time = packet.u32_at(4);
+                let found = aware_window_at(state, root_x, root_y).map(|(found, version)| Over {
+                    window: found,
+                    version,
+                    own: state.window_index(found).is_some(),
+                });
+                if found.map(|o| o.window) != over.map(|o| o.window) {
+                    if let Some(old) = over.filter(|old| !old.own) {
+                        send(state, old.window, leave, [window, 0, 0, 0, 0]);
+                    }
+                    accepted = false;
+                    awaiting_status = false;
+                    pending_position = None;
+                    if let Some(new) = found.filter(|new| !new.own && new.version >= 3) {
+                        send(state, new.window, enter, enter_data(new.version));
+                    }
+                    over = found.filter(|new| new.own || new.version >= 3);
+                }
+                if let Some(target) = over.filter(|target| !target.own) {
+                    let place = ((root_x as u16 as u32) << 16) | (root_y as u16 as u32);
+                    let action = if copying { copy_action } else { move_action };
+                    if awaiting_status {
+                        // One position at a time: the next goes when this
+                        // one is answered.
+                        pending_position = Some((place, time));
+                    } else {
+                        send(state, target.window, position, [window, 0, place, time, action]);
+                        awaiting_status = true;
+                    }
+                }
+            }
+            x11::CLIENT_MESSAGE if packet.u32_at(8) == status => {
+                accepted = word(&packet, 1) & 1 != 0;
+                accepted_action = word(&packet, 4);
+                awaiting_status = false;
+                if let (Some(target), Some((place, time))) = (over, pending_position.take()) {
+                    let action = if copying { copy_action } else { move_action };
+                    send(state, target.window, position, [window, 0, place, time, action]);
+                    awaiting_status = true;
+                }
+            }
+            x11::BUTTON_RELEASE => {
+                let time = packet.u32_at(4);
+                match over {
+                    Some(target) if target.own => {
+                        let index = state.window_index(target.window).unwrap_or(0);
+                        let scale = state.windows[index].scale;
+                        let (left, top) =
+                            state.connection.translate(target.window, 0, 0).unwrap_or((0, 0));
+                        let (x, y) = to_logical(
+                            scale,
+                            i32::from(last_root.0) - left,
+                            i32::from(last_root.1) - top,
+                        );
+                        effect = DragEffect::DroppedOnSelf { x, y, copying };
+                    }
+                    Some(target) if accepted => {
+                        send(state, target.window, drop, [window, 0, time, 0, 0]);
+                        effect = wait_for_finish(state, finished, accepted_action, &mut kept);
+                    }
+                    Some(target) => send(state, target.window, leave, [window, 0, 0, 0, 0]),
+                    None => {}
+                }
+                break;
+            }
+            x11::KEY_PRESS => {
+                // Escape gives the drag up.
+                let keysym = state.keysym(packet.detail(), packet.u16_at(28));
+                if keys::key_of(keysym) == Some(crate::Key::Escape) {
+                    if let Some(target) = over.filter(|target| !target.own) {
+                        send(state, target.window, leave, [window, 0, 0, 0, 0]);
+                    }
+                    break;
+                }
+            }
+            x11::SELECTION_REQUEST => answer_selection_request_in(state, &packet),
+            _ => kept.push(packet),
+        }
+    }
+    let _ = state.connection.ungrab_pointer();
+    let _ = state.connection.flush();
+    state.dragged = None;
+    (effect, kept)
+}
+
+/// After the drop, the target asks for what it was given and then says it
+/// is finished — and, in the fifth version, what it did: took a copy, or
+/// took it as a move. Waited for a while, answering its requests meanwhile.
+fn wait_for_finish(
+    state: &mut State,
+    finished: u32,
+    accepted_action: u32,
+    kept: &mut Vec<Packet>,
+) -> DragEffect {
+    let move_action = state.atoms.xdnd_action_move;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        let Ok(Some(packet)) = state.connection.read_packet(Some(Duration::from_millis(50))) else {
+            continue;
+        };
+        match packet.kind() {
+            x11::SELECTION_REQUEST => answer_selection_request_in(state, &packet),
+            x11::CLIENT_MESSAGE if packet.u32_at(8) == finished => {
+                let flags = word(&packet, 1);
+                let action = word(&packet, 2);
+                // A target of the fourth version says nothing of what it
+                // did: what it said it would do stands.
+                let (success, action) =
+                    if action == 0 { (true, accepted_action) } else { (flags & 1 != 0, action) };
+                return match (success, action == move_action) {
+                    (false, _) => DragEffect::None,
+                    (true, true) => DragEffect::Move,
+                    (true, false) => DragEffect::Copy,
+                };
+            }
+            _ => kept.push(packet),
+        }
+    }
     DragEffect::None
 }
 
@@ -1332,9 +1811,21 @@ pub(crate) fn clipboard_contents() -> Contents {
 
 /// Asks the clipboard's owner for one format, and waits for the answer.
 fn fetch_selection(state: &mut State, window: u32, target: u32) -> Option<Vec<u8>> {
-    let (clipboard, property, incr) =
-        (state.atoms.clipboard, state.atoms.own_property, state.atoms.incr);
-    state.connection.convert_selection(window, clipboard, target, property).ok()?;
+    let clipboard = state.atoms.clipboard;
+    fetch_from(state, window, clipboard, target, 0)
+}
+
+/// Asks a selection's owner for one format as of a moment, and waits for
+/// the answer.
+fn fetch_from(
+    state: &mut State,
+    window: u32,
+    selection: u32,
+    target: u32,
+    time: u32,
+) -> Option<Vec<u8>> {
+    let (property, incr) = (state.atoms.own_property, state.atoms.incr);
+    state.connection.convert_selection(window, selection, target, property, time).ok()?;
     state.connection.flush().ok()?;
     let deadline = Instant::now() + Duration::from_millis(1500);
     let mut kept = Vec::new();
@@ -1376,7 +1867,8 @@ fn answer_selection_request(packet: &Packet) {
     with_state(|state| answer_selection_request_in(state, packet));
 }
 
-/// Gives another program what it asks for from the clipboard.
+/// Gives another program what it asks for from the clipboard, or from what
+/// is being dragged.
 fn answer_selection_request_in(state: &mut State, packet: &Packet) {
     let time = packet.u32_at(4);
     let requestor = packet.u32_at(12);
@@ -1387,7 +1879,8 @@ fn answer_selection_request_in(state: &mut State, packet: &Packet) {
         property = target;
     }
     let atoms = &state.atoms;
-    let owned = state.owned.clone();
+    let owned =
+        if selection == atoms.xdnd_selection { state.dragged.clone() } else { state.owned.clone() };
     let mut given = 0u32;
     if let Some(contents) = owned {
         let mut offered: Vec<u32> = vec![atoms.targets];
@@ -1397,6 +1890,7 @@ fn answer_selection_request_in(state: &mut State, packet: &Packet) {
                 x11::ATOM_STRING,
                 atoms.text,
                 atoms.text_plain_utf8,
+                atoms.text_plain,
             ]);
         }
         if contents.html.is_some() {
@@ -1413,8 +1907,11 @@ fn answer_selection_request_in(state: &mut State, packet: &Packet) {
         } else if target == atoms.utf8_string
             || target == atoms.text
             || target == atoms.text_plain_utf8
+            || target == atoms.text_plain
         {
-            contents.text.as_ref().map(|text| (atoms.utf8_string, 8, text.as_bytes().to_vec()))
+            // Plain text on a desktop whose every locale is UTF-8 now.
+            let kind = if target == atoms.utf8_string { atoms.utf8_string } else { target };
+            contents.text.as_ref().map(|text| (kind, 8, text.as_bytes().to_vec()))
         } else if target == x11::ATOM_STRING {
             contents.text.as_ref().map(|text| {
                 (

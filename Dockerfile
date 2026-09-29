@@ -191,6 +191,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xdotool \
  && rm -rf /var/lib/apt/lists/*
 
+# The other end of a drag between programs: GTK, reached from Python, which
+# is a drag source and a drop target on X and on Wayland alike, written by
+# somebody else — tools/dnd-peer.py is a window of it that gives or takes
+# what is dragged, and says what it was given. The X shell's and the
+# Wayland shell's dragging and dropping are held to it, xdotool and the
+# test's own pointer moving the pointer. Test tools: nothing of GTK reaches
+# the product. In a layer of its own, after the others.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-gi \
+        gir1.2-gtk-3.0 \
+ && rm -rf /var/lib/apt/lists/*
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

@@ -347,3 +347,117 @@ fn korean_typed_through_an_input_method_goes_into_the_document() {
     assert!(!text.contains("gksrmf"), "and not the letters that spelled it: {text:?}");
     assert!(*composed.borrow(), "the syllable was shown in the document as it was built");
 }
+
+/// The editor with something dropped on it from another program: it keeps
+/// the document's text once the drop is in, and closes.
+struct Dropping {
+    editor: Editor,
+    text: Rc<RefCell<Option<String>>>,
+    started: Instant,
+    dropped_at: Option<Instant>,
+}
+
+impl App for Dropping {
+    fn handle(&mut self, event: Event) -> Response {
+        if matches!(event, Event::DataDropped { .. }) {
+            self.dropped_at = Some(Instant::now());
+        }
+        if event == Event::Tick {
+            let settled = self.dropped_at.is_some_and(|at| at.elapsed() > Duration::from_secs(1));
+            if settled || self.started.elapsed() > Duration::from_secs(60) {
+                *self.text.borrow_mut() = Some(self.editor.document.plain_text());
+                return Response::Close;
+            }
+        }
+        self.editor.handle(event)
+    }
+
+    fn cursor(&mut self, x: i32, y: i32) -> Cursor {
+        self.editor.cursor(x, y)
+    }
+
+    fn is_caption(&mut self, x: i32, y: i32) -> bool {
+        self.editor.is_caption(x, y)
+    }
+
+    fn switch_window(&mut self, index: usize) {
+        self.editor.switch_window(index);
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.editor.draw(width, height)
+    }
+}
+
+/// Text dragged out of another program — GTK's, speaking XDND itself —
+/// and let go on the page goes into the document.
+#[test]
+fn text_dragged_from_another_program_goes_into_the_document() {
+    let _display = one_display_at_a_time();
+    let Some(_server) = Server::start(89, 1400, 900) else {
+        eprintln!("skipped: Xvfb is not on this machine");
+        return;
+    };
+    let gtk = Command::new("python3")
+        .args(["-c", "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk"])
+        .status()
+        .is_ok_and(|status| status.success());
+    if !gtk || Command::new("xdotool").arg("version").output().is_err() {
+        eprintln!("skipped: GTK or xdotool is not on this machine");
+        return;
+    }
+    std::env::remove_var("XMODIFIERS");
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/dnd-peer.py");
+    // The giver at the screen's right, over the editor's window.
+    let mut peer = Command::new("python3")
+        .arg(script)
+        .args(["source", "text", "dropped in from GTK"])
+        .env("DND_PEER_X", "1050")
+        .env("NO_AT_BRIDGE", "1")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the peer starts");
+
+    let hand = std::thread::spawn(|| {
+        let run = |arguments: &[String]| {
+            let _ = Command::new("xdotool").args(arguments).env("DISPLAY", ":89").output();
+        };
+        let _ = Command::new("xdotool")
+            .args(["search", "--sync", "--name", "Word Processor"])
+            .env("DISPLAY", ":89")
+            .output();
+        // The editor draws its first page, and the peer comes up above it.
+        std::thread::sleep(Duration::from_secs(4));
+        let (from, to) = ((1200, 150), (500, 400));
+        run(&["mousemove".into(), from.0.to_string(), from.1.to_string()]);
+        std::thread::sleep(Duration::from_millis(300));
+        run(&["mousedown".into(), "1".into()]);
+        for step in 1..=14 {
+            std::thread::sleep(Duration::from_millis(100));
+            let x = from.0 + (to.0 - from.0) * step / 14;
+            let y = from.1 + (to.1 - from.1) * step / 14;
+            run(&["mousemove".into(), x.to_string(), y.to_string()]);
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        run(&["mouseup".into(), "1".into()]);
+    });
+
+    let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
+    let mut body = wp_docx::model::Body::default();
+    body.blocks.push(wp_docx::model::Block::Paragraph(wp_docx::model::Paragraph::default()));
+    let document = Document::create(&body).expect("a blank document");
+    let editor = Editor::opened(library, document, None::<PathBuf>);
+    let text = Rc::new(RefCell::new(None));
+    let dropping =
+        Dropping { editor, text: Rc::clone(&text), started: Instant::now(), dropped_at: None };
+    let options =
+        WindowOptions { title: "Document — Word Processor".to_owned(), width: 1400, height: 900 };
+    wp_shell::run(options, Box::new(dropping)).expect("the editor's window opens");
+    hand.join().expect("the pointer moved");
+    let _ = peer.kill();
+    let _ = peer.wait();
+
+    let text = text.borrow().clone().unwrap_or_default();
+    assert!(text.contains("dropped in from GTK"), "the drop is in the document: {text:?}");
+}

@@ -138,6 +138,8 @@ const SET_SELECTION_OWNER: u8 = 22;
 const GET_SELECTION_OWNER: u8 = 23;
 const CONVERT_SELECTION: u8 = 24;
 const SEND_EVENT: u8 = 25;
+const GRAB_POINTER: u8 = 26;
+const UNGRAB_POINTER: u8 = 27;
 const TRANSLATE_COORDINATES: u8 = 40;
 const OPEN_FONT: u8 = 45;
 const CREATE_GC: u8 = 55;
@@ -810,21 +812,65 @@ impl Connection {
         Ok(reply.u32_at(8))
     }
 
+    /// Asks a selection's owner for it in a format, as of a moment — nought
+    /// for now; a drop names the moment it was let go.
     pub(crate) fn convert_selection(
         &mut self,
         requestor: u32,
         selection: u32,
         target: u32,
         property: u32,
+        time: u32,
     ) -> Result<(), Failure> {
         let request = Request::new(CONVERT_SELECTION, 0)
             .u32(requestor)
             .u32(selection)
             .u32(target)
             .u32(property)
-            .u32(0)
+            .u32(time)
             .finish(false);
         self.request(&request)
+    }
+
+    // --- The pointer ---------------------------------------------------------------
+
+    /// Takes the pointer for a window: its motion and its buttons come
+    /// there, wherever it is on the screen, until let go. Whether the
+    /// server gave it.
+    pub(crate) fn grab_pointer(
+        &mut self,
+        window: u32,
+        mask: u16,
+        cursor: u32,
+    ) -> Result<bool, Failure> {
+        let request = Request::new(GRAB_POINTER, 0)
+            .u32(window)
+            .u16(mask)
+            // Neither the pointer nor the keyboard frozen.
+            .u8(1)
+            .u8(1)
+            .u32(0)
+            .u32(cursor)
+            .u32(0)
+            .finish(false);
+        let reply = self.request_with_reply(&request)?;
+        Ok(reply.u8_at(1) == 0)
+    }
+
+    pub(crate) fn ungrab_pointer(&mut self) -> Result<(), Failure> {
+        self.request(&Request::new(UNGRAB_POINTER, 0).u32(0).finish(false))
+    }
+
+    /// The child of a window that a point on the screen is in, if any.
+    pub(crate) fn child_at(&mut self, window: u32, x: i16, y: i16) -> Result<u32, Failure> {
+        let request = Request::new(TRANSLATE_COORDINATES, 0)
+            .u32(self.setup.root)
+            .u32(window)
+            .i16(x)
+            .i16(y)
+            .finish(false);
+        let reply = self.request_with_reply(&request)?;
+        Ok(reply.u32_at(8))
     }
 
     /// Sends a thirty-two byte event to a window.
