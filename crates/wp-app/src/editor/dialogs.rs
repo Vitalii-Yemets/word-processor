@@ -474,7 +474,7 @@ impl Editor {
     /// A dialog that shows what it is asking about — Word Count is the one —
     /// is built again when a field changes, because the numbers it is showing
     /// are the answer to that field.
-    fn reacted(&mut self, reaction: Reaction) -> Response {
+    pub(super) fn reacted(&mut self, reaction: Reaction) -> Response {
         match reaction {
             Reaction::Closed(answer) => self.finish_dialog(answer),
             Reaction::Changed => {

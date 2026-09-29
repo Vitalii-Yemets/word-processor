@@ -1166,108 +1166,7 @@ impl Ribbon {
             }
             Item::Field(_, choice, _) => {
                 field_box(canvas, left, top, width, theme);
-                let text = match choice {
-                    Choice::Font => state.font.clone().unwrap_or_else(|| "(default)".to_owned()),
-                    Choice::Size => super::format_size(state.size),
-                    Choice::Style => state.style.clone().unwrap_or_else(|| "Normal".to_owned()),
-                    Choice::Zoom => format!("{}%", state.zoom.round() as i32),
-                    Choice::Border
-                    | Choice::Furniture
-                    | Choice::Reference
-                    | Choice::Citation
-                    | Choice::Source
-                    | Choice::LineNumbers
-                    | Choice::Hyphenation
-                    | Choice::TextDirection
-                    | Choice::AsianLayout
-                    | Choice::Comparing
-                    | Choice::Finishing
-                    | Choice::StatusBar
-                    | Choice::PageNumbering
-                    | Choice::Printer
-                    | Choice::PrintWhich
-                    | Choice::PrintSides
-                    | Choice::PrintPerSheet
-                    | Choice::Margin
-                    | Choice::Orientation
-                    | Choice::Paper
-                    | Choice::Column
-                    | Choice::Break
-                    | Choice::Watermark
-                    | Choice::PasteOption
-                    | Choice::AutoCorrectOption
-                    | Choice::TableStyle
-                    | Choice::AlignmentTab
-                    | Choice::TablePart
-                    | Choice::AutoFit
-                    | Choice::AlignObjects
-                    | Choice::RotateObjects
-                    | Choice::GroupObjects
-                    | Choice::DocumentSpacing
-                    | Choice::BulletLibrary
-                    | Choice::NumberLibrary
-                    | Choice::MultilevelLibrary
-                    | Choice::LineSpacing
-                    | Choice::LetterCase
-                    | Choice::PageNumberPlace
-                    | Choice::PageNumberDesign
-                    | Choice::RestrictMode
-                    | Choice::MappedControl
-                    | Choice::GalleryBlock
-                    | Choice::Selecting
-                    | Choice::NoteJump
-                    | Choice::Accepting
-                    | Choice::Rejecting
-                    | Choice::Tracking
-                    | Choice::Cover
-                    | Choice::Authority
-                    | Choice::Theme
-                    | Choice::ThemeColors
-                    | Choice::ThemeFonts
-                    | Choice::Language
-                    | Choice::Shape
-                    | Choice::Wrap
-                    | Choice::Position
-                    | Choice::Forward
-                    | Choice::Backward
-                    | Choice::Markup
-                    | Choice::BorderStyle
-                    | Choice::QuickPart
-                    | Choice::LegacyField
-                    | Choice::StyleSet
-                    | Choice::RecipientSource
-                    | Choice::AutoText
-                    | Choice::FillIn
-                    | Choice::WordArt
-                    | Choice::Drawing
-                    | Choice::MergeKind
-                    | Choice::MergeField
-                    | Choice::Correction
-                    | Choice::Accessibility
-                    | Choice::Context
-                    | Choice::Group
-                    | Choice::ThemeEffects
-                    | Choice::Chart
-                    | Choice::Rule
-                    | Choice::Macro
-                    | Choice::Diagram
-                    | Choice::DiagramLayout
-                    | Choice::DiagramColours
-                    | Choice::PenLook
-                    | Choice::PencilLook
-                    | Choice::HighlighterLook
-                    | Choice::EraserKind
-                    | Choice::Screenshot
-                    | Choice::OutlineLevel
-                    | Choice::MatchField
-                    | Choice::MatchColumn
-                    | Choice::TextEffect
-                    | Choice::Envelope
-                    | Choice::Synonym
-                    | Choice::Translate
-                    | Choice::TranslatorLanguage
-                    | Choice::Label => String::new(),
-                };
+                let text = field_text(*choice, state);
                 let line = engine.simple_line(&text, left + 6.0, top + 17.0, 8.5, color);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
                 chevron(canvas, left + width - 12.0, top + ROW_HEIGHT / 2.0, color);
@@ -2590,6 +2489,111 @@ fn launcher_mark(canvas: &mut Canvas, x: f32, y: f32, size: f32, colour: Color) 
     // And its head.
     canvas.fill_rect(x + size - 3, y + 1, 3, 1, colour);
     canvas.fill_rect(x + size - 1, y + 1, 1, 3, colour);
+}
+
+/// What a box with a list shows: the font, the size, the style or the zoom
+/// in effect; the other boxes show nothing but their arrow. The same words
+/// for the eye and for a screen reader.
+#[must_use]
+pub fn field_text(choice: Choice, state: &ToolbarState) -> String {
+    match choice {
+        Choice::Font => state.font.clone().unwrap_or_else(|| "(default)".to_owned()),
+        Choice::Size => super::format_size(state.size),
+        Choice::Style => state.style.clone().unwrap_or_else(|| "Normal".to_owned()),
+        Choice::Zoom => format!("{}%", state.zoom.round() as i32),
+        _ => String::new(),
+    }
+}
+
+/// What kind of box a command is on the ribbon, if it is one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Boxed {
+    /// A measurement typed in.
+    Measure,
+    /// A box with a list under it, and which list.
+    Field(Choice),
+}
+
+/// Whether a command is a box on the ribbon, and which kind: a screen
+/// reader is told a box is a box, and what is in it.
+#[must_use]
+pub fn box_of(command: Command) -> Option<Boxed> {
+    every_item().find_map(|item| match item {
+        Item::Field(found, choice, _) if *found == command => Some(Boxed::Field(*choice)),
+        Item::Measure(found, ..) if *found == command => Some(Boxed::Measure),
+        _ => None,
+    })
+}
+
+/// The box on the ribbon a list drops from, if it drops from one — the
+/// boxes' side of [`command_of`], which is the buttons'.
+#[must_use]
+pub fn field_of(choice: Choice) -> Option<Command> {
+    every_item().find_map(|item| match item {
+        Item::Field(command, found, _) if *found == choice => Some(*command),
+        _ => None,
+    })
+}
+
+/// Every command there is a button, a box or an arrow for, on any tab or
+/// off them, each once and always in the same order — which makes its
+/// place in the list a number that stays the command's. [`all_commands`]
+/// lists only what has a name to be found by, and leaves out the buttons
+/// that carry a picture and no word.
+///
+/// Gathered once: a screen reader asks for the window's elements many
+/// times a second while it reads, and each element asks for its number.
+#[must_use]
+pub fn every_command() -> &'static [Command] {
+    static EVERY: std::sync::OnceLock<Vec<Command>> = std::sync::OnceLock::new();
+    EVERY.get_or_init(|| {
+        let mut out: Vec<Command> =
+            OFF_RIBBON_COMMANDS.iter().map(|(command, ..)| *command).collect();
+        let mut add = |command: Command| {
+            if !out.contains(&command) {
+                out.push(command);
+            }
+        };
+        for group in Tab::ALL.iter().chain(Tab::CONTEXTUAL.iter()).flat_map(|tab| groups_of(*tab)) {
+            for item in group.items {
+                match item {
+                    Item::Large(command, ..)
+                    | Item::Small(command, ..)
+                    | Item::Letter(command, ..)
+                    | Item::Measure(command, ..)
+                    | Item::Button(command, _)
+                    | Item::Field(command, ..) => add(*command),
+                    Item::StyleGallery => add(Command::ChooseStyle),
+                    Item::Break | Item::NewColumn => {}
+                }
+            }
+            if let Some(command) = group.launcher {
+                add(command);
+            }
+        }
+        out
+    })
+}
+
+/// The group whose corner arrow runs a command, if one does: what the
+/// arrow is called, since it carries no label of its own.
+#[must_use]
+pub fn launcher_of(command: Command) -> Option<&'static str> {
+    Tab::ALL
+        .iter()
+        .chain(Tab::CONTEXTUAL.iter())
+        .flat_map(|tab| groups_of(*tab))
+        .find(|group| group.launcher == Some(command))
+        .map(|group| group.label)
+}
+
+/// Every item on every tab, the contextual ones included.
+fn every_item() -> impl Iterator<Item = &'static Item> {
+    Tab::ALL
+        .iter()
+        .chain(Tab::CONTEXTUAL.iter())
+        .flat_map(|tab| groups_of(*tab))
+        .flat_map(|group| group.items)
 }
 
 #[cfg(test)]

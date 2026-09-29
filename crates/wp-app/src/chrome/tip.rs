@@ -115,6 +115,7 @@ pub fn label_of(command: Command) -> Option<&'static str> {
         Command::Align(Alignment::Center) => "Center",
         Command::Align(Alignment::End) => "Align Right",
         Command::Align(Alignment::Both) => "Justify",
+        Command::AsianLayout => "Asian Layout",
         Command::Borders => "Borders",
         Command::Bullets => "Bullets",
         Command::ChangeCase => "Change Case",

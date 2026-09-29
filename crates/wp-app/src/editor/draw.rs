@@ -796,6 +796,7 @@ impl Editor {
             selected_characters: selected.chars().count(),
             shows: self.status_shows,
         };
+        self.reader_status = status::pieces(&state).into_iter().map(|(piece, _)| piece).collect();
 
         let theme = self.theme;
         let (slider, buttons) = status::draw(

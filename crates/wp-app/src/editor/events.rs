@@ -251,6 +251,21 @@ impl App for Editor {
     fn accessible_rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
         Editor::accessible_rects(self, start, end)
     }
+
+    fn accessible_lines(&mut self) -> Vec<(usize, usize)> {
+        Editor::accessible_lines(self)
+    }
+
+    fn accessible_attributes(
+        &mut self,
+        offset: usize,
+    ) -> Option<(wp_shell::accessibility::TextAttributes, usize, usize)> {
+        Editor::accessible_attributes(self, offset)
+    }
+
+    fn accessible_set_value(&mut self, id: u64, value: &str) -> Response {
+        Editor::accessible_set_value(self, id, value)
+    }
 }
 
 impl Editor {
@@ -1247,7 +1262,7 @@ impl Editor {
     }
 
     /// Reacts to a press inside the navigation pane.
-    fn pressed_in_pane(&mut self, x: i32, y: i32, top: f32, bottom: f32) -> Response {
+    pub(super) fn pressed_in_pane(&mut self, x: i32, y: i32, top: f32, bottom: f32) -> Response {
         use crate::chrome::navigation::{Hit, Section};
 
         match self.navigation.hit(x, y, top, bottom) {
@@ -1920,7 +1935,7 @@ impl Editor {
     }
 
     /// Applies whichever item of the open list was pressed.
-    fn choose(&mut self, index: usize) -> Response {
+    pub(super) fn choose(&mut self, index: usize) -> Response {
         let Some(popup) = &self.popup else { return Response::Ignored };
         let Some(text) = popup.item(index).map(str::to_owned) else {
             return Response::Ignored;

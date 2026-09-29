@@ -166,6 +166,49 @@ impl SliderRect {
     }
 }
 
+/// What the left of the strip says, piece by piece, and whether each is
+/// drawn faint: where the caret is and how much there is. The same words
+/// for the eye and for a screen reader; the note that follows them is apart.
+#[must_use]
+pub fn pieces(state: &StatusState) -> Vec<(String, bool)> {
+    let mut pieces = Vec::new();
+    if state.shows.page {
+        let position = messages::with(
+            "Page {0} of {1}",
+            &[&crate::locale::count(state.page), &crate::locale::count(state.pages)],
+        );
+        pieces.push((position, false));
+    }
+    if state.shows.section {
+        pieces.push((messages::with("Section: {0}", &[&state.section.to_string()]), false));
+    }
+    if state.shows.words {
+        let words = if state.words == 1 {
+            t("1 word").to_owned()
+        } else {
+            messages::with("{0} words", &[&crate::locale::count(state.words)])
+        };
+        pieces.push((words, false));
+    }
+    if state.shows.characters {
+        let characters =
+            messages::with("{0} characters", &[&crate::locale::count(state.characters)]);
+        pieces.push((characters, true));
+    }
+    if state.selected_characters > 0 {
+        let selected =
+            messages::with("{0} selected", &[&crate::locale::count(state.selected_characters)]);
+        pieces.push((selected, true));
+    }
+    if state.shows.language {
+        pieces.push((state.language.clone(), true));
+    }
+    if state.modified {
+        pieces.push((t("unsaved changes").to_owned(), true));
+    }
+    pieces
+}
+
 /// Draws the strip, returning where the zoom slider ended up.
 pub fn draw(
     canvas: &mut Canvas,
@@ -199,43 +242,8 @@ pub fn draw(
         *left += measured + 16.0;
     };
 
-    if state.shows.page {
-        let position = messages::with(
-            "Page {0} of {1}",
-            &[&crate::locale::count(state.page), &crate::locale::count(state.pages)],
-        );
-        write(canvas, engine, renderer, &position, text, &mut left);
-    }
-    if state.shows.section {
-        let section = messages::with("Section: {0}", &[&state.section.to_string()]);
-        write(canvas, engine, renderer, &section, text, &mut left);
-    }
-
-    if state.shows.words {
-        let words = if state.words == 1 {
-            t("1 word").to_owned()
-        } else {
-            messages::with("{0} words", &[&crate::locale::count(state.words)])
-        };
-        write(canvas, engine, renderer, &words, text, &mut left);
-    }
-    if state.shows.characters {
-        let characters =
-            messages::with("{0} characters", &[&crate::locale::count(state.characters)]);
-        write(canvas, engine, renderer, &characters, dim, &mut left);
-    }
-
-    if state.selected_characters > 0 {
-        let selected =
-            messages::with("{0} selected", &[&crate::locale::count(state.selected_characters)]);
-        write(canvas, engine, renderer, &selected, dim, &mut left);
-    }
-    if state.shows.language {
-        write(canvas, engine, renderer, &state.language, dim, &mut left);
-    }
-
-    if state.modified {
-        write(canvas, engine, renderer, t("unsaved changes"), dim, &mut left);
+    for (piece, faint) in pieces(state) {
+        write(canvas, engine, renderer, &piece, if faint { dim } else { text }, &mut left);
     }
     if !state.note.is_empty() {
         // What the last command said, which the program wrote and the

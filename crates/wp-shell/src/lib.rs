@@ -470,20 +470,46 @@ pub trait App {
         let _ = (start, end);
         Vec::new()
     }
+
+    /// The document's lines as the layout breaks them, each as the
+    /// character offsets it starts and ends at. Nothing where the
+    /// application has no layout, and then a line is a paragraph.
+    fn accessible_lines(&mut self) -> Vec<(usize, usize)> {
+        Vec::new()
+    }
+
+    /// How the document's text at an offset is set — the font, the size,
+    /// bold and the rest — and the stretch around it that is set the same.
+    fn accessible_attributes(
+        &mut self,
+        offset: usize,
+    ) -> Option<(accessibility::TextAttributes, usize, usize)> {
+        let _ = offset;
+        None
+    }
+
+    /// Puts a value into an element that holds one — a box's text.
+    fn accessible_set_value(&mut self, id: u64, value: &str) -> Response {
+        let _ = (id, value);
+        Response::Ignored
+    }
 }
 
 /// What a screen reader is told about the window.
 ///
 /// A window that draws every control itself is a blank rectangle to a
 /// screen reader unless it says what is in it. This is what it says: each
-/// control with its kind, its name, where it is and what it does, and the
-/// document as text with a selection in it. The Windows shell puts this
-/// through UI Automation; another platform's shell would put it through
-/// its own tree.
+/// control with its kind, its name, where it is, what it holds, what it is
+/// inside and what it does; and the document as text with a selection in
+/// it, broken into lines where the layout breaks it, with how each stretch
+/// is set. The Windows shell puts this through UI Automation, and the Linux
+/// shells — X11 and Wayland alike — through AT-SPI on the accessibility
+/// bus. Each also watches it change, and says so: a dialog opening, the
+/// keyboard moving, a message on the status strip.
 pub mod accessibility {
     /// The kind of control an element is: what a screen reader calls it and
     /// how it lets a person work it.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     pub enum Role {
         /// A button that does something when pressed.
         Button,
@@ -494,11 +520,34 @@ pub mod accessibility {
         /// The document being edited.
         Document,
         /// Words that only say something.
+        #[default]
         Text,
+        /// A dialog: the fields and buttons in it are its children.
+        Dialog,
+        /// A pane beside the page: the navigation pane, the styles.
+        Pane,
+        /// A menu that has dropped open, and one of its items.
+        Menu,
+        MenuItem,
+        /// A list, and one of its rows.
+        List,
+        ListItem,
+        /// A box that is typed into: its value is what is in it.
+        Edit,
+        /// A tick box, on when selected.
+        CheckBox,
+        /// A box with a list under it: its value is what is chosen.
+        ComboBox,
+        /// A scroll bar: its range says where it is.
+        ScrollBar,
+        /// A ruler along the page.
+        Ruler,
+        /// The strip along the bottom: its value is the message it shows.
+        StatusBar,
     }
 
     /// One control on the window.
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[derive(Clone, Debug, Default, PartialEq)]
     pub struct Element {
         /// The same for the same control from one asking to the next.
         pub id: u64,
@@ -508,11 +557,37 @@ pub mod accessibility {
         pub access_key: String,
         /// Left, top, width, height, in pixels of the drawing area.
         pub rect: (i32, i32, i32, i32),
-        /// Chosen, for a tab; on, for a toggle.
+        /// Chosen, for a tab or a list's row; on, for a toggle or a tick box.
         pub selected: bool,
         pub enabled: bool,
         /// Whether keys go to it.
         pub focused: bool,
+        /// The element it is inside — a dialog's fields are the dialog's, a
+        /// menu's items the menu's — or none, for what is on the window.
+        pub parent: Option<u64>,
+        /// What it holds, for what holds something: a box's text, a list's
+        /// choice, the status strip's message.
+        pub value: String,
+        /// For what stands somewhere between two ends — a scroll bar — the
+        /// ends and where it is: least, most, now.
+        pub range: Option<(f32, f32, f32)>,
+    }
+
+    /// How a stretch of the document's text is set, as a screen reader asks
+    /// for it.
+    #[derive(Clone, Debug, Default, PartialEq)]
+    pub struct TextAttributes {
+        pub font: String,
+        /// In points.
+        pub size: f32,
+        pub bold: bool,
+        pub italic: bool,
+        pub underline: bool,
+        pub strike: bool,
+        /// Red, green and blue, where the text says a colour.
+        pub color: Option<(u8, u8, u8)>,
+        /// The highlight or shading behind it, where there is one.
+        pub background: Option<(u8, u8, u8)>,
     }
 
     /// The document's text as a screen reader reads it.

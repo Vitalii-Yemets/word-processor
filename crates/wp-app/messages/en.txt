@@ -51,6 +51,7 @@
 = Against a rule, to the right
 = Align
 = Align Left
+= Align Right
 = Alignment
 = All
 = All caps
@@ -81,6 +82,7 @@
 = Art
 = Article use
 = As you type
+= Asian Layout
 = Attach Template
 = Attach...
 = AutoCorrect
@@ -172,9 +174,11 @@
 = Cell
 = Cell Size
 = Cell margins
+= Center
 = Centimeters
 = Centred
 = Certificate
+= Change Case
 = Change Colors
 = Change Password
 = Change how the text is corrected as you type
@@ -201,6 +205,7 @@
 = City
 = Clear
 = Clear All
+= Clear All Formatting
 = Click a shape or a picture first
 = Clipboard
 = Close
@@ -240,6 +245,7 @@
 = Content control cannot be deleted
 = Contents
 = Contents cannot be edited
+= Context Menu
 = Contour
 = Controls
 = Convert
@@ -277,6 +283,8 @@
 = Date
 = Date & Time
 = Date Picker
+= Decrease Font Size
+= Decrease Indent
 = Default tab stops
 = Delete
 = Delete Column
@@ -373,6 +381,8 @@
 = Fit in line
 = Folder
 = Font
+= Font Color
+= Font Size
 = Fonts
 = Font…
 = Footer
@@ -433,6 +443,8 @@
 = Holding
 = Home
 = Horizontal
+= Horizontal Ruler
+= Horizontal Scroll Bar
 = Horizontal in Vertical
 = Horizontal in Vertical...
 = How
@@ -458,6 +470,8 @@
 = In use
 = Inches
 = Include textboxes, footnotes and endnotes
+= Increase Font Size
+= Increase Indent
 = Indentation
 = Indents and Spacing
 = Index
@@ -482,6 +496,7 @@
 = Item added
 = Item deleted
 = Items, separated by semicolons
+= Justify
 = Keep Source Formatting
 = Keep Text Only
 = Keep lines together
@@ -506,6 +521,7 @@
 = Line
 = Line Numbers
 = Line and Page Breaks
+= Line and Paragraph Spacing
 = Line with Markers
 = Lines
 = Link
@@ -554,6 +570,7 @@
 = Move Up
 = Move object with text
 = Moves
+= Multilevel List
 = My list has a header row
 = Name
 = Names
@@ -807,6 +824,7 @@
 = Setting
 = Settings…
 = Shaded
+= Shading
 = Shapes
 = Show
 = Show All Regions I Can Edit
@@ -852,6 +870,7 @@
 = Start Enforcing Protection
 = Start Mail Merge
 = Start Merge
+= Status Bar
 = Stop Auto-capitalizing First Letter of Sentences
 = Stop Automatically Applying Heading Styles
 = Stop Automatically Creating Border Lines
@@ -907,7 +926,9 @@
 = Text Box
 = Text Boxes
 = Text Direction
+= Text Effects and Typography
 = Text Files (*.txt)
+= Text Highlight Color
 = Text Pane
 = Text Wrapping
 = Text boxes
@@ -1040,6 +1061,8 @@
 = Verb form
 = Vertical
 = Vertical Box List
+= Vertical Ruler
+= Vertical Scroll Bar
 = Vertical, left to right
 = Video
 = View

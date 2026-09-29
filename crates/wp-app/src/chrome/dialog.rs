@@ -578,6 +578,29 @@ enum Hit {
     Close,
 }
 
+/// A part of a dialog, as a screen reader is told of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Part {
+    Field(usize),
+    Button(usize),
+    Tab(usize),
+    Close,
+}
+
+/// A row of a list in a dialog, as a screen reader is told of it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ListRow {
+    /// Which row of the list it is, counting those scrolled away.
+    pub index: usize,
+    pub text: String,
+    /// Whether it is the row the list has chosen.
+    pub chosen: bool,
+    /// Its tick box, on or off, where it has one.
+    pub tick: Option<bool>,
+    /// Left, top, width, height, as the dialog was last drawn.
+    pub rect: (f32, f32, f32, f32),
+}
+
 /// A dialog, and everything it is asking.
 #[derive(Clone, Debug)]
 pub struct Dialog {
@@ -601,6 +624,8 @@ pub struct Dialog {
     /// not show says which tab it is for and is drawn on that one alone: a
     /// button that changes what nobody can see is worse than no button.
     button_tabs: Vec<(Answer, usize)>,
+    /// Where the panel was last drawn: left, top, width, height.
+    frame: (f32, f32, f32, f32),
 }
 
 impl Dialog {
@@ -640,6 +665,7 @@ impl Dialog {
             width: WIDTH,
             tab: 0,
             button_tabs: Vec::new(),
+            frame: (0.0, 0.0, 0.0, 0.0),
         };
         // The keyboard starts on the first thing that can take it, which is
         // where a person expects to start typing.
@@ -838,6 +864,160 @@ impl Dialog {
             Some(Field::Pairs { current, .. }) => *current,
             _ => 0,
         }
+    }
+
+    /// Where the panel was last drawn: left, top, width, height.
+    #[must_use]
+    pub fn frame(&self) -> (f32, f32, f32, f32) {
+        self.frame
+    }
+
+    /// Each part of the dialog as it was last drawn, with its place: the
+    /// fields, the tabs, the buttons and the close button — what a screen
+    /// reader is told the dialog holds.
+    #[must_use]
+    pub fn parts(&self) -> Vec<(Part, (f32, f32, f32, f32))> {
+        self.placed
+            .iter()
+            .map(|(hit, x, y, width, height)| {
+                let part = match *hit {
+                    Hit::Field(index) => Part::Field(index),
+                    Hit::Button(index) => Part::Button(index),
+                    Hit::Tab(index) => Part::Tab(index),
+                    Hit::Close => Part::Close,
+                };
+                (part, (*x, *y, *width, *height))
+            })
+            .collect()
+    }
+
+    /// The part the keyboard is on.
+    #[must_use]
+    pub fn focused_part(&self) -> Part {
+        if self.focus < self.fields.len() {
+            Part::Field(self.focus)
+        } else {
+            Part::Button(self.focus - self.fields.len())
+        }
+    }
+
+    /// Writes a box, as though what is given had been typed into it.
+    pub fn set_text(&mut self, index: usize, text: &str) -> bool {
+        match self.fields.get_mut(index) {
+            Some(
+                Field::Text { value, .. }
+                | Field::Secret { value, .. }
+                | Field::Number { value, .. },
+            ) => {
+                text.clone_into(value);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Chooses a row of a list, or an item of a box with a list under it.
+    pub fn set_row(&mut self, index: usize, row: usize) -> bool {
+        match self.fields.get_mut(index) {
+            Some(Field::Tree { rows, current, .. }) if row < rows.len() => *current = row,
+            Some(Field::Pairs { rows, current, .. }) if row < rows.len() => *current = row,
+            Some(Field::Grid { items, current, .. }) if row < items.len() => *current = row,
+            Some(Field::Choice { items, current, .. }) if row < items.len() => *current = row,
+            _ => return false,
+        }
+        true
+    }
+
+    /// Presses a row of a list, as a press on it would: the row is chosen
+    /// and the list takes the keyboard, and a row with a tick box has its
+    /// box turned on or off — pressing a tick box is what a screen reader's
+    /// user asks for when they press the row it is.
+    pub fn press_row(&mut self, index: usize, row: usize) -> bool {
+        if !self.set_row(index, row) {
+            return false;
+        }
+        self.focus = index;
+        if let Some(Field::Tree { rows, .. }) = self.fields.get(index) {
+            if rows.get(row).is_some_and(|held| held.tick.is_some()) {
+                self.tick_in_tree(index);
+            }
+        }
+        true
+    }
+
+    /// The rows of a list that are showing, each with its place — what a
+    /// screen reader is told the list holds. Nothing for a field that is
+    /// not a list, or was not drawn.
+    #[must_use]
+    pub fn list_rows(&self, index: usize) -> Vec<ListRow> {
+        let Some((left, top, width, _)) = self.rect_of(Hit::Field(index)) else {
+            return Vec::new();
+        };
+        let at_row = |place: usize| top + PAIR_ROW * place as f32;
+        match self.fields.get(index) {
+            Some(Field::Tree { rows, current, scroll, .. }) => shown_rows(rows)
+                .into_iter()
+                .skip(*scroll)
+                .take(TREE_ROWS)
+                .enumerate()
+                .map(|(place, at)| ListRow {
+                    index: at,
+                    text: rows[at].text.clone(),
+                    chosen: at == *current,
+                    tick: rows[at].tick,
+                    rect: (left, at_row(place), width, PAIR_ROW),
+                })
+                .collect(),
+            Some(Field::Pairs { rows, current, scroll, .. }) => rows
+                .iter()
+                .enumerate()
+                .skip(*scroll)
+                .take(PAIR_ROWS)
+                .map(|(at, (first, second))| ListRow {
+                    index: at,
+                    text: if second.is_empty() {
+                        first.clone()
+                    } else {
+                        format!("{first}, {second}")
+                    },
+                    chosen: at == *current,
+                    tick: None,
+                    rect: (left, at_row(at - scroll), width, PAIR_ROW),
+                })
+                .collect(),
+            Some(Field::Grid { items, current, scroll, .. }) => {
+                let cell = width / GRID_COLUMNS as f32;
+                let first = scroll * GRID_COLUMNS;
+                items
+                    .iter()
+                    .enumerate()
+                    .skip(first)
+                    .take(GRID_ROWS * GRID_COLUMNS)
+                    .map(|(at, character)| {
+                        let place = at - first;
+                        ListRow {
+                            index: at,
+                            text: character.to_string(),
+                            chosen: at == *current,
+                            tick: None,
+                            rect: (
+                                left + cell * (place % GRID_COLUMNS) as f32,
+                                top + cell * (place / GRID_COLUMNS) as f32,
+                                cell,
+                                cell,
+                            ),
+                        }
+                    })
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// The names of the dialog's tabs, in order, and which is showing.
+    #[must_use]
+    pub fn tab_names(&self) -> (Vec<&str>, usize) {
+        (self.tabs(), self.tab)
     }
 
     /// Which of a list was chosen.
@@ -1540,6 +1720,7 @@ impl Dialog {
         let height = self.height();
         let left = ((window_width - width) / 2.0).max(0.0);
         let top = ((window_height - height) / 2.0).max(0.0);
+        self.frame = (left, top, width, height);
 
         // A shadow under the panel, so it reads as being in front rather than
         // painted on.

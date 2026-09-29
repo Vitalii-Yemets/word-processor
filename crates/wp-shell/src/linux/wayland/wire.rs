@@ -373,6 +373,24 @@ impl Connection {
     /// The next message, reading from the socket if the inbox is empty.
     ///
     /// Nothing when nothing has arrived by the time the wait runs out.
+    /// The socket, for waiting on it beside another; see
+    /// [`crate::linux::wait`].
+    pub(crate) fn raw_fd(&self) -> RawFd {
+        self.stream.as_raw_fd()
+    }
+
+    /// Whether a whole message has been read already and is waiting to be
+    /// taken, which no wait on the socket would say.
+    pub(crate) fn buffered(&self) -> bool {
+        if self.inbox.len() < 8 {
+            return false;
+        }
+        let second =
+            u32::from_ne_bytes([self.inbox[4], self.inbox[5], self.inbox[6], self.inbox[7]]);
+        let length = (second >> 16) as usize;
+        length >= 8 && self.inbox.len() >= length
+    }
+
     pub(crate) fn next_message(&mut self, timeout: Duration) -> Result<Option<Message>, Failure> {
         let deadline = Instant::now() + timeout;
         loop {

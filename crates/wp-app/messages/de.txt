@@ -623,6 +623,9 @@ language = Deutsch
 = Contents cannot be edited
 > Inhalt kann nicht bearbeitet werden
 
+= Context Menu
+> Kontextmenü
+
 = Contour
 > Kontur
 
@@ -1106,6 +1109,9 @@ language = Deutsch
 = Font
 > Schriftart
 
+= Font Size
+> Schriftgrad
+
 = Fonts
 > Schriftarten
 
@@ -1285,6 +1291,12 @@ language = Deutsch
 
 = Horizontal
 > Horizontal
+
+= Horizontal Ruler
+> Horizontales Lineal
+
+= Horizontal Scroll Bar
+> Horizontale Bildlaufleiste
 
 = Horizontal in Vertical
 > Horizontal in vertikal
@@ -2017,6 +2029,12 @@ language = Deutsch
 
 = Vertical Box List
 > Vertikale Feldliste
+
+= Vertical Ruler
+> Vertikales Lineal
+
+= Vertical Scroll Bar
+> Vertikale Bildlaufleiste
 
 = Vertical, left to right
 > Vertikal, von links nach rechts
@@ -2801,6 +2819,9 @@ language = Deutsch
 = Split Cells
 > Zellen teilen
 
+= Status Bar
+> Statusleiste
+
 = Start Mail Merge
 > Seriendruck starten
 
@@ -3463,4 +3484,52 @@ language = Deutsch
 
 = “{0}” will be formatted automatically.
 > „{0}“ wird automatisch formatiert.
+
+= Align Right
+> Rechtsbündig
+
+= Asian Layout
+> Asiatisches Layout
+
+= Center
+> Zentriert
+
+= Change Case
+> Groß-/Kleinschreibung
+
+= Clear All Formatting
+> Alle Formatierungen löschen
+
+= Decrease Font Size
+> Schriftgrad verkleinern
+
+= Decrease Indent
+> Einzug verkleinern
+
+= Font Color
+> Schriftfarbe
+
+= Increase Font Size
+> Schriftgrad vergrößern
+
+= Increase Indent
+> Einzug vergrößern
+
+= Justify
+> Blocksatz
+
+= Line and Paragraph Spacing
+> Zeilen- und Absatzabstand
+
+= Multilevel List
+> Liste mit mehreren Ebenen
+
+= Shading
+> Schattierung
+
+= Text Effects and Typography
+> Texteffekte und Typografie
+
+= Text Highlight Color
+> Texthervorhebungsfarbe
 

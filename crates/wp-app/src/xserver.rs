@@ -467,6 +467,8 @@ struct ReadAloud {
     editor: Editor,
     finished: std::sync::Arc<std::sync::atomic::AtomicBool>,
     started: Instant,
+    /// Whether the find strip has been opened yet.
+    searching: bool,
 }
 
 impl App for ReadAloud {
@@ -474,6 +476,14 @@ impl App for ReadAloud {
         let finished = self.finished.load(std::sync::atomic::Ordering::SeqCst);
         if event == Event::Tick && (finished || self.started.elapsed() > Duration::from_secs(90)) {
             return Response::Close;
+        }
+        // The find strip is opened at once, the way a person would with
+        // Ctrl+F, so that there is a box on the window to be written into.
+        if event == Event::Tick && !self.searching {
+            self.searching = true;
+            let control = wp_shell::Modifiers { control: true, ..wp_shell::Modifiers::default() };
+            self.editor
+                .handle(Event::KeyDown { key: wp_shell::Key::Letter('f'), modifiers: control });
         }
         self.editor.handle(event)
     }
@@ -513,10 +523,27 @@ impl App for ReadAloud {
     fn accessible_rects(&mut self, start: usize, end: usize) -> Vec<(i32, i32, i32, i32)> {
         self.editor.accessible_rects(start, end)
     }
+
+    fn accessible_lines(&mut self) -> Vec<(usize, usize)> {
+        self.editor.accessible_lines()
+    }
+
+    fn accessible_attributes(
+        &mut self,
+        offset: usize,
+    ) -> Option<(accessibility::TextAttributes, usize, usize)> {
+        self.editor.accessible_attributes(offset)
+    }
+
+    fn accessible_set_value(&mut self, id: u64, value: &str) -> Response {
+        self.editor.accessible_set_value(id, value)
+    }
 }
 
 /// The whole editor read through AT-SPI by a screen reader's library: the
-/// ribbon's tabs and buttons, and the document's text.
+/// ribbon's tabs, buttons and boxes, the find strip and the status strip,
+/// the document's text by lines and by how it is set, a box written into,
+/// and a dialog opening — what is heard, and what the dialog holds.
 #[test]
 fn a_screen_reader_reads_the_editor_through_at_spi() {
     let _display = one_display_at_a_time();
@@ -557,7 +584,7 @@ fn a_screen_reader_reads_the_editor_through_at_spi() {
             let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/atspi-reader.py");
             let output = Command::new("python3")
                 .arg(script)
-                .args(["Word Processor", "Italic"])
+                .args(["Word Processor", "Italic", "Paragraph", "Search document", "aloud"])
                 .env("DBUS_SESSION_BUS_ADDRESS", &address)
                 .env("DISPLAY", ":91")
                 .stderr(Stdio::null())
@@ -574,7 +601,7 @@ fn a_screen_reader_reads_the_editor_through_at_spi() {
     )));
     let document = Document::create(&body).expect("a document");
     let editor = Editor::opened(library, document, None::<PathBuf>);
-    let reading = ReadAloud { editor, finished, started: Instant::now() };
+    let reading = ReadAloud { editor, finished, started: Instant::now(), searching: false };
     let options =
         WindowOptions { title: "Document — Word Processor".to_owned(), width: 1400, height: 900 };
     wp_shell::run(options, Box::new(reading)).expect("the editor's window opens");
@@ -591,5 +618,24 @@ fn a_screen_reader_reads_the_editor_through_at_spi() {
     assert!(has("node 2 toggle button | Italic"), "{said}");
     assert!(has("text Read aloud on Linux."), "the document's text: {said}");
     assert!(has("pressed"), "{said}");
+    // The boxes as boxes, with what is in them.
+    assert!(has("node 2 combo box | Font Size | enabled | 11"), "the size box: {said}");
+    assert!(has("node 2 combo box | Font | enabled |"), "the font box: {said}");
+    // The find strip, with the keyboard in its box, and the status strip.
+    assert!(has("node 2 panel | Find"), "{said}");
+    assert!(has("node 3 entry | Find | focused,enabled,editable"), "{said}");
+    assert!(has("node 2 status bar | Status Bar"), "{said}");
+    assert!(has("node 3 label | Page 1 of 1, 4 words"), "what the strip says: {said}");
+    // Lines as the layout broke them, and how the text is set.
+    assert!(has("line 0 20"), "{said}");
+    assert!(has("attributes 0 20 "), "{said}");
+    assert!(said.contains("weight=400"), "{said}");
+    // A box written into: the navigation pane's search.
+    assert!(has("written aloud"), "{said}");
+    // A dialog opening is heard, and what it holds is read.
+    assert!(has("event window activate Paragraph"), "{said}");
+    assert!(has("event focused"), "{said}");
+    assert!(has("dialog 0 dialog | Paragraph"), "{said}");
+    assert!(has("dialog 1 push button | OK"), "{said}");
     assert!(has("done"), "{said}");
 }

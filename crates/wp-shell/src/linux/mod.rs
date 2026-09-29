@@ -32,6 +32,7 @@ mod dialogs;
 mod files;
 pub(crate) mod keys;
 mod locale;
+mod wait;
 mod wayland;
 pub(crate) mod x11;
 mod xim;

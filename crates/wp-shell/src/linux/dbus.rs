@@ -584,6 +584,9 @@ pub(crate) struct Connection {
     pending: VecDeque<Message>,
     /// The name the bus gave this connection.
     pub(crate) name: String,
+    /// Whether the bus has gone: a socket that has closed is always ready
+    /// to be read, and waiting on it would be no wait at all.
+    closed: bool,
 }
 
 /// The session bus's address: what the desktop put in the environment, or
@@ -689,6 +692,7 @@ impl Connection {
             inbox: Vec::new(),
             pending: VecDeque::new(),
             name: String::new(),
+            closed: false,
         };
         let reply = connection.call(
             &Message::call(
@@ -741,9 +745,17 @@ impl Connection {
         }
     }
 
+    /// The socket, for waiting on it beside another — while there is a bus
+    /// at the other end of it; see [`super::wait`].
+    pub(crate) fn raw_fd(&self) -> Option<std::os::fd::RawFd> {
+        (!self.closed).then(|| std::os::fd::AsRawFd::as_raw_fd(&self.stream))
+    }
+
     /// Whatever has arrived, without waiting for more.
     pub(crate) fn poll(&mut self) -> Vec<Message> {
-        let _ = self.read_some(Duration::from_millis(1));
+        if !self.closed && self.read_some(Duration::from_millis(1)).is_err() {
+            self.closed = true;
+        }
         while let Some((decoded, used)) = Message::decode(&self.inbox) {
             self.inbox.drain(..used);
             if let Some(decoded) = decoded {

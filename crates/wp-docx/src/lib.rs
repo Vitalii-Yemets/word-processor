@@ -1807,6 +1807,28 @@ impl Document {
         self.resolved_over_selection()
     }
 
+    /// How the text at a place is formatted, and the stretch of its paragraph
+    /// formatted the same way — the run it is in, as byte offsets into the
+    /// paragraph's text. What a screen reader asks when it reads how a word
+    /// is set: at a run's end, the next run's; in an empty paragraph, what
+    /// the paragraph would give typing.
+    #[must_use]
+    pub fn formatting_at(&self, at: TextPosition) -> (ResolvedRunProperties, usize, usize) {
+        let Some(paragraph) = self.paragraph_element(at.paragraph) else {
+            return (ResolvedRunProperties::default(), at.offset, at.offset);
+        };
+        let length = self.paragraph_text(at.paragraph).map_or(0, |text| text.len());
+        let runs = format::runs_in_range(paragraph, 0, length, &self.styles);
+        let found = runs
+            .iter()
+            .find(|(from, (to, _))| at.offset >= *from && at.offset < *to)
+            .or_else(|| runs.last().filter(|(_, (to, _))| at.offset >= *to));
+        match found {
+            Some((from, (to, properties))) => (properties.clone(), *from, *to),
+            None => (format::resolved_for_paragraph(paragraph, &self.styles), 0, length),
+        }
+    }
+
     /// Word's Set As Default: makes this the formatting everything inherits.
     ///
     /// It is written into `w:docDefaults`, which is the bottom of the

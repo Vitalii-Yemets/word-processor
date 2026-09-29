@@ -527,6 +527,17 @@ impl Connection {
         Ok(true)
     }
 
+    /// The socket, for waiting on it beside another; see [`super::wait`].
+    pub(crate) fn raw_fd(&self) -> std::os::fd::RawFd {
+        std::os::fd::AsRawFd::as_raw_fd(&self.stream)
+    }
+
+    /// Whether a packet has been read already and is waiting to be taken,
+    /// which no wait on the socket would say.
+    pub(crate) fn buffered(&self) -> bool {
+        !self.pending.is_empty() || self.inbox.len() >= 32
+    }
+
     /// The next event, waiting at most the given time.
     pub(crate) fn next_event(&mut self, timeout: Duration) -> Result<Option<Packet>, Failure> {
         loop {

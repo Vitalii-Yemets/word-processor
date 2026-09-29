@@ -73,7 +73,7 @@ impl Editor {
     }
 
     /// Where its left edge is.
-    fn translator_left(&self) -> f32 {
+    pub(super) fn translator_left(&self) -> f32 {
         self.view_width as f32 - WIDTH
     }
 

@@ -281,6 +281,10 @@ pub struct Editor {
     /// The selection as a screen reader was last told of it, so that it is
     /// told again only when the selection moves.
     reader_selection: Option<(TextPosition, Option<(TextPosition, TextPosition)>)>,
+    /// What the left of the status strip said when it was last drawn, piece
+    /// by piece, for a screen reader: worked out once a drawing, not once a
+    /// question, since counting the words is a walk through the document.
+    reader_status: Vec<String>,
     /// How many of the window's pixels one of this program's is: the
     /// screen's density over an ordinary screen's. Everything here is
     /// measured in this program's pixels; the canvas scales them. See
@@ -806,6 +810,7 @@ impl Editor {
             text_drag: None,
             foreign_drop: None,
             reader_selection: None,
+            reader_status: Vec::new(),
             scale: 1.0,
             last_double_click: None,
             drag_by: selecting::Granularity::default(),

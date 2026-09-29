@@ -1041,6 +1041,7 @@ impl App for Readable {
             selected,
             enabled: true,
             focused,
+            ..Element::default()
         };
         vec![
             element(3, Role::Toggle, "Bold", self.bold, false),

@@ -454,8 +454,22 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
     let mut last_tick = Instant::now();
     let mut accessible = false;
     loop {
-        let packet =
-            with_state(|state| state.connection.next_event(Duration::from_millis(TICK_MILLIS)));
+        // The display and the accessibility bus are waited on together, so
+        // that whichever speaks is answered at once; see [`super::wait`].
+        let tick = Duration::from_millis(TICK_MILLIS);
+        let until_tick = tick.saturating_sub(last_tick.elapsed());
+        let display = with_state(|state| (state.connection.raw_fd(), state.connection.buffered()));
+        let Some((display_fd, buffered)) = display else { break };
+        let ready = buffered || {
+            let mut fds = vec![display_fd];
+            fds.extend(super::atspi::bus_fd());
+            super::wait::readable(&fds, until_tick)[0]
+        };
+        let packet = if ready {
+            with_state(|state| state.connection.next_event(Duration::from_millis(1)))
+        } else {
+            Some(Ok(None))
+        };
         match packet {
             Some(Ok(Some(packet))) => handle_packet(&packet),
             Some(Ok(None)) => {}
@@ -559,6 +573,22 @@ impl super::atspi::Window for Reading {
 
     fn select(&mut self, start: usize, end: usize) {
         let response = self.application(|app| app.accessible_select(start, end));
+        self.answered(response);
+    }
+
+    fn lines(&mut self) -> Vec<(usize, usize)> {
+        self.application(|app| app.accessible_lines()).unwrap_or_default()
+    }
+
+    fn attributes(
+        &mut self,
+        offset: usize,
+    ) -> Option<(crate::accessibility::TextAttributes, usize, usize)> {
+        self.application(|app| app.accessible_attributes(offset)).flatten()
+    }
+
+    fn set_value(&mut self, id: u64, value: &str) {
+        let response = self.application(|app| app.accessible_set_value(id, value));
         self.answered(response);
     }
 }

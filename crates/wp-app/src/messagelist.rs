@@ -85,6 +85,15 @@ fn from_the_tables() -> BTreeSet<String> {
             out.insert(label.to_owned());
         }
     }
+    // The buttons that carry a picture and no word are named nowhere but in
+    // their tips, and the arrows in the groups' corners by their group; the
+    // list of names above leaves both out, and their tips are what a person
+    // reads and a screen reader says.
+    for command in ribbon::every_command().iter().copied() {
+        if let Some(label) = crate::chrome::tip::label_of(command) {
+            out.insert(label.to_owned());
+        }
+    }
     for place in Place::ALL {
         out.insert(place.label().to_owned());
     }

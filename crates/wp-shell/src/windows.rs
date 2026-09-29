@@ -1067,7 +1067,12 @@ unsafe extern "system" fn window_procedure(
                 DefWindowProcW(window, message, word, long)
             }
         }
-        MESSAGE_TIMER if word == TICK_TIMER => deliver(window, Event::Tick),
+        MESSAGE_TIMER if word == TICK_TIMER => {
+            let response = deliver(window, Event::Tick);
+            // What changed among the controls, told to a screen reader.
+            crate::uia::look_over();
+            response
+        }
         MESSAGE_PAINT => {
             paint(window);
             0

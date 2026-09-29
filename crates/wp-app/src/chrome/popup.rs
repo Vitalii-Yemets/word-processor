@@ -507,6 +507,36 @@ impl Popup {
         self.items.get(index).map(String::as_str)
     }
 
+    /// Where the list is: left, top, width, height.
+    #[must_use]
+    pub fn frame(&self) -> (f32, f32, f32, f32) {
+        (self.left, self.top, self.width, self.height())
+    }
+
+    /// The rows showing that can be picked, each with its place — what a
+    /// screen reader is told the menu holds. Walked as [`Self::hit`] walks
+    /// them, since the rows are not all one height.
+    #[must_use]
+    pub fn row_places(&self) -> Vec<(usize, (f32, f32, f32, f32))> {
+        let mut places = Vec::new();
+        let mut top = self.top + 2.0;
+        for row in 0..self.showing() {
+            let index = self.scroll + row;
+            let height = self.row_height(index);
+            if self.row(index).pickable() {
+                places.push((index, (self.left, top, self.width, height)));
+            }
+            top += height;
+        }
+        places
+    }
+
+    /// The item that is in effect, which the list marks.
+    #[must_use]
+    pub fn current(&self) -> Option<usize> {
+        self.current
+    }
+
     /// Moves the list back inside the window.
     ///
     /// A menu opened near the foot of the window would hang off the bottom,

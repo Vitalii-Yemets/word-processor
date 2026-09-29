@@ -6344,13 +6344,104 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   and what Orca would say of what Atspi reads is Orca's. Lines as the
   layout breaks them, a range's attributes and the rest of **H4**'s list
   stay **H12**'s.
-- [ ] **H12. The rest of what a screen reader is told.** Lines as the layout
+- [x] **H12. The rest of what a screen reader is told.** Lines as the layout
   breaks them rather than paragraphs; the attributes of a range — bold, font,
   size — which every one of today answers "not supported"; the panes,
   dialogs, menus and lists as elements of their own; the ribbon's boxes as
   edit controls; the rulers and the scroll bar; and announcing what happens
   rather than only where the selection is — a dialog opening, a status
   message. Named in **H4**.
+  *Done:* on both platforms at once, since UI Automation and AT-SPI read
+  the same accessibility methods on the application.
+  **What an element can say** (`crates/wp-shell/src/lib.rs`): the element
+  it is inside, what it holds, and — for what stands between two ends —
+  the ends and where it is; twelve more kinds — dialog, pane, menu and
+  menu item, list and list item, edit box, tick box, box with a list,
+  scroll bar, ruler, status strip; and three more questions of the
+  application: the document's lines, how the text at an offset is set and
+  how far that goes, and a value written into an element.
+  **What the editor says** (`crates/wp-app/src/editor/accessible.rs`),
+  each part from the account the drawing used. The ribbon's every button:
+  only the commands with a name to be found by had a number before, so the
+  buttons that carry a picture and no word, the arrows in the groups'
+  corners, the font and size boxes, the gallery of styles and a squeezed
+  group's button were never told of; now they are, the gallery as a list
+  of styles with the one in effect chosen and the squeezed group by its
+  group's name. The measurement boxes as edit boxes and the font and size
+  boxes as boxes with a list, each with what it shows; a value written
+  into one is applied as the same thing typed or chosen would be. The
+  panes: the navigation pane with its close button, its tabs, its search
+  box — written into, it searches — and the rows of its list, the current
+  heading or page chosen; Document Recovery, Styles, Restrict Editing,
+  Signatures, XML Mapping, the Text Pane, the Translator and the
+  comparison column by name. The strip across the top of the page, for
+  finding and the rest of what it is opened for, with its fields, buttons
+  and toggles; the rulers; the scroll bars with how far they have run and
+  may, which a value written into moves; the status strip with its message
+  as its value, what it says of the document, and its buttons. A dropped
+  list as a menu called what it dropped from, its items with the one in
+  effect chosen, the one lit by the keyboard having it, and choosing one
+  doing what choosing it does. A dialog with its close button, tabs,
+  buttons and fields, each by its kind — a text, number or password box
+  (the password as dots), a tick box, a box with a list, a list with its
+  rows (a row with a tick box being a tick box), a box of lines as a list
+  of them, a caption — pressable and, where they hold something, written
+  into. One element has the keyboard: whatever is in front, else a box
+  being typed into, else the document. The lines are the layout's, run on
+  from one another; a stretch's attributes are its run's — font, size,
+  bold, italic, underline, strike-through, colour, highlight — with the
+  run's extent (`Document::formatting_at`). The tips of the buttons that
+  had none in the message list are in it now, and in German.
+  **AT-SPI** (`crates/wp-shell/src/linux/atspi.rs`): the new kinds by
+  AT-SPI's roles and states — modal, single-line, expandable, vertical or
+  horizontal; the tree built from what each element is inside; Value, and
+  EditableText on an edit box; Text on the boxes and the status strip;
+  lines from the layout; the attributes, a run and the defaults. And heard:
+  a dialog's window created and activated, the keyboard moving, names and
+  values changing, a box's text replaced, controls coming and going under
+  their own parent — the status strip's message as a polite live region.
+  **UI Automation** (`crates/wp-shell/src/uia.rs`): the control types,
+  dialog, live setting and toggle state; Value and RangeValue; navigation
+  through what each element is inside; the text range's line unit from the
+  layout and its format unit from the runs, and eight attributes — mixed
+  where a range crosses runs; and raised, while a client listens: a window
+  opened, the focus moved, the structure changed, a property changed, and
+  a status message as a notification.
+  **Waiting on both connections** (`crates/wp-shell/src/linux/wait.rs`):
+  each Linux shell waited on its display alone, a tick at a time, so every
+  question a screen reader asked waited for the tick — reading the editor's
+  ribbon took thirty seconds. Both are waited on together now, and it
+  takes a fifth of one; a bus that has gone is no longer waited on.
+  *Proven by:* the editor's own tests — every control on every tab told
+  of by a name, the boxes' values written and applied, a dialog's parts,
+  focus and OK, a tree row's tick box pressed, a menu's items and one
+  chosen, the rulers, scroll bar, status strip and navigation pane, lines
+  and attributes. `crates/wp-shell/tests/x_accessibility.rs`, read through
+  Atspi on Xvfb: the kinds, values and states, the tree by parent, a line
+  and a run's attributes, a box written into, and a dialog opening heard —
+  its window activated, the keyboard on its first field, the status
+  message — and read. The Wayland shell answers from the same code, and
+  `crates/wp-shell/tests/wayland.rs` still reads **H11**'s tree, text and
+  events on sway through the new waiting; the new kinds are not asked of
+  it there. `crates/wp-app/src/xserver.rs`: the whole editor — the
+  font and size boxes with their values, the navigation pane and the find
+  strip with the keyboard in its box, the rulers, the scroll bar, the
+  status strip, the layout's line, the run's attributes, the pane's search
+  box written into, and the Paragraph dialog opening heard with the
+  keyboard on Alignment and read field by field.
+  *Not done, and named here:* the UI Automation side is compiled against
+  the Windows ABI and not run — there is no UI Automation client in the
+  build image, and Wine's has not been tried. The panes other than the
+  navigation pane are named and not read inside; the File page, the colour
+  palette, the mini toolbar, the paste and correction buttons, the key
+  tips, the information bar, the title bar's buttons and the zoom slider
+  are not described; a dialog's dropped list is not, though its box says
+  what is chosen. The rulers' markers are not elements; a stretch's
+  attributes are the characters', not the paragraph's, its language or its
+  style; a font that comes from nowhere but the program's default is not
+  named. The offset at a point, several windows and the keys pressed are
+  still as **H11** left them; and Orca, NVDA and Narrator themselves are
+  not run.
 - [ ] **H13. The desktop portal.** D-Bus, and the two things on Wayland that
   cannot be done without it: a screenshot, which the protocol forbids a
   client to take for itself and which Word's Screenshot button therefore

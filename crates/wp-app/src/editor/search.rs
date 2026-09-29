@@ -120,6 +120,28 @@ impl Editor {
         Response::Redraw
     }
 
+    /// Puts the whole of a field's text in at once, as a screen reader does
+    /// when its user writes into the box: the keyboard goes to that field,
+    /// and a search runs on what was written as it would on what was typed.
+    /// A strip opened for anything else is only written into — the words of
+    /// a comment are not something to go looking for.
+    pub(super) fn write_find(&mut self, replacing: bool, text: &str) -> Response {
+        let Some(bar) = &mut self.find_bar else { return Response::Ignored };
+        if replacing {
+            text.clone_into(&mut bar.replacement);
+            bar.focus = Focus::Replace;
+        } else {
+            text.clone_into(&mut bar.needle);
+            bar.focus = Focus::Find;
+        }
+        if !replacing && matches!(bar.purpose, Purpose::Find | Purpose::Replace) {
+            self.count_matches();
+            self.jump_to_match(true, false);
+        }
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
     /// Reacts to a press on the strip.
     pub(super) fn pressed_in_find(&mut self, x: i32, y: i32) -> Response {
         let Some(bar) = &mut self.find_bar else { return Response::Ignored };

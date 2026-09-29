@@ -96,6 +96,10 @@ pub enum Hit {
     Add,
 }
 
+/// A part of the strip as a screen reader is told of it: which part, its
+/// name, and its place — left, top, width, height.
+pub type Part = (Hit, &'static str, (f32, f32, f32, f32));
+
 /// Which field has the keyboard.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Focus {
@@ -222,29 +226,7 @@ impl FindBar {
         let mut x = left_edge + 10.0;
 
         // The two fields, each with the word that names it.
-        let first_label = match self.purpose {
-            Purpose::Comment => "Comment",
-            Purpose::Note => "Note",
-            Purpose::Caption => "Caption",
-            Purpose::IndexEntry => "Index entry",
-            Purpose::Source => "Source",
-            Purpose::Link => "Address",
-            Purpose::Watermark => "Watermark",
-            Purpose::Property => "Value",
-            Purpose::Authority => "Citation",
-            Purpose::TextBox => "Text box",
-            Purpose::WordArt => "WordArt",
-            Purpose::Chart => "Numbers",
-            Purpose::Rule => "Rule",
-            Purpose::Equation => "Equation",
-            Purpose::Video => "Video",
-            Purpose::Macro => "Name",
-            Purpose::Diagram => "Boxes",
-            Purpose::Signature => "Signer",
-            Purpose::Envelope => "Address",
-            Purpose::Label => "Label",
-            Purpose::Find | Purpose::Replace => "Find",
-        };
+        let first_label = self.field_label();
         x = self.draw_field(
             canvas,
             engine,
@@ -351,6 +333,57 @@ impl FindBar {
         }
         icons::draw_sized(canvas, Icon::Close, close_left + 3.0, middle + 3.0, 16.0, theme.text);
         self.placed.push((Hit::Close, close_left, middle, 22.0, FIELD_HEIGHT));
+    }
+
+    /// The word in front of the first field, which says what it is for.
+    #[must_use]
+    pub fn field_label(&self) -> &'static str {
+        match self.purpose {
+            Purpose::Comment => "Comment",
+            Purpose::Note => "Note",
+            Purpose::Caption => "Caption",
+            Purpose::IndexEntry => "Index entry",
+            Purpose::Source => "Source",
+            Purpose::Link => "Address",
+            Purpose::Watermark => "Watermark",
+            Purpose::Property => "Value",
+            Purpose::Authority => "Citation",
+            Purpose::TextBox => "Text box",
+            Purpose::WordArt => "WordArt",
+            Purpose::Chart => "Numbers",
+            Purpose::Rule => "Rule",
+            Purpose::Equation => "Equation",
+            Purpose::Video => "Video",
+            Purpose::Macro => "Name",
+            Purpose::Diagram => "Boxes",
+            Purpose::Signature => "Signer",
+            Purpose::Envelope => "Address",
+            Purpose::Label => "Label",
+            Purpose::Find | Purpose::Replace => "Find",
+        }
+    }
+
+    /// The strip's parts as they were last drawn, each with its name and
+    /// its place — what a screen reader is told the strip holds. The name
+    /// is the whole label even where the strip was too narrow to draw it.
+    #[must_use]
+    pub fn parts(&self) -> Vec<Part> {
+        let buttons = self.buttons();
+        self.placed
+            .iter()
+            .map(|(hit, left, top, width, height)| {
+                let name = match hit {
+                    Hit::FindField => self.field_label(),
+                    Hit::ReplaceField => "Replace",
+                    Hit::Close => "Close",
+                    other => buttons
+                        .iter()
+                        .find(|(found, ..)| found == other)
+                        .map_or("", |(_, _, label)| *label),
+                };
+                (*hit, name, (*left, *top, *width, *height))
+            })
+            .collect()
     }
 
     /// Whether a button says nothing without its label.

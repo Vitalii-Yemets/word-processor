@@ -171,7 +171,8 @@ impl Navigation {
     }
 
     /// Where the list begins, under the header, the tabs and the search box.
-    fn list_top(top: f32) -> f32 {
+    #[must_use]
+    pub fn list_top(top: f32) -> f32 {
         top + HEADER_HEIGHT + TAB_HEIGHT + SEARCH_HEIGHT + 12.0
     }
 
@@ -211,6 +212,39 @@ impl Navigation {
             return (row < self.rows).then_some(Hit::Row(self.scroll + row));
         }
         None
+    }
+
+    /// The pane's parts as a screen reader is told of them, each with its
+    /// place on the window: the close button, the tabs, the search box, and
+    /// the rows of the list that are showing, of so many.
+    #[must_use]
+    pub fn places(&self, top: f32, count: usize) -> Vec<(Hit, (f32, f32, f32, f32))> {
+        // Placed as the pane is drawn, and turned round with the window
+        // where the interface reads right to left.
+        let placed = |x: f32, y: f32, width: f32, height: f32| {
+            let left = super::mirror::flip_f(x + width).min(super::mirror::flip_f(x));
+            (left, y, width, height)
+        };
+        let mut places = Vec::new();
+        let (close_x, close_y) = self.close_rect(top);
+        places.push((Hit::Close, placed(close_x, close_y, CLOSE, CLOSE)));
+        let tabs_top = top + HEADER_HEIGHT;
+        let each = self.width / Section::ALL.len() as f32;
+        for (index, section) in Section::ALL.iter().enumerate() {
+            places.push((
+                Hit::Tab(*section),
+                placed(each * index as f32, tabs_top, each, TAB_HEIGHT),
+            ));
+        }
+        let box_top = tabs_top + TAB_HEIGHT + 4.0;
+        places.push((Hit::SearchBox, placed(0.0, box_top, self.width, SEARCH_HEIGHT)));
+        let list_top = Self::list_top(top);
+        let showing = self.rows.min(count.saturating_sub(self.scroll));
+        for row in 0..showing {
+            let y = list_top + ROW_HEIGHT * row as f32;
+            places.push((Hit::Row(self.scroll + row), placed(0.0, y, self.width, ROW_HEIGHT)));
+        }
+        places
     }
 
     /// Lights up whatever the pointer is over. Returns whether that changed.
