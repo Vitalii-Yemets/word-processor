@@ -164,11 +164,15 @@ impl Editor {
 
     /// Lays the open windows out side by side.
     pub(super) fn arrange_all(&mut self) -> Response {
-        let moved = wp_shell::arrange_windows();
-        if moved < 2 {
+        if wp_shell::window_count() < 2 {
             return self.report("Only one window is open — use New Window first");
         }
-        self.report(&format!("{moved} windows arranged"))
+        match wp_shell::arrange_windows() {
+            // A Wayland desktop that is not one this program can ask: where
+            // a window goes is the compositor's there, and nothing moved.
+            0 => self.report("This desktop places the windows itself"),
+            moved => self.report(&format!("{moved} windows arranged")),
+        }
     }
 
     /// Whether this is the only window left.

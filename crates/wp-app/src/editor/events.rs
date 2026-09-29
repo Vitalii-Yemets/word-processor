@@ -1363,6 +1363,12 @@ impl Editor {
         // work is still only in memory.
         self.autorecover_tick();
 
+        // A screenshot chosen from the list, now that the list is off the
+        // screen.
+        if let Some(response) = self.take_screenshot_due() {
+            return response;
+        }
+
         // The document creeping along under the pointer, while the middle
         // button has it doing that.
         if self.autoscrolling() && self.autoscroll_tick() == Response::Redraw {

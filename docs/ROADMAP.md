@@ -6442,11 +6442,64 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   named. The offset at a point, several windows and the keys pressed are
   still as **H11** left them; and Orca, NVDA and Narrator themselves are
   not run.
-- [ ] **H13. The desktop portal.** D-Bus, and the two things on Wayland that
+- [x] **H13. The desktop portal.** D-Bus, and the two things on Wayland that
   cannot be done without it: a screenshot, which the protocol forbids a
   client to take for itself and which Word's Screenshot button therefore
   finds nothing for, and windows arranged side by side, which a Wayland
   client cannot do to itself either. Named in **H8**.
+  *Done:* the screenshot through the portal, and the windows through the
+  compositor, since the portal turned out to have nothing for them.
+  **The portal** (`crates/wp-shell/src/linux/portal.rs`), over the D-Bus
+  **H11** wrote: `org.freedesktop.portal.Screenshot`, asked on the session
+  bus. The answer is not the call's reply but a signal on a request object
+  whose path the program works out beforehand from its name on the bus
+  and a token of its own, and listens for before it calls, so that a
+  desktop that answers at once is heard; the signal says done, cancelled
+  or failed, and where the picture was written, which is read as a PNG.
+  Asked for the whole screen without questions, or — Word's Screen
+  Clipping — for a rectangle the person drags out in the desktop's own
+  way. On Wayland the whole screen is now the portal's picture, and
+  Screen Clipping is offered under it whenever the portal says it takes
+  screenshots; there are still no windows listed, since Wayland lists no
+  one else's. The list is taken off the screen, and the window drawn
+  again without it, before the picture is taken — on every platform: the
+  picture had been taken at the press, of the window with the list still
+  open over it. A clipping cancelled says no picture was taken.
+  **Arranging** (`crates/wp-shell/src/linux/sway.rs`): the portal's own
+  list of interfaces, read from a running one, has screenshots, screen
+  recording, files, printing and the rest, and nothing that places a
+  window; so Arrange All is asked of the compositor in the compositor's
+  language, which for sway is i3's — a socket, framed messages, JSON (read
+  by `crates/wp-shell/src/linux/json.rs`). The program's windows are
+  found in sway's tree by its process number, made tiled, gathered in
+  order into one container by marks, and laid across; other programs'
+  windows stay where they were. On a desktop the program cannot ask,
+  Arrange All says the desktop places the windows itself, where it said
+  only one window was open.
+  *Proven by:* `crates/wp-shell/tests/wayland.rs` on sway, with a session
+  bus of the test's own and xdg-desktop-portal woken on it, choosing its
+  wlr half for sway, which photographs with grim and lets a rectangle be
+  dragged with slurp: the whole screen came back 640 by 480 with the
+  window where it was, and a rectangle dragged by the test's own pointer
+  came back 201 by 151 and all window — both pictures looked at; and two
+  windows made floating by swaymsg, arranged, and read back by swaymsg as
+  tiled, in one container laid across, side by side and equally wide
+  across the whole screen. `crates/wp-app/src/wayland.rs`: the editor
+  pressed through what it tells a screen reader — Insert, Screenshot,
+  which offers the whole screen and Screen Clipping and no windows; the
+  whole screen put in the document as a picture 1600 by 900; and a
+  clipping waited for until the person pressed Escape to slurp, and
+  nothing put in.
+  *Not done, and named here:* the portal is asked with no parent window,
+  since naming one takes `xdg_foreign`, which this program does not
+  speak; while a clipping is dragged the program waits for it and draws
+  nothing. Screen Clipping on X and on Windows, where the program would
+  have to lay a window of its own over the desktop, is not written.
+  Arranging is asked of sway alone: KWin, Mutter and the other Wayland
+  compositors each have their own language or none — GNOME's has none
+  open to a program — and there nothing moves. The portal of version
+  1.16 offers screenshots only beside a permission dialog, which the
+  test image has from xdg-desktop-portal-gtk.
 - [ ] **H14. The rest of the clipboard.** Word's own native format — the
   package it puts on the clipboard beside the others — which this program
   neither writes nor reads, so a paste between two copies of Word carries

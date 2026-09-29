@@ -215,6 +215,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gir1.2-atspi-2.0 \
  && rm -rf /var/lib/apt/lists/*
 
+# The desktop's portal, which is how a program on Wayland photographs the
+# screen — the protocol will not let a client look at anything but its own
+# windows. xdg-desktop-portal is the front every program talks to over
+# D-Bus, and xdg-desktop-portal-wlr the half that does the work on sway: it
+# runs grim for the whole screen, and grim over slurp for a rectangle a
+# person drags out, which is Word's Screen Clipping. The front offers the
+# screenshot only beside somewhere to ask permission, which on this
+# version is xdg-desktop-portal-gtk's; and the wlr half starts the screen
+# recording too, which wants PipeWire running. The program speaks D-Bus
+# and the portal's interface itself; test tools, nothing of them reaches
+# the product. In a layer of its own, after the others.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        xdg-desktop-portal \
+        xdg-desktop-portal-wlr \
+        xdg-desktop-portal-gtk \
+        pipewire \
+        slurp \
+ && rm -rf /var/lib/apt/lists/*
+
 # The project has no dependencies at all, so builds never need the network.
 #
 # LANG matters for the tests: under the default POSIX locale Info-ZIP's unzip

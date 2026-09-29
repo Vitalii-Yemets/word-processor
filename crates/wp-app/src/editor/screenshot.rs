@@ -5,9 +5,11 @@
 //! Word offers a thumbnail of each open window, and below them Screen Clipping,
 //! which hides Word and lets a rectangle be dragged out of whatever is behind
 //! it. The list of windows is here, by name rather than by thumbnail, together
-//! with the whole screen. The dragged clipping is not: it needs a window of its
-//! own drawn over the desktop, and the two ways of getting a picture that this
-//! list gives are the ones people use.
+//! with the whole screen. Screen Clipping is offered where the desktop does
+//! the dragging — on Wayland, through its portal, which is also the only way
+//! a program there may photograph the screen at all, and which lists no
+//! windows. Elsewhere it would need a window of this program's own drawn
+//! over the desktop, which there is not.
 //!
 //! The picture goes in as a PNG. It could go in as a bitmap and save the
 //! compressing, but a document full of uncompressed screenshots is a document
@@ -17,6 +19,7 @@ use wp_raster::{Canvas, Color};
 use wp_shell::Response;
 
 use crate::chrome::{Choice, Command, Popup};
+use crate::messages::t;
 
 use wp_docx::EMU_PER_INCH;
 
@@ -33,22 +36,48 @@ impl Editor {
         };
 
         self.screen_windows = wp_shell::screen::windows();
-        let mut items = vec!["The whole screen".to_owned()];
+        let mut items = vec![t("The whole screen").to_owned()];
         items.extend(self.screen_windows.iter().map(|window| window.title.clone()));
+        // Last, under the windows, where Word puts it.
+        if wp_shell::screen::can_clip() {
+            items.push(t("Screen Clipping").to_owned());
+        }
 
         self.popup = Some(Popup::new(Choice::Screenshot, items, None, left, top, 380.0));
         self.needs_redraw = true;
         Response::Redraw
     }
 
-    /// Takes the picture that was chosen and puts it in the document.
+    /// Takes the list away, and the picture that was chosen on the next
+    /// tick.
+    ///
+    /// Nothing of this program should be in the picture, so the list it was
+    /// chosen from is off the screen before the shutter goes — which means
+    /// drawn again without it first. Taken at once, the picture was of the
+    /// window as it last was: with the list still open over it.
     pub(super) fn choose_screenshot(&mut self, index: usize) -> Response {
         self.popup = None;
+        self.screenshot_due = Some(index);
+        self.needs_redraw = true;
+        Response::Redraw
+    }
 
-        // Nothing of this program should be in the picture, so the list it was
-        // chosen from is gone before the shutter goes.
+    /// Takes the picture chosen, if one is due, and puts it in the document.
+    pub(super) fn take_screenshot_due(&mut self) -> Option<Response> {
+        let index = self.screenshot_due.take()?;
+        Some(self.take_screenshot(index))
+    }
+
+    fn take_screenshot(&mut self, index: usize) -> Response {
+        let clipping = index == self.screen_windows.len() + 1;
         let shot = match index.checked_sub(1) {
             None => wp_shell::screen::capture_screen(),
+            // The rectangle is the person's to drag out, and theirs to
+            // cancel: a cancelled one is no picture, and nothing is wrong.
+            Some(_) if clipping => match wp_shell::screen::clip() {
+                Some(shot) => Some(shot),
+                None => return self.report("No picture was taken"),
+            },
             Some(at) => match self.screen_windows.get(at) {
                 Some(window) => wp_shell::screen::capture_window(window.handle),
                 None => return Response::Ignored,
@@ -100,4 +129,48 @@ fn canvas_from(shot: &wp_shell::screen::Shot) -> Canvas {
         }
     }
     canvas
+}
+
+#[cfg(test)]
+mod tests {
+    use wp_docx::model::{Block, Body, Paragraph};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Event};
+
+    use super::*;
+
+    fn editor() -> Editor {
+        let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Hello")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let mut editor = Editor::new(library, Document::open(&bytes).expect("reopening"), None);
+        editor.handle(Event::Resized { width: 1200, height: 800 });
+        editor.draw(1200, 800);
+        editor
+    }
+
+    /// The list is taken off the screen, and the window drawn again without
+    /// it, before the picture is taken: on the next tick, not at the press.
+    #[test]
+    fn the_picture_is_taken_once_the_list_is_off_the_screen() {
+        let mut editor = editor();
+        editor.choose_tab(crate::chrome::ribbon::Tab::Insert);
+        editor.draw(1200, 800);
+        editor.run(Command::Screenshot);
+        assert!(editor.popup.as_ref().is_some_and(|popup| popup.choice == Choice::Screenshot));
+        assert_eq!(editor.popup.as_ref().and_then(|popup| popup.item(0)), Some("The whole screen"));
+
+        assert_eq!(editor.choose_screenshot(0), Response::Redraw);
+        assert!(editor.popup.is_none(), "the list is gone");
+        assert_eq!(editor.screenshot_due, Some(0), "and the picture waits for the next tick");
+        assert!(editor.status.is_empty(), "nothing has been tried yet");
+
+        editor.draw(1200, 800);
+        editor.handle(Event::Tick);
+        assert_eq!(editor.screenshot_due, None);
+        // With no screen to photograph here, the attempt says so.
+        assert_eq!(editor.status, "The screen could not be photographed");
+    }
 }

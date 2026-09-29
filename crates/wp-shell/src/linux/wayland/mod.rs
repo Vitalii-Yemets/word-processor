@@ -1970,9 +1970,12 @@ pub(crate) fn window_count() -> usize {
 }
 
 /// Laying windows out side by side is the compositor's business on
-/// Wayland: a client cannot put its own window anywhere, by design.
+/// Wayland: a client cannot put its own window anywhere, by design, and
+/// the desktop's portal has no interface for it. So it is asked of the
+/// compositor in the compositor's own language, where that is one this
+/// program speaks — sway's; see [`super::sway`]. Elsewhere nothing moves.
 pub(crate) fn arrange_windows() -> usize {
-    0
+    super::sway::arrange(std::process::id()).unwrap_or(0)
 }
 
 pub(crate) fn is_maximised() -> bool {
@@ -2251,15 +2254,12 @@ pub(crate) struct Shot {
     pub(crate) pixels: Vec<u8>,
 }
 
-/// A Wayland client cannot see the screen or another program's window —
-/// that is the protocol's own rule, and the reason a screenshot on Wayland
-/// goes through the desktop's portal. Named in the roadmap.
+/// A Wayland client cannot see another program's window, or list them —
+/// that is the protocol's own rule — so there are none to photograph one
+/// of. The whole screen, and a rectangle dragged out of it, are asked of
+/// the desktop's portal instead; see [`super::portal`].
 pub(crate) fn screen_windows() -> Vec<ScreenWindow> {
     Vec::new()
-}
-
-pub(crate) fn capture_screen() -> Option<Shot> {
-    None
 }
 
 pub(crate) fn capture_window(_handle: usize) -> Option<Shot> {

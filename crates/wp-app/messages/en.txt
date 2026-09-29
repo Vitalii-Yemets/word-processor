@@ -803,6 +803,7 @@
 = Saved {0} pages to {1}
 = Scale
 = Scatter
+= Screen Clipping
 = Screenshot
 = Search document
 = Section: {0}
@@ -969,6 +970,7 @@
 = The same headings, closer together
 = The selection is saved to the {0} gallery.
 = The two passwords are not the same
+= The whole screen
 = The words are open; the formatting is limited to this document's styles.
 = The {0} theme
 = Themes

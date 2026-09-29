@@ -337,3 +337,221 @@ fn the_editor_comes_up_on_a_compositor_takes_typing_and_closes() {
     let paper = share_of(&rgb, page).max(share_of(&rgb, light_page));
     assert!(paper > 0.2, "the page is on the screen: {paper} of it is paper");
 }
+
+/// What the editor said as it took its screenshots.
+#[derive(Default)]
+struct Shots {
+    ticks: u32,
+    /// Which step it is on, and the tick that step began.
+    step: u32,
+    since: u32,
+    offered: Vec<String>,
+    whole: String,
+    cancelled: String,
+    /// How long the clipping was waited for.
+    waited: Duration,
+    picture: bool,
+}
+
+/// The editor pressed through what it tells a screen reader, as a person
+/// who cannot see the ribbon would press it: the Insert tab, Screenshot,
+/// and one of what that offers.
+struct Photographing {
+    editor: Editor,
+    shots: Rc<RefCell<Shots>>,
+    runtime: PathBuf,
+    display: String,
+}
+
+impl Photographing {
+    /// Presses the element of a kind with a name.
+    fn press(&mut self, role: accessibility::Role, name: &str) -> bool {
+        let found = self
+            .editor
+            .accessible_elements()
+            .into_iter()
+            .find(|element| element.role == role && element.name == name);
+        found.is_some_and(|element| self.editor.accessible_invoke(element.id) != Response::Ignored)
+    }
+
+    /// What the status strip says.
+    fn status(&mut self) -> String {
+        let elements = self.editor.accessible_elements();
+        let strip = elements.iter().find(|element| element.role == accessibility::Role::StatusBar);
+        strip.map(|element| element.value.clone()).unwrap_or_default()
+    }
+}
+
+impl App for Photographing {
+    fn handle(&mut self, event: Event) -> Response {
+        use accessibility::Role;
+        if event == Event::Tick {
+            let (ticks, step) = {
+                let mut shots = self.shots.borrow_mut();
+                shots.ticks += 1;
+                (shots.ticks, shots.step)
+            };
+            // Each step is tried on every tick until it can be done — the
+            // window takes its size from the compositor in its own time,
+            // and the ribbon is only there to press once it is drawn.
+            let next = |shots: &Rc<RefCell<Shots>>| {
+                let mut shots = shots.borrow_mut();
+                shots.step += 1;
+                shots.since = shots.ticks;
+            };
+            let since = ticks - self.shots.borrow().since;
+            match step {
+                0 if ticks > 10 && self.press(Role::TabItem, "Insert") => next(&self.shots),
+                1 if since > 2 && self.press(Role::Button, "Screenshot") => next(&self.shots),
+                2 if since > 2 => {
+                    let items = self.editor.accessible_elements();
+                    self.shots.borrow_mut().offered = items
+                        .iter()
+                        .filter(|element| element.role == Role::MenuItem)
+                        .map(|element| element.name.clone())
+                        .collect();
+                    assert!(self.press(Role::MenuItem, "The whole screen"));
+                    next(&self.shots);
+                }
+                // Taken on the tick after the list went, through the portal.
+                3 if since > 10 => {
+                    let status = self.status();
+                    let picture = self.editor.document.drawing_at(wp_docx::TextPosition::new(0, 0));
+                    let mut shots = self.shots.borrow_mut();
+                    shots.whole = status;
+                    shots.picture = picture;
+                    drop(shots);
+                    next(&self.shots);
+                }
+                4 if since > 2 && self.press(Role::Button, "Screenshot") => next(&self.shots),
+                5 if since > 2 => {
+                    // The person thinks better of it: Escape, to slurp,
+                    // which has the keyboard while the rectangle is dragged.
+                    let (runtime, display) = (self.runtime.clone(), self.display.clone());
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(2500));
+                        let _ = Command::new("wtype")
+                            .args(["-k", "Escape"])
+                            .env("XDG_RUNTIME_DIR", runtime)
+                            .env("WAYLAND_DISPLAY", display)
+                            .env_remove("DISPLAY")
+                            .status();
+                    });
+                    assert!(self.press(Role::MenuItem, "Screen Clipping"));
+                    // Taken on the next tick, and waited for there until the
+                    // person has done — or, here, not.
+                    let started = Instant::now();
+                    self.editor.handle(Event::Tick);
+                    self.shots.borrow_mut().waited = started.elapsed();
+                    next(&self.shots);
+                }
+                6 if since > 5 => {
+                    self.shots.borrow_mut().cancelled = self.status();
+                    return Response::Close;
+                }
+                _ if ticks > 600 => return Response::Close,
+                _ => {}
+            }
+        }
+        self.editor.handle(event)
+    }
+
+    fn cursor(&mut self, x: i32, y: i32) -> Cursor {
+        self.editor.cursor(x, y)
+    }
+
+    fn is_caption(&mut self, x: i32, y: i32) -> bool {
+        self.editor.is_caption(x, y)
+    }
+
+    fn switch_window(&mut self, index: usize) {
+        self.editor.switch_window(index);
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.editor.draw(width, height)
+    }
+}
+
+/// Word's Screenshot button on Wayland: the whole screen asked of the
+/// desktop's portal and put in the document as a picture, and Screen
+/// Clipping offered — the rectangle for the person to drag out, which here
+/// they cancel. Held to xdg-desktop-portal and its wlr half, which
+/// photograph with grim and let the rectangle be dragged with slurp.
+#[test]
+fn the_editor_takes_a_screenshot_through_the_desktop_s_portal() {
+    use std::io::BufRead;
+    let _display = crate::xserver::one_display_at_a_time();
+    if !Path::new("/usr/libexec/xdg-desktop-portal-wlr").exists() {
+        eprintln!("skipped: no portal for sway on this machine");
+        return;
+    }
+    let Some(compositor) = Compositor::start(1600, 900) else {
+        eprintln!("skipped: no compositor could be started on this machine");
+        return;
+    };
+    // The session bus the portal's programs are started into when the
+    // first call wakes them, knowing the compositor and that it is sway.
+    let Ok(mut bus) = Command::new("dbus-daemon")
+        .args(["--session", "--print-address=1", "--nofork", "--nopidfile"])
+        .env("XDG_CURRENT_DESKTOP", "sway")
+        .env_remove("DISPLAY")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        eprintln!("skipped: no session bus on this machine");
+        return;
+    };
+    let mut address = String::new();
+    let _ =
+        std::io::BufReader::new(bus.stdout.take().expect("the address")).read_line(&mut address);
+    let address = address.trim().to_owned();
+    let pipewire = Command::new("pipewire")
+        .env("DBUS_SESSION_BUS_ADDRESS", &address)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    std::thread::sleep(Duration::from_millis(500));
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", &address);
+
+    let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
+    let mut body = wp_docx::model::Body::default();
+    body.blocks.push(wp_docx::model::Block::Paragraph(wp_docx::model::Paragraph::default()));
+    let document = Document::create(&body).expect("a document");
+    let shots = Rc::new(RefCell::new(Shots::default()));
+    let photographing = Photographing {
+        editor: Editor::opened(library, document, None::<PathBuf>),
+        shots: Rc::clone(&shots),
+        runtime: compositor.runtime.clone(),
+        display: compositor.display.clone(),
+    };
+    let options =
+        WindowOptions { title: "Document — Word Processor".to_owned(), width: 1600, height: 900 };
+    wp_shell::run(options, Box::new(photographing)).expect("the editor's window opens");
+
+    std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+    let _ = Command::new("pkill").arg("-f").arg("xdg-desktop-portal").status();
+    if let Ok(mut pipewire) = pipewire {
+        let _ = pipewire.kill();
+        let _ = pipewire.wait();
+    }
+    let _ = bus.kill();
+    let _ = bus.wait();
+    drop(compositor);
+
+    let shots = shots.borrow();
+    assert_eq!(
+        shots.offered,
+        ["The whole screen", "Screen Clipping"],
+        "the screen, no windows — Wayland lists none — and the clipping"
+    );
+    assert_eq!(shots.whole, "Screenshot, 1600 by 900", "the whole screen went in");
+    assert!(shots.picture, "as a picture in the document");
+    assert_eq!(shots.cancelled, "No picture was taken", "and the clipping was cancelled");
+    assert!(
+        shots.waited >= Duration::from_secs(2),
+        "by the person, after slurp had waited for them: {:?}",
+        shots.waited
+    );
+}

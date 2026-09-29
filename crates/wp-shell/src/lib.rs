@@ -1293,6 +1293,40 @@ pub mod screen {
         }
     }
 
+    /// Whether a person can drag a rectangle out of the screen to be
+    /// photographed — Word's Screen Clipping. Where the desktop's portal
+    /// does it, on Wayland; not yet on X or Windows, where the program
+    /// would have to lay a window of its own over the desktop.
+    #[must_use]
+    pub fn can_clip() -> bool {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::can_clip_screen()
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            false
+        }
+    }
+
+    /// Lets a person drag a rectangle out of the screen, and photographs
+    /// it. Nothing if they cancel, or [`can_clip`] would have said no.
+    #[must_use]
+    pub fn clip() -> Option<Shot> {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::clip_screen().map(|shot| Shot {
+                width: shot.width,
+                height: shot.height,
+                pixels: shot.pixels,
+            })
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            None
+        }
+    }
+
     /// Photographs one window, whatever happens to be in front of it.
     #[must_use]
     pub fn capture_window(handle: usize) -> Option<Shot> {

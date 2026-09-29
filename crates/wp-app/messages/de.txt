@@ -3533,3 +3533,9 @@ language = Deutsch
 = Text Highlight Color
 > Texthervorhebungsfarbe
 
+= Screen Clipping
+> Bildschirmausschnitt
+
+= The whole screen
+> Der ganze Bildschirm
+

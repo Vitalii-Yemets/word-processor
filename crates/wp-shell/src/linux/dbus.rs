@@ -745,6 +745,33 @@ impl Connection {
         }
     }
 
+    /// Waits for a message the caller is looking for — a signal, as a rule,
+    /// that answers something asked earlier — keeping whatever else arrives
+    /// for [`Self::poll`]. Nothing if the time runs out or the bus goes.
+    pub(crate) fn wait_for(
+        &mut self,
+        wait: Duration,
+        wanted: impl Fn(&Message) -> bool,
+    ) -> Option<Message> {
+        let deadline = Instant::now() + wait;
+        loop {
+            if let Some(at) = self.pending.iter().position(&wanted) {
+                return self.pending.remove(at);
+            }
+            while let Some((decoded, used)) = Message::decode(&self.inbox) {
+                self.inbox.drain(..used);
+                let Some(decoded) = decoded else { continue };
+                if wanted(&decoded) {
+                    return Some(decoded);
+                }
+                self.pending.push_back(decoded);
+            }
+            let left = deadline.checked_duration_since(Instant::now())?;
+            self.read_some(left.clamp(Duration::from_millis(1), Duration::from_millis(250)))
+                .ok()?;
+        }
+    }
+
     /// The socket, for waiting on it beside another — while there is a bus
     /// at the other end of it; see [`super::wait`].
     pub(crate) fn raw_fd(&self) -> Option<std::os::fd::RawFd> {

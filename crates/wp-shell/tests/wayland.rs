@@ -1160,3 +1160,306 @@ fn a_screen_reader_reads_the_window_on_the_compositor() {
     assert!(has("event caret 5"), "{said}");
     assert_eq!(*invoked.borrow(), vec![3]);
 }
+
+/// What a program saw of the desktop's portal while its window was up.
+#[derive(Default)]
+struct Portrayed {
+    ticks: u32,
+    offered: bool,
+    screen: Option<(usize, usize, Vec<u8>)>,
+    clipped: Option<(usize, usize, Vec<u8>)>,
+}
+
+/// A window of one colour that asks the desktop's portal for a picture of
+/// the screen, then for a rectangle dragged out of it, and closes.
+struct Portrait {
+    canvas: Canvas,
+    seen: std::rc::Rc<std::cell::RefCell<Portrayed>>,
+    runtime: PathBuf,
+    display: String,
+}
+
+/// The colour the window is painted, which the pictures are looked at for.
+const PORTRAIT: (u8, u8, u8) = (200, 30, 90);
+
+impl App for Portrait {
+    fn handle(&mut self, event: Event) -> Response {
+        let Event::Tick = event else { return Response::Ignored };
+        let mut seen = self.seen.borrow_mut();
+        seen.ticks += 1;
+        let as_rgb = |shot: wp_shell::screen::Shot| {
+            let rgb = shot.pixels.chunks_exact(4).flat_map(|pixel| [pixel[0], pixel[1], pixel[2]]);
+            (shot.width, shot.height, rgb.collect())
+        };
+        if seen.ticks == 15 {
+            seen.offered = wp_shell::screen::can_clip();
+            seen.screen = wp_shell::screen::capture_screen().map(as_rgb);
+        }
+        if seen.ticks == 20 {
+            // The rectangle is dragged by another client while this one
+            // waits for the portal's answer, as a person's hand would drag
+            // it: slurp draws over the screen and takes the pointer.
+            let (runtime, display) = (self.runtime.clone(), self.display.clone());
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(2500));
+                if let Ok(mut hand) = pointer::Pointer::new(&runtime, &display, 640, 480) {
+                    hand.drag((50, 40), (250, 190));
+                    std::thread::sleep(Duration::from_millis(3000));
+                }
+            });
+            seen.clipped = wp_shell::screen::clip().map(as_rgb);
+        }
+        if seen.ticks >= 25 {
+            return Response::Close;
+        }
+        Response::Ignored
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.canvas = Canvas::new(width, height);
+        self.canvas.clear(Color::rgb(PORTRAIT.0, PORTRAIT.1, PORTRAIT.2));
+        &self.canvas
+    }
+}
+
+/// The session bus a desktop would have, with the environment the
+/// portal's programs are started into when the first call wakes them: the
+/// compositor to draw on and photograph, and which desktop this is, which
+/// is how the portal chooses sway's half of itself.
+fn portal_bus(compositor: &Compositor) -> Option<(Child, String)> {
+    use std::io::BufRead;
+    let mut bus = Command::new("dbus-daemon")
+        .args(["--session", "--print-address=1", "--nofork", "--nopidfile"])
+        .env("XDG_RUNTIME_DIR", &compositor.runtime)
+        .env("WAYLAND_DISPLAY", &compositor.display)
+        .env("XDG_CURRENT_DESKTOP", "sway")
+        .env_remove("DISPLAY")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut address = String::new();
+    let _ = std::io::BufReader::new(bus.stdout.take()?).read_line(&mut address);
+    Some((bus, address.trim().to_owned()))
+}
+
+/// The screen photographed through the desktop's portal, and a rectangle
+/// dragged out of it: the two things Word's Screenshot button does that a
+/// Wayland client may not do for itself. Held to xdg-desktop-portal and
+/// its wlr half, which photograph with grim and let the rectangle be
+/// dragged with slurp — the rectangle dragged here by the test's own
+/// pointer.
+#[test]
+fn the_screen_is_photographed_and_clipped_through_the_desktop_s_portal() {
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !Path::new("/usr/libexec/xdg-desktop-portal-wlr").exists() {
+        eprintln!("skipped: no portal for sway on this machine");
+        return;
+    }
+    let places = "for_window [title=\"^Portrait\"] floating enable, move absolute position 0 0, resize set 400 300\n";
+    let Some(compositor) = Compositor::start_with("portal", 640, 480, places) else {
+        eprintln!("skipped: no compositor could be started on this machine");
+        return;
+    };
+    let Some((mut bus, address)) = portal_bus(&compositor) else {
+        eprintln!("skipped: no session bus on this machine");
+        return;
+    };
+    // The portal's screen recording half will not start without PipeWire.
+    let pipewire = compositor
+        .client("pipewire")
+        .env("DBUS_SESSION_BUS_ADDRESS", &address)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    std::thread::sleep(Duration::from_millis(500));
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", &address);
+
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Portrayed::default()));
+    let portrait = Portrait {
+        canvas: Canvas::new(1, 1),
+        seen: std::rc::Rc::clone(&seen),
+        runtime: compositor.runtime.clone(),
+        display: compositor.display.clone(),
+    };
+    let options = WindowOptions { title: "Portrait".to_owned(), width: 400, height: 300 };
+    wp_shell::run(options, Box::new(portrait)).expect("the window opens on the compositor");
+
+    std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+    let _ = Command::new("pkill").arg("-f").arg("xdg-desktop-portal").status();
+    if let Ok(mut pipewire) = pipewire {
+        let _ = pipewire.kill();
+        let _ = pipewire.wait();
+    }
+    let _ = bus.kill();
+    let _ = bus.wait();
+    drop(compositor);
+
+    let seen = seen.borrow();
+    assert!(seen.offered, "the portal did not say it takes screenshots");
+    let (width, height, rgb) = seen.screen.as_ref().expect("the whole screen, from the portal");
+    keep_proof("portal-screen", *width, *height, rgb);
+    assert_eq!((*width, *height), (640, 480), "the whole of the compositor's output");
+    let share = share_of(rgb, PORTRAIT);
+    let expected = (400.0 * 300.0) / (640.0 * 480.0);
+    assert!(
+        (share - expected).abs() < 0.05,
+        "the window is {share} of the picture, not {expected}"
+    );
+
+    let (width, height, rgb) = seen.clipped.as_ref().expect("the rectangle, from the portal");
+    keep_proof("portal-clipping", *width, *height, rgb);
+    assert!(
+        (199..=202).contains(width) && (149..=152).contains(height),
+        "the rectangle dragged out is 200 by 150, not {width} by {height}"
+    );
+    assert!(share_of(rgb, PORTRAIT) > 0.95, "the rectangle is of the window");
+}
+
+/// What sway says of the program's windows, one line each: whether each
+/// is tiled or floating, how its parent lays it out, which parent that is,
+/// and where it is — read by Python's own JSON reader, so that what is
+/// checked is sway's account and not this program's reading of it.
+fn sway_windows(compositor: &Compositor, socket: &Path, pid: u32) -> Vec<String> {
+    let script = format!(
+        "import json, sys
+def walk(node, parent):
+    if node.get('pid') == {pid} and node.get('type') in ('con', 'floating_con'):
+        r = node['rect']
+        print(node['type'], parent['layout'], parent['id'], r['x'], r['y'], r['width'], r['height'])
+    for child in node.get('nodes', []) + node.get('floating_nodes', []):
+        walk(child, node)
+walk(json.load(sys.stdin), {{'layout': '-', 'id': 0}})"
+    );
+    let tree =
+        compositor.client("swaymsg").args(["-t", "get_tree"]).env("SWAYSOCK", socket).output();
+    let Ok(tree) = tree else { return Vec::new() };
+    let mut python = Command::new("python3")
+        .args(["-c", &script])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("python");
+    let _ = python.stdin.take().expect("its input").write_all(&tree.stdout);
+    let output = python.wait_with_output().expect("python's answer");
+    String::from_utf8_lossy(&output.stdout).lines().map(str::to_owned).collect()
+}
+
+/// Two windows, scattered, and then side by side.
+struct Arranging {
+    canvas: Canvas,
+    ticks: u32,
+    compositor: (PathBuf, String),
+    socket: PathBuf,
+    before: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    after: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    arranged: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl App for Arranging {
+    fn handle(&mut self, event: Event) -> Response {
+        let Event::Tick = event else { return Response::Ignored };
+        self.ticks += 1;
+        let compositor = Compositor {
+            // Not started here: the one already running, named so that its
+            // own clients can be run.
+            child: Command::new("true").spawn().expect("a process that does nothing"),
+            runtime: self.compositor.0.clone(),
+            display: self.compositor.1.clone(),
+        };
+        let pid = std::process::id();
+        match self.ticks {
+            2 => assert!(wp_shell::open_window("Arranging, second")),
+            12 => {
+                // Scattered: both floating, one over the other.
+                let _ = compositor
+                    .client("swaymsg")
+                    .arg(format!("[pid={pid}] floating enable"))
+                    .env("SWAYSOCK", &self.socket)
+                    .stdout(Stdio::null())
+                    .status();
+            }
+            20 => *self.before.borrow_mut() = sway_windows(&compositor, &self.socket, pid),
+            22 => self.arranged.set(wp_shell::arrange_windows()),
+            30 => *self.after.borrow_mut() = sway_windows(&compositor, &self.socket, pid),
+            _ => {}
+        }
+        core::mem::forget(compositor);
+        if self.ticks >= 32 {
+            return Response::Close;
+        }
+        Response::Ignored
+    }
+
+    fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        self.canvas = Canvas::new(width, height);
+        self.canvas.clear(Color::rgb(90, 160, 60));
+        &self.canvas
+    }
+}
+
+/// Word's Arrange All on sway: the program's windows, floating one over
+/// the other, made tiled and laid side by side across the screen — asked
+/// of sway in its own language, since neither the protocol nor the portal
+/// lets a client place its windows, and read back from sway by swaymsg.
+#[test]
+fn the_windows_are_put_side_by_side_by_asking_sway() {
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(compositor) = Compositor::start("arrange", 800, 600) else {
+        eprintln!("skipped: no compositor could be started on this machine");
+        return;
+    };
+    // Sway names its socket for itself, in the runtime folder.
+    let socket = std::fs::read_dir(&compositor.runtime)
+        .ok()
+        .and_then(|entries| {
+            entries.flatten().map(|entry| entry.path()).find(|path| {
+                path.file_name().is_some_and(|name| name.to_string_lossy().starts_with("sway-ipc."))
+            })
+        })
+        .expect("sway's socket");
+    std::env::set_var("SWAYSOCK", &socket);
+
+    let before = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let after = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let arranged = std::rc::Rc::new(std::cell::Cell::new(0));
+    let arranging = Arranging {
+        canvas: Canvas::new(1, 1),
+        ticks: 0,
+        compositor: (compositor.runtime.clone(), compositor.display.clone()),
+        socket: socket.clone(),
+        before: std::rc::Rc::clone(&before),
+        after: std::rc::Rc::clone(&after),
+        arranged: std::rc::Rc::clone(&arranged),
+    };
+    let options = WindowOptions { title: "Arranging".to_owned(), width: 500, height: 300 };
+    wp_shell::run(options, Box::new(arranging)).expect("the window opens on the compositor");
+    std::env::remove_var("SWAYSOCK");
+    drop(compositor);
+
+    let (before, after) = (before.borrow(), after.borrow());
+    assert_eq!(before.len(), 2, "two windows: {before:?}");
+    assert!(before.iter().all(|line| line.starts_with("floating_con")), "scattered: {before:?}");
+    assert_eq!(arranged.get(), 2, "both were arranged");
+    assert_eq!(after.len(), 2, "{after:?}");
+    let fields: Vec<Vec<&str>> = after.iter().map(|line| line.split(' ').collect()).collect();
+    for window in &fields {
+        assert_eq!(window[0], "con", "tiled: {after:?}");
+        assert_eq!(window[1], "splith", "laid out across: {after:?}");
+    }
+    assert_eq!(fields[0][2], fields[1][2], "in one container: {after:?}");
+    let number = |text: &str| text.parse::<i32>().expect("a number");
+    let (left, right) = (&fields[0], &fields[1]);
+    assert_eq!(
+        number(left[4]),
+        number(right[4]),
+        "side by side, not one above the other: {after:?}"
+    );
+    assert_eq!(
+        number(left[3]) + number(left[5]),
+        number(right[3]),
+        "the second where the first ends"
+    );
+    assert!((number(left[5]) - number(right[5])).abs() <= 2, "the same width: {after:?}");
+    assert_eq!(number(left[5]) + number(right[5]), 800, "across the whole screen: {after:?}");
+}

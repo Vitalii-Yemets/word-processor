@@ -324,6 +324,10 @@ pub struct Editor {
     diagram_arrangement: wp_docx::diagram::Arrangement,
     /// The windows a screenshot could be taken of, while the list is open.
     screen_windows: Vec<wp_shell::screen::Window>,
+    /// The screenshot chosen from that list, taken on the next tick: by
+    /// then the list has been taken off the screen, which the picture is
+    /// of. See [`screenshot`].
+    screenshot_due: Option<usize>,
     /// How deep the outline goes when the document is shown as one.
     outline_depth: u8,
     /// Which way the pages run, and therefore which way the view scrolls.
@@ -830,6 +834,7 @@ impl Editor {
             macro_names: Vec::new(),
             diagram_arrangement: wp_docx::diagram::Arrangement::default(),
             screen_windows: Vec::new(),
+            screenshot_due: None,
             outline_depth: outline::ALL_LEVELS,
             movement: views::Movement::default(),
             split: None,

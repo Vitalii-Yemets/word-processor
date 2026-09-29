@@ -30,8 +30,11 @@ mod cups;
 mod dbus;
 mod dialogs;
 mod files;
+mod json;
 pub(crate) mod keys;
 mod locale;
+mod portal;
+mod sway;
 mod wait;
 mod wayland;
 pub(crate) mod x11;
@@ -141,19 +144,39 @@ pub(crate) fn screen_windows() -> Vec<ScreenWindow> {
     }
 }
 
+/// The whole screen: read off the X server, or on Wayland — where a program
+/// may not look at the screen — asked of the desktop's portal.
 pub(crate) fn capture_screen() -> Option<Shot> {
     match desktop() {
-        Desktop::Wayland => wayland::capture_screen().map(|shot| Shot {
-            width: shot.width,
-            height: shot.height,
-            pixels: shot.pixels,
-        }),
+        Desktop::Wayland => from_portal(portal::Taking::Screen),
         Desktop::X11 => xshell::capture_screen().map(|shot| Shot {
             width: shot.width,
             height: shot.height,
             pixels: shot.pixels,
         }),
     }
+}
+
+/// Whether a person can drag a rectangle out of the screen to photograph:
+/// on Wayland, where the desktop's portal lets them. On X the program
+/// would have to lay a window of its own over the desktop to be dragged
+/// across, which it does not.
+pub(crate) fn can_clip_screen() -> bool {
+    desktop() == Desktop::Wayland && portal::offers_screenshot()
+}
+
+/// The rectangle a person drags out of the screen, photographed.
+pub(crate) fn clip_screen() -> Option<Shot> {
+    match desktop() {
+        Desktop::Wayland => from_portal(portal::Taking::Clipping),
+        Desktop::X11 => None,
+    }
+}
+
+/// A screenshot from the portal, which hands it over as a PNG file.
+fn from_portal(taking: portal::Taking) -> Option<Shot> {
+    let image = wp_image::png::decode(&portal::screenshot(taking)?).ok()?;
+    Some(Shot { width: image.width, height: image.height, pixels: image.pixels })
 }
 
 pub(crate) fn capture_window(handle: usize) -> Option<Shot> {

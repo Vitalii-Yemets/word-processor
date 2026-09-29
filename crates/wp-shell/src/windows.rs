@@ -3519,6 +3519,17 @@ pub(crate) fn capture_screen() -> Option<Shot> {
     }
 }
 
+/// A rectangle dragged out of the screen is not offered here: it would take
+/// a window of the program's own laid over the whole desktop to drag
+/// across, which this shell does not make.
+pub(crate) fn can_clip_screen() -> bool {
+    false
+}
+
+pub(crate) fn clip_screen() -> Option<Shot> {
+    None
+}
+
 /// Photographs one window, whatever is in front of it.
 pub(crate) fn capture_window(handle: usize) -> Option<Shot> {
     let window = handle as Handle;

@@ -272,6 +272,7 @@ name = "wp-shell"
 version = "0.0.1"
 dependencies = [
  "wp-deflate",
+ "wp-image",
  "wp-raster",
  "wp-text",
 ]
