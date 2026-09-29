@@ -106,8 +106,10 @@ impl Editor {
         if let Some(folder) = path.parent() {
             let _ = std::fs::create_dir_all(folder);
         }
+        // Every block the person has ever saved is in this one file, so it is
+        // replaced whole or not at all: see [`super::replacing`].
         match template.save() {
-            Ok(bytes) => std::fs::write(&path, bytes).is_ok(),
+            Ok(bytes) => super::replacing::replace_with(&path, &bytes).is_ok(),
             Err(_) => false,
         }
     }

@@ -126,7 +126,9 @@ impl Editor {
                 else {
                     return self.report(t("Not saved"));
                 };
-                match std::fs::write(&path, &file.bytes) {
+                // Where the person said, which may be over a file of theirs:
+                // replaced whole or not at all. See [`super::replacing`].
+                match super::replacing::replace_with(&path, &file.bytes) {
                     Ok(()) => self.report(&format!("{} {}", t("Saved"), path.display())),
                     Err(error) => {
                         self.report(&format!("{}: {error}", t("The file could not be saved")))

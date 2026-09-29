@@ -237,6 +237,10 @@ impl Editor {
     /// saved as `.dotx` is a template from then on. A kind that cannot hold
     /// macros is asked about first, in Word's words, when there are macros
     /// to lose.
+    ///
+    /// Whatever the kind, the file is written beside the one it replaces and
+    /// renamed over it, so that a save that fails leaves the file that was
+    /// there as it was: see [`super::replacing`].
     pub(super) fn write_document(&mut self, path: &Path) -> bool {
         self.write_document_as(path, false)
     }
@@ -257,10 +261,12 @@ impl Editor {
             let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("page.htm");
             let title = self.document.properties().title;
             let title = (!title.is_empty()).then_some(title.as_str());
+            // Each file replaced whole or not at all: see [`super::replacing`].
             let written = match kind {
-                WebKind::SingleFile => {
-                    std::fs::write(path, wp_html::write_mht(&self.document, name, title))
-                }
+                WebKind::SingleFile => super::replacing::replace_with(
+                    path,
+                    &wp_html::write_mht(&self.document, name, title),
+                ),
                 WebKind::Page => {
                     let page = if filtered {
                         wp_html::write_filtered(&self.document, name, title)
@@ -268,18 +274,21 @@ impl Editor {
                         wp_html::write(&self.document, name, title)
                     };
                     let folder = path.parent().map(Path::to_path_buf).unwrap_or_default();
-                    let mut written = std::fs::write(path, page.html.as_bytes());
-                    for picture in &page.pictures {
-                        if written.is_err() {
-                            break;
-                        }
-                        let target = folder.join(&picture.name);
-                        if let Some(parent) = target.parent() {
-                            let _ = std::fs::create_dir_all(parent);
-                        }
-                        written = std::fs::write(target, &picture.bytes);
-                    }
-                    written
+                    // The pictures first and the page last, so that a page is
+                    // only replaced once its pictures are all beside it: a
+                    // save that fails on the way leaves the page that was
+                    // there, not a new one pointing at pictures that never
+                    // arrived.
+                    page.pictures
+                        .iter()
+                        .try_for_each(|picture| {
+                            let target = folder.join(&picture.name);
+                            if let Some(parent) = target.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            super::replacing::replace_with(&target, &picture.bytes)
+                        })
+                        .and_then(|()| super::replacing::replace_with(path, page.html.as_bytes()))
                 }
             };
             if let Err(error) = written {
@@ -323,7 +332,7 @@ impl Editor {
                 }
             }
             let bytes = wp_doc::save(&self.document);
-            if let Err(error) = std::fs::write(path, &bytes) {
+            if let Err(error) = super::replacing::replace_with(path, &bytes) {
                 let message = crate::messages::with(
                     "Cannot write {0}: {1}",
                     &[&path.display().to_string(), &error.to_string()],
@@ -347,7 +356,7 @@ impl Editor {
         // and nothing of the package.
         if is_rtf_path(path) {
             let bytes = wp_rtf::write(&self.document);
-            if let Err(error) = std::fs::write(path, &bytes) {
+            if let Err(error) = super::replacing::replace_with(path, &bytes) {
                 let message = crate::messages::with(
                     "Cannot write {0}: {1}",
                     &[&path.display().to_string(), &error.to_string()],
@@ -378,7 +387,7 @@ impl Editor {
                     return false;
                 }
             };
-            if let Err(error) = std::fs::write(path, &bytes) {
+            if let Err(error) = super::replacing::replace_with(path, &bytes) {
                 let message = crate::messages::with(
                     "Cannot write {0}: {1}",
                     &[&path.display().to_string(), &error.to_string()],
@@ -431,7 +440,7 @@ impl Editor {
             }
         };
 
-        if let Err(error) = std::fs::write(path, &bytes) {
+        if let Err(error) = super::replacing::replace_with(path, &bytes) {
             let message = crate::messages::with(
                 "Cannot write {0}: {1}",
                 &[&path.display().to_string(), &error.to_string()],
@@ -441,8 +450,8 @@ impl Editor {
             return false;
         }
 
-        // Only once the bytes are really on disk does the document count as
-        // saved.
+        // Only once the bytes are really on disk, and renamed into the place
+        // of the file that was there, does the document count as saved.
         let _ = self.document.mark_saved();
         self.file = Some(path.to_path_buf());
         self.status = crate::messages::with("Saved {0}", &[&path.display().to_string()]);
@@ -1276,6 +1285,79 @@ mod tests {
             Some(path.display().to_string().as_str())
         );
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// What a folder holds, by name, in order.
+    fn names_in(folder: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(folder)
+            .expect("the folder")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn saving_over_a_document_puts_a_new_file_in_its_place_and_nothing_beside_it() {
+        // Every kind Save writes without asking how, each saved over a file
+        // already there. A second name for each old file, in another folder,
+        // is what tells a file replaced from a file written into: the second
+        // name still holds what was there, where writing into the file would
+        // have changed it under both names.
+        let folder = folder("replaced");
+        let _ = std::fs::remove_dir_all(&folder);
+        let (documents, aside) = (folder.join("documents"), folder.join("aside"));
+        std::fs::create_dir_all(&documents).unwrap();
+        std::fs::create_dir_all(&aside).unwrap();
+        let mut names =
+            ["Letter.docx", "Letter.doc", "Letter.rtf", "Letter.odt", "Letter.htm", "Letter.mht"];
+        let old = b"what was there before".to_vec();
+        for name in names {
+            std::fs::write(documents.join(name), &old).unwrap();
+            std::fs::hard_link(documents.join(name), aside.join(name)).expect("a second name");
+        }
+
+        for name in names {
+            let path = documents.join(name);
+            let mut editor = editor("The second draft");
+            editor.file = Some(path.clone());
+            editor.document.mark_modified();
+            assert!(editor.save_now(), "{name} was not saved: {}", editor.status);
+            assert!(!editor.document.is_modified(), "{name} is saved and still marked changed");
+            assert_ne!(std::fs::read(&path).unwrap(), old, "{name} is as it was");
+            assert_eq!(
+                std::fs::read(aside.join(name)).unwrap(),
+                old,
+                "{name} was written into rather than replaced"
+            );
+        }
+        let saved = Document::open(&std::fs::read(documents.join("Letter.docx")).unwrap());
+        assert_eq!(saved.expect("a document").plain_text().trim_end(), "The second draft");
+        names.sort_unstable();
+        assert_eq!(names_in(&documents), names, "something was left beside the documents");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_save_that_fails_leaves_the_work_marked_unsaved_and_nothing_beside_it() {
+        // A folder where the file would go, which nothing can be renamed
+        // over: the file is written in full beside it, and then refused.
+        let folder = folder("refused");
+        let _ = std::fs::remove_dir_all(&folder);
+        let path = folder.join("Letter.docx");
+        std::fs::create_dir_all(&path).unwrap();
+        let mut editor = editor("Work not yet on disk");
+        editor.document.mark_modified();
+
+        assert!(!editor.write_document(&path), "a folder was taken for a document");
+        assert!(editor.document.is_modified(), "the work is marked saved when it is not");
+        assert!(editor.status.starts_with("Cannot write"), "{}", editor.status);
+        assert!(editor.file.is_none(), "the document took the folder for its file");
+        assert!(path.is_dir(), "the folder was replaced");
+        assert_eq!(names_in(&folder), ["Letter.docx"], "the temporary file was left behind");
+        assert!(names_in(&path).is_empty(), "something was written into the folder");
+        let _ = std::fs::remove_dir_all(folder);
     }
 
     #[test]

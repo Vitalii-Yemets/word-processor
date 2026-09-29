@@ -6960,7 +6960,7 @@ work is in *The order of the work* at the end.
   Cancel leaves the copy open as the document being edited. Show
   Repairs can only say what this program's own reading of the copy says;
   Word's repairs of a damaged file are Word's.
-- [ ] **H16. A save that cannot destroy the file it replaces.** The document
+- [x] **H16. A save that cannot destroy the file it replaces.** The document
   is written straight over its own path with `std::fs::write`, which
   truncates first; a disk that fills or a process that dies during the
   write leaves an empty or partial file where the document was, and the
@@ -6968,6 +6968,73 @@ work is in *The order of the work* at the end.
   the target, finish and sync it, then rename it into place; clear the
   modified flag only after the rename. The same for every format that goes
   out through this path. Reviews #1, R16.
+  *Done:* every file the program writes for a person over one that may
+  already be there is written beside it and renamed into its place.
+  **The helper** (`crates/wp-app/src/editor/replacing.rs`):
+  `write_replacing(target, write)` makes a new file in the target's own
+  folder, `.~Letter.docx.4120-7.tmp` — the name it will become, the
+  process and a count, made with `create_new`, so no two saves share one
+  and an old one is never written into — hands it to `write`, gives it the
+  old file's mode on Linux, syncs it, closes it and renames it over the
+  target, then syncs the folder on Linux; on any error the temporary file
+  is removed and the target is as it was. `replace_with(target, bytes)` is
+  the same for bytes in hand. A link is followed and left a link; a file
+  marked read-only is refused, as writing into it was, rather than
+  replaced by one that is not. On Windows `std::fs::rename` is
+  `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, and `FileRenameInfoEx`
+  with `FILE_RENAME_FLAG_REPLACE_IF_EXISTS` where that is denied: so the
+  standard library's documentation and source say.
+  **Where it is used:** Save and Save As in every kind
+  (`crates/wp-app/src/editor/files.rs`): Word's four, `.doc`, `.rtf`,
+  `.odt`, the single-file web page, and the web page with its pictures,
+  now written pictures first and page last, so that a failure leaves the
+  old page and not a new one missing its pictures. And plain text
+  (`textfiles.rs`); a document signed over its own file
+  (`signatures.rs`); Export to PDF (`printpane.rs`); a file the document
+  carries, saved out (`links.rs`); the typed address list and the letters
+  of Merge to Files (`mailings.rs`); the person's own template of building
+  blocks (`ownblocks.rs`); and the AutoRecover copy and its sidecar
+  (`autorecover.rs`), where a crash during the write is the very thing the
+  copy is kept for. Everywhere the document is marked saved only once the
+  helper has returned, which is after the rename. Left as they were, being
+  nobody's document: the picture `--picture` draws of the window, and what
+  the tests write for themselves.
+  *Proven by:* a file replaced holding exactly the new bytes with nothing
+  beside it, and one made where there was none; a write failing halfway,
+  its temporary file seen beside the target meanwhile, leaving the old
+  bytes, no temporary file and the error; two saves of one name at once,
+  each with a file of its own; a name of 250 bytes still finding room for
+  its temporary file; a read-only file refused and untouched; the mode
+  kept; a link followed and left a link; Save over a file already there in
+  six kinds — `.docx`, `.doc`, `.rtf`, `.odt`, `.htm`, `.mht` — marked
+  saved, with a second name for each old file, in another folder, still
+  holding the old bytes, which only a rename leaves, and nothing else in
+  the folder; and a save refused, over a folder of the document's name,
+  leaving the work marked unsaved and no temporary file.
+  *Not done, and named here:* a rename puts a new file in the old one's
+  place, and what belonged to the old file rather than to its bytes does
+  not come with it. Another name for it, a hard link, keeps the old bytes,
+  as the test shows. On Linux the owner and group become the saver's and
+  extended attributes are lost; only the mode is copied. On Windows the
+  access list, the hidden and system attributes, the creation time and
+  the alternate streams, the mark of the web among them, are the new
+  file's own; `ReplaceFileW` keeps those, and would need the shell's
+  Windows calls. None of the Windows side has been run, only built: the
+  build image is Linux. On Windows a file another program holds open is
+  refused unless that program shares its deletion, where writing into it
+  needed only shared writing; on Linux the rename goes through and that
+  program goes on reading the old one. A folder where a person may change
+  a file but not make one now refuses the save that writing in place let
+  through. A temporary file left by a crash stays beside the document
+  until somebody deletes it: nothing sweeps them up, since one may be
+  another copy of the program's save in progress. The message on failure
+  still says only "Cannot write", which is now the whole truth, but not
+  that the file on disk is unchanged.
+  Written in place still, not being documents: the settings file and the
+  custom dictionary, both silent on failure and the next to go this way;
+  and outside the window, `wp-cli`'s converted output, a macro's `Close`
+  of a file it wrote, and the desktop's `mimeapps.list` and recent list,
+  which `wp-shell` rewrites.
 - [ ] **H17. What the clipboard carries within the program.** Copying a
   picture and pasting it reports success and pastes nothing, because the
   run writer skips `Picture`, `Chart`, `Ink`, `Diagram`, `Group` and

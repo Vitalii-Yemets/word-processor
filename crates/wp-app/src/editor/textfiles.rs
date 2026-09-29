@@ -329,7 +329,9 @@ impl Editor {
         let text = self.text_to_save(dialog.ticked(SAVE_LINE_BREAKS), ending);
         let (bytes, lost) = encoding.encode(&text, dialog.ticked(SAVE_SUBSTITUTE));
 
-        if let Err(error) = std::fs::write(&file.path, &bytes) {
+        // Beside the file and renamed over it, so a failure leaves the file
+        // that was there: see [`super::replacing`].
+        if let Err(error) = super::replacing::replace_with(&file.path, &bytes) {
             let message = format!("Cannot write {}: {error}", file.path.display());
             wp_shell::dialog::show_error(&message);
             self.status = message;

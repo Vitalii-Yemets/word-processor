@@ -457,7 +457,10 @@ impl Editor {
             chosen.iter().filter_map(|number| all.get(number.saturating_sub(1)).cloned()).collect();
 
         let bytes = wp_pdf::write(&pages, self.library, &name);
-        match std::fs::write(&path, &bytes) {
+        // A PDF saved over another is one a person may already have sent
+        // somewhere and be keeping: replaced whole or not at all. See
+        // [`super::replacing`].
+        match super::replacing::replace_with(&path, &bytes) {
             Ok(()) => {
                 self.status = crate::messages::with(
                     "Saved {0} pages to {1}",

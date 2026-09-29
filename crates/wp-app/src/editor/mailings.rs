@@ -414,7 +414,10 @@ impl Editor {
         let Some(path) = wp_shell::dialog::save_file(t("Save Address List"), &filters, None) else {
             return self.report(crate::messages::t("The list was not saved, so nothing is merged"));
         };
-        if let Err(error) = std::fs::write(&path, self.typed_recipients.to_delimited()) {
+        // The list the letters are merged from, and perhaps written over an
+        // older one: replaced whole or not at all. See [`super::replacing`].
+        let list = self.typed_recipients.to_delimited();
+        if let Err(error) = super::replacing::replace_with(&path, list.as_bytes()) {
             return self.report(&format!("Cannot write {}: {error}", path.display()));
         }
 
@@ -647,7 +650,9 @@ impl Editor {
             };
             written += 1;
             let path = PathBuf::from(format!("{}-{}.docx", stem.to_string_lossy(), written));
-            if let Err(error) = std::fs::write(&path, bytes) {
+            // Each letter is a document, perhaps written over the same
+            // letter merged before: see [`super::replacing`].
+            if let Err(error) = super::replacing::replace_with(&path, &bytes) {
                 return self.report(&format!("{} could not be written: {error}", path.display()));
             }
         }

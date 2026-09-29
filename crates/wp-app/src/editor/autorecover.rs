@@ -190,7 +190,11 @@ impl Editor {
         }
         let Ok(bytes) = self.document.clone().save() else { return };
         let copy = folder.join(format!("{}.docx", self.recovery_name));
-        if std::fs::write(&copy, bytes).is_err() {
+        // Written over the last copy, and a crash in the middle of the write
+        // is exactly what the copy is kept for: so the last one stays whole
+        // until the new one is. The temporary file ends in `.tmp`, which
+        // [`copies`] passes over. See [`super::replacing`].
+        if super::replacing::replace_with(&copy, &bytes).is_err() {
             return;
         }
         let sidecar = write_sidecar(
@@ -199,7 +203,9 @@ impl Editor {
             &super::files::timestamp(),
             &copy,
         );
-        let _ = std::fs::write(copy.with_extension(SIDECAR), sidecar);
+        // And what it is, the same way: an empty sidecar says no name, and a
+        // copy with no name is not offered.
+        let _ = super::replacing::replace_with(&copy.with_extension(SIDECAR), sidecar.as_bytes());
         self.recovery_written = true;
     }
 

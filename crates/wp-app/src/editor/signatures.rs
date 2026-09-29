@@ -337,7 +337,10 @@ impl Editor {
                 return self.report(&format!("Cannot sign: {error}"));
             }
         };
-        if let Err(error) = std::fs::write(&path, bytes) {
+        // Over the document's own file, and so beside it and renamed into
+        // place: a signing that fails on the way leaves the document as it
+        // was saved. See [`super::replacing`].
+        if let Err(error) = super::replacing::replace_with(&path, &bytes) {
             return self.report(&format!("Cannot write {}: {error}", path.display()));
         }
 

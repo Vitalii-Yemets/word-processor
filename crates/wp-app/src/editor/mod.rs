@@ -88,6 +88,7 @@ mod properties;
 mod protection;
 mod readonly;
 mod references;
+mod replacing;
 mod restrict;
 mod review;
 mod ribbondialog;
