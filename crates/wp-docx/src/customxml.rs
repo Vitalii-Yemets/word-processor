@@ -445,7 +445,7 @@ impl Document {
         let mut own = Relationships::new(&item);
         own.add(CUSTOM_XML_PROPS, &format!("itemProps{number}.xml"), TargetMode::Internal);
         self.package_mut().set_relationships(&own).ok()?;
-        self.mark_modified();
+        self.note_change();
         Some(id)
     }
 
@@ -479,7 +479,7 @@ impl Document {
             let _ = self.package_mut().set_relationships(&empty);
         }
         self.package_mut().remove_part(&part.part);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -518,7 +518,7 @@ impl Document {
         }
         let Ok(written) = tree.to_xml() else { return false };
         self.package_mut().set_part(&part.part, written.into_bytes());
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -592,7 +592,7 @@ impl Document {
     /// does when a document is opened. Not an edit: the document is as it
     /// was opened, and there is nothing to undo.
     pub fn refresh_bound_controls(&mut self) -> usize {
-        let was_modified = self.modified;
+        let was_modified = self.is_modified();
         let mut changed = 0usize;
         for control in self.controls() {
             let Some(binding) = &control.binding else { continue };
@@ -604,9 +604,14 @@ impl Document {
             }
         }
         if changed > 0 {
-            self.history = crate::history::History::default();
+            self.forget_history();
         }
-        self.modified = was_modified;
+        // A document that was as it is on disk still counts as that: what was
+        // brought up to date is what the file says, read the way Word reads
+        // it. One that was changed stays changed, which it is anyway.
+        if !was_modified {
+            self.count_as_saved();
+        }
         changed
     }
 

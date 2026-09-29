@@ -282,7 +282,7 @@ impl Document {
         }
         self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
         self.save_styles_tree(&tree);
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

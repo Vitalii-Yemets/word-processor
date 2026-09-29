@@ -47,6 +47,9 @@ pub(super) enum Asking {
     /// One word the automatic rule would break, offered to be broken by
     /// hand.
     ManualHyphenation,
+    /// Whether to go on editing a signed document, which takes its
+    /// signatures off: Word's question when Edit Anyway is pressed on one.
+    RemoveSignatures,
     /// Word's two Asian Layout dialogs: a run set across a vertical line,
     /// and a run set as two lines in one.
     HorizontalInVertical,
@@ -256,6 +259,7 @@ impl Editor {
                 .apply_two_lines_in_one(&dialog, answer == Answer::Named(super::vertical::REMOVE)),
             Some(Asking::Signatures) => self.apply_signature(&dialog),
             Some(Asking::OpenReadOnly) => self.apply_open_read_only(&dialog),
+            Some(Asking::RemoveSignatures) => self.take_the_signatures_off(),
             Some(Asking::ReadOnlySettings) => self.apply_read_only_settings(&dialog),
             Some(Asking::Unprotect) => self.apply_unprotection(&dialog),
             Some(Asking::Recipients) => self.apply_recipient_list(&dialog),

@@ -416,7 +416,7 @@ impl Document {
                 );
             }
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -471,7 +471,11 @@ impl Document {
 
         // The text after the caret begins the new section, so the paragraph is
         // split first — the same split pressing Enter makes.
-        if !crate::position::split_paragraph(&mut self.tree_mut().root, caret, prefix.as_deref()) {
+        if !crate::position::split_paragraph(
+            &mut self.tree_to_edit().root,
+            caret,
+            prefix.as_deref(),
+        ) {
             return false;
         }
         self.end_section_quietly(caret.paragraph, start)
@@ -522,14 +526,15 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, ending) else {
             return false;
         };
-        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        let Some(paragraph) =
+            crate::edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
         else {
             return false;
         };
         let properties = crate::edit::paragraph_properties_of(paragraph, prefix.as_deref());
         properties.remove_children_named(Some(W), "sectPr");
         crate::edit::insert_ordered(properties, kept, crate::edit::PARAGRAPH_PROPERTY_ORDER);
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

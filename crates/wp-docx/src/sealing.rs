@@ -52,13 +52,17 @@ impl Document {
     ///
     /// Nothing is encrypted here: what this changes is what the next save
     /// writes. Says whether anything changed, like every other setter.
+    ///
+    /// Not a step to take back: Word keeps what is done on the File tab off
+    /// its undo list, and this is kept beside the package rather than in it.
+    /// So no undo comes back to the file on disk after it either.
     pub fn set_password(&mut self, password: Option<&str>) -> bool {
         let wanted = password.filter(|word| !word.is_empty()).map(str::to_owned);
         if self.password == wanted {
             return false;
         }
         self.password = wanted;
-        self.mark_modified();
+        self.changed_off_the_record();
         true
     }
 

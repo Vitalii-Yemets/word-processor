@@ -151,7 +151,7 @@ impl Document {
             read::W,
             if width > height { "landscape" } else { "portrait" },
         );
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -184,7 +184,7 @@ impl Document {
                 &value.to_string(),
             );
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -221,11 +221,11 @@ impl Document {
     /// the properties that make it one.
     pub(crate) fn section_properties_mut(&mut self, prefix: Option<&str>) -> Option<&mut Element> {
         if let Some(path) = self.section_break_path() {
-            return edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+            return edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
                 .and_then(|paragraph| paragraph.child_mut(Some(read::W), "pPr"))
                 .and_then(|properties| properties.child_mut(Some(read::W), "sectPr"));
         }
-        let body = body_of_mut(&mut self.tree_mut().root)?;
+        let body = body_of_mut(&mut self.tree_to_edit().root)?;
         if body.child(Some(read::W), "sectPr").is_none() {
             // It goes last in the body, which is where the schema puts it.
             body.push_element(Element::new(&edit::name_with(prefix, "sectPr"), Some(read::W)));
@@ -278,7 +278,7 @@ impl Document {
             read::W,
             "1",
         );
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -313,7 +313,7 @@ impl Document {
                 direction.word(),
             );
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 

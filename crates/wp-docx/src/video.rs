@@ -73,7 +73,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, at.paragraph) else {
             return false;
         };
-        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        let Some(paragraph) =
+            crate::edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
         else {
             return false;
         };
@@ -114,7 +115,7 @@ impl Document {
         });
 
         if done {
-            self.mark_modified();
+            self.note_change();
         }
         done
     }

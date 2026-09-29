@@ -666,7 +666,7 @@ impl Document {
             let (ours, theirs) = (read::read_part(ours), read::read_part(theirs));
             let Some(body) = Self::compared_body(&ours, &theirs, author, options) else { continue };
 
-            let Some(into) = edit::element_at_path_mut(&mut self.tree_mut().root, path) else {
+            let Some(into) = edit::element_at_path_mut(&mut self.tree_to_edit().root, path) else {
                 continue;
             };
             into.children.clear();
@@ -676,7 +676,7 @@ impl Document {
             marked += 1;
         }
         if marked > 0 {
-            self.mark_modified();
+            self.note_change();
         }
         marked
     }
@@ -757,7 +757,7 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, at) else { return 0 };
         let reviser = self.reviser.clone();
         let id = self.next_revision_id();
-        let Some(mine) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(mine) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path) else {
             return 0;
         };
 
@@ -808,7 +808,7 @@ impl Document {
         theirs_runs.clear();
 
         if marked > 0 {
-            self.mark_modified();
+            self.note_change();
         }
         marked
     }
@@ -822,7 +822,7 @@ impl Document {
     fn rename_tracked(&mut self, paragraph: usize, from: &str, to: &str, name: u32) {
         let prefix = self.prefix();
         let Some(path) = position::paragraph_path(&self.tree().root, paragraph) else { return };
-        let Some(element) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(element) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path) else {
             return;
         };
 
@@ -863,7 +863,7 @@ impl Document {
         let at = usize::from(element.child(Some(read::W), "pPr").is_some());
         element.insert_element(at, start);
         element.push_element(end);
-        self.mark_modified();
+        self.note_change();
     }
 
     /// Marks a whole paragraph as deleted.

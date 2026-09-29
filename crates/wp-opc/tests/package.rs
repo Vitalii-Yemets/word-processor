@@ -221,3 +221,58 @@ fn a_part_with_no_relationships_simply_has_none() {
     let relationships = package.relationships("word/document.xml").unwrap();
     assert!(relationships.all().is_empty());
 }
+
+#[test]
+fn changing_the_content_types_is_a_write_like_any_other() {
+    // The count is how a program holding something worked out from the parts
+    // tells whether they changed, and the declarations are a part: a package
+    // whose main part became a template's is not the package it was.
+    let mut package = Package::open(&sample_package()).unwrap();
+    let before = package.generation();
+
+    let mut content_types = package.content_types().clone();
+    content_types.set_override("word/document.xml", wp_opc::MAIN_DOCUMENT_TEMPLATE_CONTENT_TYPE);
+    package.set_content_types(content_types);
+
+    assert!(package.generation() > before, "the declarations changed and the count did not");
+    let written: Vec<&str> = package.written_since(before).collect();
+    assert_eq!(written, ["[Content_Types].xml"]);
+}
+
+#[test]
+fn what_was_written_since_a_generation_is_named() {
+    let mut package = Package::open(&sample_package()).unwrap();
+    assert_eq!(package.written_since(0).count(), 0, "nothing is written by opening");
+
+    package.set_part("word/document.xml", MAIN_DOCUMENT.to_vec());
+    let after_the_document = package.generation();
+    package.add_part("word/extra.xml", "application/xml", b"<x/>".to_vec());
+
+    let mut since: Vec<&str> = package.written_since(after_the_document).collect();
+    since.sort_unstable();
+    assert_eq!(since, ["[Content_Types].xml", "word/extra.xml"]);
+
+    package.remove_part("word/extra.xml");
+    assert!(package.written_since(after_the_document).any(|name| name == "word/extra.xml"));
+    assert!(!package.written_since(package.generation()).any(|_| true), "nothing after now");
+}
+
+#[test]
+fn a_part_whose_type_is_declared_already_leaves_the_declarations_alone() {
+    // Writing the declarations again the same would still count as writing
+    // them, and would put this program's spelling of them over the one the
+    // producer wrote.
+    let mut package = Package::open(&sample_package()).unwrap();
+    let declared = package.part("[Content_Types].xml").unwrap().to_vec();
+    let before = package.generation();
+
+    package.add_part(
+        "word/document.xml",
+        wp_opc::MAIN_DOCUMENT_CONTENT_TYPE,
+        MAIN_DOCUMENT.to_vec(),
+    );
+
+    let written: Vec<&str> = package.written_since(before).collect();
+    assert_eq!(written, ["word/document.xml"]);
+    assert_eq!(package.part("[Content_Types].xml").unwrap(), declared.as_slice());
+}

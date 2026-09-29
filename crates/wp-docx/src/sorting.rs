@@ -288,7 +288,8 @@ impl Document {
         }
 
         self.record(EditKind::Structural, caret, false);
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
 
@@ -312,7 +313,7 @@ impl Document {
         if let Some((start, _)) = self.table_paragraphs() {
             self.set_caret(crate::TextPosition::new(start, 0));
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -360,7 +361,7 @@ impl Document {
         }
 
         self.record(EditKind::Structural, caret, false);
-        let Some(holder) = edit::element_at_path_mut(&mut self.tree_mut().root, &parent) else {
+        let Some(holder) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &parent) else {
             return false;
         };
         let taken: Vec<Node> =
@@ -377,7 +378,7 @@ impl Document {
 
         self.set_caret(crate::TextPosition::new(from, 0));
         self.clear_selection();
-        self.mark_modified();
+        self.note_change();
         true
     }
 

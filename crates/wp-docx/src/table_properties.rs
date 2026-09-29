@@ -444,13 +444,13 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &position.table)
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &position.table)
         else {
             return false;
         };
 
         change(table, prefix.as_deref());
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

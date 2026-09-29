@@ -588,8 +588,17 @@ impl Document {
         elements.insert_element(2, format_scheme(wanted));
 
         root.set_attribute("name", &wanted.name);
+        // Word takes a theme back, and so does this when the document has a
+        // theme part to keep. One that has none gets a part, a relationship to
+        // it and a declaration of its type, and a step keeps parts as they
+        // were rather than parts that were not there; that first theme is a
+        // part written that no step keeps, which the history finds, and the
+        // file on disk is out of reach until the next save.
+        if let Some(part) = self.theme_part() {
+            self.record_with_parts(self.caret(), &[&part]);
+        }
         self.save_theme_root(root)?;
-        self.mark_modified();
+        self.note_change();
         Ok(true)
     }
 

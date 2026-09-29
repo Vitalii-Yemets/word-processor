@@ -200,7 +200,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
         crate::format::split_runs_at_offset(paragraph, caret.offset);
@@ -212,7 +213,7 @@ impl Document {
         // put a control in wants to carry on typing. Without this, two
         // controls put in one after another come out in the other order.
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + shown.len()));
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -233,7 +234,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return Ok(false);
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return Ok(false);
         };
         crate::format::split_runs_at_offset(paragraph, caret.offset);
@@ -248,7 +250,7 @@ impl Document {
         paragraph.insert_element(at, control);
         // Past the picture, which is one character of the text.
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + 1));
-        self.mark_modified();
+        self.note_change();
         Ok(true)
     }
 
@@ -444,7 +446,8 @@ impl Document {
         else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
         let mut path = Vec::new();
@@ -465,7 +468,7 @@ impl Document {
         let (Some(properties), Some(content)) = (properties, content) else { return false };
         change(properties, content, prefix.as_deref());
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

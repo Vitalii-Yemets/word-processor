@@ -112,7 +112,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
         crate::format::split_runs_at_offset(paragraph, caret.offset);
@@ -129,7 +130,7 @@ impl Document {
         );
         paragraph.insert_element(at, field);
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -258,7 +259,7 @@ impl Document {
     /// Removes a run of whole paragraphs.
     pub(crate) fn remove_paragraphs(&mut self, first: usize, last: usize) {
         for _ in first..=last {
-            if !position::remove_paragraph(&mut self.tree_mut().root, first) {
+            if !position::remove_paragraph(&mut self.tree_to_edit().root, first) {
                 break;
             }
         }
@@ -272,7 +273,7 @@ impl Document {
         let Some((position, parent_path)) = path.split_last() else { return };
         let position = *position;
         let parent_path = parent_path.to_vec();
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, &parent_path)
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &parent_path)
         else {
             return;
         };
@@ -281,7 +282,7 @@ impl Document {
             parent.insert_element(position + offset, edit::block_element(block, prefix.as_deref()));
         }
         self.set_caret(TextPosition::new(at, 0));
-        self.mark_modified();
+        self.note_change();
     }
 }
 

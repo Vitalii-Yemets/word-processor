@@ -1951,7 +1951,7 @@ the files (R01–R22 and #1–#14) — which are kept outside the repository, in
 `docs/.reviews/`, with the pictures they were made from. Their order of
 work is in *The order of the work* at the end.
 
-- [ ] **C48. Undo that tells the truth.** Two ways the history lies. After a
+- [x] **C48. Undo that tells the truth.** Two ways the history lies. After a
   save, undo restores the `modified` flag the step recorded, which is the
   old save point's: the tree says A, the flag says nothing changed, and the
   next save writes the package that still holds AB. And a step recorded in
@@ -1961,6 +1961,147 @@ work is in *The order of the work* at the end.
   from the wrong part too. Tie "saved" to a revision of the history rather
   than to a flag; load the part a step belongs to before putting it back.
   Reviews R12, R13.
+  *Done:* both, and what was found on the way. The first lie was that each
+  step kept the flag as it stood when the step was made, and a save moved
+  the answer without moving the steps. Now every state the history can come
+  back to has a number — `History` in `wp-docx/src/history.rs` gives them
+  out, and a step keeps its state's number where it kept the flag — a save
+  makes the present number the one on disk, and `is_modified` is whether the
+  present number is another, or anything has changed since the present
+  state was numbered: undo past the save is a change, redo back to it is
+  none. The `modified` field in `lib.rs` is what every edit sets, and now
+  means that; recording a step, undo, redo and `mark_saved` number the
+  present state first. `save` writes the package's own bytes, and
+  `flush_part` leaves a part unwritten, only while the package really is the
+  file: the present state the saved one and no part written since — so a
+  document brought back to the save through a header written on the way is
+  written from its tree. `mark_saved` ends the step being typed, or the
+  saved state could not be come back to; `forget_history` forgets the steps
+  and keeps the numbers; `refresh_bound_controls` in `customxml.rs` and
+  `from_template` in `kinds.rs`, which set the flag by hand, go through
+  `count_as_saved`.
+  A change no step records now puts the saved state out of reach until the
+  next save (`History::lose_saved`), so undo cannot land on "unchanged" with
+  it still there. Every place that set the flag was checked against the
+  steps. A part written that no step keeps — the settings, the properties,
+  the notes, a picture — is found where every write passes: the package now
+  names the parts written since a generation (`Package::written_since` in
+  `wp-opc`), and before the history numbers a state it looks at them and
+  passes over only its own writes and the parts the last step keeps
+  (`account_for_package_writes`). What Word keeps off its undo list stays
+  unrecorded and is found that way: properties, the read-only
+  recommendation, protection and locked styles, the kind and the macro
+  project, the template and its styles, the mail merge source, custom XML,
+  sources, building blocks, the Organizer, tracking switched on or off, the
+  zoom; so is what the readers of other formats write before anybody edits.
+  The password, which lives beside the package, and `tree_mut` and
+  `mark_modified`, whose changes nothing here can know, put the saved state
+  out of reach themselves; this crate's own edits use `tree_to_edit` and
+  `note_change`, and leave the way back to the steps they record. The edits
+  a person makes that took no step now take one: `replace_text`,
+  `append_block` (a macro's `Paragraphs.Add`), `set_paragraph_style` and
+  `set_paragraph_alignment` by number; a style written, the default font
+  and paragraph, hyphenation, the default tab stop and a theme, which keep
+  their part with the step (`record_with_parts`), and whose undo reads the
+  styles, the theme and the lists again from it; and a building block
+  chosen in a gallery control, one step with the paste. A theme written
+  into a document that had none makes its part, and is found as above.
+  `wp_opc::Package::set_content_types` counts as a write, as the count
+  promised, and the declarations are written again only when they change.
+  `enter_part` drops the stretches picked out with Ctrl, as it drops the
+  caret and the anchor. `save` and `mark_saved` go through one `write_into`,
+  which takes the signatures off an edited document, so the package kept
+  after a save holds what the file does and a second save finding nothing
+  changed does not write back the signature the first took off.
+  The second lie was `restore` renaming the part and putting the step into
+  the tree that was loaded, after `undo` had kept the present for redo from
+  that same tree. Now `undo` and `redo` first make the step's part the one
+  being edited — `go_to_part_of_step`, which loads it through `enter_part`
+  and records nothing — and only then keep the present and put the step
+  back; the active part is the step's, as in Word, with the caret where the
+  step had it. `enter_part` remembers where the caret was in the part it
+  leaves, and an undo that goes back in puts it there first, so the redo
+  that follows leaves the caret after what was typed. Redo had the same
+  fault and has the same cure. Footnotes, endnotes and comments are entered
+  through the same `enter_part` (the readers of other formats put pictures
+  into them that way) and take the same road; a text box has no part of its
+  own, its text being in the tree of the part that holds it. In the
+  program, every undo and redo goes through `undo_step` and `redo_step` in
+  `editor/mod.rs`, and `follow_the_document` in `editor/furnitureedit.rs`
+  brings the view with it: into the header view, the body drawn behind and
+  the Header & Footer tab up, when undo goes into a header; out of it when
+  undo goes back to the body — the way the views are opened and left by
+  hand, without entering the part again (`furniture_being_edited` says
+  which). The notes and the comments have no view here to follow into.
+  A signed document now opens as Word opens one: marked as final and held
+  from being edited (`hold_if_signed` in `editor/readonly.rs`), under Word's
+  two bars, stacked as Word stacks them. The first says MARKED AS FINAL,
+  "An author has marked this document as final to discourage editing.",
+  Edit Anyway (`Because::Signed` in `chrome/infobar.rs`, which now draws
+  the label in bold before the words where Word has one). The second says
+  SIGNATURES and what they are worth by this program's own verdict, the
+  one the Digital Signatures pane gives: valid when every signature holds
+  and its certificate is one the machine trusts, recoverable — Word's word —
+  when they hold and one is not trusted, invalid when one does not hold;
+  its View Signatures... opens that pane. The rulers, the page and every
+  press below measure from under both. A keystroke is refused and says
+  why. Edit Anyway asks Word's question, "Editing will remove the
+  signatures in this document. Do you want to continue?", under this
+  program's name as the question about saving changes is, Yes or No: No
+  leaves everything as it was, and Yes takes the signature parts and their
+  relationship off (`Document::remove_signatures` in `signing.rs`, not a
+  step to take back, as Word's is not, and a change to save), lets editing
+  go on and takes both bars down; the pane, which reads the document, then
+  lists none. The new messages are in English, German and Hebrew.
+  *Proven by:* in `tests/undo.rs`,
+  `undo_after_a_save_is_a_change_and_the_next_save_writes_it`, whose save
+  wrote AB before; `undo_past_the_save_and_redo_back_to_it_is_no_change`,
+  which said "unchanged" at A before;
+  `an_edit_after_a_save_taken_back_again_is_no_change`, which undid to A
+  before; `a_change_said_to_be_there_is_not_taken_back_by_undo`,
+  `an_edit_off_the_record_after_a_step_is_still_a_change_after_undo` and
+  `a_part_written_off_the_record_is_still_a_change_after_undo`, which landed
+  on "unchanged" before; `replacing_text_throughout_is_one_step`,
+  `a_paragraph_added_at_the_end_can_be_undone`,
+  `a_paragraph_styled_or_aligned_by_its_number_can_be_undone`,
+  `a_style_written_can_be_undone`, `the_default_font_set_can_be_undone`,
+  `hyphenation_switched_on_can_be_undone` and
+  `a_theme_chosen_can_be_undone`, which had nothing to undo before; and
+  `a_change_said_to_be_there_stays_until_it_is_saved` and
+  `an_edit_off_the_record_before_a_step_is_still_a_change_after_undo`. In
+  `tests/parts.rs`,
+  `undo_after_leaving_a_header_takes_the_change_back_in_the_header`, whose
+  tree was the body's before;
+  `redo_after_undo_in_a_header_puts_the_change_back_in_the_header`,
+  `redo_from_the_body_goes_back_into_the_header` and
+  `a_new_paragraph_in_a_header_undoes_and_redoes_in_the_header`, which
+  stayed in the body before; `every_part_that_can_be_entered_undoes_in_itself`
+  — the header, the footer, the footnotes, the endnotes and the comments —
+  which put the header's paragraph over the body's first before; and
+  `entering_a_part_drops_what_was_selected_in_the_one_left`. In
+  `signing.rs`,
+  `an_edited_signed_document_is_written_unsigned_by_both_ways_of_saving`,
+  whose package kept the signature before. In wp-opc,
+  `changing_the_content_types_is_a_write_like_any_other`, which did not
+  count before, `what_was_written_since_a_generation_is_named` and
+  `a_part_whose_type_is_declared_already_leaves_the_declarations_alone`. In
+  the program, `undo_after_coming_out_of_a_header_opens_the_header_again` —
+  Escape out, Ctrl+Z into the header view showing H, Ctrl+Y with X back and
+  the caret after it, Escape out again — and
+  `undo_of_a_change_in_the_body_from_inside_a_header_comes_back_out`, both
+  of which left the view where it was before.
+  For the signed document,
+  `taking_the_signatures_off_leaves_a_change_to_save_and_nothing_to_undo`
+  in `signing.rs`, and in the program
+  `a_signed_document_opens_marked_as_final_and_refuses_a_keystroke`,
+  `edit_anyway_asks_first_and_no_leaves_it_as_it_was` and
+  `yes_takes_the_signatures_off_and_editing_goes_on`, which found no bar
+  before;
+  `a_signed_document_shows_both_of_words_bars_and_the_page_starts_below_them`,
+  which found one, and
+  `what_the_signatures_are_worth_is_said_in_words_for_each_verdict`; and
+  the window drawn with a signed document open, both bars and the question
+  (`--picture … signedquestion`), beside Word's with the same file.
 - [ ] **C49. Merging and splitting cells without losing anything.** Merge
   Cells drops the text of every cell but the first when merging sideways,
   hides it in `vMerge` continuations when merging down, and leaves the caret
@@ -9941,6 +10082,12 @@ person who knows Word notices first:
 Each item is closed as before: tests, `./x.sh check` on both targets, the
 entry here ticked in the same commit, a Windows build. An interface item
 also gets a picture of ours beside the review's picture of Word, looked at.
+And from here on an item is closed whole: no *Not done, and named here*
+paragraph — everything the item names is done before it is ticked, and
+what this machine cannot do (a printer that is not connected, a licence) is
+asked about rather than written down. The two entries closed on this queue
+before that was settled, **C51** and **H16**, have their tails finished
+next, not left.
 
 ---
 

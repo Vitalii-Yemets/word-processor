@@ -252,7 +252,7 @@ impl Editor {
 
         // A paste is one gesture, so one undo takes the whole of it back —
         // whichever of the four it was. See `Document::paste_blocks_as`.
-        self.document.undo();
+        self.undo_step();
         self.put_down(&previous.text, &previous.blocks, how)
     }
 

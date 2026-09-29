@@ -179,7 +179,7 @@ impl Document {
             changed = true;
         }
         if changed {
-            self.mark_modified();
+            self.note_change();
         }
         changed
     }
@@ -201,7 +201,7 @@ impl Document {
         if self.package_mut().set_relationships(&relationships).is_err() {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -253,7 +253,7 @@ impl Document {
         if !self.save_settings_root(root) {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -271,7 +271,7 @@ impl Document {
         if let Some(path) = path {
             document.attach_template(path);
         }
-        document.modified = false;
+        document.count_as_saved();
         Ok(document)
     }
 
@@ -358,7 +358,7 @@ impl Document {
                 self.save_numbering_tree(&numbering);
             }
         }
-        self.mark_modified();
+        self.note_change();
         changed
     }
 }
@@ -543,7 +543,7 @@ impl Document {
             "application/vnd.ms-office.vbaProject",
             bytes,
         );
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

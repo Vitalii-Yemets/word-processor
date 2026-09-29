@@ -160,6 +160,26 @@ impl Document {
         Some(read::read_part(&tree.root))
     }
 
+    /// Which of the two the part being edited is, when it is a header or a
+    /// footer.
+    ///
+    /// Read from the part's own root, `w:hdr` or `w:ftr`, which says so
+    /// whichever section and whichever of a section's three it serves. For a
+    /// program that shows a header differently from the body and has to know
+    /// when undo has gone into one — see [`Document::undo`].
+    #[must_use]
+    pub fn furniture_being_edited(&self) -> Option<Furniture> {
+        self.part_being_edited()?;
+        let root = &self.tree().root;
+        if root.is(Some(read::W), "hdr") {
+            Some(Furniture::Header)
+        } else if root.is(Some(read::W), "ftr") {
+            Some(Furniture::Footer)
+        } else {
+            None
+        }
+    }
+
     /// The name of the package part holding the caret's section's one.
     #[must_use]
     pub fn furniture_part(&self, which: Furniture) -> Option<String> {
@@ -265,7 +285,7 @@ impl Document {
         if on {
             crate::page::section_child(section, prefix.as_deref(), "titlePg");
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -285,7 +305,7 @@ impl Document {
         if !self.set_setting_flag("evenAndOddHeaders", on) {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -391,7 +411,7 @@ impl Document {
         self.package_mut().set_relationships(&relationships)?;
 
         self.write_reference(kind, which, &id);
-        self.mark_modified();
+        self.note_change();
         Ok(true)
     }
 
@@ -463,7 +483,7 @@ impl Document {
         self.package_mut().set_relationships(&relationships)?;
 
         self.write_reference(kind, which, &id);
-        self.mark_modified();
+        self.note_change();
         Ok(true)
     }
 
@@ -478,7 +498,7 @@ impl Document {
         if section.children_named(Some(read::W), kind.reference()).count() == before {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -560,7 +580,7 @@ impl Document {
         let name = |local: &str| edit::name_with(prefix.as_deref(), local);
         margins.set_namespaced_attribute(&name("header"), read::W, &header.max(0).to_string());
         margins.set_namespaced_attribute(&name("footer"), read::W, &footer.max(0).to_string());
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

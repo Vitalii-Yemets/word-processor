@@ -189,6 +189,218 @@ fn undoing_everything_returns_the_original_bytes() {
     assert_eq!(document.save().unwrap(), original, "the file did not come back");
 }
 
+// --- Undo and saving ----------------------------------------------------------
+
+/// The text of a file, as it would be read back from disk.
+fn text_of(bytes: &[u8]) -> String {
+    Document::open(bytes).unwrap().plain_text()
+}
+
+#[test]
+fn undo_after_a_save_is_a_change_and_the_next_save_writes_it() {
+    // The file on disk says "AB" and undo leaves "A" on the screen. That is a
+    // document that differs from its file: it has to say so, and saving it has
+    // to write "A" rather than hand back the package that still holds "AB".
+    let mut document = document_with(&["A"]);
+    document.set_caret(TextPosition::new(0, 1));
+    document.type_text("B");
+    let written = document.save().unwrap();
+    document.mark_saved().unwrap();
+    assert_eq!(text_of(&written), "AB");
+    assert!(!document.is_modified());
+
+    assert!(document.undo());
+    assert_eq!(document.plain_text(), "A");
+    assert_eq!(text_of(&document.save().unwrap()), "A", "the save wrote the file as it was");
+    assert!(document.is_modified(), "the file says AB and the screen says A");
+}
+
+#[test]
+fn undo_past_the_save_and_redo_back_to_it_is_no_change() {
+    // Whether the document has changed is where the history stands against
+    // the save, in both directions: going past it is a change, and coming back
+    // to it is none.
+    let mut document = document_with(&["A"]);
+    document.set_caret(TextPosition::new(0, 1));
+    document.type_text("B");
+    document.save().unwrap();
+    document.mark_saved().unwrap();
+
+    assert!(document.undo());
+    assert!(document.is_modified(), "undo went past what is on disk");
+    assert!(document.redo());
+    assert_eq!(document.plain_text(), "AB");
+    assert!(!document.is_modified(), "redo came back to what is on disk");
+    assert_eq!(text_of(&document.save().unwrap()), "AB");
+}
+
+#[test]
+fn an_edit_after_a_save_taken_back_again_is_no_change() {
+    // Saving ends the step being typed, so what was typed after it comes off
+    // on its own and leaves exactly the saved document.
+    let mut document = document_with(&["A"]);
+    document.set_caret(TextPosition::new(0, 1));
+    document.type_text("B");
+    document.save().unwrap();
+    document.mark_saved().unwrap();
+
+    document.type_text("C");
+    assert!(document.is_modified());
+    assert!(document.undo());
+    assert_eq!(document.plain_text(), "AB");
+    assert!(!document.is_modified(), "the document is the saved one again");
+}
+
+#[test]
+fn a_change_said_to_be_there_stays_until_it_is_saved() {
+    // A document recovered after a crash is not on disk, whatever its history
+    // says; taking back what was typed into it does not put it there.
+    let mut document = document_with(&["recovered"]);
+    document.mark_modified();
+    document.set_caret(TextPosition::new(0, 9));
+    document.type_text("!");
+    assert!(document.undo());
+    assert!(document.is_modified(), "undo made a recovered document count as saved");
+
+    document.save().unwrap();
+    document.mark_saved().unwrap();
+    assert!(!document.is_modified());
+}
+
+#[test]
+fn a_change_said_to_be_there_is_not_taken_back_by_undo() {
+    // Said after a step rather than before one, it still holds: undo takes
+    // back what the history recorded, and this it did not.
+    let mut document = document_with(&["saved"]);
+    document.set_caret(TextPosition::new(0, 5));
+    document.type_text("!");
+    document.mark_modified();
+    assert!(document.undo());
+    assert!(document.is_modified(), "undo took back something it never had");
+}
+
+// --- Changes the history does not record ---------------------------------------
+
+#[test]
+fn an_edit_off_the_record_before_a_step_is_still_a_change_after_undo() {
+    let mut document = document_with(&["A", "B"]);
+    document.tree_mut().root.set_attribute("data-off-the-record", "yes");
+    document.set_caret(TextPosition::new(0, 1));
+    document.type_text("X");
+    assert!(document.undo());
+    assert!(document.is_modified(), "the edit before the step is still there");
+}
+
+#[test]
+fn an_edit_off_the_record_after_a_step_is_still_a_change_after_undo() {
+    // The step keeps one paragraph, so undoing it leaves the edit made after
+    // it where it is — and the document is not the one on disk.
+    let mut document = document_with(&["A", "B"]);
+    document.set_caret(TextPosition::new(0, 1));
+    document.type_text("X");
+    document.tree_mut().root.set_attribute("data-off-the-record", "yes");
+    assert!(document.undo());
+    assert_eq!(document.plain_text(), "A\nB");
+    assert!(document.is_modified(), "undo landed on unchanged with the edit still in the tree");
+}
+
+#[test]
+fn a_part_written_off_the_record_is_still_a_change_after_undo() {
+    // The zoom a document is kept at lives in its settings, and nothing takes
+    // it back: after undo the settings are not the ones on disk.
+    let mut document = document_with(&["A"]);
+    document.set_caret(TextPosition::new(0, 1));
+    document.type_text("X");
+    assert!(document.set_zoom_percent(150));
+    assert!(document.undo());
+    assert!(document.is_modified(), "undo landed on unchanged with the settings changed");
+    let reopened = Document::open(&document.save().unwrap()).unwrap();
+    assert_eq!(reopened.zoom_percent(), Some(150));
+}
+
+#[test]
+fn replacing_text_throughout_is_one_step() {
+    let mut document = document_with(&["one fish", "two fish"]);
+    assert_eq!(document.replace_text("fish", "cats"), 2);
+    assert_eq!(document.plain_text(), "one cats\ntwo cats");
+    assert!(document.undo(), "there was nothing to undo");
+    assert_eq!(document.plain_text(), "one fish\ntwo fish");
+    assert!(!document.is_modified());
+}
+
+#[test]
+fn a_paragraph_added_at_the_end_can_be_undone() {
+    let mut document = document_with(&["first"]);
+    assert!(document.append_paragraph(&Paragraph::text("added")));
+    assert!(document.undo(), "there was nothing to undo");
+    assert_eq!(document.plain_text(), "first");
+    assert!(!document.is_modified());
+}
+
+#[test]
+fn a_paragraph_styled_or_aligned_by_its_number_can_be_undone() {
+    let mut document = document_with(&["first", "second"]);
+    assert!(document.set_paragraph_style(1, Some("Heading1")));
+    assert!(document.set_paragraph_alignment(0, wp_docx::model::Alignment::Center));
+    assert!(document.undo(), "the alignment was not a step");
+    assert!(document.undo(), "the style was not a step");
+    assert_eq!(document.style_of(1), None);
+    assert!(!document.is_modified());
+}
+
+#[test]
+fn a_style_written_can_be_undone() {
+    let mut document = document_with(&["text"]);
+    let wanted = wp_docx::StyleDefinition {
+        id: "Pullquote".to_owned(),
+        name: "Pullquote".to_owned(),
+        based_on: None,
+        next: None,
+        paragraph: Default::default(),
+        run: Default::default(),
+    };
+    assert!(document.set_style(&wanted));
+    assert!(document.styles().get("Pullquote").is_some());
+    assert!(document.undo(), "there was nothing to undo");
+    assert!(document.styles().get("Pullquote").is_none(), "the style is still there");
+    assert!(!document.is_modified());
+}
+
+#[test]
+fn the_default_font_set_can_be_undone() {
+    let mut document = document_with(&["text"]);
+    let bold = wp_docx::model::RunProperties { bold: Some(true), ..Default::default() };
+    assert!(document.set_default_character_format(&bold));
+    document.set_caret(TextPosition::new(0, 1));
+    assert!(document.character_format_here().bold);
+    assert!(document.undo(), "there was nothing to undo");
+    assert!(!document.character_format_here().bold, "the default is still bold");
+    assert!(!document.is_modified());
+}
+
+#[test]
+fn hyphenation_switched_on_can_be_undone() {
+    let mut document = document_with(&["text"]);
+    assert!(document.set_automatic_hyphenation(true));
+    assert!(document.undo(), "there was nothing to undo");
+    assert!(!document.automatic_hyphenation());
+    assert!(!document.is_modified());
+}
+
+#[test]
+fn a_theme_chosen_can_be_undone() {
+    use wp_docx::gallery::COLOR_SCHEMES;
+    let mut document = document_with(&["text"]);
+    document.set_theme(&COLOR_SCHEMES[1].theme()).unwrap();
+    let mut document = Document::open(&document.save().unwrap()).unwrap();
+    let before = document.theme();
+
+    assert!(document.set_theme(&COLOR_SCHEMES[2].theme()).unwrap());
+    assert!(document.undo(), "there was nothing to undo");
+    assert_eq!(document.theme(), before);
+    assert!(!document.is_modified());
+}
+
 // --- Selection --------------------------------------------------------------
 
 #[test]

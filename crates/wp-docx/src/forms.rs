@@ -175,7 +175,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
         };
-        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        let Some(paragraph) =
+            crate::edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
         else {
             return false;
         };
@@ -199,7 +200,7 @@ impl Document {
         // The caret goes past the field, which is where somebody who put one
         // in wants to carry on typing.
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + shown.len()));
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -217,7 +218,8 @@ impl Document {
         else {
             return false;
         };
-        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        let Some(paragraph) =
+            crate::edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
         else {
             return false;
         };
@@ -228,7 +230,7 @@ impl Document {
             &if on { TICKED.to_string() } else { UNTICKED.to_string() },
         );
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -247,7 +249,8 @@ impl Document {
         else {
             return false;
         };
-        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        let Some(paragraph) =
+            crate::edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
         else {
             return false;
         };
@@ -261,7 +264,7 @@ impl Document {
         );
         replace_result(paragraph, &field, &chosen);
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

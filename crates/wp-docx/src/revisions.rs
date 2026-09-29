@@ -121,10 +121,16 @@ impl Document {
         let prefix = self.prefix();
 
         let mut resolved = 0usize;
-        resolve_within(&mut self.tree_mut().root, decision, None, prefix.as_deref(), &mut resolved);
+        resolve_within(
+            &mut self.tree_to_edit().root,
+            decision,
+            None,
+            prefix.as_deref(),
+            &mut resolved,
+        );
         if resolved > 0 {
             self.clamp_caret();
-            self.mark_modified();
+            self.note_change();
         }
         resolved
     }
@@ -144,12 +150,12 @@ impl Document {
         let prefix = self.prefix();
 
         let mut resolved = 0usize;
-        if let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) {
+        if let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path) {
             resolve_within(paragraph, decision, None, prefix.as_deref(), &mut resolved);
         }
         if resolved > 0 {
             self.clamp_caret();
-            self.mark_modified();
+            self.note_change();
         }
         resolved
     }
@@ -430,7 +436,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, at.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
 
@@ -462,7 +469,7 @@ impl Document {
             position,
             wrap(run, RevisionKind::Inserted, id, reviser, prefix.as_deref()),
         );
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -482,7 +489,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, paragraph_index) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
 
@@ -528,7 +536,7 @@ impl Document {
         }
         paragraph.insert_element(at, wrapper);
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 

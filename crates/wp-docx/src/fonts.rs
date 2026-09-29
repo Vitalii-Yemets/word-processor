@@ -134,7 +134,7 @@ impl Document {
             relationships.add(RELATIONSHIP, &target, TargetMode::Internal);
             self.package_mut().set_relationships(&relationships)?;
         }
-        self.mark_modified();
+        self.note_change();
         Ok(())
     }
 }

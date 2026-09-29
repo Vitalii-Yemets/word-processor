@@ -685,7 +685,7 @@ impl Document {
         let prefix = self.prefix();
         let element = crate::shapes::shape_element(shape, prefix.as_deref());
         if !crate::position::insert_element_at(
-            &mut self.tree_mut().root,
+            &mut self.tree_to_edit().root,
             caret,
             element,
             prefix.as_deref(),
@@ -694,7 +694,7 @@ impl Document {
         }
 
         self.set_caret(crate::TextPosition::new(caret.paragraph, caret.offset + 1));
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -994,7 +994,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, at.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
 
@@ -1002,7 +1003,7 @@ impl Document {
         let mut offset = 0usize;
         let replaced = replace_shape(paragraph, &mut offset, at.offset, replacement);
         if replaced {
-            self.mark_modified();
+            self.note_change();
         }
         replaced
     }

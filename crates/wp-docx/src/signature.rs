@@ -108,7 +108,7 @@ impl Document {
         // of a sentence does not cut the sentence in half.
         let position = *position + 1;
         let parent_path = parent_path.to_vec();
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, &parent_path)
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &parent_path)
         else {
             return false;
         };
@@ -130,7 +130,7 @@ impl Document {
 
         // Into the paragraph after the line, which is where writing carries on.
         self.set_caret(TextPosition::new(last, 0));
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -284,7 +284,7 @@ impl Document {
         let Some((position, parent_path)) = path.split_last() else { return 0 };
         let position = *position + 1;
         let parent_path = parent_path.to_vec();
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, &parent_path)
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &parent_path)
         else {
             return 0;
         };
@@ -296,7 +296,7 @@ impl Document {
         // At the start of what was brought in, which is what a person wants to
         // look at once it has arrived.
         self.set_caret(TextPosition::new(caret.paragraph + 1, 0));
-        self.mark_modified();
+        self.note_change();
         blocks.len()
     }
 }

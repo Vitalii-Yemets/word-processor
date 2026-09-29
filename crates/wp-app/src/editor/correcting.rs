@@ -792,7 +792,7 @@ impl Editor {
     /// what was typed goes back in place of what was put.
     fn take_correction_back(&mut self, made: &Made) -> Response {
         if self.document.undo_depth() == made.depth {
-            let changed = self.document.undo();
+            let changed = self.undo_step();
             if changed {
                 self.correction_undone();
             }

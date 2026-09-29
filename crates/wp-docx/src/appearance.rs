@@ -134,7 +134,7 @@ impl Document {
         let Some(section) = self.section_properties_mut(prefix.as_deref()) else { return false };
         let Some(wanted) = wanted else {
             section.remove_children_named(Some(read::W), "lnNumType");
-            self.mark_modified();
+            self.note_change();
             return true;
         };
 
@@ -150,7 +150,7 @@ impl Document {
             None => element.remove_attribute(&name("distance")),
         }
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -164,7 +164,7 @@ impl Document {
 
     /// Turns hyphenation on or off.
     pub fn set_automatic_hyphenation(&mut self, on: bool) -> bool {
-        self.set_setting_flag("autoHyphenation", on)
+        self.set_setting_flag_as_step("autoHyphenation", on)
     }
 
     /// Whether words in capitals are left alone.
@@ -175,7 +175,7 @@ impl Document {
 
     /// Leaves words in capitals alone, or stops doing so.
     pub fn set_hyphenate_capitals(&mut self, on: bool) -> bool {
-        self.set_setting_flag("doNotHyphenateCaps", !on)
+        self.set_setting_flag_as_step("doNotHyphenateCaps", !on)
     }
 
     /// How close to the margin a word has to come before it is broken, in
@@ -187,7 +187,10 @@ impl Document {
 
     /// Sets that distance.
     pub fn set_hyphenation_zone(&mut self, twips: Option<i32>) -> bool {
-        self.set_setting_value("hyphenationZone", twips.map(|value| value.to_string()).as_deref())
+        self.set_setting_value_as_step(
+            "hyphenationZone",
+            twips.map(|value| value.to_string()).as_deref(),
+        )
     }
 
     /// How many lines in a row may end with a hyphen, or `None` for as many as
@@ -207,7 +210,7 @@ impl Document {
 
     /// Sets that limit.
     pub fn set_consecutive_hyphen_limit(&mut self, lines: Option<i32>) -> bool {
-        self.set_setting_value(
+        self.set_setting_value_as_step(
             "consecutiveHyphenLimit",
             lines.filter(|value| *value > 0).map(|value| value.to_string()).as_deref(),
         )
@@ -240,7 +243,7 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
 
-        let root = &mut self.tree_mut().root;
+        let root = &mut self.tree_to_edit().root;
         root.remove_children_named(Some(read::W), "background");
         if let Some(color) = &wanted {
             let mut background =
@@ -256,7 +259,7 @@ impl Document {
         }
 
         self.set_setting_flag("displayBackgroundShape", wanted.is_some());
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

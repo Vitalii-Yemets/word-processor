@@ -80,7 +80,7 @@ impl Document {
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
         self.save_styles_for_tables(&tree);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -122,7 +122,7 @@ impl Document {
             crate::table_properties::TABLE_PROPERTY_ORDER,
         );
         self.save_styles_for_tables(&tree);
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

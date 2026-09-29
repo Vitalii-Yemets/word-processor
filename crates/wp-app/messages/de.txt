@@ -200,6 +200,9 @@ language = Deutsch
 = Always show these on screen
 > Diese immer am Bildschirm anzeigen
 
+= An author has marked this document as final to discourage editing.
+> Ein Autor hat dieses Dokument als abgeschlossen gekennzeichnet, um die Bearbeitung zu verhindern.
+
 = Appearance
 > Darstellung
 
@@ -983,6 +986,9 @@ language = Deutsch
 = Editing
 > Bearbeiten
 
+= Editing will remove the signatures in this document. Do you want to continue?
+> Durch die Bearbeitung werden die Signaturen in diesem Dokument entfernt. Möchten Sie fortfahren?
+
 = Effects
 > Effekte
 
@@ -1541,6 +1547,9 @@ language = Deutsch
 = Lock aspect ratio
 > Seitenverhältnis sperren
 
+= MARKED AS FINAL
+> ALS ABGESCHLOSSEN GEKENNZEICHNET
+
 = Macro
 > Makro
 
@@ -1943,6 +1952,15 @@ language = Deutsch
 = This document carries no custom XML. Add a part from a file to bind controls to it.
 > Dieses Dokument enthält kein benutzerdefiniertes XML. Fügen Sie eine Komponente aus einer Datei hinzu, um Steuerelemente zuzuordnen.
 
+= This document contains invalid signatures.
+> Dieses Dokument enthält ungültige Signaturen.
+
+= This document contains recoverable signatures.
+> Dieses Dokument enthält wiederherstellbare Signaturen.
+
+= This document contains valid signatures.
+> Dieses Dokument enthält gültige Signaturen.
+
 = This document fixes its theme — Review ▸ Restrict Editing lifts it
 > Dieses Dokument legt sein Design fest — Überprüfen ▸ Bearbeitung einschränken hebt es auf
 
@@ -1954,6 +1972,9 @@ language = Deutsch
 
 = This document is protected from editing.
 > Dieses Dokument ist vor Bearbeitung geschützt.
+
+= This document is signed and marked as final — Edit Anyway on the bar lets it be edited, and takes the signatures off
+> Dieses Dokument ist signiert und als abgeschlossen gekennzeichnet — „Trotzdem bearbeiten“ auf der Leiste gibt es zur Bearbeitung frei und entfernt die Signaturen
 
 = This document limits formatting to its styles — Review ▸ Restrict Editing lifts it
 > Dieses Dokument beschränkt die Formatierung auf seine Formatvorlagen — Überprüfen ▸ Bearbeitung einschränken hebt es auf
@@ -3209,6 +3230,9 @@ language = Deutsch
 = View Gridlines
 > Gitternetzlinien anzeigen
 
+= View Signatures...
+> Signaturen anzeigen...
+
 = Views
 > Ansichten
 
@@ -3283,6 +3307,9 @@ language = Deutsch
 
 = Word Macro-Enabled Template (*.dotm)
 > Word-Vorlage mit Makros (*.dotm)
+
+= Word Processor
+> Word Processor
 
 = Word Template (*.dotx)
 > Word-Vorlage (*.dotx)
@@ -3904,6 +3931,9 @@ language = Deutsch
 
 = Russian
 > Russisch
+
+= SIGNATURES
+> SIGNATUREN
 
 = Salutation
 > Anrede

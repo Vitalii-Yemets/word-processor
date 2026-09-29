@@ -182,7 +182,7 @@ impl Document {
         self.clear_selection();
 
         self.set_caret(after);
-        self.mark_modified();
+        self.note_change();
         self.end_gesture();
         Ok(id)
     }
@@ -211,7 +211,7 @@ impl Document {
         let mut changed = false;
         for index in 0..self.paragraph_count() {
             let Some(path) = position::paragraph_path(&self.tree().root, index) else { continue };
-            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
             else {
                 continue;
             };
@@ -234,7 +234,7 @@ impl Document {
         }
 
         if changed {
-            self.mark_modified();
+            self.note_change();
         }
         changed
     }
@@ -482,7 +482,7 @@ impl Document {
         }
         let saved = self.save_notes_root(kind, root).is_ok();
         if saved {
-            self.mark_modified();
+            self.note_change();
         }
         saved
     }

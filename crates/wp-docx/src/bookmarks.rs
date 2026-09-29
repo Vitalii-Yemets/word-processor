@@ -127,7 +127,7 @@ impl Document {
             prefix.as_deref(),
         );
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -137,7 +137,7 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let removed = self.remove_bookmark_quietly(name);
         if removed {
-            self.mark_modified();
+            self.note_change();
         }
         removed
     }
@@ -150,7 +150,7 @@ impl Document {
         let mut changed = false;
         for index in 0..self.paragraph_count() {
             let Some(path) = position::paragraph_path(&self.tree().root, index) else { continue };
-            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
             else {
                 continue;
             };
@@ -183,7 +183,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, paragraph_index) else {
             return;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return;
         };
 

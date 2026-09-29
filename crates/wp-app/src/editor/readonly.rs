@@ -21,13 +21,23 @@
 //! somebody's draft: a person who was sent a document and told not to change
 //! it is a person who will change it by habit, and one who is asked at the
 //! door will not.
+//!
+//! # A signed document
+//!
+//! Is held the same way, because Word holds it: a signature says the document
+//! is what it was when it was signed, and an edit would make that untrue.
+//! Word opens one as final, says so across the top, and offers Edit Anyway;
+//! Edit Anyway asks whether to go on, because going on takes the signatures
+//! off, and only a yes does. Saving an edited document takes them off in any
+//! case (see `wp_docx::signing`), which is the reason to ask first rather
+//! than let a person find out from the file.
 
 use std::path::Path;
 
 use wp_docx::readonly::WriteProtection;
 use wp_shell::Response;
 
-use crate::chrome::dialog::{Dialog, Field};
+use crate::chrome::dialog::{Answer, Button, Dialog, Field};
 use crate::chrome::infobar::{Because, Hit, InfoBar};
 
 use super::dialogs::Asking;
@@ -124,6 +134,9 @@ impl Editor {
 
     /// A press on that bar.
     pub(super) fn press_info_bar(&mut self, x: i32, y: i32) -> Response {
+        if let Some(hit) = self.signatures_bar.as_ref().and_then(|bar| bar.at(x, y)) {
+            return self.press_signatures_bar(hit);
+        }
         let Some(hit) = self.info_bar.as_ref().and_then(|bar| bar.at(x, y)) else {
             return Response::Ignored;
         };
@@ -142,6 +155,7 @@ impl Editor {
                     self.relayout();
                     response
                 }
+                Some(Because::Signed) => self.ask_to_take_the_signatures_off(),
                 Some(Because::Recovered) => {
                     self.save_as_now();
                     self.after_file_command()
@@ -163,15 +177,113 @@ impl Editor {
     #[must_use]
     pub(super) fn over_info_bar(&self, y: i32) -> bool {
         let top = self.ribbon_bottom();
-        self.info_bar.is_some()
-            && (y as f32) >= top
-            && (y as f32) < top + crate::chrome::infobar::HEIGHT
+        (y as f32) >= top && (y as f32) < top + self.info_bar_height()
     }
 
-    /// Whether the document open now was opened read-only.
+    /// A press on the second bar, the one about the signatures.
+    ///
+    /// Its button is Word's View Signatures, which opens the pane that lists
+    /// them — opens, not toggles: a person pressing it wants to see them.
+    fn press_signatures_bar(&mut self, hit: Hit) -> Response {
+        match hit {
+            Hit::Close => self.signatures_bar = None,
+            Hit::Button => {
+                if !self.show_signatures {
+                    self.open_signatures();
+                }
+            }
+        }
+        self.relayout();
+        self.needs_redraw = true;
+        Response::Redraw
+    }
+
+    /// What the second bar says of the signatures the document carries.
+    ///
+    /// This program's own verdict, the one the Digital Signatures pane gives
+    /// of each: a signature that does not hold makes them invalid; ones that
+    /// all hold are valid when every certificate is one this machine trusts,
+    /// and recoverable — Word's word — when any is not, or when the machine's
+    /// list of trusted issuers cannot be read. A signature this program
+    /// cannot read at all does not hold.
+    fn signatures_verdict(&self) -> Because {
+        let signatures = self.document.signatures();
+        if signatures.is_empty() || signatures.iter().any(|one| !one.standing.is_good()) {
+            return Because::SignaturesInvalid;
+        }
+        let trusted =
+            signatures.iter().all(|one| self.trust_of(one).is_some_and(|trust| trust.is_trusted()));
+        if trusted {
+            Because::SignaturesValid
+        } else {
+            Because::SignaturesRecoverable
+        }
+    }
+
+    /// Whether the document open now was opened read-only, or is signed and
+    /// held until the person says to edit it anyway.
     #[must_use]
     pub(super) fn is_read_only(&self) -> bool {
-        self.opened_read_only
+        self.opened_read_only || self.held_for_signatures
+    }
+
+    /// Holds the document open now if it is signed, and says so across the
+    /// top, as Word does when it opens one.
+    ///
+    /// Two bars, stacked as Word stacks them: marked as final above, and
+    /// what the signatures are worth below.
+    pub(super) fn hold_if_signed(&mut self) {
+        self.held_for_signatures = self.document.is_signed();
+        self.signatures_bar = None;
+        if self.held_for_signatures {
+            self.info_bar = Some(InfoBar::new(Because::Signed));
+            self.signatures_bar = Some(InfoBar::new(self.signatures_verdict()));
+            self.needs_redraw = true;
+        }
+    }
+
+    /// Word's question when Edit Anyway is pressed on a signed document.
+    ///
+    /// Asked because the answer cannot be taken back: the signatures are
+    /// somebody else's, and nothing here can put them on again. Word's own
+    /// words, and its Yes and No, under the title this program's other
+    /// questions of the kind carry — its own name, as the question about
+    /// saving changes has it, where Word's carries Word's.
+    pub(super) fn ask_to_take_the_signatures_off(&mut self) -> Response {
+        let dialog = Dialog::with_buttons(
+            "Word Processor",
+            vec![Field::note(
+                "Editing will remove the signatures in this document. Do you want to continue?",
+            )],
+            vec![
+                Button { label: "Yes".to_owned(), answer: Answer::Accept, default: true },
+                Button { label: "No".to_owned(), answer: Answer::Cancel, default: false },
+            ],
+        )
+        // Wide enough for the whole question on one line, as Word's is, in
+        // the longest of the languages it is said in.
+        .wide(700.0);
+        self.ask(Asking::RemoveSignatures, dialog)
+    }
+
+    /// Yes: the signatures come off, and the document can be edited.
+    ///
+    /// The document is changed from the file from here on, whatever happens
+    /// next, so saving it is offered; and the pane that lists the signatures
+    /// lists none, since it reads them from the document.
+    pub(super) fn take_the_signatures_off(&mut self) -> Response {
+        self.document.remove_signatures();
+        self.held_for_signatures = false;
+        if self.info_bar.as_ref().is_some_and(|bar| bar.because == Because::Signed) {
+            self.info_bar = None;
+        }
+        // Both bars come down: there is nothing signed left to be final or
+        // to say anything about.
+        self.signatures_bar = None;
+        self.relayout();
+        self.update_title();
+        self.needs_redraw = true;
+        Response::Redraw
     }
 
     /// Takes the read-only off, which needs the password if there is one.
@@ -322,6 +434,11 @@ impl Editor {
 
     /// Says why nothing happened to a document that was opened read-only.
     pub(super) fn refuse_read_only(&mut self) -> Response {
+        if self.held_for_signatures && !self.opened_read_only {
+            return self.report(crate::messages::t(
+                "This document is signed and marked as final — Edit Anyway on the bar lets it be edited, and takes the signatures off",
+            ));
+        }
         self.report(
             "This document was opened read-only — File ▸ Always Open Read-Only lets it be written",
         )

@@ -186,7 +186,7 @@ impl Document {
         self.insert_permission(end.paragraph, end.offset, id, None, None, prefix.as_deref());
         self.insert_permission(start.paragraph, start.offset, id, editor, group, prefix.as_deref());
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -206,9 +206,9 @@ impl Document {
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
 
-        let removed = remove_permission(&mut self.tree_mut().root, id);
+        let removed = remove_permission(&mut self.tree_to_edit().root, id);
         if removed {
-            self.mark_modified();
+            self.note_change();
         }
         removed
     }
@@ -227,7 +227,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, paragraph_index) else {
             return;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return;
         };
 

@@ -137,7 +137,7 @@ impl Document {
 
         self.write_core(wanted)?;
         self.write_app(wanted)?;
-        self.mark_modified();
+        self.note_change();
         Ok(true)
     }
 

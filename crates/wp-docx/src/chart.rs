@@ -1333,7 +1333,7 @@ impl crate::Document {
         let prefix = self.prefix();
         let drawing = chart_drawing(&id, width_emu, height_emu, prefix.as_deref());
         let inserted = crate::position::insert_element_at(
-            &mut self.tree_mut().root,
+            &mut self.tree_to_edit().root,
             caret,
             drawing,
             prefix.as_deref(),
@@ -1341,7 +1341,7 @@ impl crate::Document {
 
         if inserted {
             self.set_caret(crate::TextPosition::new(caret.paragraph, caret.offset + 1));
-            self.mark_modified();
+            self.note_change();
         }
         Ok(inserted)
     }

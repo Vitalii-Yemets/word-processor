@@ -158,7 +158,7 @@ impl Document {
         self.insert_anchor(start.paragraph, start.offset, id, true, prefix.as_deref());
 
         self.write_comment_part(id, text, author, date)?;
-        self.mark_modified();
+        self.note_change();
         Ok(id)
     }
 
@@ -174,7 +174,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, paragraph_index) else {
             return;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return;
         };
 
@@ -219,7 +220,7 @@ impl Document {
         let mut changed = false;
         for index in 0..self.paragraph_count() {
             let Some(path) = position::paragraph_path(&self.tree().root, index) else { continue };
-            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
             else {
                 continue;
             };
@@ -228,7 +229,7 @@ impl Document {
 
         changed |= self.remove_from_comment_part(id);
         if changed {
-            self.mark_modified();
+            self.note_change();
         }
         changed
     }
@@ -278,7 +279,7 @@ impl Document {
         }
         let saved = self.save_comments_root(root).is_ok();
         if saved {
-            self.mark_modified();
+            self.note_change();
         }
         saved
     }

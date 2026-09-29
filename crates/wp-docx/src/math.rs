@@ -469,13 +469,14 @@ impl Document {
         // It is part of the standard, so unlike the extensions it needs no
         // marking as ignorable — a reader that meets it either knows it or
         // skips it by the rules it already follows.
-        declare_namespace(&mut self.tree_mut().root);
+        declare_namespace(&mut self.tree_to_edit().root);
 
         let element = math_element(math, MATH_PREFIX);
         let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
         };
-        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        let Some(paragraph) =
+            crate::edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
         else {
             return false;
         };
@@ -490,7 +491,7 @@ impl Document {
 
         // Past the equation, which counts as one character.
         self.set_caret(crate::TextPosition::new(caret.paragraph, caret.offset + 1));
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

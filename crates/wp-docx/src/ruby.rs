@@ -171,7 +171,7 @@ impl crate::Document {
         // beside the words already in the run, and a run inside a run is not
         // something any reader of the format looks for.
         let inserted = crate::position::insert_element_at(
-            &mut self.tree_mut().root,
+            &mut self.tree_to_edit().root,
             caret,
             ruby_element(ruby, prefix.as_deref()),
             prefix.as_deref(),
@@ -179,7 +179,7 @@ impl crate::Document {
 
         if inserted {
             self.set_caret(crate::TextPosition::new(caret.paragraph, caret.offset + word.len()));
-            self.mark_modified();
+            self.note_change();
         }
         inserted
     }

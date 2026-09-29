@@ -637,9 +637,16 @@ pub struct Editor {
     /// to be. A property of this window and not of the document: see
     /// [`readonly`].
     opened_read_only: bool,
+    /// Whether the document open now is signed and kept from being edited
+    /// until the person says to edit it anyway, as Word keeps one. See
+    /// [`readonly`].
+    held_for_signatures: bool,
     /// The bar across the top of the document saying something about it that
     /// is true for as long as it is open. See [`crate::chrome::infobar`].
     info_bar: Option<crate::chrome::infobar::InfoBar>,
+    /// The second bar, under that one, saying what the signatures a signed
+    /// document carries are worth — Word stacks the two the same way.
+    signatures_bar: Option<crate::chrome::infobar::InfoBar>,
     /// Whether Word Count counts what is written round the edges of the body:
     /// notes and text boxes. Word remembers the tick between openings, so this
     /// lives here rather than in the dialog.
@@ -787,7 +794,7 @@ impl Editor {
         let carries_macros = document.has_macros();
         let vba = macros::project_of(&document);
 
-        Self {
+        let mut editor = Self {
             document,
             engine,
             chrome_engine: LayoutEngine::new(library).with_dpi(DPI),
@@ -961,7 +968,9 @@ impl Editor {
             waiting_to_unseal: None,
             to_compare: None,
             opened_read_only: false,
+            held_for_signatures: false,
             info_bar: None,
+            signatures_bar: None,
             count_the_edges: false,
             under_caret: None,
             caret_only: false,
@@ -1025,7 +1034,12 @@ impl Editor {
             status: String::new(),
             title: String::new(),
             needs_redraw: true,
-        }
+        };
+        // A signed document is held from the start, whichever way it arrives:
+        // one handed straight to a new editor never goes through the opening
+        // path. See [`readonly`].
+        editor.hold_if_signed();
+        editor
     }
 
     /// The same, with what the reader keeps between documents read in: the
@@ -1158,12 +1172,13 @@ impl Editor {
     /// And the bar that says something about the document, which sits above
     /// the find strip because it is about the document rather than about
     /// what is being looked for in it.
+    ///
+    /// Two of them where there are two, one above the other, and everything
+    /// under them measures from here.
     pub(super) fn info_bar_height(&self) -> f32 {
-        if self.info_bar.is_some() {
-            crate::chrome::infobar::HEIGHT
-        } else {
-            0.0
-        }
+        let bars =
+            usize::from(self.info_bar.is_some()) + usize::from(self.signatures_bar.is_some());
+        bars as f32 * crate::chrome::infobar::HEIGHT
     }
 
     /// Where they end, above the status strip.
@@ -1732,7 +1747,7 @@ impl Editor {
     fn undo(&mut self) -> Response {
         // Undoing a correction straight away is what teaches the exceptions.
         let taking_back_correction = self.undo_takes_back_correction();
-        let changed = self.document.undo();
+        let changed = self.undo_step();
         if changed && taking_back_correction {
             self.correction_undone();
         }
@@ -1742,10 +1757,30 @@ impl Editor {
     }
 
     fn redo(&mut self) -> Response {
-        let changed = self.document.redo();
+        let changed = self.redo_step();
         self.edited(changed, "Redone");
         self.needs_redraw = true;
         Response::Redraw
+    }
+
+    /// Takes back the document's last step, and shows the part it was made
+    /// in.
+    ///
+    /// Every undo the editor does comes through here, because the document
+    /// goes to the part a step belongs to — a header, say — and a view left
+    /// on the body would draw the header's paragraphs as if they were the
+    /// body's. See [`Self::follow_the_document`].
+    pub(super) fn undo_step(&mut self) -> bool {
+        let changed = self.document.undo();
+        self.follow_the_document();
+        changed
+    }
+
+    /// Puts it back, the same way.
+    pub(super) fn redo_step(&mut self) -> bool {
+        let changed = self.document.redo();
+        self.follow_the_document();
+        changed
     }
 
     fn copy(&mut self) -> Response {
@@ -3026,5 +3061,79 @@ mod tests {
         editor.leave_furniture();
         assert!(!editor.in_furniture());
         assert_ne!(editor.ribbon.tab, Tab::HeaderFooter, "the tab stayed after coming out");
+    }
+
+    /// An editor on a document with a header that says "H", laid out.
+    fn under_a_header() -> Editor {
+        let mut editor = editor(3);
+        editor.paint(1200, 800);
+        editor
+            .document
+            .set_furniture(
+                wp_docx::furniture::Furniture::Header,
+                wp_docx::furniture::Preset::Text,
+                wp_docx::model::Alignment::Start,
+                "H",
+            )
+            .expect("a header");
+        editor.relayout();
+        editor
+    }
+
+    fn press(editor: &mut Editor, key: wp_shell::Key, control: bool) {
+        use wp_shell::App;
+        let modifiers = wp_shell::Modifiers { control, ..wp_shell::Modifiers::default() };
+        editor.handle(wp_shell::Event::KeyDown { key, modifiers });
+    }
+
+    #[test]
+    fn undo_after_coming_out_of_a_header_opens_the_header_again() {
+        // Word goes back into the header to take back what was typed there,
+        // and shows it as a header: the body behind, the tab on the ribbon,
+        // and Escape to come out.
+        use crate::chrome::ribbon::Tab;
+        use wp_docx::TextPosition;
+        use wp_shell::{App, Event, Key};
+        let mut editor = under_a_header();
+        editor.edit_furniture(wp_docx::furniture::Furniture::Header);
+        editor.document.set_caret(TextPosition::new(0, 0));
+        editor.handle(Event::Char('X'));
+        assert_eq!(editor.document.plain_text(), "XH");
+        press(&mut editor, Key::Escape, false);
+        assert!(!editor.in_furniture());
+
+        press(&mut editor, Key::Letter('z'), true);
+        assert!(editor.in_furniture(), "undo went into the header and the view stayed on the body");
+        assert_eq!(editor.ribbon.tab, Tab::HeaderFooter, "the ribbon was not told");
+        assert!(!editor.dimmed.is_empty(), "the body is not drawn behind the header");
+        assert_eq!(editor.document.plain_text(), "H");
+
+        press(&mut editor, Key::Letter('y'), true);
+        assert!(editor.in_furniture());
+        assert_eq!(editor.document.plain_text(), "XH");
+        assert_eq!(editor.document.caret(), TextPosition::new(0, 1), "the caret is not after X");
+
+        press(&mut editor, Key::Escape, false);
+        assert!(!editor.in_furniture(), "Escape did not come out");
+        assert_eq!(editor.document.part_being_edited(), None);
+        assert_ne!(editor.ribbon.tab, Tab::HeaderFooter, "the tab stayed after coming out");
+        assert!(editor.dimmed.is_empty());
+    }
+
+    #[test]
+    fn undo_of_a_change_in_the_body_from_inside_a_header_comes_back_out() {
+        use wp_docx::TextPosition;
+        use wp_shell::{App, Event, Key};
+        let mut editor = under_a_header();
+        editor.document.set_caret(TextPosition::new(0, 0));
+        editor.handle(Event::Char('B'));
+        editor.edit_furniture(wp_docx::furniture::Furniture::Header);
+        assert!(editor.in_furniture());
+
+        press(&mut editor, Key::Letter('z'), true);
+        assert_eq!(editor.document.part_being_edited(), None, "undo stayed in the header");
+        assert!(!editor.in_furniture(), "the view is still the header's");
+        assert!(editor.dimmed.is_empty());
+        assert!(editor.document.plain_text().starts_with("Paragraph 0"));
     }
 }

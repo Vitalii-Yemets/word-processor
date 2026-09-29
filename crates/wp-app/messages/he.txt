@@ -199,6 +199,9 @@ direction = rtl
 = Always show these on screen
 > הצג תמיד על המסך
 
+= An author has marked this document as final to discourage editing.
+> מחבר סימן מסמך זה כסופי כדי למנוע עריכה.
+
 = An empty box takes the encryption off.
 > תיבה ריקה מסירה את ההצפנה.
 
@@ -1108,6 +1111,9 @@ direction = rtl
 = Editing
 > עריכה
 
+= Editing will remove the signatures in this document. Do you want to continue?
+> עריכה תסיר את החתימות במסמך זה. האם ברצונך להמשיך?
+
 = Effects
 > אפקטים
 
@@ -1845,6 +1851,9 @@ direction = rtl
 
 = Lock aspect ratio
 > נעל יחס גובה-רוחב
+
+= MARKED AS FINAL
+> סומן כסופי
 
 = Macedonian
 > מקדונית
@@ -2689,6 +2698,9 @@ direction = rtl
 = Russian
 > רוסית
 
+= SIGNATURES
+> חתימות
+
 = Said
 > פלט
 
@@ -3412,6 +3424,15 @@ direction = rtl
 = This document carries no custom XML. Add a part from a file to bind controls to it.
 > מסמך זה אינו מכיל XML מותאם אישית. הוסף חלק מקובץ כדי לקשר אליו פקדים.
 
+= This document contains invalid signatures.
+> מסמך זה מכיל חתימות לא חוקיות.
+
+= This document contains recoverable signatures.
+> מסמך זה מכיל חתימות הניתנות לשחזור.
+
+= This document contains valid signatures.
+> מסמך זה מכיל חתימות חוקיות.
+
 = This document fixes its style set — Review ▸ Restrict Editing lifts it
 > מסמך זה קובע את ערכת הסגנונות שלו — סקירה ▸ הגבל עריכה מסיר זאת
 
@@ -3438,6 +3459,9 @@ direction = rtl
 
 = This document is protected from editing.
 > מסמך זה מוגן מפני עריכה.
+
+= This document is signed and marked as final — Edit Anyway on the bar lets it be edited, and takes the signatures off
+> מסמך זה חתום וסומן כסופי — ״ערוך בכל זאת״ בסרגל מאפשר לערוך אותו ומסיר את החתימות
 
 = This document limits formatting to its styles — Review ▸ Restrict Editing lifts it
 > מסמך זה מגביל את העיצוב לסגנונות שלו — סקירה ▸ הגבל עריכה מסיר זאת
@@ -3700,6 +3724,9 @@ direction = rtl
 = View Gridlines
 > הצג קווי רשת
 
+= View Signatures...
+> הצג חתימות...
+
 = Views
 > תצוגות
 
@@ -3792,6 +3819,9 @@ direction = rtl
 
 = Word Macro-Enabled Template (*.dotm)
 > תבנית Word התומכת בפקודות מאקרו (*.dotm)
+
+= Word Processor
+> Word Processor
 
 = Word Template (*.dotx)
 > תבנית Word ‏(*.dotx)

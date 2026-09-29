@@ -150,7 +150,8 @@ impl Document {
             return false;
         };
         self.record(EditKind::Structural, caret, false);
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
 
@@ -174,7 +175,7 @@ impl Document {
         if !unwrapped {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -252,7 +253,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, start.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
 
@@ -301,7 +303,7 @@ impl Document {
         paragraph.insert_element(from, link);
 
         self.set_caret(end);
-        self.mark_modified();
+        self.note_change();
         true
     }
 

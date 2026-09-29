@@ -224,7 +224,7 @@ impl Document {
         root.push_element(write(&source));
 
         self.save_sources_root(root)?;
-        self.mark_modified();
+        self.note_change();
         Ok(source.tag)
     }
 
@@ -243,7 +243,7 @@ impl Document {
         if self.save_sources_root(root).is_err() {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -261,7 +261,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
         crate::format::split_runs_at_offset(paragraph, caret.offset);
@@ -278,7 +279,7 @@ impl Document {
         paragraph.insert_element(at, field);
 
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + shown.len()));
-        self.mark_modified();
+        self.note_change();
         true
     }
 

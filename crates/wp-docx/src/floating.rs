@@ -301,7 +301,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, at.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
 
@@ -311,7 +312,7 @@ impl Document {
             done = turn(drawing, turned);
         });
         if done {
-            self.mark_modified();
+            self.note_change();
         }
         done
     }
@@ -349,7 +350,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, at.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
 
@@ -359,7 +361,7 @@ impl Document {
             done = resize(drawing, width_emu, height_emu);
         });
         if done {
-            self.mark_modified();
+            self.note_change();
         }
         done
     }
@@ -429,17 +431,17 @@ impl Document {
 
         // Out of the paragraph it was in, taking the run with it when the run
         // held nothing else: an empty run left behind is an empty run saved.
-        let source = edit::element_at_path_mut(&mut self.tree_mut().root, &here)?;
+        let source = edit::element_at_path_mut(&mut self.tree_to_edit().root, &here)?;
         let taken = take_drawing(source, at.offset)?;
 
         // And into the other one, as a run of its own at the end.
         let there = position::paragraph_path(&self.tree().root, paragraph)?;
-        let target = edit::element_at_path_mut(&mut self.tree_mut().root, &there)?;
+        let target = edit::element_at_path_mut(&mut self.tree_to_edit().root, &there)?;
         let mut run = Element::new(&edit::name_with(prefix.as_deref(), "r"), Some(read::W));
         run.push_element(taken);
         target.push_element(run);
 
-        self.mark_modified();
+        self.note_change();
         // Appended at the end, so it stands after everything the paragraph
         // holds: the offset is the length of what is there.
         let offset = self.paragraph_text(paragraph).map_or(0, |text| text.len());
@@ -452,7 +454,11 @@ impl Document {
         // extension, which has to be declared and marked ignorable before
         // anything under it is written. See [`edit::declare_extension`].
         if anchor.is_some_and(anchor::needs_extension) {
-            edit::declare_extension(&mut self.tree_mut().root, anchor::WP14_PREFIX, anchor::WP14);
+            edit::declare_extension(
+                &mut self.tree_to_edit().root,
+                anchor::WP14_PREFIX,
+                anchor::WP14,
+            );
         }
 
         // A shape is rebuilt from its model, which is what every other command
@@ -472,7 +478,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, at.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
 
@@ -482,7 +489,7 @@ impl Document {
             done = set_anchor_on(drawing, anchor, prefix.as_deref());
         });
         if done {
-            self.mark_modified();
+            self.note_change();
         }
         done
     }

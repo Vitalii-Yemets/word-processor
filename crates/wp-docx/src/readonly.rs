@@ -109,7 +109,7 @@ impl Document {
             if !self.save_settings_root(root) {
                 return false;
             }
-            self.mark_modified();
+            self.note_change();
             return true;
         };
 
@@ -141,7 +141,7 @@ impl Document {
         if !self.save_settings_root(root) {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

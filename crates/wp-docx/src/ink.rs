@@ -194,7 +194,7 @@ impl Document {
 
         // The run that points at it is an extension, so the document has to
         // say that a reader which does not know it may pass it over.
-        crate::edit::declare_extension(&mut self.tree_mut().root, "w14", W14);
+        crate::edit::declare_extension(&mut self.tree_to_edit().root, "w14", W14);
 
         let prefix = self.prefix();
         let (width, height) = (right - left, bottom - top);
@@ -206,7 +206,7 @@ impl Document {
             }
         };
         let inserted = crate::position::insert_element_at(
-            &mut self.tree_mut().root,
+            &mut self.tree_to_edit().root,
             caret,
             element,
             prefix.as_deref(),
@@ -214,7 +214,7 @@ impl Document {
 
         if inserted {
             self.set_caret(crate::TextPosition::new(caret.paragraph, caret.offset + 1));
-            self.mark_modified();
+            self.note_change();
         }
         Ok(inserted)
     }
@@ -288,7 +288,7 @@ impl Document {
         }
         self.end_gesture();
         if done {
-            self.mark_modified();
+            self.note_change();
         }
         done
     }
@@ -301,14 +301,14 @@ impl Document {
         let caret = self.caret();
         self.record(crate::history::EditKind::Structural, caret, false);
         let done = crate::position::delete_range(
-            &mut self.tree_mut().root,
+            &mut self.tree_to_edit().root,
             at.paragraph,
             at.offset,
             at.offset + 1,
         );
         if done {
             self.set_caret(at);
-            self.mark_modified();
+            self.note_change();
         }
         done
     }

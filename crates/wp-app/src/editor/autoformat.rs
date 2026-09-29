@@ -145,7 +145,7 @@ impl Editor {
             // Nothing to review, and the switch flipped on and off again is
             // nothing to undo either.
             if self.document.undo_depth() > depth {
-                self.document.undo();
+                self.undo_step();
             }
             return self.report(t("AutoFormat found nothing to change"));
         }
@@ -196,11 +196,11 @@ impl Editor {
     pub(super) fn answer_autoformat_review(&mut self, answer: Answer) -> Response {
         match answer {
             Answer::Named(REJECT_ALL) => {
-                let changed = self.document.undo();
+                let changed = self.undo_step();
                 self.edited(changed, "")
             }
             Answer::Named(ACCEPT_ALL) => {
-                self.document.undo();
+                self.undo_step();
                 self.reformat_document();
                 self.edited(true, "")
             }

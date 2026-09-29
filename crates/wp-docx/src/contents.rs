@@ -115,7 +115,7 @@ impl Document {
         let Some((position, parent_path)) = path.split_last() else { return 0 };
         let position = *position;
         let parent_path = parent_path.to_vec();
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, &parent_path)
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &parent_path)
         else {
             return 0;
         };
@@ -125,7 +125,7 @@ impl Document {
         }
 
         self.set_caret(TextPosition::new(at, 0));
-        self.mark_modified();
+        self.note_change();
         entries.len()
     }
 
@@ -136,7 +136,7 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         self.remove_paragraph_range(first, last);
         self.set_caret(TextPosition::new(first.min(self.paragraph_count().saturating_sub(1)), 0));
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -165,7 +165,7 @@ impl Document {
     /// Removes a run of whole paragraphs.
     fn remove_paragraph_range(&mut self, first: usize, last: usize) {
         for _ in first..=last {
-            if !position::remove_paragraph(&mut self.tree_mut().root, first) {
+            if !position::remove_paragraph(&mut self.tree_to_edit().root, first) {
                 break;
             }
         }

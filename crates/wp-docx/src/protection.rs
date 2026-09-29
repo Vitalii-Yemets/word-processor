@@ -521,7 +521,7 @@ impl Document {
         let Some(wanted) = wanted.filter(|rules| rules.restricts_anything()) else {
             root.remove_children_named(Some(read::W), "documentProtection");
             return self.save_settings_root(root) && {
-                self.mark_modified();
+                self.note_change();
                 true
             };
         };
@@ -572,7 +572,7 @@ impl Document {
         if wanted.mode == Some(EditMode::TrackedChanges) {
             self.set_tracking_changes(true);
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

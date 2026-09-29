@@ -433,6 +433,23 @@ impl Editor {
             );
             self.info_bar = Some(bar);
         }
+        // The second bar goes under the first, as Word stacks them.
+        if let Some(mut bar) = self.signatures_bar.take() {
+            let above = if self.info_bar.is_some() { crate::chrome::infobar::HEIGHT } else { 0.0 };
+            let top = self.ribbon_bottom() + above;
+            let left = self.pane_width();
+            let width = self.view_width as f32 - left;
+            bar.draw(
+                &mut self.canvas,
+                &mut self.chrome_engine,
+                &mut self.renderer,
+                top,
+                left,
+                width,
+                &theme,
+            );
+            self.signatures_bar = Some(bar);
+        }
 
         if let Some(mut bar) = self.find_bar.take() {
             let top = self.ribbon_bottom() + self.info_bar_height();

@@ -456,7 +456,7 @@ impl crate::Document {
         places.sort_by_key(|at| (at.paragraph, at.offset));
         for at in places.iter().rev() {
             crate::position::delete_range(
-                &mut self.tree_mut().root,
+                &mut self.tree_to_edit().root,
                 at.paragraph,
                 at.offset,
                 at.offset + 1,
@@ -466,7 +466,7 @@ impl crate::Document {
         let prefix = self.prefix();
         let element = group_element(union, &graphics, &anchor, &name, prefix.as_deref());
         if !crate::position::insert_element_at(
-            &mut self.tree_mut().root,
+            &mut self.tree_to_edit().root,
             where_it_goes,
             element,
             prefix.as_deref(),
@@ -475,7 +475,7 @@ impl crate::Document {
         }
 
         self.set_caret(TextPosition::new(where_it_goes.paragraph, where_it_goes.offset + 1));
-        self.mark_modified();
+        self.note_change();
         Some(where_it_goes)
     }
 
@@ -516,7 +516,7 @@ impl crate::Document {
         let caret = self.caret();
         self.record(crate::history::EditKind::Structural, caret, false);
         crate::position::delete_range(
-            &mut self.tree_mut().root,
+            &mut self.tree_to_edit().root,
             at.paragraph,
             at.offset,
             at.offset + 1,
@@ -537,7 +537,7 @@ impl crate::Document {
             let element = loose_element(rect, &inner, &hangs, prefix.as_deref());
             let place = TextPosition::new(at.paragraph, at.offset + index);
             if crate::position::insert_element_at(
-                &mut self.tree_mut().root,
+                &mut self.tree_to_edit().root,
                 place,
                 element,
                 prefix.as_deref(),
@@ -546,7 +546,7 @@ impl crate::Document {
             }
         }
 
-        self.mark_modified();
+        self.note_change();
         out
     }
 }

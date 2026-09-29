@@ -271,11 +271,40 @@ pub struct Document {
     /// it is about a place the user has left.
     pending: RunProperties,
     history: History,
-    /// Whether the tree has been changed since it was read.
+    /// Whether the tree or the package has been changed since the history
+    /// last gave the present state a number.
     ///
-    /// While it is false, saving writes the original bytes straight back, which
-    /// is what makes an untouched document come out identical.
+    /// Every edit sets it, and none of them has to know about numbers:
+    /// recording a step, undoing, redoing and saving each give the present
+    /// state its number first, and clear this. Whether the document has
+    /// changed is then whether this is set or the present number is not the
+    /// saved one — see [`history`] for why that is a number and not a flag.
     modified: bool,
+    /// The package's generation when it last held exactly what is on disk.
+    ///
+    /// The package's own bytes stand for the document only while they are
+    /// still that — the present state the saved one, and no part written since
+    /// — which is what makes an untouched document come out identical. Coming
+    /// back to the saved state by way of parts written on the way does not
+    /// make the parts the saved ones again, and a save then has to write the
+    /// tree.
+    saved_generation: u64,
+    /// The package's generation when the history last looked at what had been
+    /// written to it.
+    ///
+    /// A step keeps the tree, and sometimes a few named parts beside it; a
+    /// part written that no step keeps is a change no undo takes back. Every
+    /// part written goes through the package, which says which parts were
+    /// written since a generation, so the history can find such a change
+    /// where it happened instead of every command having to own up to it.
+    accounted_generation: u64,
+    /// Where the caret was in each part when that part was last left.
+    ///
+    /// Undo that goes back into a header to take a change back leaves a way
+    /// to redo it, and redo puts the caret back where it was in the header
+    /// when undo went in — which is where the person left it, not where the
+    /// caret is in the body.
+    left_at: Vec<(String, TextPosition)>,
     /// Whether every edit is recorded as a tracked change.
     ///
     /// Read from the settings when the document is opened and kept here: it is
@@ -349,6 +378,7 @@ impl Document {
         let styles = read_styles(&package, &main_part, theme);
         let numbering = read_numbering(&package, &main_part);
 
+        let saved_generation = package.generation();
         let mut document = Self {
             package,
             password: None,
@@ -364,6 +394,9 @@ impl Document {
             pending: RunProperties::default(),
             history: History::default(),
             modified: false,
+            saved_generation,
+            accounted_generation: saved_generation,
+            left_at: Vec::new(),
             tracking: false,
             reviser: revisions::Reviser::default(),
             gesture_depth: 0,
@@ -409,6 +442,7 @@ impl Document {
 
         let styles = read_styles(&package, "word/document.xml", crate::theme::Theme::default());
         let numbering = read_numbering(&package, "word/document.xml");
+        let saved_generation = package.generation();
 
         Ok(Self {
             package,
@@ -425,6 +459,9 @@ impl Document {
             pending: RunProperties::default(),
             history: History::default(),
             modified: false,
+            saved_generation,
+            accounted_generation: saved_generation,
+            left_at: Vec::new(),
             tracking: false,
             reviser: revisions::Reviser::default(),
             gesture_depth: 0,
@@ -459,16 +496,111 @@ impl Document {
     /// The element tree, for edits this crate does not offer directly.
     ///
     /// Taking this marks the document as changed, since there is no way to know
-    /// afterwards whether it was.
+    /// afterwards whether it was. What is done through it is no step of the
+    /// history's — nothing here knows what it was, so nothing can take it back —
+    /// so no undo may come back to the state on disk after it: see
+    /// [`history::History::lose_saved`].
     pub fn tree_mut(&mut self) -> &mut XmlTree {
+        self.changed_off_the_record();
+        &mut self.tree
+    }
+
+    /// The element tree, for an edit of this crate's own.
+    ///
+    /// Marks the document as changed, as [`Self::tree_mut`] does, and nothing
+    /// more: the edits that take it record a step first, so the history knows
+    /// how to take them back.
+    pub(crate) fn tree_to_edit(&mut self) -> &mut XmlTree {
         self.modified = true;
         &mut self.tree
     }
 
-    /// Whether the document has been changed since it was opened.
+    /// Says an edit of this crate's own has changed the document.
+    ///
+    /// The step that takes it back was recorded before it, or the part it
+    /// wrote is found by the history when it next looks: see
+    /// [`Self::account_for_package_writes`].
+    pub(crate) fn note_change(&mut self) {
+        self.modified = true;
+    }
+
+    /// Says the document has changed in a way no step records and nothing
+    /// in the package shows.
+    ///
+    /// The password the file is to be sealed with is one: it is kept beside
+    /// the package, not in it. So is whatever a caller does to the tree with
+    /// [`Self::tree_mut`]. No undo takes such a change back, so no undo may
+    /// come back to the state on disk after one.
+    pub(crate) fn changed_off_the_record(&mut self) {
+        self.modified = true;
+        self.history.lose_saved();
+    }
+
+    /// Whether the document differs from what was last saved, or from what
+    /// was opened if it has not been saved.
+    ///
+    /// Undo and redo count: taking back what was typed after a save goes back
+    /// to the saved document, and taking back more than that leaves one that
+    /// is not on disk.
     #[must_use]
     pub fn is_modified(&self) -> bool {
-        self.modified
+        self.modified || !self.history.is_at_saved()
+    }
+
+    /// Gives the present state its number, if it has changed since it was last
+    /// given one.
+    ///
+    /// Called before anything that remembers where the document stands — a
+    /// step recorded, undo, redo, a save — so that what it remembers is the
+    /// present state and no other.
+    fn number_present(&mut self) {
+        self.account_for_package_writes();
+        if core::mem::take(&mut self.modified) {
+            self.history.advance();
+        }
+    }
+
+    /// Looks at what has been written to the package since it was last looked
+    /// at, and puts the saved state out of reach if any of it is something
+    /// no step can put back.
+    ///
+    /// A step keeps the tree, and a step made with
+    /// [`Self::record_with_parts`] the parts it names as well. A part written
+    /// outside those — the settings, the properties, the notes, a picture —
+    /// stays written whatever undo does, so after it no undo can come back to
+    /// the file. Found here, where every change to the package passes, rather
+    /// than asked of every command that writes one; and the history's own
+    /// writes — the tree written back as a part is left, the parts a step puts
+    /// back, a save — are looked past, because they are what the history
+    /// keeps.
+    fn account_for_package_writes(&mut self) {
+        let generation = self.package.generation();
+        if generation == self.accounted_generation {
+            return;
+        }
+        let kept = self.history.parts_kept_by_last_step();
+        let unkept = self
+            .package
+            .written_since(self.accounted_generation)
+            .any(|written| !kept.iter().any(|name| name.eq_ignore_ascii_case(written)));
+        if unkept {
+            self.history.lose_saved();
+        }
+        self.accounted_generation = generation;
+    }
+
+    /// Whether the package, with the tree beside it, is exactly what is on
+    /// disk.
+    ///
+    /// Only then may the package's own bytes stand for the document, or the
+    /// tree be left unwritten when another part is entered: the present state
+    /// has to be the saved one, and no part may have been written since the
+    /// save. A document that undo has taken back past the save, or brought
+    /// back to it through a header written on the way, is not.
+    fn is_as_saved(&self) -> bool {
+        !self.modified
+            && self.history.is_at_saved()
+            && self.package.generation() == self.saved_generation
     }
 
     /// The document's content, as blocks.
@@ -550,12 +682,32 @@ impl Document {
 
     /// Says the document holds changes that are not on disk.
     ///
-    /// Used inside for a tree that has been edited, and from outside for a
-    /// document that did not come off disk at all — one recovered from a
-    /// copy after a crash is exactly that, and a program that did not say
+    /// For a document that did not come off disk at all — one recovered from
+    /// a copy after a crash is exactly that, and a program that did not say
     /// so would let the person close it without being asked.
+    ///
+    /// A change until the next save, whatever undo does: undo takes back what
+    /// the history recorded, and this it did not, so the saved state is put
+    /// out of reach. The edits of this crate say the same thing with
+    /// [`Self::note_change`], which leaves the way back to the saved state to
+    /// the steps they record.
     pub fn mark_modified(&mut self) {
-        self.modified = true;
+        self.changed_off_the_record();
+    }
+
+    /// Counts the present state as the one on disk, without writing anything.
+    ///
+    /// For what is done to a document that is not a person's edit and is not
+    /// to be offered for saving: bringing bound controls up to date as it is
+    /// opened, making a document from a template. The tree is not written
+    /// into the package: what was brought up to date as the file was opened
+    /// is brought up to date again the next time it is, and a file nobody
+    /// has changed is written back byte for byte.
+    pub(crate) fn count_as_saved(&mut self) {
+        self.number_present();
+        self.history.mark_saved();
+        self.saved_generation = self.package.generation();
+        self.accounted_generation = self.saved_generation;
     }
 
     pub(crate) fn prefix(&self) -> Option<String> {
@@ -567,12 +719,36 @@ impl Document {
     /// The search works across run boundaries, which it has to: Word splits a
     /// paragraph's text between runs wherever formatting changes, so a word can
     /// easily be stored in two pieces.
+    ///
+    /// Word's Replace All, and one step to take back, as it is there.
     pub fn replace_text(&mut self, needle: &str, replacement: &str) -> usize {
-        let replaced = edit::replace_text(&mut self.tree.root, needle, replacement);
-        if replaced > 0 {
-            self.modified = true;
-        }
+        let mut replaced = 0;
+        self.edit_tree_as_one_step(|root, _| {
+            replaced = edit::replace_text(root, needle, replacement);
+            replaced > 0
+        });
         replaced
+    }
+
+    /// Makes a change to the tree that is one step to take back, and a step
+    /// only if it changed anything.
+    ///
+    /// The change is made on a copy first, because whether it changes anything
+    /// is only known once it is made, and a step recorded for nothing is a
+    /// press of undo that does nothing. The copy is what a step keeps anyway.
+    fn edit_tree_as_one_step(
+        &mut self,
+        change: impl FnOnce(&mut Element, Option<&str>) -> bool,
+    ) -> bool {
+        let prefix = self.prefix();
+        let mut root = self.tree.root.clone();
+        if !change(&mut root, prefix.as_deref()) {
+            return false;
+        }
+        self.record(EditKind::Structural, self.caret, false);
+        self.tree.root = root;
+        self.modified = true;
+        true
     }
 
     /// How many paragraphs the document has, in reading order.
@@ -618,7 +794,8 @@ impl Document {
         // Undoing a gesture puts the caret where it was before the gesture,
         // not where the gesture had moved it to by its first change.
         let caret = if in_gesture { self.gesture_caret } else { self.caret };
-        self.history.record(kept, &self.main_part, caret, self.modified, kind, ends_at, mergeable);
+        self.number_present();
+        self.history.record(kept, &self.main_part, caret, kind, ends_at, mergeable);
     }
 
     /// One paragraph exactly as it is, for a step that changes only that one.
@@ -667,15 +844,8 @@ impl Document {
         }
         let kept = self.kept_with_parts(names);
         let caret = if self.gesture_depth > 0 { self.gesture_caret } else { self.caret };
-        self.history.record(
-            kept,
-            &self.main_part,
-            caret,
-            self.modified,
-            EditKind::Structural,
-            ends_at,
-            false,
-        );
+        self.number_present();
+        self.history.record(kept, &self.main_part, caret, EditKind::Structural, ends_at, false);
     }
 
     /// Puts a kept state back where it came from.
@@ -687,6 +857,11 @@ impl Document {
                 for (name, bytes) in parts {
                     self.package.set_part(&name, bytes);
                 }
+                // What is read from those parts once and kept — the styles and
+                // the theme they resolve against, the lists, whether changes
+                // are tracked — is read again, or the parts would be back and
+                // the document would go on as if they were not.
+                self.reread_what_parts_say();
             }
             history::Kept::Paragraph { index, element } => {
                 let Some(path) = position::paragraph_path(&self.tree.root, index) else { return };
@@ -1515,7 +1690,7 @@ impl Document {
     /// anything a person did, and Undo straight after opening must not take a
     /// picture out of the file.
     pub fn forget_history(&mut self) {
-        self.history = History::default();
+        self.history.forget();
     }
 
     #[must_use]
@@ -1556,10 +1731,17 @@ impl Document {
         let Ok(tree) = XmlTree::parse(&text) else { return false };
 
         self.flush_part();
-        self.main_part = part.to_owned();
+        let left = (core::mem::replace(&mut self.main_part, part.to_owned()), self.caret);
+        match self.left_at.iter_mut().find(|(name, _)| *name == left.0) {
+            Some(entry) => *entry = left,
+            None => self.left_at.push(left),
+        }
         self.tree = tree;
         self.caret = TextPosition::new(0, 0);
         self.anchor = None;
+        // The stretches picked out with Ctrl held were places in the part
+        // being left, as the caret and the anchor were.
+        self.extra.clear();
         self.pending = RunProperties::default();
         true
     }
@@ -1583,58 +1765,100 @@ impl Document {
     ///
     /// Only when something has changed: an untouched part is left byte for
     /// byte as it arrived, which is the promise the whole program makes.
+    /// "Changed" is against the file, not against the last step: a tree that
+    /// undo has put back is a change to the part the package holds, whatever
+    /// the history says about the document as a whole.
     fn flush_part(&mut self) {
-        if !self.modified {
+        if self.is_as_saved() {
             return;
         }
+        // Anything written before this is looked at first: the tree's own
+        // part is the history's to write, and whatever else was written
+        // since the history last looked must not be taken for it.
+        self.account_for_package_writes();
         if let Ok(xml) = self.tree.to_xml() {
             self.package.set_part(&self.main_part, xml.into_bytes());
         }
+        self.accounted_generation = self.package.generation();
     }
+
     /// Takes back the last change.
     ///
     /// A step that belongs to another part of the package — a header, say —
     /// brings that part back with it, because undoing an edit means being where
     /// the edit was.
     pub fn undo(&mut self) -> bool {
-        let Some(shape) = self.history.next_undo() else { return false };
-        let now = self.kept_like(shape);
-        let Some((kept, part, caret, modified)) =
-            self.history.undo(now, &self.main_part, self.caret, self.modified)
-        else {
+        let Some((_, part)) = self.history.next_undo() else { return false };
+        let part = part.to_owned();
+        if !self.go_to_part_of_step(&part) {
             return false;
-        };
-        self.restore(kept, part, caret, modified);
-        true
-    }
-
-    /// Puts back a change that was taken back.
-    pub fn redo(&mut self) -> bool {
-        let Some(shape) = self.history.next_redo() else { return false };
-        let now = self.kept_like(shape);
-        let Some((kept, part, caret, modified)) =
-            self.history.redo(now, &self.main_part, self.caret, self.modified)
-        else {
-            return false;
-        };
-        self.restore(kept, part, caret, modified);
-        true
-    }
-
-    /// Puts a remembered state back, moving to its part if that is not the one
-    /// being edited.
-    fn restore(&mut self, kept: history::Kept, part: String, caret: TextPosition, modified: bool) {
-        if part != self.main_part {
-            // The tree being left has to reach the package, or the step that
-            // put it there would be lost.
-            self.flush_part();
-            self.main_part = part;
         }
+        let Some((shape, _)) = self.history.next_undo() else { return false };
+        let now = self.kept_like(shape);
+        self.number_present();
+        let Some((kept, caret)) = self.history.undo(now, &self.main_part, self.caret) else {
+            return false;
+        };
+        self.restore(kept, caret);
+        true
+    }
+
+    /// Puts back a change that was taken back, in the part it was taken back
+    /// in, for the same reason.
+    pub fn redo(&mut self) -> bool {
+        let Some((_, part)) = self.history.next_redo() else { return false };
+        let part = part.to_owned();
+        if !self.go_to_part_of_step(&part) {
+            return false;
+        }
+        let Some((shape, _)) = self.history.next_redo() else { return false };
+        let now = self.kept_like(shape);
+        self.number_present();
+        let Some((kept, caret)) = self.history.redo(now, &self.main_part, self.caret) else {
+            return false;
+        };
+        self.restore(kept, caret);
+        true
+    }
+
+    /// Makes the part a step was recorded in the one being edited.
+    ///
+    /// A step keeps a state of its own part — a paragraph of a header is
+    /// found by where it stands in the header — so it can only be put back
+    /// into that part's tree, and what is kept of the present for the way back
+    /// has to be taken from that tree too. Both happen after this. The part is
+    /// loaded the way [`Self::enter_part`] loads it, since that is what Word
+    /// does: undo of a change in a header opens the header. Going there is not
+    /// itself a change, so nothing is recorded.
+    ///
+    /// The caret goes where it was when that part was last left, so that what
+    /// is kept for redo remembers where the person was in it.
+    fn go_to_part_of_step(&mut self, part: &str) -> bool {
+        if part == self.main_part {
+            return true;
+        }
+        if !self.enter_part(part) {
+            return false;
+        }
+        if let Some((_, caret)) = self.left_at.iter().find(|(name, _)| name == part) {
+            self.caret = self.clamp(*caret);
+        }
+        true
+    }
+
+    /// Puts a remembered state back into the part being edited, which is the
+    /// one it was taken from.
+    ///
+    /// The document is then exactly the state the history has just named, so
+    /// nothing has changed since it was numbered.
+    fn restore(&mut self, kept: history::Kept, caret: TextPosition) {
         self.put_back(kept);
+        // The parts a step puts back are the history's own writes.
+        self.accounted_generation = self.package.generation();
         self.caret = self.clamp(caret);
         self.anchor = None;
         self.pending = RunProperties::default();
-        self.modified = modified;
+        self.modified = false;
     }
 
     // --- Formatting ---------------------------------------------------------
@@ -1767,7 +1991,7 @@ impl Document {
         // The namespace has to be declared before anything in it is written,
         // and declaring it costs nothing in a document that never uses one.
         if effect != effects::Effect::None {
-            effects::declare_namespace(&mut self.tree_mut().root);
+            effects::declare_namespace(&mut self.tree_to_edit().root);
         }
         let change = RunProperties {
             effect: Some(effects::TextEffect::plain(effect)),
@@ -1795,7 +2019,7 @@ impl Document {
         // and there is nothing to declare for a change that asks the font for
         // nothing.
         if change.open_type.as_ref().is_some_and(|wanted| !wanted.is_empty()) {
-            typography::declare_namespace(&mut self.tree_mut().root);
+            typography::declare_namespace(&mut self.tree_to_edit().root);
         }
         self.apply_character_change(change)
     }
@@ -1862,9 +2086,10 @@ impl Document {
 
         // What the styles say has changed, so what every run resolves to has
         // changed with it.
+        self.record_styles_change();
         self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
         self.save_styles_tree(&tree);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -1970,9 +2195,10 @@ impl Document {
         if tree.root == before {
             return false;
         }
+        self.record_styles_change();
         self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
         self.save_styles_tree(&tree);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -2010,7 +2236,7 @@ impl Document {
         }
         self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
         self.save_styles_tree(&tree);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -2026,7 +2252,7 @@ impl Document {
         }
         self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
         self.save_styles_tree(&tree);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -2060,7 +2286,7 @@ impl Document {
 
         self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
         self.save_styles_tree(&tree);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -2091,17 +2317,50 @@ impl Document {
     /// Writes the styles part back where it came from.
     fn save_styles_tree(&mut self, tree: &XmlTree) {
         let Ok(xml) = tree.to_xml() else { return };
-        let main_part = self.main_part().to_owned();
-        let target = self
-            .package()
-            .relationships(&main_part)
+        let target = self.styles_part();
+        self.package_mut().add_part(&target, STYLES_CONTENT_TYPE, xml.into_bytes());
+    }
+
+    /// The name of the part the styles live in, or the one they would go in.
+    fn styles_part(&self) -> String {
+        let main_part = self.main_part();
+        self.package()
+            .relationships(main_part)
             .ok()
             .and_then(|relationships| {
                 let found = relationships.single_by_type(STYLES_RELATIONSHIP)?;
-                found.resolved_target(&main_part)?.ok()
+                found.resolved_target(main_part)?.ok()
             })
-            .unwrap_or_else(|| "word/styles.xml".to_owned());
-        self.package_mut().add_part(&target, STYLES_CONTENT_TYPE, xml.into_bytes());
+            .unwrap_or_else(|| "word/styles.xml".to_owned())
+    }
+
+    /// Records a step that keeps the styles part, before a change to it.
+    ///
+    /// Word takes back a style modified, a default set and a set of styles
+    /// chosen, and a step that kept only the tree would take back none of
+    /// them: the change is in the part.
+    fn record_styles_change(&mut self) {
+        let part = self.styles_part();
+        self.record_with_parts(self.caret, &[&part]);
+    }
+
+    /// Records a step that keeps the settings part, before a change to it:
+    /// hyphenation and the default tab stops are Word's to take back, and
+    /// they live there.
+    pub(crate) fn record_settings_change(&mut self) {
+        let Some(part) = self.settings_part() else { return };
+        self.record_with_parts(self.caret, &[&part]);
+    }
+
+    /// Reads again what is kept from the parts beside the document's own: the
+    /// theme, the styles resolved against it, and the lists.
+    ///
+    /// Read once when the document is opened, and so again whenever a step
+    /// puts those parts back.
+    fn reread_what_parts_say(&mut self) {
+        let theme = read_theme(&self.package, &self.document_part);
+        self.styles = read_styles(&self.package, &self.document_part, theme);
+        self.numbering = read_numbering(&self.package, &self.document_part);
     }
 
     /// Everything the run at the caret is formatted with, for the format
@@ -2320,9 +2579,10 @@ impl Document {
             return false;
         }
 
+        self.record_styles_change();
         self.styles = Styles::parse(&tree.root).with_theme(self.styles.theme().clone());
         self.save_styles_tree(&tree);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -2966,7 +3226,7 @@ impl Document {
         if self.default_tab_width() == twips {
             return false;
         }
-        self.set_setting_value("defaultTabStop", Some(&twips.to_string()))
+        self.set_setting_value_as_step("defaultTabStop", Some(&twips.to_string()))
     }
 
     /// The indents of the paragraph at the caret, in twentieths of a point:
@@ -3127,14 +3387,15 @@ impl Document {
     }
 
     /// Appends a block to the end of the document, before the section properties.
+    ///
+    /// One step to take back, like any other edit: a macro's `Paragraphs.Add`
+    /// comes here, and Word takes back what a macro did.
     pub fn append_block(&mut self, block: &Block) -> bool {
-        let prefix = self.prefix();
-        let Some(body) = read::find_body_mut(&mut self.tree.root) else {
-            return false;
-        };
-        edit::append_block(body, block, prefix.as_deref());
-        self.modified = true;
-        true
+        self.edit_tree_as_one_step(|root, prefix| {
+            let Some(body) = read::find_body_mut(root) else { return false };
+            edit::append_block(body, block, prefix);
+            true
+        })
     }
 
     /// Whether a style may be applied at all.
@@ -3151,69 +3412,81 @@ impl Document {
         if !self.style_may_be_applied(style) {
             return false;
         }
-        let prefix = self.prefix();
-        let Some(body) = read::find_body_mut(&mut self.tree.root) else {
-            return false;
-        };
-        let changed = edit::set_paragraph_style(body, index, style, prefix.as_deref());
-        self.modified |= changed;
-        changed
+        self.edit_tree_as_one_step(|root, prefix| {
+            read::find_body_mut(root)
+                .is_some_and(|body| edit::set_paragraph_style(body, index, style, prefix))
+        })
     }
 
     /// Sets the alignment of the paragraph at a given index.
     pub fn set_paragraph_alignment(&mut self, index: usize, alignment: Alignment) -> bool {
-        let prefix = self.prefix();
-        let Some(body) = read::find_body_mut(&mut self.tree.root) else {
-            return false;
-        };
-        let changed = edit::set_paragraph_alignment(body, index, alignment, prefix.as_deref());
-        self.modified |= changed;
-        changed
+        self.edit_tree_as_one_step(|root, prefix| {
+            read::find_body_mut(root)
+                .is_some_and(|body| edit::set_paragraph_alignment(body, index, alignment, prefix))
+        })
     }
 
     /// Records that the bytes from [`Self::save`] have actually been stored.
     ///
-    /// This commits the edited tree into the package and clears the modified
-    /// flag. Clearing the flag alone would be a quiet corruption: the package
+    /// This makes the package what [`Self::save`] wrote — the edited tree in
+    /// its part, and no signatures if the document is no longer what was
+    /// signed — and makes the present state of the history the saved one.
+    /// Moving the saved state alone would be a quiet corruption: the package
     /// would still hold the *old* main part, so the next save would write the
-    /// document as it was before the edits.
+    /// document as it was before the edits; and a package that kept its
+    /// signatures would have the next save, finding nothing changed, write
+    /// back a signature over a document it no longer describes.
+    ///
+    /// It also ends the step being typed. The saved state is a place undo has
+    /// to be able to come back to, and it could not if the next word typed
+    /// were folded into the step before the save.
     pub fn mark_saved(&mut self) -> Result<(), Error> {
-        if !self.modified {
+        if self.is_as_saved() {
             return Ok(());
         }
 
-        let xml = self
-            .tree
-            .to_xml()
-            .map_err(|source| Error::Xml { part: self.main_part.clone(), source })?;
-        self.package.set_part(&self.main_part, xml.into_bytes());
-        self.modified = false;
+        self.number_present();
+        Self::write_into(&self.tree, &self.main_part, &mut self.package)?;
+        self.history.mark_saved();
+        self.history.break_merge();
+        self.saved_generation = self.package.generation();
+        self.accounted_generation = self.saved_generation;
         Ok(())
     }
 
     /// Writes the document back out.
     ///
-    /// An unmodified document is written from its original bytes, so it comes
-    /// out identical. A modified one has only its main part re-serialized;
-    /// every other part is still written back exactly as it arrived.
+    /// A document that is exactly what was opened or last saved is written
+    /// from the package's own bytes, so it comes out identical. Any other has
+    /// only its main part re-serialized; every other part is still written
+    /// back exactly as the package holds it.
     pub fn save(&self) -> Result<Vec<u8>, Error> {
-        if !self.modified {
+        if self.is_as_saved() {
             return Ok(self.package.save()?);
         }
-
-        let xml = self
-            .tree
-            .to_xml()
-            .map_err(|source| Error::Xml { part: self.main_part.clone(), source })?;
-
         let mut package = self.package.clone();
-        package.set_part(&self.main_part, xml.into_bytes());
-        // A signature says the document is what it was when it was signed,
-        // and after an edit that is not true. Word marks such a signature
-        // invalid and takes it off when the document is saved; leaving it
-        // there would leave a claim in the file that the file disproves.
-        wp_sign::unsign(&mut package);
+        Self::write_into(&self.tree, &self.main_part, &mut package)?;
         Ok(package.save()?)
+    }
+
+    /// Makes a package what a document that is not the one on disk is saved
+    /// as: the tree in its part, and no signatures.
+    ///
+    /// One place for both ways a save goes — the bytes written and the
+    /// package kept afterwards — so that the two cannot come apart.
+    ///
+    /// # Why the signatures go
+    ///
+    /// A signature says the document is what it was when it was signed, and
+    /// after an edit that is not true. Word takes the signatures off an
+    /// edited document — it asks before the first edit, since editing is what
+    /// takes them off — and leaving one would leave a claim in the file that
+    /// the file disproves.
+    fn write_into(tree: &XmlTree, part: &str, package: &mut Package) -> Result<(), Error> {
+        let xml = tree.to_xml().map_err(|source| Error::Xml { part: part.to_owned(), source })?;
+        package.set_part(part, xml.into_bytes());
+        wp_sign::unsign(package);
+        Ok(())
     }
 }
 
@@ -3592,7 +3865,7 @@ impl Document {
         paragraph.insert_element(at, field);
 
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + shown.len()));
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

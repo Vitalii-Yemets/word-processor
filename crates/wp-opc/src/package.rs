@@ -46,9 +46,15 @@ pub struct Package {
     /// Not saved: a count of edits, for anyone holding something worked out
     /// from the parts — a layout, say — to tell whether it still holds
     /// without reading them all again. Everything that changes a part goes
-    /// through [`Self::set_part`] or [`Self::remove_part`], so the count is
-    /// complete.
+    /// through [`Self::set_part`], [`Self::remove_part`] or
+    /// [`Self::set_content_types`], so the count is complete.
     generation: u64,
+    /// The generation at which each part was last written or taken away.
+    ///
+    /// So that somebody who knows what they wrote can ask whether anything
+    /// else was written since: a count says that something changed, and this
+    /// says what. Not saved either.
+    written: Vec<(String, u64)>,
 }
 
 impl Package {
@@ -79,13 +85,18 @@ impl Package {
                     .map_err(|source| Error::Xml { part: CONTENT_TYPES_PART.to_owned(), source })
             })?;
 
-        Ok(Self { entries, content_types, generation: 0 })
+        Ok(Self { entries, content_types, generation: 0, written: Vec::new() })
     }
 
     /// Builds an empty package with no parts and no declared types.
     #[must_use]
     pub fn empty() -> Self {
-        Self { entries: Vec::new(), content_types: ContentTypes::default(), generation: 0 }
+        Self {
+            entries: Vec::new(),
+            content_types: ContentTypes::default(),
+            generation: 0,
+            written: Vec::new(),
+        }
     }
 
     /// How many times a part has been written or taken away since the
@@ -94,6 +105,25 @@ impl Package {
     #[must_use]
     pub fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// The parts written or taken away after a given generation, by name.
+    ///
+    /// For a caller that writes parts of its own and needs to know whether
+    /// anybody else wrote one in between: it reads the generation after its
+    /// own writes and asks this later.
+    pub fn written_since(&self, generation: u64) -> impl Iterator<Item = &str> {
+        self.written.iter().filter(move |(_, at)| *at > generation).map(|(name, _)| name.as_str())
+    }
+
+    /// Notes that a part has just been written or taken away, at the present
+    /// generation.
+    fn stamp(&mut self, name: &str) {
+        let at = self.generation;
+        match self.written.iter_mut().find(|(known, _)| known.eq_ignore_ascii_case(name)) {
+            Some(entry) => entry.1 = at,
+            None => self.written.push((name.to_owned(), at)),
+        }
     }
 
     /// Every entry, in the order it appears in the archive.
@@ -137,6 +167,7 @@ impl Package {
     pub fn set_part(&mut self, name: &str, data: Vec<u8>) {
         self.generation += 1;
         let name = normalize(name);
+        self.stamp(&name);
         match self.entries.iter_mut().find(|entry| entry.name.eq_ignore_ascii_case(&name)) {
             Some(entry) => entry.data = data,
             None => self.entries.push(PackageEntry {
@@ -152,15 +183,38 @@ impl Package {
     pub fn remove_part(&mut self, name: &str) {
         self.generation += 1;
         let name = normalize(name);
+        self.stamp(&name);
         self.entries.retain(|entry| !entry.name.eq_ignore_ascii_case(&name));
-        self.content_types.remove_override(&name);
-        self.rewrite_content_types();
+        self.declare(|types| types.remove_override(&name));
     }
 
     /// Replaces the content type declarations.
+    ///
+    /// A write like any other: the declarations are a part of the package,
+    /// and a count of writes that missed this one would say a package whose
+    /// kind had changed was the package it was.
     pub fn set_content_types(&mut self, content_types: ContentTypes) {
+        if content_types == self.content_types {
+            return;
+        }
+        self.generation += 1;
         self.content_types = content_types;
         self.rewrite_content_types();
+    }
+
+    /// Changes the declarations, and writes the stream again only if they
+    /// did change.
+    ///
+    /// Adding a part whose type is declared already declares nothing, and
+    /// writing the stream again the same would still be a write: a package
+    /// that says a part was written when nothing in it changed cannot be
+    /// reasoned about, and the stream a producer wrote is kept byte for byte.
+    fn declare(&mut self, change: impl FnOnce(&mut ContentTypes)) {
+        let before = self.content_types.clone();
+        change(&mut self.content_types);
+        if self.content_types != before {
+            self.rewrite_content_types();
+        }
     }
 
     /// Reads the relationships declared by a part.
@@ -191,8 +245,7 @@ impl Package {
         // Relationships parts are covered by an extension default in every real
         // package; declaring it is harmless and makes a package we built from
         // nothing valid too.
-        self.content_types.set_default("rels", RELATIONSHIPS_CONTENT_TYPE);
-        self.rewrite_content_types();
+        self.declare(|types| types.set_default("rels", RELATIONSHIPS_CONTENT_TYPE));
         Ok(())
     }
 
@@ -288,6 +341,9 @@ impl Package {
             return;
         };
         let bytes = xml.into_bytes();
+        // Every caller counted the change it made; the stream is written as
+        // part of that change, at the same generation.
+        self.stamp(CONTENT_TYPES_PART);
 
         match self
             .entries
@@ -329,8 +385,7 @@ impl Package {
     /// Adds a part and declares its content type in one step.
     pub fn add_part(&mut self, name: &str, content_type: &str, data: Vec<u8>) {
         self.set_part(name, data);
-        self.content_types.set_override(name, content_type);
-        self.rewrite_content_types();
+        self.declare(|types| types.set_override(name, content_type));
     }
 
     /// Adds a part covered by an extension default rather than an override.
@@ -342,7 +397,6 @@ impl Package {
         data: Vec<u8>,
     ) {
         self.set_part(name, data);
-        self.content_types.set_default(extension, content_type);
-        self.rewrite_content_types();
+        self.declare(|types| types.set_default(extension, content_type));
     }
 }

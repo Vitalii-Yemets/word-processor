@@ -133,7 +133,8 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
         let Some(row_position) = positions_of(table, "tr").get(place.row).copied() else {
@@ -167,7 +168,7 @@ impl Document {
             borders.push_element(edit::border_element(edge.element(), border, prefix.as_deref()));
         }
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -183,7 +184,8 @@ impl Document {
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &range.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &range.table)
+        else {
             return false;
         };
 
@@ -235,7 +237,7 @@ impl Document {
             }
         }
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -252,7 +254,8 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
 
@@ -289,7 +292,7 @@ impl Document {
         }
 
         crate::tables::widen_grid(table, prefix.as_deref(), place.column);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -306,7 +309,8 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
         let Some(row_position) = positions_of(table, "tr").get(place.row).copied() else {
@@ -347,7 +351,7 @@ impl Document {
         }
 
         table.insert_element(row_position + 1, below);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -382,7 +386,8 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
         let Some(row_position) = position_of(table, "tr", place.row) else { return false };
@@ -416,7 +421,7 @@ impl Document {
             row.insert_element(cell_position + offset, fresh);
         }
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 

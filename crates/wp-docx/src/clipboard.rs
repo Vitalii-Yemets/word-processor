@@ -150,7 +150,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return;
         };
-        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        let Some(paragraph) =
+            crate::edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
         else {
             return;
         };
@@ -159,7 +160,7 @@ impl Document {
         crate::format::set_paragraph_style(paragraph, wanted.style.as_deref(), prefix.as_deref());
         crate::format::set_paragraph_numbering(paragraph, wanted.numbering, prefix.as_deref());
         crate::format::apply_paragraph_properties(paragraph, wanted, prefix.as_deref());
-        self.mark_modified();
+        self.note_change();
     }
 
     /// Puts formatted runs in at the caret.
@@ -180,7 +181,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
         };
-        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        let Some(paragraph) =
+            crate::edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
         else {
             return false;
         };
@@ -197,7 +199,7 @@ impl Document {
         }
 
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + length));
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

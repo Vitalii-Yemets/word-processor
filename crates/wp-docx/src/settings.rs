@@ -174,8 +174,31 @@ impl Document {
         if !self.save_settings_root(root) {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
+    }
+
+    /// Turns a switch in the settings on or off as a step to take back.
+    ///
+    /// For the settings Word takes back — hyphenation among them — as
+    /// against the ones it keeps off its undo list, which go through
+    /// [`Self::set_setting_flag`] alone and are found by the history as a
+    /// part written that no step keeps.
+    pub(crate) fn set_setting_flag_as_step(&mut self, local: &str, on: bool) -> bool {
+        if self.setting_is_on(local) == on {
+            return false;
+        }
+        self.record_settings_change();
+        self.set_setting_flag(local, on)
+    }
+
+    /// The same for a setting that carries a value.
+    pub(crate) fn set_setting_value_as_step(&mut self, local: &str, value: Option<&str>) -> bool {
+        if self.setting_value(local).as_deref() == value {
+            return false;
+        }
+        self.record_settings_change();
+        self.set_setting_value(local, value)
     }
 
     /// The zoom the document was last looked at, as a percentage: `w:zoom`.
@@ -204,7 +227,7 @@ impl Document {
         if !self.save_settings_root(root) {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -242,7 +265,7 @@ impl Document {
         if !self.save_settings_root(root) {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

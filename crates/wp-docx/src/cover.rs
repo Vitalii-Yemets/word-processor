@@ -100,7 +100,7 @@ impl Document {
         let Some((position, parent_path)) = path.split_last() else { return false };
         let position = *position;
         let parent_path = parent_path.to_vec();
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, &parent_path)
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &parent_path)
         else {
             return false;
         };
@@ -113,7 +113,7 @@ impl Document {
         // The caret goes to the start of what used to be the first paragraph,
         // which is where the document proper now begins.
         self.set_caret(TextPosition::new(blocks.len(), 0));
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -150,11 +150,11 @@ impl Document {
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
 
-        let Some(body) = read::find_body_mut(&mut self.tree_mut().root) else { return false };
+        let Some(body) = read::find_body_mut(&mut self.tree_to_edit().root) else { return false };
         body.children.remove(index);
 
         self.set_caret(TextPosition::default());
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

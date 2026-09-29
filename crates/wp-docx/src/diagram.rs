@@ -459,7 +459,7 @@ impl Document {
         let prefix = self.prefix();
         let frame = frame_element(&ids, width_emu, height, prefix.as_deref());
         let inserted = crate::position::insert_element_at(
-            &mut self.tree_mut().root,
+            &mut self.tree_to_edit().root,
             caret,
             frame,
             prefix.as_deref(),
@@ -467,7 +467,7 @@ impl Document {
 
         if inserted {
             self.set_caret(crate::TextPosition::new(caret.paragraph, caret.offset + 1));
-            self.mark_modified();
+            self.note_change();
         }
         Ok(inserted)
     }
@@ -666,7 +666,7 @@ impl Document {
             ..reference.clone()
         };
         self.relay_diagram(&resized, None, None, None, None);
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -712,7 +712,7 @@ impl Document {
         self.record_with_parts(at, &names);
         let done = self.relay_diagram(reference, nodes, arrangement, colouring, right_to_left);
         if done {
-            self.mark_modified();
+            self.note_change();
         }
         done
     }

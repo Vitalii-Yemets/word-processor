@@ -83,15 +83,7 @@ impl Editor {
             return Response::Ignored;
         }
 
-        // What was on screen a moment ago, kept as a picture of the document
-        // to draw behind what is being edited.
-        self.dimmed = dimmed(core::mem::take(&mut self.pages));
-        self.editing_furniture = Some(kind);
-        // The ribbon shows the tab that is about headers and footers, which is
-        // what Word does the moment one is opened. Where it was is remembered,
-        // because coming back out should not leave somebody somewhere else.
-        self.tab_before_furniture = Some(self.ribbon.tab);
-        self.ribbon.tab = crate::chrome::ribbon::Tab::HeaderFooter;
+        self.show_furniture_view(kind);
         self.relayout();
         self.reveal_caret();
 
@@ -129,17 +121,75 @@ impl Editor {
 
     /// Comes back out to the document.
     pub(super) fn leave_furniture(&mut self) -> Response {
-        if self.editing_furniture.take().is_none() {
+        if self.editing_furniture.is_none() {
             return Response::Ignored;
         }
         self.document.leave_part();
+        self.hide_furniture_view();
+        self.relayout();
+        self.reveal_caret();
+        self.report("Document")
+    }
+
+    /// Shows the header or the footer the document is now in, as a header or
+    /// a footer: the document behind it, and the tab about them.
+    ///
+    /// What opening one by hand does once the part is entered, and what undo
+    /// does when it goes into one. Going from the header to the footer keeps
+    /// the picture behind and the tab to come back to, which are the body's.
+    fn show_furniture_view(&mut self, kind: Furniture) {
+        if self.editing_furniture.is_none() {
+            // What was on screen a moment ago, kept as a picture of the
+            // document to draw behind what is being edited.
+            self.dimmed = dimmed(core::mem::take(&mut self.pages));
+            // The ribbon shows the tab that is about headers and footers, which
+            // is what Word does the moment one is opened. Where it was is
+            // remembered, because coming back out should not leave somebody
+            // somewhere else.
+            self.tab_before_furniture = Some(self.ribbon.tab);
+        }
+        self.editing_furniture = Some(kind);
+        self.ribbon.tab = crate::chrome::ribbon::Tab::HeaderFooter;
+    }
+
+    /// Takes that view away again, once the document is back in its body.
+    fn hide_furniture_view(&mut self) {
+        self.editing_furniture = None;
         self.dimmed = Vec::new();
         if let Some(tab) = self.tab_before_furniture.take() {
             self.ribbon.tab = tab;
         }
-        self.relayout();
-        self.reveal_caret();
-        self.report("Document")
+    }
+
+    /// Brings the view into line with the part the document is in.
+    ///
+    /// Undo and redo go to the part a step was made in, which is what Word
+    /// does: taking back what was typed in a header opens the header, and
+    /// taking back what was typed in the body from inside a header comes back
+    /// out. The document has moved already; this moves what is shown with it,
+    /// the way opening and leaving by hand do, without entering or leaving
+    /// the part again. Called before the document is laid out afresh, so the
+    /// picture kept of the body is the body's.
+    ///
+    /// Headers and footers are the only parts this program shows as parts: a
+    /// note or a comment is typed into the strip along the top and written
+    /// straight into its part, which is never entered. A step can only have
+    /// been made in another part by something outside the editor, and the
+    /// document is brought back to its body for it, which is the one thing
+    /// the editor can show.
+    pub(super) fn follow_the_document(&mut self) {
+        match self.document.furniture_being_edited() {
+            Some(kind) if self.editing_furniture == Some(kind) => {}
+            Some(kind) => self.show_furniture_view(kind),
+            None => {
+                if self.document.part_being_edited().is_some() {
+                    self.document.leave_part();
+                }
+                if self.editing_furniture.is_some() {
+                    self.hide_furniture_view();
+                }
+            }
+        }
     }
 
     /// Moves between the header and the footer of the page being edited.

@@ -2826,6 +2826,11 @@ Katherine Johnson,Hampton,katherine@example.com
                 self.finish_dialog(crate::chrome::dialog::Answer::Accept);
                 self.relayout();
             }
+            // Edit Anyway pressed on a signed document: the question asked
+            // before the signatures come off.
+            "signedquestion" => {
+                self.ask_to_take_the_signatures_off();
+            }
             // Word's General Options, which holds both passwords.
             "generaloptions" => {
                 self.open_read_only_settings();

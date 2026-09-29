@@ -188,6 +188,9 @@ fn from_the_tables() -> BTreeSet<String> {
     // What the bar across the top says, and what its button offers.
     for because in crate::chrome::infobar::Because::ALL {
         out.insert(because.said().to_owned());
+        if let Some(label) = because.label() {
+            out.insert(label.to_owned());
+        }
         if let Some(button) = because.button() {
             out.insert(button.to_owned());
         }

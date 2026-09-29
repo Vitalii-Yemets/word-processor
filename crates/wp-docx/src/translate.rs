@@ -206,7 +206,7 @@ impl Document {
             let Some(path) = crate::position::paragraph_path(&self.tree().root, index) else {
                 continue;
             };
-            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+            let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
             else {
                 continue;
             };
@@ -215,7 +215,7 @@ impl Document {
 
         if replaced > 0 {
             self.clamp_caret();
-            self.mark_modified();
+            self.note_change();
         }
         replaced
     }

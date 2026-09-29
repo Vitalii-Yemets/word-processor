@@ -117,7 +117,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
         crate::format::split_runs_at_offset(paragraph, caret.offset);
@@ -141,7 +142,7 @@ impl Document {
         );
         paragraph.insert_element(at, field);
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 

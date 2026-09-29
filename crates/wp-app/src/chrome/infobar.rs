@@ -54,17 +54,62 @@ pub enum Because {
     Macros,
     /// It was put back after the program stopped without saving it.
     Recovered,
+    /// It carries a signature, and is kept from being edited until somebody
+    /// says to edit it anyway — which takes the signature off, because a
+    /// signature says the document is what it was when it was signed. Word
+    /// opens a signed document this way, and says what this says.
+    Signed,
+    /// Every signature the document carries holds, and each is from somebody
+    /// this machine trusts: the second bar Word puts under a signed
+    /// document's, saying what the signatures are worth.
+    SignaturesValid,
+    /// They hold, and at least one is from somebody this machine does not
+    /// trust, or cannot say it trusts. Word's word for that is recoverable.
+    SignaturesRecoverable,
+    /// At least one does not hold: the document is not what was signed.
+    SignaturesInvalid,
 }
 
 impl Because {
     /// Every reason a bar can be up, for the catalogue of everything the
     /// program can say.
-    pub const ALL: &'static [Self] = &[Self::ReadOnly, Self::Macros, Self::Recovered];
+    pub const ALL: &'static [Self] = &[
+        Self::ReadOnly,
+        Self::Macros,
+        Self::Recovered,
+        Self::Signed,
+        Self::SignaturesValid,
+        Self::SignaturesRecoverable,
+        Self::SignaturesInvalid,
+    ];
+
+    /// The word in capitals before what the bar says, where Word puts one.
+    ///
+    /// Only where Word's own bar for the same thing has been looked at: the
+    /// others say what they say without one.
+    #[must_use]
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            Self::Signed => Some("MARKED AS FINAL"),
+            Self::SignaturesValid | Self::SignaturesRecoverable | Self::SignaturesInvalid => {
+                Some("SIGNATURES")
+            }
+            Self::ReadOnly | Self::Macros | Self::Recovered => None,
+        }
+    }
 
     /// What the bar says.
     #[must_use]
     pub fn said(self) -> &'static str {
         match self {
+            // Word's words for a signed document, which it opens as final:
+            // the signature is what editing would break.
+            Self::Signed => "An author has marked this document as final to discourage editing.",
+            // And Word's for what it makes of the signatures, which follow this
+            // program's own verdict on them as Word's follow its own.
+            Self::SignaturesValid => "This document contains valid signatures.",
+            Self::SignaturesRecoverable => "This document contains recoverable signatures.",
+            Self::SignaturesInvalid => "This document contains invalid signatures.",
             Self::ReadOnly => "This document is open read-only.",
             Self::Macros => {
                 "This document carries macros. They are disabled until you say otherwise."
@@ -77,11 +122,14 @@ impl Because {
     #[must_use]
     pub fn button(self) -> Option<&'static str> {
         match self {
-            Self::ReadOnly => Some("Edit Anyway"),
+            Self::ReadOnly | Self::Signed => Some("Edit Anyway"),
             // Word's own words, and the one decision a person opening a
             // document with macros in it is being asked to make.
             Self::Macros => Some("Enable Content"),
             Self::Recovered => Some("Save As"),
+            Self::SignaturesValid | Self::SignaturesRecoverable | Self::SignaturesInvalid => {
+                Some("View Signatures...")
+            }
         }
     }
 }
@@ -157,9 +205,25 @@ impl InfoBar {
         );
 
         let middle = top + HEIGHT / 2.0 + 3.0;
+        // Word's bar names what it is about in capitals, in bold, before it
+        // says anything: MARKED AS FINAL, and then the sentence.
+        let mut said_left = left_edge + PADDING;
+        if let Some(label) = self.because.label() {
+            let bold = wp_layout::TextStyle { bold: true, ..wp_layout::TextStyle::default() };
+            let line = engine.styled_line(
+                crate::messages::t(label),
+                said_left,
+                middle,
+                8.5,
+                theme.text,
+                bold,
+            );
+            said_left = line.width + PADDING;
+            renderer.draw_onto(canvas, &line, 0.0, 0.0);
+        }
         let line = engine.simple_line(
             crate::messages::t(self.because.said()),
-            left_edge + PADDING,
+            said_left,
             middle,
             8.5,
             theme.text,
@@ -243,7 +307,7 @@ mod tests {
 
     #[test]
     fn every_reason_says_something() {
-        for because in [Because::ReadOnly, Because::Macros, Because::Recovered] {
+        for because in Because::ALL.iter().copied() {
             assert!(!because.said().trim().is_empty(), "{because:?} says nothing");
         }
     }
@@ -257,6 +321,9 @@ mod tests {
         assert_eq!(Because::Macros.button(), Some("Enable Content"));
         assert_eq!(Because::ReadOnly.button(), Some("Edit Anyway"));
         assert_eq!(Because::Recovered.button(), Some("Save As"));
+        // Word's Edit Anyway on a signed document, which asks before it takes
+        // the signatures off: see [`crate::editor`]'s read-only module.
+        assert_eq!(Because::Signed.button(), Some("Edit Anyway"));
     }
 
     #[test]

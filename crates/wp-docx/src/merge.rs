@@ -456,7 +456,7 @@ impl Document {
         if !self.save_settings_root(root) {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -470,7 +470,7 @@ impl Document {
         if !self.save_settings_root(root) {
             return false;
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -526,10 +526,15 @@ impl Document {
         let prefix = self.prefix();
 
         let mut replaced = 0usize;
-        replace_merge_fields(&mut self.tree_mut().root, record, prefix.as_deref(), &mut replaced);
+        replace_merge_fields(
+            &mut self.tree_to_edit().root,
+            record,
+            prefix.as_deref(),
+            &mut replaced,
+        );
         if replaced > 0 {
             self.clamp_caret();
-            self.mark_modified();
+            self.note_change();
         }
         replaced
     }
@@ -654,7 +659,8 @@ impl Document {
         let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
         };
-        let Some(paragraph) = crate::edit::element_at_path_mut(&mut self.tree_mut().root, &path)
+        let Some(paragraph) =
+            crate::edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
         else {
             return false;
         };
@@ -665,7 +671,7 @@ impl Document {
             paragraph.insert_element(position + offset, run);
         }
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -690,10 +696,16 @@ impl Document {
         let prefix = self.prefix();
 
         let mut replaced = 0usize;
-        rewrite_rules(&mut self.tree_mut().root, record, number, prefix.as_deref(), &mut replaced);
+        rewrite_rules(
+            &mut self.tree_to_edit().root,
+            record,
+            number,
+            prefix.as_deref(),
+            &mut replaced,
+        );
         if replaced > 0 {
             self.clamp_caret();
-            self.mark_modified();
+            self.note_change();
         }
         replaced
     }

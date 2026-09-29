@@ -621,6 +621,8 @@ impl Editor {
         // Whatever is opened is opened for writing until it asks not to be,
         // which is asked at the door and not here: see [`super::readonly`].
         self.opened_read_only = false;
+        // Except a signed one, which Word opens as final: see the same.
+        self.hold_if_signed();
         // Whatever was opened is not the text file the last one was.
         self.text_encoding = None;
         self.scroll = 0.0;

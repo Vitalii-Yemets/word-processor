@@ -546,4 +546,168 @@ mod tests {
         assert!(!own.is_from_the_system());
         assert!(matches!(own.from, From::Folder { .. }));
     }
+
+    // --- A signed document is held until somebody says to edit it ------------
+
+    /// An editor holding a document signed as the pane signs one, opened the
+    /// way File ▸ Open opens it.
+    fn signed(name: &str) -> Editor {
+        let folder = folder(name, "der");
+        let mine = own_certificates_in(&folder.0);
+        let own = mine.first().expect("a certificate");
+        let mut editor = editor();
+        let signer = wp_sign::Signer {
+            certificate: own.certificate.der.clone(),
+            chain: Vec::new(),
+            key: own.signs(),
+            reason: String::from("Approved"),
+            at: String::from("2027-01-01T00:00:00Z"),
+            line: String::new(),
+        };
+        let bytes = editor.document.save_signed(&signer).expect("signing");
+        editor.set_document(Document::open(&bytes).expect("reopening"), None);
+        editor.draw(1400, 900);
+        editor
+    }
+
+    fn carries_signature_parts(editor: &Editor) -> bool {
+        editor
+            .document
+            .package()
+            .entries()
+            .iter()
+            .any(|entry| entry.name.starts_with("_xmlsignatures/"))
+    }
+
+    /// Presses Edit Anyway on the bar across the top.
+    fn edit_anyway(editor: &mut Editor) {
+        let bar = editor.info_bar.as_ref().expect("the bar");
+        let (x, y) = bar.button_middle().expect("the button was drawn");
+        editor.press_info_bar(x, y);
+    }
+
+    #[test]
+    fn a_signed_document_opens_marked_as_final_and_refuses_a_keystroke() {
+        use crate::chrome::infobar::Because;
+        let mut editor = signed("hold-open");
+        assert_eq!(editor.info_bar.as_ref().map(|bar| bar.because), Some(Because::Signed));
+        assert!(editor.is_read_only(), "a signed document opened for writing");
+
+        editor.document.set_caret(TextPosition::new(0, 0));
+        editor.handle(Event::Char('X'));
+        assert_eq!(
+            editor.document.plain_text().trim(),
+            "Yours faithfully,",
+            "the keystroke went in"
+        );
+        assert!(editor.document.is_signed());
+    }
+
+    #[test]
+    fn edit_anyway_asks_first_and_no_leaves_it_as_it_was() {
+        let mut editor = signed("hold-no");
+        edit_anyway(&mut editor);
+        assert_eq!(editor.asking, Some(Asking::RemoveSignatures), "nothing was asked");
+        let dialog = editor.dialog.clone().expect("the question");
+        assert!(
+            dialog
+                .fields
+                .iter()
+                .any(|field| matches!(field, crate::chrome::dialog::Field::Said { value, .. }
+                if value.contains("Editing will remove the signatures"))),
+            "{:?}",
+            dialog.fields
+        );
+
+        editor.finish_dialog(crate::chrome::dialog::Answer::Cancel);
+        assert!(editor.is_read_only(), "No let the document be edited");
+        assert!(editor.document.is_signed(), "No took the signatures off");
+        assert!(editor.info_bar.is_some(), "No took the bar down");
+        editor.document.set_caret(TextPosition::new(0, 0));
+        editor.handle(Event::Char('X'));
+        assert_eq!(editor.document.plain_text().trim(), "Yours faithfully,");
+    }
+
+    #[test]
+    fn yes_takes_the_signatures_off_and_editing_goes_on() {
+        let mut editor = signed("hold-yes");
+        editor.open_signatures();
+        assert!(editor.show_signatures);
+        assert_eq!(editor.signature_pane_shown().made.len(), 1);
+
+        edit_anyway(&mut editor);
+        editor.finish_dialog(crate::chrome::dialog::Answer::Accept);
+        assert!(!editor.is_read_only(), "Yes did not let it be edited");
+        assert!(editor.info_bar.is_none(), "the bar stayed up");
+        assert!(editor.signatures_bar.is_none(), "the bar about the signatures stayed up");
+        assert!(!editor.document.is_signed());
+        assert!(!carries_signature_parts(&editor), "the signature parts are still there");
+        assert!(editor.document.is_modified(), "there is nothing to save");
+        assert!(editor.signature_pane_shown().made.is_empty(), "the pane still shows a signature");
+
+        editor.document.set_caret(TextPosition::new(0, 0));
+        editor.handle(Event::Char('X'));
+        assert_eq!(
+            editor.document.plain_text().trim(),
+            "XYours faithfully,",
+            "the keystroke did not go in"
+        );
+    }
+
+    #[test]
+    fn a_signed_document_shows_both_of_words_bars_and_the_page_starts_below_them() {
+        use crate::chrome::infobar::{Because, HEIGHT};
+        let mut editor = signed("hold-bars");
+        // Marked as final above, and what the signatures are worth below. The
+        // test certificate is one nobody trusts, and it verifies: Word's word
+        // for that is recoverable.
+        assert_eq!(editor.info_bar.as_ref().map(|bar| bar.because), Some(Because::Signed));
+        assert_eq!(
+            editor.signatures_bar.as_ref().map(|bar| bar.because),
+            Some(Because::SignaturesRecoverable)
+        );
+        assert_eq!(
+            Because::SignaturesRecoverable.said(),
+            "This document contains recoverable signatures."
+        );
+
+        // The page starts below both, and comes up by one bar when one goes.
+        let with_both = editor.page_origin_for_test(0).1;
+        assert!(with_both >= editor.ribbon_bottom() + 2.0 * HEIGHT, "the page is under a bar");
+
+        // View Signatures opens the pane, and the second bar is where a press
+        // on it lands: under the first, not over the page.
+        let (x, y) = editor
+            .signatures_bar
+            .as_ref()
+            .and_then(|bar| bar.button_middle())
+            .expect("the second bar's button was drawn");
+        assert!(
+            y as f32 >= editor.ribbon_bottom() + HEIGHT,
+            "the second bar is not under the first"
+        );
+        assert!(editor.over_info_bar(y));
+        assert!(!editor.show_signatures);
+        editor.press_info_bar(x, y);
+        assert!(editor.show_signatures, "View Signatures did not open the pane");
+        assert!(editor.document.is_signed(), "looking at them changed them");
+
+        editor.signatures_bar = None;
+        editor.relayout();
+        let with_one = editor.page_origin_for_test(0).1;
+        assert!((with_both - with_one - HEIGHT).abs() < 0.5, "{with_both} and {with_one}");
+    }
+
+    #[test]
+    fn what_the_signatures_are_worth_is_said_in_words_for_each_verdict() {
+        use crate::chrome::infobar::Because;
+        assert_eq!(Because::SignaturesValid.said(), "This document contains valid signatures.");
+        assert_eq!(Because::SignaturesInvalid.said(), "This document contains invalid signatures.");
+        for because in
+            [Because::SignaturesValid, Because::SignaturesRecoverable, Because::SignaturesInvalid]
+        {
+            assert_eq!(because.label(), Some("SIGNATURES"));
+            assert_eq!(because.button(), Some("View Signatures..."));
+        }
+    }
 }

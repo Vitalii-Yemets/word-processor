@@ -517,7 +517,7 @@ impl Document {
         self.point_at_numbering(&target);
         self.package_mut().add_part(&target, crate::NUMBERING_CONTENT_TYPE, xml.into_bytes());
         self.numbering = Numbering::parse(&tree.root);
-        self.mark_modified();
+        self.note_change();
     }
 
     /// Makes sure the main document names the numbering part.

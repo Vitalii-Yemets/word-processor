@@ -134,7 +134,7 @@ impl Document {
         let content_type =
             "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
         self.package_mut().add_part(&part, content_type, xml.into_bytes());
-        self.mark_modified();
+        self.note_change();
         true
     }
 }

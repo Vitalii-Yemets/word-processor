@@ -162,7 +162,7 @@ impl Document {
             return false;
         };
         write_page_borders(section, wanted, prefix.as_deref());
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -176,7 +176,7 @@ impl Document {
         let mut changed = false;
         for index in 0..sections {
             let Some(section) =
-                crate::sections::properties_of_mut(&mut self.tree_mut().root, index)
+                crate::sections::properties_of_mut(&mut self.tree_to_edit().root, index)
             else {
                 continue;
             };
@@ -185,7 +185,7 @@ impl Document {
             changed |= section.child(Some(W), "pgBorders").cloned() != before;
         }
         if changed {
-            self.mark_modified();
+            self.note_change();
         }
         changed
     }

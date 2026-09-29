@@ -175,7 +175,7 @@ impl Document {
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
         let parent_path = table_parent.to_vec();
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, &parent_path)
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &parent_path)
         else {
             return false;
         };
@@ -187,7 +187,7 @@ impl Document {
         parent.children.insert(at, element);
 
         self.clamp_caret_after_edit();
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -275,7 +275,8 @@ impl Document {
         let Some((parent_path, at)) = place.table.split_last().map(|(at, rest)| (rest, *at)) else {
             return false;
         };
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, parent_path) else {
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, parent_path)
+        else {
             return false;
         };
         if at >= parent.children.len() {
@@ -287,7 +288,7 @@ impl Document {
         }
 
         self.clamp_caret();
-        self.mark_modified();
+        self.note_change();
         true
     }
     /// Adds a row above or below the one the caret is in.
@@ -297,7 +298,8 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
         let Some(position) = child_position(table, "tr", place.row) else { return false };
@@ -311,7 +313,7 @@ impl Document {
         let fresh = empty_row(&model, prefix.as_deref());
         table.insert_element(if below { position + 1 } else { position }, fresh);
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -335,7 +337,8 @@ impl Document {
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
         // From the last back to the first: taking one out moves every row after
@@ -353,7 +356,7 @@ impl Document {
         if !self.caret_into_cell(&table_path, first, place.column) {
             self.clamp_caret_after_edit();
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -364,7 +367,8 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
 
@@ -401,7 +405,7 @@ impl Document {
         // width.
         add_grid_column(table, prefix.as_deref(), place.column, after);
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -418,7 +422,8 @@ impl Document {
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
 
@@ -452,7 +457,7 @@ impl Document {
         if !self.caret_into_cell(&table_path, place.row, first) {
             self.clamp_caret_after_edit();
         }
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -464,13 +469,14 @@ impl Document {
 
         let Some((position, parent_path)) = place.table.split_last() else { return false };
         let position = *position;
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, parent_path) else {
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, parent_path)
+        else {
             return false;
         };
         parent.children.remove(position);
 
         self.clamp_caret_after_edit();
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -481,7 +487,8 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let prefix = self.prefix();
 
-        let Some(table) = edit::element_at_path_mut(&mut self.tree_mut().root, &place.table) else {
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
             return false;
         };
         let properties = table_properties_of(table, prefix.as_deref());
@@ -494,7 +501,7 @@ impl Document {
             TABLE_PROPERTY_ORDER,
         );
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 

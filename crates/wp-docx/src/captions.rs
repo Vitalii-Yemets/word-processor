@@ -105,7 +105,7 @@ impl Document {
         let Some((at, parent_path)) = path.split_last() else { return false };
         let at = *at;
         let parent_path = parent_path.to_vec();
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, &parent_path)
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &parent_path)
         else {
             return false;
         };
@@ -125,7 +125,7 @@ impl Document {
         self.clear_selection();
         self.set_caret(TextPosition::new(index, length));
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -173,7 +173,8 @@ impl Document {
         let Some(path) = position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
         };
-        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_mut().root, &path) else {
+        let Some(paragraph) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &path)
+        else {
             return false;
         };
         crate::format::split_runs_at_offset(paragraph, caret.offset);
@@ -193,7 +194,7 @@ impl Document {
         paragraph.insert_element(at, field);
 
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + shown.len()));
-        self.mark_modified();
+        self.note_change();
         true
     }
 

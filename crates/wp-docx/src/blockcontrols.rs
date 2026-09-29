@@ -134,7 +134,8 @@ impl Document {
         let named = |local: &str| edit::name_with(prefix.as_deref(), local);
 
         let parent_path = &first_path[..first_path.len() - 1];
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, parent_path) else {
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, parent_path)
+        else {
             return false;
         };
         let from = first_path[first_path.len() - 1];
@@ -154,7 +155,7 @@ impl Document {
         section.push_element(content);
         parent.insert_element(from, section);
 
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -165,7 +166,8 @@ impl Document {
         self.record(EditKind::Structural, self.caret(), false);
         let (parent_path, at) = item.path.split_at(item.path.len() - 1);
         let at = at[0];
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, parent_path) else {
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, parent_path)
+        else {
             return false;
         };
         let Some(copy) = parent.children.get(at).and_then(Node::as_element).cloned() else {
@@ -176,7 +178,7 @@ impl Document {
         // person who pressed the plus wants to type.
         let new_first = if after { item.last + 1 } else { item.first };
         self.set_caret(TextPosition::new(new_first, 0));
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -199,7 +201,8 @@ impl Document {
         }
         self.record(EditKind::Structural, self.caret(), false);
         let (parent_path, at) = item.path.split_at(item.path.len() - 1);
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, parent_path) else {
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, parent_path)
+        else {
             return false;
         };
         if at[0] >= parent.children.len() {
@@ -213,7 +216,7 @@ impl Document {
         let landing =
             if self.repeating_item_at(next).is_some() { next } else { next.saturating_sub(1) };
         self.set_caret(TextPosition::new(landing, 0));
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -254,7 +257,8 @@ impl Document {
         control.push_element(content);
 
         let (parent_path, at) = path.split_at(path.len() - 1);
-        let Some(parent) = edit::element_at_path_mut(&mut self.tree_mut().root, parent_path) else {
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree_to_edit().root, parent_path)
+        else {
             return false;
         };
         let at = at[0];
@@ -268,7 +272,7 @@ impl Document {
         parent.insert_element(put_at, control);
         let new_paragraph = if empty { caret.paragraph } else { caret.paragraph + 1 };
         self.set_caret(TextPosition::new(new_paragraph, 0));
-        self.mark_modified();
+        self.note_change();
         true
     }
 
@@ -284,14 +288,21 @@ impl Document {
             TextPosition::new(control.first, 0),
             TextPosition::new(control.last, end),
         )]);
-        if self.paste_blocks(blocks) {
+        // The block and the control no longer asking are one choice, and one
+        // step to take back: the second half must not be left outside it.
+        self.begin_gesture();
+        let pasted = self.paste_blocks(blocks);
+        if pasted {
             // A block chosen is an answer, so the control stops asking.
             if let Some(properties) =
-                edit::element_at_path_mut(&mut self.tree_mut().root, &control.path)
+                edit::element_at_path_mut(&mut self.tree_to_edit().root, &control.path)
                     .and_then(|sdt| sdt.child_mut(Some(read::W), "sdtPr"))
             {
                 properties.remove_children_named(Some(read::W), "showingPlcHdr");
             }
+        }
+        self.end_gesture();
+        if pasted {
             return true;
         }
         self.set_caret(TextPosition::new(control.first, 0));
