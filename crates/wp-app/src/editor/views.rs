@@ -66,6 +66,21 @@ impl View {
     pub(super) fn shows_paper(self) -> bool {
         matches!(self, Self::Print | Self::Reading)
     }
+
+    /// Whether the document is one sheet as long as its text, rather than
+    /// pages.
+    ///
+    /// The web and the outline are both laid out on a sheet with no end —
+    /// see [`Editor::view_metrics`] — and both have to be ended where the
+    /// text ends, which the layout does for a sheet it is told is the web's.
+    /// One it is not told about is left as tall as it was given, a quarter
+    /// of the largest float, and everything that measures the page measures
+    /// that: the paper was filled down the whole of it, the side ruler's
+    /// marks were counted along it, and the scroll bar ran the length of it.
+    #[must_use]
+    pub(super) fn is_one_sheet(self) -> bool {
+        matches!(self, Self::Web | Self::Outline)
+    }
 }
 
 impl Editor {
@@ -164,6 +179,15 @@ mod tests {
         assert!(!View::Web.shows_paper());
         assert!(!View::Draft.shows_paper());
         assert!(!View::Outline.shows_paper());
+    }
+
+    #[test]
+    fn the_web_and_the_outline_are_each_one_sheet() {
+        assert!(View::Web.is_one_sheet());
+        assert!(View::Outline.is_one_sheet());
+        for view in [View::Print, View::Draft, View::Reading] {
+            assert!(!view.is_one_sheet(), "{}", view.label());
+        }
     }
 
     #[test]

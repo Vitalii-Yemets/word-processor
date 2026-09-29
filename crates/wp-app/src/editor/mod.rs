@@ -1679,7 +1679,10 @@ impl Editor {
         self.engine.set_table_gridlines(self.show_table_gridlines);
         self.engine.set_marks(self.show_marks);
         self.engine.set_outline(self.outline_for_layout());
-        self.engine.set_web(self.view == views::View::Web);
+        // An outline runs on as a web page does, and is finished as one: no
+        // page breaks, no headers or footers, and a sheet as long as its
+        // text. See [`views::View::is_one_sheet`].
+        self.engine.set_web(self.view.is_one_sheet());
         // A letter being previewed shows one recipient's values in place of the
         // names of its merge fields.
         let record = self.preview_record.map(|at| self.recipients.record(at)).unwrap_or_default();
@@ -1692,8 +1695,8 @@ impl Editor {
         let previous = core::mem::take(&mut self.pages);
         self.pages = self.engine.layout_document_again(&self.document, metrics, previous);
         // A short page on the web still fills the window, as a browser's does:
-        // there is no desk below it.
-        if self.view == views::View::Web {
+        // there is no desk below it. Nor below a short outline.
+        if self.view.is_one_sheet() {
             let window = self.viewport_height() - self.page_gap();
             if let Some(page) = self.pages.last_mut() {
                 page.height = page.height.max(window);
@@ -2236,6 +2239,48 @@ mod tests {
         editor.set_view(super::views::View::Print);
         assert_eq!(editor.ribbon_bottom(), with_ribbon);
         assert!(editor.show_rulers, "the rulers should come back");
+    }
+
+    #[test]
+    fn an_outline_is_one_sheet_as_long_as_its_text() {
+        // Laid out on the same sheet with no end as a web page, and so ended
+        // the same way, where its text ends. Left as it was given, the sheet
+        // was a quarter of the largest float tall, and the paper, the side
+        // ruler and the scroll bar all measured the whole of it.
+        let mut editor = editor(200);
+        let printed: f32 = editor.pages.iter().map(|page| page.height).sum();
+
+        editor.set_view(super::views::View::Outline);
+        assert_eq!(editor.pages.len(), 1, "an outline has no pages");
+        let height = editor.pages[0].height;
+        assert!(height < printed, "a sheet {height} tall for text printed on {printed}");
+        assert!(
+            height >= editor.viewport_height() - editor.page_gap() - 1.0,
+            "short of the window"
+        );
+    }
+
+    #[test]
+    fn every_view_draws() {
+        // Each way of looking at the document is chosen in turn and the
+        // window drawn in it. The tests above ask what each view lays out,
+        // and none of them drew it: which is how the outline went on
+        // panicking in a debug build and hanging a release one, with every
+        // test green.
+        use super::views::View;
+        let mut editor = editor(40);
+        for view in [View::Print, View::Web, View::Draft, View::Outline, View::Reading] {
+            editor.set_view(view);
+            let pixels = painted(&mut editor);
+            // Something has to have been drawn over the background: a window
+            // of one colour is a view that drew nothing at all.
+            let first = &pixels[..4];
+            assert!(
+                pixels.chunks_exact(4).any(|pixel| pixel != first),
+                "{} drew a window of one colour",
+                view.label()
+            );
+        }
     }
 
     #[test]

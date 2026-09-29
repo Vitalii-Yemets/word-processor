@@ -414,8 +414,17 @@ pub fn draw_vertical(
     // The numbers count outwards from the top margin, the same way the ones
     // across the top count from the left margin: what a ruler measures is the
     // text, not the paper.
-    let mut index = -((text_top - page_top) / step).floor() as i32;
-    let last = ((page_top + page_height - text_top) / step) as i32;
+    //
+    // Only the marks beside the window are walked, not every one down the
+    // page. A page may be far longer than the window — an outline's once
+    // was a quarter of the largest float, which made the last mark
+    // `i32::MAX`, a number every count is at or below: an overflow in a
+    // debug build, and in a release one a count that wrapped round and
+    // walked for ever.
+    let first_on_screen = ((top - text_top) / step).floor() as i32;
+    let last_on_screen = ((bottom - text_top) / step).ceil() as i32;
+    let mut index = (-((text_top - page_top) / step).floor() as i32).max(first_on_screen);
+    let last = (((page_top + page_height - text_top) / step) as i32).min(last_on_screen);
 
     while index <= last {
         let y = text_top + index as f32 * step;
@@ -746,6 +755,28 @@ mod tests {
     #[test]
     fn the_middle_of_the_side_ruler_is_nothing_at_all() {
         assert_eq!(hit_vertical(10.0, side(), 15, 400), None);
+    }
+
+    #[test]
+    fn a_page_far_longer_than_the_window_is_marked_only_beside_it() {
+        // An outline's sheet was once a quarter of the largest float tall,
+        // and the side ruler walked every mark down the whole of it: an
+        // overflow in a debug build, and a walk that never ended in a release
+        // one. The marks beside the window are the only ones that can be
+        // seen, so they are the only ones walked — and they are still drawn.
+        let library: &'static wp_layout::FontLibrary =
+            Box::leak(Box::new(wp_layout::FontLibrary::scan_system()));
+        let mut engine = wp_layout::LayoutEngine::new(library).with_dpi(96.0);
+        let mut renderer = wp_layout::Renderer::new(library);
+        let mut canvas = wp_raster::Canvas::new(40, 800);
+        let theme = crate::chrome::theme::Theme::light();
+        let endless = Vertical { page_height: f32::MAX / 4.0, ..side() };
+        super::draw_vertical(&mut canvas, &mut engine, &mut renderer, 10.0, endless, &theme);
+
+        // The short marks sit three pixels into the band, which starts five
+        // pixels into the ruler.
+        let marked = (0..800).filter(|&y| canvas.pixel(19, y) == theme.ruler_tick).count();
+        assert!(marked > 10, "only {marked} rows of the ruler were marked");
     }
 
     /// Two stops on the ruler: at the left margin and two inches along.

@@ -1979,11 +1979,46 @@ work is in *The order of the work* at the end.
   showed. Go through `select_cells`, as Shift+click does; refuse a text
   range that crosses a cell boundary in `remove_range` and `press_enter`;
   and hold to it that a cell always has a paragraph. Review T14.
-- [ ] **C51. Outline view draws.** Switching to Outline hangs the release
+- [x] **C51. Outline view draws.** Switching to Outline hangs the release
   build and panics the debug one — "attempt to add with overflow" in
   `fill_rect`, from a page given a height of `f32::MAX / 4` and a rectangle
   drawn the whole of it. Find the rectangle, clip it to the window, and add
   the test that was missing: every view draws. Review U32.
+  *Done:* the rectangle was the paper itself, in `draw_pages`, not the level
+  bar. The outline is laid out on the web's sheet with no end, and the
+  engine ends that sheet where the text ends only when told it is the web's;
+  the outline never said so, and everything that measured its page measured
+  a quarter of the largest float — the paper overflowed, the side ruler
+  walked to `i32::MAX` marks (the release hang: its count wrapped round and
+  walked for ever) and the scroll bar ran the length of it. The outline is
+  now finished as one sheet as the web page is: `View::is_one_sheet` in
+  `editor/views.rs`, which `relayout` in `editor/mod.rs` hands the engine.
+  What drew it is clipped as well: `Canvas::fill_rect` in
+  `wp-raster/src/canvas.rs` brings a rectangle's edges within reach before
+  it adds them up, so one running past what an i32 holds is clipped rather
+  than overflowing, and the side ruler in `chrome/rulers.rs` walks only the
+  marks beside the window.
+  *Proven by:* `every_view_draws`, which chooses each view in turn and
+  draws the window, and panicked on Outline before;
+  `an_outline_is_one_sheet_as_long_as_its_text`;
+  `a_page_far_longer_than_the_window_is_marked_only_beside_it`, which
+  overflowed before; and in wp-raster
+  `a_rectangle_whose_end_is_past_what_an_i32_holds_is_clipped`, plain,
+  turned right to left and scaled, which overflowed before.
+  *Not done, and named here:* being finished as the web's, the outline now
+  shows the footnotes and endnotes after its text, under a rule, as the web
+  page does; Word's outline shows none. The sheet is as wide as the window
+  but set a desk's gap in from its left, so it runs that far past the right
+  edge and the view scrolls sideways, as it did before. Word offers no ruler
+  in outline view, and both are still drawn here. Only `fill_rect` of the
+  canvas was hardened: `set_clip`, `draw_mask`, `blend`, `clamped` and the
+  picture copies still add a size to a position in i32, which is safe for
+  the sizes they are given and not for a position near `i32::MAX`. And
+  what is drawn is not Word's outline: Word's is a view of its own, with an
+  Outlining tab, ⊕ and ∘ marks beside headings and body text, and levels
+  folded and dragged by them; this is the web's sheet showing the headings
+  and their text to the chosen depth (the review's picture
+  `word-outline-dark.png` is what it should come to look like).
 - [ ] **C52. The pointer is an arrow over the furniture.** Over a dialog's
   body and its OK button the pointer is an I-beam, and over the desk beside
   the page too, because `cursor()` has no branch for the dialog or the

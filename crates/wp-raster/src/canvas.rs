@@ -180,8 +180,11 @@ impl Canvas {
 
     /// Where a span of the caller's begins once the window is turned.
     fn across(&self, x: i32, width: i32) -> i32 {
+        // Saturating, so that a span nobody brought within reach first (see
+        // `within_reach`) is turned as far as an i32 goes and then clipped,
+        // rather than overflowing on its way to the canvas.
         match self.mirror {
-            Some(about) => (about.round() as i32) - x - width,
+            Some(about) => (about.round() as i32).saturating_sub(x).saturating_sub(width),
             None => x,
         }
     }
@@ -203,7 +206,7 @@ impl Canvas {
         }
         let from = self.device(start);
         let to = self.device(start.saturating_add(length));
-        (from, to - from)
+        (from, to.saturating_sub(from))
     }
 
     /// A canvas filled with one colour, which is how a page starts.
@@ -372,13 +375,23 @@ impl Canvas {
     }
 
     /// Fills an axis-aligned rectangle, clipped to the canvas.
+    ///
+    /// A caller's rectangle may start on the canvas and run as far as an i32
+    /// reaches — a float too large for one casts to `i32::MAX` — and its far
+    /// edge is then past what an i32 holds: an overflow in a debug build and,
+    /// wrapped round to a negative number, a rectangle silently not drawn in
+    /// a release one. So its edges are first brought in to a distance from
+    /// the canvas that nothing after can overflow, and the far ones added up
+    /// wide as well; what shows on the canvas is the same either way.
     pub fn fill_rect(&mut self, x: i32, y: i32, width: i32, height: i32, color: Color) {
+        let (x, width) = within_reach(x, width);
+        let (y, height) = within_reach(y, height);
         let (x, width) = self.device_span(self.across(x, width), width);
         let (y, height) = self.device_span(y, height);
         let left = x.max(0) as usize;
         let top = y.max(0) as usize;
-        let right = (x + width).clamp(0, self.width as i32) as usize;
-        let bottom = (y + height).clamp(0, self.height as i32) as usize;
+        let right = (i64::from(x) + i64::from(width)).clamp(0, self.width as i64) as usize;
+        let bottom = (i64::from(y) + i64::from(height)).clamp(0, self.height as i64) as usize;
 
         for row in top..bottom {
             for column in left..right {
@@ -806,6 +819,22 @@ impl Canvas {
     }
 }
 
+/// A span of a caller's, with both its edges brought within reach: no
+/// further from nought than a canvas could ever be across, and near enough
+/// that turning it and scaling it cannot overflow an i32.
+///
+/// Sixteen million pixels is a thousand times the widest screen there is, so
+/// nothing that could be seen is cut off; and a span inside it can be turned
+/// about the width of a window and scaled a hundredfold and still be an i32.
+/// The edges are clamped rather than the length, so that a span reaching far
+/// to one side ends where it did on the other.
+fn within_reach(start: i32, length: i32) -> (i32, i32) {
+    const REACH: i64 = 1 << 24;
+    let from = i64::from(start).clamp(-REACH, REACH);
+    let to = (i64::from(start) + i64::from(length)).clamp(-REACH, REACH);
+    (from as i32, (to - from) as i32)
+}
+
 /// The bounding box of a path, if it has any points.
 pub fn bounds_of(path: &Path) -> Option<(f32, f32, f32, f32)> {
     let mut min_x = f32::INFINITY;
@@ -917,6 +946,36 @@ mod tests {
         assert_eq!(canvas.pixel(5, 4), Color::BLACK);
         assert_eq!(canvas.pixel(6, 4), Color::WHITE, "one past the right edge");
         assert_eq!(canvas.pixel(2, 5), Color::WHITE, "one past the bottom edge");
+    }
+
+    #[test]
+    fn a_rectangle_whose_end_is_past_what_an_i32_holds_is_clipped() {
+        // Starting on the canvas and running as far as an i32 reaches, which
+        // is what a float too large for one comes to when it is cast. Its far
+        // edge is past i32::MAX, and it has to be clipped rather than
+        // overflow — or, wrapped round, not be drawn at all.
+        let mut canvas = Canvas::filled(10, 10, Color::WHITE);
+        canvas.fill_rect(2, 3, i32::MAX, i32::MAX, Color::BLACK);
+        assert_eq!(canvas.pixel(2, 3), Color::BLACK, "where it starts");
+        assert_eq!(canvas.pixel(9, 9), Color::BLACK, "all the way to the corner");
+        assert_eq!(canvas.pixel(1, 3), Color::WHITE, "left of it");
+        assert_eq!(canvas.pixel(2, 2), Color::WHITE, "above it");
+
+        // And turned right to left and drawn at twice the size, which work
+        // the span out by other roads. Clipping must not move it: one that
+        // lies wholly left of the canvas before it is turned lies wholly
+        // right of it after, and nothing of it may show.
+        let mut canvas = Canvas::filled(20, 20, Color::WHITE);
+        canvas.set_scale(2.0);
+        canvas.set_mirror(Some(10.0));
+        canvas.fill_rect(i32::MIN, 3, i32::MAX, i32::MAX, Color::BLACK);
+        assert_eq!(canvas.pixel(0, 9), Color::WHITE, "one off the canvas was drawn on it");
+        assert_eq!(canvas.pixel(9, 9), Color::WHITE, "one off the canvas was drawn on it");
+
+        canvas.fill_rect(-5, 3, i32::MAX, i32::MAX, Color::BLACK);
+        assert_eq!(canvas.pixel(0, 9), Color::BLACK, "where it starts, turned");
+        assert_eq!(canvas.pixel(9, 9), Color::BLACK, "all the way across");
+        assert_eq!(canvas.pixel(0, 2), Color::WHITE, "above it");
     }
 
     #[test]
