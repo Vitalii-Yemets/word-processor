@@ -18,7 +18,12 @@ use wp_docx::model::{
     RunProperties, Table, TableCell, TableRow, Underline, VerticalAlignment,
 };
 
-use super::content::{Drawn, PlacedPicture, Rectangle};
+use super::content::{Drawn, Glyph, PlacedPicture, Rectangle};
+
+mod notes;
+mod running;
+mod tables;
+mod turned;
 
 /// A character the document holds where a picture will go.
 pub const PICTURE_MARK: char = '\u{FFFC}';
@@ -39,6 +44,11 @@ pub struct Reading {
     pub links: Vec<LinkFound>,
     /// Width, height, and the margins top, right, bottom, left, in twips.
     pub page: Option<(i32, i32, [i32; 4])>,
+    /// The running header and footer the pages repeat.
+    pub header: Option<Body>,
+    pub footer: Option<Body>,
+    /// The footnotes, by the number their references in the body carry.
+    pub notes: Vec<(i32, Body)>,
 }
 
 #[derive(Debug)]
@@ -69,6 +79,8 @@ struct Found {
     /// The pictures standing in lines of text, by the index their pieces
     /// hold, taken as they are placed.
     inline: Vec<Option<PlacedPicture>>,
+    /// The footnotes taken from the feet of the pages.
+    notes: Vec<(i32, Body)>,
 }
 
 /// How a glyph is formatted, as the document will hold it.
@@ -96,11 +108,13 @@ struct Piece {
     link: Option<usize>,
     /// The inline picture this piece stands for, by its index among them.
     picture: Option<usize>,
+    /// The footnote this piece is the reference to, by its number.
+    note: Option<i32>,
 }
 
 impl Piece {
     fn is_space(&self) -> bool {
-        self.text.chars().all(char::is_whitespace)
+        self.note.is_none() && self.text.chars().all(char::is_whitespace)
     }
 }
 
@@ -147,6 +161,17 @@ struct Grid {
     verticals: Vec<Rectangle>,
     /// Row-major cells: the lines in each.
     cells: Vec<Vec<Line>>,
+    /// Which rules made it a table.
+    ruled: Ruled,
+}
+
+/// What a table was known by: rules that cross, rules across it only, or
+/// none, its columns lined up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ruled {
+    Grid,
+    Across,
+    Unruled,
 }
 
 impl Grid {
@@ -221,14 +246,20 @@ struct Built {
 
 /// Turns pages into a document.
 #[must_use]
-pub fn reflow(pages: Vec<PageDrawn>) -> Reading {
+pub fn reflow(mut pages: Vec<PageDrawn>) -> Reading {
     let mut found = Found::default();
     let body_size = body_size_of(&pages);
+    // What every page repeats at its top or its foot is the header and the
+    // footer, not the text.
+    let running = running::running_lines(&pages);
+    for (page, areas) in pages.iter_mut().zip(&running.areas) {
+        page.drawn.glyphs.retain(|glyph| !areas.iter().any(|area| area.holds(glyph)));
+    }
 
     // Every page's items, in reading order, with paragraphs built.
     let mut sequence: Vec<Sequenced> = Vec::new();
     let mut extent = Extent::default();
-    for (page_index, page) in pages.into_iter().enumerate() {
+    for (page_index, mut page) in pages.into_iter().enumerate() {
         if page_index == 0 {
             extent.width = page.width;
             extent.height = page.height;
@@ -237,16 +268,24 @@ pub fn reflow(pages: Vec<PageDrawn>) -> Reading {
         for (_, address) in &page.links {
             found.addresses.push(address.clone());
         }
-        let pieces = decorate(&page, link_base);
+        // Text drawn turned is read along its own lines, apart.
+        let (level, turned): (Vec<Glyph>, Vec<Glyph>) = std::mem::take(&mut page.drawn.glyphs)
+            .into_iter()
+            .partition(|glyph| glyph.angle.abs() < 0.1);
+        let pieces = decorate(&level, &page.drawn.rectangles, &page.links, link_base);
         let mut page_pictures: Vec<Option<PlacedPicture>> =
             page.drawn.pictures.into_iter().map(Some).collect();
         let mut lines = lines_of(pieces, &mut page_pictures, &mut found.inline);
         for line in &lines {
             extent.note(line.x0, line.y - line.size * 0.25, line.x1, line.top());
         }
+        notes::footnotes_of(&mut lines, &page.drawn.rectangles, body_size, &mut found);
         let text_left = lines.iter().map(|l| l.x0).fold(f64::INFINITY, f64::min);
         let text_right = lines.iter().map(|l| l.x1).fold(f64::NEG_INFINITY, f64::max);
-        let grids = grids_of(&page.drawn.rectangles, &mut lines);
+        let mut grids = grids_of(&page.drawn.rectangles, &mut lines);
+        let ruled = tables::ruled_across(&page.drawn.rectangles, &grids, &mut lines);
+        grids.extend(ruled);
+        grids.extend(tables::aligned(&mut lines));
         let blocks = blocks_of(lines);
         let mut items: Vec<Item> = blocks.into_iter().map(Item::Block).collect();
         items.extend(grids.into_iter().map(Item::Table));
@@ -276,6 +315,9 @@ pub fn reflow(pages: Vec<PageDrawn>) -> Reading {
                     sequence.push(Sequenced::Picture { picture, centred });
                 }
             }
+        }
+        for built in turned::turned_paragraphs(turned, body_size) {
+            sequence.push(Sequenced::Paragraph { built: Box::new(built) });
         }
         sequence.push(Sequenced::PageEnd);
     }
@@ -325,7 +367,15 @@ pub fn reflow(pages: Vec<PageDrawn>) -> Reading {
     if body.blocks.is_empty() {
         body.blocks.push(Block::Paragraph(Paragraph::default()));
     }
-    Reading { body, pictures: found.pictures, links: found.links, page: extent.page() }
+    Reading {
+        body,
+        pictures: found.pictures,
+        links: found.links,
+        page: extent.page(),
+        header: running.header,
+        footer: running.footer,
+        notes: found.notes,
+    }
 }
 
 /// An item of the document in reading order, before it is a block.
@@ -407,21 +457,17 @@ fn body_size_of(pages: &[PageDrawn]) -> f64 {
 }
 
 /// Glyphs with their lines under and through them, and their links.
-fn decorate(page: &PageDrawn, link_base: usize) -> Vec<Piece> {
-    let thin: Vec<&Rectangle> = page
-        .drawn
-        .rectangles
-        .iter()
-        .filter(|r| r.filled && r.height() <= 2.5 && r.width() >= 2.0)
-        .collect();
-    let stroked: Vec<&Rectangle> = page
-        .drawn
-        .rectangles
-        .iter()
-        .filter(|r| !r.filled && r.height() <= 2.5 && r.width() >= 2.0)
-        .collect();
-    page.drawn
-        .glyphs
+fn decorate(
+    glyphs: &[Glyph],
+    rectangles: &[Rectangle],
+    links: &[([f64; 4], String)],
+    link_base: usize,
+) -> Vec<Piece> {
+    let thin: Vec<&Rectangle> =
+        rectangles.iter().filter(|r| r.filled && r.height() <= 2.5 && r.width() >= 2.0).collect();
+    let stroked: Vec<&Rectangle> =
+        rectangles.iter().filter(|r| !r.filled && r.height() <= 2.5 && r.width() >= 2.0).collect();
+    glyphs
         .iter()
         .map(|glyph| {
             let size = glyph.size.max(0.5);
@@ -450,7 +496,7 @@ fn decorate(page: &PageDrawn, link_base: usize) -> Vec<Piece> {
             } else {
                 VerticalAlignment::Baseline
             };
-            let link = page.links.iter().position(|(rect, _)| {
+            let link = links.iter().position(|(rect, _)| {
                 let y = glyph.y + 0.4 * size;
                 centre_x >= rect[0] - 1.0
                     && centre_x <= rect[2] + 1.0
@@ -480,6 +526,7 @@ fn decorate(page: &PageDrawn, link_base: usize) -> Vec<Piece> {
                 },
                 link: link.map(|index| link_base + index),
                 picture: None,
+                note: None,
             }
         })
         .collect()
@@ -545,20 +592,52 @@ fn lines_of(
             },
             link: None,
             picture: Some(inline.len()),
+            note: None,
         };
         inline.push(slot.take());
         rows[index].push(piece);
     }
-    let mut lines = Vec::new();
-    for mut row in rows {
+    for row in &mut rows {
         row.sort_by(|a, b| a.x0.partial_cmp(&b.x0).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    // What each row covers across, for telling a gutter between columns
+    // from a wide space: the gutter is empty on the rows around it too.
+    let covered: Vec<Vec<(f64, f64)>> = rows
+        .iter()
+        .map(|row| row.iter().filter(|p| !p.is_space()).map(|p| (p.x0, p.x1)).collect())
+        .collect();
+    // Of the rows around that reach across a place, how many leave it
+    // empty and how many have text there: a gutter is empty on nearly all
+    // of them, where a wide space in one line is under a word in the next.
+    let gutter_at = |index: usize, x: f64| {
+        let near = index.saturating_sub(8)..(index + 9).min(covered.len());
+        let (mut empty, mut full) = (0, 0);
+        for other in near.filter(|&other| other != index) {
+            let spans = &covered[other];
+            let (Some(first), Some(last)) = (spans.first(), spans.last()) else { continue };
+            if x <= first.0 || x >= last.1 {
+                continue;
+            }
+            if spans.iter().any(|&(x0, x1)| x >= x0 - 0.5 && x <= x1 + 0.5) {
+                full += 1;
+            } else {
+                empty += 1;
+            }
+        }
+        empty >= 2 && full * 4 <= empty
+    };
+    let mut lines = Vec::new();
+    for (index, row) in rows.into_iter().enumerate() {
         let (y, size) = row_baseline(&row);
-        // Cut into segments at gaps wider than a few letters.
+        // Cut into segments at gaps wider than a few letters, or at a gap
+        // the rows around it leave empty too.
         let mut segments: Vec<Vec<Piece>> = Vec::new();
         for piece in row {
             let split = segments.last().is_some_and(|segment| {
                 let last = segment.last().expect("a segment holds a piece");
-                piece.x0 - last.x1 > (2.5 * size).max(14.0)
+                let gap = piece.x0 - last.x1;
+                gap > (2.5 * size).max(14.0)
+                    || (gap > 0.8 * size && gutter_at(index, (piece.x0 + last.x1) / 2.0))
             });
             if split || segments.is_empty() {
                 segments.push(vec![piece]);
@@ -619,6 +698,7 @@ fn line_of(segment: Vec<Piece>, y: f64, size: f64) -> Option<Line> {
                     format: last.format.clone(),
                     link: if last.link == piece.link { last.link } else { None },
                     picture: None,
+                    note: None,
                 });
             } else if piece.is_space() && last.is_space() {
                 continue;
@@ -728,6 +808,7 @@ fn grids_of(rectangles: &[Rectangle], lines: &mut Vec<Line>) -> Vec<Grid> {
             horizontals: group_h,
             verticals: group_v,
             cells: vec![Vec::new(); rows * columns],
+            ruled: Ruled::Grid,
         };
         grids.push(grid);
     }
@@ -1388,8 +1469,26 @@ fn runs_of(lines: &[Line], found: &mut Found, paragraph_index: usize) -> Vec<Run
             });
         }
         let properties = properties_of(&piece.format);
+        if let Some(id) = piece.note {
+            // A footnote's reference: the mark, raised, in a run of its own.
+            runs.push(Run {
+                properties: RunProperties {
+                    vertical_align: Some(VerticalAlignment::Superscript),
+                    ..properties
+                },
+                content: vec![RunContent::NoteReference { id, endnote: false }],
+                field: None,
+                revision: None,
+                format_change: None,
+            });
+            offset += 1;
+            continue;
+        }
         match runs.last_mut() {
-            Some(last) if last.properties == properties => {
+            Some(last)
+                if last.properties == properties
+                    && matches!(last.content.last(), Some(RunContent::Text(_))) =>
+            {
                 if let Some(RunContent::Text(text)) = last.content.last_mut() {
                     text.push_str(&piece.text);
                 }
@@ -1436,10 +1535,21 @@ fn properties_of(format: &Format) -> RunProperties {
 fn table_of(grid: Grid, body_size: f64, found: &mut Found, paragraphs_done: &mut usize) -> Table {
     let rows = grid.rows();
     let columns = grid.columns();
-    // The borders were what made it a table, so it keeps them.
+    // The borders were what made it a table, so it keeps them: all of
+    // them, the rules across it at its top and foot, or none.
+    let rule = || Some(wp_docx::model::Border::line("single", 4, None));
+    let borders = match grid.ruled {
+        Ruled::Grid => wp_docx::model::TableBorders::grid(),
+        Ruled::Across => wp_docx::model::TableBorders {
+            top: rule(),
+            bottom: rule(),
+            ..wp_docx::model::TableBorders::default()
+        },
+        Ruled::Unruled => wp_docx::model::TableBorders::default(),
+    };
     let mut table = Table {
         grid: grid.xs.windows(2).map(|w| ((w[1] - w[0]) * 20.0).round() as i32).collect(),
-        borders: wp_docx::model::TableBorders::grid(),
+        borders,
         ..Table::default()
     };
     let mut cells: Vec<Vec<Line>> = grid.cells.clone();
@@ -1447,11 +1557,31 @@ fn table_of(grid: Grid, body_size: f64, found: &mut Found, paragraphs_done: &mut
         let mut table_row = TableRow::default();
         let mut column = 0;
         while column < columns {
+            // Only a grid's missing borders say its cells are merged; the
+            // others have no borders between cells to miss.
             let mut span = 1;
-            while column + span < columns && !grid.has_vertical(column + span, row) {
+            while grid.ruled == Ruled::Grid
+                && column + span < columns
+                && !grid.has_vertical(column + span, row)
+            {
                 span += 1;
             }
-            let merged_upwards = row > 0 && !grid.has_horizontal(row, column, column + span);
+            let merged_upwards = grid.ruled == Ruled::Grid
+                && row > 0
+                && !grid.has_horizontal(row, column, column + span);
+            // A rule across the table under a row, inside it, is that
+            // row's cells' bottom border.
+            let cell_borders = if grid.ruled == Ruled::Across
+                && row + 1 < rows
+                && grid.has_horizontal(row + 1, column, column + span)
+            {
+                wp_docx::model::TableBorders {
+                    bottom: rule(),
+                    ..wp_docx::model::TableBorders::default()
+                }
+            } else {
+                wp_docx::model::TableBorders::default()
+            };
             let mut lines = Vec::new();
             for c in column..column + span {
                 lines.append(&mut cells[row * columns + c]);
@@ -1481,6 +1611,7 @@ fn table_of(grid: Grid, body_size: f64, found: &mut Found, paragraphs_done: &mut
                 width: Some(((right - left) * 20.0).round() as i32),
                 span: span as u32,
                 merged_upwards,
+                borders: cell_borders,
                 ..TableCell::default()
             });
             column += span;
@@ -1517,6 +1648,7 @@ mod tests {
                 },
                 link: None,
                 picture: None,
+                note: None,
             });
             x += width;
         }

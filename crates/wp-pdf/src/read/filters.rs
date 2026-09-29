@@ -19,6 +19,21 @@ pub fn is_picture_filter(name: &str) -> bool {
     matches!(name, "DCTDecode" | "DCT" | "JPXDecode" | "CCITTFaxDecode" | "CCF" | "JBIG2Decode")
 }
 
+/// A filter's full name, where an inline picture may give it short.
+#[must_use]
+pub fn full_name(name: &str) -> &str {
+    match name {
+        "Fl" => "FlateDecode",
+        "LZW" => "LZWDecode",
+        "AHx" => "ASCIIHexDecode",
+        "A85" => "ASCII85Decode",
+        "RL" => "RunLengthDecode",
+        "DCT" => "DCTDecode",
+        "CCF" => "CCITTFaxDecode",
+        other => other,
+    }
+}
+
 /// Applies one filter. Nothing if the filter is not known or the bytes are
 /// not what it expects.
 #[must_use]

@@ -82,6 +82,10 @@ impl Editor {
         let opened = if wp_doc::is_encrypted(&waiting.bytes) {
             wp_doc::open_with_password(&waiting.bytes, Some(&password))
                 .map_err(|error| error.to_string())
+        } else if wp_pdf::looks_like_pdf(&waiting.bytes) {
+            // A PDF is converted as it is opened, and its password goes no
+            // further: the document it becomes is saved as a Word document.
+            wp_pdf::open_with_password(&waiting.bytes, &password).map_err(|error| error.to_string())
         } else {
             Document::open_sealed(&waiting.bytes, &password).map_err(|error| error.to_string())
         };
@@ -364,6 +368,68 @@ mod tests {
         assert!(editor.dialog.is_none(), "it is still asking");
         assert_eq!(editor.document.plain_text().trim_end(), SECRET);
         assert_eq!(editor.document.password(), Some("Fenchurch"), "it did not stay encrypted");
+    }
+
+    /// A page of text in a PDF with a password to open it: the first
+    /// revision of the standard security handler, 40-bit RC4.
+    fn locked_pdf(password: &str) -> Vec<u8> {
+        const PAD: [u8; 32] = [
+            0x28, 0xBF, 0x4E, 0x5E, 0x4E, 0x75, 0x8A, 0x41, 0x64, 0x00, 0x4E, 0x56, 0xFF, 0xFA,
+            0x01, 0x08, 0x2E, 0x2E, 0x00, 0xB6, 0xD0, 0x68, 0x3E, 0x80, 0x2F, 0x0C, 0xA9, 0xFE,
+            0x64, 0x53, 0x69, 0x7A,
+        ];
+        let id = *b"0123456789ABCDEF";
+        let owner = [0x5Au8; 32];
+        let mut input = password.as_bytes().to_vec();
+        input.extend_from_slice(&PAD[..32 - password.len()]);
+        input.extend_from_slice(&owner);
+        input.extend_from_slice(&(-4i32).to_le_bytes());
+        input.extend_from_slice(&id);
+        let key = wp_hash::md5(&input)[..5].to_vec();
+        let user = wp_cipher::rc4(&key, &PAD);
+        let mut object_key = key.clone();
+        object_key.extend_from_slice(&[4, 0, 0, 0, 0]);
+        let content = wp_cipher::rc4(
+            &wp_hash::md5(&object_key)[..10],
+            b"BT /F1 24 Tf 72 700 Td (Behind a password) Tj ET",
+        );
+        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02X}")).collect::<String>();
+        let mut pdf = b"%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >> endobj\n".to_vec();
+        pdf.extend_from_slice(
+            format!("4 0 obj << /Length {} >> stream\n", content.len()).as_bytes(),
+        );
+        pdf.extend_from_slice(&content);
+        pdf.extend_from_slice(b"\nendstream endobj\n5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n");
+        pdf.extend_from_slice(
+            format!(
+                "6 0 obj << /Filter /Standard /V 1 /R 2 /O <{}> /U <{}> /P -4 >> endobj\ntrailer << /Root 1 0 R /Encrypt 6 0 R /ID [<{}> <{}>] >>\n%%EOF\n",
+                hex(&owner),
+                hex(&user),
+                hex(&id),
+                hex(&id)
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    #[test]
+    fn a_pdf_with_a_password_to_open_it_asks_for_it() {
+        let path = std::env::temp_dir().join(format!("wp-locked-{}.pdf", std::process::id()));
+        std::fs::write(&path, locked_pdf("Marvin")).expect("the file");
+        let mut editor = editor();
+        editor.open_path(&path);
+        assert!(editor.dialog.is_some(), "it did not ask: {}", editor.status);
+
+        typed(&mut editor, &[ANSWER], "marvin");
+        editor.finish_dialog(Answer::Accept);
+        assert!(editor.dialog.is_some(), "it gave up on a wrong password");
+
+        typed(&mut editor, &[ANSWER], "Marvin");
+        editor.finish_dialog(Answer::Accept);
+        let _ = std::fs::remove_file(&path);
+        assert!(editor.dialog.is_none(), "it is still asking: {}", editor.status);
+        assert_eq!(editor.document.plain_text().trim_end(), "Behind a password");
     }
 
     #[test]

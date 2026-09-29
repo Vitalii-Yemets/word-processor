@@ -41,3 +41,6 @@ workspace = true
 # The tests build a document carrying a Visual Basic project, which
 # means reaching the package under it.
 wp-opc = { path = "../wp-opc" }
+# And an encrypted PDF, enciphered by hand.
+wp-cipher = { path = "../wp-cipher" }
+wp-hash = { path = "../wp-hash" }

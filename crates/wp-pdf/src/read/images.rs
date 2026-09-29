@@ -3,8 +3,9 @@
 //! A JPEG is carried as itself and comes out as itself. Anything else is
 //! rows of samples in a colour space — grey, RGB, CMYK, or an index into
 //! a palette — with a mask of its own for what is see-through, and comes
-//! out as a PNG made from them. JPEG 2000, fax and JBIG2 pictures are not
-//! read, and named in the roadmap.
+//! out as a PNG made from them: whether the samples were stored as they
+//! are, as a fax coding, as JBIG2, or as JPEG 2000, which says its own
+//! colour space where the dictionary does not.
 
 use super::file::File;
 use super::object::{Object, Stream};
@@ -16,11 +17,6 @@ pub fn picture_of(
     fill: [f32; 3],
 ) -> Option<(Vec<u8>, &'static str)> {
     let (data, filter) = file.decode(stream);
-    match filter.as_deref() {
-        Some("DCTDecode" | "DCT") => return Some((data, "jpeg")),
-        Some(_) => return None,
-        None => {}
-    }
     let dictionary = &stream.dictionary;
     let width = file
         .get(dictionary, "Width")
@@ -34,6 +30,38 @@ pub fn picture_of(
     if width == 0 || height == 0 || width * height > 64 * 1024 * 1024 {
         return None;
     }
+    let data = match filter.as_deref() {
+        Some("DCTDecode") => return Some((data, "jpeg")),
+        Some("CCITTFaxDecode") => fax(&data, file.picture_parameters(dictionary), height)?,
+        Some("JBIG2Decode") => {
+            let globals = match file.picture_parameters(dictionary) {
+                Some(parameters) => match file.get(&parameters, "JBIG2Globals") {
+                    Object::Stream(globals) => Some(file.decode(&globals).0),
+                    _ => None,
+                },
+                None => None,
+            };
+            let page = super::jbig2::decode(&data, globals.as_deref())?;
+            // The page's rows at the picture's width; and JBIG2 paints its
+            // ones black, where a picture's ones are white.
+            let (from, to) = (page.width.div_ceil(8), width.div_ceil(8));
+            let mut rows = vec![0xFFu8; to * height];
+            for y in 0..height.min(page.height) {
+                for x in 0..width.min(page.width) {
+                    if page.data[y * from + x / 8] & (0x80 >> (x % 8)) != 0 {
+                        rows[y * to + x / 8] &= !(0x80 >> (x % 8));
+                    }
+                }
+            }
+            rows
+        }
+        Some("JPXDecode") => {
+            let decoded = super::jpx::decode(&data)?;
+            return jpx_picture(file, dictionary, &decoded, fill);
+        }
+        Some(_) => return None,
+        None => data,
+    };
     let is_mask = matches!(file.get(dictionary, "ImageMask"), Object::Bool(true))
         || matches!(file.get(dictionary, "IM"), Object::Bool(true));
     let bits = if is_mask {
@@ -98,6 +126,99 @@ pub fn picture_of(
         if let Object::Stream(mask) = file.get(dictionary, "SMask") {
             apply_soft_mask(file, &mask, &mut pixels, width, height);
         }
+    }
+    let mut canvas = wp_raster::Canvas::new(width, height);
+    canvas.paste_rect(0, 0, width as i32, height as i32, &pixels);
+    Some((wp_raster::encode_png(&canvas), "png"))
+}
+
+/// A fax picture's rows: the coding the parameters name, a nought bit
+/// black unless they say black is a one.
+fn fax(
+    data: &[u8],
+    parameters: Option<super::object::Dictionary>,
+    height: usize,
+) -> Option<Vec<u8>> {
+    use wp_image::fax::Kind;
+    let number = |key: &str, default: i64| {
+        parameters.as_ref().and_then(|p| p.get(key)).and_then(Object::as_integer).unwrap_or(default)
+    };
+    let flag = |key: &str| {
+        matches!(parameters.as_ref().and_then(|p| p.get(key)), Some(Object::Bool(true)))
+    };
+    let columns = usize::try_from(number("Columns", 1728)).ok()?.clamp(1, 1 << 16);
+    let rows = match usize::try_from(number("Rows", 0)).unwrap_or(0) {
+        0 => height,
+        rows => rows,
+    };
+    let aligned = flag("EncodedByteAlign");
+    let kind = match number("K", 0) {
+        k if k < 0 && aligned => Kind::AlignedGroup4,
+        k if k < 0 => Kind::Group4,
+        0 => Kind::Group3 { two_dimensional: false, byte_aligned: aligned },
+        _ => Kind::Group3 { two_dimensional: true, byte_aligned: aligned },
+    };
+    let mut rows = wp_image::fax::decode(data, columns, rows.max(1), kind).ok()?;
+    if !flag("BlackIs1") {
+        for byte in &mut rows {
+            *byte = !*byte;
+        }
+    }
+    Some(rows)
+}
+
+/// A JPEG 2000 picture: its samples, eight bits each, in the colour space
+/// the dictionary gives or, where it gives none, the one the picture's own
+/// header does. A channel past the colours is the alpha when the dictionary
+/// says the mask is in the data.
+fn jpx_picture(
+    file: &File<'_>,
+    dictionary: &super::object::Dictionary,
+    picture: &super::jpx::Picture,
+    fill: [f32; 3],
+) -> Option<(Vec<u8>, &'static str)> {
+    let (width, height, channels) = (picture.width, picture.height, picture.channels);
+    if width == 0 || height == 0 || channels == 0 || width * height > 64 * 1024 * 1024 {
+        return None;
+    }
+    let is_mask = matches!(file.get(dictionary, "ImageMask"), Object::Bool(true));
+    let given = file.get(dictionary, "ColorSpace");
+    let space = if given.is_null() {
+        match (picture.colour, channels) {
+            (Some(super::jpx::Colour::Cmyk), _) => Space::Cmyk,
+            (Some(super::jpx::Colour::Gray), _) | (None, 1 | 2) => Space::Gray,
+            (_, 4) if !picture.has_alpha => Space::Cmyk,
+            _ => Space::Rgb,
+        }
+    } else {
+        Space::of(file, &given)?
+    };
+    let components = if is_mask { 1 } else { space.components().min(channels) };
+    let alpha_channel = (channels > components
+        && (picture.has_alpha
+            || file.get(dictionary, "SMaskInData").as_integer().unwrap_or(0) != 0))
+        .then_some(components);
+    let colour = [(fill[0] * 255.0) as u8, (fill[1] * 255.0) as u8, (fill[2] * 255.0) as u8];
+    let mut pixels = vec![0u8; width * height * 4];
+    for index in 0..width * height {
+        let at = index * channels;
+        let pixel = picture.samples.get(at..at + channels)?;
+        let out = &mut pixels[index * 4..index * 4 + 4];
+        if is_mask {
+            out[..3].copy_from_slice(&colour);
+            out[3] = if pixel[0] < 128 { 255 } else { 0 };
+            continue;
+        }
+        let mut samples = [0f32; 4];
+        for (slot, &value) in samples.iter_mut().zip(pixel).take(components) {
+            *slot = f32::from(value) / 255.0;
+        }
+        let rgb = space.rgb(&samples, usize::from(pixel[0]));
+        out[..3].copy_from_slice(&rgb);
+        out[3] = alpha_channel.map_or(255, |channel| pixel[channel]);
+    }
+    if let Object::Stream(mask) = file.get(dictionary, "SMask") {
+        apply_soft_mask(file, &mask, &mut pixels, width, height);
     }
     let mut canvas = wp_raster::Canvas::new(width, height);
     canvas.paste_rect(0, 0, width as i32, height as i32, &pixels);

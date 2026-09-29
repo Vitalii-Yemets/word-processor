@@ -7,14 +7,19 @@
 //! [`font`] and [`cmap`] turn shown bytes into characters, [`content`]
 //! runs each page for where its glyphs land, [`images`] takes the
 //! pictures out, and [`reflow`] turns the glyphs into lines, paragraphs,
-//! lists, headings and tables.
+//! lists, headings and tables. An encrypted file is read through
+//! [`crypt`], with its password or with none.
 
 pub mod cmap;
 pub mod content;
+pub mod crypt;
 pub mod file;
 pub mod filters;
 pub mod font;
 pub mod images;
+pub mod jbig2;
+pub mod jpx;
+pub mod mq;
 pub mod object;
 pub mod reflow;
 
@@ -29,8 +34,12 @@ use reflow::{PageDrawn, PICTURE_MARK};
 pub enum Error {
     /// No `%PDF` header.
     NotPdf,
-    /// The file is encrypted, which this reader does not undo.
+    /// The file is encrypted with a password that was not given, or not
+    /// the right one.
     Encrypted,
+    /// The file is encrypted other than with the standard security
+    /// handler: for particular people's certificates, say.
+    UnsupportedEncryption,
     /// No pages could be found.
     NoPages,
     /// The document could not be built from what was read.
@@ -41,7 +50,10 @@ impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NotPdf => write!(f, "not a PDF file"),
-            Self::Encrypted => write!(f, "the PDF is encrypted"),
+            Self::Encrypted => write!(f, "the PDF needs its password"),
+            Self::UnsupportedEncryption => {
+                write!(f, "the PDF is encrypted in a way this reader cannot undo")
+            }
             Self::NoPages => write!(f, "the PDF has no pages"),
             Self::Document(what) => write!(f, "{what}"),
         }
@@ -54,7 +66,12 @@ impl std::error::Error for Error {}
 /// formatting, lists, headings, tables, pictures and links that can be
 /// told from the page.
 pub fn open(bytes: &[u8]) -> Result<Document, Error> {
-    let file = File::open(bytes)?;
+    open_with_password(bytes, "")
+}
+
+/// Opens an encrypted PDF with its password, as [`open`] does otherwise.
+pub fn open_with_password(bytes: &[u8], password: &str) -> Result<Document, Error> {
+    let file = File::open_with_password(bytes, password)?;
     let pages = file.pages();
     if pages.is_empty() {
         return Err(Error::NoPages);
@@ -110,10 +127,27 @@ pub fn open(bytes: &[u8]) -> Result<Document, Error> {
         document.extend_selection_to(TextPosition::new(link.paragraph, link.end));
         document.add_hyperlink(&link.address, "");
     }
+    // The footnotes' words, their references already in the text.
+    for (id, body) in &reading.notes {
+        document
+            .put_note(wp_docx::notes::Kind::Footnote, *id, body)
+            .map_err(|error| Error::Document(error.to_string()))?;
+    }
     if let Some((width, height, [top, right, bottom, left])) = reading.page {
         if width > 0 && height > 0 {
             document.set_page_size(width, height);
             document.set_page_margins(top, right, bottom, left);
+        }
+    }
+    let furniture = [
+        (wp_docx::furniture::Furniture::Header, &reading.header),
+        (wp_docx::furniture::Furniture::Footer, &reading.footer),
+    ];
+    for (kind, body) in furniture {
+        if let Some(body) = body {
+            document
+                .set_furniture_body(kind, wp_docx::furniture::Which::Default, body)
+                .map_err(|error| Error::Document(error.to_string()))?;
         }
     }
     let info = file.info();
@@ -160,6 +194,13 @@ fn links_of(file: &File<'_>, page: &file::PageInfo) -> Vec<([f64; 4], String)> {
         links.push((rect, address));
     }
     links
+}
+
+/// Whether a PDF will not open without a password: encrypted, and not
+/// with the empty one most encrypted files have.
+#[must_use]
+pub fn needs_password(bytes: &[u8]) -> bool {
+    matches!(File::open(bytes), Err(Error::Encrypted))
 }
 
 /// Whether bytes look like a PDF.

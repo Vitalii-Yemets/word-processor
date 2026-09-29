@@ -5497,13 +5497,112 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   a header or in a note; a table's own colour behind it and a row that may
   not break; the settings but the zoom and the wish to be read only; and the
   editor opening a document at the zoom it keeps.
-- [ ] **G13. The rest of the PDF reader.** Encrypted files (RC4 and AES with
+- [x] **G13. The rest of the PDF reader.** Encrypted files (RC4 and AES with
   the empty password); JPEG 2000, fax and JBIG2 pictures, and inline
   pictures; the predefined CJK CMaps; Type 3 glyph procedures; headers,
   footers and page numbers told from repeated lines; footnotes; tables drawn
   with horizontal rules only or with none; text drawn rotated; and the
   reading order of pages with more than two columns of unequal height. Named
   in **G7**.
+  *Done:* encryption (`crates/wp-pdf/src/read/crypt.rs`): the standard
+  security handler in every revision — RC4 of forty to 128 bits, AES-128
+  through crypt filters with the identity ones, AES-256 with revision 5's
+  hash and revision 6's rounds (SHA-384 added to `wp-hash` for them) — the
+  file's key from the user's password or the owner's, every string and
+  stream deciphered with its object's key, the cross-reference streams and,
+  when the file says, the metadata left as they are. The empty password
+  opens the files that need none, which is most; one that needs a password
+  asks for it on Open with the dialog an encrypted Word document asks with,
+  and asks again when it is wrong (`wp_pdf::needs_password`,
+  `open_with_password`); a file encrypted for particular people's
+  certificates is refused by name. Pictures (`read/images.rs`): JPEG 2000
+  (`read/jpx.rs`, `read/jpx/`) — the JP2 file or the bare codestream, tiles,
+  the five progressions and their changes part-way, precincts, layers,
+  packet headers kept apart, the markers before and after packets, every
+  code-block style, both wavelets, both colour transforms, quantisation
+  derived and given, the region-of-interest shift, and the JP2 header's
+  colour space, palette and alpha; the MQ coder JPEG 2000 and JBIG2 share
+  (`read/mq.rs`); fax codings through `wp-image`'s own decoder, the one
+  TIFF uses, with the parameters' K, rows aligned on bytes (added for Group
+  4), black taken as one or nought, and the rows the picture's height when
+  the filter says none; JBIG2 (`read/jbig2.rs`, `read/jbig2/`) — the page's
+  segments after the globals stream's, generic regions in all four
+  templates with their pixels moved and typical prediction, or as Group 4;
+  refinements in both templates; symbol dictionaries coded either way, a
+  height class stored as it is or as Group 4, symbols refined from others
+  and made of several, the contexts one dictionary leaves for the next;
+  text regions coded either way — strips, the four corners, turned, the
+  gaps offset, symbols refined in place, the symbols' own code table; the
+  standard Huffman tables and a file's own; pattern dictionaries and
+  halftones with their grey planes and the cells skipped; intermediate
+  regions kept for a refinement; pages whose stripes say their height; a
+  generic region of unsaid length. Inline pictures (`read/content.rs`):
+  `BI` to `ID` read as the picture's dictionary, the abbreviations spelt
+  out and a colour space named in the resources looked up, the data as
+  long as its size makes it when it is not filtered and to the `EI` on its
+  own when it is. The predefined Unicode CMaps of the four CJK collections
+  (`read/cmap.rs`) — UCS-2, UTF-16, UTF-8 and UTF-32, across and down — the
+  codes being the characters, with the printable ASCII's widths from the
+  ids every collection gives it. Type 3 fonts (`read/font.rs`): glyphs named
+  by their codes, as programs that make fonts name them — `a65`, `c65`,
+  `G41`, `g0041` — and the size a font drawn in pixels really is, from its
+  matrix and the boxes its glyph procedures declare. The reflow
+  (`read/reflow.rs`, `read/reflow/`): a line in the top or bottom eighth
+  that half the pages repeat, whatever its numbers, is the running header
+  or footer — made from the first page with it, parts of one line at the
+  alignment tabs, the numbers that go up with the page the page number and
+  one that is the count of pages that — and taken off every page; the lines
+  at a page's foot, under the note separator or smaller than the text or
+  set apart from it, that start with a number the text has raised, are
+  footnotes, the raised number their reference; rules across a table only
+  make a table of the lines between them, its columns where the lines
+  stand, a rule inside it a row's border; rows of short pieces that stand
+  in the same columns make a table without rules — prose in columns and a
+  list's markers do not; glyphs that run another way than across — up the
+  page, down it, or down in columns as vertical writing does — are read
+  along their own lines after the page's text; and a gap too narrow to be a
+  column's edge by its width is one when the rows around it leave it empty
+  too, which is what keeps three narrow columns of different heights apart
+  and in order.
+  *Proven by:* `crates/wp-pdf/tests/pictures.rs` — a picture coded by
+  OpenJPEG through ImageMagick comes back exact where the coding loses
+  nothing (colour, grey, a bare codestream, tiles and three resolutions in
+  all five orders) and within two levels of OpenJPEG's own reading where it
+  does (lossy, and in layers); a Group 3 and a Group 4 coding lifted from
+  libtiff's TIFF read exactly; JBIG2 coded here with the standard's encoder
+  — its arithmetic coder checked against the standard's own example to the
+  byte — in generic regions of every template, a fax coding, text drawn
+  with a dictionary's symbols at every corner turned and not, refined,
+  made of others, coded with Huffman tables standard and sent, a halftone,
+  a page refined and a page of stripes, each read here and by poppler
+  (LibreOffice's PDF import runs it) the same; an inline picture with `EI`
+  in its data, and one filtered. `tests/encrypted.rs` — LibreOffice's
+  encrypted exports open with the password and without one, and a page
+  encrypted here in each revision opens here and in poppler with the user's
+  password and the owner's. `tests/fonts.rs` — a Type 3 font in pixels at a
+  quarter of a point reads as ten-point "Hi"; a CJK font through
+  UniGB-UCS2-H reads its characters. `tests/layout.rs` — a document with a
+  header, "Page 1 of 3", a footnote, a table ruled across, one unruled, a
+  cell turned up and three columns of different lengths, printed by
+  LibreOffice, comes back with each. `crates/wp-app/src/editor/sealing.rs`
+  — a PDF with a password asks for it, and again when it is wrong.
+  *Found along the way:* `wp-image`'s fax decoder aligned a Group 3 row on
+  its byte before looking for the end-of-row, and cut into the end-of-row's
+  zeros when the padding before it was short — every such TIFF from libtiff
+  came out wrong; it now takes the padding with the end-of-row. Poppler
+  draws nothing from a JBIG2 dictionary with a height class stored uncoded,
+  where jbig2dec reads it as this does.
+  *Not done, and named here:* the older CJK encodings' predefined CMaps —
+  Shift-JIS, GBK, Big5, EUC-KR codes — which need the tables of **G14**,
+  and, through the Unicode CMaps, the collections' ids and so the widths of
+  anything but ASCII, which take the font's default; the security handler
+  for particular people's certificates; SASLprep for the AES-256
+  passwords, which are taken as typed; JPEG 2000's Part 2, and a JP2's
+  colour from an ICC profile, which is taken by its channels; JBIG2's colour
+  extension; a footnote carried over to the next page, whose rest stays in
+  that page's text; a header or footer only the first page or every other
+  page has, which is text; and the "Don't show this message again" box,
+  still named in **G7**.
 - [ ] **G14. The East Asian encodings, and the rest of opening a text file.**
   Shift-JIS, GBK, Big5 and EUC-KR are tables of thousands and a stage of
   their own. With them: Word's "Confirm file format conversion on open",

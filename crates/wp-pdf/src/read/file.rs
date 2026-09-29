@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use super::crypt::{Crypt, Refused};
 use super::filters;
 use super::object::{find, rfind, Dictionary, Lexer, Object, Stream};
 
@@ -45,29 +46,59 @@ pub struct File<'a> {
     /// each, in order, with their numbers.
     unpacked: RefCell<HashMap<u32, Rc<Packed>>>,
     rebuilt: RefCell<bool>,
+    /// What undoes the file's encryption, if it is encrypted.
+    crypt: Option<Crypt>,
+    /// The encryption dictionary's own number: it is never enciphered.
+    encrypt_number: Option<u32>,
 }
 
 impl<'a> File<'a> {
     /// Reads the cross-reference and the trailer. A file with neither that
     /// can be read is rebuilt by scanning.
     pub fn open(bytes: &'a [u8]) -> Result<Self, super::Error> {
+        Self::open_with_password(bytes, "")
+    }
+
+    /// Opens an encrypted file with its password; the empty password opens
+    /// a file that needs none, which is most of them.
+    pub fn open_with_password(bytes: &'a [u8], password: &str) -> Result<Self, super::Error> {
         if find(&bytes[..bytes.len().min(1024)], b"%PDF").is_none() {
             return Err(super::Error::NotPdf);
         }
-        let file = Self {
+        let mut file = Self {
             bytes,
             locations: RefCell::new(HashMap::new()),
             trailer: RefCell::new(Dictionary::new()),
             cache: RefCell::new(HashMap::new()),
             unpacked: RefCell::new(HashMap::new()),
             rebuilt: RefCell::new(false),
+            crypt: None,
+            encrypt_number: None,
         };
         let read = file.read_cross_references();
         if read.is_err() || !file.trailer.borrow().contains_key("Root") {
             file.rebuild();
         }
-        if file.trailer.borrow().get("Encrypt").is_some() {
-            return Err(super::Error::Encrypted);
+        let encrypt = file.trailer.borrow().get("Encrypt").cloned();
+        if let Some(encrypt) = encrypt {
+            file.encrypt_number = encrypt.as_reference().map(|(number, _)| number);
+            let dictionary = file.resolve(&encrypt).as_dictionary().cloned().unwrap_or_default();
+            let first_id = match file.get(&file.trailer(), "ID") {
+                Object::Array(ids) => match ids.first().map(|id| file.resolve(id)) {
+                    Some(Object::String(id)) => id,
+                    _ => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
+            file.crypt = Some(Crypt::open(&dictionary, &first_id, password).map_err(
+                |refused| match refused {
+                    Refused::Password => super::Error::Encrypted,
+                    Refused::Unsupported => super::Error::UnsupportedEncryption,
+                },
+            )?);
+            // Whatever was read before the key was known was read enciphered.
+            file.cache.borrow_mut().clear();
+            file.unpacked.borrow_mut().clear();
         }
         Ok(file)
     }
@@ -329,14 +360,22 @@ impl<'a> File<'a> {
                     return None;
                 }
                 let mut lexer = Lexer::from(self.bytes, offset);
-                let (found, _) = lexer.object_header()?;
+                let (found, generation) = lexer.object_header()?;
                 if found != number {
                     return None;
                 }
                 let object = lexer.next_object()?;
-                Some(match object {
+                let object = match object {
                     Object::Operator(word) if word == "endobj" => Object::Null,
                     other => other,
+                };
+                // Objects inside an object stream are not enciphered one by
+                // one: the stream holding them was, as a whole.
+                Some(match &self.crypt {
+                    Some(crypt) if self.encrypt_number != Some(number) => {
+                        decipher(crypt, number, generation, object)
+                    }
+                    _ => object,
                 })
             }
             Location::Packed { stream, index } => {
@@ -402,37 +441,63 @@ impl<'a> File<'a> {
     /// A stream's bytes with its filters undone, and the name of the
     /// picture filter left on them if one was.
     pub fn decode(&self, stream: &Stream) -> (Vec<u8>, Option<String>) {
-        let filters: Vec<String> = match self.get(&stream.dictionary, "Filter") {
-            Object::Name(name) => vec![name],
+        let mut data = stream.data.clone();
+        for (filter, parameters) in self.filters_of(&stream.dictionary) {
+            if filters::is_picture_filter(&filter) {
+                return (data, Some(filter));
+            }
+            match filters::apply(&filter, &data, parameters.as_ref()) {
+                Some(out) => data = out,
+                None => return (Vec::new(), None),
+            }
+        }
+        (data, None)
+    }
+
+    /// A stream's filters in order, each with its parameters resolved.
+    pub fn filters_of(&self, dictionary: &Dictionary) -> Vec<(String, Option<Dictionary>)> {
+        let (filter_key, parameters_key) = if dictionary.contains_key("Filter") {
+            ("Filter", "DecodeParms")
+        } else {
+            // An inline picture's abbreviations.
+            ("F", "DP")
+        };
+        let filters: Vec<String> = match self.get(dictionary, filter_key) {
+            Object::Name(name) => vec![filters::full_name(&name).to_owned()],
             Object::Array(names) => names
                 .iter()
-                .filter_map(|name| self.resolve(name).as_name().map(str::to_owned))
+                .filter_map(|name| {
+                    self.resolve(name).as_name().map(|name| filters::full_name(name).to_owned())
+                })
                 .collect(),
             _ => Vec::new(),
         };
-        let parameters: Vec<Option<Dictionary>> = match self.get(&stream.dictionary, "DecodeParms")
-        {
+        let parameters: Vec<Option<Dictionary>> = match self.get(dictionary, parameters_key) {
             Object::Dictionary(parameters) => vec![Some(parameters)],
             Object::Array(items) => {
                 items.iter().map(|item| self.resolve(item).as_dictionary().cloned()).collect()
             }
             _ => Vec::new(),
         };
-        let mut data = stream.data.clone();
-        for (index, filter) in filters.iter().enumerate() {
-            if filters::is_picture_filter(filter) {
-                return (data, Some(filter.clone()));
-            }
-            let parameters = parameters.get(index).and_then(Option::as_ref).map(|p| {
-                // The parameters may hold references.
-                p.iter().map(|(k, v)| (k.clone(), self.resolve(v))).collect::<Dictionary>()
-            });
-            match filters::apply(filter, &data, parameters.as_ref()) {
-                Some(out) => data = out,
-                None => return (Vec::new(), None),
-            }
-        }
-        (data, None)
+        filters
+            .into_iter()
+            .enumerate()
+            .map(|(index, filter)| {
+                let parameters = parameters.get(index).and_then(Option::as_ref).map(|p| {
+                    // The parameters may hold references.
+                    p.iter().map(|(k, v)| (k.clone(), self.resolve(v))).collect::<Dictionary>()
+                });
+                (filter, parameters)
+            })
+            .collect()
+    }
+
+    /// The parameters of the picture filter a stream's data is left in.
+    pub fn picture_parameters(&self, dictionary: &Dictionary) -> Option<Dictionary> {
+        self.filters_of(dictionary)
+            .into_iter()
+            .find(|(filter, _)| filters::is_picture_filter(filter))
+            .and_then(|(_, parameters)| parameters)
     }
 
     /// The document's catalog.
@@ -578,6 +643,38 @@ impl<'a> File<'a> {
     }
 }
 
+/// An object's strings and stream deciphered, all the way down.
+fn decipher(crypt: &Crypt, number: u32, generation: u16, object: Object) -> Object {
+    match object {
+        Object::String(bytes) => Object::String(crypt.string(number, generation, &bytes)),
+        Object::Array(items) => Object::Array(
+            items.into_iter().map(|item| decipher(crypt, number, generation, item)).collect(),
+        ),
+        Object::Dictionary(dictionary) => {
+            Object::Dictionary(decipher_dictionary(crypt, number, generation, dictionary))
+        }
+        Object::Stream(stream) => {
+            let kind = stream.dictionary.get("Type").and_then(Object::as_name).map(str::to_owned);
+            let data = crypt.stream(number, generation, kind.as_deref(), &stream.data);
+            let dictionary = decipher_dictionary(crypt, number, generation, stream.dictionary);
+            Object::Stream(Box::new(Stream { dictionary, data }))
+        }
+        other => other,
+    }
+}
+
+fn decipher_dictionary(
+    crypt: &Crypt,
+    number: u32,
+    generation: u16,
+    dictionary: Dictionary,
+) -> Dictionary {
+    dictionary
+        .into_iter()
+        .map(|(key, value)| (key, decipher(crypt, number, generation, value)))
+        .collect()
+}
+
 /// What a page may take from the nodes above it.
 #[derive(Clone, Debug, Default)]
 struct Inherited {
@@ -681,8 +778,8 @@ mod tests {
     }
 
     #[test]
-    fn an_encrypted_file_is_refused() {
-        let bytes = b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R /Encrypt 5 0 R >>";
-        assert!(matches!(File::open(bytes), Err(super::super::Error::Encrypted)));
+    fn a_file_encrypted_for_other_than_the_standard_handler_is_refused() {
+        let bytes = b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n5 0 obj << /Filter /Adobe.PubSec /V 4 >> endobj\ntrailer << /Root 1 0 R /Encrypt 5 0 R >>";
+        assert!(matches!(File::open(bytes), Err(super::super::Error::UnsupportedEncryption)));
     }
 }

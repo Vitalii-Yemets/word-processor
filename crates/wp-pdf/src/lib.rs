@@ -48,7 +48,7 @@ mod read;
 mod subset;
 mod writer;
 
-pub use read::{looks_like_pdf, open, Error as ReadError};
+pub use read::{looks_like_pdf, needs_password, open, open_with_password, Error as ReadError};
 
 use std::collections::{BTreeMap, BTreeSet};
 

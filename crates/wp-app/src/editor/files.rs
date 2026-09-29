@@ -804,9 +804,13 @@ impl Editor {
         // do anything about; what it needs is the question being asked.
         // A binary document with a password is the same question: its streams
         // are enciphered where they lie rather than a package whole, but what
-        // a person has to do about it is the same.
+        // a person has to do about it is the same; and so is a PDF that has a
+        // password to open it.
         if let Ok(bytes) = &read {
-            if wp_docx::sealing::is_sealed(bytes) || wp_doc::is_encrypted(bytes) {
+            if wp_docx::sealing::is_sealed(bytes)
+                || wp_doc::is_encrypted(bytes)
+                || (is_pdf_path(&path) && wp_pdf::needs_password(bytes))
+            {
                 let bytes = bytes.clone();
                 return self.ask_to_unseal(&path, bytes);
             }

@@ -275,6 +275,9 @@ pub enum Kind {
     Group3 { two_dimensional: bool, byte_aligned: bool },
     /// Every row against the row above.
     Group4,
+    /// Every row against the row above, each beginning on a byte: which a
+    /// PDF's fax filter may ask for.
+    AlignedGroup4,
 }
 
 /// Reads bits from the top of each byte down, which is how these codings are
@@ -438,6 +441,17 @@ fn past_end_of_row(bits: &mut Bits<'_>) -> bool {
 /// A set bit is black, which is what the photometric of a scanned page says
 /// zero means white.
 pub fn decode(data: &[u8], width: usize, height: usize, kind: Kind) -> Result<Vec<u8>, Error> {
+    decode_counting(data, width, height, kind).map(|(rows, _)| rows)
+}
+
+/// Decodes as [`decode`] does, and says how many bytes of the data the rows
+/// took: for a coding that is followed by something else.
+pub fn decode_counting(
+    data: &[u8],
+    width: usize,
+    height: usize,
+    kind: Kind,
+) -> Result<(Vec<u8>, usize), Error> {
     if width == 0 {
         return Err(Error::Malformed("a picture with no width"));
     }
@@ -459,11 +473,20 @@ pub fn decode(data: &[u8], width: usize, height: usize, kind: Kind) -> Result<Ve
         let two_dimensional = match kind {
             Kind::Huffman => false,
             Kind::Group4 => true,
+            Kind::AlignedGroup4 => {
+                bits.align();
+                true
+            }
             Kind::Group3 { two_dimensional, byte_aligned } => {
-                if byte_aligned {
+                // Byte alignment pads before the end-of-row, so that it is the
+                // end-of-row that finishes on a byte: the padding is taken in
+                // with it, and aligning first could cut into its zeros. Only
+                // a row with no end-of-row to it starts on the byte itself.
+                let mut had_end = past_end_of_row(&mut bits);
+                if !had_end && byte_aligned {
                     bits.align();
+                    had_end = past_end_of_row(&mut bits);
                 }
-                let had_end = past_end_of_row(&mut bits);
                 if two_dimensional {
                     // After the end of a row, one bit says which way the next
                     // one is written. Without an end-of-row there is nothing to
@@ -497,7 +520,15 @@ pub fn decode(data: &[u8], width: usize, height: usize, kind: Kind) -> Result<Ve
         core::mem::swap(&mut above, &mut here);
     }
 
-    Ok(out)
+    // The end-of-block mark after the last row, two end-of-rows together,
+    // belongs to the coding.
+    if bits.peek(12) == Some(1) && {
+        let after = Bits { data, at: bits.at + 12 };
+        after.peek(12) == Some(1)
+    } {
+        bits.skip(24);
+    }
+    Ok((out, bits.at.div_ceil(8).min(data.len())))
 }
 
 /// Reads a row written as its own run lengths.
@@ -748,6 +779,29 @@ mod tests {
         let image = decode(&data, 8, 2, kind).expect("two rows");
         assert_eq!(row_of(&image, 0, 8), vec![0, 0, 1, 1, 1, 0, 0, 0]);
         assert_eq!(row_of(&image, 1, 8), vec![0, 0, 1, 1, 1, 0, 0, 0], "the second row");
+    }
+
+    #[test]
+    fn byte_alignment_pads_before_the_end_of_a_row() {
+        // Each end-of-row finishes on a byte, with as many noughts before it
+        // as that takes — none, after the first row here, whose end-of-row
+        // starts half-way through a byte.
+        const END: (u16, u8) = (0b0000_0000_0001, 12);
+        let codes = vec![
+            (0b0000, 4), // Padding,
+            END,
+            (0b0111, 4),    // two white;
+            END,            // no padding.
+            (0b00_0111, 6), // One white,
+            (0b010, 3),     // one black;
+            (0b000, 3),     // padding.
+            END,
+        ];
+        let data = packed(&codes);
+        let kind = Kind::Group3 { two_dimensional: false, byte_aligned: true };
+        let image = decode(&data, 2, 2, kind).expect("two rows");
+        assert_eq!(row_of(&image, 0, 2), vec![0, 0]);
+        assert_eq!(row_of(&image, 1, 2), vec![0, 1], "the second row");
     }
 
     #[test]

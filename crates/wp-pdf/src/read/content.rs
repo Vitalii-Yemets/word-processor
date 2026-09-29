@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use super::file::{File, PageInfo};
 use super::font::LoadedFont;
-use super::object::{Dictionary, Lexer, Object};
+use super::object::{Dictionary, Lexer, Object, Stream};
 
 /// A transformation: `[a b c d e f]`, mapping (x, y) to
 /// (a·x + c·y + e, b·x + d·y + f).
@@ -81,6 +81,11 @@ pub struct Glyph {
     /// from an upright font, which is how a program without the italic
     /// face draws one.
     pub slanted: bool,
+    /// Which way the text runs, in radians from left to right: nought for
+    /// a line across the page, a quarter turn for one up it.
+    pub angle: f64,
+    /// Where the next glyph would start, up the page.
+    pub end_y: f64,
 }
 
 /// A picture drawn on the page.
@@ -214,7 +219,9 @@ impl<'f, 'a> Interpreter<'f, 'a> {
             };
             match operator.as_str() {
                 "BI" => {
-                    skip_inline_image(&mut lexer);
+                    if let Some(stream) = self.inline_image(&mut lexer, resources) {
+                        self.place_picture(&stream);
+                    }
                 }
                 _ => self.operate(&operator, &operands, resources),
             }
@@ -427,23 +434,28 @@ impl<'f, 'a> Interpreter<'f, 'a> {
                 (advance * self.state.horizontal_scale, 0.0)
             };
             let after = Matrix::translate(tx, ty).then(self.text_matrix).then(self.state.ctm);
-            let (end_x, _) = after.apply(0.0, 0.0);
+            let (end_x, end_y) = after.apply(0.0, 0.0);
             let on_page = placement.y_scale();
             // A slant: the y axis leaning to the right by more than a few
             // degrees relative to the x axis.
             let [a, b, c, d, ..] = placement.0;
             let slanted = (a * c + b * d).abs() > 0.15 * (a * a + b * b).sqrt() * on_page;
+            // The way the text runs: along its x axis, or down its y axis
+            // for a font that writes in columns.
+            let angle = if vertical { (-d).atan2(-c) } else { b.atan2(a) };
             if !shown.text.is_empty() && on_page > 0.0 {
                 self.drawn.glyphs.push(Glyph {
                     x,
                     y: y - self.state.rise * self.text_matrix.then(self.state.ctm).y_scale(),
                     end_x,
-                    size: on_page,
+                    size: on_page * font.size_factor(),
                     text: shown.text,
                     font: Rc::clone(&font),
                     colour: self.state.fill,
                     rise: self.state.rise * self.text_matrix.then(self.state.ctm).y_scale(),
                     slanted,
+                    angle,
+                    end_y,
                 });
             }
             self.text_matrix = Matrix::translate(tx, ty).then(self.text_matrix);
@@ -572,25 +584,149 @@ impl<'f, 'a> Interpreter<'f, 'a> {
                 self.state = saved_state;
                 self.depth -= 1;
             }
-            Some("Image") => {
-                let corners = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
-                    .map(|(x, y)| self.state.ctm.apply(x, y));
-                let x0 = corners.iter().map(|c| c.0).fold(f64::INFINITY, f64::min);
-                let x1 = corners.iter().map(|c| c.0).fold(f64::NEG_INFINITY, f64::max);
-                let y0 = corners.iter().map(|c| c.1).fold(f64::INFINITY, f64::min);
-                let y1 = corners.iter().map(|c| c.1).fold(f64::NEG_INFINITY, f64::max);
-                if x1 - x0 < 1.0 || y1 - y0 < 1.0 {
-                    return;
-                }
-                if let Some((bytes, extension)) =
-                    super::images::picture_of(self.file, stream, self.state.fill)
-                {
-                    self.drawn.pictures.push(PlacedPicture { x0, y0, x1, y1, bytes, extension });
-                }
-            }
+            Some("Image") => self.place_picture(stream),
             _ => {}
         }
     }
+
+    /// A picture drawn into the unit square the current matrix maps.
+    fn place_picture(&mut self, stream: &Stream) {
+        let corners = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+            .map(|(x, y)| self.state.ctm.apply(x, y));
+        let x0 = corners.iter().map(|c| c.0).fold(f64::INFINITY, f64::min);
+        let x1 = corners.iter().map(|c| c.0).fold(f64::NEG_INFINITY, f64::max);
+        let y0 = corners.iter().map(|c| c.1).fold(f64::INFINITY, f64::min);
+        let y1 = corners.iter().map(|c| c.1).fold(f64::NEG_INFINITY, f64::max);
+        if x1 - x0 < 1.0 || y1 - y0 < 1.0 {
+            return;
+        }
+        if let Some((bytes, extension)) =
+            super::images::picture_of(self.file, stream, self.state.fill)
+        {
+            self.drawn.pictures.push(PlacedPicture { x0, y0, x1, y1, bytes, extension });
+        }
+    }
+
+    /// An inline picture, read from after its `BI`: its dictionary, the
+    /// abbreviations spelt out and a colour space named in the resources
+    /// looked up, and its data up to the `EI` after it.
+    fn inline_image(&self, lexer: &mut Lexer<'_>, resources: &Dictionary) -> Option<Stream> {
+        let mut dictionary = Dictionary::new();
+        let mut key: Option<String> = None;
+        loop {
+            match lexer.next_object()? {
+                Object::Operator(word) if word == "ID" => break,
+                Object::Name(name) if key.is_none() => key = Some(name),
+                value => {
+                    if let Some(name) = key.take() {
+                        dictionary.insert(full_key(&name).to_owned(), value);
+                    }
+                }
+            }
+        }
+        if let Some(Object::Name(space)) = dictionary.get("ColorSpace").cloned() {
+            let spelt = match space.as_str() {
+                "G" => Some(Object::Name("DeviceGray".to_owned())),
+                "RGB" => Some(Object::Name("DeviceRGB".to_owned())),
+                "CMYK" => Some(Object::Name("DeviceCMYK".to_owned())),
+                "DeviceGray" | "DeviceRGB" | "DeviceCMYK" => None,
+                named => {
+                    let spaces = self.file.get(resources, "ColorSpace");
+                    spaces.as_dictionary().map(|spaces| self.file.get(spaces, named))
+                }
+            };
+            if let Some(spelt) = spelt {
+                dictionary.insert("ColorSpace".to_owned(), spelt);
+            }
+        }
+        // One white space after `ID`, then the data.
+        let bytes = lexer.bytes;
+        if bytes.get(lexer.at).is_some_and(|b| super::object::is_whitespace(*b)) {
+            lexer.at += 1;
+        }
+        let start = lexer.at;
+        let length = self.inline_length(&dictionary);
+        let end = match length {
+            Some(length) if ends_at(bytes, start + length).is_some() => start + length,
+            _ => find_end(bytes, start),
+        };
+        lexer.at = ends_at(bytes, end).unwrap_or(bytes.len());
+        let data = bytes.get(start..end.min(bytes.len()))?.to_vec();
+        Some(Stream { dictionary, data })
+    }
+
+    /// How long an inline picture's data is: as said, or as its size makes
+    /// it when it is not filtered.
+    fn inline_length(&self, dictionary: &Dictionary) -> Option<usize> {
+        if let Some(length) = dictionary.get("Length").and_then(Object::as_integer) {
+            return usize::try_from(length).ok();
+        }
+        if dictionary.contains_key("Filter") {
+            return None;
+        }
+        let number =
+            |key: &str| dictionary.get(key).and_then(Object::as_integer).map(|v| v.max(0) as usize);
+        let (width, height) = (number("Width")?, number("Height")?);
+        let mask = matches!(dictionary.get("ImageMask"), Some(Object::Bool(true)));
+        let (bits, components) = if mask {
+            (1, 1)
+        } else {
+            let space = dictionary.get("ColorSpace").cloned().unwrap_or(Object::Null);
+            (number("BitsPerComponent").unwrap_or(8), components_of(self.file, &space, 0).max(1))
+        };
+        Some((width * components * bits).div_ceil(8) * height)
+    }
+}
+
+/// An inline picture's key, spelt out.
+fn full_key(key: &str) -> &str {
+    match key {
+        "W" => "Width",
+        "H" => "Height",
+        "BPC" => "BitsPerComponent",
+        "CS" => "ColorSpace",
+        "D" => "Decode",
+        "DP" => "DecodeParms",
+        "F" => "Filter",
+        "IM" => "ImageMask",
+        "I" => "Interpolate",
+        "L" => "Length",
+        other => other,
+    }
+}
+
+/// Where the content goes on if an `EI` ends an inline picture's data at
+/// `at`, white space before it allowed.
+fn ends_at(bytes: &[u8], at: usize) -> Option<usize> {
+    let mut at = at;
+    while bytes.get(at).is_some_and(|b| super::object::is_whitespace(*b)) {
+        at += 1;
+    }
+    let after = bytes.get(at + 2);
+    (bytes.get(at..at + 2) == Some(b"EI")
+        && after
+            .is_none_or(|b| super::object::is_whitespace(*b) || super::object::is_delimiter(*b)))
+    .then_some(at + 2)
+}
+
+/// Where an inline picture's data ends when nothing says: at the first
+/// `EI` standing on its own, white space before and after.
+fn find_end(bytes: &[u8], start: usize) -> usize {
+    let mut at = start;
+    while at + 1 < bytes.len() {
+        if bytes[at] == b'E'
+            && bytes[at + 1] == b'I'
+            && at > start
+            && super::object::is_whitespace(bytes[at - 1])
+            && bytes
+                .get(at + 2)
+                .is_none_or(|b| super::object::is_whitespace(*b) || super::object::is_delimiter(*b))
+        {
+            return at - 1;
+        }
+        at += 1;
+    }
+    bytes.len()
 }
 
 /// How many components a colour space object takes.
@@ -660,47 +796,6 @@ fn rectangle_of(points: &[(f64, f64)]) -> Option<Rectangle> {
     Some(Rectangle { x0, y0, x1, y1, filled: false })
 }
 
-/// Steps over an inline picture: its dictionary up to `ID`, one byte of
-/// white space, then the data up to an `EI` standing on its own.
-fn skip_inline_image(lexer: &mut Lexer<'_>) {
-    let mut length: Option<usize> = None;
-    let mut key: Option<String> = None;
-    while let Some(object) = lexer.next_object() {
-        match object {
-            Object::Operator(word) if word == "ID" => break,
-            Object::Operator(_) => {}
-            Object::Name(name) if key.is_none() => key = Some(name),
-            value => {
-                if let Some(name) = key.take() {
-                    if name == "L" || name == "Length" {
-                        length = value.as_integer().and_then(|l| usize::try_from(l).ok());
-                    }
-                }
-            }
-        }
-    }
-    lexer.at = (lexer.at + 1).min(lexer.bytes.len());
-    if let Some(length) = length {
-        lexer.at = (lexer.at + length).min(lexer.bytes.len());
-    }
-    let bytes = lexer.bytes;
-    let mut at = lexer.at;
-    while at + 1 < bytes.len() {
-        if bytes[at] == b'E'
-            && bytes[at + 1] == b'I'
-            && (at == 0 || super::object::is_whitespace(bytes[at - 1]))
-            && bytes
-                .get(at + 2)
-                .is_none_or(|b| super::object::is_whitespace(*b) || super::object::is_delimiter(*b))
-        {
-            lexer.at = at + 2;
-            return;
-        }
-        at += 1;
-    }
-    lexer.at = bytes.len();
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -722,11 +817,11 @@ mod tests {
     }
 
     #[test]
-    fn an_inline_image_is_stepped_over() {
-        let content = b"BI /W 2 /H 2 /BPC 8 /CS /G ID \x00\xFFEI\x80 EI Q";
-        let mut lexer = Lexer::new(content);
-        assert!(matches!(lexer.next_object(), Some(Object::Operator(word)) if word == "BI"));
-        skip_inline_image(&mut lexer);
-        assert!(matches!(lexer.next_object(), Some(Object::Operator(word)) if word == "Q"));
+    fn an_inline_pictures_data_ends_at_an_ei_on_its_own() {
+        let content = b"\x00\xFFEI\x80 EI Q";
+        assert_eq!(find_end(content, 0), 5);
+        assert_eq!(ends_at(content, 5), Some(8));
+        assert_eq!(ends_at(content, 2), None, "an EI inside the data");
+        assert_eq!(full_key("BPC"), "BitsPerComponent");
     }
 }

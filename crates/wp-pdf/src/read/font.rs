@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use super::cmap::{glyph_char, private_use_bullet, BaseEncoding, CMap};
 use super::file::File;
-use super::object::{Dictionary, Object};
+use super::object::{Dictionary, Lexer, Object};
 
 /// One character as the font shows it.
 #[derive(Clone, Debug)]
@@ -46,6 +46,9 @@ pub struct LoadedFont {
     missing_width: f64,
     /// A Type 3 font's own scale, applied to its widths.
     type3_scale: f64,
+    /// How much bigger a Type 3 font's glyphs are than its size says:
+    /// one for any font drawn in an em of its own.
+    size_factor: f64,
     /// The embedded program's characters by glyph, for a composite font
     /// with no ToUnicode table.
     by_glyph: HashMap<u32, char>,
@@ -92,6 +95,7 @@ impl LoadedFont {
             default_width: 1.0,
             missing_width,
             type3_scale: 0.001,
+            size_factor: 1.0,
             by_glyph: HashMap::new(),
             style: Style::default(),
         };
@@ -129,6 +133,7 @@ impl LoadedFont {
                 for width in font.simple_widths.iter_mut().flatten() {
                     *width *= font.type3_scale * 1000.0;
                 }
+                font.size_factor = type3_size_factor(file, dictionary);
             }
             style.symbolic = symbolic;
         }
@@ -151,6 +156,7 @@ impl LoadedFont {
                     .to_unicode
                     .as_ref()
                     .and_then(|map| map.text(code))
+                    .or_else(|| self.encoding.text(code))
                     .or_else(|| self.by_glyph.get(&cid).map(|c| c.to_string()))
                     .unwrap_or_else(|| "\u{FFFD}".to_owned());
                 out.push(Shown {
@@ -182,6 +188,12 @@ impl LoadedFont {
             }
         }
         out
+    }
+
+    /// How much bigger the glyphs are than the size they are shown at.
+    #[must_use]
+    pub fn size_factor(&self) -> f64 {
+        self.size_factor
     }
 
     #[must_use]
@@ -305,12 +317,85 @@ fn simple_encoding(
         })
         .collect();
     for (code, name) in differences {
-        table[usize::from(code)] = glyph_char(&name).map(|c| c.to_string()).or_else(|| {
+        let named =
+            glyph_char(&name).or_else(|| if is_type3 { type3_name_char(&name) } else { None });
+        table[usize::from(code)] = named.map(|c| c.to_string()).or_else(|| {
             // A name that is not a character keeps the base's character.
             table[usize::from(code)].clone()
         });
     }
     table
+}
+
+/// The character a Type 3 font's glyph name means when it is not a name
+/// of the glyph list: the code it stands for, which is how programs that
+/// make fonts of their own name the glyphs — `a65` and `c65` in decimal,
+/// `G41` and `g0041` in hex.
+fn type3_name_char(name: &str) -> Option<char> {
+    let digits = |text: &str, radix: u32| {
+        (!text.is_empty() && text.chars().all(|c| c.is_digit(radix)))
+            .then(|| u32::from_str_radix(text, radix).ok())
+            .flatten()
+    };
+    let code = match (name.chars().next()?, name.len()) {
+        ('a', 2..=4) | ('c' | 'C', 3..=4) => digits(&name[1..], 10),
+        ('G', 3) | ('g', 5) => digits(&name[1..], 16),
+        _ => None,
+    }?;
+    char::from_u32(code).filter(|c| !c.is_control())
+}
+
+/// How much bigger a Type 3 font's glyphs are than the size it is shown
+/// at. A size scales the em; a Type 3 font's glyphs are drawn in a space
+/// of their own that the font's matrix takes into the em — so a font drawn
+/// in a thousand units to the em with a matrix of a thousandth is the size
+/// it says, and one drawn in pixels with a matrix of one, as a bitmap font
+/// is, is as many times bigger as its glyphs are pixels tall. How tall is
+/// what the glyphs' procedures declare with `d1`, or else the font's box.
+/// A factor near one is one: glyphs stand a little over or under an em.
+fn type3_size_factor(file: &File<'_>, dictionary: &Dictionary) -> f64 {
+    let matrix = file.get(dictionary, "FontMatrix");
+    let scale = matrix
+        .as_array()
+        .and_then(|m| m.get(3))
+        .and_then(|d| file.resolve(d).as_number())
+        .map_or(0.001, f64::abs);
+    let (mut low, mut high) = (f64::INFINITY, f64::NEG_INFINITY);
+    if let Some(procedures) = file.get(dictionary, "CharProcs").as_dictionary() {
+        for value in procedures.values().take(256) {
+            let Object::Stream(stream) = file.resolve(value) else { continue };
+            let data = file.decode(&stream).0;
+            let mut lexer = Lexer::new(&data);
+            let mut numbers = Vec::new();
+            while let Some(Object::Number(number)) = lexer.next_object() {
+                numbers.push(number);
+            }
+            // `wx wy llx lly urx ury d1`: the operator ended the numbers.
+            if numbers.len() == 6 {
+                low = low.min(numbers[3]).min(numbers[5]);
+                high = high.max(numbers[3]).max(numbers[5]);
+            }
+        }
+    }
+    if high <= low {
+        if let Some(bounds) = file.get(dictionary, "FontBBox").as_array() {
+            let values: Vec<f64> =
+                bounds.iter().filter_map(|v| file.resolve(v).as_number()).collect();
+            if values.len() == 4 {
+                low = values[1].min(values[3]);
+                high = values[1].max(values[3]);
+            }
+        }
+    }
+    if high <= low {
+        return 1.0;
+    }
+    let factor = (high - low) * scale;
+    if (0.5..=2.0).contains(&factor) {
+        1.0
+    } else {
+        factor.clamp(0.01, 100.0)
+    }
 }
 
 /// The few dingbats a document uses as bullets.
@@ -657,6 +742,18 @@ mod tests {
         assert_eq!(split_family("NimbusRomanRegular"), ("NimbusRoman".into(), String::new()));
         assert_eq!(word_family("Calibri"), "Calibri");
         assert_eq!(plain_name("ABCDEF+Calibri"), "Calibri");
+    }
+
+    #[test]
+    fn a_type_3_glyph_named_by_its_code_is_that_character() {
+        assert_eq!(type3_name_char("a65"), Some('A'));
+        assert_eq!(type3_name_char("c97"), Some('a'));
+        assert_eq!(type3_name_char("C101"), Some('e'));
+        assert_eq!(type3_name_char("G41"), Some('A'));
+        assert_eq!(type3_name_char("g0041"), Some('A'));
+        assert_eq!(type3_name_char("a7"), None, "a control code");
+        assert_eq!(type3_name_char("alpha"), None);
+        assert_eq!(type3_name_char("g41"), None);
     }
 
     #[test]

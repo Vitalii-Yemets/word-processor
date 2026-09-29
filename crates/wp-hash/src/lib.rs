@@ -84,16 +84,47 @@ pub fn sha1(message: &[u8]) -> [u8; 20] {
 /// The SHA-512 of some bytes: sixty-four bytes.
 #[must_use]
 pub fn sha512(message: &[u8]) -> [u8; 64] {
-    let mut state: [u64; 8] = [
-        0x6A09_E667_F3BC_C908,
-        0xBB67_AE85_84CA_A73B,
-        0x3C6E_F372_FE94_F82B,
-        0xA54F_F53A_5F1D_36F1,
-        0x510E_527F_ADE6_82D1,
-        0x9B05_688C_2B3E_6C1F,
-        0x1F83_D9AB_FB41_BD6B,
-        0x5BE0_CD19_137E_2179,
-    ];
+    sha512_from(
+        [
+            0x6A09_E667_F3BC_C908,
+            0xBB67_AE85_84CA_A73B,
+            0x3C6E_F372_FE94_F82B,
+            0xA54F_F53A_5F1D_36F1,
+            0x510E_527F_ADE6_82D1,
+            0x9B05_688C_2B3E_6C1F,
+            0x1F83_D9AB_FB41_BD6B,
+            0x5BE0_CD19_137E_2179,
+        ],
+        message,
+    )
+}
+
+/// The SHA-384 of some bytes: forty-eight. SHA-512 begun from other numbers
+/// and cut short, which a PDF encrypted with AES-256 hashes its password
+/// with, among the others.
+#[must_use]
+pub fn sha384(message: &[u8]) -> [u8; 48] {
+    let whole = sha512_from(
+        [
+            0xCBBB_9D5D_C105_9ED8,
+            0x629A_292A_367C_D507,
+            0x9159_015A_3070_DD17,
+            0x152F_ECD8_F70E_5939,
+            0x6733_2667_FFC0_0B31,
+            0x8EB4_4A87_6858_1511,
+            0xDB0C_2E0D_64F9_8FA7,
+            0x47B5_481D_BEFA_4FA4,
+        ],
+        message,
+    );
+    let mut out = [0u8; 48];
+    out.copy_from_slice(&whole[..48]);
+    out
+}
+
+/// SHA-512's rounds, from a starting state.
+fn sha512_from(start: [u64; 8], message: &[u8]) -> [u8; 64] {
+    let mut state = start;
 
     for block in blocks_of_128(message) {
         let mut words = [0u64; 80];
@@ -579,6 +610,20 @@ mod tests {
         assert_eq!(
             to_hex(&sha256(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")),
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+        );
+    }
+
+    #[test]
+    fn sha384_agrees_with_the_standards_examples() {
+        assert_eq!(
+            to_hex(&sha384(b"abc")),
+            "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed\
+             8086072ba1e7cc2358baeca134c825a7"
+        );
+        assert_eq!(
+            to_hex(&sha384(b"")),
+            "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da\
+             274edebfe76f65fbd51ad2f14898b95b"
         );
     }
 

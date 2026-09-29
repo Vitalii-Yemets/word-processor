@@ -7,10 +7,12 @@ name = "wp-app"
 version = "0.0.1"
 dependencies = [
  "wp-asn1",
+ "wp-cipher",
  "wp-crypt",
  "wp-dict",
  "wp-doc",
  "wp-docx",
+ "wp-hash",
  "wp-html",
  "wp-image",
  "wp-layout",
@@ -210,13 +212,16 @@ dependencies = [
 name = "wp-pdf"
 version = "0.0.1"
 dependencies = [
+ "wp-cipher",
  "wp-deflate",
  "wp-docx",
  "wp-font",
+ "wp-hash",
  "wp-image",
  "wp-layout",
  "wp-raster",
  "wp-text",
+ "wp-zip",
 ]
 
 [[package]]

@@ -26,6 +26,18 @@ pub struct CMap {
     /// codespace.
     widest: usize,
     pub vertical: bool,
+    /// For the predefined Unicode CMaps: the form the codes are Unicode
+    /// in, and the id of the space, where the collection's Latin starts.
+    unicode: Option<(Form, u32)>,
+}
+
+/// The forms of Unicode the predefined `Uni` CMaps take.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Form {
+    Ucs2,
+    Utf16,
+    Utf8,
+    Utf32,
 }
 
 impl CMap {
@@ -39,12 +51,48 @@ impl CMap {
         }
     }
 
-    /// A predefined CMap by name. Only the identities are known; the
-    /// others, for the CJK collections, are read as two bytes a code so
-    /// that a ToUnicode table can still name them.
+    /// A predefined CMap by name: the identities, and the Unicode ones of
+    /// the CJK collections, whose codes are the characters themselves.
+    /// The rest, the older national encodings, are read as two bytes a
+    /// code so that a ToUnicode table can still name them.
     #[must_use]
     pub fn predefined(name: &str) -> Self {
-        let mut map = Self::identity();
+        let form = if !name.starts_with("Uni") {
+            None
+        } else if name.contains("UCS2") {
+            Some(Form::Ucs2)
+        } else if name.contains("UTF16") {
+            Some(Form::Utf16)
+        } else if name.contains("UTF8") {
+            Some(Form::Utf8)
+        } else if name.contains("UTF32") {
+            Some(Form::Utf32)
+        } else {
+            None
+        };
+        let mut map = match form {
+            None => Self::identity(),
+            Some(form) => {
+                let codespaces = match form {
+                    Form::Ucs2 => vec![(2, 0, 0xFFFF)],
+                    Form::Utf16 => {
+                        vec![(2, 0, 0xD7FF), (4, 0xD800_DC00, 0xDBFF_DFFF), (2, 0xE000, 0xFFFF)]
+                    }
+                    Form::Utf8 => vec![
+                        (1, 0, 0x7F),
+                        (2, 0xC280, 0xDFBF),
+                        (3, 0xE0_8080, 0xEF_BFBF),
+                        (4, 0xF080_8080, 0xF48F_BFBF),
+                    ],
+                    Form::Utf32 => vec![(4, 0, 0x10_FFFF)],
+                };
+                // Every Adobe CJK collection has the printable ASCII from
+                // id 1, proportional; Japanese has it half-width from 231
+                // too, which the "HW" maps use.
+                let space = if name.contains("-HW-") { 231 } else { 1 };
+                Self { codespaces, unicode: Some((form, space)), ..Default::default() }
+            }
+        };
         map.vertical = name.ends_with("-V");
         map
     }
@@ -214,6 +262,14 @@ impl CMap {
     /// The character id of a code.
     #[must_use]
     pub fn cid(&self, code: u32) -> u32 {
+        if let Some((form, space)) = self.unicode {
+            // The collection's ids for the rest are its own tables', which
+            // this does not carry: they take the font's default width.
+            return match unicode_of(form, code) {
+                Some(c @ ' '..='~') => u32::from(c) - 0x20 + space,
+                _ => 0,
+            };
+        }
         if let Some(&cid) = self.single.get(&code) {
             return cid;
         }
@@ -243,7 +299,7 @@ impl CMap {
                 return Some(chars.into_iter().collect());
             }
         }
-        None
+        self.unicode.and_then(|(form, _)| unicode_of(form, code)).map(String::from)
     }
 
     /// Whether the map has any text in it.
@@ -268,6 +324,26 @@ fn read_until(lexer: &mut Lexer<'_>, end: &str) -> Vec<Object> {
 
 fn code_of(bytes: &[u8]) -> u32 {
     bytes.iter().take(4).fold(0u32, |acc, &b| (acc << 8) | u32::from(b))
+}
+
+/// The character a code of a Unicode CMap is.
+fn unicode_of(form: Form, code: u32) -> Option<char> {
+    match form {
+        Form::Ucs2 | Form::Utf32 => char::from_u32(code),
+        Form::Utf16 if code > 0xFFFF => {
+            let (high, low) = (code >> 16, code & 0xFFFF);
+            if !(0xD800..0xDC00).contains(&high) || !(0xDC00..0xE000).contains(&low) {
+                return None;
+            }
+            char::from_u32(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00))
+        }
+        Form::Utf16 => char::from_u32(code),
+        Form::Utf8 => {
+            let bytes = code.to_be_bytes();
+            let start = bytes.iter().position(|&b| b != 0).unwrap_or(3);
+            std::str::from_utf8(&bytes[start..]).ok()?.chars().next()
+        }
+    }
 }
 
 /// A destination string: UTF-16BE, as ToUnicode maps write them — or a
@@ -943,6 +1019,27 @@ const GLYPH_LIST: &[(&str, char)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_unicode_cmaps_are_the_characters_themselves() {
+        let ucs2 = CMap::predefined("UniGB-UCS2-H");
+        assert_eq!(ucs2.next_code(&[0x4E, 0x2D, 0x00, 0x41]), (0x4E2D, 2));
+        assert_eq!(ucs2.text(0x4E2D).as_deref(), Some("\u{4E2D}"));
+        // Its Latin from id 1, the space first.
+        assert_eq!(ucs2.cid(0x0041), 34);
+        assert!(!ucs2.vertical);
+        let utf16 = CMap::predefined("UniJIS-UTF16-V");
+        assert!(utf16.vertical);
+        let face = [0xD8, 0x3D, 0xDE, 0x00];
+        assert_eq!(utf16.next_code(&face), (0xD83D_DE00, 4));
+        assert_eq!(utf16.text(0xD83D_DE00).as_deref(), Some("\u{1F600}"));
+        assert_eq!(CMap::predefined("UniJIS-UCS2-HW-H").cid(0x0020), 231);
+        let utf8 = CMap::predefined("UniKS-UTF8-H");
+        assert_eq!(utf8.next_code("\u{E9}x".as_bytes()), (0xC3A9, 2));
+        assert_eq!(utf8.text(0xC3A9).as_deref(), Some("\u{E9}"));
+        assert_eq!(utf8.next_code(b"x"), (0x78, 1));
+        assert_eq!(CMap::predefined("UniCNS-UTF32-H").text(0x1F600).as_deref(), Some("\u{1F600}"));
+    }
 
     #[test]
     fn a_tounicode_map_gives_text_back() {
