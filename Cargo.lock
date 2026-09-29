@@ -253,6 +253,14 @@ name = "wp-segment"
 version = "0.0.1"
 
 [[package]]
+name = "wp-setup"
+version = "0.0.1"
+dependencies = [
+ "wp-shell",
+ "wp-zip",
+]
+
+[[package]]
 name = "wp-shape"
 version = "0.0.1"
 dependencies = [

@@ -21,10 +21,12 @@ case "${1:-help}" in
   win)
     run cargo build --release --target x86_64-pc-windows-gnu
     run bash -lc 'mkdir -p /work/dist && cp -v /work/target/x86_64-pc-windows-gnu/release/*.exe /work/dist/ 2>/dev/null || echo "(no binaries yet)"'
+    run bash tools/pack-installer.sh win
     ;;
   linux)
     run cargo build --release
     run bash -lc 'mkdir -p /work/dist && find /work/target/release -maxdepth 1 -type f -executable -exec cp -v {} /work/dist/ \; 2>/dev/null || true'
+    run bash tools/pack-installer.sh linux
     ;;
   *)
     cat <<'USAGE'
@@ -41,8 +43,8 @@ Usage: ./x.sh <command>
   fidelity   score the pages drawn for them against Word's own
   conformance  run the Unicode test suites in ./unicode against the engine
   vba        read every macro in ./corpus and write it back out
-  win        release build of the Windows .exe -> ./dist
-  linux      release build for Linux -> ./dist
+  win        release build of the Windows .exe and its installer -> ./dist
+  linux      release build for Linux and its installer -> ./dist
   shell      interactive bash inside the container
 USAGE
     ;;

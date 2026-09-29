@@ -1,0 +1,18 @@
+[package]
+name = "wp-setup"
+description = "The installer: the program's files carried at its end, put where one person's programs go, and the desktop told"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "word-processor-setup"
+path = "src/main.rs"
+
+[dependencies]
+wp-shell = { path = "../wp-shell" }
+wp-zip = { path = "../wp-zip" }
+
+[lints]
+workspace = true

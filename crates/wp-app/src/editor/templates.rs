@@ -45,7 +45,7 @@ const TEMPLATE_FILTERS: &[wp_shell::dialog::FileFilter] = &[
 /// A document with its template's styles taken over, if it says to take
 /// them and its template can be read. Not counted as a change: the document
 /// is as it would be opened any time.
-pub(super) fn with_template_styles(mut document: Document) -> Document {
+pub(crate) fn with_template_styles(mut document: Document) -> Document {
     if !document.links_styles() {
         return document;
     }

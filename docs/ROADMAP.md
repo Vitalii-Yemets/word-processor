@@ -5707,11 +5707,112 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   a template at a web address rather than a path, which is not fetched; and
   the Normal template and a template's building blocks, which stay named in
   **G1**.
-- [ ] **G16. An installer, and the file kinds it claims.** Double-clicking a
+- [x] **G16. An installer, and the file kinds it claims.** Double-clicking a
   `.docx` should open it here, and double-clicking a `.dotx` should make a new
   document from it; both are the shell's associations, and associations are
   the installer's to write. There is no installer. Named in **G1** and
   **H7**.
+  *Done:* `wp-setup`, a crate of its own, and `word-processor-setup.exe` in
+  `dist` beside the program. It is the setup program with the program and
+  the command line after it — a ZIP archive, then where the archive starts
+  and a mark that it is there — which is how installers have always been
+  made: a program does not mind what follows it in its own file. `./x.sh
+  win` makes it, the setup program built for the container putting the
+  files after the Windows one (`tools/pack-installer.sh`); `./x.sh linux`
+  makes the Linux one the same way. Run, it asks once and installs for the
+  person running it, where Windows' own per-user installers go —
+  `%LOCALAPPDATA%\Programs\Word Processor` — without an administrator: a
+  manifest inside it says so, since Windows takes a program called setup to
+  want one otherwise. A damaged download is found before anything is
+  written; each file is written beside itself and moved over, so it is whole
+  or not there; a program that is running is found on the first file and
+  named; the files written are written down, and the setup program without
+  the files is left beside them as `uninstall.exe`. Then the desktop is told
+  (`wp_shell::install`): every kind the program opens, as Make Default
+  registers them, now from one list in the shell (`wp_shell::files::KINDS`)
+  that the window and the installer share; a template's two verbs as
+  Word's — New, the default and so what a double-click does, making a
+  document from it, and Open opening the template itself, which the program
+  is told with `--open`; a document kind that nothing on the machine opens
+  and the person has chosen nothing for is this program's, as it is any
+  installer's, while a kind another program has is left to the Default Apps
+  page, which the installer offers to open when it is done; Explorer's New ▸
+  Word Document, an empty file, which the program opens as a blank document
+  saved where the file is, as Word's does; a shortcut in the Start menu,
+  made by the shell's own link object; and the entry in Settings ▸ Apps,
+  with the version, the size, the folder and Uninstall, and nothing to
+  modify or repair. Uninstall asks, and takes back that and nothing else:
+  the files it wrote down and not whatever else is in the folder; the
+  kinds, and an extension's program only where it was this one's, so that
+  a kind it took goes back to having none; another program's entries and
+  the person's choices untouched; the folder only if it is empty. It cannot
+  remove itself while it runs, and leaves that to the command interpreter
+  once it has stopped. `--quiet` asks nothing and says nothing, which is
+  what the list's quiet uninstall runs. On Linux the same installer goes in
+  `~/.local/share/word-processor`, and the desktop entry is both the menu
+  and the kinds. Along the way, a double-clicked document that links its
+  styles takes its template's, as one opened with File ▸ Open already did
+  (**G15**'s, which only the Open command took).
+  *Proven by:* `crates/wp-setup/tests/install.rs` — on Linux, end to end:
+  the installer packed and run in a home of its own; the files, the
+  uninstaller the installer without its files, the desktop entry starting
+  the installed program, and the list with another program's lines kept;
+  and then `gio`, the desktop's own tool reading what a file manager reads,
+  naming this program for a Word document and starting the installed
+  program with a document and with a template — a double-click without the
+  mouse; installed again over itself with nothing listed twice; uninstalled,
+  the files, the entry and its lines gone, a kind another program had
+  before given back to it, a file of the person's own in the folder left
+  there, and the folder gone when nothing else is in it; an installer
+  carrying nothing refusing; `crates/wp-setup/src/lib.rs` — what is packed
+  is what is carried, packing again replaces it, a damaged archive and a
+  tail pointing past the file refused; `crates/wp-shell/src/linux/files.rs`
+  — the list's other programs kept on a line in their order, taken off and
+  given back; `crates/wp-app/src/editor/files.rs` — a Word document of no
+  bytes opening blank, unchanged, and saving where it is. And the Windows
+  half, run — for the first time anything of **H7**'s registry was — under
+  Wine 10 in a container thrown away afterwards
+  (`tools/check-installer-wine.sh`): the manifest in the installer and in
+  the uninstaller; the files; every key — the template's New as the
+  default verb and Open with `--open`, the unclaimed `.docx` taken, `.txt`
+  left to the text file Wine has for it and the program only offered,
+  ShellNew,
+  RegisteredApplications, the Apps entry — and the Start menu shortcut
+  naming the program; then the shell asked to open a document as a
+  double-click asks it, which starts the installed program with the
+  document and keeps it open, with a template making a new document from
+  it, with Open on the template opening it, and with an empty `.docx`
+  opening blank; then uninstalled, every key, the shortcut, the Apps entry
+  and the folder gone, the uninstaller's own file too, and `.txt` still
+  Wine's.
+  *Found along the way:* registering on Linux put this program in place of
+  another's in `mimeapps.list`'s Added Associations rather than beside it;
+  now the others stay on the line, this one first where it takes the kind
+  and last where it only can. A program in a folder with a space in its
+  name would have broken the desktop entry's Exec line; it is quoted as the
+  specification says. And the Windows build had never run anywhere; under
+  the Wine of the build image's Debian, 8, it does not start at all — Rust
+  asks `bcryptprimitives.dll` for random numbers before `main`, and Wine 8
+  has none — nor from a folder shared from a Windows host, which Wine cannot
+  map into memory. Neither is Windows; both are why the check runs where it
+  does, on Debian 13 from the container's own disk.
+  *Not done, and named here:* Wine is not Windows. Its HKEY_CLASSES_ROOT is
+  the machine's classes without the person's, which Windows merges in, so
+  the check copies the installer's keys across before asking the shell — on
+  Windows the merge is the system's; and the Default Apps page, SmartScreen
+  and Windows' own "how do you want to open this" are not Wine's to show.
+  The installer's questions and messages — the message boxes, and on Linux
+  the terminal or the desktop's dialog program — are English and are not
+  run by the checks, which use `--quiet`. The program has no icon of its
+  own, so the Start menu, the Apps list and every registered kind show the
+  system's generic one. Not signed, so Windows warns about a download from
+  an unknown publisher. No install for every user of the machine, which
+  would want an administrator; no choosing the folder; `wp.exe` is
+  installed beside the program but not put on the PATH. An upgrade is the
+  installer run again, which replaces the files; nothing looks for a newer
+  one. The installer and the uninstaller finding the program running and
+  saying so is written against what Windows says of a file in use and is
+  not run by either check.
 
 ## H — The system around the window
 

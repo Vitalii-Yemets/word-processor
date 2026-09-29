@@ -12,75 +12,9 @@ use wp_shell::Response;
 use super::conversion::Kind as FileKind;
 use super::Editor;
 
-/// The kinds this program tells the desktop it opens.
-///
-/// Word registers every kind it can read, which is what puts it in Open With
-/// for all of them, and asks to be the one that opens the documents among
-/// them. A plain text file and a web page are not documents in that sense:
-/// the machine already has a program for each, and taking those would be
-/// taking something nobody asked to give.
-pub const DESKTOP_KINDS: &[wp_shell::files::Kind] = &[
-    wp_shell::files::Kind {
-        extension: ".docx",
-        description: "Word Document",
-        media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        becomes_default: true,
-    },
-    wp_shell::files::Kind {
-        extension: ".docm",
-        description: "Word Macro-Enabled Document",
-        media_type: "application/vnd.ms-word.document.macroEnabled.12",
-        becomes_default: true,
-    },
-    wp_shell::files::Kind {
-        extension: ".dotx",
-        description: "Word Template",
-        media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
-        becomes_default: true,
-    },
-    wp_shell::files::Kind {
-        extension: ".dotm",
-        description: "Word Macro-Enabled Template",
-        media_type: "application/vnd.ms-word.template.macroEnabled.12",
-        becomes_default: true,
-    },
-    wp_shell::files::Kind {
-        extension: ".doc",
-        description: "Word 97-2003 Document",
-        media_type: "application/msword",
-        becomes_default: true,
-    },
-    wp_shell::files::Kind {
-        extension: ".rtf",
-        description: "Rich Text Format",
-        media_type: "application/rtf",
-        becomes_default: true,
-    },
-    wp_shell::files::Kind {
-        extension: ".odt",
-        description: "OpenDocument Text",
-        media_type: "application/vnd.oasis.opendocument.text",
-        becomes_default: true,
-    },
-    wp_shell::files::Kind {
-        extension: ".txt",
-        description: "Text Document",
-        media_type: "text/plain",
-        becomes_default: false,
-    },
-    wp_shell::files::Kind {
-        extension: ".htm",
-        description: "Web Page",
-        media_type: "text/html",
-        becomes_default: false,
-    },
-    wp_shell::files::Kind {
-        extension: ".html",
-        description: "Web Page",
-        media_type: "text/html",
-        becomes_default: false,
-    },
-];
+/// The kinds this program tells the desktop it opens. The list is the
+/// shell's, because the installer registers the same ones.
+pub const DESKTOP_KINDS: &[wp_shell::files::Kind] = wp_shell::files::KINDS;
 
 /// What kind the desktop would call a file, by its name.
 ///
@@ -698,20 +632,8 @@ impl Editor {
         if let Some(path) = self.own_template_path().filter(|path| path.is_file()) {
             return self.new_from_template(&path);
         }
-        // One empty paragraph, so there is somewhere for the caret to be.
-        let mut body = Body::default();
-        body.blocks.push(Block::Paragraph(Paragraph::default()));
-
-        match Document::create(&body) {
-            Ok(mut document) => {
-                // A new document is made with whatever theme was last set as
-                // the default, which is what the Design tab's button is for.
-                let _ = document.set_theme(&self.default_theme());
-                // And on the paper this machine prints on: A4 nearly
-                // everywhere, Letter in North America. Word asks the
-                // system the same question.
-                let (width, height) = crate::locale::paper();
-                document.set_page_size(width, height);
+        match self.blank_document() {
+            Ok(document) => {
                 self.set_document(document, None);
                 self.status = String::from("New document");
                 Response::Redraw
@@ -724,6 +646,60 @@ impl Editor {
                 Response::Ignored
             }
         }
+    }
+
+    /// A blank document as File ▸ New makes one where there is no Normal
+    /// template of the person's own.
+    fn blank_document(&self) -> Result<Document, wp_docx::Error> {
+        // One empty paragraph, so there is somewhere for the caret to be.
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::default()));
+        let mut document = Document::create(&body)?;
+        // A new document is made with whatever theme was last set as the
+        // default, which is what the Design tab's button is for.
+        let _ = document.set_theme(&self.default_theme());
+        // And on the paper this machine prints on: A4 nearly everywhere,
+        // Letter in North America. Word asks the system the same question.
+        let (width, height) = crate::locale::paper();
+        document.set_page_size(width, height);
+        Ok(document)
+    }
+
+    /// A Word document of no bytes at all, which is what Explorer's New ▸
+    /// Word Document makes: opened as a blank document that is saved where
+    /// the file is, as Word opens one — from the person's Normal template
+    /// where there is one, like any new document.
+    fn open_empty(&mut self, path: &Path) -> Response {
+        let normal = self.own_template_path().filter(|normal| normal.is_file());
+        let made = match normal {
+            Some(normal) => {
+                std::fs::read(&normal).map_err(|error| error.to_string()).and_then(|bytes| {
+                    Document::from_template(&bytes, normal.to_str())
+                        .map_err(|error| error.to_string())
+                })
+            }
+            None => self.blank_document().map_err(|error| error.to_string()),
+        };
+        match made {
+            Ok(mut document) => {
+                // Not a change until something is typed: closing it again
+                // asks nothing, as Word's does not.
+                let _ = document.mark_saved();
+                self.set_document(document, Some(path.to_path_buf()));
+                self.status = crate::messages::with("Opened {0}", &[&path.display().to_string()]);
+                self.remember_recent(path);
+            }
+            Err(error) => {
+                let message = crate::messages::with(
+                    "Cannot open {0}: {1}",
+                    &[&path.display().to_string(), &error],
+                );
+                wp_shell::dialog::show_error(&message);
+                self.status = message;
+            }
+        }
+        self.needs_redraw = true;
+        Response::Redraw
     }
 
     pub(super) fn open_document(&mut self) -> Response {
@@ -826,6 +802,9 @@ impl Editor {
         // Conversion dialog where its bytes do not say what they are.
         if kind == FileKind::Text {
             return self.open_text_path(&path, bytes);
+        }
+        if kind == FileKind::Word && bytes.is_empty() {
+            return self.open_empty(&path);
         }
         if kind == FileKind::Pdf && !wp_shell::dialog::ask_ok_cancel(PDF_CONVERSION_NOTICE) {
             self.status = String::from("Not opened");
@@ -1074,6 +1053,25 @@ mod tests {
         editor.open_path(&template);
         assert_eq!(editor.document.kind(), Kind::MacroEnabledTemplate);
         assert_eq!(editor.document_name(), "Letter.dotm");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_word_document_of_no_bytes_opens_blank_and_saves_where_it_is() {
+        // What Explorer's New ▸ Word Document makes.
+        let folder = folder("empty");
+        let path = folder.join("New Document.docx");
+        std::fs::write(&path, b"").unwrap();
+        let mut editor = editor("Something else");
+        editor.open_path(&path);
+        assert_eq!(editor.file.as_deref(), Some(path.as_path()), "it is that file that is open");
+        assert_eq!(editor.document_name(), "New Document.docx");
+        assert_eq!(editor.document.plain_text().trim(), "", "and it is blank");
+        assert!(!editor.document.is_modified(), "an empty file opened is not a change");
+
+        assert!(editor.write_document(&path));
+        let saved = Document::open(&std::fs::read(&path).unwrap()).expect("a document now");
+        assert_eq!(saved.kind(), Kind::Document);
         let _ = std::fs::remove_dir_all(folder);
     }
 

@@ -1865,6 +1865,16 @@ pub(crate) fn show_error(message: &str) {
     }
 }
 
+/// Shows a message with nothing to answer but OK.
+pub(crate) fn show_message(message: &str) {
+    let text = wide(message);
+    let caption = wide("Word Processor");
+    // SAFETY: both strings outlive the call.
+    unsafe {
+        MessageBoxW(owner_window(), text.as_ptr(), caption.as_ptr(), MB_OK | MB_ICON_INFORMATION);
+    }
+}
+
 // --- Printing ---------------------------------------------------------------
 
 /// The name of every printer this machine can reach.
@@ -2624,17 +2634,15 @@ extern "system" {
         length: *mut u32,
     ) -> i32;
     fn RegCloseKey(key: Handle) -> i32;
+    fn RegDeleteTreeW(key: Handle, name: *const u16) -> i32;
+    fn RegDeleteKeyW(key: Handle, name: *const u16) -> i32;
+    fn RegDeleteKeyValueW(key: Handle, name: *const u16, value_name: *const u16) -> i32;
 }
 
 #[link(name = "shell32")]
 extern "system" {
     fn SHAddToRecentDocs(flags: u32, path: *const c_void);
     fn SHChangeNotify(event: i32, flags: u32, first: *const c_void, second: *const c_void);
-}
-
-#[link(name = "kernel32")]
-extern "system" {
-    fn GetModuleFileNameW(module: Handle, name: *mut u16, length: u32) -> u32;
 }
 
 /// The two roots used here. `HKEY_CURRENT_USER` is where a program writes what
@@ -2646,29 +2654,31 @@ const HKEY_CURRENT_USER: Handle = 0x8000_0001 as Handle;
 const KEY_READ: u32 = 0x0002_0019;
 const KEY_WRITE: u32 = 0x0002_0006;
 const REG_SZ: u32 = 1;
+const REG_DWORD: u32 = 4;
 const ERROR_SUCCESS: i32 = 0;
+const ERROR_FILE_NOT_FOUND: i32 = 2;
 /// `SHAddToRecentDocs` takes a wide path when told so.
 const SHARD_PATHW: u32 = 3;
 /// "The association between a file kind and a program has changed."
 const SHCNE_ASSOCCHANGED: i32 = 0x0800_0000;
 const SHCNF_IDLIST: u32 = 0;
 
-/// This program's own file, which every registration has to name.
-fn program_path() -> Option<String> {
-    let mut buffer = [0u16; 32768];
-    // SAFETY: a null module means this program, and the buffer is as long as
-    // the length passed with it.
-    let length = unsafe {
-        GetModuleFileNameW(core::ptr::null_mut(), buffer.as_mut_ptr(), buffer.len() as u32)
-    };
-    if length == 0 || length as usize >= buffer.len() {
-        return None;
-    }
-    Some(String::from_utf16_lossy(&buffer[..length as usize]))
-}
-
 /// Writes one string value under `HKEY_CURRENT_USER`, making the key.
 fn write_string(path: &str, value_name: Option<&str>, value: &str) -> bool {
+    let data = wide(value);
+    // The string's own bytes, its length counted in bytes including the
+    // terminator, which is what REG_SZ means.
+    let bytes: Vec<u8> = data.iter().flat_map(|unit| unit.to_le_bytes()).collect();
+    write_value(path, value_name, REG_SZ, &bytes)
+}
+
+/// Writes one number under `HKEY_CURRENT_USER`, making the key.
+fn write_number(path: &str, value_name: &str, value: u32) -> bool {
+    write_value(path, Some(value_name), REG_DWORD, &value.to_le_bytes())
+}
+
+/// Writes one value of any kind under `HKEY_CURRENT_USER`, making the key.
+fn write_value(path: &str, value_name: Option<&str>, kind: u32, data: &[u8]) -> bool {
     let wide_path = wide(path);
     let mut key: Handle = core::ptr::null_mut();
     // SAFETY: a null-terminated name, and a handle written only on success,
@@ -2690,17 +2700,15 @@ fn write_string(path: &str, value_name: Option<&str>, value: &str) -> bool {
         return false;
     }
     let name = value_name.map(wide);
-    let data = wide(value);
-    // SAFETY: the data is the string's own bytes, its length counted in bytes
-    // including the terminator, which is what REG_SZ means.
+    // SAFETY: the data is as long as the length passed with it.
     let written = unsafe {
         RegSetValueExW(
             key,
             name.as_ref().map_or(core::ptr::null(), |name| name.as_ptr()),
             0,
-            REG_SZ,
-            data.as_ptr().cast::<u8>(),
-            (data.len() * 2) as u32,
+            kind,
+            data.as_ptr(),
+            data.len() as u32,
         )
     };
     // SAFETY: the handle came from the call above and is not used again.
@@ -2708,13 +2716,52 @@ fn write_string(path: &str, value_name: Option<&str>, value: &str) -> bool {
     written == ERROR_SUCCESS
 }
 
+/// Takes a key and everything under it out of `HKEY_CURRENT_USER`. A key
+/// that is not there is as good as taken.
+fn delete_tree(path: &str) -> bool {
+    let wide_path = wide(path);
+    // SAFETY: a null-terminated name under a predefined key.
+    let deleted = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, wide_path.as_ptr()) };
+    // The call deletes what is under the key and leaves the key itself, so
+    // the key goes after it.
+    // SAFETY: as above.
+    let emptied = unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, wide_path.as_ptr()) };
+    matches!(deleted, ERROR_SUCCESS | ERROR_FILE_NOT_FOUND)
+        && matches!(emptied, ERROR_SUCCESS | ERROR_FILE_NOT_FOUND)
+}
+
+/// Takes one value out of a key under `HKEY_CURRENT_USER`; `None` is the
+/// key's default value. A value that is not there is as good as taken.
+fn delete_value(path: &str, value_name: Option<&str>) -> bool {
+    let wide_path = wide(path);
+    let name = value_name.map(wide);
+    // SAFETY: null-terminated names; a null value name is the default value.
+    let deleted = unsafe {
+        RegDeleteKeyValueW(
+            HKEY_CURRENT_USER,
+            wide_path.as_ptr(),
+            name.as_ref().map_or(core::ptr::null(), |name| name.as_ptr()),
+        )
+    };
+    matches!(deleted, ERROR_SUCCESS | ERROR_FILE_NOT_FOUND)
+}
+
 /// Reads one string value from the merged view of the classes.
 fn read_class_string(path: &str, value_name: Option<&str>) -> Option<String> {
+    read_string(HKEY_CLASSES_ROOT, path, value_name)
+}
+
+/// Reads one string value from what this person's own keys say, without
+/// the machine's.
+fn read_user_string(path: &str, value_name: Option<&str>) -> Option<String> {
+    read_string(HKEY_CURRENT_USER, path, value_name)
+}
+
+fn read_string(root: Handle, path: &str, value_name: Option<&str>) -> Option<String> {
     let wide_path = wide(path);
     let mut key: Handle = core::ptr::null_mut();
     // SAFETY: as above; the handle is closed before returning.
-    let opened =
-        unsafe { RegOpenKeyExW(HKEY_CLASSES_ROOT, wide_path.as_ptr(), 0, KEY_READ, &mut key) };
+    let opened = unsafe { RegOpenKeyExW(root, wide_path.as_ptr(), 0, KEY_READ, &mut key) };
     if opened != ERROR_SUCCESS {
         return None;
     }
@@ -2756,9 +2803,16 @@ pub(crate) fn remember_document(path: &Path, _media_type: &str) {
     unsafe { SHAddToRecentDocs(SHARD_PATHW, wide_path.as_ptr().cast::<c_void>()) };
 }
 
-pub(crate) fn associate_kinds(kinds: &[crate::files::Kind], program_name: &str) -> bool {
-    let Some(program) = program_path() else { return false };
+pub(crate) fn associate_kinds(
+    kinds: &[crate::files::Kind],
+    program_name: &str,
+    program: &Path,
+) -> bool {
+    let program = program.display().to_string();
     let command = format!("\"{program}\" \"%1\"");
+    // What opens a template for changing it, where a double-click makes a
+    // document from it.
+    let open_command = format!("\"{program}\" {} \"%1\"", crate::files::OPEN_SWITCH);
     let executable = Path::new(&program)
         .file_name()
         .map_or_else(|| program.clone(), |name| name.to_string_lossy().into_owned());
@@ -2788,15 +2842,21 @@ pub(crate) fn associate_kinds(kinds: &[crate::files::Kind], program_name: &str) 
         let class = format!(r"Software\Classes\{id}");
         all &= write_string(&class, None, kind.description);
         all &= write_string(&format!(r"{class}\DefaultIcon"), None, &format!("{program},0"));
-        all &= write_string(&format!(r"{class}\shell\open\command"), None, &command);
+        if kind.is_template {
+            // Word's two verbs on a template: New, the one a double-click
+            // does, makes a document from it; Open opens the template itself.
+            all &= write_string(&format!(r"{class}\shell"), None, "new");
+            all &= write_string(&format!(r"{class}\shell\new"), None, "&New");
+            all &= write_string(&format!(r"{class}\shell\new\command"), None, &command);
+            all &= write_string(&format!(r"{class}\shell\open\command"), None, &open_command);
+        } else {
+            all &= write_string(&format!(r"{class}\shell\open\command"), None, &command);
+        }
         // The kind itself lists the program as one that opens it. Not as the
         // one that does: that is the person's choice, and Windows keeps it
         // where a program cannot write it.
-        all &= write_string(
-            &format!(r"Software\Classes\{}\OpenWithProgids", kind.extension),
-            Some(&id),
-            "",
-        );
+        let extension = format!(r"Software\Classes\{}", kind.extension);
+        all &= write_string(&format!(r"{extension}\OpenWithProgids"), Some(&id), "");
         all &= write_string(&format!(r"{application}\SupportedTypes"), Some(kind.extension), "");
         // The capabilities are what "set this program as the default" acts
         // on, so the kinds it does not ask for are left out of them while
@@ -2807,21 +2867,98 @@ pub(crate) fn associate_kinds(kinds: &[crate::files::Kind], program_name: &str) 
                 Some(kind.extension),
                 &id,
             );
+            // Except where nothing has it: a kind no program claims and the
+            // person has chosen nothing for is this one's to open, as it is
+            // any installer's. Taking one another program has would be
+            // taking a choice, and that is left to the page.
+            if unclaimed(kind.extension, &id) {
+                all &= write_string(&extension, None, &id);
+            }
+        }
+        // Explorer's New menu, which offers the kind's ShellNew where the
+        // program the kind opens with has one: an empty file, which the
+        // program opens as a blank document, as Word's does.
+        if kind.in_new_menu {
+            all &= write_string(&format!(r"{extension}\{id}\ShellNew"), Some("NullFile"), "");
         }
     }
 
-    // Tell the shell, or Explorer goes on showing the old icons and the old
-    // Open With list until it is restarted.
+    tell_the_shell();
+    all
+}
+
+/// Tells the shell the kinds have changed, or Explorer goes on showing the
+/// old icons and the old Open With list until it is restarted.
+fn tell_the_shell() {
     // SAFETY: the event takes no arguments in this form, which is what the two
     // null pointers say.
     unsafe {
         SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, core::ptr::null(), core::ptr::null());
     }
+}
+
+/// Whether nothing opens files with this extension yet: the person has not
+/// chosen, and the extension names no program identifier that exists — or
+/// names this program's.
+fn unclaimed(extension: &str, id: &str) -> bool {
+    if read_user_choice(extension).is_some() {
+        return false;
+    }
+    match read_class_string(extension, None) {
+        None => true,
+        Some(named) if named.is_empty() || named == id => true,
+        Some(named) => !class_exists(&named),
+    }
+}
+
+/// Whether the merged view of the classes has this key.
+fn class_exists(path: &str) -> bool {
+    let wide_path = wide(path);
+    let mut key: Handle = core::ptr::null_mut();
+    // SAFETY: a null-terminated name; the handle is closed straight away.
+    let opened =
+        unsafe { RegOpenKeyExW(HKEY_CLASSES_ROOT, wide_path.as_ptr(), 0, KEY_READ, &mut key) };
+    if opened != ERROR_SUCCESS {
+        return false;
+    }
+    // SAFETY: the handle came from the call above and is not used again.
+    unsafe { RegCloseKey(key) };
+    true
+}
+
+/// Takes back everything [`associate_kinds`] wrote, and the extension's
+/// own program where it was this one's; another program's entries, and
+/// the person's choices, are not touched.
+fn dissociate_kinds(kinds: &[crate::files::Kind], program: &Path) -> bool {
+    let executable =
+        program.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    let mut all = true;
+    for kind in kinds {
+        let id = program_id(kind.extension);
+        let extension = format!(r"Software\Classes\{}", kind.extension);
+        all &= delete_tree(&format!(r"Software\Classes\{id}"));
+        all &= delete_tree(&format!(r"{extension}\{id}"));
+        all &= delete_value(&format!(r"{extension}\OpenWithProgids"), Some(&id));
+        if read_user_string(&extension, None).as_deref() == Some(id.as_str()) {
+            all &= delete_value(&extension, None);
+        }
+    }
+    if !executable.is_empty() {
+        all &= delete_tree(&format!(r"Software\Classes\Applications\{executable}"));
+    }
+    all &= delete_tree(r"Software\WordProcessor\Capabilities");
+    // The program's own key goes too where nothing else is under it.
+    let own = wide(r"Software\WordProcessor");
+    // SAFETY: a null-terminated name. The call refuses a key with keys under
+    // it, which is the point: only an empty one is taken away.
+    unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, own.as_ptr()) };
+    all &= delete_value(r"Software\RegisteredApplications", Some("WordProcessor"));
+    tell_the_shell();
     all
 }
 
-pub(crate) fn opens_kind(kind: &crate::files::Kind) -> bool {
-    let Some(program) = program_path() else { return false };
+pub(crate) fn opens_kind(kind: &crate::files::Kind, program: &Path) -> bool {
+    let program = program.display().to_string();
     // What the person chose, if they have chosen; otherwise what the merged
     // view says the extension is.
     let chosen = read_user_choice(kind.extension);
@@ -2879,6 +3016,181 @@ pub(crate) fn choose_default_programs() -> bool {
     // there is no Settings to open it.
     open_in_shell("ms-settings:defaultapps")
         || open_in_shell("control.exe /name Microsoft.DefaultPrograms")
+}
+
+// --- Installing -------------------------------------------------------------
+
+#[link(name = "ole32")]
+extern "system" {
+    fn CoInitializeEx(reserved: *mut c_void, flags: u32) -> crate::com::HResult;
+    fn CoUninitialize();
+    fn CoCreateInstance(
+        class: *const crate::com::Guid,
+        outer: *mut c_void,
+        context: u32,
+        iid: *const crate::com::Guid,
+        out: *mut *mut c_void,
+    ) -> crate::com::HResult;
+}
+
+const COINIT_APARTMENTTHREADED: u32 = 0x2;
+const CLSCTX_INPROC_SERVER: u32 = 0x1;
+/// The shell's link object, and the two faces of it used here: the link, and
+/// the file it is saved as.
+const CLSID_SHELL_LINK: crate::com::Guid = crate::com::Guid::standard(0x0002_1401);
+const IID_ISHELL_LINK_W: crate::com::Guid = crate::com::Guid::standard(0x0002_14F9);
+const IID_IPERSIST_FILE: crate::com::Guid = crate::com::Guid::standard(0x0000_010B);
+
+/// Where the program's entry in Apps & features is kept.
+const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\WordProcessor";
+
+/// `%LOCALAPPDATA%\Programs\Word Processor`: where Windows' own installers
+/// put a program installed for one person, which needs no administrator.
+pub(crate) fn install_folder() -> Option<std::path::PathBuf> {
+    let local = std::env::var_os("LOCALAPPDATA").filter(|local| !local.is_empty())?;
+    Some(std::path::PathBuf::from(local).join("Programs").join(crate::install::PROGRAM_NAME))
+}
+
+/// The shortcut the Start menu lists the program by.
+fn start_menu_link() -> Option<std::path::PathBuf> {
+    let roaming = std::env::var_os("APPDATA").filter(|roaming| !roaming.is_empty())?;
+    Some(
+        std::path::PathBuf::from(roaming)
+            .join(r"Microsoft\Windows\Start Menu\Programs")
+            .join(format!("{}.lnk", crate::install::PROGRAM_NAME)),
+    )
+}
+
+pub(crate) fn register_installed(installed: &crate::install::Installed) -> bool {
+    let program = &installed.program;
+    let mut all = associate_kinds(crate::files::KINDS, crate::install::PROGRAM_NAME, program);
+    all &= start_menu_link().is_some_and(|link| make_shortcut(&link, program));
+
+    // The entry in Apps & features, which is what Windows calls to take the
+    // program off again.
+    let uninstaller = installed.uninstaller.display().to_string();
+    all &= write_string(UNINSTALL_KEY, Some("DisplayName"), crate::install::PROGRAM_NAME);
+    all &= write_string(UNINSTALL_KEY, Some("DisplayVersion"), &installed.version);
+    all &= write_string(UNINSTALL_KEY, Some("DisplayIcon"), &program.display().to_string());
+    all &= write_string(
+        UNINSTALL_KEY,
+        Some("InstallLocation"),
+        &installed.folder.display().to_string(),
+    );
+    all &= write_string(
+        UNINSTALL_KEY,
+        Some("UninstallString"),
+        &format!("\"{uninstaller}\" {}", crate::install::UNINSTALL_SWITCH),
+    );
+    all &= write_string(
+        UNINSTALL_KEY,
+        Some("QuietUninstallString"),
+        &format!(
+            "\"{uninstaller}\" {} {}",
+            crate::install::UNINSTALL_SWITCH,
+            crate::install::QUIET_SWITCH
+        ),
+    );
+    // There is nothing to change and nothing to repair: the list offers only
+    // Uninstall.
+    all &= write_number(UNINSTALL_KEY, "NoModify", 1);
+    all &= write_number(UNINSTALL_KEY, "NoRepair", 1);
+    let kilobytes = u32::try_from(installed.size.div_ceil(1024)).unwrap_or(u32::MAX);
+    all &= write_number(UNINSTALL_KEY, "EstimatedSize", kilobytes);
+    all
+}
+
+pub(crate) fn unregister_installed(installed: &crate::install::Installed) -> bool {
+    let mut all = dissociate_kinds(crate::files::KINDS, &installed.program);
+    if let Some(link) = start_menu_link() {
+        all &= match std::fs::remove_file(link) {
+            Ok(()) => true,
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        };
+    }
+    all &= delete_tree(UNINSTALL_KEY);
+    all
+}
+
+/// Saves a shortcut to the program where the Start menu looks, through the
+/// shell's own link object: the format of a `.lnk` is the shell's, and the
+/// shell writing it is the one sure way it reads it back.
+fn make_shortcut(link: &Path, program: &Path) -> bool {
+    type SetText = unsafe extern "system" fn(*mut c_void, *const u16) -> crate::com::HResult;
+    type Query = unsafe extern "system" fn(
+        *mut c_void,
+        *const crate::com::Guid,
+        *mut *mut c_void,
+    ) -> crate::com::HResult;
+    type Save = unsafe extern "system" fn(*mut c_void, *const u16, i32) -> crate::com::HResult;
+    type Release = unsafe extern "system" fn(*mut c_void) -> u32;
+
+    /// The function at a place in an object's table.
+    ///
+    /// # Safety
+    /// `object` must be a live COM object whose table has that many entries.
+    unsafe fn method(object: *mut c_void, index: usize) -> *const c_void {
+        let table = *object.cast::<*const *const c_void>();
+        *table.add(index)
+    }
+
+    if let Some(folder) = link.parent() {
+        let _ = std::fs::create_dir_all(folder);
+    }
+    // SAFETY: the reserved argument must be null. What it answers decides
+    // whether this call is the one that must be balanced below.
+    let initialised = unsafe { CoInitializeEx(core::ptr::null_mut(), COINIT_APARTMENTTHREADED) };
+    let mut shell_link: *mut c_void = core::ptr::null_mut();
+    // SAFETY: the two GUIDs are statics, and the pointer is written only on
+    // success.
+    let made = unsafe {
+        CoCreateInstance(
+            &CLSID_SHELL_LINK,
+            core::ptr::null_mut(),
+            CLSCTX_INPROC_SERVER,
+            &IID_ISHELL_LINK_W,
+            &mut shell_link,
+        )
+    };
+    let mut saved = false;
+    if made >= 0 && !shell_link.is_null() {
+        let target = wide(&program.display().to_string());
+        let folder = wide(&program.parent().map_or_else(String::new, |p| p.display().to_string()));
+        let description = wide("Writes and reads Word documents");
+        let file_name = wide(&link.display().to_string());
+        // SAFETY: the object is a live IShellLinkW, whose table is IUnknown's
+        // three and then, in order, GetPath, GetIDList, SetIDList,
+        // GetDescription, SetDescription (7), GetWorkingDirectory,
+        // SetWorkingDirectory (9), … and SetPath (20). Every string is
+        // null-terminated and outlives the call, which copies it.
+        // IPersistFile's is IUnknown's three, GetClassID, IsDirty, Load and
+        // Save (6). Each interface taken is released once.
+        unsafe {
+            let set_path = core::mem::transmute::<*const c_void, SetText>(method(shell_link, 20));
+            let set_description =
+                core::mem::transmute::<*const c_void, SetText>(method(shell_link, 7));
+            let set_folder = core::mem::transmute::<*const c_void, SetText>(method(shell_link, 9));
+            let query = core::mem::transmute::<*const c_void, Query>(method(shell_link, 0));
+            let release = core::mem::transmute::<*const c_void, Release>(method(shell_link, 2));
+            let mut described = set_path(shell_link, target.as_ptr()) >= 0;
+            described &= set_description(shell_link, description.as_ptr()) >= 0;
+            described &= set_folder(shell_link, folder.as_ptr()) >= 0;
+            let mut file: *mut c_void = core::ptr::null_mut();
+            if described && query(shell_link, &IID_IPERSIST_FILE, &mut file) >= 0 && !file.is_null()
+            {
+                let save = core::mem::transmute::<*const c_void, Save>(method(file, 6));
+                let release_file = core::mem::transmute::<*const c_void, Release>(method(file, 2));
+                saved = save(file, file_name.as_ptr(), 1) >= 0;
+                release_file(file);
+            }
+            release(shell_link);
+        }
+    }
+    if initialised == crate::com::S_OK || initialised == crate::com::S_FALSE {
+        // SAFETY: balances the successful call above, on the same thread.
+        unsafe { CoUninitialize() };
+    }
+    saved
 }
 
 // --- What the machine says about numbers, lengths, dates and paper --------

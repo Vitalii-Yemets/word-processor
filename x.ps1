@@ -28,13 +28,16 @@ switch ($Cmd) {
     'vba'      { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'vba') + $Rest) }
     'shell'    { docker compose run --rm dev bash }
     'win' {
-        # Cross-compile a Windows .exe and copy it to ./dist, which is bind-mounted.
+        # Cross-compile the Windows .exes and copy them to ./dist, which is
+        # bind-mounted; then the installer, which carries them.
         Invoke-InContainer @('cargo', 'build', '--release', '--target', 'x86_64-pc-windows-gnu')
         Invoke-InContainer @('bash', '-lc', 'mkdir -p /work/dist && cp -v /work/target/x86_64-pc-windows-gnu/release/*.exe /work/dist/ 2>/dev/null || echo "(no binaries yet)"')
+        Invoke-InContainer @('bash', 'tools/pack-installer.sh', 'win')
     }
     'linux' {
         Invoke-InContainer @('cargo', 'build', '--release')
         Invoke-InContainer @('bash', '-lc', 'mkdir -p /work/dist && find /work/target/release -maxdepth 1 -type f -executable -exec cp -v {} /work/dist/ \; 2>/dev/null || true')
+        Invoke-InContainer @('bash', 'tools/pack-installer.sh', 'linux')
     }
     default {
         Write-Host @"
@@ -51,8 +54,8 @@ Usage: .\x.ps1 <command>
   fidelity   score the pages drawn for them against Word's own
   conformance  run the Unicode test suites in .\unicode against the engine
   vba        read every macro in .\corpus and write it back out
-  win        release build of the Windows .exe -> ./dist
-  linux      release build for Linux -> ./dist
+  win        release build of the Windows .exe and its installer -> ./dist
+  linux      release build for Linux and its installer -> ./dist
   shell      interactive bash inside the container
 "@
     }

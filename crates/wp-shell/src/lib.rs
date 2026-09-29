@@ -807,6 +807,19 @@ pub mod dialog {
             eprintln!("error: {message}");
         }
     }
+
+    /// Tells the user something that went as it should, with nothing to
+    /// answer but OK.
+    pub fn show_message(message: &str) {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::show_message(message);
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            println!("{message}");
+        }
+    }
 }
 
 /// Putting a document on paper.
@@ -1331,7 +1344,112 @@ pub mod files {
         /// unwelcome. Those kinds are registered so that Open With offers
         /// this program; the default is asked for only for documents.
         pub becomes_default: bool,
+        /// Whether the kind is a template, which the desktop's own verb makes
+        /// a new document from rather than opens: Word's New on a `.dotx`,
+        /// with Open beside it for changing the template itself.
+        pub is_template: bool,
+        /// Whether the desktop's New menu offers an empty one — Explorer's
+        /// New ▸ Word Document, which makes a file of no bytes that the
+        /// program then opens as a blank document.
+        pub in_new_menu: bool,
     }
+
+    /// The kinds this program tells the desktop it opens: the ones the
+    /// Options dialog's Make Default registers, and the installer too.
+    ///
+    /// Word registers every kind it can read, which is what puts it in Open
+    /// With for all of them, and asks to be the one that opens the documents
+    /// among them. A plain text file and a web page are not documents in
+    /// that sense: the machine already has a program for each, and taking
+    /// those would be taking something nobody asked to give.
+    pub const KINDS: &[Kind] = &[
+        Kind {
+            extension: ".docx",
+            description: "Word Document",
+            media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            becomes_default: true,
+            is_template: false,
+            in_new_menu: true,
+        },
+        Kind {
+            extension: ".docm",
+            description: "Word Macro-Enabled Document",
+            media_type: "application/vnd.ms-word.document.macroEnabled.12",
+            becomes_default: true,
+            is_template: false,
+            in_new_menu: false,
+        },
+        Kind {
+            extension: ".dotx",
+            description: "Word Template",
+            media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+            becomes_default: true,
+            is_template: true,
+            in_new_menu: false,
+        },
+        Kind {
+            extension: ".dotm",
+            description: "Word Macro-Enabled Template",
+            media_type: "application/vnd.ms-word.template.macroEnabled.12",
+            becomes_default: true,
+            is_template: true,
+            in_new_menu: false,
+        },
+        Kind {
+            extension: ".doc",
+            description: "Word 97-2003 Document",
+            media_type: "application/msword",
+            becomes_default: true,
+            is_template: false,
+            in_new_menu: false,
+        },
+        Kind {
+            extension: ".rtf",
+            description: "Rich Text Format",
+            media_type: "application/rtf",
+            becomes_default: true,
+            is_template: false,
+            in_new_menu: false,
+        },
+        Kind {
+            extension: ".odt",
+            description: "OpenDocument Text",
+            media_type: "application/vnd.oasis.opendocument.text",
+            becomes_default: true,
+            is_template: false,
+            in_new_menu: false,
+        },
+        Kind {
+            extension: ".txt",
+            description: "Text Document",
+            media_type: "text/plain",
+            becomes_default: false,
+            is_template: false,
+            in_new_menu: false,
+        },
+        Kind {
+            extension: ".htm",
+            description: "Web Page",
+            media_type: "text/html",
+            becomes_default: false,
+            is_template: false,
+            in_new_menu: false,
+        },
+        Kind {
+            extension: ".html",
+            description: "Web Page",
+            media_type: "text/html",
+            becomes_default: false,
+            is_template: false,
+            in_new_menu: false,
+        },
+    ];
+
+    /// The switch that opens a file as File ▸ Open does rather than as a
+    /// double-click does: the one difference is a template, which a
+    /// double-click makes a new document from and this opens for changing.
+    /// The desktop's Open verb on a template carries it.
+    pub const OPEN_SWITCH: &str = "--open";
 
     /// Puts a document on the desktop's own list of documents opened lately.
     ///
@@ -1362,7 +1480,8 @@ pub mod files {
     pub fn associate(kinds: &[Kind], program_name: &str) -> bool {
         #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::platform::associate_kinds(kinds, program_name)
+            let Ok(program) = std::env::current_exe() else { return false };
+            crate::platform::associate_kinds(kinds, program_name, &program)
         }
         #[cfg(not(any(windows, target_os = "linux")))]
         {
@@ -1376,7 +1495,7 @@ pub mod files {
     pub fn opens(kind: &Kind) -> bool {
         #[cfg(any(windows, target_os = "linux"))]
         {
-            crate::platform::opens_kind(kind)
+            std::env::current_exe().is_ok_and(|program| crate::platform::opens_kind(kind, &program))
         }
         #[cfg(not(any(windows, target_os = "linux")))]
         {
@@ -1404,6 +1523,107 @@ pub mod files {
         }
         #[cfg(not(any(windows, target_os = "linux")))]
         {
+            false
+        }
+    }
+}
+
+/// What an installer tells the desktop besides copying the files: which
+/// kinds of file the program opens, where the desktop lists it, and how it
+/// is taken off again.
+///
+/// # For one person, without an administrator
+///
+/// The program goes where the desktop keeps programs a person installed for
+/// themselves — on Windows `%LOCALAPPDATA%\Programs`, where Windows' own
+/// per-user installers put them, on Linux the data directory — and
+/// everything registered is under that person's own keys and files. Nothing
+/// asks for an administrator, and nothing another person on the machine has
+/// is touched.
+pub mod install {
+    use std::path::{Path, PathBuf};
+
+    /// What the program is called wherever the desktop lists it.
+    pub const PROGRAM_NAME: &str = "Word Processor";
+
+    /// What the uninstaller is started with, by the list of installed
+    /// programs and by a person alike.
+    pub const UNINSTALL_SWITCH: &str = "--uninstall";
+
+    /// Said as well, the installer or the uninstaller asks nothing and says
+    /// nothing, which is what the list's quiet uninstall runs.
+    pub const QUIET_SWITCH: &str = "--quiet";
+
+    /// A program installed, as the desktop is told about it.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Installed {
+        /// The folder the files are in.
+        pub folder: PathBuf,
+        /// The windowed program, which every kind opens with.
+        pub program: PathBuf,
+        /// What takes it all off again.
+        pub uninstaller: PathBuf,
+        /// The version, as the list of installed programs shows it.
+        pub version: String,
+        /// How many bytes the files take, which the list shows too.
+        pub size: u64,
+    }
+
+    /// Where a program installed for one person goes, or `None` where the
+    /// desktop does not say.
+    #[must_use]
+    pub fn folder() -> Option<PathBuf> {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::install_folder()
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            None
+        }
+    }
+
+    /// Tells the desktop about an installed program: every kind in
+    /// [`crate::files::KINDS`] opening with it — a template's double-click
+    /// making a new document, with Open beside it — and its place in the
+    /// desktop's menu; on Windows its entry in Apps & features as well.
+    /// Returns whether all of it was taken.
+    pub fn register(installed: &Installed) -> bool {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::register_installed(installed)
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = installed;
+            false
+        }
+    }
+
+    /// Takes back everything [`register`] wrote, leaving what other programs
+    /// wrote and what the person chose. Returns whether all of it went.
+    pub fn unregister(installed: &Installed) -> bool {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::unregister_installed(installed)
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = installed;
+            false
+        }
+    }
+
+    /// Whether the desktop now opens the kind with the installed program.
+    #[must_use]
+    pub fn opens(kind: &crate::files::Kind, program: &Path) -> bool {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform::opens_kind(kind, program)
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = (kind, program);
             false
         }
     }

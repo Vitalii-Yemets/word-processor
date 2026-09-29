@@ -161,6 +161,23 @@ pub(crate) fn ask_ok_cancel(message: &str) -> bool {
     ask(&arguments).is_some_and(|(yes, _)| yes)
 }
 
+/// Tells the user something that went as it should.
+pub(crate) fn show_message(message: &str) {
+    let Some(program) = program() else {
+        println!("{message}");
+        return;
+    };
+    let arguments: Vec<String> = match program {
+        "zenity" => vec![
+            "--info".to_owned(),
+            "--title=Word Processor".to_owned(),
+            format!("--text={message}"),
+        ],
+        _ => vec!["--msgbox".to_owned(), message.to_owned()],
+    };
+    let _ = ask(&arguments);
+}
+
 /// Tells the user something went wrong.
 pub(crate) fn show_error(message: &str) {
     let Some(program) = program() else {

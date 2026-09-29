@@ -191,6 +191,27 @@ fn with_bookmark(existing: &str, uri: &str, bookmark: &str) -> String {
     out
 }
 
+/// A path as it can stand in a desktop entry's `Exec` line: as it is where
+/// it needs nothing, and otherwise in double quotes with the four characters
+/// the specification reserves inside them escaped.
+fn exec_quoted(program: &Path) -> String {
+    let text = program.display().to_string();
+    let plain = text.chars().all(|c| c.is_ascii_alphanumeric() || "/._-+,:@".contains(c));
+    if plain {
+        return text;
+    }
+    let mut quoted = String::from("\"");
+    for c in text.chars() {
+        if matches!(c, '"' | '`' | '$' | '\\') {
+            quoted.push('\\');
+        }
+        quoted.push(c);
+    }
+    quoted.push('"');
+    // A percent sign is a field code anywhere on the line, so it is doubled.
+    quoted.replace('%', "%%")
+}
+
 /// The desktop entry this program is known by, as its text.
 fn desktop_entry(program: &Path, program_name: &str, kinds: &[Kind]) -> String {
     let types: Vec<&str> = kinds.iter().map(|kind| kind.media_type).collect();
@@ -206,19 +227,18 @@ fn desktop_entry(program: &Path, program_name: &str, kinds: &[Kind]) -> String {
             "MimeType={types};\n"
         ),
         name = program_name,
-        program = program.display(),
+        program = exec_quoted(program),
         types = types.join(";")
     )
 }
 
-pub(crate) fn associate_kinds(kinds: &[Kind], program_name: &str) -> bool {
+pub(crate) fn associate_kinds(kinds: &[Kind], program_name: &str, program: &Path) -> bool {
     let (Some(data), Some(config)) = (data_home(), config_home()) else { return false };
-    let Ok(program) = std::env::current_exe() else { return false };
     let applications = data.join("applications");
     if std::fs::create_dir_all(&applications).is_err() {
         return false;
     }
-    let entry = desktop_entry(&program, program_name, kinds);
+    let entry = desktop_entry(program, program_name, kinds);
     if std::fs::write(applications.join(ENTRY), entry).is_err() {
         return false;
     }
@@ -235,21 +255,45 @@ pub(crate) fn associate_kinds(kinds: &[Kind], program_name: &str) -> bool {
     if std::fs::write(&file, written).is_err() {
         return false;
     }
-
-    // The desktop keeps an index of which entry takes which kind. Where the
-    // tool to rebuild it is installed the index is rebuilt now; where it is
-    // not, the desktop rebuilds it itself when it next looks.
-    let _ = std::process::Command::new("update-desktop-database")
-        .arg(&applications)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+    rebuild_index(&applications);
     true
 }
 
-/// `mimeapps.list` with this program named for these kinds, leaving every
-/// other line of it as it was.
-fn with_associations(existing: &str, types: &[&str], claimed: &[&str]) -> String {
+/// Takes back everything [`associate_kinds`] wrote: the desktop entry, and
+/// this program's name wherever `mimeapps.list` gives it — the rest of the
+/// list as it was, and a kind that had another program before this one
+/// took it going back to that one.
+pub(crate) fn dissociate_kinds() -> bool {
+    let (Some(data), Some(config)) = (data_home(), config_home()) else { return false };
+    let applications = data.join("applications");
+    let entry = applications.join(ENTRY);
+    let mut all = match std::fs::remove_file(&entry) {
+        Ok(()) => true,
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+    };
+    let file = config.join("mimeapps.list");
+    if let Ok(existing) = std::fs::read_to_string(&file) {
+        all &= std::fs::write(&file, without_associations(&existing)).is_ok();
+    }
+    rebuild_index(&applications);
+    all
+}
+
+/// The desktop keeps an index of which entry takes which kind. Where the
+/// tool to rebuild it is installed the index is rebuilt now; where it is
+/// not, the desktop rebuilds it itself when it next looks.
+fn rebuild_index(applications: &Path) {
+    let _ = std::process::Command::new("update-desktop-database")
+        .arg(applications)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// `mimeapps.list` as its sections, each a heading and its lines, in order.
+/// Anything before the first heading belongs to no section and is kept at
+/// the top under an empty heading.
+fn sections_of(existing: &str) -> Vec<(String, Vec<String>)> {
     let mut sections: Vec<(String, Vec<String>)> = Vec::new();
     let mut current = String::new();
     for line in existing.lines() {
@@ -260,8 +304,6 @@ fn with_associations(existing: &str, types: &[&str], claimed: &[&str]) -> String
             continue;
         }
         if current.is_empty() {
-            // Anything before the first heading belongs to no section; keep
-            // it at the top under a heading of its own name.
             sections.push((String::new(), vec![line.to_owned()]));
             continue;
         }
@@ -269,22 +311,11 @@ fn with_associations(existing: &str, types: &[&str], claimed: &[&str]) -> String
             lines.push(line.to_owned());
         }
     }
-    for (heading, wanted) in [("[Default Applications]", claimed), ("[Added Associations]", types)]
-    {
-        if wanted.is_empty() {
-            continue;
-        }
-        if !sections.iter().any(|(name, _)| name == heading) {
-            sections.push((heading.to_owned(), Vec::new()));
-        }
-        let Some((_, lines)) = sections.iter_mut().find(|(name, _)| name == heading) else {
-            continue;
-        };
-        for media_type in wanted {
-            lines.retain(|line| !line.trim_start().starts_with(&format!("{media_type}=")));
-            lines.push(format!("{media_type}={ENTRY}"));
-        }
-    }
+    sections
+}
+
+/// The sections written out again, a blank line after each.
+fn joined(sections: Vec<(String, Vec<String>)>) -> String {
     let mut out = String::new();
     for (heading, lines) in sections {
         if !heading.is_empty() {
@@ -303,8 +334,85 @@ fn with_associations(existing: &str, types: &[&str], claimed: &[&str]) -> String
     out
 }
 
-pub(crate) fn opens_kind(kind: &Kind) -> bool {
-    let Some(config) = config_home() else { return false };
+/// The entries a line of the list names, with this program's taken out.
+fn others_in(entries: &str) -> Vec<&str> {
+    entries.split(';').map(str::trim).filter(|entry| !entry.is_empty() && *entry != ENTRY).collect()
+}
+
+/// `mimeapps.list` with this program named for these kinds, leaving every
+/// other line of it as it was.
+///
+/// A line is a list, and the other programs on it stay on it: this one goes
+/// first where it is to be the one that opens the kind, so that the others
+/// are what the desktop falls back to, and last where it is only one that
+/// can, so that the order the person had is kept.
+fn with_associations(existing: &str, types: &[&str], claimed: &[&str]) -> String {
+    let mut sections = sections_of(existing);
+    for (heading, wanted, first) in
+        [("[Default Applications]", claimed, true), ("[Added Associations]", types, false)]
+    {
+        if wanted.is_empty() {
+            continue;
+        }
+        if !sections.iter().any(|(name, _)| name == heading) {
+            sections.push((heading.to_owned(), Vec::new()));
+        }
+        let Some((_, lines)) = sections.iter_mut().find(|(name, _)| name == heading) else {
+            continue;
+        };
+        for media_type in wanted {
+            let found = lines.iter().position(|line| {
+                line.split_once('=').is_some_and(|(name, _)| name.trim() == *media_type)
+            });
+            let Some(at) = found else {
+                lines.push(format!("{media_type}={ENTRY};"));
+                continue;
+            };
+            let entries = lines[at].split_once('=').map_or("", |(_, entries)| entries).to_owned();
+            let others = others_in(&entries);
+            let listed = if first {
+                std::iter::once(ENTRY).chain(others).collect::<Vec<_>>()
+            } else {
+                others.into_iter().chain(std::iter::once(ENTRY)).collect()
+            };
+            lines[at] = format!("{media_type}={};", listed.join(";"));
+        }
+    }
+    joined(sections)
+}
+
+/// `mimeapps.list` with this program's name taken off every line, and a
+/// line that named no one else taken out.
+fn without_associations(existing: &str) -> String {
+    let mut sections = sections_of(existing);
+    for (heading, lines) in &mut sections {
+        if heading.is_empty() {
+            continue;
+        }
+        lines.retain_mut(|line| {
+            let Some((name, entries)) = line.split_once('=') else { return true };
+            if !entries.split(';').any(|entry| entry.trim() == ENTRY) {
+                return true;
+            }
+            let others = others_in(entries);
+            if others.is_empty() {
+                return false;
+            }
+            *line = format!("{}={};", name.trim(), others.join(";"));
+            true
+        });
+    }
+    joined(sections)
+}
+
+/// Whether the list makes this program's entry the one for the kind. The
+/// program is named by the entry rather than by its path, and an entry that
+/// is not there any more opens nothing whatever the list says.
+pub(crate) fn opens_kind(kind: &Kind, _program: &Path) -> bool {
+    let (Some(data), Some(config)) = (data_home(), config_home()) else { return false };
+    if !data.join("applications").join(ENTRY).is_file() {
+        return false;
+    }
     let Ok(text) = std::fs::read_to_string(config.join("mimeapps.list")) else { return false };
     let mut inside = false;
     for line in text.lines() {
@@ -332,6 +440,24 @@ pub(crate) fn choose_default_programs() -> bool {
     // A Linux desktop has no one page for this, and the program has already
     // made itself the default by writing the list. Nothing to open.
     false
+}
+
+/// `$XDG_DATA_HOME/word-processor`: a program installed for one person
+/// keeps its files in that person's data directory, beside the desktop
+/// entry that names it.
+pub(crate) fn install_folder() -> Option<PathBuf> {
+    data_home().map(|data| data.join("word-processor"))
+}
+
+/// The desktop entry is the whole of it on Linux: it is what the desktop's
+/// menu lists the program by as well as what the kinds open with, and there
+/// is no list of installed programs to be put on.
+pub(crate) fn register_installed(installed: &crate::install::Installed) -> bool {
+    associate_kinds(crate::files::KINDS, crate::install::PROGRAM_NAME, &installed.program)
+}
+
+pub(crate) fn unregister_installed(_installed: &crate::install::Installed) -> bool {
+    dissociate_kinds()
 }
 
 #[cfg(test)]
@@ -422,16 +548,90 @@ mod tests {
                 description: "Word Document",
                 media_type: "application/x-a",
                 becomes_default: true,
+                is_template: false,
+                in_new_menu: false,
             },
             Kind {
                 extension: ".rtf",
                 description: "Rich Text",
                 media_type: "text/rtf",
                 becomes_default: true,
+                is_template: false,
+                in_new_menu: false,
             },
         ];
         let entry = desktop_entry(Path::new("/usr/bin/word-processor"), "Word Processor", &kinds);
         assert!(entry.contains("Exec=/usr/bin/word-processor %f"));
         assert!(entry.contains("MimeType=application/x-a;text/rtf;"));
+    }
+
+    #[test]
+    fn a_program_in_a_folder_with_a_space_is_quoted_on_the_exec_line() {
+        assert_eq!(
+            exec_quoted(Path::new("/home/Ann Lee/.local/share/word-processor/word-processor")),
+            "\"/home/Ann Lee/.local/share/word-processor/word-processor\""
+        );
+        assert_eq!(exec_quoted(Path::new("/opt/a$b\\c")), "\"/opt/a\\$b\\\\c\"");
+        assert_eq!(exec_quoted(Path::new("/opt/100%")), "\"/opt/100%%\"");
+    }
+
+    #[test]
+    fn the_other_programs_on_a_line_stay_on_it() {
+        let existing = concat!(
+            "[Default Applications]\n",
+            "application/msword=other.desktop;\n",
+            "\n",
+            "[Added Associations]\n",
+            "text/plain=editor.desktop;viewer.desktop;\n"
+        );
+        let written = with_associations(
+            existing,
+            &["text/plain", "application/msword"],
+            &["application/msword"],
+        );
+        assert!(
+            written.contains("application/msword=word-processor.desktop;other.desktop;"),
+            "the kind it takes is this one's first, and the other one's after it: {written}"
+        );
+        assert!(
+            written.contains("text/plain=editor.desktop;viewer.desktop;word-processor.desktop;"),
+            "and a kind it only can open keeps the order it had, this one last: {written}"
+        );
+        // Asked again, nothing is listed twice.
+        let again = with_associations(
+            &written,
+            &["text/plain", "application/msword"],
+            &["application/msword"],
+        );
+        assert_eq!(again.matches("word-processor.desktop").count(), 3, "{again}");
+    }
+
+    #[test]
+    fn taking_the_program_off_gives_each_kind_back() {
+        let before = concat!(
+            "[Default Applications]\n",
+            "application/msword=other.desktop;\n",
+            "image/png=viewer.desktop\n",
+            "\n",
+            "[Added Associations]\n",
+            "text/plain=editor.desktop;\n"
+        );
+        let with = with_associations(
+            before,
+            &["text/plain", "application/msword", "application/rtf"],
+            &["application/msword", "application/rtf"],
+        );
+        let without = without_associations(&with);
+        assert!(!without.contains("word-processor.desktop"), "{without}");
+        assert!(
+            without.contains("application/msword=other.desktop;"),
+            "the kind goes back to the program that had it: {without}"
+        );
+        assert!(without.contains("image/png=viewer.desktop"), "{without}");
+        assert!(without.contains("text/plain=editor.desktop;"), "{without}");
+        assert!(
+            !without.contains("application/rtf"),
+            "and a kind only this program was named for is not named at all: {without}"
+        );
     }
 }

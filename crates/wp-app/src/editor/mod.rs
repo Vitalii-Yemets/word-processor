@@ -44,6 +44,7 @@ pub use files::{
     is_doc_path, is_odt_path, is_pdf_path, is_rtf_path, is_template_path, is_web_path,
 };
 mod templates;
+pub(crate) use templates::with_template_styles;
 mod textfiles;
 pub mod trust;
 pub use textfiles::is_text_path;

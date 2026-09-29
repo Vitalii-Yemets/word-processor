@@ -48,7 +48,10 @@ fn main() -> std::process::ExitCode {
     // that has no display.
     let outcome = match arguments.first().map(String::as_str) {
         Some("--picture") => picture(&arguments[1..]),
-        _ => start(arguments.first().map(String::as_str)),
+        // The desktop's Open on a template, as against its New: the file
+        // opened as File ▸ Open opens it.
+        Some(wp_shell::files::OPEN_SWITCH) => start(arguments.get(1).map(String::as_str), true),
+        _ => start(arguments.first().map(String::as_str), false),
     };
 
     match outcome {
@@ -126,7 +129,7 @@ fn font_library() -> Result<&'static FontLibrary, String> {
     Ok(library)
 }
 
-fn start(path: Option<&str>) -> Result<(), String> {
+fn start(path: Option<&str>, as_opened: bool) -> Result<(), String> {
     if !wp_shell::is_supported() {
         return Err(
             "this build has no window support; Windows, and Linux under X11 or Wayland, are the desktops it runs on".to_owned()
@@ -134,28 +137,32 @@ fn start(path: Option<&str>) -> Result<(), String> {
     }
 
     let library = font_library()?;
+    // What is read once the window is up, the way the Open command reads it,
+    // with a blank document standing in until then. A text file has no
+    // package to open and is read through the same dialog the Open command
+    // uses; a page likewise; a PDF too, since Word says what it is about to
+    // do to one first, and the message needs a window to belong to. A file
+    // of no bytes is what the desktop's New menu makes, and is a blank
+    // document that saves to it. And anything the desktop's Open asked for
+    // on a template, which File ▸ Open opens as the template itself.
+    let later = path.filter(|path| {
+        let path = Path::new(path);
+        as_opened
+            || editor::is_text_path(path)
+            || editor::is_web_path(path)
+            || editor::is_pdf_path(path)
+            || std::fs::metadata(path).is_ok_and(|metadata| metadata.len() == 0)
+    });
     let (document, file, title) = match path {
+        Some(path) if later.is_some() => {
+            let document = Document::create(&wp_docx::model::Body::default())
+                .map_err(|error| format!("cannot make a document: {error}"))?;
+            (document, None, file_name(path))
+        }
         Some(path) => {
             let bytes =
                 std::fs::read(path).map_err(|error| format!("cannot read {path}: {error}"))?;
-            // A template given to the program is a document to make from it,
-            // which is what Word does with one double-clicked: the template
-            // stays as it was, and the new document is untitled.
-            if editor::is_text_path(Path::new(path)) {
-                // A text file has no package to open: it is read once the
-                // window is up, through the same dialog the Open command uses.
-                let document = Document::create(&wp_docx::model::Body::default())
-                    .map_err(|error| format!("cannot make a document: {error}"))?;
-                (document, None, file_name(path))
-            } else if editor::is_web_path(Path::new(path)) || editor::is_pdf_path(Path::new(path)) {
-                // A page has no package to open: it is read once the window
-                // is up, the way the Open command reads it. A PDF likewise,
-                // since Word says what it is about to do to one first, and
-                // the message needs a window to belong to.
-                let document = Document::create(&wp_docx::model::Body::default())
-                    .map_err(|error| format!("cannot make a document: {error}"))?;
-                (document, None, file_name(path))
-            } else if editor::is_doc_path(Path::new(path)) {
+            if editor::is_doc_path(Path::new(path)) {
                 let document =
                     wp_doc::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))?;
                 (document, Some(PathBuf::from(path)), file_name(path))
@@ -168,11 +175,17 @@ fn start(path: Option<&str>) -> Result<(), String> {
                     wp_odt::open(&bytes).map_err(|error| format!("cannot open {path}: {error}"))?;
                 (document, Some(PathBuf::from(path)), file_name(path))
             } else if editor::is_template_path(Path::new(path)) {
+                // A template given to the program is a document to make from
+                // it, which is what Word does with one double-clicked: the
+                // template stays as it was, and the new document is untitled.
                 let document = Document::from_template(&bytes, Some(path))
                     .map_err(|error| format!("cannot open {path}: {error}"))?;
                 (document, None, "Document".to_owned())
             } else {
+                // A document that says so takes its template's styles as it
+                // opens, however it is opened.
                 let document = Document::open(&bytes)
+                    .map(editor::with_template_styles)
                     .map_err(|error| format!("cannot open {path}: {error}"))?;
                 (document, Some(PathBuf::from(path)), file_name(path))
             }
@@ -190,11 +203,7 @@ fn start(path: Option<&str>) -> Result<(), String> {
     // Anything a run that did not end left behind, offered before the person
     // has touched anything — which is the only moment at which it is news.
     editor.show_recovered(editor::autorecover::found());
-    if let Some(path) = path.filter(|path| {
-        editor::is_text_path(Path::new(path))
-            || editor::is_web_path(Path::new(path))
-            || editor::is_pdf_path(Path::new(path))
-    }) {
+    if let Some(path) = later {
         editor.open_path(Path::new(path));
     }
     // The window comes up the way it was left rather than the way it starts.

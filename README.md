@@ -105,7 +105,16 @@ The windowed application:
 ```powershell
 .\dist\word-processor.exe                 # open with a sample document
 .\dist\word-processor.exe mine.docx       # open a file
+.\dist\word-processor-setup.exe           # install it, so that documents open in it
 ```
+
+The installer puts the program where Windows keeps programs a person installs
+for themselves, `%LOCALAPPDATA%\Programs\Word Processor`, and needs no
+administrator. It registers the Word documents and templates — double-clicking
+a template makes a new document from it, as Word's does — adds the program to
+the Start menu, and puts it in Settings ▸ Apps, where Uninstall takes it all
+off again. On Linux `./dist/word-processor-setup` does the same in
+`~/.local/share/word-processor`, with a desktop entry.
 
 Click in the text to put the caret there, then type. The ribbon along the top is
 where the commands are; Alt puts a letter over each of its tabs and lets it be

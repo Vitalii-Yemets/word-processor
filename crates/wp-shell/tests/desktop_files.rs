@@ -22,12 +22,16 @@ const KINDS: &[Kind] = &[
         description: "Word Document",
         media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         becomes_default: true,
+        is_template: false,
+        in_new_menu: false,
     },
     Kind {
         extension: ".txt",
         description: "Text Document",
         media_type: "text/plain",
         becomes_default: false,
+        is_template: false,
+        in_new_menu: false,
     },
 ];
 

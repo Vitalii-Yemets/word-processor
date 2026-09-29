@@ -27,6 +27,7 @@ members = [
     "crates/wp-svg",
     "crates/wp-raster",
     "crates/wp-rsa",
+    "crates/wp-setup",
     "crates/wp-shell",
     "crates/wp-sign",
     "crates/wp-app",
