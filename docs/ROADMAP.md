@@ -6820,10 +6820,36 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   there being nowhere here a style is chosen by typing its name. The
   German names were checked against another's translation, not against a
   German Word.
-- [ ] **I5. The letters Alt puts over the ribbon, in the language.** Word's
+- [x] **I5. The letters Alt puts over the ribbon, in the language.** Word's
   key tips are the language's; these are English whatever is loaded, so a
   German pressing Alt sees letters that do not match the words under them.
   Named in **I1**.
+  *Done:* in any language but English, the letter over a tab and over a
+  command is worked out from the words under it as that language has them
+  (`crates/wp-app/src/editor/keytips.rs`) — the first letter of a word
+  nothing else has, then a later one, then a digit — so a German sees D
+  over Datei and I over Einfügen, not F and N. The tabs are lettered over
+  every tab in one fixed order, so a tab's letter does not move when the
+  table tabs come and go. English keeps Word's own letters over the tabs.
+  A command's letter comes from the words on its button where it has any,
+  which it had been taking from the button's tip, so that the letter is
+  in the word the eye is on; and a squeezed group's button, and a style's
+  tile, are lettered from the group's name and the style's, where they had
+  been given digits for want of a word. A screen reader is told the same
+  letters. On the way, the navigation pane's own sentences — no headings,
+  no pages, nothing found, Page 3 — were drawn through the catalogue but
+  never listed in it, so a German read them in English; they are now.
+  *Proven by:* in English, H and N over Home and Insert; in German, every
+  tab's letter and every command's on the Insert tab in the German word
+  under it and no two alike, Einfügen's not N, and that letter opening it;
+  the German ribbon with its letters, looked at.
+  *Not done, and named here:* Word's own German letters. Microsoft's German
+  help gives the English letters for the tabs — Start on H — where a
+  German site gives others — Start on R — and neither lists them all, so
+  there was nothing sure to copy; these are worked out, as the commands'
+  always were. A letter only the language's keyboard has — Ü — is not
+  offered, since the shells report a letter key by the Latin letter on it.
+  The navigation pane's four tabs are too narrow for their German names.
 - [ ] **I6. A window that really reads right to left.** **I2** turns the
   window and proves it with a mirrored pseudo-language; what is missing is a
   real Arabic or Hebrew catalogue, which is a translation rather than a
