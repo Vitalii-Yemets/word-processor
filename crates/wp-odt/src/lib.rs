@@ -10,21 +10,41 @@
 //! # What is here
 //!
 //! [`open`] reads a package into a document: the text with its paragraph
-//! and character formatting resolved through the styles, headings, lists,
-//! tables, links, pictures, the page and the title. [`save`] writes one
-//! that LibreOffice and Word read back. Not here: headers and footers,
-//! footnotes, comments, tracked changes, sections, frames other than
-//! pictures, and fields — named in the roadmap.
+//! and character formatting resolved through the styles, and the named
+//! character styles as styles; headings, lists; tables with cells merged
+//! either way, ruled and shaded, and tables inside them; links, bookmarks
+//! and every field Word has a name for; footnotes, endnotes and comments;
+//! tracked insertions, deletions and changes of formatting; pictures, text
+//! boxes and shapes, in the line or floating; the page styles as sections,
+//! with their paper, margins, columns, headers and footers and first pages
+//! of their own, and sections of their own in columns; the table of
+//! contents; what the document says about itself and how it was last looked
+//! at. [`save`] writes one that LibreOffice and Word read back.
+//!
+//! # What is not
+//!
+//! Groups of drawings and freeform drawings; pictures in text boxes; a
+//! deletion of whole paragraphs, whose words are put back into one; the
+//! replies to a comment; indexes other than the table of contents, whose
+//! entries are read as text; paragraph styles as styles, which are laid into
+//! the formatting of what uses them; and the settings this program has no
+//! place for. Each is named in the roadmap.
 
 #![forbid(unsafe_code)]
 
 mod read;
+mod styles;
 mod write;
 
-pub use read::{read, LinkFound, PictureFound, Reading, Styles, PICTURE_MARK};
+pub use read::{
+    read, BookmarkFound, CommentFound, ContentsFound, FurnitureFound, LinkFound, NoteFound,
+    PictureFound, Reading, SectionFound, StyleFound, PICTURE_MARK,
+};
+pub use styles::{PageSetup, Styles};
 pub use write::{write, Parts, PictureFile};
 
-use wp_docx::{Document, TextPosition};
+use wp_docx::notes::Kind;
+use wp_docx::{Document, StyleDefinition, StyleKind, TextPosition};
 
 pub const MIME_TYPE: &str = "application/vnd.oasis.opendocument.text";
 
@@ -51,7 +71,11 @@ impl core::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// Opens a package as a document.
+/// Opens a package as a document: everything [`read`] found, put where it
+/// belongs — the styles defined, the pictures in where their marks were,
+/// the links, bookmarks and comments laid over their text, the notes given
+/// their words, the sections made with their pages and their headers and
+/// footers, and the table of contents gathered where it was.
 pub fn open(bytes: &[u8]) -> Result<Document, Error> {
     let archive = wp_zip::ZipArchive::open(bytes).map_err(|_| Error::NotOpenDocument)?;
     let part = |name: &str| -> Option<String> {
@@ -61,45 +85,30 @@ pub fn open(bytes: &[u8]) -> Result<Document, Error> {
     let content = part("content.xml").ok_or(Error::NotOpenDocument)?;
     let styles = part("styles.xml");
     let meta = part("meta.xml");
-    let reading = read(&content, styles.as_deref(), meta.as_deref())
+    let settings = part("settings.xml");
+    let reading = read(&content, styles.as_deref(), meta.as_deref(), settings.as_deref())
         .map_err(|error| Error::Xml(error.to_string()))?;
+    let failed = |error: wp_docx::Error| Error::Document(error.to_string());
+    let picture_bytes = |name: &str| archive.read_by_name(name).and_then(Result::ok);
 
-    let mut document =
-        Document::create(&reading.body).map_err(|error| Error::Document(error.to_string()))?;
-    let mut pictures = reading.pictures;
-    pictures.sort_by_key(|one| std::cmp::Reverse((one.paragraph, one.offset)));
-    let mut links = reading.links;
-    for picture in pictures {
-        let start = TextPosition::new(picture.paragraph, picture.offset);
-        let end = TextPosition::new(picture.paragraph, picture.offset + PICTURE_MARK.len_utf8());
-        let before = document.paragraph_text(picture.paragraph).map_or(0, |text| text.len());
-        document.set_caret(start);
-        document.extend_selection_to(end);
-        document.delete_selection();
-        document.set_caret(start);
-        if let Some(Ok(bytes)) = archive.read_by_name(&picture.name) {
-            let extension = match wp_image::Format::detect(&bytes) {
-                Some(wp_image::Format::Png) => "png",
-                Some(wp_image::Format::Jpeg) => "jpeg",
-                Some(wp_image::Format::Gif) => "gif",
-                Some(wp_image::Format::Bmp) => "bmp",
-                Some(wp_image::Format::Tiff) => "tiff",
-                Some(wp_image::Format::Emf) => "emf",
-                Some(wp_image::Format::Wmf) => "wmf",
-                None => "bin",
-            };
-            let _ =
-                document.insert_picture(&bytes, extension, picture.width_emu, picture.height_emu);
-        }
-        let after = document.paragraph_text(picture.paragraph).map_or(0, |text| text.len());
-        for link in &mut links {
-            if link.paragraph == picture.paragraph && link.start >= picture.offset {
-                link.start = (link.start + after).saturating_sub(before);
-                link.end = (link.end + after).saturating_sub(before);
-            }
-        }
+    let mut document = Document::create(&reading.body).map_err(failed)?;
+    if !reading.fonts.is_empty() {
+        document.set_font_table(&reading.fonts).map_err(failed)?;
     }
-    for link in links {
+    for style in &reading.styles {
+        let definition = StyleDefinition {
+            id: style.id.clone(),
+            name: style.name.clone(),
+            based_on: style.based_on.clone(),
+            next: None,
+            paragraph: Default::default(),
+            run: style.run.clone(),
+        };
+        document.set_style_of_kind(&definition, StyleKind::Character);
+    }
+
+    put_pictures(&mut document, &reading.pictures, 0, &picture_bytes);
+    for link in &reading.links {
         if link.end <= link.start {
             continue;
         }
@@ -107,21 +116,213 @@ pub fn open(bytes: &[u8]) -> Result<Document, Error> {
         document.extend_selection_to(TextPosition::new(link.paragraph, link.end));
         document.add_hyperlink(&link.address, "");
     }
-    if let Some((width, height, [top, right, bottom, left])) = reading.page {
-        if width > 0 && height > 0 {
-            document.set_page_size(width, height);
-            document.set_page_margins(top, right, bottom, left);
+    for bookmark in &reading.bookmarks {
+        document.set_caret(bookmark.start);
+        document.extend_selection_to(bookmark.end);
+        document.add_bookmark(&bookmark.name);
+    }
+    // The comments, and then their pictures, in the part they are all in.
+    let mut written = Vec::new();
+    for comment in &reading.comments {
+        document.set_caret(comment.start);
+        document.extend_selection_to(comment.end);
+        let text = comment.body.plain_text();
+        if let Ok(id) = document.add_comment(text.trim(), &comment.author, &comment.date) {
+            if document.set_comment_body(id, &comment.body) {
+                written.push(comment);
+            }
         }
     }
-    if let Some(title) = reading.title {
-        let mut properties = document.properties();
-        properties.title = title;
-        let _ = document.set_properties(&properties);
+    document.clear_selection();
+    if let Some(part) = document.comments_part() {
+        put_pictures_in_entries(
+            &mut document,
+            &part,
+            0,
+            written.iter().map(|comment| (&comment.body, &comment.pictures)),
+            &picture_bytes,
+        );
     }
+    for note in &reading.notes {
+        let kind = if note.endnote { Kind::Endnote } else { Kind::Footnote };
+        document.put_note(kind, note.id, &note.body).map_err(failed)?;
+    }
+    for kind in [Kind::Footnote, Kind::Endnote] {
+        let Some(part) = document.notes_part(kind) else { continue };
+        let notes = reading.notes.iter().filter(|note| note.endnote == (kind == Kind::Endnote));
+        put_pictures_in_entries(
+            &mut document,
+            &part,
+            2,
+            notes.map(|note| (&note.body, &note.pictures)),
+            &picture_bytes,
+        );
+    }
+
+    set_up_sections(&mut document, &reading.sections, &picture_bytes).map_err(failed)?;
+    if reading.facing_pages {
+        document.set_different_odd_and_even(true);
+    }
+    if !reading.properties.is_empty() {
+        document.set_properties(&reading.properties).map_err(failed)?;
+    }
+    if reading.tracking {
+        document.set_tracking_changes(true);
+    }
+    if let Some(zoom) = reading.zoom {
+        document.set_zoom_percent(zoom);
+    }
+    if reading.read_only {
+        document.set_write_protection(Some(&wp_docx::readonly::WriteProtection::recommended()));
+    }
+    // The table of contents last, gathered from the headings with the page
+    // numbers its entries showed: it adds paragraphs, and every place above
+    // was counted without them.
+    if let Some(contents) = &reading.contents {
+        let entries = document.contents_entries(contents.levels, &[]);
+        let mut pages = vec![0; document.paragraph_count()];
+        for (entry, page) in entries.iter().zip(&contents.pages) {
+            if let Some(slot) = pages.get_mut(entry.paragraph) {
+                *slot = *page;
+            }
+        }
+        document.set_caret(TextPosition::new(contents.paragraph, 0));
+        document.insert_contents(contents.levels, &pages);
+    }
+
     document.set_caret(TextPosition::default());
     document.clear_selection();
+    // None of that was anything a person did.
+    document.forget_history();
     let _ = document.mark_saved();
     Ok(document)
+}
+
+/// Makes the sections: the breaks first, each on the paragraph that ends its
+/// section, and then each section's page and its headers and footers, with
+/// the caret in it — which is what says which section a change is to.
+fn set_up_sections(
+    document: &mut Document,
+    sections: &[SectionFound],
+    picture_bytes: &dyn Fn(&str) -> Option<Vec<u8>>,
+) -> Result<(), wp_docx::Error> {
+    for (index, section) in sections.iter().enumerate() {
+        let (Some(last), Some(next)) = (section.last_paragraph, sections.get(index + 1)) else {
+            continue;
+        };
+        document.end_section_at(last, next.start);
+    }
+    let mut first = 0;
+    for section in sections {
+        document.set_caret(TextPosition::new(first, 0));
+        let page = &section.page;
+        let turned = page.landscape && page.width < page.height;
+        let (width, height) =
+            if turned { (page.height, page.width) } else { (page.width, page.height) };
+        if width > 0 && height > 0 {
+            document.set_page_size(width, height);
+        }
+        let [top, right, bottom, left] = page.margins;
+        document.set_page_margins(top, right, bottom, left);
+        document.set_furniture_distances(page.header_distance, page.footer_distance);
+        if page.columns > 1 {
+            document.set_columns(page.columns, page.column_gap);
+        }
+        if page.title_page {
+            document.set_different_first_page(true);
+        }
+        if let Some(numbering) = page.numbering {
+            document.set_page_numbering(numbering);
+        }
+        for furniture in &section.furniture {
+            document.set_furniture_body(furniture.kind, furniture.which, &furniture.body)?;
+        }
+        first = section.last_paragraph.map_or(first, |last| last + 1);
+    }
+    // The pictures in the headers and footers go into each one's own part.
+    for (index, section) in sections.iter().enumerate() {
+        for furniture in section.furniture.iter().filter(|furniture| !furniture.pictures.is_empty())
+        {
+            let Some(part) = document.furniture_part_for(furniture.kind, index, furniture.which)
+            else {
+                continue;
+            };
+            if document.enter_part(&part) {
+                put_pictures(document, &furniture.pictures, 0, picture_bytes);
+                document.leave_part();
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Puts pictures in where their marks are, first to last, in whichever part
+/// is being edited, `shift` paragraphs further on than they were counted.
+///
+/// Each mark is longer than the picture that takes its place, and the places
+/// of everything after it were counted with the picture, so each is where it
+/// should be once the ones before it are in.
+fn put_pictures(
+    document: &mut Document,
+    pictures: &[PictureFound],
+    shift: usize,
+    picture_bytes: &dyn Fn(&str) -> Option<Vec<u8>>,
+) {
+    for picture in pictures {
+        let paragraph = picture.paragraph + shift;
+        let start = TextPosition::new(paragraph, picture.offset);
+        let end = TextPosition::new(paragraph, picture.offset + PICTURE_MARK.len_utf8());
+        document.set_caret(start);
+        document.extend_selection_to(end);
+        document.delete_selection();
+        document.set_caret(start);
+        let Some(bytes) = picture_bytes(&picture.name) else { continue };
+        let put = document.insert_picture(
+            &bytes,
+            extension_of(&bytes),
+            picture.width_emu,
+            picture.height_emu,
+        );
+        if let (Ok(true), Some(anchor)) = (put, &picture.anchor) {
+            document.set_anchor_at(start, Some(anchor));
+        }
+    }
+    document.clear_selection();
+}
+
+/// The same for a part of entries one after another — the comments, or the
+/// notes of one kind — whose paragraphs are counted through the whole part.
+fn put_pictures_in_entries<'a>(
+    document: &mut Document,
+    part: &str,
+    before: usize,
+    entries: impl Iterator<Item = (&'a wp_docx::model::Body, &'a Vec<PictureFound>)>,
+    picture_bytes: &dyn Fn(&str) -> Option<Vec<u8>>,
+) {
+    let entries: Vec<_> = entries.collect();
+    if entries.iter().all(|(_, pictures)| pictures.is_empty()) || !document.enter_part(part) {
+        return;
+    }
+    let mut shift = before;
+    for (body, pictures) in entries {
+        put_pictures(document, pictures, shift, picture_bytes);
+        shift += body.paragraphs().len();
+    }
+    document.leave_part();
+}
+
+/// The extension a picture's bytes are, as the package names its parts.
+fn extension_of(bytes: &[u8]) -> &'static str {
+    match wp_image::Format::detect(bytes) {
+        Some(wp_image::Format::Png) => "png",
+        Some(wp_image::Format::Jpeg) => "jpeg",
+        Some(wp_image::Format::Gif) => "gif",
+        Some(wp_image::Format::Bmp) => "bmp",
+        Some(wp_image::Format::Tiff) => "tiff",
+        Some(wp_image::Format::Emf) => "emf",
+        Some(wp_image::Format::Wmf) => "wmf",
+        None => "bin",
+    }
 }
 
 /// The document as a package.
@@ -200,7 +401,7 @@ mod tests {
 
     #[test]
     fn a_package_reads_to_its_text_and_formatting() {
-        let reading = read(CONTENT, Some(STYLES), None).expect("read");
+        let reading = read(CONTENT, Some(STYLES), None, None).expect("read");
         let blocks = &reading.body.blocks;
         assert_eq!(
             reading.body.plain_text(),
@@ -243,7 +444,11 @@ mod tests {
             (reading.pictures[0].width_emu, reading.pictures[0].height_emu),
             (914400, 457200)
         );
-        assert_eq!(reading.page, Some((11906, 16838, [1134, 1134, 1134, 1134])));
+        let page = &reading.sections[0].page;
+        assert_eq!(
+            (page.width, page.height, page.margins),
+            (11906, 16838, [1134, 1134, 1134, 1134])
+        );
     }
 
     #[test]

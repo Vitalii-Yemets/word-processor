@@ -189,6 +189,7 @@ version = "0.0.1"
 dependencies = [
  "wp-docx",
  "wp-image",
+ "wp-raster",
  "wp-xml",
  "wp-zip",
 ]

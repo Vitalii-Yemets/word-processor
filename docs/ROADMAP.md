@@ -5403,11 +5403,100 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   that encrypts them with the rest; the styles as styles, which are laid into
   the formatting of what uses them as **G5** left them; and Word 2 and
   older, which are not compound files at all.
-- [ ] **G12. The rest of the ODF reader.** Headers and footers, footnotes,
+- [x] **G12. The rest of the ODF reader.** Headers and footers, footnotes,
   endnotes and comments; tracked changes; sections and columns; frames that
   are not pictures, shapes and text boxes; fields other than links; cell
   merging, cell borders and shading; nested tables; character styles by name;
   bookmarks; tables of contents; the settings part. Named in **G6**.
+  *Done when:* a document of one of everything, written as OpenDocument by
+  LibreOffice from a Word document, opens with each of those where it was;
+  a package written by hand in the forms LibreOffice does not write from a
+  Word document opens with them as well; and a character style this program
+  writes to a package is one LibreOffice reads.
+  The styles (`crates/wp-odt/src/styles.rs`) are folded parent first in
+  every family the text names — paragraph, text, table, row, cell, frame,
+  section — with the page layouts and the master pages; the masters' own
+  automatic styles kept apart from the text's, since the two parts may use
+  the same names for different things. The reader (`crates/wp-odt/src/read.rs`)
+  reads *stories* as the RTF reader does: a note's words, a comment's, a
+  text box's, a header's and a footer's, each read as the text is and put
+  where it belongs, and every place in the text counted as the document
+  will count it. Footnotes and endnotes with their marks where they were,
+  each note begun with its own mark as Word's are. Comments with their
+  author, date, words and the range to their end mark. Bookmarks, ranges
+  and points. Tracked changes from the list at the head of the text:
+  insertions and changes of formatting between their marks, deletions with
+  their words put back where they were taken from, marked deleted and
+  counting for nothing, and whether changes were being recorded. Every field
+  Word has a name for — the page and the count of pages, the counts of words
+  and characters, the dates and times, the title, subject, comments,
+  keywords, author, last author and file name, a reference to a bookmark or
+  to its page, a sequence — as the instruction on the runs of its result, and
+  a link outside the text as a field too. Drawings: a frame holding a text
+  box, a custom shape with its type — this format's own names, Word's
+  presets as LibreOffice keeps them, the Office shape numbers — with its
+  words, a rectangle, an ellipse, a line; their fill and line, and where
+  they float: the wrap and the side, in front of the text or behind it, how
+  they are aligned and what from, the room round them; a frame anchored to
+  the page carried by the first paragraph after it. Pictures that float.
+  Tables: cells merged across and down from the cells the format marks as
+  covered, lines — a double one by its own lines' widths — colour, where the
+  text sits and which way it runs; header rows, row heights, the indent,
+  columns in groups and repeated. A paragraph's lines and colour, direction
+  and contextual spacing, and its outline level; a run's letter spacing,
+  and the right-to-left runs of a right-to-left paragraph. Sections: a page
+  style beginning where a paragraph's style says, as a section on a new
+  page, and a section of the format's own in columns as a continuous one;
+  each with its paper, its margins as Word measures them — the header's
+  height in the top margin, the header where this format's margin is —
+  columns, page numbers and the number its first page takes, and its master
+  page's headers and footers: left-hand pages' as the even pages', and a
+  first page of its own whether the master says so itself or is a first
+  page's style followed by another's. The named character styles defined as
+  the document's, and named by the runs in them, the paragraph style's
+  formatting giving way to them as Word's does. The table of contents
+  gathered again where it was, from the headings, with the page numbers its
+  entries showed. What `meta.xml` says of the document; from `settings.xml`
+  the zoom it was looked at, which `wp-docx` now keeps
+  (`Document::set_zoom_percent`), and whether it asks to be opened only for
+  reading; and the font table from the font declarations, which the layout
+  goes on for a font the machine lacks (**G10**). The writer
+  (`crates/wp-odt/src/write.rs`) writes a run's character style as a named
+  style of the format's, with the run's own formatting built on it.
+  *Proven by:* `crates/wp-odt/tests/libreoffice.rs` — a document of one of
+  everything, as a `.docx`, written as OpenDocument by LibreOffice and
+  opened: its notes where they were, its bookmark, its comment over its
+  word, its insertion, deletion and change of formatting with their author
+  and date, its field; its boxed and shaded paragraph, its right-to-left
+  one, its heading, its character style, its table of contents, its
+  properties and its fonts; its table with its merges, lines, colours and
+  inner table; its rectangle, text box and floating picture; its two
+  sections with their pages, columns and headers — one with a picture in it
+  — its footer with the page number and a first page of its own.
+  `crates/wp-odt/tests/by_hand.rs` — a package in the forms LibreOffice does
+  not write from Word: a header for left-hand pages and one for the first
+  page, pages numbered from five in small numerals, a section of its own in
+  two columns between two in one, a text box on the page, an ellipse behind
+  the text, a date, a title, a reference to a bookmark's page, a table's
+  header row and exact height, the zoom and the wish to be read only; and a
+  character style written and read back. `crates/wp-odt/tests/real_document.rs`
+  — LibreOffice reads the character style this writer writes.
+  *Found along the way:* a covered cell was read as a cell of its own, so a
+  cell across two columns came out as three. The writer wrote only a run's
+  own formatting, so a Word document's character styles were lost when it
+  was saved as OpenDocument, and with them whatever they made bold.
+  *Not done:* groups of drawings, freeform drawings and connectors, and a
+  drawing's turn; pictures in text boxes; a deletion of whole paragraphs,
+  whose words are put back into one, and tracked changes to paragraph
+  formatting; the replies to a comment and whether it is resolved; indexes
+  other than the table of contents, whose entries are read as text, and the
+  table of contents' own formatting of its entries, which is gathered again
+  as this program lays one out; paragraph styles as styles, which are laid
+  into the formatting of what uses them; fields Word has no name for —
+  variables, chapters, conditional text — which read as their text; notes in
+  a header or in a note; a table's own colour behind it and a row that may
+  not break; the settings but the zoom and the wish to be read only; and the
+  editor opening a document at the zoom it keeps.
 - [ ] **G13. The rest of the PDF reader.** Encrypted files (RC4 and AES with
   the empty password); JPEG 2000, fax and JBIG2 pictures, and inline
   pictures; the predefined CJK CMaps; Type 3 glyph procedures; headers,

@@ -178,6 +178,36 @@ impl Document {
         true
     }
 
+    /// The zoom the document was last looked at, as a percentage: `w:zoom`.
+    #[must_use]
+    pub fn zoom_percent(&self) -> Option<u32> {
+        let root = self.settings_root()?;
+        root.child(Some(read::W), "zoom")?.attribute(Some(read::W), "percent")?.parse().ok()
+    }
+
+    /// Records the zoom the document is looked at, which the settings keep
+    /// for the next program to open it at.
+    pub fn set_zoom_percent(&mut self, percent: u32) -> bool {
+        let Some(mut root) = self.settings_root() else { return false };
+        if self.zoom_percent() == Some(percent) {
+            return false;
+        }
+        root.remove_children_named(Some(read::W), "zoom");
+        let prefix = self.prefix();
+        let mut element = Element::new(&edit::name_with(prefix.as_deref(), "zoom"), Some(read::W));
+        element.set_namespaced_attribute(
+            &edit::name_with(prefix.as_deref(), "percent"),
+            read::W,
+            &percent.to_string(),
+        );
+        edit::insert_ordered(&mut root, element, SETTINGS_ORDER);
+        if !self.save_settings_root(root) {
+            return false;
+        }
+        self.mark_modified();
+        true
+    }
+
     /// The value of a settings element's `w:val`, if it has one.
     pub(crate) fn setting_value(&self, local: &str) -> Option<String> {
         let root = self.settings_root()?;

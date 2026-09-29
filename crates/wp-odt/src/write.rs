@@ -49,6 +49,7 @@ pub fn write(document: &Document, title: Option<&str>) -> Parts {
     let mut writer = Writer {
         paragraph_styles: BTreeMap::new(),
         text_styles: BTreeMap::new(),
+        character_styles: BTreeMap::new(),
         fonts: Vec::new(),
         pictures: Vec::new(),
         columns: Vec::new(),
@@ -164,9 +165,13 @@ pub fn write(document: &Document, title: Option<&str>) -> Parts {
     for (style, name) in &writer.paragraph_styles {
         content.push_str(&format!("<style:style style:name=\"{name}\" style:family=\"paragraph\" style:parent-style-name=\"{}\">{}</style:style>\n", attr(&style.parent), style.xml));
     }
-    for (style, name) in &writer.text_styles {
+    for ((parent, style), name) in &writer.text_styles {
+        let parent = parent
+            .as_deref()
+            .map(|parent| format!(" style:parent-style-name=\"{}\"", attr(parent)))
+            .unwrap_or_default();
         content.push_str(&format!(
-            "<style:style style:name=\"{name}\" style:family=\"text\">{style}</style:style>\n"
+            "<style:style style:name=\"{name}\" style:family=\"text\"{parent}>{style}</style:style>\n"
         ));
     }
     for (index, widths) in writer.columns.iter().enumerate() {
@@ -226,6 +231,16 @@ pub fn write(document: &Document, title: Option<&str>) -> Parts {
     }
     styles.push_str("<style:style style:name=\"Title\" style:display-name=\"Title\" style:family=\"paragraph\" style:parent-style-name=\"Standard\" style:next-style-name=\"Standard\" style:class=\"chapter\"><style:paragraph-properties fo:margin-bottom=\"4pt\"/><style:text-properties style:font-name=\"Calibri Light\" fo:font-size=\"28pt\"/></style:style>\n");
     styles.push_str("<style:style style:name=\"Internet_20_link\" style:display-name=\"Internet link\" style:family=\"text\"><style:text-properties fo:color=\"#0563C1\" style:text-underline-style=\"solid\" style:text-underline-width=\"auto\" style:text-underline-color=\"font-color\"/></style:style>\n");
+    // The character styles the text names, each with its formatting and its
+    // ancestors' folded in.
+    for (id, name) in &writer.character_styles {
+        styles.push_str(&format!(
+            "<style:style style:name=\"{}\" style:display-name=\"{}\" style:family=\"text\">{}</style:style>\n",
+            attr(id),
+            attr(&name.0),
+            name.1
+        ));
+    }
     styles.push_str("</office:styles>\n<office:automatic-styles>\n");
     styles.push_str(&format!(
         "<style:page-layout style:name=\"Mpm1\"><style:page-layout-properties fo:page-width=\"{}\" fo:page-height=\"{}\" style:print-orientation=\"{}\" fo:margin-top=\"{}\" fo:margin-bottom=\"{}\" fo:margin-left=\"{}\" fo:margin-right=\"{}\"/></style:page-layout>\n",
@@ -259,7 +274,12 @@ struct ParagraphStyle {
 
 struct Writer {
     paragraph_styles: BTreeMap<ParagraphStyle, String>,
-    text_styles: BTreeMap<String, String>,
+    /// The automatic text styles, by the named style each builds on and what
+    /// it says.
+    text_styles: BTreeMap<(Option<String>, String), String>,
+    /// The named character styles the text uses: each one's name and its
+    /// formatting, by identifier.
+    character_styles: BTreeMap<String, (String, String)>,
     fonts: Vec<String>,
     pictures: Vec<PictureFile>,
     /// The column widths of each table, for its styles.
@@ -340,11 +360,29 @@ impl Writer {
                 self.fonts.push(font.clone());
             }
         }
+        // A character style of the document's is a named style of this
+        // format's, which the run's own formatting builds on.
+        let named = run.properties.style.as_deref().and_then(|id| {
+            let styles = document.styles();
+            let style = styles.get(id)?;
+            if style.kind != wp_docx::StyleKind::Character {
+                return None;
+            }
+            let mut folded = RunProperties::default();
+            for held in styles.chain(id) {
+                folded = folded.overlaid_with(&held.run);
+            }
+            let name = style.name.clone().unwrap_or_else(|| id.to_owned());
+            self.character_styles
+                .entry(id.to_owned())
+                .or_insert_with(|| (name, text_properties_xml(&folded)));
+            Some(id.to_owned())
+        });
         let style = if xml.is_empty() {
-            None
+            named.clone()
         } else {
             let next = format!("T{}", self.text_styles.len() + 1);
-            Some(self.text_styles.entry(xml).or_insert(next).clone())
+            Some(self.text_styles.entry((named, xml)).or_insert(next).clone())
         };
         if let Some(style) = &style {
             self.out.push_str(&format!("<text:span text:style-name=\"{style}\">"));

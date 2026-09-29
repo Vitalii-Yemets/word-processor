@@ -14,5 +14,9 @@ wp-image = { path = "../wp-image" }
 wp-xml = { path = "../wp-xml" }
 wp-zip = { path = "../wp-zip" }
 
+[dev-dependencies]
+# Used only by the tests, to draw a picture to put into a document.
+wp-raster = { path = "../wp-raster" }
+
 [lints]
 workspace = true

@@ -152,8 +152,25 @@ fn a_package_of_this_programs_own_is_read_by_libreoffice() {
         ..Default::default()
     };
     body.blocks.push(Block::Table(Box::new(table)));
-    body.blocks.push(Block::Paragraph(Paragraph::text("The end.")));
-    let document = wp_docx::Document::create(&body).expect("a document");
+    // The last word in a character style of its own.
+    let mut styled = Run::text("end");
+    styled.properties.style = Some("StrongRed".to_owned());
+    body.blocks.push(Block::Paragraph(Paragraph::from_runs(vec![
+        Run::text("The "),
+        styled,
+        Run::text("."),
+    ])));
+    let mut document = wp_docx::Document::create(&body).expect("a document");
+    let mut strong = wp_docx::StyleDefinition {
+        id: "StrongRed".to_owned(),
+        name: "Strong Red".to_owned(),
+        based_on: None,
+        next: None,
+        paragraph: Default::default(),
+        run: Default::default(),
+    };
+    strong.run.bold = Some(true);
+    assert!(document.set_style_of_kind(&strong, wp_docx::StyleKind::Character));
     let package = wp_odt::save(&document).expect("saved");
 
     let folder = folder("write");
@@ -200,4 +217,17 @@ fn a_package_of_this_programs_own_is_read_by_libreoffice() {
     let Block::Paragraph(item) = &back.blocks[2] else { panic!() };
     assert!(item.properties.numbering.is_some(), "the bullet was lost");
     assert!(back.blocks.iter().any(|block| matches!(block, Block::Table(_))), "the table was lost");
+    // The character style, which LibreOffice read as one: the word is in
+    // it, or at least bold because of it.
+    let end = back
+        .paragraphs()
+        .into_iter()
+        .flat_map(|paragraph| paragraph.runs.clone())
+        .find(|run| run.plain_text() == "end")
+        .expect("the styled word");
+    let bold = end.properties.bold == Some(true)
+        || end.properties.style.as_deref().is_some_and(|id| {
+            reopened.styles().chain(id).iter().any(|style| style.run.bold == Some(true))
+        });
+    assert!(bold, "the character style was lost: {end:?}");
 }
