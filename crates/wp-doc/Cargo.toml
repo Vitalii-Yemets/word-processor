@@ -9,15 +9,20 @@ license.workspace = true
 [dependencies]
 wp-ole = { path = "../wp-ole" }
 # Workspace-internal only. The document model to read into, the code pages
-# the old text is in, the pictures' formats, and the deflate a metafile in a
-# drawing is squeezed with.
+# the old text is in, the pictures' formats, the deflate a metafile in a
+# drawing is squeezed with, and the ciphers an encrypted document is
+# enciphered with.
+wp-crypt = { path = "../wp-crypt" }
 wp-deflate = { path = "../wp-deflate" }
 wp-docx = { path = "../wp-docx" }
 wp-image = { path = "../wp-image" }
 wp-text = { path = "../wp-text" }
 
 [dev-dependencies]
-# Used only by the tests, to draw a picture to put into a document.
+# Used only by the tests: to draw a picture to put into a document, and to
+# encipher documents by the specification, apart from the code being tested.
+wp-cipher = { path = "../wp-cipher" }
+wp-hash = { path = "../wp-hash" }
 wp-raster = { path = "../wp-raster" }
 
 [lints]

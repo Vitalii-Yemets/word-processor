@@ -802,8 +802,11 @@ impl Editor {
         // An encrypted document is not a broken one. Read as a package it
         // would fail as "not a zip", which tells a person nothing they can
         // do anything about; what it needs is the question being asked.
+        // A binary document with a password is the same question: its streams
+        // are enciphered where they lie rather than a package whole, but what
+        // a person has to do about it is the same.
         if let Ok(bytes) = &read {
-            if wp_docx::sealing::is_sealed(bytes) {
+            if wp_docx::sealing::is_sealed(bytes) || wp_doc::is_encrypted(bytes) {
                 let bytes = bytes.clone();
                 return self.ask_to_unseal(&path, bytes);
             }

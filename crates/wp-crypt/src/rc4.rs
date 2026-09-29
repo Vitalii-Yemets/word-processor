@@ -44,6 +44,42 @@ pub(crate) fn open_cryptoapi(
     package: &[u8],
     password: &str,
 ) -> Result<Vec<u8>, Error> {
+    let keys = cryptoapi_keys(header, verifier, password)?;
+    let length = crate::declared_length(package)?;
+    let mut out = package.get(8..).ok_or(Error::Damaged("package"))?.to_vec();
+    keys.apply(&mut out);
+    if out.len() < length {
+        return Err(Error::Damaged("package"));
+    }
+    out.truncate(length);
+    Ok(out)
+}
+
+/// The keys of the CryptoAPI scheme, once the password has been proved.
+#[derive(Clone, Debug)]
+pub(crate) struct CryptoApiKeys {
+    base: [u8; 20],
+    key_bytes: usize,
+}
+
+impl CryptoApiKeys {
+    /// Deciphers — or enciphers, which is the same — a run of bytes that
+    /// begins with a block, each block with its own key.
+    pub(crate) fn apply(&self, bytes: &mut [u8]) {
+        for (number, block) in bytes.chunks_mut(BLOCK).enumerate() {
+            let key = cryptoapi_key(&self.base, number as u32, self.key_bytes);
+            wp_cipher::Rc4::new(&key).apply(block);
+        }
+    }
+}
+
+/// Proves a password against the standard header and its verifier, and
+/// gives back what every block's key is made from.
+pub(crate) fn cryptoapi_keys(
+    header: &[u8],
+    verifier: &[u8],
+    password: &str,
+) -> Result<CryptoApiKeys, Error> {
     let key_bits = u32_at(header, 16).ok_or(Error::Damaged("description"))?;
     // A file that says nothing about its key length means forty bits, which
     // is what the scheme started as.
@@ -56,8 +92,9 @@ pub(crate) fn open_cryptoapi(
     let salt = verifier.get(4..4 + salt_size).ok_or(Error::Damaged("verifier"))?;
     let enciphered =
         verifier.get(4 + salt_size..4 + salt_size + 16).ok_or(Error::Damaged("verifier"))?;
+    // Then how long the hash is, and the hash — twenty bytes, as SHA-1's are.
     let enciphered_hash =
-        verifier.get(4 + salt_size + 16..4 + salt_size + 36).ok_or(Error::Damaged("verifier"))?;
+        verifier.get(4 + salt_size + 20..4 + salt_size + 40).ok_or(Error::Damaged("verifier"))?;
 
     let base = sha1_base(password, salt);
     let key = cryptoapi_key(&base, 0, key_bytes);
@@ -73,18 +110,7 @@ pub(crate) fn open_cryptoapi(
     if !same(&wanted, &both[16..36]) {
         return Err(Error::WrongPassword);
     }
-
-    let length = crate::declared_length(package)?;
-    let mut out = package.get(8..).ok_or(Error::Damaged("package"))?.to_vec();
-    for (number, block) in out.chunks_mut(BLOCK).enumerate() {
-        let key = cryptoapi_key(&base, number as u32, key_bytes);
-        wp_cipher::Rc4::new(&key).apply(block);
-    }
-    if out.len() < length {
-        return Err(Error::Damaged("package"));
-    }
-    out.truncate(length);
-    Ok(out)
+    Ok(CryptoApiKeys { base, key_bytes })
 }
 
 /// What every block's key is made from: the salt and the password, hashed
@@ -138,9 +164,15 @@ fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
 /// same shape as the newer one with MD5 in place of SHA-1.
 #[must_use]
 pub fn binary_key(password: &str, salt: &[u8], block: u32) -> Vec<u8> {
-    // The password is hashed, and the first five bytes of that are repeated
-    // with the salt sixteen times over. Written out because it cannot be
-    // guessed: it is a stretch of the key nobody would invent.
+    BinaryKeys { truncated: binary_base(password, salt) }.block(block)
+}
+
+/// What every block's key is made from in the oldest scheme.
+///
+/// The password is hashed, and the first five bytes of that are repeated
+/// with the salt sixteen times over and hashed again. Written out because it
+/// cannot be guessed: it is a stretch of the key nobody would invent.
+fn binary_base(password: &str, salt: &[u8]) -> [u8; 5] {
     let hashed = wp_hash::md5(&utf16(password));
     let mut stretched = Vec::with_capacity(21 * 16);
     for _ in 0..16 {
@@ -148,39 +180,67 @@ pub fn binary_key(password: &str, salt: &[u8], block: u32) -> Vec<u8> {
         stretched.extend_from_slice(salt);
     }
     let intermediate = wp_hash::md5(&stretched);
+    let mut truncated = [0u8; 5];
+    truncated.copy_from_slice(&intermediate[..5]);
+    truncated
+}
 
-    let mut with_block = intermediate[..5].to_vec();
-    with_block.extend_from_slice(&block.to_le_bytes());
-    let hash = wp_hash::md5(&with_block);
-    // Forty bits again, given to the cipher as the nine bytes the scheme
-    // says: five of key and four of the hash after them.
-    hash[..9].to_vec()
+/// The keys of the oldest scheme, once the password has been proved.
+#[derive(Clone, Debug)]
+pub(crate) struct BinaryKeys {
+    truncated: [u8; 5],
+}
+
+impl BinaryKeys {
+    /// One block's key: the five bytes with the block's number after them,
+    /// hashed.
+    fn block(&self, number: u32) -> Vec<u8> {
+        let mut with_block = self.truncated.to_vec();
+        with_block.extend_from_slice(&number.to_le_bytes());
+        wp_hash::md5(&with_block)[..BINARY_KEY_LENGTH].to_vec()
+    }
+
+    /// Deciphers — or enciphers, which is the same — a run of bytes that
+    /// begins with a block, each block with its own key.
+    pub(crate) fn apply(&self, bytes: &mut [u8]) {
+        for (number, block) in bytes.chunks_mut(BLOCK).enumerate() {
+            wp_cipher::Rc4::new(&self.block(number as u32)).apply(block);
+        }
+    }
+}
+
+/// How much of each block's hash the cipher is given: all sixteen bytes of
+/// it. Forty bits of the password go into the hash, and the whole hash comes
+/// out as the key — which a file LibreOffice encrypts is what settles, since
+/// nine bytes, which this was once given, open nothing.
+const BINARY_KEY_LENGTH: usize = 16;
+
+/// Proves a password against the description that follows the version —
+/// salt, verifier, and the verifier's hash, sixteen bytes each, one after
+/// another, and nothing else — and gives back the keys.
+pub(crate) fn binary_keys(info: &[u8], password: &str) -> Result<BinaryKeys, Error> {
+    let salt = info.get(0..16).ok_or(Error::Damaged("description"))?;
+    let enciphered = info.get(16..32).ok_or(Error::Damaged("description"))?;
+    let enciphered_hash = info.get(32..48).ok_or(Error::Damaged("description"))?;
+
+    let keys = BinaryKeys { truncated: binary_base(password, salt) };
+    let mut both = Vec::with_capacity(32);
+    both.extend_from_slice(enciphered);
+    both.extend_from_slice(enciphered_hash);
+    wp_cipher::Rc4::new(&keys.block(0)).apply(&mut both);
+    let wanted = wp_hash::md5(&both[..16]);
+    if !same(&wanted, &both[16..32]) {
+        return Err(Error::WrongPassword);
+    }
+    Ok(keys)
 }
 
 /// Opens a document encrypted the oldest way, given the description that
 /// follows the version.
 pub(crate) fn open_binary(info: &[u8], package: &[u8], password: &str) -> Result<Vec<u8>, Error> {
-    // Salt, verifier, and the verifier's hash: sixteen bytes each, one after
-    // another, and nothing else.
-    let salt = info.get(0..16).ok_or(Error::Damaged("description"))?;
-    let enciphered = info.get(16..32).ok_or(Error::Damaged("description"))?;
-    let enciphered_hash = info.get(32..48).ok_or(Error::Damaged("description"))?;
-
-    let key = binary_key(password, salt, 0);
-    let mut both = Vec::with_capacity(32);
-    both.extend_from_slice(enciphered);
-    both.extend_from_slice(enciphered_hash);
-    wp_cipher::Rc4::new(&key).apply(&mut both);
-    let wanted = wp_hash::md5(&both[..16]);
-    if !same(&wanted, &both[16..32]) {
-        return Err(Error::WrongPassword);
-    }
-
+    let keys = binary_keys(info, password)?;
     let mut out = package.to_vec();
-    for (number, block) in out.chunks_mut(BLOCK).enumerate() {
-        let key = binary_key(password, salt, number as u32);
-        wp_cipher::Rc4::new(&key).apply(block);
-    }
+    keys.apply(&mut out);
     Ok(out)
 }
 
@@ -213,8 +273,8 @@ mod tests {
     }
 
     #[test]
-    fn the_oldest_key_is_the_nine_bytes_the_scheme_says() {
-        assert_eq!(binary_key("secret", &[1u8; 16], 0).len(), 9);
+    fn the_oldest_key_is_the_whole_of_its_hash() {
+        assert_eq!(binary_key("secret", &[1u8; 16], 0).len(), 16);
         assert_ne!(binary_key("secret", &[1u8; 16], 0), binary_key("secret", &[1u8; 16], 1));
         assert_ne!(binary_key("secret", &[1u8; 16], 0), binary_key("other", &[1u8; 16], 0));
     }

@@ -2635,7 +2635,7 @@ impl Reader {
             self.place_picture(bytes, extension, (width_emu, height_emu), anchor, properties);
             return;
         }
-        let Some(preset) = preset_of(kind) else { return };
+        let Some(preset) = wp_docx::shapes::office_preset(kind) else { return };
         let line = matches!(preset, "line" | "straightConnector1");
         let fill = if line || shape.number("fFilled") == Some(0) {
             Fill::None
@@ -2921,55 +2921,6 @@ fn bitmap_file(dib: &[u8]) -> Option<Vec<u8>> {
     file.extend_from_slice(&offset.to_le_bytes());
     file.extend_from_slice(dib);
     Some(file)
-}
-
-/// The shape a drawing's number names, as the model names it. What has no
-/// name here — a freeform, WordArt — is not drawn.
-fn preset_of(kind: i64) -> Option<&'static str> {
-    Some(match kind {
-        1 => "rect",
-        2 => "roundRect",
-        3 => "ellipse",
-        4 => "diamond",
-        5 => "triangle",
-        6 => "rtTriangle",
-        7 => "parallelogram",
-        8 => "trapezoid",
-        9 => "hexagon",
-        10 => "octagon",
-        11 => "plus",
-        12 => "star5",
-        13 => "rightArrow",
-        15 => "homePlate",
-        16 => "cube",
-        20 => "line",
-        21 => "plaque",
-        22 => "can",
-        23 => "donut",
-        32 => "straightConnector1",
-        55 => "chevron",
-        56 => "pentagon",
-        58 => "star8",
-        59 => "star16",
-        60 => "star32",
-        66 => "leftArrow",
-        67 => "downArrow",
-        68 => "upArrow",
-        69 => "leftRightArrow",
-        70 => "upDownArrow",
-        73 => "lightningBolt",
-        74 => "heart",
-        84 => "bevel",
-        96 => "smileyFace",
-        183 => "sun",
-        184 => "moon",
-        185 => "bracketPair",
-        186 => "bracePair",
-        187 => "star4",
-        188 => "doubleWave",
-        202 => "rect",
-        _ => return None,
-    })
 }
 
 /// The line a border word names, as the model names it.

@@ -5286,12 +5286,123 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   was chosen, so a filtered page is written there by `wp convert` only. And
   endnotes in print layout, which the layout counts but draws nowhere; Web
   Layout draws them after the text.
-- [ ] **G11. The rest of the `.doc` reader.** Headers and footers, footnotes,
+- [x] **G11. The rest of the `.doc` reader.** Headers and footers, footnotes,
   endnotes and comments; sections past the first; nested tables, cell merging,
   borders and shading; drawings that are not pictures; bookmarks; fields other
   than links; revision marks; the properties streams; the Word 95 and earlier
   layouts, whose block has no piece table; and encrypted files. Named in
   **G5**.
+  *Done when:* a document of one of everything, written as Word 97 by
+  LibreOffice, opens with each of those where it was; a Word 95 file opens as
+  LibreOffice opens it; and a file encrypted each of the three ways Word
+  encrypted one opens with its password — in the editor too, which asks for
+  it as it asks for a `.docx`'s.
+  The reader (`crates/wp-doc/src/read.rs`) reads the text's *stories* — the
+  main text, the footnotes, the headers and footers, the comments, the
+  endnotes and the text boxes — each where the block's lengths put it and cut
+  into its entries by its own table of positions, each read the same way
+  into paragraphs and tables of its own. Reading the main text notes where
+  each of its characters ends up in the document, and the bookmarks, the
+  comments' ranges and the sections are read through that. Footnotes and
+  endnotes: their marks where they were, their words with them. Comments:
+  who wrote them, what they cover (their own bookmarks, tagged), their words,
+  and their dates where Word 2002 and after keep them. Bookmarks. Sections:
+  every one, from the section table and its sprms over Word's own defaults —
+  paper, turn, margins, where the header and footer sit, columns, how it
+  begins, a first page of its own, page numbering — and each one's headers
+  and footers, the even pages', the first page's, a missing one carrying the
+  section before it on; facing pages from the document's properties.
+  Tables (`crates/wp-doc/src/tables.rs`): the row's description from the
+  sprms of the mark that ends it — the cells' edges, each cell's merge across
+  and down, its four lines, its colour, where its text sits and which way it
+  runs, the table's own lines, the row's height and whether it heads the
+  table — Word 97's forms and Word 2000's both; the columns from every edge
+  any row has; and tables inside cells, as deep as they go, from the depth
+  each paragraph states and the marks that end an inner cell and row. A
+  paragraph's lines and colour behind it, its tab stops, its direction; a
+  run's direction, its spacing, its language however Word wrote it.
+  Fields: every one's instruction on the runs of its result, `HYPERLINK`
+  with a place in the document as a link to a bookmark, a field in a field's
+  instruction left out of the text. Tracked insertions and deletions, with
+  who and when, numbered as one change per person per time, and changes of
+  formatting. Symbols, column breaks. Drawings (`crates/wp-doc/src/shapes.rs`):
+  the Office drawing container in the table stream read whole — the store,
+  each shape's number, kind and properties, the second table of properties
+  Word 2000 keeps — and each floating drawing's place from its story's table:
+  shapes with their fill, line, turn, flips, name and description, text boxes
+  with their words from their own story, and pictures that float, their bytes
+  from the store or from the main stream where the store says, all with where
+  they are measured from, how they are aligned, how text goes round them and
+  whether they are behind it; in the main text and in headers. The font
+  table becomes the document's (`wp-docx`'s, from **G10**), and the two
+  property streams its title, subject, author, keywords, comments, last
+  author, category, company and dates (`crates/wp-doc/src/summary.rs`).
+  Word 6 and Word 95: the block at its fixed places read into the same
+  places Word 97's are (`crates/wp-doc/src/fib.rs`), everything in the one
+  stream, text in one stretch where the block says or in pieces, the
+  formatting pages' narrower entries and bin tables that list fewer pages
+  than there are, the stylesheet's and the font table's one-byte names, and
+  every one-byte sprm said again as Word 97's (`crates/wp-doc/src/old.rs`) —
+  borders, row definitions, symbols and a picture's place with their operands
+  grown; each byte of text read in the code page of its font; Word 6's
+  numbered and bulleted paragraphs; headers as many as each section says it
+  has. Encryption (`crates/wp-crypt/src/binary.rs`): Word 97's RC4, Word
+  2002's RC4 through CryptoAPI and Word 95's exclusive-or, each stream
+  deciphered from its first byte and the readable part of the main one kept;
+  `wp_doc::open_with_password`, and the editor's password dialog, which a
+  `.doc` now goes to as an encrypted `.docx` does; the document keeps the
+  password, and is written back encrypted as a Word Document.
+  *Proven by:* `crates/wp-doc/tests/libreoffice.rs` — a document of one of
+  everything, as a `.docx`, written as Word 97 by LibreOffice and opened: its
+  notes where they were, its bookmark, its comment over its word, its
+  insertion, deletion and change of formatting with their author and date,
+  its field; its boxed and shaded paragraph, its right-to-left one, its
+  heading, its properties and its font table; its table with its merges,
+  lines, colours and inner table; its rectangle, text box and floating
+  picture; its two sections with their pages, columns, headers — one with a
+  picture in it — footer with the page number and first page of its own.
+  `crates/wp-doc/tests/encrypted.rs` — LibreOffice, through a macro of its
+  own, writes a file with a password, which opens here; files encrypted the
+  other two ways are made here by the specification from one LibreOffice
+  wrote, LibreOffice opens them with the password, and so does this; the
+  wrong password and none are told apart. `crates/wp-doc/tests/word6.rs` — a
+  Word 95 file built byte by byte, and what LibreOffice reads in it is what
+  this reads: a heading, bold and italic, alignment and indent, Cyrillic in
+  its font's code page, a table, a bullet, a footnote, a comment, a
+  bookmark, the margins and a header with a page number. And the editor's
+  own: an encrypted `.doc` asks for its password, asks again on a wrong one,
+  and opens on the right one keeping it.
+  *Found along the way:* the key Word 97's RC4 makes was given to the cipher
+  as nine bytes of its hash rather than sixteen, so no file encrypted that
+  way — a `.doc`, or a package in that oldest scheme — would ever have
+  opened; and the hash of the RC4 CryptoAPI verifier was read from four bytes
+  too early, and the test beside it built its file the same way. Both are
+  what LibreOffice settles now. The XOR table another implementation carries
+  has one number wrong, which the rule its rows are built by shows. A table
+  definition's length counts one more byte than follows it, and read at its
+  word it swallowed the first byte of whatever sprm came next. Word 97's own
+  indents — the older sprms, which every Word writes beside the newer — were
+  not read, and the language of East Asian text overwrote the Latin one's.
+  The section's turn was read, and written by **G8**'s writer, under the
+  number of a different sprm; a section that said nothing of its side
+  margins got an inch rather than Word's inch and a quarter. Headings were
+  known by their English names only; they are known by Word's number for
+  them now, in any language. `wp-docx` counted LibreOffice's continuation
+  separator, which it numbers 1, as a footnote. The table of Office shape
+  numbers was in the RTF and web-page readers twice, differing; it is one
+  table in `wp-docx` now (`wp_docx::shapes::office_preset`).
+  *Not done:* groups of drawings, WordArt and freeform drawings — among them
+  every ellipse LibreOffice writes, which it writes as a freeform — and Word
+  6's drawing objects; pictures in text boxes; Word 6's outline numbering of
+  headings, and the ranges of its comments; tracked changes to paragraph
+  formatting and to paragraph marks, and what a run's formatting was before
+  a tracked change to it, which the file does not keep — rejecting one puts
+  back the style's; a field whose result runs over several paragraphs, which
+  keeps its result as text; notes marked with something other than their
+  number, which read as numbered; frames; the document properties of a file
+  that encrypts them with the rest; the styles as styles, which are laid into
+  the formatting of what uses them as **G5** left them; and Word 2 and
+  older, which are not compound files at all.
 - [ ] **G12. The rest of the ODF reader.** Headers and footers, footnotes,
   endnotes and comments; tracked changes; sections and columns; frames that
   are not pictures, shapes and text boxes; fields other than links; cell

@@ -98,8 +98,11 @@ dependencies = [
 name = "wp-doc"
 version = "0.0.1"
 dependencies = [
+ "wp-cipher",
+ "wp-crypt",
  "wp-deflate",
  "wp-docx",
+ "wp-hash",
  "wp-image",
  "wp-ole",
  "wp-raster",

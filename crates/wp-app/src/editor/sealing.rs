@@ -5,7 +5,8 @@
 //! [`super::protection`] has one: it stops a person lifting a restriction,
 //! and the text of the document is in the file for anybody who cares to
 //! unzip it. This one is the other kind. Without it there is no text in the
-//! file at all — only a compound file holding one enciphered stream — and no
+//! file at all — only a compound file holding one enciphered stream, or, for
+//! a Word 97-2003 document, its streams enciphered where they lie — and no
 //! program can read it, including this one. See [`wp_crypt`].
 //!
 //! # What this module is
@@ -75,7 +76,16 @@ impl Editor {
     /// Opens it, if that was the password.
     pub(super) fn apply_unseal(&mut self, dialog: &Dialog) -> Response {
         let Some(waiting) = self.waiting_to_unseal.clone() else { return Response::Ignored };
-        match Document::open_sealed(&waiting.bytes, &dialog.said(ANSWER)) {
+        let password = dialog.said(ANSWER);
+        // A binary document keeps the password it was opened with as a
+        // package would, and is written back encrypted as one.
+        let opened = if wp_doc::is_encrypted(&waiting.bytes) {
+            wp_doc::open_with_password(&waiting.bytes, Some(&password))
+                .map_err(|error| error.to_string())
+        } else {
+            Document::open_sealed(&waiting.bytes, &password).map_err(|error| error.to_string())
+        };
+        match opened {
             Ok(document) => {
                 self.waiting_to_unseal = None;
                 self.set_document(document, Some(waiting.path.clone()));
@@ -302,6 +312,57 @@ mod tests {
         editor.finish_dialog(Answer::Accept);
         assert!(editor.dialog.is_none(), "it is still asking");
         assert_eq!(editor.document.plain_text(), SECRET);
+        assert_eq!(editor.document.password(), Some("Fenchurch"), "it did not stay encrypted");
+    }
+
+    /// A Word 97-2003 document of the secret, obfuscated under a password the
+    /// way Word's weakest option does it.
+    fn locked_doc(password: &str) -> Vec<u8> {
+        let plain = wp_doc::save(&editor().document);
+        let file = wp_ole::CompoundFile::open(plain).expect("a compound file");
+        let (key, verifier) = wp_crypt::binary::xor_values(password);
+        let stored = wp_crypt::binary::xor_stored(key, verifier);
+        let cipher = wp_crypt::binary::xor_stream_cipher(password, stored).expect("its cipher");
+        let mut builder = wp_ole::Builder::new();
+        for entry in file.entries() {
+            if entry.kind != wp_ole::EntryKind::Stream {
+                continue;
+            }
+            let mut bytes = file.stream(&entry.name).expect("the stream");
+            match entry.name.as_str() {
+                "WordDocument" => {
+                    let flags = u16::from_le_bytes([bytes[10], bytes[11]]) | 0x8100;
+                    bytes[10..12].copy_from_slice(&flags.to_le_bytes());
+                    bytes[14..18].copy_from_slice(&stored.to_le_bytes());
+                    let kept = bytes[..0x44].to_vec();
+                    cipher.apply(&mut bytes);
+                    bytes[..0x44].copy_from_slice(&kept);
+                }
+                "1Table" | "0Table" | "Data" => cipher.apply(&mut bytes),
+                _ => {}
+            }
+            builder.stream(&entry.name, bytes);
+        }
+        builder.build()
+    }
+
+    #[test]
+    fn an_encrypted_word_97_document_asks_for_its_password_and_keeps_it() {
+        let path = std::env::temp_dir().join(format!("wp-locked-{}.doc", std::process::id()));
+        std::fs::write(&path, locked_doc("Fenchurch")).expect("the file");
+        let mut editor = editor();
+        editor.open_path(&path);
+        assert!(editor.dialog.is_some(), "it did not ask: {}", editor.status);
+
+        typed(&mut editor, &[ANSWER], "fenchurch");
+        editor.finish_dialog(Answer::Accept);
+        assert!(editor.status.contains("not the password"), "{}", editor.status);
+
+        typed(&mut editor, &[ANSWER], "Fenchurch");
+        editor.finish_dialog(Answer::Accept);
+        let _ = std::fs::remove_file(&path);
+        assert!(editor.dialog.is_none(), "it is still asking");
+        assert_eq!(editor.document.plain_text().trim_end(), SECRET);
         assert_eq!(editor.document.password(), Some("Fenchurch"), "it did not stay encrypted");
     }
 

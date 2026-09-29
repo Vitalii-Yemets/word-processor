@@ -68,14 +68,16 @@ fn cryptoapi_file(key_bits: u32) -> Vec<u8> {
     let salt = [0x11u8; 16];
     let key_bytes = (key_bits / 8) as usize;
 
-    // The verifier: sixteen bytes and their hash, enciphered together.
+    // The verifier: sixteen bytes and their hash, enciphered together, and
+    // written with the hash's length between them.
     let plain = [0x22u8; 16];
     let mut both = plain.to_vec();
     both.extend_from_slice(&wp_hash::sha1(&plain));
     wp_cipher::Rc4::new(&cryptoapi_key(PASSWORD, &salt, 0, key_bytes)).apply(&mut both);
 
-    let mut verifier = both;
+    let mut verifier = both[..16].to_vec();
     verifier.extend_from_slice(&20u32.to_le_bytes());
+    verifier.extend_from_slice(&both[16..]);
 
     // The package: its length, then the document in blocks of five hundred
     // and twelve, each under a key of its own.

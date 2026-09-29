@@ -1337,5 +1337,5 @@ fn highlight_index(name: &str) -> Option<u8> {
 /// The Windows language number of a language tag, for the ones the reader
 /// knows back.
 fn language_number(tag: &str) -> Option<u16> {
-    (1u16..0x7FFF).find(|number| crate::read::language_tag(*number) == Some(tag))
+    (1u16..0x7FFF).find(|number| crate::format::language_tag(*number) == Some(tag))
 }

@@ -1543,7 +1543,7 @@ impl Reader {
                 .and_then(|number| number.parse::<i64>().ok())
                 .or_else(|| attribute("o:spt").and_then(|number| number.parse::<i64>().ok())),
         };
-        let Some(preset) = kind.and_then(preset_of) else { return false };
+        let Some(preset) = kind.and_then(wp_docx::shapes::office_preset) else { return false };
         let line = preset == "line" || preset == "straightConnector1";
         let (width_emu, height_emu) = if line {
             vml_line_size(attribute("from"), attribute("to"))
@@ -2002,48 +2002,6 @@ fn vml_line_size(from: Option<&str>, to: Option<&str>) -> (i64, i64) {
 /// came from after it — `#4472c4 [3204]`.
 fn vml_colour(value: &str) -> Option<String> {
     css::colour(value.split_whitespace().next()?)
-}
-
-/// The shape a VML type's number names, as the model names it. What has no
-/// name here — a freeform, WordArt — is not drawn.
-fn preset_of(kind: i64) -> Option<&'static str> {
-    Some(match kind {
-        1 => "rect",
-        2 => "roundRect",
-        3 => "ellipse",
-        4 => "diamond",
-        5 => "triangle",
-        6 => "rtTriangle",
-        7 => "parallelogram",
-        8 => "trapezoid",
-        9 => "hexagon",
-        10 => "octagon",
-        11 => "plus",
-        12 => "star5",
-        13 => "rightArrow",
-        15 => "homePlate",
-        16 => "cube",
-        20 => "line",
-        21 => "plaque",
-        22 => "can",
-        23 => "donut",
-        32 => "straightConnector1",
-        55 => "chevron",
-        56 => "pentagon",
-        58 => "star8",
-        66 => "leftArrow",
-        67 => "downArrow",
-        68 => "upArrow",
-        69 => "leftRightArrow",
-        70 => "upDownArrow",
-        73 => "lightningBolt",
-        74 => "heart",
-        96 => "smileyFace",
-        183 => "sun",
-        184 => "moon",
-        202 => "rect",
-        _ => return None,
-    })
 }
 
 /// A style as the sheet has it: the class that names it, the style, and the

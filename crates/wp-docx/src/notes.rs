@@ -116,8 +116,11 @@ impl Document {
             .children_named(Some(read::W), kind.entry())
             .filter_map(|element| {
                 let id: i32 = element.attribute(Some(read::W), "id")?.parse().ok()?;
-                // The separator and the continuation separator are not notes.
-                if id < 1 {
+                // The separator and the continuation separator are not notes:
+                // Word numbers them −1 and 0, LibreOffice 0 and 1, and both
+                // say what they are.
+                let kind_of = element.attribute(Some(read::W), "type").unwrap_or("normal");
+                if id < 1 || kind_of != "normal" {
                     return None;
                 }
                 Some(Note {

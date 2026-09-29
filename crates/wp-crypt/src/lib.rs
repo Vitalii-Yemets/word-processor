@@ -26,10 +26,10 @@
 //! exist; it is not written, because writing it would mean making a new
 //! document weaker than it has to be.
 //!
-//! What is not here is anything older: the RC4 schemes Office used before
-//! 2007. A document in one of those is one this program says it cannot open,
-//! which is the truth and is better than a cipher broken twenty years ago
-//! offered as a feature.
+//! And the older ones, read and never written: the RC4 schemes Office used
+//! before 2007 — see [`rc4`] — and, for the binary formats that enciphered
+//! their streams where they lay rather than a package whole, those two again
+//! and Word 95's exclusive-or — see [`binary`].
 //!
 //! # What the password does here, and what it did in [`wp_docx::protection`]
 //!
@@ -43,6 +43,7 @@
 use wp_ole::CompoundFile;
 
 mod agile;
+pub mod binary;
 mod rc4;
 
 /// The key the oldest of the schemes makes, which a test builds a file with.

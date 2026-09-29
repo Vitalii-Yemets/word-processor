@@ -1079,6 +1079,58 @@ fn replace_shape(
     false
 }
 
+/// The preset an Office drawing's shape number names: the number the binary
+/// formats, RTF's drawings and VML's shape types all give a shape, as the
+/// model names it. What has no name here — a freeform, WordArt — is not
+/// drawn.
+#[must_use]
+pub fn office_preset(kind: i64) -> Option<&'static str> {
+    Some(match kind {
+        1 => "rect",
+        2 => "roundRect",
+        3 => "ellipse",
+        4 => "diamond",
+        5 => "triangle",
+        6 => "rtTriangle",
+        7 => "parallelogram",
+        8 => "trapezoid",
+        9 => "hexagon",
+        10 => "octagon",
+        11 => "plus",
+        12 => "star5",
+        13 => "rightArrow",
+        15 => "homePlate",
+        16 => "cube",
+        20 => "line",
+        21 => "plaque",
+        22 => "can",
+        23 => "donut",
+        32 => "straightConnector1",
+        55 => "chevron",
+        56 => "pentagon",
+        58 => "star8",
+        59 => "star16",
+        60 => "star32",
+        66 => "leftArrow",
+        67 => "downArrow",
+        68 => "upArrow",
+        69 => "leftRightArrow",
+        70 => "upDownArrow",
+        73 => "lightningBolt",
+        74 => "heart",
+        84 => "bevel",
+        96 => "smileyFace",
+        183 => "sun",
+        184 => "moon",
+        185 => "bracketPair",
+        186 => "bracePair",
+        187 => "star4",
+        188 => "doubleWave",
+        202 => "rect",
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

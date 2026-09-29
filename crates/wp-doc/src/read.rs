@@ -14,37 +14,83 @@
 //! properties are tables of their own in the second stream; pictures are in
 //! a third, behind a header and inside a drawing record.
 //!
-//! So the reading is: the text with the file position of every character;
-//! the paragraphs cut at their marks, each looked up by the position of its
-//! mark; the runs cut where the character pages cut them; and the tables,
-//! lists, fields and pictures recognised from the marks and sprms as the
-//! text goes by.
+//! # Stories
+//!
+//! The main text is only the first of the text's stories: after it come the
+//! footnotes, the headers and footers, the comments, the endnotes and the
+//! words in text boxes, each where the block's lengths say, each cut into
+//! its entries by a table of positions — which note begins where, which
+//! header is which. Each is read the same way, paragraph by paragraph, into
+//! paragraphs and tables of its own, and put where it belongs: a note's
+//! words with the note, a header's with its section.
+//!
+//! The main text's marks say where the rest is anchored: a note's number
+//! where the note is, a drawing where it floats from. Bookmarks, comments'
+//! ranges and sections are positions in the main text, kept in tables of
+//! their own; reading the main text notes where each of its characters ends
+//! up in the document, and those tables are read through that.
+//!
+//! # Encrypted files
+//!
+//! Every stream but the first few bytes of the main one is enciphered where
+//! it lies. With the password, each is deciphered from its first byte — see
+//! [`wp_crypt::binary`] — and then read as any other file.
 
+use std::collections::HashMap;
+use std::ops::Range;
+
+use wp_docx::anchor::Anchor;
+use wp_docx::fonts::FontEntry;
+use wp_docx::furniture::{Furniture, Which};
 use wp_docx::model::{
-    Alignment, Block, Body, BreakKind, LineRule, LineSpacing, NumberingReference, Paragraph,
-    ParagraphProperties, Run, RunContent, RunProperties, Table, TableCell, TableRow, Underline,
-    VerticalAlignment,
+    Block, Body, BreakKind, FormatChange, NumberingReference, Paragraph, ParagraphProperties,
+    Revision, RevisionKind, Run, RunContent, RunProperties,
 };
-use wp_text::Encoding;
-
-use crate::fib::{Fib, Table as FibTable};
-use crate::sprm::{self, Sprm};
-use crate::Error;
+use wp_docx::properties::Properties;
+use wp_docx::TextPosition;
 use wp_ole::CompoundFile;
+
+use crate::fib::{Base, Fib, Table};
+use crate::format::{self, Bins, Font, Kind, Lists, Pages, Style};
+use crate::plc::{self, Plc};
+use crate::sections::{self, PageSetup};
+use crate::shapes::{self, Drawings};
+use crate::sprm::{self, Sprm};
+use crate::tables::{Level, RowDefinition};
+use crate::text::{self, Char};
+use crate::Error;
 
 /// The character that stands where a picture goes in the text, until the
 /// picture is put in.
 pub const PICTURE_MARK: char = '\u{FFFC}';
 
 /// What was read.
+///
+/// Every place in it — a picture's, a link's, a bookmark's, a comment's — is
+/// counted the way the document will count it once the pictures are in: a
+/// picture, a note's mark and a drawing are one character each, and deleted
+/// text is no characters at all.
 #[derive(Debug, Default)]
 pub struct Reading {
     pub body: Body,
+    /// The pictures, each with where it goes: the paragraph, counted through
+    /// the whole document in order, and the offset in it of the mark that
+    /// stands for it.
     pub pictures: Vec<PictureFound>,
     pub links: Vec<LinkFound>,
-    /// The page: width, height, and the margins top, right, bottom, left,
-    /// in twips, from the first section.
-    pub page: Option<(i32, i32, [i32; 4])>,
+    pub bookmarks: Vec<BookmarkFound>,
+    pub comments: Vec<CommentFound>,
+    /// What the notes say, for the marks already in the body.
+    pub notes: Vec<NoteFound>,
+    /// The sections, in order; there is always at least one.
+    pub sections: Vec<SectionFound>,
+    /// Whether left-hand and right-hand pages have headers and footers of
+    /// their own.
+    pub facing_pages: bool,
+    /// The font table: what the file says of each font it names.
+    pub fonts: Vec<FontEntry>,
+    /// What the document says about itself.
+    pub properties: Properties,
 }
 
 #[derive(Debug)]
@@ -55,6 +101,9 @@ pub struct PictureFound {
     pub extension: &'static str,
     pub width_emu: i64,
     pub height_emu: i64,
+    /// Where it floats, for a picture that is a drawing on the page rather
+    /// than a character in the line.
+    pub anchor: Option<Anchor>,
 }
 
 #[derive(Debug)]
@@ -62,518 +111,485 @@ pub struct LinkFound {
     pub paragraph: usize,
     pub start: usize,
     pub end: usize,
+    /// An address, or `#` and a bookmark's name for a place in the document.
     pub address: String,
 }
 
-/// The streams the document is in.
-struct Streams {
-    word: Vec<u8>,
-    table: Vec<u8>,
-    data: Vec<u8>,
-    fib: Fib,
+#[derive(Debug)]
+pub struct BookmarkFound {
+    pub name: String,
+    pub start: TextPosition,
+    pub end: TextPosition,
 }
 
-/// One stretch of the text: which characters, where they are, how wide.
-#[derive(Clone, Copy, Debug)]
-struct Piece {
-    cp_start: u32,
-    cp_end: u32,
-    fc: u32,
-    compressed: bool,
+#[derive(Debug)]
+pub struct CommentFound {
+    pub start: TextPosition,
+    pub end: TextPosition,
+    pub author: String,
+    /// An ISO 8601 timestamp, or nothing where the file gave no date — which
+    /// before Word 2002 it never did.
+    pub date: String,
+    pub body: Body,
+    /// The pictures in it, placed in its own paragraphs.
+    pub pictures: Vec<PictureFound>,
 }
 
-/// A style of the stylesheet.
-#[derive(Clone, Debug, Default)]
-struct Style {
-    name: String,
-    base: u16,
-    papx: Vec<u8>,
-    chpx: Vec<u8>,
+#[derive(Debug)]
+pub struct NoteFound {
+    /// The number its mark in the body carries.
+    pub id: i32,
+    pub endnote: bool,
+    pub body: Body,
+    pub pictures: Vec<PictureFound>,
 }
 
-/// One character of the text, and where it is in the file.
-#[derive(Clone, Copy, Debug)]
-struct Char {
-    character: char,
-    fc: u32,
+/// One of a section's headers or footers.
+#[derive(Debug)]
+pub struct FurnitureFound {
+    pub kind: Furniture,
+    pub which: Which,
+    pub body: Body,
+    pub pictures: Vec<PictureFound>,
 }
 
-/// Reads a document's bytes into a body, with the pictures and links beside
-/// it.
+#[derive(Debug, Default)]
+pub struct SectionFound {
+    /// The paragraph it ends with, counted through the whole document; the
+    /// last section ends with the document and has none.
+    pub last_paragraph: Option<usize>,
+    pub page: PageSetup,
+    /// Its own headers and footers. One it does not have follows the section
+    /// before it, as in Word.
+    pub furniture: Vec<FurnitureFound>,
+}
+
+/// Reads a document's bytes.
 pub fn read(bytes: &[u8]) -> Result<Reading, Error> {
+    read_with_password(bytes, None)
+}
+
+/// Reads a document's bytes, deciphering them with the password if they are
+/// encrypted. An encrypted document without one is [`Error::Encrypted`].
+pub fn read_with_password(bytes: &[u8], password: Option<&str>) -> Result<Reading, Error> {
     let file = CompoundFile::open(bytes.to_vec())?;
-    let word = file.stream("WordDocument").ok_or(Error::Malformed("no WordDocument stream"))?;
-    let fib = Fib::parse(&word)?;
-    if fib.encrypted {
-        return Err(Error::Encrypted);
-    }
-    let table_name = if fib.table_stream_one { "1Table" } else { "0Table" };
-    let table = file
-        .stream(table_name)
-        .or_else(|| file.stream("1Table"))
-        .or_else(|| file.stream("0Table"))
-        .ok_or(Error::Malformed("no table stream"))?;
-    let data = file.stream("Data").unwrap_or_default();
-    let streams = Streams { word, table, data, fib };
-
-    let text = text_of(&streams)?;
-    let styles = styles_of(&streams);
-    let fonts = fonts_of(&streams);
-    let lists = lists_of(&streams);
-    let sections = section_boundaries(&streams);
-    let paragraph_bins = bins_of(&streams, FibTable::ParagraphBins);
-    let character_bins = bins_of(&streams, FibTable::CharacterBins);
-    let page = page_of(&streams);
-
-    let mut builder = Builder {
-        streams: &streams,
-        styles: &styles,
-        fonts: &fonts,
-        lists: &lists,
-        paragraph_bins: &paragraph_bins,
-        character_bins: &character_bins,
-        body: Body::default(),
-        pictures: Vec::new(),
-        links: Vec::new(),
-        paragraphs_done: 0,
-        table_rows: Vec::new(),
-        row_cells: Vec::new(),
-        cell_blocks: Vec::new(),
-        fields: Vec::new(),
+    let mut word = file.stream("WordDocument").ok_or(Error::Malformed("no WordDocument stream"))?;
+    let base = Base::parse(&word)?;
+    let mut table = if base.old {
+        Vec::new()
+    } else {
+        let name = if base.table_stream_one { "1Table" } else { "0Table" };
+        file.stream(name)
+            .or_else(|| file.stream("1Table"))
+            .or_else(|| file.stream("0Table"))
+            .ok_or(Error::Malformed("no table stream"))?
     };
-    builder.build(&text, &sections);
-    let mut body = builder.body;
+    let mut data = file.stream("Data").unwrap_or_default();
+    if base.encrypted {
+        let password = password.ok_or(Error::Encrypted)?;
+        decipher(&base, password, &mut word, &mut table, &mut data)?;
+    }
+    // Word 6 kept everything in the one stream.
+    if base.old {
+        table.clone_from(&word);
+        data.clone_from(&word);
+    }
+    let fib = Fib::parse(&word)?;
+    let text = text::text_of(&word, &table, &fib)?;
+    let styles = format::styles_of(&table, &fib);
+    let fonts = format::fonts_of(&table, &fib);
+    let lists = format::lists_of(&table, &fib);
+    let paragraph_bins = format::bins_of(&word, &table, &fib, Kind::Paragraph);
+    let character_bins = format::bins_of(&word, &table, &fib, Kind::Character);
+    let drawings = Drawings::parse(&table, &fib);
+    let starts = fib.story_starts();
+    let table_of = |which: Table| {
+        fib.table(which).and_then(|(offset, length)| table.get(offset..offset + length))
+    };
+    let authors = table_of(Table::RevisionAuthors)
+        .map(|bytes| plc::strings(bytes, fib.base.old).into_iter().map(|(name, _)| name).collect())
+        .unwrap_or_default();
+    let dop = table_of(Table::Dop).unwrap_or(&[]);
+    let facing_pages = dop.first().is_some_and(|flags| flags & 1 != 0);
+    let separators = dop.get(1).copied().unwrap_or(0);
+
+    // The notes: where each is marked in the main text, and where its words
+    // are in its own story.
+    let notes_of = |references: Table, texts: Table| -> Vec<(u32, Range<u32>)> {
+        let (Some(references), Some(texts)) = (table_of(references), table_of(texts)) else {
+            return Vec::new();
+        };
+        let references = Plc::parse(references, 2);
+        let texts = Plc::parse(texts, 0);
+        (0..references.len())
+            .filter_map(|index| {
+                Some((references.start(index)?, texts.start(index)?..texts.end(index)?))
+            })
+            .collect()
+    };
+    let footnotes = notes_of(Table::FootnoteReferences, Table::FootnoteTexts);
+    let endnotes = notes_of(Table::EndnoteReferences, Table::EndnoteTexts);
+    let mut note_marks = HashMap::new();
+    for (index, (at, _)) in footnotes.iter().enumerate() {
+        note_marks.insert(*at, (index as i32 + 1, false));
+    }
+    for (index, (at, _)) in endnotes.iter().enumerate() {
+        note_marks.insert(*at, (index as i32 + 1, true));
+    }
+
+    let context = Context {
+        word: &word,
+        table: &table,
+        data: &data,
+        fib: &fib,
+        text,
+        styles,
+        fonts,
+        lists,
+        paragraph_bins,
+        character_bins,
+        drawings,
+        authors,
+        note_marks,
+        starts,
+    };
+    let mut reader = Reader { context: &context, pages: Pages::default(), changes: Vec::new() };
+
+    let sections = sections::sections_of(&word, &table, &fib);
+    let section_ends: Vec<u32> = sections.iter().map(|(end, _)| *end).collect();
+    let main = reader.story(Story::Main, starts[0]..starts[1], &section_ends);
+
+    let mut notes = Vec::new();
+    for (endnote, list, from) in [(false, &footnotes, starts[1]), (true, &endnotes, starts[5])] {
+        let story = if endnote { Story::Endnote } else { Story::Footnote };
+        for (index, (_, range)) in list.iter().enumerate() {
+            let built = reader.story(story, from + range.start..from + range.end, &[]);
+            notes.push(NoteFound {
+                id: index as i32 + 1,
+                endnote,
+                body: built.body(),
+                pictures: built.pictures,
+            });
+        }
+    }
+
+    let position =
+        |cp: u32| main.positions.get(cp as usize).copied().unwrap_or_else(|| main.end_position());
+    let comments = comments_of(&mut reader, &table_of, &position);
+    let bookmarks = bookmarks_of(&table_of, fib.base.old, starts[1], &position);
+
+    let furniture = sections::furniture_of(&table, &fib, &sections, separators);
+    let last = sections.len().saturating_sub(1);
+    let mut found_sections = Vec::with_capacity(sections.len().max(1));
+    for (index, (end, page)) in sections.into_iter().enumerate() {
+        let mut found = SectionFound {
+            last_paragraph: (index < last).then(|| position(end.saturating_sub(1)).paragraph),
+            page,
+            furniture: Vec::new(),
+        };
+        for (kind, which, start, end) in furniture.get(index).cloned().unwrap_or_default() {
+            let built = reader.story(Story::Header, starts[2] + start..starts[2] + end, &[]);
+            found.furniture.push(FurnitureFound {
+                kind,
+                which,
+                body: built.body(),
+                pictures: built.pictures,
+            });
+        }
+        found_sections.push(found);
+    }
+    if found_sections.is_empty() {
+        found_sections.push(SectionFound::default());
+    }
+
+    let mut body = Body { blocks: main.blocks };
     if body.blocks.is_empty() {
         body.blocks.push(Block::Paragraph(Paragraph::default()));
     }
-    Ok(Reading { body, pictures: builder.pictures, links: builder.links, page })
+    Ok(Reading {
+        body,
+        pictures: main.pictures,
+        links: main.links,
+        bookmarks,
+        comments,
+        notes,
+        sections: found_sections,
+        facing_pages,
+        fonts: context.fonts.iter().map(|font| font.entry.clone()).collect(),
+        properties: crate::summary::properties_of(&file),
+    })
 }
 
-// --- The text -----------------------------------------------------------------
-
-/// The main text, character by character with its place in the file.
-fn text_of(streams: &Streams) -> Result<Vec<Char>, Error> {
-    let pieces = pieces_of(streams)?;
-    let end = streams.fib.text_length;
-    let mut out = Vec::with_capacity(end as usize);
-    for piece in pieces {
-        if piece.cp_start >= end {
-            break;
-        }
-        let last = piece.cp_end.min(end);
-        for cp in piece.cp_start..last {
-            let offset = cp - piece.cp_start;
-            let (character, fc) = if piece.compressed {
-                let fc = piece.fc + offset;
-                let byte = *streams.word.get(fc as usize).ok_or(Error::Truncated("text"))?;
-                (old_character(byte), fc)
-            } else {
-                let fc = piece.fc + offset * 2;
-                let two = streams
-                    .word
-                    .get(fc as usize..fc as usize + 2)
-                    .ok_or(Error::Truncated("text"))?;
-                let unit = u16::from_le_bytes([two[0], two[1]]);
-                (char::from_u32(u32::from(unit)).unwrap_or('\u{FFFD}'), fc)
-            };
-            out.push(Char { character, fc });
-        }
-    }
-    Ok(out)
-}
-
-/// A byte of the old one-byte text: the Western code page, with the few
-/// places the format keeps for itself.
-fn old_character(byte: u8) -> char {
-    match byte {
-        0x82 => '\u{201A}',
-        0x83 => '\u{0192}',
-        0x84 => '\u{201E}',
-        0x85 => '\u{2026}',
-        0x86 => '\u{2020}',
-        0x87 => '\u{2021}',
-        0x88 => '\u{02C6}',
-        0x89 => '\u{2030}',
-        0x8A => '\u{0160}',
-        0x8B => '\u{2039}',
-        0x8C => '\u{0152}',
-        0x91 => '\u{2018}',
-        0x92 => '\u{2019}',
-        0x93 => '\u{201C}',
-        0x94 => '\u{201D}',
-        0x95 => '\u{2022}',
-        0x96 => '\u{2013}',
-        0x97 => '\u{2014}',
-        0x98 => '\u{02DC}',
-        0x99 => '\u{2122}',
-        0x9A => '\u{0161}',
-        0x9B => '\u{203A}',
-        0x9C => '\u{0153}',
-        0x9F => '\u{0178}',
-        other => Encoding::CodePage(1252).decode(&[other]).chars().next().unwrap_or('\u{FFFD}'),
-    }
-}
-
-/// The piece table, out of the Clx.
-fn pieces_of(streams: &Streams) -> Result<Vec<Piece>, Error> {
-    let Some((offset, length)) = streams.fib.table(FibTable::Clx) else {
-        return Err(Error::Malformed("no piece table"));
+/// Deciphers the streams in place: the main stream but its first bytes,
+/// which were never enciphered, and the other two whole.
+fn decipher(
+    base: &Base,
+    password: &str,
+    word: &mut [u8],
+    table: &mut [u8],
+    data: &mut [u8],
+) -> Result<(), Error> {
+    let cipher = if base.obfuscated {
+        wp_crypt::binary::xor_stream_cipher(password, base.key)?
+    } else {
+        let description =
+            table.get(..base.key as usize).ok_or(Error::Truncated("encryption description"))?;
+        wp_crypt::binary::rc4_stream_cipher(description, password)?
     };
-    let clx = streams.table.get(offset..offset + length).ok_or(Error::Truncated("Clx"))?;
-    // Property modifiers first, each `01 cb[2] grpprl`, then the piece
-    // table, `02 lcb[4] plcpcd`.
-    let mut at = 0;
-    while at < clx.len() {
-        match clx[at] {
-            1 => {
-                let cb = usize::from(u16::from_le_bytes([clx[at + 1], clx[at + 2]]));
-                at += 3 + cb;
-            }
-            2 => {
-                let lcb = u32::from_le_bytes([clx[at + 1], clx[at + 2], clx[at + 3], clx[at + 4]])
-                    as usize;
-                let plc = clx.get(at + 5..at + 5 + lcb).ok_or(Error::Truncated("piece table"))?;
-                return Ok(parse_pieces(plc));
-            }
-            _ => return Err(Error::Malformed("Clx")),
-        }
+    let readable = base.readable().min(word.len());
+    let kept = word[..readable].to_vec();
+    cipher.apply(word);
+    word[..readable].copy_from_slice(&kept);
+    if !base.old {
+        cipher.apply(table);
+        cipher.apply(data);
     }
-    Err(Error::Malformed("no piece table in the Clx"))
+    Ok(())
 }
 
-fn parse_pieces(plc: &[u8]) -> Vec<Piece> {
-    // n pieces: n+1 positions of four bytes, then n descriptors of eight.
-    let n = (plc.len().saturating_sub(4)) / 12;
-    let u32_at = |at: usize| u32::from_le_bytes([plc[at], plc[at + 1], plc[at + 2], plc[at + 3]]);
-    let mut pieces = Vec::with_capacity(n);
-    for index in 0..n {
-        let cp_start = u32_at(index * 4);
-        let cp_end = u32_at(index * 4 + 4);
-        let descriptor = (n + 1) * 4 + index * 8;
-        let fc = u32_at(descriptor + 2);
-        let compressed = fc & 0x4000_0000 != 0;
-        let fc = if compressed { (fc & !0x4000_0000) / 2 } else { fc };
-        pieces.push(Piece { cp_start, cp_end, fc, compressed });
-    }
-    pieces
-}
+/// The comments: where each is marked, who wrote it and when, what it covers,
+/// and its words.
+fn comments_of<'t>(
+    reader: &mut Reader<'_>,
+    table_of: &dyn Fn(Table) -> Option<&'t [u8]>,
+    position: &dyn Fn(u32) -> TextPosition,
+) -> Vec<CommentFound> {
+    let context = reader.context;
+    let old = context.fib.base.old;
+    let (Some(references), Some(texts)) =
+        (table_of(Table::CommentReferences), table_of(Table::CommentTexts))
+    else {
+        return Vec::new();
+    };
+    let references = Plc::parse(references, if old { 20 } else { 30 });
+    let texts = Plc::parse(texts, 0);
+    let authors = table_of(Table::CommentAuthors)
+        .map(|bytes| plc::run_of_strings(bytes, old))
+        .unwrap_or_default();
+    // The ranges: bookmarks of their own, each tagged with a number a
+    // comment names.
+    let tags: Vec<i32> = table_of(Table::CommentBookmarks)
+        .filter(|_| !old)
+        .map(|bytes| {
+            plc::strings(bytes, false)
+                .into_iter()
+                .map(|(_, extra)| plc::u32_at(&extra, 2) as i32)
+                .collect()
+        })
+        .unwrap_or_default();
+    let starts = table_of(Table::CommentBookmarkStarts).map(|bytes| Plc::parse(bytes, 4));
+    let ends = table_of(Table::CommentBookmarkEnds).map(|bytes| Plc::parse(bytes, 0));
+    let extra = table_of(Table::CommentsExtra).filter(|_| !old);
+    let from = context.starts[4];
 
-/// Where the sections end, as character positions.
-fn section_boundaries(streams: &Streams) -> Vec<u32> {
-    let Some((offset, length)) = streams.fib.table(FibTable::Sections) else { return Vec::new() };
-    let Some(plc) = streams.table.get(offset..offset + length) else { return Vec::new() };
-    let n = plc.len().saturating_sub(4) / 16;
-    (0..=n)
-        .filter_map(|index| plc.get(index * 4..index * 4 + 4))
-        .map(|four| u32::from_le_bytes([four[0], four[1], four[2], four[3]]))
-        .collect()
-}
-
-/// The first section's page: size and margins.
-fn page_of(streams: &Streams) -> Option<(i32, i32, [i32; 4])> {
-    let (offset, length) = streams.fib.table(FibTable::Sections)?;
-    let plc = streams.table.get(offset..offset + length)?;
-    let n = plc.len().saturating_sub(4) / 16;
-    if n == 0 {
-        return None;
-    }
-    let sed = plc.get((n + 1) * 4..(n + 1) * 4 + 12)?;
-    let fc = u32::from_le_bytes([sed[2], sed[3], sed[4], sed[5]]);
-    if fc == 0xFFFF_FFFF {
-        return None;
-    }
-    let cb = usize::from(u16::from_le_bytes([
-        *streams.word.get(fc as usize)?,
-        *streams.word.get(fc as usize + 1)?,
-    ]));
-    let grpprl = streams.word.get(fc as usize + 2..fc as usize + 2 + cb)?;
-    let (mut width, mut height) = (12240, 15840);
-    let mut margins = [1440, 1440, 1440, 1440];
-    let mut landscape = false;
-    for sprm in sprm::parse(grpprl) {
-        match sprm.code {
-            sprm::S_PAGE_WIDTH => width = i32::from(sprm.u16()),
-            sprm::S_PAGE_HEIGHT => height = i32::from(sprm.u16()),
-            sprm::S_MARGIN_TOP => margins[0] = i32::from(sprm.i16()),
-            sprm::S_MARGIN_RIGHT => margins[1] = i32::from(sprm.u16()),
-            sprm::S_MARGIN_BOTTOM => margins[2] = i32::from(sprm.i16()),
-            sprm::S_MARGIN_LEFT => margins[3] = i32::from(sprm.u16()),
-            sprm::S_ORIENTATION => landscape = sprm.byte() == 2,
-            _ => {}
-        }
-    }
-    let _ = landscape;
-    Some((width, height, margins))
-}
-
-// --- The tables in the table stream ---------------------------------------------
-
-/// The stylesheet: every style with its name, its base, and its sprms.
-fn styles_of(streams: &Streams) -> Vec<Style> {
-    let Some((offset, length)) = streams.fib.table(FibTable::StyleSheet) else { return Vec::new() };
-    let Some(stsh) = streams.table.get(offset..offset + length) else { return Vec::new() };
-    let u16_at = |at: usize| stsh.get(at..at + 2).map(|two| u16::from_le_bytes([two[0], two[1]]));
-    let Some(cb_stshi) = u16_at(0) else { return Vec::new() };
-    let Some(count) = u16_at(2) else { return Vec::new() };
-    let base_size = u16_at(4).unwrap_or(10) as usize;
-    let mut at = 2 + cb_stshi as usize;
-    let mut styles = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        let Some(cb) = u16_at(at) else { break };
-        at += 2;
-        let cb = cb as usize;
-        if cb == 0 {
-            styles.push(Style::default());
+    let mut out = Vec::new();
+    for index in 0..references.len() {
+        let (Some(at), Some(entry)) = (references.start(index), references.entry(index)) else {
             continue;
-        }
-        let Some(std) = stsh.get(at..at + cb) else { break };
-        at += cb;
-        styles.push(parse_style(std, base_size));
-    }
-    styles
-}
-
-fn parse_style(std: &[u8], base_size: usize) -> Style {
-    let u16_at =
-        |at: usize| std.get(at..at + 2).map_or(0, |two| u16::from_le_bytes([two[0], two[1]]));
-    let kind = (u16_at(2) & 0x000F) as u8;
-    let base = u16_at(2) >> 4;
-    let cupx = (u16_at(4) & 0x000F) as usize;
-    let mut at = base_size;
-    // The name: a count of characters, the characters, a terminator.
-    let cch = usize::from(u16_at(at));
-    at += 2;
-    let units: Vec<u16> = (0..cch).map(|index| u16_at(at + index * 2)).collect();
-    let name = String::from_utf16_lossy(&units);
-    at += cch * 2 + 2;
-    // The property groups: for a paragraph style its paragraph sprms (behind
-    // a style number) and then its character sprms; for a character style
-    // just the character ones. Each is padded to an even length.
-    let mut papx = Vec::new();
-    let mut chpx = Vec::new();
-    for index in 0..cupx {
-        if at % 2 == 1 {
-            at += 1;
-        }
-        let cb = usize::from(u16_at(at));
-        at += 2;
-        let Some(group) = std.get(at..at + cb) else { break };
-        at += cb;
-        if kind == 1 && index == 0 {
-            papx = group.get(2..).unwrap_or(&[]).to_vec();
+        };
+        let (Some(text_start), Some(text_end)) = (texts.start(index), texts.end(index)) else {
+            continue;
+        };
+        let (author_index, tag) = if old {
+            (plc::u16_at(entry, 10), plc::u32_at(entry, 16) as i32)
         } else {
-            chpx = group.to_vec();
-        }
-    }
-    Style { name, base, papx, chpx }
-}
-
-/// The fonts, by index: the font table's names.
-fn fonts_of(streams: &Streams) -> Vec<String> {
-    let Some((offset, length)) = streams.fib.table(FibTable::Fonts) else { return Vec::new() };
-    let Some(sttb) = streams.table.get(offset..offset + length) else { return Vec::new() };
-    let u16_at =
-        |at: usize| sttb.get(at..at + 2).map_or(0, |two| u16::from_le_bytes([two[0], two[1]]));
-    let extended = u16_at(0) == 0xFFFF;
-    let (count, mut at) = if extended { (u16_at(2), 6) } else { (u16_at(0), 4) };
-    let mut fonts = Vec::with_capacity(usize::from(count));
-    for _ in 0..count {
-        let Some(&cb) = sttb.get(at) else { break };
-        let entry = sttb.get(at + 1..at + 1 + usize::from(cb)).unwrap_or(&[]);
-        at += 1 + usize::from(cb);
-        // The name is at the end of the entry, after thirty-nine bytes of
-        // what the font is like, ended by a zero.
-        let units: Vec<u16> = entry
-            .get(39..)
-            .unwrap_or(&[])
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-            .take_while(|unit| *unit != 0)
-            .collect();
-        fonts.push(String::from_utf16_lossy(&units));
-    }
-    fonts
-}
-
-/// The lists: for each list-format override number, whether its levels are
-/// bulleted.
-#[derive(Debug, Default)]
-struct Lists {
-    /// By list id: whether each of the nine levels is a bullet.
-    lists: Vec<(i32, [bool; 9])>,
-    /// By override number, from one: the list id.
-    overrides: Vec<i32>,
-}
-
-impl Lists {
-    fn is_bullet(&self, ilfo: u16, level: u8) -> Option<bool> {
-        let id = *self.overrides.get(usize::from(ilfo).checked_sub(1)?)?;
-        let (_, levels) = self.lists.iter().find(|(held, _)| *held == id)?;
-        levels.get(usize::from(level)).copied()
-    }
-}
-
-fn lists_of(streams: &Streams) -> Lists {
-    let mut lists = Lists::default();
-    if let Some((offset, _length)) = streams.fib.table(FibTable::Lists) {
-        // The levels follow the table of lists in the stream, past the
-        // length the block gives for it, so the stream is read from the
-        // table's start to wherever the levels end.
-        if let Some(plf) = streams.table.get(offset..) {
-            let count =
-                plf.get(0..2).map_or(0, |two| usize::from(u16::from_le_bytes([two[0], two[1]])));
-            let mut at = 2;
-            let mut simple = Vec::with_capacity(count);
-            for _ in 0..count {
-                let Some(lstf) = plf.get(at..at + 28) else { break };
-                let id = i32::from_le_bytes([lstf[0], lstf[1], lstf[2], lstf[3]]);
-                simple.push(lstf[26] & 1 != 0);
-                lists.lists.push((id, [false; 9]));
-                at += 28;
-            }
-            // Then the levels of every list, nine each or one for a simple
-            // list, each a fixed part, two sprm groups, and the number text.
-            for (index, is_simple) in simple.into_iter().enumerate() {
-                let levels = if is_simple { 1 } else { 9 };
-                for level in 0..levels {
-                    let Some(lvlf) = plf.get(at..at + 28) else { break };
-                    let format = lvlf[4];
-                    let cb_chpx = usize::from(lvlf[24]);
-                    let cb_papx = usize::from(lvlf[25]);
-                    at += 28 + cb_papx + cb_chpx;
-                    let cch = plf
-                        .get(at..at + 2)
-                        .map_or(0, |two| usize::from(u16::from_le_bytes([two[0], two[1]])));
-                    at += 2 + cch * 2;
-                    if let Some((_, bullets)) = lists.lists.get_mut(index) {
-                        bullets[level] = format == 23;
-                        if is_simple {
-                            for later in bullets.iter_mut().skip(1) {
-                                *later = format == 23;
-                            }
-                        }
-                    }
+            (plc::u16_at(entry, 20), plc::u32_at(entry, 26) as i32)
+        };
+        let author = authors.get(usize::from(author_index)).cloned().unwrap_or_default();
+        let date = extra
+            .and_then(|bytes| bytes.get(index * 18..index * 18 + 4))
+            .map(|four| format::dttm(u32::from_le_bytes([four[0], four[1], four[2], four[3]])))
+            .unwrap_or_default();
+        let mut range = (position(at), position(at));
+        if tag != -1 {
+            if let (Some(mark), Some(starts), Some(ends)) =
+                (tags.iter().position(|held| *held == tag), &starts, &ends)
+            {
+                let end_index = starts.entry(mark).map(|entry| usize::from(plc::u16_at(entry, 0)));
+                if let (Some(start), Some(end)) =
+                    (starts.start(mark), end_index.and_then(|at| ends.start(at)))
+                {
+                    range = (position(start), position(end));
                 }
             }
         }
+        let built = reader.story(Story::Comment, from + text_start..from + text_end, &[]);
+        out.push(CommentFound {
+            start: range.0,
+            end: range.1,
+            author,
+            date,
+            body: built.body(),
+            pictures: built.pictures,
+        });
     }
-    if let Some((offset, length)) = streams.fib.table(FibTable::ListOverrides) {
-        if let Some(plf) = streams.table.get(offset..offset + length) {
-            let count = plf.get(0..4).map_or(0, |four| {
-                u32::from_le_bytes([four[0], four[1], four[2], four[3]]) as usize
-            });
-            for index in 0..count {
-                let Some(lfo) = plf.get(4 + index * 16..4 + index * 16 + 4) else { break };
-                lists.overrides.push(i32::from_le_bytes([lfo[0], lfo[1], lfo[2], lfo[3]]));
-            }
-        }
-    }
-    lists
+    out
 }
 
-/// A bin table: which formatting page covers which range of file positions.
-#[derive(Debug, Default)]
-struct Bins {
-    /// Ranges of file positions, one more than the pages.
-    fcs: Vec<u32>,
-    /// The page number of each range.
-    pages: Vec<u32>,
-}
-
-fn bins_of(streams: &Streams, which: FibTable) -> Bins {
-    let Some((offset, length)) = streams.fib.table(which) else { return Bins::default() };
-    let Some(plc) = streams.table.get(offset..offset + length) else { return Bins::default() };
-    let n = plc.len().saturating_sub(4) / 8;
-    let u32_at = |at: usize| {
-        plc.get(at..at + 4)
-            .map_or(0, |four| u32::from_le_bytes([four[0], four[1], four[2], four[3]]))
+/// The bookmarks in the main text: their names, and where each begins and
+/// ends.
+fn bookmarks_of<'t>(
+    table_of: &dyn Fn(Table) -> Option<&'t [u8]>,
+    old: bool,
+    main_end: u32,
+    position: &dyn Fn(u32) -> TextPosition,
+) -> Vec<BookmarkFound> {
+    let (Some(names), Some(starts), Some(ends)) = (
+        table_of(Table::BookmarkNames),
+        table_of(Table::BookmarkStarts),
+        table_of(Table::BookmarkEnds),
+    ) else {
+        return Vec::new();
     };
-    Bins {
-        fcs: (0..=n).map(|index| u32_at(index * 4)).collect(),
-        pages: (0..n).map(|index| u32_at((n + 1) * 4 + index * 4)).collect(),
-    }
-}
-
-impl Bins {
-    /// The page covering a file position.
-    fn page_for(&self, fc: u32) -> Option<u32> {
-        let index = self.fcs.iter().position(|edge| fc < *edge)?.checked_sub(1)?;
-        self.pages.get(index).copied()
-    }
-}
-
-/// A formatting page: which file positions it covers, and the group of
-/// sprms for each.
-struct Page<'a> {
-    fcs: Vec<u32>,
-    entries: Vec<Option<(u16, &'a [u8])>>,
-}
-
-impl Page<'_> {
-    /// The entry covering a file position: its style, and its sprms.
-    fn entry_for(&self, fc: u32) -> Option<(u16, &[u8])> {
-        let index = self.fcs.iter().position(|edge| fc < *edge)?.checked_sub(1)?;
-        self.entries.get(index).copied().flatten()
-    }
-}
-
-/// A page of paragraph formatting.
-fn paragraph_page(word: &[u8], page: u32) -> Option<Page<'_>> {
-    let bytes = word.get(page as usize * 512..page as usize * 512 + 512)?;
-    let count = usize::from(bytes[511]);
-    let u32_at =
-        |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
-    let fcs: Vec<u32> = (0..=count).map(|index| u32_at(index * 4)).collect();
-    let mut entries = Vec::with_capacity(count);
-    for index in 0..count {
-        let offset = usize::from(bytes[(count + 1) * 4 + index * 13]) * 2;
-        if offset == 0 {
-            entries.push(None);
-            continue;
-        }
-        // The length is a count of words, or, when that is zero, the next
-        // byte is a count of words instead — because a paragraph can carry
-        // more than a byte's worth of formatting.
-        let (cb, start) = match bytes.get(offset).copied() {
-            Some(0) => (usize::from(bytes.get(offset + 1).copied().unwrap_or(0)) * 2, offset + 2),
-            Some(cb) => (usize::from(cb) * 2 - 1, offset + 1),
-            None => (0, offset),
-        };
-        let Some(papx) = bytes.get(start..start + cb) else {
-            entries.push(None);
+    let names = plc::strings(names, old);
+    let starts = Plc::parse(starts, 4);
+    let ends = Plc::parse(ends, 0);
+    let mut out = Vec::new();
+    for (index, (name, _)) in names.into_iter().enumerate() {
+        let (Some(start), Some(entry)) = (starts.start(index), starts.entry(index)) else {
             continue;
         };
-        if papx.len() < 2 {
-            entries.push(None);
+        let Some(end) = ends.start(usize::from(plc::u16_at(entry, 0))) else { continue };
+        if name.is_empty() || start >= main_end || end > main_end {
             continue;
         }
-        let istd = u16::from_le_bytes([papx[0], papx[1]]);
-        entries.push(Some((istd, &papx[2..])));
+        out.push(BookmarkFound { name, start: position(start), end: position(end) });
     }
-    Some(Page { fcs, entries })
+    out
 }
 
-/// A page of character formatting.
-fn character_page(word: &[u8], page: u32) -> Option<Page<'_>> {
-    let bytes = word.get(page as usize * 512..page as usize * 512 + 512)?;
-    let count = usize::from(bytes[511]);
-    let u32_at =
-        |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
-    let fcs: Vec<u32> = (0..=count).map(|index| u32_at(index * 4)).collect();
-    let mut entries = Vec::with_capacity(count);
-    for index in 0..count {
-        let offset = usize::from(bytes[(count + 1) * 4 + index]) * 2;
-        if offset == 0 {
-            entries.push(Some((0, &[][..])));
-            continue;
+// --- Stories ------------------------------------------------------------------------
+
+/// Everything the stories are read from.
+struct Context<'a> {
+    word: &'a [u8],
+    table: &'a [u8],
+    data: &'a [u8],
+    fib: &'a Fib,
+    text: Vec<Char>,
+    styles: Vec<Style>,
+    fonts: Vec<Font>,
+    lists: Lists,
+    paragraph_bins: Bins,
+    character_bins: Bins,
+    drawings: Drawings,
+    /// Who made tracked changes, by the number the changes name them with.
+    authors: Vec<String>,
+    /// The notes' marks in the main text: each note's number, and whether
+    /// it is an endnote.
+    note_marks: HashMap<u32, (i32, bool)>,
+    /// Where each story begins.
+    starts: [u32; 9],
+}
+
+/// Which story is being read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Story {
+    Main,
+    Footnote,
+    Endnote,
+    Header,
+    Comment,
+    TextBox,
+    HeaderTextBox,
+}
+
+/// What reading a story comes to.
+#[derive(Debug, Default)]
+struct Built {
+    blocks: Vec<Block>,
+    pictures: Vec<PictureFound>,
+    links: Vec<LinkFound>,
+    /// Where each of the story's characters begins, as the document counts.
+    positions: Vec<TextPosition>,
+    paragraphs: usize,
+}
+
+impl Built {
+    fn body(&self) -> Body {
+        let mut blocks = self.blocks.clone();
+        if blocks.is_empty() {
+            blocks.push(Block::Paragraph(Paragraph::default()));
         }
-        let cb = usize::from(bytes.get(offset).copied().unwrap_or(0));
-        entries.push(bytes.get(offset + 1..offset + 1 + cb).map(|chpx| (0, chpx)));
+        Body { blocks }
     }
-    Some(Page { fcs, entries })
+
+    fn end_position(&self) -> TextPosition {
+        self.positions.last().copied().unwrap_or_default()
+    }
 }
 
-// --- Putting the document together ------------------------------------------------
+/// The reading of every story, and what they share: the formatting pages
+/// already read, and the tracked changes already numbered.
+struct Reader<'a> {
+    context: &'a Context<'a>,
+    pages: Pages,
+    changes: Vec<(Option<RevisionKind>, String, String)>,
+}
+
+impl<'a> Reader<'a> {
+    fn story(&mut self, story: Story, mut range: Range<u32>, section_ends: &[u32]) -> Built {
+        let context = self.context;
+        // A header's or a text box's story written with an empty paragraph
+        // after its own — as LibreOffice writes every one — has one paragraph
+        // more than it shows, and LibreOffice leaves it out when it reads one.
+        let ends_twice = |end: usize| {
+            end >= 2
+                && context
+                    .text
+                    .get(end - 2..end)
+                    .is_some_and(|last| last.iter().all(|item| item.character == '\r'))
+        };
+        let extra = matches!(story, Story::Header | Story::TextBox | Story::HeaderTextBox);
+        if extra && range.end > range.start + 1 && ends_twice(range.end as usize) {
+            range.end -= 1;
+        }
+        let subdoc = match story {
+            Story::Main => context.starts[0],
+            Story::Header => context.starts[2],
+            _ => range.start,
+        };
+        let mut builder = Builder {
+            reader: self,
+            story,
+            subdoc,
+            built: Built::default(),
+            levels: Vec::new(),
+            fields: Vec::new(),
+        };
+        builder.build(range, section_ends);
+        builder.built
+    }
+
+    /// Who made a change, when, and its number: one number for one person's
+    /// one change, so the runs of it go back inside one wrapper.
+    fn change_number(
+        &mut self,
+        kind: Option<RevisionKind>,
+        author: u16,
+        date: u32,
+    ) -> (String, String, i32) {
+        let author = self
+            .context
+            .authors
+            .get(usize::from(author))
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_owned());
+        let date = format::dttm(date);
+        let index = match self
+            .changes
+            .iter()
+            .position(|(was, by, at)| *was == kind && *by == author && *at == date)
+        {
+            Some(index) => index,
+            None => {
+                self.changes.push((kind, author.clone(), date.clone()));
+                self.changes.len() - 1
+            }
+        };
+        (author, date, i32::try_from(index + 1).unwrap_or(i32::MAX))
+    }
+}
 
 /// A field being read: its code, and where its result began.
 struct Field {
@@ -581,771 +597,737 @@ struct Field {
     in_code: bool,
     paragraph: usize,
     start: usize,
+    /// The run of the paragraph its result begins with.
+    first_run: usize,
+    /// Whether a paragraph ended inside it.
+    spans: bool,
 }
 
-struct Builder<'a> {
-    streams: &'a Streams,
-    styles: &'a [Style],
-    fonts: &'a [String],
-    lists: &'a Lists,
-    paragraph_bins: &'a Bins,
-    character_bins: &'a Bins,
-    body: Body,
-    pictures: Vec<PictureFound>,
-    links: Vec<LinkFound>,
-    paragraphs_done: usize,
-    table_rows: Vec<TableRow>,
-    row_cells: Vec<TableCell>,
-    cell_blocks: Vec<Block>,
+/// How the characters of a stretch are formatted: the model's properties,
+/// and what else the sprms say of them.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct CharFormat {
+    properties: RunProperties,
+    special: bool,
+    picture: u32,
+    revision: Option<(RevisionKind, u16, u32)>,
+    format_change: Option<(u16, u32)>,
+    symbol: Option<(u16, u16)>,
+    charset: u8,
+}
+
+struct Builder<'r, 'a> {
+    reader: &'r mut Reader<'a>,
+    story: Story,
+    /// Where the story's part of the text begins, which is what the tables
+    /// of drawings count from.
+    subdoc: u32,
+    built: Built,
+    levels: Vec<Level>,
     fields: Vec<Field>,
 }
 
-impl Builder<'_> {
-    /// Walks the text, paragraph by paragraph.
-    fn build(&mut self, text: &[Char], sections: &[u32]) {
-        let mut start = 0;
-        for (index, item) in text.iter().enumerate() {
-            let cp = index as u32;
-            let ends_paragraph = match item.character {
+impl Builder<'_, '_> {
+    /// Walks the story, paragraph by paragraph.
+    fn build(&mut self, range: Range<u32>, section_ends: &[u32]) {
+        let context = self.reader.context;
+        let to = (range.end as usize).min(context.text.len());
+        let from = (range.start as usize).min(to);
+        let mut start = from;
+        for index in from..to {
+            let ends = match context.text[index].character {
                 '\r' | '\u{7}' => true,
-                '\u{c}' => sections.contains(&(cp + 1)),
+                '\u{c}' => self.story == Story::Main && section_ends.contains(&(index as u32 + 1)),
                 _ => false,
             };
-            if ends_paragraph {
-                self.paragraph(&text[start..=index]);
+            if ends {
+                self.paragraph(start..index + 1, true);
                 start = index + 1;
             }
         }
-        if start < text.len() {
-            self.paragraph(&text[start..]);
+        if start < to {
+            self.paragraph(start..to, false);
         }
-        self.end_table();
+        self.close_tables_to(0);
+    }
+
+    /// Where the next character goes, between paragraphs.
+    fn here(&self) -> TextPosition {
+        TextPosition::new(self.built.paragraphs, 0)
     }
 
     /// One paragraph: its formatting from its mark's page, its runs from
     /// the character pages, and its place in a table if it is in one.
-    fn paragraph(&mut self, chars: &[Char]) {
-        let Some(mark) = chars.last() else { return };
-        let word = &self.streams.word;
+    fn paragraph(&mut self, range: Range<usize>, marked: bool) {
+        let context = self.reader.context;
+        let chars = &context.text[range.clone()];
+        let Some(mark) = chars.last().copied() else { return };
+        let old = context.fib.base.old;
 
         // The paragraph's own sprms, and the style they sit on.
-        let (istd, papx) = self
+        let (istd, papx) = context
             .paragraph_bins
             .page_for(mark.fc)
-            .and_then(|page| paragraph_page(word, page))
-            .and_then(|page| page.entry_for(mark.fc).map(|(istd, grpprl)| (istd, grpprl.to_vec())))
+            .and_then(|page| {
+                let page = self.reader.pages.get(context.word, page, Kind::Paragraph, old);
+                page.entry_for(mark.fc).map(|(_, _, istd, grpprl)| (istd, grpprl.to_vec()))
+            })
             .unwrap_or((0, Vec::new()));
-        let paragraph_sprms = sprm::parse(&papx);
+        let sprms = sprm::parse(&papx);
         let mut properties = ParagraphProperties::default();
-        let mut base_chars = RunProperties::default();
-        self.apply_style(istd, &mut properties, &mut base_chars);
-        properties.style = self.style_id(istd);
-        let mut in_table = false;
-        let mut row_end = false;
-        let mut table_definition: Option<Vec<i32>> = None;
-        let mut ilfo = 0u16;
-        for sprm in &paragraph_sprms {
+        let mut base = RunProperties::default();
+        let mut list = self.apply_style(istd, &mut properties, &mut base);
+        properties.style = style_id(&context.styles, istd);
+        let (mut in_table, mut depth, mut row_end, mut inner_cell, mut inner_row_end) =
+            (false, 0usize, false, false, false);
+        for sprm in &sprms {
             match sprm.code {
                 sprm::P_IN_TABLE => in_table = sprm.on(),
+                sprm::P_ITAP => depth = sprm.u32() as usize,
                 sprm::P_TABLE_ROW_END => row_end = sprm.on(),
-                sprm::T_DEFINITION => table_definition = Some(cell_edges(sprm.operand)),
-                sprm::P_ILFO => ilfo = sprm.u16(),
+                sprm::P_INNER_CELL => inner_cell = sprm.on(),
+                sprm::P_INNER_ROW_END => inner_row_end = sprm.on(),
                 _ => {}
             }
         }
-        apply_paragraph(&mut properties, &paragraph_sprms);
-        if ilfo != 0 || properties.numbering.is_some() {
-            let level = properties.numbering.map_or(0, |n| n.level);
-            let bullet = self.lists.is_bullet(ilfo, level).unwrap_or(false);
-            properties.numbering = if ilfo == 0 {
-                None
-            } else {
-                Some(NumberingReference {
-                    id: if bullet { wp_docx::BULLET_LIST } else { wp_docx::NUMBERED_LIST },
-                    level,
-                })
-            };
+        list.take(&sprms);
+        format::apply_paragraph(&mut properties, &sprms);
+        properties.numbering = list.reference(&context.lists, properties.numbering);
+
+        // How deep in tables it is, and whether it ends a cell or a row.
+        let marked_cell = marked && mark.character == '\u{7}';
+        let depth = if in_table || depth > 0 || marked_cell { depth.clamp(1, 64) } else { 0 };
+        let ends_row = if depth > 1 { inner_row_end } else { row_end && depth == 1 };
+        let ends_cell = if depth > 1 { inner_cell } else { marked_cell };
+        self.close_tables_to(depth);
+        while self.levels.len() < depth {
+            self.levels.push(Level::default());
         }
 
         // A row's end is not a paragraph: it is where the row's cells are
-        // gathered up, with the widths the row's definition gives.
-        if row_end {
-            let cells = core::mem::take(&mut self.row_cells);
-            if !cells.is_empty() {
-                let mut cells = cells;
-                if let Some(edges) = table_definition {
-                    for (index, cell) in cells.iter_mut().enumerate() {
-                        if let (Some(left), Some(right)) = (edges.get(index), edges.get(index + 1))
-                        {
-                            cell.width = Some(right - left).filter(|width| *width > 0);
-                        }
-                    }
-                }
-                self.table_rows.push(TableRow { cells, ..TableRow::default() });
+        // gathered up, as the row's sprms describe them.
+        if ends_row {
+            if let Some(level) = self.levels.last_mut() {
+                level.finish_row(&RowDefinition::from_sprms(&sprms));
             }
+            let here = self.here();
+            self.built.positions.extend(core::iter::repeat_n(here, chars.len()));
             return;
         }
 
-        // The runs.
-        let runs = self.runs(&chars[..chars.len() - 1], &base_chars, mark.character == '\u{7}');
-        let paragraph = Paragraph { properties, runs };
-        self.paragraphs_done += 1;
-
-        if in_table {
-            self.cell_blocks.push(Block::Paragraph(paragraph));
-            if mark.character == '\u{7}' {
-                let blocks = core::mem::take(&mut self.cell_blocks);
-                self.row_cells.push(TableCell { blocks, ..TableCell::default() });
+        let content = if marked { &chars[..chars.len() - 1] } else { chars };
+        let paragraph = self.built.paragraphs;
+        let (runs, length) = self.runs(range.start, content, &base, paragraph);
+        if marked {
+            self.built.positions.push(TextPosition::new(paragraph, length));
+        }
+        for field in &mut self.fields {
+            field.spans = true;
+        }
+        self.built.paragraphs += 1;
+        let paragraph = Block::Paragraph(Paragraph { properties, runs });
+        match self.levels.last_mut() {
+            Some(level) => {
+                level.cell_blocks.push(paragraph);
+                if ends_cell {
+                    level.end_cell();
+                }
             }
-        } else {
-            self.end_table();
-            self.body.blocks.push(Block::Paragraph(paragraph));
+            None => self.built.blocks.push(paragraph),
         }
     }
 
-    fn end_table(&mut self) {
-        if !self.cell_blocks.is_empty() {
-            let blocks = core::mem::take(&mut self.cell_blocks);
-            self.row_cells.push(TableCell { blocks, ..TableCell::default() });
-        }
-        if !self.row_cells.is_empty() {
-            let cells = core::mem::take(&mut self.row_cells);
-            self.table_rows.push(TableRow { cells, ..TableRow::default() });
-        }
-        if self.table_rows.is_empty() {
-            return;
-        }
-        let rows = core::mem::take(&mut self.table_rows);
-        let grid = rows
-            .first()
-            .map(|row| row.cells.iter().map(|cell| cell.width.unwrap_or(2880)).collect())
-            .unwrap_or_default();
-        self.body.blocks.push(Block::Table(Box::new(Table { rows, grid, ..Table::default() })));
-    }
-
-    /// The runs of a paragraph: the characters cut where their formatting
-    /// changes, with the special ones — tabs, breaks, fields, pictures —
-    /// made into what they are.
-    fn runs(&mut self, chars: &[Char], base: &RunProperties, _in_cell: bool) -> Vec<Run> {
-        let mut runs: Vec<Run> = Vec::new();
-        let mut text = String::new();
-        let mut current: Option<(u32, u32, RunProperties, bool, u32)> = None;
-        let mut offset = 0usize;
-        let paragraph = self.paragraphs_done;
-
-        let flush = |runs: &mut Vec<Run>, text: &mut String, properties: &RunProperties| {
-            if text.is_empty() {
-                return;
-            }
-            runs.push(Run {
-                properties: properties.clone(),
-                content: vec![RunContent::Text(core::mem::take(text))],
-                field: None,
-                revision: None,
-                format_change: None,
-            });
-        };
-
-        for item in chars {
-            // The formatting in force at this character: looked up afresh
-            // when its file position leaves the range the last lookup
-            // covered.
-            let outside =
-                current.as_ref().is_none_or(|(from, to, ..)| item.fc < *from || item.fc >= *to);
-            if outside {
-                let found = self
-                    .character_bins
-                    .page_for(item.fc)
-                    .and_then(|page| character_page(&self.streams.word, page))
-                    .and_then(|page| {
-                        let index =
-                            page.fcs.iter().position(|edge| item.fc < *edge)?.checked_sub(1)?;
-                        let (_, chpx) = page.entries.get(index).copied().flatten()?;
-                        Some((page.fcs[index], page.fcs[index + 1], chpx.to_vec()))
-                    });
-                let (from, to, chpx) = found.unwrap_or((item.fc, item.fc + 1, Vec::new()));
-                let sprms = sprm::parse(&chpx);
-                let mut properties = base.clone();
-                // A character style under the run's own sprms.
-                if let Some(style) = sprms.iter().find(|sprm| sprm.code == sprm::C_ISTD) {
-                    let mut unused = ParagraphProperties::default();
-                    self.apply_style(style.u16(), &mut unused, &mut properties);
-                }
-                let mut special = false;
-                let mut picture = 0;
-                for sprm in &sprms {
-                    match sprm.code {
-                        sprm::C_SPECIAL => special = sprm.on(),
-                        sprm::C_PICTURE => picture = sprm.u32(),
-                        _ => {}
-                    }
-                }
-                apply_character(&mut properties, &sprms, self.fonts);
-                if current.as_ref().is_none_or(|(_, _, held, ..)| *held != properties) {
-                    if let Some((_, _, held, ..)) = &current {
-                        flush(&mut runs, &mut text, held);
-                    }
-                }
-                current = Some((from, to, properties, special, picture));
-            }
-            let Some((_, _, properties, special, picture)) = &current else { continue };
-            let properties = properties.clone();
-            let (special, picture) = (*special, *picture);
-
-            // Fields: the code between the begin and the separator, the
-            // result between the separator and the end.
-            let in_field_code = self.fields.last().is_some_and(|field| field.in_code);
-            match item.character {
-                '\u{13}' => {
-                    flush(&mut runs, &mut text, &properties);
-                    self.fields.push(Field {
-                        code: String::new(),
-                        in_code: true,
-                        paragraph,
-                        start: offset,
-                    });
-                    continue;
-                }
-                '\u{14}' => {
-                    if let Some(field) = self.fields.last_mut() {
-                        field.in_code = false;
-                        field.start = offset;
-                    }
-                    continue;
-                }
-                '\u{15}' => {
-                    flush(&mut runs, &mut text, &properties);
-                    if let Some(field) = self.fields.pop() {
-                        let code = field.code.trim();
-                        if let Some(rest) = code.strip_prefix("HYPERLINK") {
-                            let address = link_address(rest);
-                            if !address.is_empty()
-                                && field.paragraph == paragraph
-                                && offset > field.start
-                            {
-                                self.links.push(LinkFound {
-                                    paragraph,
-                                    start: field.start,
-                                    end: offset,
-                                    address,
-                                });
-                            }
-                        }
-                    }
-                    continue;
-                }
-                _ if in_field_code => {
-                    // The code is text; the picture mark of the field's own
-                    // data is not part of it.
-                    if let Some(field) = self.fields.last_mut() {
-                        if (item.character as u32) >= 0x20 {
-                            field.code.push(item.character);
-                        }
-                    }
-                    continue;
-                }
-                _ => {}
-            }
-
-            match item.character {
-                '\t' => {
-                    flush(&mut runs, &mut text, &properties);
-                    runs.push(Run {
-                        properties,
-                        content: vec![RunContent::Tab],
-                        field: None,
-                        revision: None,
-                        format_change: None,
-                    });
-                    offset += 1;
-                }
-                '\u{b}' => {
-                    flush(&mut runs, &mut text, &properties);
-                    runs.push(Run {
-                        properties,
-                        content: vec![RunContent::Break(BreakKind::Line)],
-                        field: None,
-                        revision: None,
-                        format_change: None,
-                    });
-                    offset += 1;
-                }
-                '\u{c}' => {
-                    flush(&mut runs, &mut text, &properties);
-                    runs.push(Run {
-                        properties,
-                        content: vec![RunContent::Break(BreakKind::Page)],
-                        field: None,
-                        revision: None,
-                        format_change: None,
-                    });
-                    offset += 1;
-                }
-                '\u{1}' if special => {
-                    flush(&mut runs, &mut text, &properties);
-                    if let Some(found) = self.picture_at(picture, paragraph, offset) {
-                        self.pictures.push(found);
-                        runs.push(Run {
-                            properties,
-                            content: vec![RunContent::Text(PICTURE_MARK.to_string())],
-                            field: None,
-                            revision: None,
-                            format_change: None,
-                        });
-                        offset += PICTURE_MARK.len_utf8();
-                    }
-                }
-                '\u{1e}' => {
-                    text.push('\u{2011}');
-                    offset += '\u{2011}'.len_utf8();
-                }
-                '\u{1f}' => {
-                    text.push('\u{00AD}');
-                    offset += '\u{00AD}'.len_utf8();
-                }
-                // The other marks: footnote and comment references, drawn
-                // objects, and whatever else the format keeps for itself.
-                c if (c as u32) < 0x20 || c == '\u{7}' => {}
-                c => {
-                    text.push(c);
-                    offset += c.len_utf8();
-                }
+    /// Finishes the tables deeper than a paragraph now being read, each put
+    /// in the cell it is in.
+    fn close_tables_to(&mut self, depth: usize) {
+        while self.levels.len() > depth {
+            let Some(level) = self.levels.pop() else { break };
+            let Some(table) = level.into_table() else { continue };
+            let block = Block::Table(Box::new(table));
+            match self.levels.last_mut() {
+                Some(outer) => outer.cell_blocks.push(block),
+                None => self.built.blocks.push(block),
             }
         }
-        if let Some((_, _, properties, ..)) = &current {
-            flush(&mut runs, &mut text, properties);
-        }
-        runs
     }
 
     /// A style's formatting, its base's under it, onto a paragraph's
-    /// properties and the run properties its text starts from.
+    /// properties and the run properties its text starts from; and what the
+    /// styles say of its list.
     fn apply_style(
         &self,
         istd: u16,
         paragraph: &mut ParagraphProperties,
         chars: &mut RunProperties,
-    ) {
-        // The chain from the base up, so that each style's sprms land on
-        // its base's.
-        let mut chain = Vec::new();
-        let mut current = istd;
-        let mut guard = 0;
-        while let Some(style) = self.styles.get(usize::from(current)) {
-            chain.push(style);
-            if style.base == 0x0FFF || style.base == current || guard > 20 {
-                break;
-            }
-            current = style.base;
-            guard += 1;
+    ) -> ListSprms {
+        let context = self.reader.context;
+        let mut list = ListSprms::default();
+        for style in style_chain(&context.styles, istd).iter().rev() {
+            let paragraph_sprms = sprm::parse(&style.papx);
+            list.take(&paragraph_sprms);
+            format::apply_paragraph(paragraph, &paragraph_sprms);
+            format::apply_character(chars, &sprm::parse(&style.chpx), &context.fonts);
         }
-        for style in chain.iter().rev() {
-            apply_paragraph(paragraph, &sprm::parse(&style.papx));
-            apply_character(chars, &sprm::parse(&style.chpx), self.fonts);
-        }
-        // A style is not a paragraph's own list, table or table-row mark.
-        paragraph.numbering = paragraph.numbering.take();
+        list
     }
 
-    /// The identifier of the document style a style's name maps to.
-    fn style_id(&self, istd: u16) -> Option<String> {
-        let name = self.styles.get(usize::from(istd))?.name.to_lowercase();
-        if let Some(level) = name.strip_prefix("heading ") {
-            if let Ok(level) = level.trim().parse::<u8>() {
-                if (1..=9).contains(&level) {
-                    return Some(format!("Heading{level}"));
+    /// The runs of a paragraph: the characters cut where their formatting
+    /// changes, with the special ones — tabs, breaks, fields, notes' marks,
+    /// pictures and drawings — made into what they are. Returns the runs and
+    /// how long the paragraph is as the document counts.
+    fn runs(
+        &mut self,
+        first: usize,
+        chars: &[Char],
+        base: &RunProperties,
+        paragraph: usize,
+    ) -> (Vec<Run>, usize) {
+        let context = self.reader.context;
+        let mut runs: Vec<Run> = Vec::new();
+        let mut text = String::new();
+        // The formatting in force, the range of file positions it covers,
+        // and the change and the change of formatting it makes the runs.
+        let mut current: Option<(u32, u32, CharFormat)> = None;
+        let mut marks: (Option<Revision>, Option<FormatChange>) = (None, None);
+        let mut offset = 0usize;
+
+        for (index, item) in chars.iter().enumerate() {
+            let cp = (first + index) as u32;
+            self.built.positions.push(TextPosition::new(paragraph, offset));
+            let outside =
+                current.as_ref().is_none_or(|(from, to, _)| item.fc < *from || item.fc >= *to);
+            if outside {
+                let (from, to, format) = self.format_at(item.fc, base);
+                if current.as_ref().is_none_or(|(_, _, held)| *held != format) {
+                    flush(&mut runs, &mut text, current.as_ref().map(|(_, _, held)| held), &marks);
+                    marks = self.marks_of(&format, base);
+                }
+                current = Some((from, to, format));
+            }
+            let Some((_, _, format)) = &current else { continue };
+            let deleted = format.revision.is_some_and(|(kind, ..)| kind == RevisionKind::Deleted);
+            let counted = |length: usize| if deleted { 0 } else { length };
+
+            // Fields: the code between the begin and the separator, the
+            // result between the separator and the end.
+            match item.character {
+                '\u{13}' => {
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    self.fields.push(Field {
+                        code: String::new(),
+                        in_code: true,
+                        paragraph,
+                        start: offset,
+                        first_run: runs.len(),
+                        spans: false,
+                    });
+                    continue;
+                }
+                '\u{14}' => {
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    if let Some(field) = self.fields.last_mut() {
+                        field.in_code = false;
+                        field.start = offset;
+                        field.first_run = runs.len();
+                    }
+                    continue;
+                }
+                '\u{15}' => {
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    if let Some(field) = self.fields.pop() {
+                        self.end_field(field, &mut runs, paragraph, offset);
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            if self.fields.iter().any(|field| field.in_code) {
+                // The code is text; the marks of the field's own data are
+                // not part of it.
+                if let Some(field) = self.fields.iter_mut().rev().find(|field| field.in_code) {
+                    if (item.character as u32) >= 0x20 {
+                        field.code.push(item.character);
+                    }
+                }
+                continue;
+            }
+
+            // A note's mark in the main text, whatever character marks it.
+            if self.story == Story::Main {
+                if let Some(&(id, endnote)) = context.note_marks.get(&cp) {
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    runs.push(run_of(format, &marks, RunContent::NoteReference { id, endnote }));
+                    offset += counted(1);
+                    continue;
+                }
+            }
+
+            let special = format.special;
+            match item.character {
+                '\t' => {
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    runs.push(run_of(format, &marks, RunContent::Tab));
+                    offset += counted(1);
+                }
+                '\u{b}' | '\u{c}' | '\u{e}' => {
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    let kind = match item.character {
+                        '\u{b}' => BreakKind::Line,
+                        '\u{c}' => BreakKind::Page,
+                        _ => BreakKind::Column,
+                    };
+                    runs.push(run_of(format, &marks, RunContent::Break(kind)));
+                    offset += counted(1);
+                }
+                '\u{1}' if special && !deleted => {
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    if let Some((bytes, extension, width_emu, height_emu)) = shapes::inline_picture(
+                        context.data,
+                        context.word,
+                        format.picture,
+                        &context.drawings,
+                    ) {
+                        self.built.pictures.push(PictureFound {
+                            paragraph,
+                            offset,
+                            bytes,
+                            extension,
+                            width_emu,
+                            height_emu,
+                            anchor: None,
+                        });
+                        runs.push(run_of(format, &marks, RunContent::Text(PICTURE_MARK.into())));
+                        offset += 1;
+                    }
+                }
+                '\u{2}' if special && matches!(self.story, Story::Footnote | Story::Endnote) => {
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    let endnote = self.story == Story::Endnote;
+                    runs.push(run_of(format, &marks, RunContent::NoteReference { id: 0, endnote }));
+                    offset += counted(1);
+                }
+                '\u{8}' if special && !deleted => {
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    if self.drawing(cp, paragraph, offset, format, &marks, &mut runs) {
+                        offset += 1;
+                    }
+                }
+                '(' if special && format.symbol.is_some() => {
+                    let Some((font, character)) = format.symbol else { continue };
+                    flush(&mut runs, &mut text, Some(format), &marks);
+                    let Some(character) = char::from_u32(u32::from(character)) else { continue };
+                    let mut symbol = run_of(format, &marks, RunContent::Text(character.into()));
+                    if let Some(font) = context.fonts.get(usize::from(font)) {
+                        symbol.properties.font = Some(font.name.clone());
+                    }
+                    runs.push(symbol);
+                    offset += counted(character.len_utf8());
+                }
+                '\u{1e}' => {
+                    text.push('\u{2011}');
+                    offset += counted('\u{2011}'.len_utf8());
+                }
+                '\u{1f}' => {
+                    text.push('\u{00AD}');
+                    offset += counted('\u{00AD}'.len_utf8());
+                }
+                // The other marks: comments', separators', and whatever else
+                // the format keeps for itself.
+                c if (c as u32) < 0x20 || (special && c != ' ') => {}
+                c => {
+                    // A Word 6 byte in a font of another alphabet is a letter
+                    // of that alphabet.
+                    let c = if item.narrow && context.fib.base.old {
+                        context
+                            .word
+                            .get(item.fc as usize)
+                            .and_then(|byte| text::in_character_set(*byte, format.charset))
+                            .unwrap_or(c)
+                    } else {
+                        c
+                    };
+                    text.push(c);
+                    offset += counted(c.len_utf8());
                 }
             }
         }
-        (name == "title").then(|| "Title".to_owned())
+        flush(&mut runs, &mut text, current.as_ref().map(|(_, _, held)| held), &marks);
+        (runs, offset)
     }
 
-    /// A picture, from its place in the data stream: the header that says
-    /// how big it is drawn, and the drawing record that holds its bytes.
-    fn picture_at(&self, fc: u32, paragraph: usize, offset: usize) -> Option<PictureFound> {
-        let data = &self.streams.data;
-        let at = fc as usize;
-        let header = data.get(at..at + 68)?;
-        let u16_at = |from: usize| u16::from_le_bytes([header[from], header[from + 1]]);
-        let lcb = u32::from_le_bytes([header[0], header[1], header[2], header[3]]) as usize;
-        let cb_header = usize::from(u16_at(4));
-        let format = u16_at(6);
-        let dxa_goal = i64::from(u16_at(28) as i16);
-        let dya_goal = i64::from(u16_at(30) as i16);
-        let mx = i64::from(u16_at(32)).max(1);
-        let my = i64::from(u16_at(34)).max(1);
-        let picture = data.get(at + cb_header..at + lcb.max(cb_header))?;
-        let (bytes, extension) = match format {
-            // A drawing container holding the picture's bytes, or naming
-            // them in the drawing store.
-            0x64 | 0x66 => blip_in(picture).or_else(|| {
-                let pib = pib_in(picture)?;
-                self.blip_from_store(pib)
-            })?,
-            // The oldest form: a metafile straight after the header.
-            _ => (picture.to_vec(), "wmf"),
+    /// A field has ended: a link over its result, where it is one in the
+    /// main text, or its instruction on the runs of its result, where its
+    /// result is in the paragraph it began in.
+    fn end_field(&mut self, field: Field, runs: &mut [Run], paragraph: usize, offset: usize) {
+        let code = field.code.trim();
+        if field.in_code || field.spans || field.paragraph != paragraph || code.is_empty() {
+            return;
+        }
+        let keyword = code.split_whitespace().next().unwrap_or_default().to_uppercase();
+        if keyword == "HYPERLINK" && self.story == Story::Main {
+            let address = link_address(&code["HYPERLINK".len()..]);
+            if !address.is_empty() && offset > field.start {
+                self.built.links.push(LinkFound {
+                    paragraph,
+                    start: field.start,
+                    end: offset,
+                    address,
+                });
+            }
+            return;
+        }
+        // A drawing or an object wrapped in a field of its own, for readers
+        // that know fields and not drawings: the drawing is what is meant.
+        if matches!(keyword.as_str(), "SHAPE" | "EMBED" | "INCLUDEPICTURE") {
+            return;
+        }
+        for run in runs.iter_mut().skip(field.first_run) {
+            let picture = run.content.iter().any(|content| {
+                matches!(content, RunContent::Text(text) if text.starts_with(PICTURE_MARK))
+                    || matches!(content, RunContent::Shape(_) | RunContent::NoteReference { .. })
+            });
+            if run.field.is_none() && !picture {
+                run.field = Some(code.to_owned());
+            }
+        }
+    }
+
+    /// A floating drawing anchored here: a picture, a shape or a text box.
+    /// Whether one was put in.
+    fn drawing(
+        &mut self,
+        cp: u32,
+        paragraph: usize,
+        offset: usize,
+        format: &CharFormat,
+        marks: &(Option<Revision>, Option<FormatChange>),
+        runs: &mut Vec<Run>,
+    ) -> bool {
+        let context = self.reader.context;
+        let header = self.story == Story::Header;
+        if !matches!(self.story, Story::Main | Story::Header) {
+            return false;
+        }
+        let Some(placed) = context.drawings.placed_at(header, cp - self.subdoc) else {
+            return false;
         };
-        let width_emu = dxa_goal * mx / 1000 * 635;
-        let height_emu = dya_goal * my / 1000 * 635;
-        Some(PictureFound {
-            paragraph,
-            offset,
-            bytes,
-            extension,
-            width_emu: width_emu.max(9525),
-            height_emu: height_emu.max(9525),
-        })
+        let Some(drawn) = context.drawings.drawn(placed.spid) else { return false };
+        if drawn.grouped() {
+            return false;
+        }
+        if let (Some(pib), None) = (drawn.picture(), drawn.text_story()) {
+            let Some((bytes, extension)) = context.drawings.stored_picture(pib, context.word)
+            else {
+                return false;
+            };
+            let (width_emu, height_emu) = shapes::size_of(&placed);
+            self.built.pictures.push(PictureFound {
+                paragraph,
+                offset,
+                bytes,
+                extension,
+                width_emu,
+                height_emu,
+                anchor: Some(shapes::anchor_of(&placed, drawn)),
+            });
+            runs.push(run_of(format, marks, RunContent::Text(PICTURE_MARK.into())));
+            return true;
+        }
+        let text = drawn.text_story().map(|story| self.text_box(story, placed.spid, header));
+        let Some(shape) = shapes::shape_of(&placed, drawn, text.unwrap_or_default()) else {
+            return false;
+        };
+        runs.push(run_of(format, marks, RunContent::Shape(Box::new(shape))));
+        true
     }
 
-    /// The picture a drawing refers to by number, from the drawing store in
-    /// the table stream.
-    fn blip_from_store(&self, pib: u32) -> Option<(Vec<u8>, &'static str)> {
-        let (offset, length) = self.streams.fib.table(FibTable::Drawings)?;
-        let store = self.streams.table.get(offset..offset + length)?;
-        let mut found = Vec::new();
-        collect_records(store, 0xF007, &mut found);
-        let bse = found.get(pib.checked_sub(1)? as usize)?;
-        // The store entry: thirty-six bytes about the picture, then the
-        // picture's own record where it is kept here.
-        blip_in(bse.get(36..)?)
+    /// A text box's words: its story, found by the drawing's number or by its
+    /// place among the text boxes, read as any other.
+    fn text_box(&mut self, story: u32, spid: u32, header: bool) -> Vec<Paragraph> {
+        let context = self.reader.context;
+        let (which, from, kind) = if header {
+            (Table::HeaderTextBoxTexts, context.starts[7], Story::HeaderTextBox)
+        } else {
+            (Table::TextBoxTexts, context.starts[6], Story::TextBox)
+        };
+        let Some(bytes) = context
+            .fib
+            .table(which)
+            .and_then(|(offset, length)| context.table.get(offset..offset + length))
+        else {
+            return Vec::new();
+        };
+        let plc = Plc::parse(bytes, 22);
+        let index = (0..plc.len())
+            .find(|index| plc.entry(*index).is_some_and(|entry| plc::u32_at(entry, 14) == spid))
+            .unwrap_or(story as usize - 1);
+        let (Some(start), Some(end)) = (plc.start(index), plc.end(index)) else {
+            return Vec::new();
+        };
+        let built = self.reader.story(kind, from + start..from + end, &[]);
+        let mut paragraphs = Vec::new();
+        collect_paragraphs(&built.blocks, &mut paragraphs);
+        paragraphs
+    }
+
+    /// The formatting at a file position, and the range it covers.
+    fn format_at(&mut self, fc: u32, base: &RunProperties) -> (u32, u32, CharFormat) {
+        let context = self.reader.context;
+        let old = context.fib.base.old;
+        let found = context.character_bins.page_for(fc).and_then(|page| {
+            let page = self.reader.pages.get(context.word, page, Kind::Character, old);
+            page.entry_for(fc).map(|(from, to, _, grpprl)| (from, to, grpprl.to_vec()))
+        });
+        let (from, to, chpx) = found.unwrap_or((fc, fc + 1, Vec::new()));
+        let sprms = sprm::parse(&chpx);
+        let mut format = CharFormat { properties: base.clone(), ..CharFormat::default() };
+        // A character style under the run's own sprms.
+        if let Some(style) = sprms.iter().find(|sprm| sprm.code == sprm::C_ISTD) {
+            for style in style_chain(&context.styles, style.u16()).iter().rev() {
+                format::apply_character(
+                    &mut format.properties,
+                    &sprm::parse(&style.chpx),
+                    &context.fonts,
+                );
+            }
+        }
+        format::apply_character(&mut format.properties, &sprms, &context.fonts);
+        let (mut inserted, mut deleted) = (false, false);
+        let (mut author, mut date, mut deleted_author, mut deleted_date) = (0, 0, None, None);
+        for sprm in &sprms {
+            match sprm.code {
+                sprm::C_SPECIAL => format.special = sprm.on(),
+                sprm::C_PICTURE => format.picture = sprm.u32(),
+                sprm::C_INSERTED => inserted = sprm.on(),
+                sprm::C_DELETED => deleted = sprm.on(),
+                sprm::C_REVISION_AUTHOR => author = sprm.u16(),
+                sprm::C_REVISION_DATE => date = sprm.u32(),
+                sprm::C_DELETED_AUTHOR => deleted_author = Some(sprm.u16()),
+                sprm::C_DELETED_DATE => deleted_date = Some(sprm.u32()),
+                sprm::C_FORMAT_CHANGE | sprm::C_FORMAT_CHANGE_90 => {
+                    let operand = sprm.operand;
+                    if operand.first().is_some_and(|on| *on != 0) {
+                        format.format_change =
+                            Some((plc::u16_at(operand, 1), plc::u32_at(operand, 3)));
+                    }
+                }
+                sprm::C_SYMBOL => {
+                    format.symbol =
+                        Some((plc::u16_at(sprm.operand, 0), plc::u16_at(sprm.operand, 2)));
+                }
+                _ => {}
+            }
+        }
+        format.revision = if deleted {
+            Some((
+                RevisionKind::Deleted,
+                deleted_author.unwrap_or(author),
+                deleted_date.unwrap_or(date),
+            ))
+        } else if inserted {
+            Some((RevisionKind::Inserted, author, date))
+        } else {
+            None
+        };
+        format.charset = format
+            .properties
+            .font
+            .as_ref()
+            .and_then(|name| context.fonts.iter().find(|font| font.name == *name))
+            .map_or(0, |font| font.charset);
+        (from, to, format)
+    }
+
+    /// The tracked change and the change of formatting the runs of a
+    /// stretch are part of.
+    fn marks_of(
+        &mut self,
+        format: &CharFormat,
+        base: &RunProperties,
+    ) -> (Option<Revision>, Option<FormatChange>) {
+        let revision = format.revision.map(|(kind, author, date)| {
+            let (author, date, id) = self.reader.change_number(Some(kind), author, date);
+            Revision { kind, author, date, id }
+        });
+        // What the formatting was before is not in the file: what rejecting
+        // the change puts back is the style's.
+        let format_change = format.format_change.map(|(author, date)| {
+            let (author, date, id) = self.reader.change_number(None, author, date);
+            FormatChange { author, date, id, before: Box::new(base.clone()) }
+        });
+        (revision, format_change)
+    }
+}
+
+/// Writes out the text gathered so far as a run.
+fn flush(
+    runs: &mut Vec<Run>,
+    text: &mut String,
+    format: Option<&CharFormat>,
+    marks: &(Option<Revision>, Option<FormatChange>),
+) {
+    let Some(format) = format else { return };
+    if text.is_empty() {
+        return;
+    }
+    runs.push(run_of(format, marks, RunContent::Text(core::mem::take(text))));
+}
+
+/// A run holding one thing, formatted as the text here is.
+fn run_of(
+    format: &CharFormat,
+    marks: &(Option<Revision>, Option<FormatChange>),
+    content: RunContent,
+) -> Run {
+    Run {
+        properties: format.properties.clone(),
+        content: vec![content],
+        field: None,
+        revision: marks.0.clone(),
+        format_change: marks.1.clone(),
+    }
+}
+
+/// Every paragraph in some blocks, tables' included.
+fn collect_paragraphs(blocks: &[Block], out: &mut Vec<Paragraph>) {
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => out.push(paragraph.clone()),
+            Block::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        collect_paragraphs(&cell.blocks, out);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A style and the styles it is based on, the style first.
+fn style_chain(styles: &[Style], istd: u16) -> Vec<&Style> {
+    let mut chain = Vec::new();
+    let mut current = istd;
+    while let Some(style) = styles.get(usize::from(current)) {
+        chain.push(style);
+        if style.base == 0x0FFF || style.base == current || chain.len() > 20 {
+            break;
+        }
+        current = style.base;
+    }
+    chain
+}
+
+/// The identifier of the document style a style maps to: the headings and
+/// the title, which Word numbers the same in every language.
+fn style_id(styles: &[Style], istd: u16) -> Option<String> {
+    let style = styles.get(usize::from(istd))?;
+    match style.sti {
+        1..=9 => return Some(format!("Heading{}", style.sti)),
+        62 => return Some("Title".to_owned()),
+        _ => {}
+    }
+    let name = style.name.to_lowercase();
+    if let Some(level) = name.strip_prefix("heading ") {
+        if let Ok(level) = level.trim().parse::<u8>() {
+            if (1..=9).contains(&level) {
+                return Some(format!("Heading{level}"));
+            }
+        }
+    }
+    (name == "title").then(|| "Title".to_owned())
+}
+
+/// What a paragraph's sprms and its styles' say of its list: Word 97's list
+/// by number, or Word 6's numbering described on the paragraph.
+#[derive(Clone, Copy, Debug, Default)]
+struct ListSprms {
+    ilfo: Option<u16>,
+    /// Word 6's: which of its kinds of numbering, and whether the numbers
+    /// are bullets.
+    numbered: Option<u8>,
+    bullet: bool,
+}
+
+impl ListSprms {
+    fn take(&mut self, sprms: &[Sprm<'_>]) {
+        for sprm in sprms {
+            match sprm.code {
+                sprm::P_ILFO => self.ilfo = Some(sprm.u16()),
+                sprm::P_NUMBERED_LEVEL => self.numbered = Some(sprm.byte()),
+                sprm::P_ANLD => self.bullet = sprm.operand.first() == Some(&23),
+                _ => {}
+            }
+        }
+    }
+
+    /// The list the paragraph is in, if any: Word 97's by its number, or
+    /// Word 6's numbered and bulleted paragraphs. Word 6's outline numbering
+    /// of headings is not a list here.
+    fn reference(
+        &self,
+        lists: &Lists,
+        level: Option<NumberingReference>,
+    ) -> Option<NumberingReference> {
+        let level = level.map_or(0, |reference| reference.level);
+        if let Some(ilfo) = self.ilfo.filter(|ilfo| *ilfo != 0) {
+            let bullet = lists.is_bullet(ilfo, level).unwrap_or(false);
+            let id = if bullet { wp_docx::BULLET_LIST } else { wp_docx::NUMBERED_LIST };
+            return Some(NumberingReference { id, level });
+        }
+        if self.ilfo.is_none() && matches!(self.numbered, Some(10 | 11)) {
+            let id = if self.bullet { wp_docx::BULLET_LIST } else { wp_docx::NUMBERED_LIST };
+            return Some(NumberingReference { id, level: 0 });
+        }
+        None
     }
 }
 
 /// The address a HYPERLINK field names: what is quoted, or the first word
-/// that is not a switch.
+/// that is not a switch; a place in the document, `\l`, after a `#`.
 fn link_address(rest: &str) -> String {
-    let rest = rest.trim();
-    if let Some(after) = rest.strip_prefix('"') {
-        if let Some((quoted, _)) = after.split_once('"') {
-            return quoted.to_owned();
+    let mut words = Vec::new();
+    let mut rest = rest.trim();
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix('"') {
+            let (quoted, remainder) = after.split_once('"').unwrap_or((after, ""));
+            words.push(quoted.to_owned());
+            rest = remainder.trim_start();
+        } else {
+            let (word, remainder) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+            words.push(word.to_owned());
+            rest = remainder.trim_start();
         }
     }
-    rest.split_whitespace()
-        .find(|piece| !piece.starts_with('\\'))
-        .map(|piece| piece.trim_matches('"').to_owned())
-        .unwrap_or_default()
-}
-
-/// The right edges of a table's cells, from its definition sprm.
-fn cell_edges(operand: &[u8]) -> Vec<i32> {
-    let Some(&count) = operand.first() else { return Vec::new() };
-    (0..=usize::from(count))
-        .filter_map(|index| operand.get(1 + index * 2..3 + index * 2))
-        .map(|two| i32::from(i16::from_le_bytes([two[0], two[1]])))
-        .collect()
-}
-
-// --- Drawings ----------------------------------------------------------------------
-
-/// Walks the records of a drawing container, collecting those of a type.
-fn collect_records<'a>(bytes: &'a [u8], wanted: u16, out: &mut Vec<&'a [u8]>) {
-    let mut at = 0;
-    while at + 8 <= bytes.len() {
-        let version = u16::from_le_bytes([bytes[at], bytes[at + 1]]);
-        let kind = u16::from_le_bytes([bytes[at + 2], bytes[at + 3]]);
-        let length =
-            u32::from_le_bytes([bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]])
-                as usize;
-        let Some(body) = bytes.get(at + 8..at + 8 + length) else { break };
-        if kind == wanted {
-            out.push(body);
-        }
-        // A container holds records; anything else holds bytes.
-        if version & 0x000F == 0x000F {
-            collect_records(body, wanted, out);
-        }
-        at += 8 + length;
-    }
-}
-
-/// The first picture record in a drawing, as bytes of a format this program
-/// draws, with its extension.
-fn blip_in(bytes: &[u8]) -> Option<(Vec<u8>, &'static str)> {
-    let mut at = 0;
-    while at + 8 <= bytes.len() {
-        let version = u16::from_le_bytes([bytes[at], bytes[at + 1]]);
-        let kind = u16::from_le_bytes([bytes[at + 2], bytes[at + 3]]);
-        let length =
-            u32::from_le_bytes([bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]])
-                as usize;
-        let body = bytes.get(at + 8..at + 8 + length)?;
-        let instance = version >> 4;
-        match kind {
-            0xF01A..=0xF01F | 0xF029 | 0xF02A => {
-                if let Some(found) = decode_blip(kind, instance, body) {
-                    return Some(found);
-                }
+    let mut address = String::new();
+    let mut place = None;
+    let mut words = words.into_iter();
+    while let Some(word) = words.next() {
+        match word.as_str() {
+            "\\l" => place = words.next(),
+            "\\o" | "\\t" => {
+                words.next();
             }
-            // The store entry, whose picture record follows its header.
-            0xF007 => {
-                if let Some(found) = body.get(36..).and_then(blip_in) {
-                    return Some(found);
-                }
-            }
-            _ => {}
-        }
-        if version & 0x000F == 0x000F {
-            if let Some(found) = blip_in(body) {
-                return Some(found);
-            }
-        }
-        at += 8 + length;
-    }
-    None
-}
-
-/// The bytes of one picture record.
-///
-/// Every kind begins with a sixteen-byte identifier, or two when the
-/// instance says so. A bitmap then has one byte of tag and the file; a
-/// metafile has a header saying how big it is and then the file, squeezed.
-fn decode_blip(kind: u16, instance: u16, body: &[u8]) -> Option<(Vec<u8>, &'static str)> {
-    let two_ids = matches!(instance, 0x6E1 | 0x46B | 0x6E3 | 0x7A9 | 0x6E5 | 0x3D5 | 0x217 | 0x543);
-    let mut at = if two_ids { 32 } else { 16 };
-    match kind {
-        0xF01D | 0xF02A => {
-            at += 1;
-            Some((body.get(at..)?.to_vec(), "jpeg"))
-        }
-        0xF01E => {
-            at += 1;
-            Some((body.get(at..)?.to_vec(), "png"))
-        }
-        0xF029 => {
-            at += 1;
-            Some((body.get(at..)?.to_vec(), "tiff"))
-        }
-        0xF01F => {
-            // A device-independent bitmap is a bitmap file without its
-            // first fourteen bytes; put them back and it is one.
-            at += 1;
-            let dib = body.get(at..)?;
-            let header_size =
-                u32::from_le_bytes([*dib.first()?, *dib.get(1)?, *dib.get(2)?, *dib.get(3)?]);
-            let bits = u16::from_le_bytes([*dib.get(14)?, *dib.get(15)?]);
-            let colours = if bits <= 8 { 1u32 << bits } else { 0 };
-            let offset = 14 + header_size + colours * 4;
-            let mut bmp = Vec::with_capacity(dib.len() + 14);
-            bmp.extend_from_slice(b"BM");
-            bmp.extend_from_slice(&((dib.len() + 14) as u32).to_le_bytes());
-            bmp.extend_from_slice(&[0, 0, 0, 0]);
-            bmp.extend_from_slice(&offset.to_le_bytes());
-            bmp.extend_from_slice(dib);
-            Some((bmp, "bmp"))
-        }
-        0xF01A | 0xF01B => {
-            let header = body.get(at..at + 34)?;
-            let compression = header[32];
-            let data = body.get(at + 34..)?;
-            let bytes = if compression == 0 {
-                wp_deflate::inflate_zlib(data, 64 * 1024 * 1024).ok()?
-            } else {
-                data.to_vec()
-            };
-            Some((bytes, if kind == 0xF01A { "emf" } else { "wmf" }))
-        }
-        _ => None,
-    }
-}
-
-/// The picture number a shape's properties name.
-fn pib_in(bytes: &[u8]) -> Option<u32> {
-    let mut options = Vec::new();
-    collect_records(bytes, 0xF00B, &mut options);
-    for option in options {
-        for property in option.chunks_exact(6) {
-            let id = u16::from_le_bytes([property[0], property[1]]) & 0x3FFF;
-            if id == 0x0104 {
-                return Some(u32::from_le_bytes([
-                    property[2],
-                    property[3],
-                    property[4],
-                    property[5],
-                ]));
-            }
-        }
-    }
-    None
-}
-
-// --- What the sprms say ------------------------------------------------------------
-
-fn apply_paragraph(properties: &mut ParagraphProperties, sprms: &[Sprm<'_>]) {
-    for sprm in sprms {
-        match sprm.code {
-            sprm::P_JC | sprm::P_JC_OLD => {
-                properties.alignment = Some(match sprm.byte() {
-                    1 => Alignment::Center,
-                    2 => Alignment::End,
-                    3..=5 => Alignment::Both,
-                    _ => Alignment::Start,
-                });
-            }
-            sprm::P_DXA_LEFT | sprm::P_DXA_LEFT_NEW => {
-                properties.indent_start = Some(i32::from(sprm.i16()))
-            }
-            sprm::P_DXA_RIGHT | sprm::P_DXA_RIGHT_NEW => {
-                properties.indent_end = Some(i32::from(sprm.i16()))
-            }
-            sprm::P_DXA_LEFT1 | sprm::P_DXA_LEFT1_NEW => {
-                properties.indent_first_line = Some(i32::from(sprm.i16()))
-            }
-            sprm::P_DYA_BEFORE => properties.space_before = Some(i32::from(sprm.u16())),
-            sprm::P_DYA_AFTER => properties.space_after = Some(i32::from(sprm.u16())),
-            sprm::P_DYA_LINE => {
-                let value = i32::from(sprm.i16());
-                let multiple = sprm
-                    .operand
-                    .get(2..4)
-                    .is_some_and(|two| u16::from_le_bytes([two[0], two[1]]) != 0);
-                properties.line_spacing = if multiple {
-                    Some(LineSpacing { value, rule: LineRule::Auto })
-                } else if value < 0 {
-                    Some(LineSpacing { value: -value, rule: LineRule::Exact })
-                } else if value > 0 {
-                    Some(LineSpacing { value, rule: LineRule::AtLeast })
-                } else {
-                    None
-                };
-            }
-            sprm::P_KEEP => properties.keep_lines = Some(sprm.on()),
-            sprm::P_KEEP_FOLLOW => properties.keep_next = Some(sprm.on()),
-            sprm::P_PAGE_BREAK_BEFORE => properties.page_break_before = Some(sprm.on()),
-            sprm::P_WIDOW_CONTROL => properties.widow_control = Some(sprm.on()),
-            sprm::P_CONTEXTUAL_SPACING => properties.contextual_spacing = Some(sprm.on()),
-            sprm::P_OUTLINE_LEVEL => {
-                let level = sprm.byte();
-                properties.outline_level = (level < 9).then_some(level);
-            }
-            sprm::P_ILVL => {
-                let level = sprm.byte().min(8);
-                match &mut properties.numbering {
-                    Some(reference) => reference.level = level,
-                    none => *none = Some(NumberingReference { id: wp_docx::NUMBERED_LIST, level }),
-                }
-            }
+            switch if switch.starts_with('\\') => {}
+            _ if address.is_empty() => address = word,
             _ => {}
         }
     }
-}
-
-fn apply_character(properties: &mut RunProperties, sprms: &[Sprm<'_>], fonts: &[String]) {
-    let toggle = |held: &mut Option<bool>, sprm: &Sprm<'_>| match sprm.byte() {
-        0 => *held = Some(false),
-        1 => *held = Some(true),
-        129 => *held = Some(!held.unwrap_or(false)),
-        _ => {}
-    };
-    for sprm in sprms {
-        match sprm.code {
-            sprm::C_BOLD => toggle(&mut properties.bold, sprm),
-            sprm::C_ITALIC => toggle(&mut properties.italic, sprm),
-            sprm::C_STRIKE => toggle(&mut properties.strike, sprm),
-            sprm::C_DOUBLE_STRIKE => toggle(&mut properties.double_strike, sprm),
-            sprm::C_SMALL_CAPS => toggle(&mut properties.small_caps, sprm),
-            sprm::C_CAPS => toggle(&mut properties.caps, sprm),
-            sprm::C_HIDDEN => toggle(&mut properties.hidden, sprm),
-            sprm::C_UNDERLINE => {
-                properties.underline = Some(match sprm.byte() {
-                    0 => Underline::None,
-                    3 => Underline::Double,
-                    4 => Underline::Dotted,
-                    6 => Underline::Thick,
-                    7 => Underline::Dashed,
-                    11 => Underline::Wave,
-                    _ => Underline::Single,
-                });
-            }
-            sprm::C_SIZE => properties.size_half_points = Some(u32::from(sprm.u16())),
-            sprm::C_FONT => {
-                properties.font = fonts.get(usize::from(sprm.u16())).cloned();
-            }
-            sprm::C_COLOUR_INDEX => {
-                properties.color = sprm::colour_by_index(sprm.byte()).map(str::to_owned);
-            }
-            sprm::C_COLOUR => {
-                let bytes = sprm.operand;
-                if bytes.len() >= 4 && bytes[3] == 0 {
-                    properties.color =
-                        Some(format!("{:02X}{:02X}{:02X}", bytes[0], bytes[1], bytes[2]));
-                } else {
-                    properties.color = None;
-                }
-            }
-            sprm::C_HIGHLIGHT => {
-                properties.highlight = sprm::highlight_by_index(sprm.byte()).map(str::to_owned);
-            }
-            // A colour behind the characters, which is a highlight when it
-            // is one of the sixteen a highlight can be.
-            sprm::C_SHADING_OLD => {
-                let back = ((sprm.u16() >> 5) & 0x1F) as u8;
-                if back != 0 {
-                    properties.highlight = sprm::highlight_by_index(back).map(str::to_owned);
-                }
-            }
-            sprm::C_SHADING => {
-                // The colour in front, the colour behind, the pattern: a
-                // clear pattern shows the colour behind, a solid one the
-                // colour in front.
-                let operand = sprm.operand;
-                if let (Some(fore), Some(back)) = (operand.get(0..4), operand.get(4..8)) {
-                    let pattern =
-                        operand.get(8..10).map_or(0, |two| u16::from_le_bytes([two[0], two[1]]));
-                    let colour = if pattern == 1 && fore[3] == 0 { fore } else { back };
-                    if colour[3] == 0 {
-                        properties.highlight =
-                            sprm::highlight_by_colour(colour[0], colour[1], colour[2])
-                                .map(str::to_owned);
-                    }
-                }
-            }
-            sprm::C_SUPER_SUB => {
-                properties.vertical_align = Some(match sprm.byte() {
-                    1 => VerticalAlignment::Superscript,
-                    2 => VerticalAlignment::Subscript,
-                    _ => VerticalAlignment::Baseline,
-                });
-            }
-            // Raised or lowered by so many half-points, which is how the
-            // older files write what is not quite a superscript.
-            sprm::C_POSITION => properties.position_half_points = Some(i32::from(sprm.i16())),
-            sprm::C_LANGUAGE | sprm::C_LANGUAGE_OLD => {
-                properties.language = language_tag(sprm.u16()).map(str::to_owned);
-            }
-            _ => {}
-        }
+    match place {
+        Some(place) => format!("{address}#{place}"),
+        None => address,
     }
 }
 
-/// The language tag for a Windows language number, for the common ones.
-pub(crate) fn language_tag(number: u16) -> Option<&'static str> {
-    Some(match number {
-        1033 => "en-US",
-        2057 => "en-GB",
-        1031 => "de-DE",
-        1036 => "fr-FR",
-        1034 | 3082 => "es-ES",
-        1040 => "it-IT",
-        1043 => "nl-NL",
-        1046 => "pt-BR",
-        2070 => "pt-PT",
-        1049 => "ru-RU",
-        1058 => "uk-UA",
-        1045 => "pl-PL",
-        1029 => "cs-CZ",
-        1030 => "da-DK",
-        1053 => "sv-SE",
-        1044 => "nb-NO",
-        1035 => "fi-FI",
-        1038 => "hu-HU",
-        1055 => "tr-TR",
-        1032 => "el-GR",
-        1037 => "he-IL",
-        1025 => "ar-SA",
-        1041 => "ja-JP",
-        1042 => "ko-KR",
-        2052 => "zh-CN",
-        1028 => "zh-TW",
-        _ => return None,
-    })
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_links_address_is_what_it_names_and_where_in_it() {
+        assert_eq!(link_address(" \"https://example.com/\" "), "https://example.com/");
+        assert_eq!(link_address(" \\l \"marked_place\" "), "#marked_place");
+        assert_eq!(link_address(" \"page.htm\" \\l \"top\" \\o \"tip\""), "page.htm#top");
+        assert_eq!(link_address(" https://example.com/a "), "https://example.com/a");
+    }
 }
