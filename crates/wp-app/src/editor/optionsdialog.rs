@@ -72,6 +72,11 @@ const CORRECTING: usize = 29;
 const PROOFING: usize = 30;
 const HIDE_SPELLING: usize = 31;
 
+// Advanced.
+const TAB_ADVANCED: usize = 32;
+const ADVANCED_GENERAL: usize = 33;
+const CONFIRM_CONVERSION: usize = 34;
+
 // Trust Centre. Word gives it a dialog of its own behind a button; here it
 // is a page of this one, because the two are the same question — what this
 // program is allowed to do without asking — and a dialog that opens a dialog
@@ -88,9 +93,9 @@ pub(super) const TRUSTED_PLACES: usize = TAB_TRUST + 4;
 const TAB_PROOFING_PAGE: usize = 4;
 
 /// And which the Trust Centre is, for the two buttons that belong to it:
-/// after General, Display, Language, Save, Proofing, and the two pages of
-/// lists.
-const TAB_TRUST_PAGE: usize = 7;
+/// after General, Display, Language, Save, Proofing, Advanced, and the two
+/// pages of lists.
+const TAB_TRUST_PAGE: usize = 8;
 
 /// The button that trusts the folder the document is in.
 pub(super) const TRUST_FOLDER: &str = "Trust This Folder";
@@ -261,6 +266,12 @@ impl Editor {
                 "Hide spelling errors in this document only",
                 self.document.setting_is_on("hideSpellingErrors"),
             ),
+            // --- Advanced --------------------------------------------------
+            Field::Tab("Advanced".to_owned()),
+            Field::Group("General".to_owned()),
+            // Word's wording: every file not a Word document is asked about
+            // before it is converted, even when its kind is plain.
+            check("Confirm file format conversion on open", self.confirm_conversion),
         ];
         // --- Quick Access Toolbar, and Customize Ribbon --------------------
         // Built elsewhere because they are two pages of lists rather than a
@@ -336,6 +347,9 @@ impl Editor {
             (CORRECTING, "a group"),
             (PROOFING, "a tick box"),
             (HIDE_SPELLING, "a tick box"),
+            (TAB_ADVANCED, "a tab"),
+            (ADVANCED_GENERAL, "a group"),
+            (CONFIRM_CONVERSION, "a tick box"),
         ];
         kinds.extend(Self::customise_kinds());
         kinds.extend([
@@ -422,6 +436,7 @@ impl Editor {
             self.autosave_minutes = minutes.clamp(1, 120);
         }
         self.keep_autosaved = dialog.ticked(KEEP_AUTOSAVED);
+        self.confirm_conversion = dialog.ticked(CONFIRM_CONVERSION);
         // What the Trust Centre was told, which is about the person and not
         // about the document: it follows them to the next one.
         if let Some(chosen) = super::trust::Trusting::ALL.get(dialog.chose(MACRO_TRUST)) {
@@ -443,6 +458,7 @@ impl Editor {
         self.settings.autosave = Some(self.autosave);
         self.settings.autosave_minutes = Some(self.autosave_minutes);
         self.settings.keep_autosaved = Some(self.keep_autosaved);
+        self.settings.confirm_conversion = Some(self.confirm_conversion);
         self.settings.dark = Some(dark);
         self.settings.rulers = Some(self.show_rulers);
         self.settings.navigation = Some(self.show_navigation);

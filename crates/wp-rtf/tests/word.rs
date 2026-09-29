@@ -722,3 +722,18 @@ fn a_link_that_begins_with_a_picture_begins_at_the_picture() {
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].range, (4, 4 + 1 + " the logo".len()), "the link moved off its picture");
 }
+
+#[test]
+fn east_asian_text_is_read_two_bytes_a_character() {
+    // A Japanese font whose very name is in Shift-JIS, and text in it the
+    // way Word writes it: each character's two bytes as `\'hh` pairs.
+    let rtf = r"{\rtf1\ansi\ansicpg932\deff0{\fonttbl{\f0\fcharset128 \'82\'6c\'82\'72 \'96\'be\'92\'a9;}}\f0 \'93\'fa\'96\'7b\'8c\'ea and \'b1\par}";
+    let document = wp_rtf::open(rtf.as_bytes()).expect("opened");
+    assert_eq!(document.plain_text().trim_end(), "\u{65E5}\u{672C}\u{8A9E} and \u{FF71}");
+    let body = document.body();
+    let Block::Paragraph(paragraph) = &body.blocks[0] else { panic!("a paragraph") };
+    assert_eq!(
+        paragraph.runs[0].properties.font.as_deref(),
+        Some("\u{FF2D}\u{FF33} \u{660E}\u{671D}")
+    );
+}

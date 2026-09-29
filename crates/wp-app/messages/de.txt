@@ -602,6 +602,9 @@ language = Deutsch
 = Compile error
 > Kompilierungsfehler
 
+= Confirm file format conversion on open
+> Konvertierung des Dateiformats beim Öffnen bestätigen
+
 = Content control cannot be deleted
 > Inhaltssteuerelement kann nicht gelöscht werden
 
@@ -616,6 +619,12 @@ language = Deutsch
 
 = Convert
 > Konvertieren
+
+= Convert File
+> Datei konvertieren
+
+= Convert file from
+> Datei konvertieren von
 
 = Countersign
 > Gegenzeichnen
@@ -1678,6 +1687,9 @@ language = Deutsch
 
 = Recommended Minimum
 > Empfohlenes Minimum
+
+= Recover Text from Any File (*.*)
+> Text aus beliebiger Datei wiederherstellen (*.*)
 
 = Rectangle
 > Rechteck

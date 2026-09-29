@@ -682,6 +682,30 @@ pub mod dialog {
         }
     }
 
+    /// Asks for a file to open, and says which of the types in the list was
+    /// chosen, counted from nought, where the system's dialog tells: a type
+    /// may be a way of reading rather than a kind of file, as Word's
+    /// "Recover Text from Any File" is.
+    #[must_use]
+    pub fn open_file_typed(
+        title: &str,
+        filters: &[FileFilter],
+    ) -> Option<(PathBuf, Option<usize>)> {
+        #[cfg(windows)]
+        {
+            crate::platform::choose_file_typed(title, filters, None, false)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            crate::platform::choose_file(title, filters, None, false).map(|path| (path, None))
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = (title, filters);
+            None
+        }
+    }
+
     /// Asks where to save a file, starting from a suggested name.
     #[must_use]
     pub fn save_file(

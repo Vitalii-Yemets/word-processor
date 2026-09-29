@@ -388,6 +388,25 @@ struct Font {
     name: String,
     /// The code page its charset names, where it names one.
     code_page: Option<u16>,
+    /// The bytes of its name not yet read: a name may be in its own
+    /// character set, two bytes a character.
+    name_bytes: Vec<u8>,
+}
+
+impl Font {
+    /// The name's bytes so far read in the font's own code page, or the
+    /// document's.
+    fn finish_name(&mut self, document: Encoding) {
+        if self.name_bytes.is_empty() {
+            return;
+        }
+        let page = self
+            .code_page
+            .and_then(|number| Encoding::code_page(u32::from(number)))
+            .unwrap_or(document);
+        let bytes = core::mem::take(&mut self.name_bytes);
+        self.name.push_str(&page.decode(&bytes));
+    }
 }
 
 /// One list of the list table: its id and whether it is bulleted.
@@ -1121,11 +1140,12 @@ impl Reader {
             }
             Destination::FontTable => {
                 if byte == b';' {
-                    if let Some((index, font)) = self.font_being_read.take() {
+                    if let Some((index, mut font)) = self.font_being_read.take() {
+                        font.finish_name(self.code_page);
                         self.fonts.push((index, font));
                     }
                 } else if let Some((_, font)) = &mut self.font_being_read {
-                    font.name.push(byte as char);
+                    font.name_bytes.push(byte);
                 }
             }
             Destination::ColourTable => {
@@ -1169,6 +1189,7 @@ impl Reader {
             }
             Destination::FontTable => {
                 if let Some((_, font)) = &mut self.font_being_read {
+                    font.finish_name(self.code_page);
                     font.name.push(character);
                 }
             }
@@ -1726,7 +1747,8 @@ impl Reader {
     fn font_word(&mut self, word: &str, n: i32) {
         match word {
             "f" => {
-                if let Some((index, font)) = self.font_being_read.take() {
+                if let Some((index, mut font)) = self.font_being_read.take() {
+                    font.finish_name(self.code_page);
                     if !font.name.is_empty() {
                         self.fonts.push((index, font));
                     }
@@ -2359,7 +2381,8 @@ impl Reader {
         match closing {
             Destination::Body | Destination::FieldInstruction => self.flush_run(),
             Destination::FontTable => {
-                if let Some((index, font)) = self.font_being_read.take() {
+                if let Some((index, mut font)) = self.font_being_read.take() {
+                    font.finish_name(self.code_page);
                     if !font.name.is_empty() {
                         self.fonts.push((index, font));
                     }
@@ -2980,6 +3003,10 @@ fn charset_code_page(charset: i32) -> Option<u16> {
         186 => Some(1257),
         163 => Some(1258),
         255 => Some(437),
+        128 => Some(932),
+        129 => Some(949),
+        134 => Some(936),
+        136 => Some(950),
         _ => None,
     }
 }

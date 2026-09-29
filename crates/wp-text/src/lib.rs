@@ -16,24 +16,25 @@
 //! # What is here
 //!
 //! The single-byte code pages Word lists, as tables generated from Unicode's
-//! own mapping files (see `tools/generate-codepages.sh`), and UTF-8 and
-//! UTF-16 both ways round. Decoding never fails: every byte of a single-byte
-//! table is some character, and a byte that is not valid UTF-8 becomes the
-//! replacement character, which is what Word shows too. Encoding can fail one
-//! character at a time — a Cyrillic file cannot hold an ő — and says how many
-//! it could not write, which is what Word's dialog marks in red.
-//!
-//! # What is not
-//!
-//! The East Asian encodings — Shift-JIS, GBK, Big5, EUC-KR — which are tables
-//! of thousands rather than of a hundred and twenty-eight, and are named in
-//! the roadmap rather than half done here.
+//! own mapping files (see `tools/generate-codepages.sh`); the East Asian
+//! ones — Shift-JIS, GBK, Unified Hangul and Big5 — where a byte past ASCII
+//! is a character or the first of two, as tables of thousands generated the
+//! same way; and UTF-8 and UTF-16 both ways round. Decoding never fails:
+//! every byte of a single-byte table is some character, and a byte that is
+//! not valid in its encoding becomes the replacement character, which is
+//! what Word shows too. Encoding can fail one character at a time — a
+//! Cyrillic file cannot hold an ő — and says which it could not write,
+//! which is what Word's dialog marks in red.
 
 #![forbid(unsafe_code)]
 
 pub mod base64;
 
+mod cjk_tables;
 mod tables;
+
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// An encoding a text file can be in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -85,6 +86,151 @@ const PAGES: &[Page] = &[
     Page { number: 866, name: "Cyrillic (DOS)", upper: &tables::DOS_866 },
 ];
 
+/// One of the East Asian code pages: a byte past ASCII is a character by
+/// itself or the first of a pair.
+struct Double {
+    number: u16,
+    name: &'static str,
+    /// The single bytes' characters from 0x80, nought for a pair's first.
+    single: &'static [u16; 128],
+    /// The row of pairs each byte from 0x80 begins, or 0xFF.
+    rows: &'static [u8; 128],
+    /// The rows: a character for each second byte from 0x40 to 0xFE.
+    pairs: &'static [u16],
+    /// Which code a character with more than one is written with.
+    preferred: &'static [(u16, u16)],
+}
+
+/// How many second bytes a row has.
+const TRAILS: usize = 0xFF - 0x40;
+
+/// The East Asian code pages, as Word lists them.
+static DOUBLES: &[Double] = &[
+    Double {
+        number: 936,
+        name: "Chinese Simplified (GB2312)",
+        single: &cjk_tables::CP936_SINGLE,
+        rows: &cjk_tables::CP936_ROWS,
+        pairs: &cjk_tables::CP936_PAIRS,
+        preferred: &cjk_tables::CP936_PREFERRED,
+    },
+    Double {
+        number: 950,
+        name: "Chinese Traditional (Big5)",
+        single: &cjk_tables::CP950_SINGLE,
+        rows: &cjk_tables::CP950_ROWS,
+        pairs: &cjk_tables::CP950_PAIRS,
+        preferred: &cjk_tables::CP950_PREFERRED,
+    },
+    Double {
+        number: 932,
+        name: "Japanese (Shift-JIS)",
+        single: &cjk_tables::CP932_SINGLE,
+        rows: &cjk_tables::CP932_ROWS,
+        pairs: &cjk_tables::CP932_PAIRS,
+        preferred: &cjk_tables::CP932_PREFERRED,
+    },
+    Double {
+        number: 949,
+        name: "Korean",
+        single: &cjk_tables::CP949_SINGLE,
+        rows: &cjk_tables::CP949_ROWS,
+        pairs: &cjk_tables::CP949_PAIRS,
+        preferred: &cjk_tables::CP949_PREFERRED,
+    },
+];
+
+impl Double {
+    fn of(number: u16) -> Option<&'static Self> {
+        DOUBLES.iter().find(|double| double.number == number)
+    }
+
+    /// The character at the start of some bytes, and how many bytes it
+    /// took; or nothing, where they are not a character.
+    fn next(&self, bytes: &[u8]) -> Option<(char, usize)> {
+        let first = *bytes.first()?;
+        if first < 0x80 {
+            return Some((char::from(first), 1));
+        }
+        let index = usize::from(first - 0x80);
+        if self.single[index] != 0 {
+            return Some((char::from_u32(u32::from(self.single[index]))?, 1));
+        }
+        let row = self.rows[index];
+        let second = *bytes.get(1)?;
+        if row == 0xFF || !(0x40..=0xFE).contains(&second) {
+            return None;
+        }
+        let value = self.pairs[usize::from(row) * TRAILS + usize::from(second - 0x40)];
+        (value != 0).then(|| char::from_u32(u32::from(value))).flatten().map(|c| (c, 2))
+    }
+
+    fn decode(&self, bytes: &[u8]) -> String {
+        let mut out = String::with_capacity(bytes.len());
+        let mut at = 0;
+        while at < bytes.len() {
+            match self.next(&bytes[at..]) {
+                Some((character, length)) => {
+                    out.push(character);
+                    at += length;
+                }
+                None => {
+                    // A byte that begins nothing, or a pair that means
+                    // nothing: the one byte is lost, and what follows it is
+                    // read on its own.
+                    out.push('\u{FFFD}');
+                    at += 1;
+                }
+            }
+        }
+        out
+    }
+
+    /// The bytes each character is written with, made once from the table.
+    fn codes(&self) -> &'static HashMap<char, u16> {
+        static MAPS: OnceLock<Vec<HashMap<char, u16>>> = OnceLock::new();
+        let maps = MAPS.get_or_init(|| DOUBLES.iter().map(Self::build_codes).collect());
+        let index = DOUBLES.iter().position(|double| double.number == self.number).unwrap_or(0);
+        &maps[index]
+    }
+
+    fn build_codes(&self) -> HashMap<char, u16> {
+        let mut codes = HashMap::new();
+        for (index, &value) in self.single.iter().enumerate() {
+            if let Some(character) = char::from_u32(u32::from(value)).filter(|_| value != 0) {
+                codes.entry(character).or_insert(0x80 + index as u16);
+            }
+        }
+        for (index, &row) in self.rows.iter().enumerate() {
+            if row == 0xFF {
+                continue;
+            }
+            let first = 0x80 + index as u16;
+            let start = usize::from(row) * TRAILS;
+            for (offset, &value) in self.pairs[start..start + TRAILS].iter().enumerate() {
+                if let Some(character) = char::from_u32(u32::from(value)).filter(|_| value != 0) {
+                    codes.entry(character).or_insert(first << 8 | (0x40 + offset as u16));
+                }
+            }
+        }
+        for &(value, code) in self.preferred {
+            if let Some(character) = char::from_u32(u32::from(value)) {
+                codes.insert(character, code);
+            }
+        }
+        codes
+    }
+
+    /// The bytes of one character, if the page has it.
+    fn bytes_for(&self, character: char) -> Option<Vec<u8>> {
+        if (character as u32) < 0x80 {
+            return Some(vec![character as u8]);
+        }
+        let code = *self.codes().get(&character)?;
+        Some(if code < 0x100 { vec![code as u8] } else { code.to_be_bytes().to_vec() })
+    }
+}
+
 impl Encoding {
     /// Every encoding there is to choose from, in the order Word lists them:
     /// Unicode first, then the code pages.
@@ -92,6 +238,7 @@ impl Encoding {
     pub fn all() -> Vec<Self> {
         let mut all = vec![Self::Utf8, Self::Utf16Le, Self::Utf16Be, Self::Ascii];
         all.extend(PAGES.iter().map(|page| Self::CodePage(page.number)));
+        all.extend(DOUBLES.iter().map(|double| Self::CodePage(double.number)));
         all
     }
 
@@ -105,7 +252,8 @@ impl Encoding {
             20127 => Some(Self::Ascii),
             other => {
                 let number = u16::try_from(other).ok()?;
-                PAGES.iter().any(|page| page.number == number).then_some(Self::CodePage(number))
+                (PAGES.iter().any(|page| page.number == number) || Double::of(number).is_some())
+                    .then_some(Self::CodePage(number))
             }
         }
     }
@@ -127,6 +275,10 @@ impl Encoding {
             "latin1" | "l1" => Some(Self::CodePage(28591)),
             "latin2" | "l2" => Some(Self::CodePage(28592)),
             "latin9" => Some(Self::CodePage(28605)),
+            "shiftjis" | "sjis" | "windows31j" | "xsjis" | "ms932" => Some(Self::CodePage(932)),
+            "gbk" | "gb2312" | "euccn" | "xgbk" | "ms936" => Some(Self::CodePage(936)),
+            "euckr" | "ksc56011987" | "uhc" | "ms949" => Some(Self::CodePage(949)),
+            "big5" | "ms950" => Some(Self::CodePage(950)),
             other => {
                 let iso = other.strip_prefix("iso8859");
                 let digits = iso
@@ -153,6 +305,10 @@ impl Encoding {
             Self::CodePage(21866) => "koi8-u".to_owned(),
             Self::CodePage(number @ 28591..=28605) => format!("iso-8859-{}", number - 28590),
             Self::CodePage(number @ 1250..=1258) => format!("windows-{number}"),
+            Self::CodePage(932) => "shift_jis".to_owned(),
+            Self::CodePage(936) => "gb2312".to_owned(),
+            Self::CodePage(949) => "ks_c_5601-1987".to_owned(),
+            Self::CodePage(950) => "big5".to_owned(),
             Self::CodePage(number) => format!("cp{number}"),
         }
     }
@@ -177,9 +333,10 @@ impl Encoding {
             Self::Utf16Le => "Unicode",
             Self::Utf16Be => "Unicode (Big-Endian)",
             Self::Ascii => "US-ASCII",
-            Self::CodePage(number) => {
-                PAGES.iter().find(|page| page.number == number).map_or("Unknown", |page| page.name)
-            }
+            Self::CodePage(number) => match PAGES.iter().find(|page| page.number == number) {
+                Some(page) => page.name,
+                None => Double::of(number).map_or("Unknown", |double| double.name),
+            },
         }
     }
 
@@ -214,7 +371,10 @@ impl Encoding {
                 .iter()
                 .map(|&byte| if byte < 0x80 { byte as char } else { '\u{FFFD}' })
                 .collect(),
-            Self::CodePage(_) => {
+            Self::CodePage(number) => {
+                if let Some(double) = Double::of(number) {
+                    return double.decode(bytes);
+                }
                 let Some(page) = self.page() else { return String::new() };
                 let text: String = bytes
                     .iter()
@@ -265,27 +425,67 @@ impl Encoding {
                 (out, 0)
             }
             Self::Ascii | Self::CodePage(_) => {
-                let page = self.page();
                 let mut out = Vec::with_capacity(text.len());
                 let mut lost = 0;
                 for character in text.chars() {
-                    if let Some(byte) = self.byte_for(page, character, substitute) {
-                        out.push(byte);
-                        continue;
+                    if !self.write_one(character, substitute, &mut out) {
+                        lost += 1;
                     }
-                    // A letter the page writes in pieces: Vietnamese keeps its
-                    // tone marks as separate bytes after the vowel, so ệ is ê
-                    // and then the dot below, each of which the page has.
-                    if let Some(pieces) = self.pieces_for(page, character) {
-                        out.extend(pieces);
-                        continue;
-                    }
-                    out.push(b'?');
-                    lost += 1;
                 }
                 (out, lost)
             }
         }
+    }
+
+    /// Where in a text the characters are that this encoding cannot write,
+    /// as byte offsets of the text: what Word's dialog marks in red.
+    #[must_use]
+    pub fn unwritable(self, text: &str, substitute: bool) -> Vec<usize> {
+        if matches!(self, Self::Utf8 | Self::Utf16Le | Self::Utf16Be) {
+            return Vec::new();
+        }
+        let mut scratch = Vec::new();
+        text.char_indices()
+            .filter(|&(_, character)| {
+                scratch.clear();
+                !self.write_one(character, substitute, &mut scratch)
+            })
+            .map(|(at, _)| at)
+            .collect()
+    }
+
+    /// Writes one character of a code page, or a question mark in its place
+    /// and says so.
+    fn write_one(self, character: char, substitute: bool, out: &mut Vec<u8>) -> bool {
+        if let Self::CodePage(number) = self {
+            if let Some(double) = Double::of(number) {
+                if let Some(bytes) = double.bytes_for(character) {
+                    out.extend(bytes);
+                    return true;
+                }
+                // What stands in for it, where the page has that.
+                if let Some(byte) = self.byte_for(None, character, substitute) {
+                    out.push(byte);
+                    return true;
+                }
+                out.push(b'?');
+                return false;
+            }
+        }
+        let page = self.page();
+        if let Some(byte) = self.byte_for(page, character, substitute) {
+            out.push(byte);
+            return true;
+        }
+        // A letter the page writes in pieces: Vietnamese keeps its tone
+        // marks as separate bytes after the vowel, so ệ is ê and then the
+        // dot below, each of which the page has.
+        if let Some(pieces) = self.pieces_for(page, character) {
+            out.extend(pieces);
+            return true;
+        }
+        out.push(b'?');
+        false
     }
 
     /// Whether a text can be written under this encoding without loss.
@@ -431,7 +631,10 @@ pub struct Detected {
 /// UTF-16 without one, which gives itself away by the zero bytes between the
 /// letters, and UTF-8 without one, whose multi-byte sequences no other
 /// encoding produces by accident. Bytes past ASCII that are not UTF-8 are
-/// some code page, and which one is a guess: the default, marked as a guess.
+/// some code page, and which one is a guess, marked as a guess: an East
+/// Asian page where the bytes read as one without a fault and in the
+/// script that page is for — Japanese with its kana, Korean in Hangul,
+/// Chinese in the ideographs — and otherwise the default.
 #[must_use]
 pub fn detect(bytes: &[u8], default: Encoding) -> Detected {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -467,7 +670,65 @@ pub fn detect(bytes: &[u8], default: Encoding) -> Detected {
     if core::str::from_utf8(bytes).is_ok() {
         return Detected { encoding: Encoding::Utf8, sure: true };
     }
-    Detected { encoding: default, sure: false }
+    let encoding = match default {
+        Encoding::CodePage(number) if Double::of(number).is_some() => default,
+        _ => east_asian_guess(bytes).unwrap_or(default),
+    };
+    Detected { encoding, sure: false }
+}
+
+/// The East Asian page some bytes read as without a fault and in its own
+/// script, if one does: Shift-JIS when kana are among the characters,
+/// Unified Hangul when Hangul syllables are most of them, and for the
+/// ideographs alone GBK before Big5, as Windows guesses.
+fn east_asian_guess(bytes: &[u8]) -> Option<Encoding> {
+    let score = |number: u16, fits: fn(char) -> bool| -> Option<(usize, usize)> {
+        let text = Double::of(number)?.decode(bytes);
+        if text.contains('\u{FFFD}') {
+            return None;
+        }
+        let wide: Vec<char> = text.chars().filter(|c| !c.is_ascii()).collect();
+        Some((wide.iter().filter(|&&c| fits(c)).count(), wide.len()))
+    };
+    let kana = |c: char| ('\u{3040}'..='\u{30FF}').contains(&c);
+    let hangul = |c: char| ('\u{AC00}'..='\u{D7A3}').contains(&c);
+    let ideograph =
+        |c: char| ('\u{4E00}'..='\u{9FFF}').contains(&c) || ('\u{3000}'..='\u{303F}').contains(&c);
+    if let Some((found, of)) = score(932, kana) {
+        if found >= 2 && found * 5 >= of {
+            return Some(Encoding::CodePage(932));
+        }
+    }
+    if let Some((found, of)) = score(949, hangul) {
+        if found >= 2 && found * 10 >= of * 7 {
+            return Some(Encoding::CodePage(949));
+        }
+    }
+    // Any two bytes past ASCII are some ideograph of GBK, so the ideographs
+    // must be the common ones, as Chinese text's are: most pairs begin in
+    // the first level of GB 2312, or among Big5's frequent characters —
+    // where the letters of the European code pages do not.
+    let common = |leads: core::ops::RangeInclusive<u8>| {
+        let (mut pairs, mut frequent, mut at) = (0usize, 0usize, 0);
+        while at < bytes.len() {
+            if bytes[at] >= 0x81 {
+                pairs += 1;
+                frequent += usize::from(leads.contains(&bytes[at]));
+                at += 2;
+            } else {
+                at += 1;
+            }
+        }
+        pairs > 0 && frequent * 10 >= pairs * 7
+    };
+    for (number, leads) in [(936, 0xB0..=0xD7), (950, 0xA4..=0xC6)] {
+        if let Some((found, of)) = score(number, ideograph) {
+            if found >= 2 && found * 10 >= of * 9 && common(leads) {
+                return Some(Encoding::CodePage(number));
+            }
+        }
+    }
+    None
 }
 
 /// The lines of a text, whichever way its lines end.
@@ -574,6 +835,10 @@ mod tests {
                 Encoding::CodePage(1254 | 28599 | 857) => "Şişli İstanbul",
                 Encoding::CodePage(1257) => "Ā ā Ē ē",
                 Encoding::CodePage(1258) => "Việt Nam",
+                Encoding::CodePage(932) => "日本語のテキスト、ｶﾀｶﾅ",
+                Encoding::CodePage(936) => "简体中文文本",
+                Encoding::CodePage(950) => "繁體中文文本",
+                Encoding::CodePage(949) => "한국어 텍스트",
                 Encoding::Ascii => "plain words",
                 Encoding::CodePage(1252)
                 | Encoding::Utf8
@@ -670,7 +935,10 @@ mod tests {
         assert_eq!(Encoding::named("ISO-8859-2"), Some(Encoding::CodePage(28592)));
         assert_eq!(Encoding::named("koi8-r"), Some(Encoding::CodePage(20866)));
         assert_eq!(Encoding::named("latin1"), Some(Encoding::CodePage(28591)));
-        assert_eq!(Encoding::named("shift_jis"), None);
+        assert_eq!(Encoding::named("shift_jis"), Some(Encoding::CodePage(932)));
+        assert_eq!(Encoding::named("GBK"), Some(Encoding::CodePage(936)));
+        assert_eq!(Encoding::named("EUC-KR"), Some(Encoding::CodePage(949)));
+        assert_eq!(Encoding::named("big5"), Some(Encoding::CodePage(950)));
         for encoding in Encoding::all() {
             assert_eq!(Encoding::named(&encoding.label()), Some(encoding), "{encoding:?}");
         }
@@ -683,6 +951,60 @@ mod tests {
             assert_eq!(Encoding::code_page(encoding.number()), Some(encoding));
         }
         assert_eq!(Encoding::CodePage(1251).name(), "Cyrillic (Windows)");
-        assert_eq!(Encoding::code_page(932), None, "Shift-JIS is not here yet");
+        assert_eq!(Encoding::CodePage(932).name(), "Japanese (Shift-JIS)");
+    }
+
+    #[test]
+    fn the_east_asian_code_pages_read_a_character_from_one_byte_or_two() {
+        let cases: [(u16, &[u8], &str); 5] = [
+            (
+                932,
+                &[0x93, 0xFA, 0x96, 0x7B, 0x8C, 0xEA, 0x41, 0xB1],
+                "\u{65E5}\u{672C}\u{8A9E}A\u{FF71}",
+            ),
+            (936, &[0xD6, 0xD0, 0xCE, 0xC4, 0x80], "\u{4E2D}\u{6587}\u{20AC}"),
+            (950, &[0xA4, 0xA4, 0xA4, 0xE5], "\u{4E2D}\u{6587}"),
+            (949, &[0xC7, 0xD1, 0xB1, 0xB9, 0xBE, 0xEE], "\u{D55C}\u{AD6D}\u{C5B4}"),
+            (949, &[0x81, 0x41], "\u{AC02}"),
+        ];
+        for (number, bytes, text) in cases {
+            let encoding = Encoding::CodePage(number);
+            assert_eq!(encoding.decode(bytes), text, "{number}");
+            assert_eq!(encoding.encode(text, false), (bytes.to_vec(), 0), "{number}");
+        }
+        // A first byte with nothing after it, and a pair that means nothing.
+        assert_eq!(Encoding::CodePage(932).decode(&[0x41, 0x93]), "A\u{FFFD}");
+        assert_eq!(Encoding::CodePage(950).decode(&[0xA4, 0x30]), "\u{FFFD}0");
+    }
+
+    #[test]
+    fn an_east_asian_page_is_guessed_by_its_script() {
+        let western = Encoding::CodePage(1252);
+        let cases = [
+            (932, "これは日本語のテキストです。"),
+            (949, "한국어 텍스트입니다"),
+            (936, "这是简体中文文本"),
+        ];
+        for (number, text) in cases {
+            let (bytes, _) = Encoding::CodePage(number).encode(text, false);
+            let detected = detect(&bytes, western);
+            assert_eq!(
+                detected,
+                Detected { encoding: Encoding::CodePage(number), sure: false },
+                "{text}"
+            );
+        }
+        // Western text past ASCII stays the default.
+        let (bytes, _) = western.encode("déjà vu, naïve café", false);
+        assert_eq!(detect(&bytes, western), Detected { encoding: western, sure: false });
+    }
+
+    #[test]
+    fn what_cannot_be_written_is_found_where_it_stands() {
+        let text = "Caf\u{E9} \u{65E5}\u{672C}";
+        assert_eq!(Encoding::CodePage(1252).unwritable(text, false), vec![6, 9]);
+        assert_eq!(Encoding::CodePage(932).unwritable(text, false), vec![3]);
+        assert_eq!(Encoding::CodePage(932).unwritable(text, true), Vec::<usize>::new());
+        assert!(Encoding::Utf8.unwritable(text, false).is_empty());
     }
 }

@@ -82,6 +82,9 @@ pub struct Settings {
     /// Whether the last copy is kept when a document is closed without
     /// saving, so that "Don't Save" can still be taken back.
     pub keep_autosaved: Option<bool>,
+    /// Whether a file not a Word document is asked about before it is
+    /// converted: Word's "Confirm file format conversion on open".
+    pub confirm_conversion: Option<bool>,
     /// Which corrections are made as text is typed, and the replacements.
     ///
     /// Kept here because it is about the person and not about the document:
@@ -237,6 +240,7 @@ impl Settings {
                 "autosave" => settings.autosave = parse_flag(value),
                 "autosave-minutes" => settings.autosave_minutes = value.parse().ok(),
                 "keep-autosaved" => settings.keep_autosaved = parse_flag(value),
+                "confirm-conversion" => settings.confirm_conversion = parse_flag(value),
                 "macro-trust" => settings.macro_trust = Some(value.to_owned()),
                 "trusted-place" => settings.trusted_places.push(value.to_owned()),
                 "trusted-publisher" => settings.trusted_publishers.push(value.to_owned()),
@@ -386,6 +390,9 @@ impl Settings {
         }
         if let Some(on) = self.keep_autosaved {
             write("keep-autosaved", flag(on));
+        }
+        if let Some(on) = self.confirm_conversion {
+            write("confirm-conversion", flag(on));
         }
         if let Some(name) = &self.theme_colors {
             write("theme-colors", name.clone());
@@ -599,6 +606,7 @@ mod tests {
             autosave: Some(false),
             autosave_minutes: Some(5),
             keep_autosaved: Some(false),
+            confirm_conversion: Some(true),
             macro_trust: Some("signed".to_owned()),
             trusted_places: vec!["/home/somebody/Trusted".to_owned()],
             trusted_publishers: vec!["CN=Somebody".to_owned()],

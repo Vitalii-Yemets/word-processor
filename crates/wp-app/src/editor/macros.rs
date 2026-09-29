@@ -282,7 +282,12 @@ impl Editor {
                 value: complaint.to_string(),
             });
         }
-        fields.push(Field::Lines { label: "Source".to_owned(), lines, scroll: 0 });
+        fields.push(Field::Lines {
+            label: "Source".to_owned(),
+            lines,
+            scroll: 0,
+            marks: Vec::new(),
+        });
         let dialog = Dialog::with_buttons(
             "Macro",
             fields,
@@ -375,7 +380,12 @@ impl Editor {
             "Macro",
             vec![
                 Field::Said { label: "Macro name".to_owned(), value: wanted.to_owned() },
-                Field::Lines { label: "Said".to_owned(), lines: said, scroll: 0 },
+                Field::Lines {
+                    label: "Said".to_owned(),
+                    lines: said,
+                    scroll: 0,
+                    marks: Vec::new(),
+                },
             ],
         );
         let _ = self.ask(Asking::Macro, dialog);

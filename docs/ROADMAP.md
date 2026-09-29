@@ -5603,13 +5603,72 @@ depth behind it: the dialogs, and the buttons that are drawn but do nothing.
   that page's text; a header or footer only the first page or every other
   page has, which is text; and the "Don't show this message again" box,
   still named in **G7**.
-- [ ] **G14. The East Asian encodings, and the rest of opening a text file.**
+- [x] **G14. The East Asian encodings, and the rest of opening a text file.**
   Shift-JIS, GBK, Big5 and EUC-KR are tables of thousands and a stage of
   their own. With them: Word's "Confirm file format conversion on open",
   which asks even when it is sure; Word's red marks on the characters an
   encoding cannot write, which this counts instead; and Word's "Recover Text
   from Any File", which opens a file of any extension as text. Named in
   **G2**.
+  *Done:* `wp-text` reads and writes the four East Asian code pages —
+  Shift-JIS (932), GBK (936), Unified Hangul, which is EUC-KR and more
+  (949), and Big5 (950) — where a byte past ASCII is a character or the
+  first of a pair: tables of their single bytes, of the row of pairs each
+  first byte begins, and of the rows, generated with the single-byte ones by
+  `tools/generate-codepages.sh` from the mappings Python carries (with the
+  euro Windows' own GBK has at 0x80, which Unicode's CP936.TXT has too),
+  and the code Windows writes a character with where a page has it twice.
+  A pair that means nothing is the replacement character for its first
+  byte, and what follows is read on its own; writing gives each character
+  its bytes, or its stand-in with substitution allowed, or a question
+  mark; and `Encoding::unwritable` says where in a text the characters are
+  that an encoding cannot write. The four are named as HTML and mail name
+  them — `shift_jis`, `gbk` and `gb2312`, `euc-kr` and `ks_c_5601-1987`,
+  `big5` — and in the File Conversion list as Word names them. A file whose
+  bytes past ASCII are not UTF-8 is still a guess and still asks, but the
+  guess is an East Asian page where the bytes read as one without a fault
+  and in its script — Japanese with its kana, Korean in Hangul, Chinese in
+  its common ideographs, which the letters of the European pages do not
+  make — preselected in the dialog. With the tables: RTF's fonts in those
+  four character sets read two bytes a character, and a font's own name in
+  its character set (`crates/wp-rtf/src/read.rs`); and the PDF reader's
+  national CMaps — the Shift-JIS, GB and GBK, Big5, and Korean ones, and
+  Japanese as EUC and as the seven-bit JIS rows and cells, through Shift-
+  JIS's arithmetic — read their codes as the characters they are
+  (`crates/wp-pdf/src/read/cmap.rs`), which **G13** named. Saving as text
+  shows the text as it is in the preview, the characters the encoding
+  cannot write in red, as Word's does (a dialog's lines field now takes
+  marks). Options has an Advanced page with "Confirm file format conversion
+  on open", remembered with the other settings; ticked, every file that is
+  not a Word document is put to Word's Convert File dialog before it is
+  read — a list of every kind this program reads, the kind the file is
+  taken for chosen, taken by its extension or, where that says nothing, by
+  its first bytes (`crates/wp-app/src/editor/conversion.rs`), and the file
+  read as whichever is chosen. "Recover Text from Any File" is one of the
+  kinds, and a type of the Open dialog: the file as text where it is text,
+  and otherwise the runs of readable characters in it, single bytes and
+  UTF-16, each a paragraph in the order they stand. A file of an extension
+  this program does not know is taken by its bytes now, where it was read
+  as a Word package whatever it was. `--picture - … convert` draws Convert
+  File.
+  *Proven by:* `crates/wp-text` — each page's own characters from their
+  known bytes and back, half-width katakana and the euro included, a first
+  byte with nothing after it and a pair that means nothing, where a text
+  cannot be written, and each page guessed from its own text while Russian
+  in Windows-1251 is not taken for GBK; `crates/wp-rtf/tests/word.rs` — a
+  Japanese font named in Shift-JIS and its text as `\'hh` pairs;
+  `crates/wp-pdf/src/read/cmap.rs` — every national CMap's codes to their
+  characters, and the ids of their Latin; `crates/wp-app` — a file asked
+  about and read as the kind chosen, a file read as what it is when the
+  setting is off, text recovered from a binary file, and the save
+  preview's marks.
+  *Not done, and named here:* Word 6 and Word 95 documents from the East
+  Asian editions, whose text is two bytes a character in the document
+  itself; text files in EUC-JP, ISO-2022-JP, GB18030's four-byte sequences
+  and Johab, which Word lists and this does not; the Convert File dialog's
+  "Show all" box, the list here showing every kind always; and, on Linux,
+  the Open dialog saying which type was chosen, which the system's dialog
+  does not tell — there Recover Text is reached through Convert File.
 - [ ] **G15. A document that takes its styles from its template.** Word's
   Developer ▸ Document Template ▸ Automatically update: the attached template
   is read on opening and its styles are applied over the document's own.

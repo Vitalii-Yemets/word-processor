@@ -211,7 +211,9 @@ pub enum Field {
     /// `scroll` is the first line showing. A box that shows eight lines of a
     /// forty-line macro and cannot reach the ninth is a box that is hiding
     /// what somebody asked to see.
-    Lines { label: String, lines: Vec<String>, scroll: usize },
+    /// `marks` are the byte ranges of each line drawn in red: what Word's
+    /// preview marks as the characters an encoding cannot write.
+    Lines { label: String, lines: Vec<String>, scroll: usize, marks: Vec<Vec<(usize, usize)>> },
     /// A rectangle round everything that follows, with a caption on its top
     /// edge, until the next group or the next tab.
     ///
@@ -414,7 +416,9 @@ impl Field {
                 current,
                 scroll,
             },
-            Self::Lines { label, lines, scroll } => Self::Lines { label: m(&label), lines, scroll },
+            Self::Lines { label, lines, scroll, marks } => {
+                Self::Lines { label: m(&label), lines, scroll, marks }
+            }
             Self::Group(caption) => Self::Group(m(&caption)),
             // Nothing to translate: a picture of the document, or a marker.
             other @ (Self::Preview(_) | Self::Shape(_) | Self::Columns(_)) => other,
@@ -2066,7 +2070,7 @@ impl Dialog {
                 self.placed.push((Hit::Field(index), label_x, list_top, room, list_height));
             }
 
-            Field::Lines { label, lines, scroll } => {
+            Field::Lines { label, lines, scroll, marks } => {
                 let line = engine.simple_line(&label, label_x, label_y, 9.0, theme.text);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
 
@@ -2083,21 +2087,39 @@ impl Dialog {
                 outline(canvas, label_x, list_top, room, list_height, theme.field_edge);
                 for (showing, text) in lines.iter().skip(scroll).take(LINES_SHOWN).enumerate() {
                     let row_y = list_top + PAIR_ROW * showing as f32;
-                    let line = engine.simple_line(
-                        text,
-                        label_x + 5.0,
-                        row_y + PAIR_ROW * 0.72,
-                        9.0,
-                        theme.text,
-                    );
-                    renderer.draw_within(
-                        canvas,
-                        &line,
-                        label_x + 5.0,
-                        row_y,
-                        room - 10.0,
-                        PAIR_ROW,
-                    );
+                    // The line a piece at a time, the marked pieces in red,
+                    // each starting where the one before it ended.
+                    let marked = marks.get(scroll + showing).map_or(&[][..], Vec::as_slice);
+                    let mut pieces: Vec<(&str, bool)> = Vec::new();
+                    let mut from = 0;
+                    for &(start, end) in marked {
+                        let (start, end) = (start.min(text.len()), end.min(text.len()));
+                        if start < from
+                            || !text.is_char_boundary(start)
+                            || !text.is_char_boundary(end)
+                        {
+                            continue;
+                        }
+                        pieces.push((&text[from..start], false));
+                        pieces.push((&text[start..end], true));
+                        from = end;
+                    }
+                    pieces.push((&text[from..], false));
+                    let mut x = label_x + 5.0;
+                    for (piece, red) in pieces.into_iter().filter(|(piece, _)| !piece.is_empty()) {
+                        let colour = if red { Color::rgb(0xC0, 0x00, 0x00) } else { theme.text };
+                        let line =
+                            engine.simple_line(piece, x, row_y + PAIR_ROW * 0.72, 9.0, colour);
+                        renderer.draw_within(
+                            canvas,
+                            &line,
+                            label_x + 5.0,
+                            row_y,
+                            room - 10.0,
+                            PAIR_ROW,
+                        );
+                        x = line.width.max(x);
+                    }
                 }
                 if lines.len() > LINES_SHOWN {
                     draw_scroll_bar(

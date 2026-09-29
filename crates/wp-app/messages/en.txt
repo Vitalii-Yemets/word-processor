@@ -232,6 +232,7 @@
 = Compare with
 = Comparisons
 = Compile error
+= Confirm file format conversion on open
 = Content Control Properties
 = Content control cannot be deleted
 = Contents
@@ -239,6 +240,8 @@
 = Contour
 = Controls
 = Convert
+= Convert File
+= Convert file from
 = Convert to Text
 = Convert to {0}
 = Copies
@@ -704,6 +707,7 @@
 = Recently used
 = Recipients
 = Recommended Minimum
+= Recover Text from Any File (*.*)
 = Rectangle
 = Red
 = Redo

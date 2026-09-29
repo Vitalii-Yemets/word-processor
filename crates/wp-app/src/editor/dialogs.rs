@@ -98,6 +98,8 @@ pub(super) enum Asking {
     AutoFormatReview,
     /// Which language to translate into.
     Translator,
+    /// Which kind of file to read a file as: Word's Convert File.
+    Convert,
     /// Which encoding a text file is in, when its bytes do not say.
     TextOpen,
     /// Which encoding to write a text file in, and how to end its lines.
@@ -190,6 +192,7 @@ impl Editor {
         if answer == Answer::Cancel {
             match asking {
                 Some(Asking::TextOpen) => self.cancel_text_open(),
+                Some(Asking::Convert) => self.cancel_conversion(),
                 Some(Asking::Unseal) => self.cancel_unseal(),
                 Some(Asking::Compare) => self.cancel_comparison(),
                 Some(Asking::ManualHyphenation) => self.cancel_manual_hyphenation(),
@@ -268,6 +271,7 @@ impl Editor {
             }
             Some(Asking::Translator) => self.apply_translator_preferences(&dialog),
             Some(Asking::TextOpen) => self.apply_text_open(&dialog),
+            Some(Asking::Convert) => self.apply_conversion(&dialog),
             Some(Asking::TextSave) => self.apply_text_save(&dialog),
             Some(Asking::PageBorders) => self.apply_page_borders(&dialog),
             // Word's Symbol dialog is answered by its Insert button rather

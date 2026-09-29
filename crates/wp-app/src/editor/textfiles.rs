@@ -69,7 +69,7 @@ pub fn is_text_path(path: &Path) -> bool {
 
 /// The machine's two code pages, as encodings this program knows — or the
 /// Western European ones where the machine's are not known here.
-fn system_encodings() -> (Encoding, Encoding) {
+pub(super) fn system_encodings() -> (Encoding, Encoding) {
     let (windows, dos) = wp_shell::system_code_pages();
     (
         Encoding::code_page(windows).unwrap_or(Encoding::CodePage(1252)),
@@ -138,7 +138,12 @@ impl Editor {
                 value: "Select the encoding that makes your document readable.".to_owned(),
             },
             Field::Choice { label: "Text encoding".to_owned(), items: names, current },
-            Field::Lines { label: "Preview".to_owned(), lines: preview, scroll: 0 },
+            Field::Lines {
+                label: "Preview".to_owned(),
+                lines: preview,
+                scroll: 0,
+                marks: Vec::new(),
+            },
         ];
         crate::chrome::dialog::check_rows(
             "File Conversion",
@@ -228,8 +233,20 @@ impl Editor {
         let encoding = encodings.get(current).copied().unwrap_or(Encoding::Utf8);
         let ending_kind = LineEnding::ALL.get(ending).copied().unwrap_or(LineEnding::CrLf);
         let text = self.text_to_save(line_breaks, ending_kind);
-        let (bytes, lost) = encoding.encode(&text, substitute);
-        let preview = preview_lines(&encoding.decode(&bytes));
+        let (_, lost) = encoding.encode(&text, substitute);
+        // The text as it is, what the encoding cannot write in red, as
+        // Word's preview has it.
+        let preview = preview_lines(&text);
+        let marks: Vec<Vec<(usize, usize)>> = preview
+            .iter()
+            .map(|line| {
+                encoding
+                    .unwritable(line, substitute)
+                    .into_iter()
+                    .map(|at| (at, at + line[at..].chars().next().map_or(1, char::len_utf8)))
+                    .collect()
+            })
+            .collect();
         let name = self
             .text_file
             .as_ref()
@@ -254,7 +271,7 @@ impl Editor {
                 current: ending,
             },
             Field::Check { label: "Allow character substitution".to_owned(), on: substitute },
-            Field::Lines { label: "Preview".to_owned(), lines: preview, scroll: 0 },
+            Field::Lines { label: "Preview".to_owned(), lines: preview, scroll: 0, marks },
             Field::Said {
                 label: String::new(),
                 value: match lost {
@@ -479,6 +496,16 @@ mod tests {
         let dialog = editor.text_save_dialog(ascii, false, 0, false);
         match &dialog.fields[SAVE_LOST] {
             Field::Said { value, .. } => assert!(value.contains("cannot be saved"), "{value}"),
+            other => panic!("{other:?}"),
+        }
+        // The preview shows the text as it is, what ASCII cannot write in
+        // red: every letter of it and the dash and the quotes.
+        match &dialog.fields[SAVE_PREVIEW] {
+            Field::Lines { lines, marks, .. } => {
+                assert_eq!(lines[0], "Привет — “мир”");
+                assert_eq!(marks[0].len(), 12);
+                assert_eq!(marks[0][0], (0, "П".len()));
+            }
             other => panic!("{other:?}"),
         }
         let _ = std::fs::remove_dir_all(folder);

@@ -59,6 +59,9 @@ impl Editor {
         if let Some(on) = settings.keep_autosaved {
             self.keep_autosaved = on;
         }
+        if let Some(on) = settings.confirm_conversion {
+            self.confirm_conversion = on;
+        }
         if let Some(rules) = &settings.autocorrect {
             self.autocorrect = rules.clone();
         }

@@ -26,18 +26,24 @@ pub struct CMap {
     /// codespace.
     widest: usize,
     pub vertical: bool,
-    /// For the predefined Unicode CMaps: the form the codes are Unicode
-    /// in, and the id of the space, where the collection's Latin starts.
+    /// For the predefined CMaps whose codes are characters in an encoding:
+    /// the encoding, and the id of the space, where the collection's Latin
+    /// starts.
     unicode: Option<(Form, u32)>,
 }
 
-/// The forms of Unicode the predefined `Uni` CMaps take.
+/// What the codes of a predefined CMap are: Unicode in one of its forms,
+/// or a national encoding — one of the East Asian code pages, or Japanese
+/// as EUC or as the seven-bit JIS rows and cells.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Form {
     Ucs2,
     Utf16,
     Utf8,
     Utf32,
+    Page(u16),
+    EucJp,
+    Jis,
 }
 
 impl CMap {
@@ -51,22 +57,39 @@ impl CMap {
         }
     }
 
-    /// A predefined CMap by name: the identities, and the Unicode ones of
-    /// the CJK collections, whose codes are the characters themselves.
-    /// The rest, the older national encodings, are read as two bytes a
-    /// code so that a ToUnicode table can still name them.
+    /// A predefined CMap by name: the identities; the Unicode ones of the
+    /// CJK collections, whose codes are the characters themselves; and the
+    /// national encodings' — Shift-JIS, EUC and JIS for Japanese, GB and GBK,
+    /// Big5, and Korean's EUC and Unified Hangul — whose codes are the
+    /// characters in those. Any other is read as two bytes a code, so that a
+    /// ToUnicode table can still name them.
     #[must_use]
     pub fn predefined(name: &str) -> Self {
-        let form = if !name.starts_with("Uni") {
-            None
-        } else if name.contains("UCS2") {
-            Some(Form::Ucs2)
-        } else if name.contains("UTF16") {
-            Some(Form::Utf16)
-        } else if name.contains("UTF8") {
-            Some(Form::Utf8)
-        } else if name.contains("UTF32") {
-            Some(Form::Utf32)
+        let stem = name.trim_end_matches("-H").trim_end_matches("-V");
+        let form = if name.starts_with("Uni") {
+            if name.contains("UCS2") {
+                Some(Form::Ucs2)
+            } else if name.contains("UTF16") {
+                Some(Form::Utf16)
+            } else if name.contains("UTF8") {
+                Some(Form::Utf8)
+            } else if name.contains("UTF32") {
+                Some(Form::Utf32)
+            } else {
+                None
+            }
+        } else if name.contains("RKSJ") {
+            Some(Form::Page(932))
+        } else if name.starts_with("GB") {
+            Some(Form::Page(936))
+        } else if name.contains("B5") {
+            Some(Form::Page(950))
+        } else if name.starts_with("KSC") && !name.contains("Johab") {
+            Some(Form::Page(949))
+        } else if stem == "EUC" {
+            Some(Form::EucJp)
+        } else if name == "H" || name == "V" {
+            Some(Form::Jis)
         } else {
             None
         };
@@ -85,15 +108,32 @@ impl CMap {
                         (4, 0xF080_8080, 0xF48F_BFBF),
                     ],
                     Form::Utf32 => vec![(4, 0, 0x10_FFFF)],
+                    Form::Page(932) => vec![
+                        (1, 0, 0x80),
+                        (1, 0xA0, 0xDF),
+                        (1, 0xFD, 0xFF),
+                        (2, 0x8140, 0x9FFC),
+                        (2, 0xE040, 0xFCFC),
+                    ],
+                    Form::Page(949) => vec![(1, 0, 0x80), (2, 0x8141, 0xFEFE)],
+                    Form::Page(_) => vec![(1, 0, 0x80), (2, 0x8140, 0xFEFE)],
+                    Form::EucJp => vec![(1, 0, 0x80), (2, 0x8EA0, 0x8EDF), (2, 0xA1A1, 0xFEFE)],
+                    Form::Jis => vec![(2, 0x2121, 0x7E7E)],
                 };
                 // Every Adobe CJK collection has the printable ASCII from
                 // id 1, proportional; Japanese has it half-width from 231
-                // too, which the "HW" maps use.
-                let space = if name.contains("-HW-") { 231 } else { 1 };
+                // too, which its national encodings' maps and the "HW"
+                // Unicode ones use, all but the proportional "msp".
+                let japanese = matches!(form, Form::Page(932) | Form::EucJp | Form::Jis);
+                let space = if name.contains("-HW-") || (japanese && !name.contains("msp")) {
+                    231
+                } else {
+                    1
+                };
                 Self { codespaces, unicode: Some((form, space)), ..Default::default() }
             }
         };
-        map.vertical = name.ends_with("-V");
+        map.vertical = name.ends_with("-V") || name == "V";
         map
     }
 
@@ -343,7 +383,37 @@ fn unicode_of(form: Form, code: u32) -> Option<char> {
             let start = bytes.iter().position(|&b| b != 0).unwrap_or(3);
             std::str::from_utf8(&bytes[start..]).ok()?.chars().next()
         }
+        Form::Page(page) => in_page(page, code),
+        Form::EucJp => match code {
+            0..=0x7F => char::from_u32(code),
+            // A half-width katakana, which Shift-JIS keeps as its one byte.
+            0x8E00..=0x8EFF => in_page(932, code & 0xFF),
+            _ => shift_jis_of(((code >> 8) & 0x7F) as u8, (code & 0x7F) as u8),
+        },
+        Form::Jis => shift_jis_of((code >> 8) as u8, code as u8),
     }
+}
+
+/// The character of a code, one byte or two, in an East Asian code page.
+fn in_page(page: u16, code: u32) -> Option<char> {
+    let bytes: Vec<u8> =
+        if code <= 0xFF { vec![code as u8] } else { vec![(code >> 8) as u8, code as u8] };
+    let text = wp_text::Encoding::CodePage(page).decode(&bytes);
+    let mut characters = text.chars();
+    let character = characters.next().filter(|&c| c != '\u{FFFD}')?;
+    characters.next().is_none().then_some(character)
+}
+
+/// A JIS X 0208 row and cell, as Shift-JIS writes it, read as the
+/// character: the one arithmetic every Japanese encoding shares.
+fn shift_jis_of(row: u8, cell: u8) -> Option<char> {
+    if !(0x21..=0x7E).contains(&row) || !(0x21..=0x7E).contains(&cell) {
+        return None;
+    }
+    let first = ((row + 1) >> 1) + if row <= 0x5E { 0x70 } else { 0xB0 };
+    let second =
+        if row % 2 == 1 { cell + if cell >= 0x60 { 0x20 } else { 0x1F } } else { cell + 0x7E };
+    in_page(932, u32::from(first) << 8 | u32::from(second))
 }
 
 /// A destination string: UTF-16BE, as ToUnicode maps write them — or a
@@ -1039,6 +1109,28 @@ mod tests {
         assert_eq!(utf8.text(0xC3A9).as_deref(), Some("\u{E9}"));
         assert_eq!(utf8.next_code(b"x"), (0x78, 1));
         assert_eq!(CMap::predefined("UniCNS-UTF32-H").text(0x1F600).as_deref(), Some("\u{1F600}"));
+    }
+
+    #[test]
+    fn the_national_cmaps_are_the_characters_in_their_encodings() {
+        let rksj = CMap::predefined("90ms-RKSJ-H");
+        assert_eq!(rksj.next_code(&[0x93, 0xFA, 0x41]), (0x93FA, 2));
+        assert_eq!(rksj.text(0x93FA).as_deref(), Some("\u{65E5}"));
+        assert_eq!(rksj.next_code(&[0x41, 0x93]), (0x41, 1));
+        assert_eq!(rksj.text(0x41).as_deref(), Some("A"));
+        assert_eq!(rksj.cid(0x41), 231 + 0x21);
+        assert_eq!(CMap::predefined("90msp-RKSJ-H").cid(0x41), 1 + 0x21);
+        assert_eq!(CMap::predefined("GBK-EUC-H").text(0xD6D0).as_deref(), Some("\u{4E2D}"));
+        assert_eq!(CMap::predefined("B5pc-H").text(0xA4A4).as_deref(), Some("\u{4E2D}"));
+        assert_eq!(CMap::predefined("KSCms-UHC-H").text(0xC7D1).as_deref(), Some("\u{D55C}"));
+        let euc = CMap::predefined("EUC-V");
+        assert!(euc.vertical);
+        assert_eq!(euc.text(0xB0A1).as_deref(), Some("\u{4E9C}"));
+        assert_eq!(euc.text(0x8EB1).as_deref(), Some("\u{FF71}"));
+        let jis = CMap::predefined("H");
+        assert_eq!(jis.next_code(&[0x30, 0x21]), (0x3021, 2));
+        assert_eq!(jis.text(0x3021).as_deref(), Some("\u{4E9C}"));
+        assert_eq!(jis.text(0x2121).as_deref(), Some("\u{3000}"));
     }
 
     #[test]

@@ -23,6 +23,7 @@ mod comparing;
 mod composing;
 mod context;
 mod controls;
+pub(crate) mod conversion;
 mod correcting;
 pub mod debugger;
 mod defaults;
@@ -471,6 +472,9 @@ pub struct Editor {
     /// The text file being opened or saved while its File Conversion dialog
     /// is up. See [`textfiles`].
     text_file: Option<textfiles::TextFile>,
+    /// A file read and waiting for the Convert File dialog. See
+    /// [`conversion`].
+    converting: Option<conversion::Converting>,
     /// The encoding the document was read from, or last written to, as a
     /// text file — what its next save offers first.
     text_encoding: Option<wp_text::Encoding>,
@@ -738,6 +742,10 @@ pub struct Editor {
     autosave: bool,
     autosave_minutes: u32,
     keep_autosaved: bool,
+    /// Whether a file that is not a Word document is asked about before it
+    /// is converted, whatever it plainly is: Word's "Confirm file format
+    /// conversion on open". See [`conversion`].
+    confirm_conversion: bool,
     /// When the last copy was written.
     autosaved: Instant,
     /// What this run's copy is called, and whether there is one to take away.
@@ -910,6 +918,7 @@ impl Editor {
             pasted: None,
             corrected: None,
             text_file: None,
+            converting: None,
             text_encoding: None,
             backstage: None,
             print_pane: None,
@@ -992,6 +1001,7 @@ impl Editor {
             autosave: true,
             autosave_minutes: autorecover::DEFAULT_MINUTES,
             keep_autosaved: true,
+            confirm_conversion: false,
             autosaved: Instant::now(),
             recovery_name: Self::new_recovery_name(),
             recovery_written: false,

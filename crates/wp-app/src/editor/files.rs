@@ -9,6 +9,7 @@ use wp_docx::model::{Block, Body, Paragraph};
 use wp_docx::Document;
 use wp_shell::Response;
 
+use super::conversion::Kind as FileKind;
 use super::Editor;
 
 /// The kinds this program tells the desktop it opens.
@@ -141,8 +142,14 @@ pub const DOCUMENT_FILTERS: &[wp_shell::dialog::FileFilter] = &[
     wp_shell::dialog::FileFilter { label: "Text Files (*.txt)", pattern: "*.txt" },
     wp_shell::dialog::FileFilter { label: "OpenDocument Text (*.odt)", pattern: "*.odt" },
     wp_shell::dialog::FileFilter { label: "PDF Files (*.pdf)", pattern: "*.pdf" },
+    // Not a kind of file but a way of reading one: see [`RECOVER`].
+    wp_shell::dialog::FileFilter { label: RECOVER, pattern: "*.*" },
     wp_shell::dialog::FileFilter { label: "All files (*.*)", pattern: "*.*" },
 ];
+
+/// The Open dialog's type that reads the text out of any file, which is
+/// what is left to do with one nothing else will open.
+pub const RECOVER: &str = "Recover Text from Any File (*.*)";
 
 /// And the ones Save As offers, which are the kinds a document can be made
 /// into, in the order Word lists them. The extension follows the kind chosen:
@@ -723,10 +730,17 @@ impl Editor {
         if !self.may_discard() {
             return Response::Ignored;
         }
-        let Some(path) = wp_shell::dialog::open_file(t("Open"), &readable(DOCUMENT_FILTERS)) else {
+        let Some((path, chosen)) =
+            wp_shell::dialog::open_file_typed(t("Open"), &readable(DOCUMENT_FILTERS))
+        else {
             return Response::Ignored;
         };
-        self.open_path(&path)
+        // Where the system's dialog says the type chosen, the recovery is
+        // one; where it does not, Convert File offers it.
+        let recover = chosen
+            .and_then(|index| DOCUMENT_FILTERS.get(index))
+            .is_some_and(|f| f.label == RECOVER);
+        self.open_path_as(&path, recover.then_some(FileKind::Recover))
     }
 
     /// Makes a new document from a template, which is what opening a template
@@ -774,70 +788,83 @@ impl Editor {
     ///
     /// Whoever calls this has already asked about unsaved changes.
     pub(crate) fn open_path(&mut self, path: &Path) -> Response {
+        self.open_path_as(path, None)
+    }
+
+    /// Opens a file as a kind of file, or as the kind it is taken for when
+    /// none is said — asking first, when Word's "Confirm file format
+    /// conversion on open" says to, for anything not a Word document. See
+    /// [`super::conversion`].
+    ///
+    /// Whoever calls this has already asked about unsaved changes.
+    pub(crate) fn open_path_as(&mut self, path: &Path, kind: Option<FileKind>) -> Response {
+        let path = path.to_path_buf();
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let message = crate::messages::with(
+                    "Cannot read {0}: {1}",
+                    &[&path.display().to_string(), &error.to_string()],
+                );
+                wp_shell::dialog::show_error(&message);
+                self.status = message;
+                self.needs_redraw = true;
+                return Response::Redraw;
+            }
+        };
+        let taken = FileKind::of(&path, &bytes);
+        if kind.is_none() && self.confirm_conversion && taken != FileKind::Word {
+            return self.ask_conversion(&path, bytes, taken);
+        }
+        self.open_read(&path, bytes, kind.unwrap_or(taken))
+    }
+
+    /// Opens a file's bytes as a kind of file.
+    pub(super) fn open_read(&mut self, path: &Path, bytes: Vec<u8>, kind: FileKind) -> Response {
         let path = path.to_path_buf();
         // A text file is not a package: it is read as text, through the File
         // Conversion dialog where its bytes do not say what they are.
-        if super::textfiles::is_text_path(&path) {
-            return match std::fs::read(&path) {
-                Ok(bytes) => self.open_text_path(&path, bytes),
-                Err(error) => {
-                    let message = crate::messages::with(
-                        "Cannot read {0}: {1}",
-                        &[&path.display().to_string(), &error.to_string()],
-                    );
-                    wp_shell::dialog::show_error(&message);
-                    self.status = message;
-                    self.needs_redraw = true;
-                    Response::Redraw
-                }
-            };
+        if kind == FileKind::Text {
+            return self.open_text_path(&path, bytes);
         }
-        if is_pdf_path(&path) && !wp_shell::dialog::ask_ok_cancel(PDF_CONVERSION_NOTICE) {
+        if kind == FileKind::Pdf && !wp_shell::dialog::ask_ok_cancel(PDF_CONVERSION_NOTICE) {
             self.status = String::from("Not opened");
             return Response::Redraw;
         }
-        let rich = is_rtf_path(&path);
-        let web = web_kind(&path);
-        let read = std::fs::read(&path);
         // An encrypted document is not a broken one. Read as a package it
         // would fail as "not a zip", which tells a person nothing they can
         // do anything about; what it needs is the question being asked.
         // A binary document with a password is the same question: its streams
         // are enciphered where they lie rather than a package whole, but what
         // a person has to do about it is the same; and so is a PDF that has a
-        // password to open it.
-        if let Ok(bytes) = &read {
-            if wp_docx::sealing::is_sealed(bytes)
-                || wp_doc::is_encrypted(bytes)
-                || (is_pdf_path(&path) && wp_pdf::needs_password(bytes))
-            {
-                let bytes = bytes.clone();
-                return self.ask_to_unseal(&path, bytes);
-            }
+        // password to open it. Recovering a file's text asks nothing.
+        if kind != FileKind::Recover
+            && (wp_docx::sealing::is_sealed(&bytes)
+                || wp_doc::is_encrypted(&bytes)
+                || (kind == FileKind::Pdf && wp_pdf::needs_password(&bytes)))
+        {
+            return self.ask_to_unseal(&path, bytes);
         }
-        let opened = read
-            .map_err(|error| format!("Cannot read {}: {error}", path.display()))
-            .and_then(|bytes| {
-                if is_doc_path(&path) {
-                    return wp_doc::open(&bytes)
-                        .map_err(|error| format!("Cannot open {}: {error}", path.display()));
-                }
-                if is_odt_path(&path) {
-                    return wp_odt::open(&bytes)
-                        .map_err(|error| format!("Cannot open {}: {error}", path.display()));
-                }
-                if is_pdf_path(&path) {
-                    return wp_pdf::open(&bytes)
-                        .map_err(|error| format!("Cannot open {}: {error}", path.display()));
-                }
-                match (rich, web) {
-                    (true, _) => wp_rtf::open(&bytes),
-                    (_, Some(WebKind::Page)) => wp_html::open_html(&bytes, Some(&path)),
-                    (_, Some(WebKind::SingleFile)) => wp_html::open_mht(&bytes),
-                    _ => Document::open(&bytes),
-                }
-                .map_err(|error| format!("Cannot open {}: {error}", path.display()))
-            });
+        let said =
+            |error: &dyn std::fmt::Display| format!("Cannot open {}: {error}", path.display());
+        let opened = match kind {
+            FileKind::Word | FileKind::Text => Document::open(&bytes).map_err(|error| said(&error)),
+            FileKind::Word97 => wp_doc::open(&bytes).map_err(|error| said(&error)),
+            FileKind::Rtf => wp_rtf::open(&bytes).map_err(|error| said(&error)),
+            FileKind::WebPage => {
+                wp_html::open_html(&bytes, Some(&path)).map_err(|error| said(&error))
+            }
+            FileKind::SingleFileWebPage => wp_html::open_mht(&bytes).map_err(|error| said(&error)),
+            FileKind::OpenDocument => wp_odt::open(&bytes).map_err(|error| said(&error)),
+            FileKind::Pdf => wp_pdf::open(&bytes).map_err(|error| said(&error)),
+            FileKind::Recover => {
+                let lines = super::conversion::recovered_text(
+                    &bytes,
+                    super::textfiles::system_encodings().0,
+                );
+                Document::from_text(&lines).map_err(|error| said(&error))
+            }
+        };
 
         match opened {
             Ok(document) => {

@@ -637,6 +637,15 @@ impl Editor {
             "textsave" => {
                 self.begin_text_save(std::path::Path::new("letter.txt"));
             }
+            // Word's Convert File, over a file of rich text, as "Confirm file
+            // format conversion on open" asks it.
+            "convert" => {
+                self.ask_conversion(
+                    std::path::Path::new("letter.rtf"),
+                    b"{\\rtf1\\ansi Dear reader\\par}".to_vec(),
+                    super::conversion::Kind::Rtf,
+                );
+            }
             "table" => {
                 self.document.insert_table(3, 3);
                 self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
