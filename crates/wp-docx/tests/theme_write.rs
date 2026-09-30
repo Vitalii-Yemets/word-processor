@@ -7,8 +7,9 @@ use wp_docx::{Document, TextPosition};
 
 /// A document whose one run names the theme rather than a colour and a font.
 ///
-/// Built by hand because nothing here writes such a run — Word does, and a
-/// theme is only worth changing for a document that names it.
+/// Built by hand, the way Word writes such a run, because a theme is only
+/// worth changing for a document that names it — and the documents that do
+/// are Word's.
 fn document_naming_the_theme() -> Document {
     let mut body = Body::default();
     body.blocks.push(Block::Paragraph(Paragraph::text("text")));

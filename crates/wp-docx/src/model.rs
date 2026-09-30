@@ -712,9 +712,12 @@ pub enum RunContent {
     Shape(Box<crate::shapes::Shape>),
     /// Several drawings written as one.
     ///
-    /// Read but not written from here: a group's element is carried through
-    /// whole, the way a picture's is, because a group holds pictures. See
-    /// [`crate::group`].
+    /// A group read from a document is changed in its own element and
+    /// copied as its own element, the way a picture is, because a group holds
+    /// pictures and the model does not say all of a picture. Written from the
+    /// model only when there is no element to be had — a part written again
+    /// from its model, or a group somebody built — and then each member from
+    /// its own model, inside the group's box. See [`crate::group`].
     Group(crate::group::Group),
     /// A chart drawn in the line of text.
     ///
@@ -914,9 +917,10 @@ pub struct Picture {
     pub anchor: Option<crate::anchor::Anchor>,
     /// How far round it is turned, and whether it is mirrored.
     ///
-    /// Read from the picture's own `a:xfrm` and not written from here: a
-    /// picture is carried through in its own element rather than rebuilt, so
-    /// turning one changes that element where it stands. See
+    /// Read from the picture's own `a:xfrm`, and written back there when the
+    /// picture is written from the model. Turning a picture in a document is
+    /// another thing: it changes the picture's element where it stands,
+    /// which keeps everything the model does not say. See
     /// [`crate::Document::set_drawing_turn_at`].
     pub turned: crate::floating::Turned,
     /// Where a press on it goes, as the relationship that holds the address.

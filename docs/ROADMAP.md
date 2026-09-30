@@ -6627,7 +6627,14 @@ work is in *The order of the work* at the end.
   that; an RTF `\itap2147483647` pushes two billion table levels; a PDF of
   a million nested `[` and an XML of a hundred thousand nested `w:sdt`
   recurse until the stack goes. Limits checked before the allocation or
-  the recursion, and a test each. Reviews R06/#3, R07, R08, R10, R11.
+  the recursion, and a test each. Reviews R06/#3, R07, R08, R10, R11. And
+  a damaged part inside a package (found while **G20** was done): a
+  `styles.xml` that does not parse is taken by `styles_tree()` as absent
+  and replaced by the default styles without a word, so a document opens
+  looking wrong and, saved, loses its styles for good. Word offers to
+  repair and says what it did; here the person is told, the repair is
+  recorded where **H15**'s Show Repairs lists them, and the same for every
+  other part the readers fall back on silently — find them.
 - [x] **G19. Properties in the order the schema wants, and identifiers that
   are unique.** The writer has the ordered lists and does not always use
   them: `contextualSpacing` before `ind`, `strike` before `caps`, `w`
@@ -6725,13 +6732,94 @@ work is in *The order of the work* at the end.
   19": **opened**. Ink is not in it: Word refuses ink in the line as this
   program writes it and repairs the floating kind, with the number 1
   either had before this.
-- [ ] **G20. What the reader keeps and the writer drops.** A run's theme
+- [x] **G20. What the reader keeps and the writer drops.** A run's theme
   colour, theme font and text effect are read into the model and not
   written from it, so text pasted with Keep Source Formatting stops
   following the document's theme; a table's `tblInd` and `tblLook` are
   read and, when the table is built from the model, not written. Make the
   writer symmetrical with the reader and test it as a round trip through
   the model. Reviews #7/R17, #11.
+  *Done:* every properties struct in `model.rs` walked field by field, the
+  reader against the writer. The paragraph's twenty-two fields, the row's,
+  the cell's, the borders, the tab stops, the list reference, a run's
+  tracked change, its change of formatting and its field, and the drawings
+  a run points at, a picture's video aside, were all written; five fields
+  were not, and now are, each put in through `ordered` in **G19**'s order.
+  A run's theme colour: `w:color` with `themeColor`, `themeTint` and
+  `themeShade` beside `val`, which the schema requires and which says
+  `auto` when only the theme's name is known. Its theme font:
+  `asciiTheme`, `hAnsiTheme`, `eastAsiaTheme` and `cstheme` beside the
+  names, as Word writes a heading's. Its text effect, Word 2010's `w14`
+  shadow, outline, glow or reflection, after the standard's properties and
+  in front of the OpenType features. A table's `w:tblInd`, written when it
+  is set in or out of the margin, and its `w:tblLook`, on every table as
+  Word writes it: the number Word 2007 read and the six attributes beside
+  it, by one writer the Table Style Options command now shares. The run's
+  properties declare the `w14` prefix themselves, as an equation does,
+  because a run from the model goes into parts whose root never declared
+  it: a paste of a run with OpenType features into a document without
+  effects already wrote a file that did not open. What the file cannot say
+  is what the reader never kept: `dark1` and `text1` are one slot, and
+  Word's name is written; one font slot for every script, as one font
+  name; of an effect only which it is and a colour written out, so it goes
+  back with the gallery's settings, and in the gallery's colour when it
+  had none — the schema has no glow or shadow without one. A picture's
+  video is a flag without its address, and is not written; a field inside
+  a tracked change comes back as its answer, since `w:ins` cannot hold a
+  field. Sections have no struct in the model, and nothing writes one from
+  it. The same held for the styles part: a style set from its definition
+  wrote its ligatures and its effect with a prefix the part never declared,
+  the part did not parse, and the next command to edit the styles started
+  again from the defaults, so the document lost every style of its own.
+  One helper, `effects::declare_where_used`, now declares `w14` on the
+  outermost properties written whenever anything under them uses it, for
+  every writer of a run's properties: a run from the model in any part, a
+  command's change, a style, the defaults, and a style the Organizer
+  copies, whose declaration stayed on the other document's root. Numbering
+  writes no run properties that could hold one. The G19 walker passed
+  over a part that did not parse; it now fails on one, by name. An empty
+  `<w:tblLook/>` read with every switch on, the last row and column too; a
+  switch the file does not state is now what a table with no look has, so
+  an empty one and none at all are the same table. And the model's words
+  on a picture's turn and on a group no longer say they are not written
+  from the model: both are.
+  *Proven by:* `crates/wp-docx/tests/round_trip.rs`, each struct a literal
+  naming every field, none left saying nothing, made with
+  `Document::create`, saved and opened again:
+  `every_run_property_comes_back_from_the_file`,
+  `every_paragraph_property_comes_back_from_the_file`,
+  `every_table_property_comes_back_from_the_file`,
+  `every_row_property_comes_back_from_the_file`,
+  `every_cell_property_comes_back_from_the_file`,
+  `everything_a_run_is_besides_its_properties_comes_back_from_the_file`
+  and `every_drawing_a_run_points_at_comes_back_from_the_file`, with the
+  borders, margins, tab stops, look, theme colour and effect inside them
+  written out the same way. Run against the writer as it was, the five
+  fields were all that failed; now they pass. With them: every slot of the
+  theme and both of its fonts, a colour and a font named only after the
+  theme, every effect of the gallery and one read without a colour, all
+  sixty-four looks with indents into the margin and out of it, the look
+  written as Word writes a new table's — `04A0` and the six — and read the
+  same from the number alone, and a run with its theme, its glow and its
+  features pasted into a plain document, which does not open without the
+  declaration. A style asking for ligatures and a glow, and one copied
+  from a document that declared the prefix only on its root, each saved
+  with a styles part that parses and opened again with the style; without
+  the helper both parts fail with the prefix undeclared. An empty look and
+  none at all read as the same. `schema_order.rs` has the new elements in
+  its model fixtures, in the schema's order; its walker fails on a part
+  that does not parse, which a test of its own proves, and its document
+  with everything done to it still has its style after the defaults are
+  changed — without the helper it did not. `cargo test` for wp-docx, wp-app,
+  wp-rtf, wp-odt, wp-html, wp-doc and wp-cli: 3185 passed, none failed,
+  and **K1**'s untouched document still saved byte for byte. **K4**, with
+  `dist\wp.exe` rebuilt: a document from the model with those runs and two
+  tables, one set in half an inch with banded rows and one out into the
+  margin with every switch turned, and the same runs pasted into a plain
+  document — both **opened**, Word drawing the lightened accent named over
+  `auto`, the theme's heading font, the four effects and both indents; and
+  a paragraph in a style set with ligatures and a glow, its styles part
+  declaring nothing on its root, **opened**, drawn with both.
 - [ ] **G21. An unedited document saved as it came.** `Document::save` on a
   document nobody changed rebuilds the zip, so the file's bytes change on a
   save that changed nothing — a LibreOffice file of 5 580 bytes comes back

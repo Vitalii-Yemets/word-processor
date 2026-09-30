@@ -347,23 +347,28 @@ fn read_table_cell(cell: &Element) -> TableCell {
 /// writes the attributes as well. A file may have either, so the number is read
 /// where the attributes are missing. See [`TableLook`] on why two of the six are
 /// written the other way up.
+///
+/// A switch neither the attributes nor the number says anything about is what
+/// a table with no `w:tblLook` at all has — [`TableLook::default`], Word's new
+/// table — so that an empty `<w:tblLook/>` and none at all are the same table.
+/// Each switch was turned on instead, the last row and the last column with the
+/// rest.
 #[must_use]
 pub fn read_table_look(element: &Element) -> TableLook {
     let bits = element
         .attribute(Some(W), "val")
         .and_then(|text| u32::from_str_radix(text.trim(), 16).ok());
 
-    let flag = |name: &str, mask: u32, backwards: bool| {
+    // Each switch as the file says it, the two bands the other way up; and
+    // what the switch is when the file says nothing, said the way round the
+    // model says it.
+    let flag = |name: &str, mask: u32, backwards: bool, unsaid: bool| {
         let stated =
             element.attribute(Some(W), name).map(|value| matches!(value, "1" | "true" | "on"));
-        let set = match stated {
-            Some(on) => on,
-            None => match bits {
-                Some(bits) => bits & mask != 0,
-                // Nothing said at all: a table has bands and no special
-                // columns, which is what an absent `w:tblLook` means.
-                None => !backwards,
-            },
+        let set = match (stated, bits) {
+            (Some(on), _) => on,
+            (None, Some(bits)) => bits & mask != 0,
+            (None, None) => return unsaid,
         };
         if backwards {
             !set
@@ -372,13 +377,14 @@ pub fn read_table_look(element: &Element) -> TableLook {
         }
     };
 
+    let unsaid = TableLook::default();
     TableLook {
-        first_row: flag("firstRow", 0x0020, false),
-        last_row: flag("lastRow", 0x0040, false),
-        first_column: flag("firstColumn", 0x0080, false),
-        last_column: flag("lastColumn", 0x0100, false),
-        banded_rows: flag("noHBand", 0x0200, true),
-        banded_columns: flag("noVBand", 0x0400, true),
+        first_row: flag("firstRow", 0x0020, false, unsaid.first_row),
+        last_row: flag("lastRow", 0x0040, false, unsaid.last_row),
+        first_column: flag("firstColumn", 0x0080, false, unsaid.first_column),
+        last_column: flag("lastColumn", 0x0100, false, unsaid.last_column),
+        banded_rows: flag("noHBand", 0x0200, true, unsaid.banded_rows),
+        banded_columns: flag("noVBand", 0x0400, true, unsaid.banded_columns),
     }
 }
 

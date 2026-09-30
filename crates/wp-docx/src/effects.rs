@@ -205,7 +205,12 @@ pub(crate) fn effect_element(wanted: &TextEffect, prefix: &str) -> Option<Elemen
         }
     }
 
-    if let Some(color) = &wanted.color {
+    // An effect with no colour of its own is one read from a file that gave
+    // it a colour the reader does not keep — a glow Word drew in one of the
+    // theme's colours. Word's schema will not have a shadow or a glow without
+    // a colour, so it is written in the one the gallery gives it; a
+    // reflection takes the text's and has none to write.
+    if let Some(color) = wanted.color.as_deref().or_else(|| wanted.effect.default_color()) {
         // An outline is a line, so its colour is a fill inside the line; the
         // other two colour the effect directly.
         match wanted.effect {
@@ -247,6 +252,35 @@ fn solid_color(hex: &str, prefix: &str, alpha: Option<&str>) -> Element {
 /// this program writes goes through.
 pub(crate) fn declare_namespace(root: &mut Element) {
     crate::edit::declare_extension(root, W14_PREFIX, W14);
+}
+
+/// Declares the prefix on an element that holds anything in the namespace,
+/// so that the element is XML in whatever part it is put.
+///
+/// The one place every writer of Word 2010's run properties comes through —
+/// a run written from the model, a change made by a command, a style set
+/// from its definition or copied from another document, the document's
+/// defaults — because the part they go into is any part: the body, a
+/// header, a note, a comment, the styles. Its root may never have declared
+/// the prefix, and a prefix used and not declared is a part that does not
+/// parse, which for the styles meant a document that opened with none.
+///
+/// On the outermost element written, and for anything under it at any
+/// depth: rejecting a change of formatting lifts what the record inside a
+/// run's properties kept up into those properties, and a declaration that
+/// was only on the record would not come with it. Asked again, it says
+/// nothing twice.
+pub(crate) fn declare_where_used(element: &mut Element) {
+    fn uses(element: &Element) -> bool {
+        element.namespace.as_deref() == Some(W14) || element.child_elements().any(uses)
+    }
+    let declared = element
+        .declarations
+        .iter()
+        .any(|(prefix, uri)| prefix.as_deref() == Some(W14_PREFIX) && uri == W14);
+    if !declared && element.child_elements().any(uses) {
+        element.declarations.push((Some(W14_PREFIX.to_owned()), W14.to_owned()));
+    }
 }
 
 #[cfg(test)]

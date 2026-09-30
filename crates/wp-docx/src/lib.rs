@@ -2464,7 +2464,7 @@ impl Document {
     /// copying onto one means and what Word asks about first.
     pub fn copy_style_from(&mut self, other: &Document, id: &str) -> bool {
         let Some(source) = other.styles_tree() else { return false };
-        let Some(wanted) = source
+        let Some(mut wanted) = source
             .root
             .children_named(Some(read::W), "style")
             .find(|style| {
@@ -2476,6 +2476,9 @@ impl Document {
         else {
             return false;
         };
+        // Word 2010's run properties in it were declared on the other styles
+        // part's root, which does not come with it: the style says it itself.
+        effects::declare_where_used(&mut wanted);
 
         let Some(mut tree) = self.styles_tree() else { return false };
         let before = tree.root.clone();

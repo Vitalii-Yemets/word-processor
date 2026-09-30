@@ -133,6 +133,29 @@ impl Slot {
         })
     }
 
+    /// The name a `w:themeColor` gives it, as Word writes it.
+    ///
+    /// Of the two names the text side has for the first four, Word writes
+    /// `text1` and `background1` rather than `dark1` and `light1`. The reader
+    /// takes either as the same slot, so the one written here is Word's.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Dark1 => "text1",
+            Self::Light1 => "background1",
+            Self::Dark2 => "text2",
+            Self::Light2 => "background2",
+            Self::Accent1 => "accent1",
+            Self::Accent2 => "accent2",
+            Self::Accent3 => "accent3",
+            Self::Accent4 => "accent4",
+            Self::Accent5 => "accent5",
+            Self::Accent6 => "accent6",
+            Self::Hyperlink => "hyperlink",
+            Self::FollowedHyperlink => "followedHyperlink",
+        }
+    }
+
     /// Every slot, in the order a scheme writes them.
     pub const ALL: &'static [Self] = &[
         Self::Dark1,
@@ -174,6 +197,32 @@ impl FontSlot {
             return Some(Self::Minor);
         }
         None
+    }
+
+    /// The four theme attributes of a `w:rFonts` naming this slot, and what
+    /// each says, as Word writes them on a heading: the Latin two name the
+    /// `HAnsi` font, the East Asian one the `EastAsia`, and the complex
+    /// scripts' — spelt `cstheme` by the schema — the `Bidi`.
+    ///
+    /// All four, because the model keeps one slot for every script, as it
+    /// keeps one font name: a run that named it for the Latin text alone
+    /// would have its Arabic or its Chinese fall back to another font.
+    #[must_use]
+    pub fn words(self) -> [(&'static str, &'static str); 4] {
+        match self {
+            Self::Major => [
+                ("asciiTheme", "majorHAnsi"),
+                ("hAnsiTheme", "majorHAnsi"),
+                ("eastAsiaTheme", "majorEastAsia"),
+                ("cstheme", "majorBidi"),
+            ],
+            Self::Minor => [
+                ("asciiTheme", "minorHAnsi"),
+                ("hAnsiTheme", "minorHAnsi"),
+                ("eastAsiaTheme", "minorEastAsia"),
+                ("cstheme", "minorBidi"),
+            ],
+        }
     }
 }
 

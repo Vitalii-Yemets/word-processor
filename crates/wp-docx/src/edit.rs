@@ -20,7 +20,7 @@ use wp_xml::tree::{Element, Node};
 use crate::model::{
     Alignment, Block, Border, BreakKind, LineRule, Paragraph, ParagraphBorders,
     ParagraphProperties, RevisionKind, Run, RunContent, RunProperties, TabAlignment, TabLeader,
-    TabStop, Table, TableBorders,
+    TabStop, Table, TableBorders, TableLook,
 };
 use crate::read::W;
 
@@ -1103,12 +1103,23 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
     if let Some(style) = &properties.style {
         children.push(valued(prefix, "rStyle", style));
     }
-    if let Some(font) = &properties.font {
+    if properties.font.is_some() || properties.font_theme.is_some() {
         let mut fonts = Element::new(&name_with(prefix, "rFonts"), Some(W));
         // All four scripts get the same family: without w:cs, right-to-left and
         // East Asian text would silently fall back to a different font.
-        for attribute in ["ascii", "hAnsi", "cs", "eastAsia"] {
-            fonts.set_namespaced_attribute(&name_with(prefix, attribute), W, font);
+        if let Some(font) = &properties.font {
+            for attribute in ["ascii", "hAnsi", "cs", "eastAsia"] {
+                fonts.set_namespaced_attribute(&name_with(prefix, attribute), W, font);
+            }
+        }
+        // And the theme's slot beside the names, which is what a document
+        // Word made says of nearly every run. The slot is what Word follows,
+        // so that a change of theme changes the font; left off, the text kept
+        // the typeface the theme had when it was read and stopped following.
+        if let Some(slot) = properties.font_theme {
+            for (attribute, name) in slot.words() {
+                fonts.set_namespaced_attribute(&name_with(prefix, attribute), W, name);
+            }
         }
         children.push(fonts);
     }
@@ -1151,8 +1162,27 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
     if let Some(kerning) = properties.kerning_half_points {
         children.push(valued(prefix, "kern", &kerning.to_string()));
     }
-    if let Some(color) = &properties.color {
-        children.push(valued(prefix, "color", color));
+    if properties.color.is_some() || properties.color_theme.is_some() {
+        // `w:val` has to be there whatever else is: the schema requires it.
+        // A colour known only by the theme's name for it says `auto`, which
+        // is what the reader takes for no colour written out — Word takes
+        // the name over the value either way, and writes the value only as
+        // the answer it last worked out.
+        let mut color = valued(prefix, "color", properties.color.as_deref().unwrap_or("auto"));
+        if let Some(named) = &properties.color_theme {
+            let mut set = |local: &str, value: &str| {
+                color.set_namespaced_attribute(&name_with(prefix, local), W, value);
+            };
+            set("themeColor", named.slot.word());
+            // Two hex digits each, which is how the reader reads them.
+            if let Some(tint) = named.tint {
+                set("themeTint", &format!("{tint:02X}"));
+            }
+            if let Some(shade) = named.shade {
+                set("themeShade", &format!("{shade:02X}"));
+            }
+        }
+        children.push(color);
     }
     if let Some(highlight) = &properties.highlight {
         children.push(valued(prefix, "highlight", highlight));
@@ -1183,6 +1213,16 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
     if let Some(layout) = properties.east_asian_layout.filter(|layout| !layout.is_empty()) {
         children.push(layout.element(prefix));
     }
+    // Word 2010's text effect, which the order puts after the standard's
+    // properties and in front of the OpenType features. "No effect" is said
+    // by writing nothing, as the command that takes one off says it.
+    if let Some(effect) = properties
+        .effect
+        .as_ref()
+        .and_then(|wanted| crate::effects::effect_element(wanted, crate::effects::W14_PREFIX))
+    {
+        children.push(effect);
+    }
 
     let mut element = ordered(&name_with(prefix, "rPr"), children, RUN_PROPERTY_ORDER);
     // In a namespace of their own, which the order puts after the standard
@@ -1190,6 +1230,13 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
     if let Some(wanted) = &properties.open_type {
         crate::typography::write_open_type(&mut element, wanted);
     }
+    // The properties say for themselves what their Word 2010 prefix means,
+    // as an equation and a content part do: a run written from the model
+    // goes into whatever part is being edited — a paste, a building block,
+    // a comparison — and that part's root need not have declared it. A
+    // document made from a model declares it on its root as well, and marks
+    // it ignorable there; saying it twice is still XML.
+    crate::effects::declare_where_used(&mut element);
     element
 }
 
@@ -1254,6 +1301,9 @@ fn run_shell(run: &Run, prefix: Option<&str>) -> Element {
             }
             record.push_element(run_properties_element(&change.before, prefix));
             insert_ordered(&mut properties, record, RUN_PROPERTY_ORDER);
+            // And on the outer properties too when only the record uses the
+            // prefix: rejecting the change lifts the record's up into them.
+            crate::effects::declare_where_used(&mut properties);
         }
         element.push_element(properties);
     }
@@ -1694,6 +1744,18 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
     if !table.cell_margins.is_empty() {
         properties.push(cell_margins_element("tblCellMar", &table.cell_margins, prefix));
     }
+    // How far the table is set in from the margin, which may be out into it:
+    // Word's own tables sit a cell's margin to the left, so that the text in
+    // the first column lines up with the text above. Written only when it is
+    // set in or out, because nothing is what a table that says nothing has.
+    if table.indent != 0 {
+        properties.push(measured(prefix, "tblInd", table.indent));
+    }
+    // Which parts of the table its style may treat specially. Always
+    // written, as Word writes it on every table it makes: the model has no
+    // "unsaid", and a file that left it out would leave the answer to each
+    // reader's own idea of what a table with no look has.
+    properties.push(table_look_element(table.look, prefix));
     element.push_element(ordered(&name_with(prefix, "tblPr"), properties, TABLE_PROPERTY_ORDER));
 
     // The grid decides the geometry, so it is written even when every column is
@@ -1844,6 +1906,33 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
         element.push_element(row_element);
     }
 
+    element
+}
+
+/// A `w:tblLook`: which parts of a table its style may treat specially.
+///
+/// The number as well as the attributes, because a reader that knows only
+/// the old form must see the same table as one that knows the new. Word 2007
+/// wrote the number alone and every Word since writes both, for the same
+/// reason. See [`TableLook`] on why two of the six are written the other way
+/// up.
+pub(crate) fn table_look_element(look: TableLook, prefix: Option<&str>) -> Element {
+    let mut element = Element::new(&name_with(prefix, "tblLook"), Some(W));
+
+    let switches = [
+        ("firstRow", 0x0020, look.first_row),
+        ("lastRow", 0x0040, look.last_row),
+        ("firstColumn", 0x0080, look.first_column),
+        ("lastColumn", 0x0100, look.last_column),
+        ("noHBand", 0x0200, !look.banded_rows),
+        ("noVBand", 0x0400, !look.banded_columns),
+    ];
+    let bits =
+        switches.iter().filter(|(_, _, on)| *on).fold(0u32, |bits, (_, mask, _)| bits | mask);
+    element.set_namespaced_attribute(&name_with(prefix, "val"), W, &format!("{bits:04X}"));
+    for (local, _, on) in switches {
+        element.set_namespaced_attribute(&name_with(prefix, local), W, if on { "1" } else { "0" });
+    }
     element
 }
 

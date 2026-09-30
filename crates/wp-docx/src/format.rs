@@ -718,6 +718,10 @@ pub(crate) fn write_run_properties(
         }
         insert_ordered(properties, fonts, RUN_PROPERTY_ORDER);
     }
+    // The effect and the OpenType features above are Word 2010's, and these
+    // properties may be a run's in any part, a style's or the defaults': the
+    // prefix is declared where it is used, whatever the part's root says.
+    crate::effects::declare_where_used(properties);
 }
 
 fn set_toggle(properties: &mut Element, local: &str, state: bool, prefix: Option<&str>) {

@@ -136,38 +136,9 @@ impl Document {
         self.change_table(|table, prefix| {
             let properties = table_properties(table, prefix);
             properties.remove_children_named(Some(read::W), "tblLook");
-
-            let name = |local: &str| edit::name_with(prefix, local);
-            let mut element = Element::new(&name("tblLook"), Some(read::W));
-
-            // The number as well as the attributes, because a reader that
-            // knows only the old form must see the same table as one that
-            // knows the new. Word writes both, for the same reason.
-            let mut bits = 0x0000u32;
-            for (mask, on) in [
-                (0x0020, wanted.first_row),
-                (0x0040, wanted.last_row),
-                (0x0080, wanted.first_column),
-                (0x0100, wanted.last_column),
-                (0x0200, !wanted.banded_rows),
-                (0x0400, !wanted.banded_columns),
-            ] {
-                if on {
-                    bits |= mask;
-                }
-            }
-            element.set_namespaced_attribute(&name("val"), read::W, &format!("{bits:04X}"));
-
-            for (local, on) in [
-                ("firstRow", wanted.first_row),
-                ("lastRow", wanted.last_row),
-                ("firstColumn", wanted.first_column),
-                ("lastColumn", wanted.last_column),
-                ("noHBand", !wanted.banded_rows),
-                ("noVBand", !wanted.banded_columns),
-            ] {
-                element.set_namespaced_attribute(&name(local), read::W, if on { "1" } else { "0" });
-            }
+            // Written by the one writer a table from the model is written
+            // by, so that the command and the model cannot say it two ways.
+            let element = edit::table_look_element(wanted, prefix);
             edit::insert_ordered(properties, element, TABLE_PROPERTY_ORDER);
         })
     }

@@ -26,7 +26,7 @@
 use wp_docx::appearance::{LineNumbers, Restart};
 use wp_docx::cells::CellEdge;
 use wp_docx::eastasian::{CombineBrackets, EastAsianLayout};
-use wp_docx::effects::Effect;
+use wp_docx::effects::{Effect, TextEffect};
 use wp_docx::furniture::{Furniture, Preset, Which};
 use wp_docx::model::{
     Alignment, Block, Body, Border, CellMargins, LineRule, LineSpacing, NumberingReference,
@@ -37,6 +37,7 @@ use wp_docx::model::{
 use wp_docx::pageborders::PageBorders;
 use wp_docx::sections::{NumberFormat, PageNumbering, Start};
 use wp_docx::table_properties::CellAlignment;
+use wp_docx::theme::{FontSlot, Slot, ThemeColor};
 use wp_docx::typography::{Ligatures, NumberForms, NumberSpacing, OpenType};
 use wp_docx::{Document, StyleDefinition, TextPosition};
 use wp_xml::tree::{Element, XmlTree};
@@ -317,15 +318,25 @@ fn names(element: &Element) -> Vec<String> {
 }
 
 /// Every part of a document as it is saved, read back.
+///
+/// A part that does not parse fails here, by name. Passing over it was how a
+/// styles part written with a prefix it never declared went unseen: the
+/// walker found nothing out of order in a part it had not looked at.
 fn saved_parts(document: &Document) -> Vec<(String, XmlTree)> {
     let bytes = document.save().expect("saving");
     let package = wp_opc::Package::open(&bytes).expect("a package");
     package
         .content_parts()
         .filter(|entry| entry.name.ends_with(".xml"))
-        .filter_map(|entry| {
-            let text = package.xml_part(&entry.name)?.ok()?;
-            Some((entry.name.clone(), XmlTree::parse(&text).ok()?))
+        .map(|entry| {
+            let name = &entry.name;
+            let text = match package.xml_part(name) {
+                Some(Ok(text)) => text,
+                other => panic!("{name} cannot be read as text: {other:?}"),
+            };
+            let tree = XmlTree::parse(&text)
+                .unwrap_or_else(|error| panic!("{name} does not parse: {error:?}"));
+            (name.clone(), tree)
         })
         .collect()
 }
@@ -411,9 +422,9 @@ fn every_run_property() -> RunProperties {
         font: Some("Cambria".to_owned()),
         right_to_left: Some(false),
         language: Some("en-GB".to_owned()),
-        color_theme: None,
-        effect: None,
-        font_theme: None,
+        color_theme: Some(ThemeColor { slot: Slot::Accent1, tint: Some(0x99), shade: None }),
+        effect: Some(TextEffect::plain(Effect::Glow)),
+        font_theme: Some(FontSlot::Major),
         double_strike: Some(false),
         caps: Some(true),
         small_caps: Some(false),
@@ -471,6 +482,8 @@ fn every_table_property() -> Table {
     table.cell_spacing = Some(20);
     table.cell_margins =
         CellMargins { top: Some(0), start: Some(108), bottom: Some(0), end: Some(108) };
+    table.indent = -108;
+    table.look = TableLook { last_row: true, banded_columns: true, ..TableLook::default() };
     table
 }
 
@@ -613,6 +626,7 @@ fn a_runs_properties_from_the_model_come_out_in_the_schemas_order() {
             "rtl",
             "lang",
             "eastAsianLayout",
+            "w14:glow",
             "w14:ligatures",
             "w14:numForm",
             "w14:numSpacing",
@@ -742,7 +756,16 @@ fn a_tables_properties_from_the_model_come_out_in_the_schemas_order() {
     let properties = element.child(Some(W), "tblPr").expect("the table's properties");
     assert_eq!(
         names(properties),
-        ["tblStyle", "tblW", "tblCellSpacing", "tblBorders", "tblLayout", "tblCellMar"]
+        [
+            "tblStyle",
+            "tblW",
+            "tblCellSpacing",
+            "tblInd",
+            "tblBorders",
+            "tblLayout",
+            "tblCellMar",
+            "tblLook"
+        ]
     );
     let row = element.child(Some(W), "tr").expect("a row");
     assert_eq!(names(row.child(Some(W), "trPr").expect("the row's")), ["trHeight", "tblHeader"]);
@@ -929,6 +952,27 @@ fn the_walker_finds_a_property_out_of_order_or_out_of_place() {
     assert!(found[2].contains("holds uColor"), "{}", found[2]);
 }
 
+#[test]
+#[should_panic(expected = "word/styles.xml does not parse")]
+fn the_walker_fails_on_a_part_that_does_not_parse() {
+    // A style with Word 2010's ligatures and no declaration of the prefix,
+    // as the styles part was written before G20: passed over, it was a part
+    // with nothing out of order in it.
+    let bytes = document(&["Words"]).save().expect("saving");
+    let mut package = wp_opc::Package::open(&bytes).expect("a package");
+    let part = "word/styles.xml";
+    let text = package.xml_part(part).expect("the styles").expect("readable");
+    let broken = text.replacen(
+        "</w:styles>",
+        "<w:style w:type=\"character\" w:styleId=\"Ligated\"><w:rPr>\
+         <w14:ligatures w14:val=\"standard\"/></w:rPr></w:style></w:styles>",
+        1,
+    );
+    package.set_part(part, broken.into_bytes());
+    let bytes = package.save().expect("saving the package");
+    faults(&Document::open(&bytes).expect("it opens, with the default styles"));
+}
+
 /// A body with everything the model can say, a paragraph and a run of it
 /// with every property, a table with every property of each kind, and runs
 /// of formatting tracked as changed.
@@ -997,6 +1041,11 @@ fn nothing_the_writer_makes_has_a_property_out_of_order() {
         font: Some("Georgia".to_owned()),
         ..RunProperties::default()
     }));
+    // Still there after the defaults. A styles part that does not parse is
+    // taken for none by the next command that edits it, which starts again
+    // from the default styles; so a style written with a prefix it never
+    // declared was lost here, and the part saved after it parsed.
+    assert!(document.styles().get("Quote").is_some(), "the style set from its definition was lost");
     document.set_caret(TextPosition::new(0, 0));
     document.extend_selection_to(TextPosition::new(0, 5));
     document.add_comment("A remark", "Somebody", "2026-09-30T00:00:00Z").expect("a comment");
