@@ -4,7 +4,7 @@ use wp_zip::{Compression, DosDateTime, ZipArchive, ZipWriter};
 
 use crate::content_types::ContentTypes;
 use crate::part_name::{is_relationships_part, normalize, relationships_part_for};
-use crate::relationships::{Relationships, RELATIONSHIPS_CONTENT_TYPE};
+use crate::relationships::{Relationship, Relationships, RELATIONSHIPS_CONTENT_TYPE};
 use crate::{
     Error, CONTENT_TYPES_PART, MAIN_DOCUMENT_CONTENT_TYPE, MAIN_DOCUMENT_MACRO_CONTENT_TYPE,
     MAIN_DOCUMENT_MACRO_TEMPLATE_CONTENT_TYPE, MAIN_DOCUMENT_TEMPLATE_CONTENT_TYPE,
@@ -324,6 +324,109 @@ impl Package {
         problems
     }
 
+    /// Takes out every part no relationship reaches, with the relationships
+    /// part of each part taken out.
+    ///
+    /// Reached means reached from the package's own relationships,
+    /// `/_rels/.rels`, through the relationships of every part reached in
+    /// turn, internal targets only — which is how a reader finds anything in
+    /// a package, so a part not reached that way is one nothing will ever
+    /// read. `follows` says whether a relationship still counts; one that
+    /// does not is taken out of its part's relationships as well, so that
+    /// nothing is left pointing at a part that is gone.
+    ///
+    /// Nothing at all is taken out when a relationships part cannot be read,
+    /// or when the walk does not come to the main document: then what reaches
+    /// what is not known, and a part kept for nothing costs less than a part
+    /// lost. Says whether anything was taken out.
+    pub fn prune_unreachable(
+        &mut self,
+        follows: impl Fn(&Self, &str, &Relationship) -> bool,
+    ) -> bool {
+        let mut reached: Vec<String> = Vec::new();
+        let mut dropped: Vec<(String, String)> = Vec::new();
+        let mut waiting = vec![String::new()];
+        while let Some(source) = waiting.pop() {
+            let Ok(relationships) = self.relationships(&source) else { return false };
+            for relationship in relationships.all() {
+                // An address outside, or a target that leads nowhere, is not a
+                // part, and is left as it was.
+                let Some(Ok(target)) = relationship.resolved_target(&source) else { continue };
+                let Some(target) = self.entry_reached_by(&target) else { continue };
+                if !follows(self, &source, relationship) {
+                    dropped.push((source.clone(), relationship.id.clone()));
+                    continue;
+                }
+                if !reached.iter().any(|held| held.eq_ignore_ascii_case(&target)) {
+                    reached.push(target.clone());
+                    waiting.push(target);
+                }
+            }
+        }
+        let Ok(main) = self.main_document_part() else { return false };
+        if !reached.iter().any(|held| held.eq_ignore_ascii_case(&main)) {
+            return false;
+        }
+
+        let unreached: Vec<String> = self
+            .content_parts()
+            .map(|entry| entry.name.clone())
+            .filter(|name| !reached.iter().any(|held| held.eq_ignore_ascii_case(name)))
+            .collect();
+        if dropped.is_empty() && unreached.is_empty() {
+            return false;
+        }
+
+        // The relationships that no longer count, out of the parts that stay.
+        let mut sources: Vec<&str> = dropped.iter().map(|(source, _)| source.as_str()).collect();
+        sources.dedup();
+        let sources: Vec<String> = sources.into_iter().map(str::to_owned).collect();
+        for source in &sources {
+            let Ok(mut relationships) = self.relationships(source) else { continue };
+            for (_, id) in dropped.iter().filter(|(held, _)| held == source) {
+                relationships.remove(id);
+            }
+            if self.set_relationships(&relationships).is_err() {
+                // Not written back, it still points at its parts, so they
+                // stay where they are.
+                return true;
+            }
+        }
+        for name in &unreached {
+            self.remove_part(name);
+            let own = relationships_part_for(name);
+            if self.part(&own).is_some() {
+                self.remove_part(&own);
+            }
+        }
+        true
+    }
+
+    /// The name the archive holds a part under, for a target resolved to it.
+    ///
+    /// A target is a URI, and a character a URI cannot carry is written in
+    /// it percent-encoded — `image%201.png` for `image 1.png` — while a
+    /// producer may name the entry either way. The two spellings are one
+    /// part, and a walk that told them apart would take out a part that is
+    /// reached.
+    fn entry_reached_by(&self, target: &str) -> Option<String> {
+        let content = |entry: &&PackageEntry| !entry.is_directory();
+        if let Some(entry) = self
+            .entries
+            .iter()
+            .filter(content)
+            .find(|entry| entry.name.eq_ignore_ascii_case(target))
+        {
+            return Some(entry.name.clone());
+        }
+        let target = percent_decoded(target);
+        self.entries
+            .iter()
+            .filter(content)
+            .find(|entry| percent_decoded(&entry.name).eq_ignore_ascii_case(&target))
+            .map(|entry| entry.name.clone())
+    }
+
     /// Writes the package back out as `.docx` bytes.
     pub fn save(&self) -> Result<Vec<u8>, Error> {
         let mut writer = ZipWriter::new();
@@ -377,6 +480,29 @@ fn parse_xml_part(name: &str, bytes: &[u8]) -> Result<String, Error> {
     wp_xml::decode_to_utf8(bytes)
         .map(|text| text.into_owned())
         .map_err(|source| Error::Xml { part: name.to_owned(), source })
+}
+
+/// A part name with every `%` and two hex digits made the byte they stand
+/// for. A name whose bytes are then not UTF-8 is left as it was: it was not
+/// written by encoding a name, and it is compared as written.
+fn percent_decoded(name: &str) -> String {
+    let hex = |byte: Option<&u8>| byte.and_then(|byte| char::from(*byte).to_digit(16));
+    let bytes = name.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' {
+            if let (Some(high), Some(low)) = (hex(bytes.get(at + 1)), hex(bytes.get(at + 2))) {
+                // Two hex digits make at most 255, so the byte is whole.
+                decoded.push((high * 16 + low) as u8);
+                at += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[at]);
+        at += 1;
+    }
+    String::from_utf8(decoded).unwrap_or_else(|_| name.to_owned())
 }
 
 /// Convenience for building a package from scratch, used by tests and by the

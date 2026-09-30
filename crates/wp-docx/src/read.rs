@@ -423,23 +423,39 @@ pub(crate) fn read_border(element: &Element) -> Border {
     }
 }
 
+/// A paragraph read for copying: every drawing and every equation in it is
+/// read with the element it was written as, so that the copy can take it
+/// away whole. See [`RunContent::Copied`].
+///
+/// What the elements point at is not gathered here, because this knows
+/// nothing of the package: [`crate::clipboard`] does that next.
 pub(crate) fn read_paragraph(element: &Element) -> Paragraph {
-    read_paragraph_as(element, false)
+    read_paragraph_as(element, Reading::Copy)
 }
 
 /// The same for showing: the words a content control holds in place of an
 /// answer — its placeholder — come out grey, as Word draws them. Not for
 /// copying, where the words are only words.
 pub(crate) fn read_paragraph_for_display(element: &Element) -> Paragraph {
-    read_paragraph_as(element, true)
+    read_paragraph_as(element, Reading::Display)
 }
 
-fn read_paragraph_as(element: &Element, display: bool) -> Paragraph {
+/// What a paragraph is being read for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reading {
+    /// To be shown, and to be looked at by everything else: the model as a
+    /// view of the package it was read from.
+    Display,
+    /// To be taken away: the drawings and the equations with their elements.
+    Copy,
+}
+
+fn read_paragraph_as(element: &Element, reading: Reading) -> Paragraph {
     let properties =
         element.child(Some(W), "pPr").map(read_paragraph_properties).unwrap_or_default();
 
     let mut runs = Vec::new();
-    collect_runs_within(element, &mut runs, None, None, display);
+    collect_runs_within(element, &mut runs, None, None, reading);
     Paragraph { properties, runs }
 }
 
@@ -564,12 +580,13 @@ fn collect_runs_within(
     runs: &mut Vec<Run>,
     field: Option<&str>,
     revision: Option<&Revision>,
-    display: bool,
+    reading: Reading,
 ) {
     // Fields written the long way are a run of markers among the ordinary
     // runs, so reading them means keeping track of where in one we are. See
     // [`crate::fields`].
     let mut open = crate::fields::Fields::default();
+    let display = reading == Reading::Display;
 
     for child in parent.child_elements() {
         // An equation is a sibling of the runs, in the namespace equations live
@@ -577,14 +594,30 @@ fn collect_runs_within(
         // WordprocessingML.
         if child.namespace.as_deref() == Some(crate::math::MATH_NAMESPACE) {
             match child.local_name() {
-                "oMath" => runs.push(math_run(child, field, revision)),
+                "oMath" => {
+                    let mut run = math_run(child, field, revision);
+                    if reading == Reading::Copy {
+                        keep_element(&mut run, child);
+                    }
+                    runs.push(run);
+                }
                 // A display equation is wrapped in a paragraph of its own and
                 // holds the equation itself inside.
                 "oMathPara" => {
-                    for inner in child.child_elements() {
-                        if inner.is(Some(crate::math::MATH_NAMESPACE), "oMath") {
-                            runs.push(math_run(inner, field, revision));
+                    let inner: Vec<&Element> = child
+                        .child_elements()
+                        .filter(|inner| inner.is(Some(crate::math::MATH_NAMESPACE), "oMath"))
+                        .collect();
+                    for equation in &inner {
+                        let mut run = math_run(equation, field, revision);
+                        // A copy of the one equation a display holds keeps the
+                        // display, which is what makes it stand on a line of
+                        // its own. One that holds several gives each its own
+                        // element: the display cannot be copied once for each.
+                        if reading == Reading::Copy {
+                            keep_element(&mut run, if inner.len() == 1 { child } else { equation });
                         }
+                        runs.push(run);
                     }
                 }
                 _ => {}
@@ -619,7 +652,7 @@ fn collect_runs_within(
                     continue;
                 }
 
-                let mut run = read_run(child);
+                let mut run = read_run_as(child, reading == Reading::Copy);
                 // The innermost field being answered wins: a page number inside
                 // a table of contents entry belongs to the page number.
                 run.field = open.current().or_else(|| field.map(str::to_owned));
@@ -645,7 +678,7 @@ fn collect_runs_within(
                         .and_then(|text| text.parse().ok())
                         .unwrap_or(0),
                 };
-                collect_runs_within(child, runs, field, Some(&change), display);
+                collect_runs_within(child, runs, field, Some(&change), reading);
             }
             // A simple field holds the runs that show its last computed value.
             // They are read as ordinary runs so the cached answer is never
@@ -654,16 +687,26 @@ fn collect_runs_within(
             "fldSimple" => {
                 let instruction =
                     child.attribute(Some(W), "instr").unwrap_or_default().trim().to_owned();
-                collect_runs_within(child, runs, Some(&instruction), revision, display);
+                collect_runs_within(child, runs, Some(&instruction), revision, reading);
             }
             _ if is_transparent_inline(child) => {
                 let before = runs.len();
-                collect_runs_within(child, runs, field, revision, display);
+                collect_runs_within(child, runs, field, revision, reading);
                 // A control's placeholder is shown grey, whatever the run
                 // says: it is not the answer, it is the question.
                 if display && child.local_name() == "sdt" && showing_placeholder(child) {
                     for run in &mut runs[before..] {
                         run.properties.color = Some(PLACEHOLDER_GREY.to_owned());
+                    }
+                }
+                // A copy keeps a link: every run it holds is marked with it,
+                // so that a paste can put the link round them again. See
+                // [`crate::clipboard::Copied`].
+                if reading == Reading::Copy && child.local_name() == "hyperlink" {
+                    let mut wrapper = child.clone();
+                    wrapper.children.clear();
+                    for run in &mut runs[before..] {
+                        run.content.insert(0, crate::clipboard::linking(&wrapper, before));
                     }
                 }
             }
@@ -673,30 +716,65 @@ fn collect_runs_within(
 }
 
 pub(crate) fn read_run(element: &Element) -> Run {
+    read_run_as(element, false)
+}
+
+/// The same, keeping each drawing's element when the run is being copied.
+fn read_run_as(element: &Element, copying: bool) -> Run {
     let rpr = element.child(Some(W), "rPr");
     let properties = rpr.map(read_run_properties).unwrap_or_default();
     let format_change = rpr.and_then(read_format_change);
 
     let mut content = Vec::new();
     for child in element.child_elements() {
-        read_run_piece(child, &mut content);
+        read_run_piece(child, &mut content, copying);
     }
 
     Run { properties, content, field: None, revision: None, format_change }
+}
+
+/// A piece read from an element, kept with the element when it is being
+/// copied. See [`RunContent::Copied`].
+fn kept(piece: RunContent, element: &Element, copying: bool) -> RunContent {
+    if copying {
+        crate::clipboard::carrying(piece, element)
+    } else {
+        piece
+    }
+}
+
+/// Keeps an equation's element with the run that holds it.
+fn keep_element(run: &mut Run, element: &Element) {
+    for piece in &mut run.content {
+        let read = core::mem::replace(piece, RunContent::Tab);
+        *piece = crate::clipboard::carrying(read, element);
+    }
 }
 
 /// The namespace that says which of two ways of writing the same thing to read.
 pub(crate) const MC: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
 /// Reads one child of a run into whatever it stands for.
-fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
+fn read_run_piece(child: &Element, content: &mut Vec<RunContent>, copying: bool) {
     // A drawing Word writes twice: once as what it means, and once as what a
     // reader too old to know the first can draw instead. Everything from the
     // shapes gallery arrives this way, and so does ink.
     if child.local_name() == "AlternateContent"
         && matches!(child.namespace.as_deref(), None | Some(MC))
     {
-        read_alternate(child, content);
+        // A copy keeps both ways of writing it, which is what a reader that
+        // knows neither the choice nor this program needs to draw anything:
+        // the whole alternative goes, standing for the one thing read out of
+        // it. When it comes to more than one thing, each is kept on its own.
+        if copying {
+            let mut found = Vec::new();
+            read_alternate(child, &mut found, false);
+            if found.len() == 1 {
+                content.extend(found.into_iter().map(|piece| kept(piece, child, true)));
+                return;
+            }
+        }
+        read_alternate(child, content, copying);
         return;
     }
     // Ink is not in the word-processing namespace: it is an extension, and it
@@ -705,7 +783,7 @@ fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
         && matches!(child.namespace.as_deref(), Some(crate::ink::W14))
     {
         if let Some(reference) = crate::ink::read_reference(child) {
-            content.push(RunContent::Ink(reference));
+            content.push(kept(RunContent::Ink(reference), child, copying));
         }
         return;
     }
@@ -777,23 +855,24 @@ fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
                 // A group is asked first of all, and has to be: it holds
                 // shapes and pictures, so every reader below would read a
                 // whole group as whatever it found inside it.
-                if let Some(ink) = crate::ink::read_drawing_reference(child) {
-                    content.push(RunContent::Ink(ink));
+                let piece = if let Some(ink) = crate::ink::read_drawing_reference(child) {
+                    RunContent::Ink(ink)
                 } else if let Some(group) = crate::group::read_group(child) {
-                    content.push(RunContent::Group(group));
+                    RunContent::Group(group)
                 } else if let Some(diagram) = read_diagram_reference(child) {
-                    content.push(RunContent::Diagram(diagram));
+                    RunContent::Diagram(diagram)
                 } else if let Some(chart) = read_chart_reference(child) {
-                    content.push(RunContent::Chart(chart));
+                    RunContent::Chart(chart)
                 } else if let Some(shape) = crate::shapes::read_shape(child) {
-                    content.push(RunContent::Shape(Box::new(shape)));
+                    RunContent::Shape(Box::new(shape))
                 } else if let Some(picture) = read_picture(child) {
-                    content.push(RunContent::Picture(Box::new(picture)));
+                    RunContent::Picture(Box::new(picture))
                 } else {
                     // Nothing here knows what it is, which is not a reason to
                     // lose it: see [`RunContent::Carried`].
-                    content.push(RunContent::Carried(Box::new(child.clone())));
-                }
+                    RunContent::Carried(Box::new(child.clone()))
+                };
+                content.push(kept(piece, child, copying));
             }
             _ => {}
         }
@@ -808,14 +887,14 @@ fn read_run_piece(child: &Element, content: &mut Vec<RunContent>) {
 /// choice is read in turn and the first that comes to anything is kept, and
 /// the fallback is read when none of them did. A reader that knows an
 /// extension is a reader that gets something out of it.
-fn read_alternate(element: &Element, content: &mut Vec<RunContent>) {
+fn read_alternate(element: &Element, content: &mut Vec<RunContent>, copying: bool) {
     let mut fallback = None;
     for choice in element.child_elements() {
         match choice.local_name() {
             "Choice" => {
                 let mut found = Vec::new();
                 for child in choice.child_elements() {
-                    read_run_piece(child, &mut found);
+                    read_run_piece(child, &mut found, copying);
                 }
                 if !found.is_empty() {
                     content.extend(found);
@@ -829,7 +908,7 @@ fn read_alternate(element: &Element, content: &mut Vec<RunContent>) {
 
     let Some(fallback) = fallback else { return };
     for child in fallback.child_elements() {
-        read_run_piece(child, content);
+        read_run_piece(child, content, copying);
     }
 }
 

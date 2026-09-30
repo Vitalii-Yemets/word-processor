@@ -688,7 +688,7 @@ fn gather_picture_depths(block: &crate::model::Block, out: &mut Vec<u32>) {
 /// box the text flows round: the box stays where it is and the picture inside
 /// it turns, which is why a turned picture still keeps the words out of the
 /// same rectangle. A drawing whose transform says nothing is given one.
-fn turn(drawing: &mut Element, turned: Turned) -> bool {
+pub(crate) fn turn(drawing: &mut Element, turned: Turned) -> bool {
     fn write(element: &mut Element, turned: Turned, done: &mut bool) {
         if element.local_name() == "xfrm" {
             if turned.rotation == 0 {

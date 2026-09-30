@@ -1375,7 +1375,7 @@ impl crate::Document {
 
 /// The drawing that puts a chart in the line of text.
 #[must_use]
-fn chart_drawing(
+pub(crate) fn chart_drawing(
     relationship: &str,
     width_emu: i64,
     height_emu: i64,

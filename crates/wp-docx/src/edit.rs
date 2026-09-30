@@ -795,12 +795,74 @@ pub fn paragraph_element(paragraph: &Paragraph, prefix: Option<&str>) -> Element
     if !paragraph.properties.is_empty() {
         element.push_element(paragraph_properties_element(&paragraph.properties, prefix));
     }
-    // Runs that belong to the same field or the same tracked change go back
-    // inside one wrapper, or the field would be lost and only its cached answer
-    // would remain, and a change would stop being a change.
+    for child in runs_elements(&paragraph.runs, prefix) {
+        element.push_element(child);
+    }
+
+    element
+}
+
+/// Turns a paragraph's runs from the model into the elements that go in it.
+///
+/// Runs a copied link holds go back inside the link, outermost, because a
+/// link may hold a change but a change may not hold a link. See
+/// [`crate::clipboard::Copied::is_link`]; a link whose relationship has not
+/// been made in the part being written — a copy no paste has settled — is
+/// left off, and its words written as words.
+#[must_use]
+pub(crate) fn runs_elements(runs: &[Run], prefix: Option<&str>) -> Vec<Element> {
+    /// The link a run stands in, when it can be written here.
+    fn link_of(run: &Run) -> Option<&crate::clipboard::Copied> {
+        run.content.iter().find_map(|piece| match piece {
+            RunContent::Copied(copied) if copied.is_link() && copied.is_settled() => {
+                Some(&**copied)
+            }
+            _ => None,
+        })
+    }
+
+    let mut out = Vec::new();
     let mut index = 0usize;
-    while index < paragraph.runs.len() {
-        let run = &paragraph.runs[index];
+    while index < runs.len() {
+        let start = index;
+        let link = link_of(&runs[index]);
+        index += 1;
+        while index < runs.len()
+            && match (link, link_of(&runs[index])) {
+                (Some(one), Some(other)) => one.same_link(other),
+                (None, None) => true,
+                _ => false,
+            }
+        {
+            index += 1;
+        }
+        let children = unlinked_elements(&runs[start..index], prefix);
+        match link {
+            Some(link) => {
+                let mut wrapper = link.element().clone();
+                for child in children {
+                    wrapper.push_element(child);
+                }
+                out.push(wrapper);
+            }
+            None => out.extend(children),
+        }
+    }
+    out
+}
+
+/// The same for runs no link holds.
+///
+/// Runs that belong to the same field or the same tracked change go back
+/// inside one wrapper, or the field would be lost and only its cached answer
+/// would remain, and a change would stop being a change. What is inside a
+/// change's wrapper is written as runs, because a simple field is not
+/// something the format lets a change hold; the answer stays, as text.
+fn unlinked_elements(runs: &[Run], prefix: Option<&str>) -> Vec<Element> {
+    let mut out = Vec::new();
+    let mut index = 0usize;
+    while index < runs.len() {
+        let run = &runs[index];
 
         if let Some(revision) = &run.revision {
             let mut wrapper = Element::new(&name_with(prefix, revision.kind.element()), Some(W));
@@ -809,44 +871,36 @@ pub fn paragraph_element(paragraph: &Paragraph, prefix: Option<&str>) -> Element
             wrapper.set_namespaced_attribute(&name_with(prefix, "date"), W, &revision.date);
 
             let deleted = revision.kind == RevisionKind::Deleted;
-            while index < paragraph.runs.len()
-                && paragraph.runs[index].revision.as_ref() == Some(revision)
-            {
-                wrapper.push_element(revised_run_element(&paragraph.runs[index], prefix, deleted));
+            while index < runs.len() && runs[index].revision.as_ref() == Some(revision) {
+                for child in revised_run_elements(&runs[index], prefix, deleted) {
+                    wrapper.push_element(child);
+                }
                 index += 1;
             }
-            element.push_element(wrapper);
+            out.push(wrapper);
             continue;
         }
 
-        // An equation is not written inside a run: it is a sibling of the runs,
-        // in the namespace equations live in.
-        if let Some(crate::model::RunContent::Math(math)) = run.content.first() {
-            if run.content.len() == 1 {
-                element.push_element(crate::math::math_element(math, crate::math::MATH_PREFIX));
-                index += 1;
-                continue;
-            }
-        }
-
         let Some(instruction) = &run.field else {
-            element.push_element(run_element(run, prefix));
+            out.extend(run_elements(run, prefix));
             index += 1;
             continue;
         };
 
         let mut field = Element::new(&name_with(prefix, "fldSimple"), Some(W));
         field.set_namespaced_attribute(&name_with(prefix, "instr"), W, &format!(" {instruction} "));
-        while index < paragraph.runs.len()
-            && paragraph.runs[index].field.as_deref() == Some(instruction.as_str())
+        while index < runs.len()
+            && runs[index].revision.is_none()
+            && runs[index].field.as_deref() == Some(instruction.as_str())
         {
-            field.push_element(run_element(&paragraph.runs[index], prefix));
+            for child in run_elements(&runs[index], prefix) {
+                field.push_element(child);
+            }
             index += 1;
         }
-        element.push_element(field);
+        out.push(field);
     }
-
-    element
+    out
 }
 
 /// Turns run properties into a `w:rPr`.
@@ -946,10 +1000,15 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
     element
 }
 
-/// Turns a run from the model into an element.
+/// Turns a run from the model into the elements that write it.
+///
+/// One `w:r`, nearly always. An equation is not something a run can hold —
+/// it is a sibling of the runs, in the namespace equations live in — so a run
+/// with one in it is written as the run before the equation, the equation,
+/// and the run after it, each with the run's own properties.
 #[must_use]
-pub fn run_element(run: &Run, prefix: Option<&str>) -> Element {
-    revised_run_element(run, prefix, false)
+pub fn run_elements(run: &Run, prefix: Option<&str>) -> Vec<Element> {
+    revised_run_elements(run, prefix, false)
 }
 
 /// The same, writing `w:delText` instead of `w:t` for deleted text.
@@ -958,7 +1017,35 @@ pub fn run_element(run: &Run, prefix: Option<&str>) -> Element {
 /// as it would be with every change accepted skips `w:delText` and keeps `w:t`,
 /// and it can only do that if the two are told apart by name.
 #[must_use]
-pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> Element {
+pub fn revised_run_elements(run: &Run, prefix: Option<&str>, deleted: bool) -> Vec<Element> {
+    let mut out = Vec::new();
+    let mut element = run_shell(run, prefix);
+    let mut holds = false;
+    for piece in &run.content {
+        match placed(piece, prefix, deleted) {
+            Placed::InRun(children) => {
+                holds |= !children.is_empty();
+                for child in children {
+                    element.push_element(child);
+                }
+            }
+            Placed::Beside(beside) => {
+                if holds {
+                    out.push(core::mem::replace(&mut element, run_shell(run, prefix)));
+                    holds = false;
+                }
+                out.push(beside);
+            }
+        }
+    }
+    if holds || out.is_empty() {
+        out.push(element);
+    }
+    out
+}
+
+/// A `w:r` with the run's properties and nothing in it yet.
+fn run_shell(run: &Run, prefix: Option<&str>) -> Element {
     let mut element = Element::new(&name_with(prefix, "r"), Some(W));
 
     if !run.properties.is_empty() || run.format_change.is_some() {
@@ -977,123 +1064,196 @@ pub fn revised_run_element(run: &Run, prefix: Option<&str>, deleted: bool) -> El
         }
         element.push_element(properties);
     }
+    element
+}
 
-    for piece in &run.content {
-        match piece {
-            RunContent::Text(text) => {
-                // A tab inside a run's text is an element of its own in the
-                // format, not a character: Word writes `w:tab` and reads a
-                // literal tab in `w:t` as nothing at all. So the text goes in
-                // as pieces with tabs between them, and something built from
-                // plain text with tabs in it comes out right.
-                let local = if deleted { "delText" } else { "t" };
-                let pieces: Vec<&str> = text.split('\t').collect();
-                for (index, piece) in pieces.iter().enumerate() {
-                    if index > 0 {
-                        element.push_element(Element::new(&name_with(prefix, "tab"), Some(W)));
-                    }
-                    // Nothing between two tabs writes nothing — but a run whose
-                    // whole text is empty keeps its `w:t`, because that is where
-                    // a field puts its answer.
-                    if piece.is_empty() && pieces.len() > 1 {
-                        continue;
-                    }
-                    let mut node = Element::new(&name_with(prefix, local), Some(W));
-                    node.set_text(piece);
-                    // Always written: a run's text is content, and the cost of
-                    // the attribute is far smaller than the cost of losing a
-                    // space.
-                    node.set_namespaced_attribute("xml:space", XML_NAMESPACE, "preserve");
-                    element.push_element(node);
+/// Where one piece of a run is written.
+enum Placed {
+    /// Inside the run, as these elements.
+    InRun(Vec<Element>),
+    /// Beside it, as an equation is.
+    Beside(Element),
+}
+
+/// Writes one piece of a run.
+///
+/// # The drawings
+///
+/// A drawing read from a document and edited where it stands is edited in
+/// its own element and never comes through here; one that is copied comes
+/// through as the element it was — see [`RunContent::Copied`] — and one
+/// that reaches here as the model alone is written from what the model says.
+/// That is a drawing in a part being written again from its own model, or
+/// one a program built. Either way the relationship it names is one of the
+/// part it is written into, which is what a model read from that part says;
+/// a paste, which cannot know that of a model, refuses one — see
+/// [`crate::clipboard`].
+fn placed(piece: &RunContent, prefix: Option<&str>, deleted: bool) -> Placed {
+    match piece {
+        RunContent::Text(text) => {
+            // A tab inside a run's text is an element of its own in the
+            // format, not a character: Word writes `w:tab` and reads a literal
+            // tab in `w:t` as nothing at all. So the text goes in as pieces
+            // with tabs between them, and something built from plain text with
+            // tabs in it comes out right.
+            let local = if deleted { "delText" } else { "t" };
+            let pieces: Vec<&str> = text.split('\t').collect();
+            let mut out = Vec::new();
+            for (index, piece) in pieces.iter().enumerate() {
+                if index > 0 {
+                    out.push(Element::new(&name_with(prefix, "tab"), Some(W)));
                 }
-            }
-            RunContent::Break(kind) => {
-                let mut node = Element::new(&name_with(prefix, "br"), Some(W));
-                match kind {
-                    BreakKind::Line => {}
-                    BreakKind::Page => {
-                        node.set_namespaced_attribute(&name_with(prefix, "type"), W, "page");
-                    }
-                    BreakKind::Column => {
-                        node.set_namespaced_attribute(&name_with(prefix, "type"), W, "column");
-                    }
+                // Nothing between two tabs writes nothing — but a run whose
+                // whole text is empty keeps its `w:t`, because that is where a
+                // field puts its answer.
+                if piece.is_empty() && pieces.len() > 1 {
+                    continue;
                 }
-                element.push_element(node);
-            }
-            RunContent::Tab => {
-                element.push_element(Element::new(&name_with(prefix, "tab"), Some(W)));
-            }
-            RunContent::PositionTab(alignment) => {
-                let mut tab = Element::new(&name_with(prefix, "ptab"), Some(W));
-                tab.set_namespaced_attribute(
-                    &name_with(prefix, "alignment"),
-                    W,
-                    match alignment {
-                        TabAlignment::Center => "center",
-                        TabAlignment::End => "right",
-                        _ => "left",
-                    },
-                );
-                // Measured from the margins, which is what makes it keep its
-                // place when the indents change.
-                tab.set_namespaced_attribute(&name_with(prefix, "relativeTo"), W, "margin");
-                tab.set_namespaced_attribute(&name_with(prefix, "leader"), W, "none");
-                element.push_element(tab);
-            }
-            // Building a drawing means writing four namespaces of DrawingML
-            // and adding a part and a relationship for the picture itself.
-            // Nothing here creates a picture yet, and one read from a document
-            // is carried through in its own element rather than rebuilt — so
-            // there is nothing to write, and pretending otherwise would lose
-            // the picture.
-            RunContent::Picture(_) => {}
-            // Nor a chart: it is a part of the package, carried through in
-            // its own element rather than rebuilt from the model.
-            RunContent::Chart(_) => {}
-            // Nor ink: the strokes are a part of their own, written in a
-            // format that is not this one, and the run that points at them is
-            // carried through as it was read.
-            RunContent::Ink(_) => {}
-            // Nor a diagram, which is five parts and a frame that names four
-            // relationships: rebuilding the frame from the model would have to
-            // invent those, and the frame that is already there names the ones
-            // the package has.
-            RunContent::Diagram(_) => {}
-            // Nor a group. A group holds pictures, so rebuilding one from the
-            // model would throw away everything a picture's element says that
-            // this program does not model — see [`crate::group`]. Making and
-            // breaking groups moves the elements themselves instead.
-            RunContent::Group(_) => {}
-            // Written back exactly as it was read, because nothing here knows
-            // what it is. See [`crate::model::RunContent::Carried`].
-            RunContent::Carried(element_of) => {
-                element.push_element((**element_of).clone());
-            }
-            // An equation is not written from inside a run: it is a sibling
-            // of the runs, and `paragraph_element` writes it there.
-            RunContent::Math(_) => {}
-            // A shape, unlike a picture, needs no part and no relationship —
-            // it is described entirely by its own element — so it can be
-            // written out from the model.
-            RunContent::Shape(shape) => {
-                element.push_element(crate::shapes::shape_element(shape, prefix));
-            }
-            // A ruby is written out from the model: it is two lists of runs
-            // and nothing else — no part, no relationship — so nothing is lost
-            // by rebuilding it.
-            RunContent::Ruby(ruby) => {
-                element.push_element(crate::ruby::ruby_element(ruby, prefix));
-            }
-            RunContent::NoteReference { id, endnote } => {
-                let local = if *endnote { "endnoteReference" } else { "footnoteReference" };
                 let mut node = Element::new(&name_with(prefix, local), Some(W));
-                node.set_namespaced_attribute(&name_with(prefix, "id"), W, &id.to_string());
-                element.push_element(node);
+                node.set_text(piece);
+                // Always written: a run's text is content, and the cost of the
+                // attribute is far smaller than the cost of losing a space.
+                node.set_namespaced_attribute("xml:space", XML_NAMESPACE, "preserve");
+                out.push(node);
+            }
+            Placed::InRun(out)
+        }
+        RunContent::Break(kind) => {
+            let mut node = Element::new(&name_with(prefix, "br"), Some(W));
+            match kind {
+                BreakKind::Line => {}
+                BreakKind::Page => {
+                    node.set_namespaced_attribute(&name_with(prefix, "type"), W, "page");
+                }
+                BreakKind::Column => {
+                    node.set_namespaced_attribute(&name_with(prefix, "type"), W, "column");
+                }
+            }
+            Placed::InRun(vec![node])
+        }
+        RunContent::Tab => Placed::InRun(vec![Element::new(&name_with(prefix, "tab"), Some(W))]),
+        RunContent::PositionTab(alignment) => {
+            let mut tab = Element::new(&name_with(prefix, "ptab"), Some(W));
+            tab.set_namespaced_attribute(
+                &name_with(prefix, "alignment"),
+                W,
+                match alignment {
+                    TabAlignment::Center => "center",
+                    TabAlignment::End => "right",
+                    _ => "left",
+                },
+            );
+            // Measured from the margins, which is what makes it keep its
+            // place when the indents change.
+            tab.set_namespaced_attribute(&name_with(prefix, "relativeTo"), W, "margin");
+            tab.set_namespaced_attribute(&name_with(prefix, "leader"), W, "none");
+            Placed::InRun(vec![tab])
+        }
+        RunContent::Picture(picture) => Placed::InRun(vec![picture_element(picture, prefix)]),
+        RunContent::Chart(chart) => Placed::InRun(vec![crate::chart::chart_drawing(
+            &chart.relationship,
+            chart.width_emu,
+            chart.height_emu,
+            prefix,
+        )]),
+        RunContent::Ink(ink) => Placed::InRun(vec![crate::ink::reference_element(ink, prefix)]),
+        RunContent::Diagram(diagram) => {
+            Placed::InRun(vec![crate::diagram::reference_element(diagram, prefix)])
+        }
+        // A group from its model: what each member is, where it sits in the
+        // group, and the group's own box. See [`crate::group::model_element`]
+        // for what that leaves out.
+        RunContent::Group(group) => Placed::InRun(vec![crate::group::model_element(group, prefix)]),
+        // Written back exactly as it was read, because nothing here knows
+        // what it is. See [`crate::model::RunContent::Carried`].
+        RunContent::Carried(element_of) => Placed::InRun(vec![(**element_of).clone()]),
+        // An equation stands beside the runs, and says for itself what its
+        // prefix means: a part written from a model need not have declared
+        // it, and without the declaration it is not XML.
+        RunContent::Math(math) => {
+            let mut element = crate::math::math_element(math, crate::math::MATH_PREFIX);
+            element.declarations.push((
+                Some(crate::math::MATH_PREFIX.to_owned()),
+                crate::math::MATH_NAMESPACE.to_owned(),
+            ));
+            Placed::Beside(element)
+        }
+        // A shape, unlike a picture, needs no part and no relationship —
+        // it is described entirely by its own element — so it can be written
+        // out from the model.
+        RunContent::Shape(shape) => {
+            Placed::InRun(vec![crate::shapes::shape_element(shape, prefix)])
+        }
+        // A ruby is written out from the model: it is two lists of runs and
+        // nothing else — no part, no relationship — so nothing is lost by
+        // rebuilding it.
+        RunContent::Ruby(ruby) => Placed::InRun(vec![crate::ruby::ruby_element(ruby, prefix)]),
+        RunContent::NoteReference { id, endnote } => {
+            let local = if *endnote { "endnoteReference" } else { "footnoteReference" };
+            let mut node = Element::new(&name_with(prefix, local), Some(W));
+            node.set_namespaced_attribute(&name_with(prefix, "id"), W, &id.to_string());
+            Placed::InRun(vec![node])
+        }
+        // A copy is its own element, once a paste has made it this part's;
+        // until then it names the relationships of the part it was copied
+        // from, and written here it would point at whatever this part's
+        // relationships of the same names are. Only a paste writes one of
+        // those — see [`crate::clipboard::Copied::is_settled`].
+        // A link's mark is not in the run: the run is in the link, which
+        // [`runs_elements`] puts round it.
+        RunContent::Copied(copied) => {
+            if copied.is_link() || !copied.is_settled() {
+                Placed::InRun(Vec::new())
+            } else if copied.is_equation() {
+                Placed::Beside(copied.element().clone())
+            } else {
+                Placed::InRun(vec![copied.element().clone()])
             }
         }
     }
+}
 
-    element
+/// A picture's drawing, built from what the model says of it: how big it is,
+/// where it floats, how it is turned, what it shows and where a press on it
+/// goes.
+///
+/// What the model does not say — a crop, an effect, a recolouring — is not
+/// written, which is why a picture is carried in its own element rather than
+/// rebuilt wherever that can be done.
+fn picture_element(picture: &crate::model::Picture, prefix: Option<&str>) -> Element {
+    let mut drawing = drawing_element(
+        &picture.relationship,
+        picture.width_emu.max(1),
+        picture.height_emu.max(1),
+        prefix,
+    );
+    if let Some(properties) = find_named_mut(&mut drawing, "docPr") {
+        if let Some(description) = picture.description.as_deref().filter(|said| !said.is_empty()) {
+            properties.set_attribute("descr", description);
+        }
+        if let Some(link) = &picture.link {
+            let mut click = Element::new("a:hlinkClick", Some(DRAWING_MAIN));
+            click.declarations.push((Some("a".to_owned()), DRAWING_MAIN.to_owned()));
+            click.declarations.push((Some("r".to_owned()), RELATIONSHIPS.to_owned()));
+            click.set_namespaced_attribute("r:id", RELATIONSHIPS, link);
+            properties.push_element(click);
+        }
+    }
+    if picture.turned != crate::floating::Turned::default() {
+        crate::floating::turn(&mut drawing, picture.turned);
+    }
+    if let Some(anchor) = &picture.anchor {
+        crate::floating::set_anchor_on(&mut drawing, Some(anchor), prefix);
+    }
+    drawing
+}
+
+/// The first element of a local name at or under a root.
+pub(crate) fn find_named_mut<'a>(root: &'a mut Element, local: &str) -> Option<&'a mut Element> {
+    if root.local_name() == local {
+        return Some(root);
+    }
+    root.child_elements_mut().find_map(|child| find_named_mut(child, local))
 }
 
 /// Turns paragraph borders into a `w:pBdr`.
@@ -1627,6 +1787,10 @@ pub(crate) fn child_position_at_offset(paragraph: &Element, offset: usize) -> us
 }
 
 /// How many characters of a paragraph's text an element accounts for.
+///
+/// Measured by the walk that makes the paragraph's text, so that the two can
+/// never disagree: a shape Word wrote twice over is one character here as it
+/// is to the caret, and a word under a reading is as long as the word.
 #[must_use]
 pub(crate) fn measured_length(element: &Element) -> usize {
     if element.namespace.as_deref() == Some(W) && element.local_name() == "t" {
@@ -1635,9 +1799,183 @@ pub(crate) fn measured_length(element: &Element) -> usize {
     if let Some(text) = atomic_text(element) {
         return text.len();
     }
-    element
-        .child_elements()
-        .filter(|child| child.namespace.as_deref() == Some(W) && child.local_name() != "del")
-        .map(measured_length)
-        .sum()
+    if element.namespace.as_deref() == Some(W) && element.local_name() == "del" {
+        return 0;
+    }
+    if element.namespace.as_deref() == Some(W) && element.local_name() == "ruby" {
+        return ruby_base_text(element).len();
+    }
+    let mut pieces = Vec::new();
+    if element.local_name() == "AlternateContent"
+        && matches!(element.namespace.as_deref(), None | Some(crate::read::MC))
+    {
+        walk_alternate(element, &mut Vec::new(), &mut 0, &mut pieces, false);
+    } else if element.namespace.as_deref() == Some(W) {
+        pieces = collect_text_pieces(element);
+    }
+    pieces.iter().map(|piece| piece.text.len()).sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{ChartReference, DiagramReference, InkReference, Picture};
+
+    /// A paragraph holding the elements a run was written as, read back.
+    fn read_back(run: &Run) -> Vec<RunContent> {
+        let mut paragraph = Element::new("w:p", Some(W));
+        paragraph.declarations.push((Some("w".to_owned()), W.to_owned()));
+        for element in run_elements(run, Some("w")) {
+            paragraph.push_element(element);
+        }
+        crate::read::read_paragraph_for_display(&paragraph)
+            .runs
+            .into_iter()
+            .flat_map(|run| run.content)
+            .collect()
+    }
+
+    fn holding(piece: RunContent) -> Run {
+        Run { content: vec![piece], ..Run::default() }
+    }
+
+    #[test]
+    fn a_picture_is_written_from_its_model_and_reads_back_as_itself() {
+        let picture = Picture {
+            relationship: "rId5".to_owned(),
+            width_emu: 100,
+            height_emu: 200,
+            description: Some("A view".to_owned()),
+            ..Picture::default()
+        };
+        let back = read_back(&holding(RunContent::Picture(Box::new(picture.clone()))));
+        let [RunContent::Picture(read)] = back.as_slice() else { panic!("{back:?}") };
+        assert_eq!(read.relationship, "rId5");
+        assert_eq!((read.width_emu, read.height_emu), (100, 200));
+        assert_eq!(read.description.as_deref(), Some("A view"));
+    }
+
+    #[test]
+    fn a_chart_is_written_from_its_model_and_reads_back_as_itself() {
+        let chart =
+            ChartReference { relationship: "rId6".to_owned(), width_emu: 300, height_emu: 400 };
+        let back = read_back(&holding(RunContent::Chart(chart.clone())));
+        assert_eq!(back, vec![RunContent::Chart(chart)]);
+    }
+
+    #[test]
+    fn ink_is_written_from_its_model_and_reads_back_as_itself() {
+        let ink = InkReference {
+            relationship: "rId7".to_owned(),
+            name: "Ink 1".to_owned(),
+            width_emu: 500,
+            height_emu: 600,
+            ..InkReference::default()
+        };
+        let back = read_back(&holding(RunContent::Ink(ink.clone())));
+        assert_eq!(back, vec![RunContent::Ink(ink)]);
+    }
+
+    #[test]
+    fn a_diagram_is_written_from_its_model_and_reads_back_as_itself() {
+        let diagram = DiagramReference {
+            relationship: "rId8".to_owned(),
+            layout: "rId9".to_owned(),
+            style: "rId10".to_owned(),
+            colours: "rId11".to_owned(),
+            name: "Diagram 1".to_owned(),
+            width_emu: 700,
+            height_emu: 800,
+            ..DiagramReference::default()
+        };
+        let back = read_back(&holding(RunContent::Diagram(diagram.clone())));
+        let [RunContent::Diagram(read)] = back.as_slice() else { panic!("{back:?}") };
+        assert_eq!(read.relationship, "rId8");
+        assert_eq!(
+            (read.layout.as_str(), read.style.as_str(), read.colours.as_str()),
+            ("rId9", "rId10", "rId11")
+        );
+        assert_eq!((read.width_emu, read.height_emu), (700, 800));
+    }
+
+    #[test]
+    fn a_group_is_written_from_its_model_and_reads_back_as_itself() {
+        use crate::group::{Group, Inside, Member};
+        let square = crate::shapes::Shape {
+            name: "Square".to_owned(),
+            width_emu: 100,
+            height_emu: 100,
+            ..crate::shapes::Shape::default()
+        };
+        let picture = Picture {
+            relationship: "rId12".to_owned(),
+            width_emu: 100,
+            height_emu: 100,
+            ..Picture::default()
+        };
+        let group = Group {
+            name: "Group 1".to_owned(),
+            width_emu: 200,
+            height_emu: 100,
+            members: vec![
+                Member {
+                    x_emu: 0,
+                    y_emu: 0,
+                    width_emu: 100,
+                    height_emu: 100,
+                    what: Inside::Shape(Box::new(square)),
+                },
+                Member {
+                    x_emu: 100,
+                    y_emu: 0,
+                    width_emu: 100,
+                    height_emu: 100,
+                    what: Inside::Picture(Box::new(picture)),
+                },
+            ],
+            ..Group::default()
+        };
+        let back = read_back(&holding(RunContent::Group(group)));
+        let [RunContent::Group(read)] = back.as_slice() else { panic!("{back:?}") };
+        assert_eq!((read.width_emu, read.height_emu), (200, 100));
+        assert_eq!(read.members.len(), 2);
+        assert!(matches!(read.members[0].what, Inside::Shape(_)));
+        let Inside::Picture(inside) = &read.members[1].what else { panic!("{:?}", read.members) };
+        assert_eq!(inside.relationship, "rId12");
+        assert_eq!(read.fractions(&read.members[1]), (0.5, 0.0, 0.5, 1.0));
+    }
+
+    #[test]
+    fn an_equation_is_written_beside_the_run_it_was_in() {
+        let run = Run {
+            content: vec![
+                RunContent::Text("x = ".to_owned()),
+                RunContent::Math(crate::math::parse("a/b")),
+                RunContent::Text(" then".to_owned()),
+            ],
+            ..Run::default()
+        };
+        let elements = run_elements(&run, Some("w"));
+        let names: Vec<&str> = elements.iter().map(Element::local_name).collect();
+        assert_eq!(names, vec!["r", "oMath", "r"]);
+        let back = read_back(&run);
+        assert!(
+            matches!(
+                back.as_slice(),
+                [RunContent::Text(_), RunContent::Math(_), RunContent::Text(_)]
+            ),
+            "{back:?}"
+        );
+    }
+
+    #[test]
+    fn a_shape_twice_over_measures_one_character_as_it_does_to_the_caret() {
+        let mut alternate = Element::new("mc:AlternateContent", Some(crate::read::MC));
+        let mut choice = Element::new("mc:Choice", Some(crate::read::MC));
+        choice.push_element(Element::new("w:drawing", Some(W)));
+        alternate.push_element(choice);
+        let mut holder = Element::new("w:r", Some(W));
+        holder.push_element(alternate);
+        assert_eq!(measured_length(&holder), 1);
+    }
 }

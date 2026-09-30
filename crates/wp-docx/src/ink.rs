@@ -873,6 +873,34 @@ fn ink_drawing_element(
     choice_holder
 }
 
+/// What a run holds for ink, written from what the model says of it: in the
+/// line as the 2010 run form, floating as the drawing Word writes now, and
+/// with its name and description when it has them.
+pub(crate) fn reference_element(
+    reference: &crate::model::InkReference,
+    prefix: Option<&str>,
+) -> Element {
+    let (width, height) = (reference.width_emu, reference.height_emu);
+    let mut element = match &reference.anchor {
+        None => content_part_element(&reference.relationship, width, height),
+        Some(anchor) => {
+            ink_drawing_element(&reference.relationship, width, height, anchor, 1, prefix)
+        }
+    };
+    // The drawing's own name where there is a drawing, and the content
+    // part's where there is only that: which is where each is read from.
+    let named = if reference.anchor.is_some() { "docPr" } else { "cNvPr" };
+    if let Some(properties) = crate::edit::find_named_mut(&mut element, named) {
+        if !reference.name.is_empty() {
+            properties.set_attribute("name", &reference.name);
+        }
+        if !reference.description.is_empty() {
+            properties.set_attribute("descr", &reference.description);
+        }
+    }
+    element
+}
+
 /// The run's own element: which part the ink is in, and how big it is drawn.
 #[must_use]
 fn content_part_element(relationship: &str, width_emu: i64, height_emu: i64) -> Element {

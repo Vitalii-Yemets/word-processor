@@ -177,7 +177,7 @@ pub fn field_runs(instruction: &str, result: &str, prefix: Option<&str>) -> Vec<
     }
     out.push(marker_run(prefix, "separate"));
     if !result.is_empty() {
-        out.push(crate::edit::run_element(&crate::model::Run::text(result), prefix));
+        out.extend(crate::edit::run_elements(&crate::model::Run::text(result), prefix));
     }
     out.push(marker_run(prefix, "end"));
     out

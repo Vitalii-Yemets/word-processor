@@ -253,13 +253,17 @@ pub fn ruby_element(ruby: &Ruby, prefix: Option<&str>) -> Element {
     // asks for and the order Word writes.
     let mut reading = Element::new(&named("rt"), Some(W));
     for run in &ruby.annotation {
-        reading.push_element(crate::edit::run_element(run, prefix));
+        for child in crate::edit::run_elements(run, prefix) {
+            reading.push_element(child);
+        }
     }
     element.push_element(reading);
 
     let mut base = Element::new(&named("rubyBase"), Some(W));
     for run in &ruby.base {
-        base.push_element(crate::edit::run_element(run, prefix));
+        for child in crate::edit::run_elements(run, prefix) {
+            base.push_element(child);
+        }
     }
     element.push_element(base);
 

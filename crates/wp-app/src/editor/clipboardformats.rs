@@ -7,25 +7,27 @@
 //! that text copied here keeps its formatting in Word and text copied in
 //! Word keeps its formatting here — which is the whole point of the
 //! formats. See [`wp_shell::clipboard`].
+//!
+//! # What is taken off it
+//!
+//! Whatever it is, it comes back as a copy the way this program makes one —
+//! see [`wp_docx::clipboard`] — with every drawing carrying the parts it
+//! points at. What another program put there is opened as a document of its
+//! own and copied out of that whole, so a picture pasted from a browser, a
+//! chart pasted from Word and a bitmap pasted on its own all go into the
+//! document by the one road a copy made here goes by, and nothing is taken
+//! into the document until something is really pasted.
 
-use wp_docx::model::{Block, Paragraph, Run, RunContent};
+use wp_docx::model::{Block, Body, Paragraph, RunContent};
 use wp_docx::{Document, TextPosition};
 use wp_shell::clipboard::Contents;
 
 use super::Editor;
 
-/// The character a paragraph holds where a picture was, while the
-/// paragraphs are being made into a document of their own.
-const PICTURE_MARK: char = '\u{FFFC}';
-
-/// Where a picture sat in the copied paragraphs, and what it was.
+/// A picture that was copied on its own, and what kind of file it is.
 struct Held {
-    paragraph: usize,
-    offset: usize,
     bytes: Vec<u8>,
     extension: String,
-    width_emu: i64,
-    height_emu: i64,
 }
 
 impl Editor {
@@ -53,121 +55,26 @@ impl Editor {
         contents
     }
 
-    /// The copied paragraphs as a document of their own, with the pictures
-    /// they refer to brought along, so that the writers can write it.
+    /// The copied paragraphs as a document of their own, so that the writers
+    /// can write it.
+    ///
+    /// Made by pasting the copy into an empty document, which is what brings
+    /// every drawing in it along with the parts it points at: the same road a
+    /// paste takes, so what goes out is what a paste would have put down.
     fn fragment_document(&self, blocks: &[Block]) -> Option<Document> {
-        let (body_blocks, held) = self.detach_pictures(blocks);
-        if body_blocks.is_empty() {
+        if blocks.is_empty() {
             return None;
         }
-        let body = wp_docx::model::Body { blocks: body_blocks };
-        let mut document = Document::create(&body).ok()?;
+        let empty = Body { blocks: vec![Block::Paragraph(Paragraph::default())] };
+        let mut document = Document::create(&empty).ok()?;
         // With this document's styles, so that a heading copied is a heading
         // as this document has it wherever it lands, and not whatever a new
         // document's style of the name looks like.
         document.update_styles_from(&self.document);
-        // Last first, so that putting one in does not move the marks after it
-        // in the same paragraph.
-        for picture in held.into_iter().rev() {
-            let start = TextPosition::new(picture.paragraph, picture.offset);
-            let end =
-                TextPosition::new(picture.paragraph, picture.offset + PICTURE_MARK.len_utf8());
-            document.set_caret(start);
-            document.extend_selection_to(end);
-            document.delete_selection();
-            document.set_caret(start);
-            let _ = document.insert_picture(
-                &picture.bytes,
-                &picture.extension,
-                picture.width_emu.max(1),
-                picture.height_emu.max(1),
-            );
-        }
+        document.paste_blocks(blocks);
         document.set_caret(TextPosition::default());
         document.clear_selection();
         Some(document)
-    }
-
-    /// The paragraphs with each picture replaced by a mark, and the pictures
-    /// taken out with their bytes, in order.
-    fn detach_pictures(&self, blocks: &[Block]) -> (Vec<Block>, Vec<Held>) {
-        let mut held = Vec::new();
-        let mut out = Vec::new();
-        let mut paragraph_index = 0usize;
-        for block in blocks {
-            match block {
-                Block::Paragraph(paragraph) => {
-                    out.push(Block::Paragraph(self.detach_from(
-                        paragraph,
-                        paragraph_index,
-                        &mut held,
-                    )));
-                    paragraph_index += 1;
-                }
-                Block::Table(table) => {
-                    let mut table = (**table).clone();
-                    for row in &mut table.rows {
-                        for cell in &mut row.cells {
-                            for cell_block in &mut cell.blocks {
-                                if let Block::Paragraph(paragraph) = cell_block {
-                                    *paragraph =
-                                        self.detach_from(paragraph, paragraph_index, &mut held);
-                                    paragraph_index += 1;
-                                }
-                            }
-                        }
-                    }
-                    out.push(Block::Table(Box::new(table)));
-                }
-            }
-        }
-        (out, held)
-    }
-
-    fn detach_from(&self, paragraph: &Paragraph, index: usize, held: &mut Vec<Held>) -> Paragraph {
-        let mut offset = 0usize;
-        let mut runs = Vec::new();
-        for run in &paragraph.runs {
-            let mut kept = Run { content: Vec::new(), ..run.clone() };
-            for content in &run.content {
-                match content {
-                    RunContent::Picture(picture) => {
-                        let bytes = self.document.embedded_part(&picture.relationship);
-                        let target = self.document.relationship_target(&picture.relationship);
-                        if let (Some(bytes), Some(target)) = (bytes, target) {
-                            {
-                                let extension = target
-                                    .rsplit('.')
-                                    .next()
-                                    .filter(|ext| !ext.contains('/'))
-                                    .unwrap_or("png")
-                                    .to_owned();
-                                held.push(Held {
-                                    paragraph: index,
-                                    offset,
-                                    bytes: bytes.to_vec(),
-                                    extension,
-                                    width_emu: picture.width_emu,
-                                    height_emu: picture.height_emu,
-                                });
-                                kept.content.push(RunContent::Text(PICTURE_MARK.to_string()));
-                                offset += PICTURE_MARK.len_utf8();
-                            }
-                        }
-                    }
-                    RunContent::Text(text) => {
-                        offset += text.len();
-                        kept.content.push(content.clone());
-                    }
-                    other => {
-                        offset += 1;
-                        kept.content.push(other.clone());
-                    }
-                }
-            }
-            runs.push(kept);
-        }
-        Paragraph { properties: paragraph.properties.clone(), runs }
     }
 
     /// The one picture the selection is, when it is one picture and nothing
@@ -177,12 +84,22 @@ impl Editor {
         if !paragraph.plain_text().trim().is_empty() {
             return None;
         }
-        let (_, mut held) = self.detach_pictures(blocks);
-        if held.len() == 1 {
-            held.pop()
-        } else {
-            None
+        let mut pictures = paragraph.runs.iter().flat_map(|run| &run.content).filter_map(|piece| {
+            match piece.bare() {
+                RunContent::Picture(picture) => Some(picture),
+                _ => None,
+            }
+        });
+        let picture = pictures.next()?;
+        if pictures.next().is_some() {
+            return None;
         }
+        // Read from the document, which is the one the copy was just made in.
+        let bytes = self.document.embedded_part(&picture.relationship)?;
+        let target = self.document.relationship_target(&picture.relationship)?;
+        let extension =
+            target.rsplit('.').next().filter(|ext| !ext.contains('/')).unwrap_or("png").to_owned();
+        Some(Held { bytes: bytes.to_vec(), extension })
     }
 
     /// What the clipboard holds, as text and as paragraphs: this program's
@@ -218,19 +135,17 @@ impl Editor {
                 })
             });
         if let Some(foreign) = foreign {
-            let blocks = self.adopt_blocks(&foreign);
+            let words = foreign.plain_text().trim_end_matches('\n').to_owned();
+            let blocks = copied_whole(foreign);
+            // A drawing is something even where there are no words.
             let has_something = blocks.iter().any(|block| {
                 !block.plain_text().trim().is_empty()
                     || matches!(block, Block::Paragraph(p) if p.runs.iter().any(|run| {
-                        run.content.iter().any(|c| matches!(c, RunContent::Picture(_)))
+                        run.content.iter().any(|c| matches!(c, RunContent::Copied(copied) if !copied.is_link()))
                     }))
             });
             if has_something {
-                let words = if text.is_empty() {
-                    foreign.plain_text().trim_end_matches('\n').to_owned()
-                } else {
-                    text
-                };
+                let words = if text.is_empty() { words } else { text };
                 return (words, blocks);
             }
         }
@@ -247,61 +162,18 @@ impl Editor {
             });
         if let Some(png) = picture {
             if let Ok(image) = wp_image::decode(&png) {
-                if let Ok(id) = self.document.adopt_picture(&png, "png") {
-                    let (width, height) = self.fit_picture(image.width, image.height);
-                    let picture = wp_docx::model::Picture {
-                        relationship: id,
-                        width_emu: width,
-                        height_emu: height,
-                        ..wp_docx::model::Picture::default()
-                    };
-                    let run = Run {
-                        content: vec![RunContent::Picture(Box::new(picture))],
-                        ..Run::text("")
-                    };
-                    let paragraph = Paragraph { properties: Default::default(), runs: vec![run] };
-                    return (text, vec![Block::Paragraph(paragraph)]);
+                // Put in a document of its own and copied out of it, so that
+                // it is pasted the way every other picture is.
+                let (width, height) = self.fit_picture(image.width, image.height);
+                let empty = Body { blocks: vec![Block::Paragraph(Paragraph::default())] };
+                if let Ok(mut holder) = Document::create(&empty) {
+                    if holder.insert_picture(&png, "png", width, height).unwrap_or(false) {
+                        return (text, copied_whole(holder));
+                    }
                 }
             }
         }
         (text, Vec::new())
-    }
-
-    /// Another document's paragraphs made this document's: its pictures
-    /// taken into this package and the paragraphs pointed at the copies.
-    fn adopt_blocks(&mut self, foreign: &Document) -> Vec<Block> {
-        let mut blocks = foreign.body().blocks;
-        let mut adopted: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
-        for block in &mut blocks {
-            let Block::Paragraph(paragraph) = block else { continue };
-            for run in &mut paragraph.runs {
-                for content in &mut run.content {
-                    let RunContent::Picture(picture) = content else { continue };
-                    let id = adopted.entry(picture.relationship.clone()).or_insert_with(|| {
-                        let bytes = foreign.embedded_part(&picture.relationship);
-                        let target = foreign.relationship_target(&picture.relationship);
-                        match (bytes, target) {
-                            (Some(bytes), Some(target)) => {
-                                let extension =
-                                    target.rsplit('.').next().unwrap_or("png").to_owned();
-                                self.document.adopt_picture(bytes, &extension).unwrap_or_default()
-                            }
-                            _ => String::new(),
-                        }
-                    });
-                    picture.relationship = id.clone();
-                }
-            }
-            // A picture that could not be brought along is dropped rather than
-            // left pointing at nothing.
-            for run in &mut paragraph.runs {
-                run.content.retain(|content| {
-                    !matches!(content, RunContent::Picture(picture) if picture.relationship.is_empty())
-                });
-            }
-        }
-        blocks
     }
 
     /// How big a pasted picture is drawn: at its own size, at 96 dots to the
@@ -447,6 +319,14 @@ fn bmp_of(dib: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Everything a document holds, copied out of it the way a selection is:
+/// every drawing with the parts it points at, which is what lets it be
+/// pasted into a document it was never part of.
+fn copied_whole(mut document: Document) -> Vec<Block> {
+    document.select_all();
+    document.copy_selection()
+}
+
 /// A picture as a PNG file.
 fn png_of(image: &wp_image::Image) -> Vec<u8> {
     let mut canvas = wp_raster::Canvas::new(image.width, image.height);
@@ -478,6 +358,213 @@ mod tests {
     }
 
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\nIDATx\x9cc\0\x01\0\0\x05\0\x01\r\n\x2d\xb4\0\0\0\0IEND\xaeB`\x82";
+
+    /// How many pictures a document holds that reach their parts.
+    fn pictures_in(document: &Document) -> usize {
+        let body = document.body();
+        body.paragraphs()
+            .iter()
+            .flat_map(|paragraph| &paragraph.runs)
+            .flat_map(|run| &run.content)
+            .filter(|piece| match piece {
+                RunContent::Picture(picture) => {
+                    document.embedded_part(&picture.relationship).is_some()
+                }
+                _ => false,
+            })
+            .count()
+    }
+
+    /// The document saved and opened again, which is what says whether
+    /// everything in it points at something.
+    fn reopened(document: &Document) -> Document {
+        Document::open(&document.save().expect("saving")).expect("reopening")
+    }
+
+    /// "Before after " with a picture between the two words. The space at
+    /// the end is so that a paste there needs no space of its own.
+    fn with_picture() -> Editor {
+        let mut editor = editor("Before after ");
+        editor.document.set_caret(TextPosition::new(0, 7));
+        assert!(editor.document.insert_picture(PNG, "png", 914_400, 914_400).expect("inserted"));
+        editor
+    }
+
+    /// Selects the picture and copies it the way Copy does once the system
+    /// has taken the copy: the words and the formatted copy are kept here,
+    /// which is what a paste finds again. The build image has no clipboard
+    /// for the rest of it.
+    fn copy_the_picture(editor: &mut Editor) -> String {
+        editor.document.set_caret(TextPosition::new(0, 7));
+        editor.document.extend_selection_to(TextPosition::new(0, 8));
+        let text = editor.document.selected_text();
+        let blocks = editor.document.copy_selection();
+        editor.clipboard = Some((text.clone(), blocks));
+        text
+    }
+
+    fn pasted_here(editor: &mut Editor, text: String) {
+        let contents = Contents { text: Some(text), ..Contents::default() };
+        let (words, blocks) = editor.take_contents(contents);
+        editor.put_down(&words, &blocks, super::super::paste::PasteAs::KeepSource);
+    }
+
+    #[test]
+    fn our_own_copy_comes_back_whole_with_the_parts_it_points_at() {
+        let mut editor = with_picture();
+        let text = copy_the_picture(&mut editor);
+        let kept = editor.clipboard.as_ref().expect("the copy").1.clone();
+
+        let contents = Contents { text: Some(text.clone()), ..Contents::default() };
+        let (words, blocks) = editor.take_contents(contents);
+        assert_eq!(words, text);
+        assert_eq!(blocks, kept, "what came back is not what was copied");
+        let carried = blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Paragraph(paragraph) => Some(paragraph),
+                Block::Table(_) => None,
+            })
+            .flat_map(|paragraph| &paragraph.runs)
+            .flat_map(|run| &run.content)
+            .find_map(|piece| match piece {
+                RunContent::Copied(copied) => Some(copied),
+                _ => None,
+            })
+            .expect("the picture came back as a reference and nothing more");
+        assert!(matches!(carried.content, RunContent::Picture(_)));
+        assert!(
+            carried.parts().any(|(_, bytes)| bytes == PNG),
+            "the picture's bytes are not in it"
+        );
+
+        // And into another document opened in its place: the copy is still
+        // what the clipboard holds, and it brings its picture.
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Elsewhere ")));
+        let other = Document::open(&Document::create(&body).expect("made").save().expect("saved"))
+            .expect("opened");
+        editor.set_document(other, None);
+        editor.document.set_caret(TextPosition::new(0, "Elsewhere ".len()));
+        pasted_here(&mut editor, text);
+        let other = reopened(&editor.document);
+        assert_eq!(other.paragraph_text(0).as_deref(), Some("Elsewhere \u{1}"));
+        assert_eq!(pictures_in(&other), 1, "the picture did not come into the other document");
+    }
+
+    /// "Sales " and a chart after it.
+    fn with_chart(document: &mut Document) {
+        let end = document.paragraph_text(0).expect("a paragraph").len();
+        document.set_caret(TextPosition::new(0, end));
+        let chart = wp_docx::chart::Chart::parse(
+            wp_docx::chart::Kind::Column,
+            "Sales",
+            "North=10; South=20",
+        );
+        assert!(document.insert_chart(&chart, 914_400 * 4, 914_400 * 3).expect("the chart"));
+    }
+
+    /// How many charts a document holds that reach their parts.
+    fn charts_in(document: &Document) -> usize {
+        let body = document.body();
+        body.paragraphs()
+            .iter()
+            .flat_map(|paragraph| &paragraph.runs)
+            .flat_map(|run| &run.content)
+            .filter(|piece| match piece {
+                RunContent::Chart(chart) => document.chart(&chart.relationship).is_some(),
+                _ => false,
+            })
+            .count()
+    }
+
+    #[test]
+    fn a_chart_in_a_word_document_on_the_clipboard_is_pasted_with_its_part() {
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Sales ")));
+        let mut theirs = Document::create(&body).expect("a document");
+        with_chart(&mut theirs);
+        let contents = Contents {
+            text: Some("Sales ".to_owned()),
+            document: Some(theirs.save().expect("saved")),
+            ..Contents::default()
+        };
+
+        let mut editor = editor("");
+        let (text, blocks) = editor.take_contents(contents);
+        assert_eq!(charts_in(&editor.document), 0, "taken in before anything was pasted");
+        editor.put_down(&text, &blocks, super::super::paste::PasteAs::KeepSource);
+        assert_eq!(charts_in(&reopened(&editor.document)), 1);
+    }
+
+    #[test]
+    fn a_chart_copied_goes_out_in_the_word_document_on_the_clipboard() {
+        let mut editor = editor("Sales ");
+        with_chart(&mut editor.document);
+        editor.document.select_all();
+        let text = editor.document.selected_text();
+        let blocks = editor.document.copy_selection();
+        let contents = editor.clipboard_contents_of_selection(&text, &blocks);
+
+        let copy = Document::open(&contents.document.expect("the copy as a document"))
+            .expect("a .docx that opens");
+        assert_eq!(copy.paragraph_text(0).as_deref(), Some("Sales \u{1}"));
+        assert_eq!(charts_in(&copy), 1, "the chart did not go out with the copy");
+    }
+
+    #[test]
+    fn a_link_comes_back_from_the_clipboard_as_a_link() {
+        let mut editor = editor("See the manual.");
+        editor.document.set_caret(TextPosition::new(0, 8));
+        editor.document.extend_selection_to(TextPosition::new(0, 14));
+        assert!(editor.document.add_hyperlink("https://example.com/manual", ""));
+        editor.document.set_caret(TextPosition::new(0, 4));
+        editor.document.extend_selection_to(TextPosition::new(0, 14));
+        let text = editor.document.selected_text();
+        let blocks = editor.document.copy_selection();
+        editor.clipboard = Some((text.clone(), blocks));
+
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Elsewhere ")));
+        let other = Document::open(&Document::create(&body).expect("made").save().expect("saved"))
+            .expect("opened");
+        editor.set_document(other, None);
+        editor.document.set_caret(TextPosition::new(0, "Elsewhere ".len()));
+        pasted_here(&mut editor, text);
+
+        let other = reopened(&editor.document);
+        assert_eq!(other.paragraph_text(0).as_deref(), Some("Elsewhere the manual"));
+        let links: Vec<(String, wp_docx::links::Destination)> =
+            other.hyperlinks().into_iter().map(|link| (link.text, link.destination)).collect();
+        let address = wp_docx::links::Destination::Address("https://example.com/manual".into());
+        assert_eq!(links, vec![("manual".to_owned(), address)]);
+    }
+
+    #[test]
+    fn a_picture_cut_and_pasted_is_still_there() {
+        let mut editor = with_picture();
+        let text = copy_the_picture(&mut editor);
+        // What Cut does once the system has taken the copy.
+        assert!(editor.document.delete_selection());
+        assert_eq!(pictures_in(&editor.document), 0);
+
+        editor.document.set_caret(TextPosition::new(0, "Before after ".len()));
+        pasted_here(&mut editor, text);
+        let document = reopened(&editor.document);
+        assert_eq!(document.paragraph_text(0).as_deref(), Some("Before after \u{1}"));
+        assert_eq!(pictures_in(&document), 1, "the cut picture was lost");
+    }
+
+    #[test]
+    fn a_picture_copied_and_pasted_is_there_twice() {
+        let mut editor = with_picture();
+        let text = copy_the_picture(&mut editor);
+        editor.document.set_caret(TextPosition::new(0, "Before \u{1}after ".len()));
+        pasted_here(&mut editor, text);
+        let document = reopened(&editor.document);
+        assert_eq!(pictures_in(&document), 2);
+        assert_eq!(editor.status, "Pasted 1 characters", "the paste said {:?}", editor.status);
+    }
 
     #[test]
     fn a_copy_goes_out_as_text_rich_text_and_html() {
@@ -631,20 +718,26 @@ mod tests {
             paragraph.runs
         );
         let Block::Paragraph(picture) = &blocks[1] else { panic!() };
-        let relationship = picture
+        let carried = picture
             .runs
             .iter()
-            .find_map(|run| {
-                run.content.iter().find_map(|c| match c {
-                    RunContent::Picture(p) => Some(p.relationship.clone()),
-                    _ => None,
-                })
+            .flat_map(|run| &run.content)
+            .find_map(|c| match c {
+                RunContent::Copied(copied) if matches!(copied.content, RunContent::Picture(_)) => {
+                    Some(copied)
+                }
+                _ => None,
             })
-            .expect("a picture");
+            .expect("a picture, carried with its part");
         assert!(
-            editor.document.embedded_part(&relationship).is_some(),
-            "the picture was not brought along"
+            carried.parts().any(|(_, bytes)| !bytes.is_empty()),
+            "the picture's bytes did not come with it"
         );
+        // Nothing is taken into the document until it is pasted, and then
+        // the picture is there with its part.
+        assert_eq!(pictures_in(&editor.document), 0);
+        editor.put_down(&text, &blocks, super::super::paste::PasteAs::KeepSource);
+        assert_eq!(pictures_in(&editor.document), 1, "the picture was not brought along");
     }
 
     #[test]
@@ -658,7 +751,9 @@ mod tests {
         assert!(paragraph
             .runs
             .iter()
-            .any(|run| run.content.iter().any(|c| matches!(c, RunContent::Picture(_)))));
+            .any(|run| run.content.iter().any(|c| matches!(c.bare(), RunContent::Picture(_)))));
+        editor.put_down(&text, &blocks, super::super::paste::PasteAs::KeepSource);
+        assert_eq!(pictures_in(&editor.document), 1, "the bitmap was not pasted");
     }
 
     #[test]

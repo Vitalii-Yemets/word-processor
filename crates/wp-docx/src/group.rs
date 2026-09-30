@@ -586,6 +586,68 @@ fn graphic_of(drawing: &Element) -> Option<&Element> {
     data.child_elements().find(|child| matches!(child.local_name(), "wsp" | "pic" | "wgp"))
 }
 
+/// A group's drawing, built from its model: each member written from its own
+/// model and put where it sits in the group, inside the group's box.
+///
+/// For a group that has only its model — one a part is being written again
+/// from, or one somebody built. What the model does not say of a member is
+/// not written: a picture's crop, a shape's effects beyond those it models.
+/// That is why a group read from a document is changed in its own element
+/// and copied as its own element (see the note at the top of this file); this
+/// is the answer when there is no element to be had.
+pub(crate) fn model_element(group: &Group, prefix: Option<&str>) -> Element {
+    let union = Rect { x: 0, y: 0, width: group.width_emu.max(1), height: group.height_emu.max(1) };
+    let members: Vec<(Rect, Element)> = group
+        .members
+        .iter()
+        .filter_map(|member| {
+            // In the group's own box, which the group is written with as its
+            // inner rectangle too: the proportions are what is kept.
+            let (x, y, width, height) = group.fractions(member);
+            let scaled = |fraction: f32, whole: i64| (f64::from(fraction) * whole as f64) as i64;
+            let rect = Rect {
+                x: scaled(x, union.width),
+                y: scaled(y, union.height),
+                width: scaled(width, union.width).max(1),
+                height: scaled(height, union.height).max(1),
+            };
+            let drawing = match &member.what {
+                Inside::Shape(shape) => {
+                    let shape = Shape { anchor: None, ..(**shape).clone() };
+                    crate::shapes::shape_element(&shape, prefix)
+                }
+                Inside::Picture(picture) => crate::edit::drawing_element(
+                    &picture.relationship,
+                    rect.width,
+                    rect.height,
+                    prefix,
+                ),
+                Inside::Group(inner) => {
+                    let inner = Group { anchor: None, ..(**inner).clone() };
+                    model_element(&inner, prefix)
+                }
+            };
+            graphic_of(&drawing).cloned().map(|graphic| (rect, graphic))
+        })
+        .collect();
+
+    let name = if group.name.is_empty() { "Group" } else { group.name.as_str() };
+    let anchor = group.anchor.clone().unwrap_or_default();
+    let mut drawing = group_element(union, &members, &anchor, name, prefix);
+    if group.anchor.is_none() {
+        crate::floating::set_anchor_on(&mut drawing, None, prefix);
+    }
+    if !group.description.is_empty() {
+        if let Some(properties) = crate::edit::find_named_mut(&mut drawing, "docPr") {
+            properties.set_attribute("descr", &group.description);
+        }
+    }
+    if group.turned != Turned::default() {
+        crate::floating::turn(&mut drawing, group.turned);
+    }
+    drawing
+}
+
 /// Builds the `w:drawing` that holds a group.
 fn group_element(
     union: Rect,

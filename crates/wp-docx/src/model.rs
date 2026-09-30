@@ -767,6 +767,33 @@ pub enum RunContent {
         id: i32,
         endnote: bool,
     },
+    /// A drawing or an equation copied out of a document, with what it
+    /// needs to be put down again anywhere: the element it was written as,
+    /// and the parts of the package that element points at.
+    ///
+    /// Only a copy holds one. Everything a document reads is a view of the
+    /// package it is in, and a picture there is a relationship to a part of
+    /// that package; a copy is taken away from the package, so it has to take
+    /// the part with it, or a paste into another document — or into the same
+    /// one after the picture was cut — has nothing to point at. What it is
+    /// stays readable as `content`, so everything that looks at a copy
+    /// without pasting it sees a picture as a picture. See
+    /// [`crate::clipboard`].
+    Copied(Box<crate::clipboard::Copied>),
+}
+
+impl RunContent {
+    /// What this piece is, with the wrapping a copy puts round it taken off.
+    ///
+    /// For whatever reads a copy the way it reads a document: a picture that
+    /// was copied is still a picture to be drawn or counted.
+    #[must_use]
+    pub fn bare(&self) -> &Self {
+        match self {
+            Self::Copied(copied) => copied.content.bare(),
+            other => other,
+        }
+    }
 }
 
 /// Which ink a run points at, and how big it is drawn.
@@ -1041,7 +1068,7 @@ impl Run {
 
         let mut out = String::new();
         for piece in &self.content {
-            match piece {
+            match piece.bare() {
                 RunContent::Text(text) => out.push_str(text),
                 RunContent::Break(_) => out.push('\n'),
                 // An alignment tab is a tab as far as the text is concerned:
@@ -1064,6 +1091,9 @@ impl Run {
                 // An equation reads as the line it was typed on, which is
                 // what a person searching for it would look for.
                 RunContent::Math(math) => out.push_str(&math.plain_text()),
+                // `bare` has taken a copy's wrapping off already, so what is
+                // read here is always what the copy holds.
+                RunContent::Copied(_) => {}
             }
         }
         out

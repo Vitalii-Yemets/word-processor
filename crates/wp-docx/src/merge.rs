@@ -575,7 +575,9 @@ fn replace_merge_fields(
                 {
                     run.properties = read::read_run_properties(first);
                 }
-                children.push(wp_xml::tree::Node::Element(edit::run_element(&run, prefix)));
+                children.extend(
+                    edit::run_elements(&run, prefix).into_iter().map(wp_xml::tree::Node::Element),
+                );
                 *replaced += 1;
                 continue;
             }
@@ -781,9 +783,11 @@ fn rewrite_rules(
                             Some(answer) => {
                                 if let Some(text) = answered(&answer, record, number) {
                                     let run = crate::model::Run::text(&text);
-                                    out.push(wp_xml::tree::Node::Element(
-                                        crate::edit::run_element(&run, prefix),
-                                    ));
+                                    out.extend(
+                                        crate::edit::run_elements(&run, prefix)
+                                            .into_iter()
+                                            .map(wp_xml::tree::Node::Element),
+                                    );
                                 }
                                 *replaced += 1;
                             }

@@ -1380,6 +1380,32 @@ fn colours_xml(colouring: Colouring) -> String {
 
 /// The frame that stands in the text: four relationships and a size.
 #[must_use]
+/// The frame a run holds for a diagram, written from what the model says of
+/// it: the four relationships, the room it was given, and its name and
+/// description when it has them.
+pub(crate) fn reference_element(
+    reference: &crate::model::DiagramReference,
+    prefix: Option<&str>,
+) -> Element {
+    let ids = Ids {
+        data: reference.relationship.clone(),
+        layout: reference.layout.clone(),
+        style: reference.style.clone(),
+        colours: reference.colours.clone(),
+    };
+    let mut frame =
+        frame_element(&ids, reference.width_emu.max(1), reference.height_emu.max(1), prefix);
+    if let Some(properties) = crate::edit::find_named_mut(&mut frame, "docPr") {
+        if !reference.name.is_empty() {
+            properties.set_attribute("name", &reference.name);
+        }
+        if !reference.description.is_empty() {
+            properties.set_attribute("descr", &reference.description);
+        }
+    }
+    frame
+}
+
 fn frame_element(ids: &Ids, width_emu: i64, height_emu: i64, prefix: Option<&str>) -> Element {
     let mut drawing =
         Element::new(&crate::edit::name_with(prefix, "drawing"), Some(crate::read::W));

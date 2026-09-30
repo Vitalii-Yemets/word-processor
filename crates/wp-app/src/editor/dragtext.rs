@@ -140,15 +140,7 @@ impl Editor {
             return Response::Ignored;
         }
 
-        // One gesture, so one undo takes the whole move back.
-        self.document.begin_gesture();
-        if copying {
-            self.document.set_caret(onto);
-            self.document.paste_blocks(&drag.blocks);
-        } else {
-            self.move_text(&drag, onto);
-        }
-        self.document.end_gesture();
+        self.put_dragged(&drag, onto, copying);
 
         self.relayout();
         self.reveal_caret();
@@ -156,6 +148,20 @@ impl Editor {
             drag.blocks.iter().map(|block| block.plain_text().split_whitespace().count()).sum();
         let what = if copying { "Copied" } else { "Moved" };
         self.edited(true, &format!("{what} {words} words"))
+    }
+
+    /// Puts what is being carried down: a copy of it with Ctrl held, and
+    /// otherwise the text itself, taken from where it was. One gesture, so
+    /// one undo takes the whole move back.
+    fn put_dragged(&mut self, drag: &TextDrag, onto: TextPosition, copying: bool) {
+        self.document.begin_gesture();
+        if copying {
+            self.document.set_caret(onto);
+            self.document.paste_blocks(&drag.blocks);
+        } else {
+            self.move_text(drag, onto);
+        }
+        self.document.end_gesture();
     }
 
     /// Takes the text out and puts it in where the bookmark ended up.
@@ -189,5 +195,92 @@ impl Editor {
     pub(super) fn cancel_text_drag(&mut self) {
         self.pending_text_drag = None;
         self.text_drag = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wp_docx::model::{Block, Body, Paragraph, RunContent};
+    use wp_docx::Document;
+    use wp_layout::FontLibrary;
+    use wp_shell::{App, Event};
+
+    use super::*;
+
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\nIDATx\x9cc\0\x01\0\0\x05\0\x01\r\n\x2d\xb4\0\0\0\0IEND\xaeB`\x82";
+
+    /// "Before after " with a picture between the two words, and the picture
+    /// selected, as it is when somebody presses on it to drag it.
+    fn editor() -> Editor {
+        let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("Before after ")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let document = Document::open(&bytes).expect("reopening");
+        let mut editor = Editor::new(library, document, None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor.document.set_caret(TextPosition::new(0, 7));
+        assert!(editor.document.insert_picture(PNG, "png", 914_400, 914_400).expect("inserted"));
+        editor.document.set_caret(TextPosition::new(0, 7));
+        editor.document.extend_selection_to(TextPosition::new(0, 8));
+        editor
+    }
+
+    /// What a drag takes hold of once the pointer has moved far enough.
+    fn taken(editor: &Editor) -> TextDrag {
+        let from = editor.document.selection().expect("a selection");
+        TextDrag { from, blocks: editor.document.copy_selection(), onto: None }
+    }
+
+    /// The document saved and opened again, and how many pictures in it
+    /// reach their parts.
+    fn saved(editor: &Editor) -> (Document, usize) {
+        let document = Document::open(&editor.document.save().expect("saving")).expect("reopening");
+        let body = document.body();
+        let pictures = body
+            .paragraphs()
+            .iter()
+            .flat_map(|paragraph| &paragraph.runs)
+            .flat_map(|run| &run.content)
+            .filter(|piece| match piece {
+                RunContent::Picture(picture) => {
+                    document.embedded_part(&picture.relationship).is_some()
+                }
+                _ => false,
+            })
+            .count();
+        (document, pictures)
+    }
+
+    #[test]
+    fn a_picture_dragged_goes_with_its_part() {
+        let mut editor = editor();
+        let drag = taken(&editor);
+        // Let go at the end of the paragraph.
+        editor.put_dragged(&drag, TextPosition::new(0, "Before \u{1}after ".len()), false);
+
+        let (document, pictures) = saved(&editor);
+        assert_eq!(document.paragraph_text(0).as_deref(), Some("Before after \u{1}"));
+        assert_eq!(pictures, 1, "the dragged picture was lost");
+    }
+
+    #[test]
+    fn a_picture_dragged_with_ctrl_held_is_there_twice() {
+        let mut editor = editor();
+        let drag = taken(&editor);
+        editor.put_dragged(&drag, TextPosition::new(0, "Before \u{1}after ".len()), true);
+
+        let (document, pictures) = saved(&editor);
+        assert_eq!(document.paragraph_text(0).as_deref(), Some("Before \u{1}after \u{1}"));
+        assert_eq!(pictures, 2);
+    }
+
+    #[test]
+    fn a_drag_is_one_thing_to_take_back() {
+        let mut editor = editor();
+        let drag = taken(&editor);
+        editor.put_dragged(&drag, TextPosition::new(0, "Before \u{1}after ".len()), false);
+        assert!(editor.document.undo());
+        assert_eq!(editor.document.paragraph_text(0).as_deref(), Some("Before \u{1}after "));
     }
 }

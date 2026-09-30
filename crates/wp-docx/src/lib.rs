@@ -121,7 +121,7 @@ pub mod words;
 pub mod workbook;
 
 use history::History;
-use wp_opc::{Package, Relationships, TargetMode};
+use wp_opc::{Package, Relationship, Relationships, TargetMode};
 use wp_xml::tree::{Element, XmlTree};
 
 pub use format::CharacterFormat;
@@ -298,6 +298,14 @@ pub struct Document {
     /// written since a generation, so the history can find such a change
     /// where it happened instead of every command having to own up to it.
     accounted_generation: u64,
+    /// Whether the package's own bytes are the file, as it was opened.
+    ///
+    /// Then a document nobody has changed is saved as those bytes, identical.
+    /// A save writes the package without the parts nothing reaches any more,
+    /// and the package is kept with them — undo may want one back — so after
+    /// a save the file is what the package is saved as, not its bytes. See
+    /// [`Self::save`].
+    package_is_the_file: bool,
     /// Where the caret was in each part when that part was last left.
     ///
     /// Undo that goes back into a header to take a change back leaves a way
@@ -396,6 +404,7 @@ impl Document {
             modified: false,
             saved_generation,
             accounted_generation: saved_generation,
+            package_is_the_file: true,
             left_at: Vec::new(),
             tracking: false,
             reviser: revisions::Reviser::default(),
@@ -461,6 +470,7 @@ impl Document {
             modified: false,
             saved_generation,
             accounted_generation: saved_generation,
+            package_is_the_file: true,
             left_at: Vec::new(),
             tracking: false,
             reviser: revisions::Reviser::default(),
@@ -3451,21 +3461,26 @@ impl Document {
         self.history.break_merge();
         self.saved_generation = self.package.generation();
         self.accounted_generation = self.saved_generation;
+        self.package_is_the_file = false;
         Ok(())
     }
 
     /// Writes the document back out.
     ///
-    /// A document that is exactly what was opened or last saved is written
-    /// from the package's own bytes, so it comes out identical. Any other has
-    /// only its main part re-serialized; every other part is still written
-    /// back exactly as the package holds it.
+    /// A document that is exactly what was opened is written from the
+    /// package's own bytes, so it comes out identical. Any other has only its
+    /// main part re-serialized, and every other part is written back exactly
+    /// as the package holds it — except a part nothing reaches any more, which
+    /// is left out, as Word leaves it out. See [`without_what_nothing_reaches`].
     pub fn save(&self) -> Result<Vec<u8>, Error> {
-        if self.is_as_saved() {
+        if self.is_as_saved() && self.package_is_the_file {
             return Ok(self.package.save()?);
         }
         let mut package = self.package.clone();
-        Self::write_into(&self.tree, &self.main_part, &mut package)?;
+        if !self.is_as_saved() {
+            Self::write_into(&self.tree, &self.main_part, &mut package)?;
+        }
+        without_what_nothing_reaches(&mut package);
         Ok(package.save()?)
     }
 
@@ -3488,6 +3503,92 @@ impl Document {
         wp_sign::unsign(package);
         Ok(())
     }
+}
+
+/// The kinds of relationship a part names by identifier, from inside itself:
+/// a picture's `r:embed`, a chart's `r:id`, an embedded object's.
+///
+/// A relationship of any other kind — the styles, the settings, a note part, a
+/// header's own theme — is found by its kind and counts for as long as it is
+/// there; one of these counts only while its part still names it. Ink is not
+/// here, though its part names it too: see [`named_by_identifier`].
+const NAMED_BY_IDENTIFIER: &[&str] = &[
+    IMAGE_RELATIONSHIP,
+    chart::CHART_RELATIONSHIP,
+    diagram::DATA_RELATIONSHIP,
+    diagram::LAYOUT_RELATIONSHIP,
+    diagram::STYLE_RELATIONSHIP,
+    diagram::COLORS_RELATIONSHIP,
+    workbook::PACKAGE_RELATIONSHIP,
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/video",
+    "http://schemas.microsoft.com/office/2007/relationships/media",
+];
+
+/// Whether a relationship is one its part names by identifier, and so counts
+/// only while the part still names it.
+///
+/// # Why the kind alone does not say, for ink
+///
+/// Word reaches an ink part by the relationship it writes for a content part,
+/// which is the very kind that reaches a custom XML data part — and nothing
+/// names the data part by identifier: Word finds it by its kind, and a control
+/// bound to it finds it by the GUID of its datastore item. Asking the document
+/// whether it names such a relationship would take every custom XML part out
+/// of the file, and its datastore item with it. So for that kind the part
+/// reached decides, by what the package says it is: ink is named, and anything
+/// else is kept for as long as its relationship is there, which is the side a
+/// doubt has to fall on.
+fn named_by_identifier(package: &Package, source: &str, relationship: &Relationship) -> bool {
+    if NAMED_BY_IDENTIFIER.contains(&relationship.kind.as_str()) {
+        return true;
+    }
+    relationship.kind == ink::INK_RELATIONSHIP
+        && matches!(
+            relationship.resolved_target(source),
+            Some(Ok(target)) if package.content_type(&target) == Some(ink::INK_CONTENT_TYPE)
+        )
+}
+
+/// Leaves out of a package being written every part that nothing reaches.
+///
+/// # Why a part is left behind, and why it goes
+///
+/// A part is added when a picture is inserted or pasted, and nothing takes it
+/// out again: a picture cut, a paste undone, an old chart replaced by the one
+/// pasted in its place all leave the part — and the relationship to it —
+/// where they were, because undo may want them back while the document is
+/// open. Word writes a file without them, and so does this: what is written
+/// is what the package's relationships reach, walked from the package's own
+/// (see [`wp_opc::Package::prune_unreachable`]), with one thing more — a
+/// relationship of a kind a part names by its identifier counts only while
+/// the part still names it, because a cut picture leaves its relationship
+/// behind as well as its part. A diagram's drawing is not of those kinds:
+/// Word names it from the diagram's data model rather than from the part the
+/// relationship belongs to, so it is kept for as long as its relationship is.
+fn without_what_nothing_reaches(package: &mut Package) {
+    // The text of the part last looked at: a part's relationships are asked
+    // about one after another, and a part is read once for all of them.
+    let read: std::cell::RefCell<Option<(String, Option<String>)>> = std::cell::RefCell::new(None);
+    package.prune_unreachable(|package, source, relationship| {
+        if !named_by_identifier(package, source, relationship) {
+            return true;
+        }
+        let mut read = read.borrow_mut();
+        if read.as_ref().is_none_or(|(held, _)| held != source) {
+            // Only a part the package says is XML is read for the names in
+            // it: the bytes of a picture or a macro project can come out as
+            // text by chance, and text that is not XML names nothing.
+            let is_xml = package.content_type(source).is_some_and(|kind| kind.ends_with("xml"));
+            let text = if is_xml { package.xml_part(source).and_then(Result::ok) } else { None };
+            *read = Some((source.to_owned(), text));
+        }
+        // A part that cannot be read as text cannot be asked, and whatever
+        // it points at stays.
+        let Some((_, Some(text))) = read.as_ref() else { return true };
+        let id = &relationship.id;
+        text.contains(&format!("\"{id}\"")) || text.contains(&format!("'{id}'"))
+    });
 }
 
 /// The named child of an element, made if it is not there.
@@ -3861,7 +3962,9 @@ impl Document {
             read::W,
             &format!(" {instruction} "),
         );
-        field.push_element(edit::run_element(&run, prefix.as_deref()));
+        for element in edit::run_elements(&run, prefix.as_deref()) {
+            field.push_element(element);
+        }
         paragraph.insert_element(at, field);
 
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + shown.len()));

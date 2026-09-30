@@ -4179,7 +4179,9 @@ impl<'a> LayoutEngine<'a> {
         field_number: usize,
     ) {
         for content in &run.content {
-            match content {
+            // A copy is laid out as what it holds: printing a selection and
+            // pasting as a picture lay out what was copied.
+            match content.bare() {
                 RunContent::Text(text) => {
                     // A run inside a field shows what the field works out, not
                     paragraph_text.push_str(text);
@@ -4784,6 +4786,8 @@ impl<'a> LayoutEngine<'a> {
                         end_offset: *offset,
                     });
                 }
+                // `bare` has taken a copy's wrapping off already.
+                RunContent::Copied(_) => {}
             }
         }
     }

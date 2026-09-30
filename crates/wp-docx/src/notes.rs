@@ -71,7 +71,7 @@ impl Kind {
 
     /// One entry in it.
     #[must_use]
-    fn entry(self) -> &'static str {
+    pub(crate) fn entry(self) -> &'static str {
         match self {
             Self::Footnote => "footnote",
             Self::Endnote => "endnote",
@@ -258,7 +258,7 @@ impl Document {
     }
 
     /// The root element of that part, read afresh.
-    fn notes_root(&self, kind: Kind) -> Option<Element> {
+    pub(crate) fn notes_root(&self, kind: Kind) -> Option<Element> {
         let part = self.notes_part(kind)?;
         let text = self.package().xml_part(&part)?.ok()?;
         XmlTree::parse(&text).ok().map(|tree| tree.root)

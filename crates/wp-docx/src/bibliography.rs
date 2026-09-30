@@ -275,7 +275,9 @@ impl Document {
             read::W,
             &format!(" {instruction} "),
         );
-        field.push_element(edit::run_element(&run, prefix.as_deref()));
+        for element in edit::run_elements(&run, prefix.as_deref()) {
+            field.push_element(element);
+        }
         paragraph.insert_element(at, field);
 
         self.set_caret(TextPosition::new(caret.paragraph, caret.offset + shown.len()));

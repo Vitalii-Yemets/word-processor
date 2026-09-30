@@ -4441,6 +4441,20 @@ work is in *The order of the work* at the end.
   more, with a bound on the passes. The wrapping test's helper skipped the
   first line, which is why it passed. Reviews R21, #10; **C45** did not
   name it.
+- [ ] **E20. One count of characters for the caret, the reader and the
+  layout.** Found while **H17** was done: the three do not agree on what is
+  one character. The caret's walk (`edit::atomic_text`) does not count
+  `w:ptab`, which the model treats as a tab; the layout counts a carried
+  drawing as nothing where the caret counts `w:drawing` as one; an
+  `m:oMathPara` holding several equations is one character to the caret and
+  several to the reader and the layout; the reader skips inline
+  `w:customXml` and `w:moveFrom`, both of which the caret counts; and
+  `edit::child_position_at_offset` answers a place before `w:pPr` at offset
+  0 and skips equations — bookmarks, comments, equations and fields use it,
+  and `links.rs` works around it. Smart paste's spacing (`paste.rs`,
+  `spacing_for_paste`) treats a pasted picture as a word and puts a space
+  beside it. One walk, used by all three, and a test that a document with
+  each of those in it gives the same count everywhere.
 
 ## F — Proofing
 
@@ -7176,7 +7190,7 @@ work is in *The order of the work* at the end.
   and outside the window, `wp-cli`'s converted output, a macro's `Close`
   of a file it wrote, and the desktop's `mimeapps.list` and recent list,
   which `wp-shell` rewrites.
-- [ ] **H17. What the clipboard carries within the program.** Copying a
+- [x] **H17. What the clipboard carries within the program.** Copying a
   picture and pasting it reports success and pastes nothing, because the
   run writer skips `Picture`, `Chart`, `Ink`, `Diagram`, `Group` and
   `Math`: a cut-and-paste of a picture loses it, and a dragged one too. A
@@ -7185,6 +7199,192 @@ work is in *The order of the work* at the end.
   deleted words into plain text. And after pasting a shape the caret stays
   before it, because the length is counted in plain text where a shape is
   a byte to the caret. Reviews #5/R14, #6/R15, #14/R18.
+  *Done:* all three, and what was found on the way.
+  **Where a copy is cut** (`crates/wp-docx/src/clipboard.rs`): `slice`
+  walked the model and counted every run's text, a deleted run's too,
+  where the caret's text leaves deletions out. A copy now cuts the
+  paragraph's own element where the caret would — the runs split at both
+  ends by `format::split_runs_at_offset`, which typing uses, and whatever
+  lies outside the stretch taken out by a walk that measures as
+  `position::paragraph_text` does — and only then reads it. What takes no
+  room in the text, a deletion above all, is in the copy when it lies
+  inside the stretch, and at an end only when that end is the paragraph's
+  own. `edit::measured_length` now measures by the caret's own walk: a
+  shape Word wrote twice over, in `mc:AlternateContent`, was nothing to it.
+  **Tracked changes:** Word carries them across as they are when nobody is
+  tracking changes where the copy lands, and a paste here does the same —
+  a deletion as a deletion, an insertion as an insertion, each with its
+  author and a number of its own in the document it lands in. When changes
+  are being tracked there, Word pastes the copy with its changes accepted,
+  as one insertion by whoever pastes, and so does this.
+  **Drawings:** the writer's empty arms are gone. A copy is read in a mode
+  of its own that keeps every drawing and every equation with the element
+  it was written as — the whole `mc:AlternateContent` where Word wrote two
+  — in a new `RunContent::Copied` (`model.rs`), which says what it is and
+  carries every relationship the element names, the part each reaches and
+  every part those reach: a picture's media, a chart's part and its
+  workbook, ink's part, a diagram's four parts and its drawing (with the
+  relationship Word keeps for that on the document, the data model told
+  its new name), the pictures in a group, an object's embedding, a
+  picture's link. The element declares every namespace it uses. A paste
+  (`insert_runs`) settles it first: each part goes into the package under
+  a name nothing there has — its own if that is free, else the next number
+  — with its own relationships under the identifiers its content names
+  them by; the relationships of the part being edited are made again with
+  that part's identifiers, the element is pointed at them, and its
+  namespaces are declared on the root, an extension its document let a
+  reader pass over marked so here too. A picture the package holds byte
+  for byte is pointed at again rather than stored twice; a chart, a
+  diagram and ink are always copied, since each can be edited and one must
+  not change with the other. A drawing that reaches the writer as its
+  model alone is written from the model (`edit::placed`): a picture with
+  its size, place, turn, description and link; a chart; ink, in the line
+  or floating; a diagram's frame; a group from its members
+  (`group::model_element`); an equation beside the run it was in, which is
+  where the format puts it (`edit::run_elements`, which every writer of
+  runs now uses), declaring its own namespace. A paste does not put such a
+  model down, because nothing says which part its relationship belongs
+  to: `insert_runs` leaves it out, and a paste that puts nothing down says
+  so, where it said pasted and wrote an empty run.
+  **The caret** after a paste is where the paragraph's text says the paste
+  ended — its length after, less its length before — so a shape, a
+  picture and a note's mark are a character each, as they are to the
+  caret. The paste itself lands inside a link or a content control when
+  the caret is in one, beside somebody's tracked insertion, cut in two
+  there, rather than after the whole of it, and never before the
+  paragraph's properties, which it used to go in front of at the start.
+  **Found on the way,** and part of what a copy carries: a note's mark
+  pasted pointed at the note of that number where it landed — the same
+  note twice in its own document, another or none in another. The copy now
+  carries what the note says, and a paste makes a note of its own, as Word
+  does. A field pasted came across as its last answer in plain words, and
+  now comes as the field. In the program
+  (`crates/wp-app/src/editor/clipboardformats.rs`), what another program
+  put on the clipboard — Word's own document, Rich Text, HTML, a bitmap —
+  is opened as a document of its own and copied out of it whole
+  (`copied_whole`), so it pastes by the same road; its pictures used to be
+  taken into the document whenever the clipboard was looked at, twice for
+  every Ctrl+V, and then not pasted. The Word document this program puts
+  on the clipboard is made by pasting the copy into an empty one, so it
+  carries every drawing the copy does. What a drag puts down is a method
+  of its own, `put_dragged` in `dragtext.rs`, so that it can be tested.
+  **Links** come across as links, where a copy used to bring their words
+  alone. A `w:hyperlink` is a wrapper round runs, and the model of a
+  paragraph has none, so a copy leaves a mark on every run a link holds —
+  the wrapper with its runs taken out, and where the link began, so that
+  two links side by side stay two (`Copied::is_link`) — and carries the
+  relationship the wrapper names, an address outside the package or a
+  part in it. A paste makes that relationship again in the part it lands
+  in, under an identifier of that part's, naming again one already there
+  to the same place; and the writer puts the runs that carry one link's
+  mark back inside it, outermost, since a link may hold a tracked change
+  and a change may not hold a link. A link the selection cuts in two
+  pastes as a link round what was taken; a link to a bookmark, which
+  names no relationship, pastes as one; and a link pasted with the caret
+  in a link goes beside that one, cut in two round it, because a link
+  cannot hold a link — what holds none still lands inside, as above.
+  **What a save leaves out.** A paste adds parts and nothing takes them
+  out again: a chart cut, a paste taken back, leave the part and the
+  relationship to it where they were, because undo may want them while
+  the document is open. Word writes a file without them, and `save` now
+  does too (`without_what_nothing_reaches` in `lib.rs`, over
+  `wp_opc::Package::prune_unreachable`). What is written is what the
+  package's relationships reach, walked from its own, `_rels/.rels`,
+  through the relationships of every part reached in turn, whether or
+  not the part is XML — a macro project reaches its data — internal
+  targets only, each resolved against the folder of the part that names
+  it, so the document's `../customXml/item1.xml` is the item and the
+  item's `itemProps1.xml` its datastore item, and matched to the archive
+  whichever way a name a URI writes with `%` is spelled. An address
+  outside, a template attached in the settings among them, is no part
+  and is left alone. A part not reached goes, with its own relationships
+  part; everything reached stays — a header's pictures and a note's,
+  custom XML and its datastore item, the building blocks and their own
+  parts, the thumbnail and the document's properties, the font table and
+  the fonts it embeds, a chart and its workbook, a diagram's parts, the
+  macros and their data, the people and the comments' extensions. One
+  thing more: a relationship of a kind a part names from inside itself —
+  a picture's, a chart's, a diagram's four, an embedded object's or
+  workbook's, a video's, ink's — counts only while the part, read as XML,
+  still names it, because a cut picture leaves its relationship behind
+  too; one of any other kind counts while it is there. Ink is reached by
+  the kind that reaches custom XML, which nothing names — Word finds it
+  by its kind, a bound control by its datastore item's GUID — so for that
+  kind the content type decides: ink is `application/inkml+xml`, and
+  anything else is kept. Nothing at all goes when a relationships part
+  cannot be read or the walk does not come to the main document. The
+  document held open keeps the parts, for undo, and only the file goes
+  without them; a document nobody has changed since it was opened is
+  still written from the package's own bytes, byte for byte, by the road
+  it always was.
+  *Proven by:* in `crates/wp-docx/tests/clipboard.rs`, each of a picture,
+  a chart, ink, a diagram, a group holding a picture, and an equation
+  copied out of "Before after", pasted, saved, opened again and found by
+  its own reader with its parts — twice in its own document,
+  `a_picture_pasted_in_its_own_document_is_there_twice` and its five
+  fellows, and once in another,
+  `a_picture_pasted_into_another_document_brings_its_part` and its five;
+  `a_picture_cut_and_pasted_is_still_there`;
+  `a_picture_pasted_beside_another_keeps_both_apart` and
+  `a_chart_pasted_beside_another_keeps_both_apart`, where both documents
+  call their part by one name;
+  `a_copy_over_a_tracked_deletion_takes_what_the_caret_sees`, which took
+  "old" before; `a_tracked_deletion_in_a_copy_is_pasted_as_a_deletion`,
+  `a_tracked_insertion_in_a_copy_is_pasted_as_an_insertion` and
+  `a_paste_while_changes_are_tracked_is_one_insertion_of_what_the_copy_says`;
+  `the_caret_ends_after_a_pasted_shape`, which typed `\x01BA` before, and
+  `the_caret_ends_after_a_pasted_picture`;
+  `a_paste_of_nothing_that_can_be_put_down_says_nothing_was_pasted`;
+  `a_diagram_word_wrote_brings_the_drawing_its_document_keeps_for_it`,
+  its drawing moved to where Word keeps it; the two notes, the field, the
+  paste into somebody's insertion and the paste at the start of a
+  paragraph — twenty-eight, every one of which failed on the code before
+  this. In the crate's own tests, the cut at the caret's offsets, a
+  deletion in the middle and at either edge, a picture carried with its
+  element, a copy not written until a paste has settled it, fresh names,
+  relative targets and an element taken out declaring what it uses
+  (`clipboard.rs`); each of the six kinds written from its model and read
+  back as itself, an equation beside its run, and a shape written twice
+  over measuring one character (`edit.rs`). In `wp-app`, our own copy
+  coming back from `take_contents` whole, carrying the picture's bytes,
+  and pasted into another document opened in its place; a picture cut and
+  pasted; a picture copied and pasted, twice, the status saying so; a
+  picture from HTML, a bitmap and a chart from a Word document on the
+  clipboard now pasted, and taken in only then; a chart going out in the
+  Word document this program puts there (`clipboardformats.rs`); and a
+  picture dragged, dragged with Ctrl held, and a drag taken back in one
+  undo (`dragtext.rs`). For links, in `crates/wp-docx/tests/clipboard.rs`:
+  `a_link_copied_and_pasted_in_its_own_document_is_a_link_to_the_same_place`,
+  `a_link_pasted_into_another_document_is_a_link_to_the_same_place`,
+  `a_link_cut_in_two_by_the_selection_is_pasted_as_a_link`,
+  `a_link_to_a_place_in_the_document_is_pasted_as_one` and
+  `a_link_pasted_into_a_link_goes_beside_it_and_not_inside`, which looks
+  for a link inside a link too; in `wp-app`,
+  `a_link_comes_back_from_the_clipboard_as_a_link`
+  (`clipboardformats.rs`). For what a save leaves out, in the same test
+  file: `a_chart_cut_and_pasted_leaves_one_chart_part_in_the_file`, and
+  one workbook; `a_paste_taken_back_leaves_nothing_of_itself_in_the_file`;
+  `a_picture_cut_saved_and_taken_back_is_still_whole`, the file without
+  the picture and the document still with it;
+  `a_save_keeps_everything_something_reaches_and_nothing_else`;
+  `every_part_of_every_kind_something_reaches_is_in_the_saved_file`, a
+  document holding each kind named above — reached from the document,
+  from another part, from a part that is not XML and from the package —
+  and one part nothing reaches, edited and saved: every part and every
+  relationships part still there but that one, and the chart, the ink,
+  the diagram, the macros and the template read back;
+  `ink_cut_is_left_out_of_the_file_and_custom_xml_reached_the_same_way_is_not`;
+  and `a_document_nobody_changed_is_saved_as_it_was_opened`, byte for
+  byte, the part nothing reaches with it. In
+  `crates/wp-opc/tests/package.rs`:
+  `a_part_nothing_reaches_goes_with_what_only_it_reaches`,
+  `a_relationship_that_no_longer_counts_goes_and_so_does_its_part`,
+  `nothing_goes_when_the_walk_does_not_come_to_the_document`,
+  `a_package_where_everything_is_reached_is_left_as_it_was`,
+  `a_walk_goes_up_out_of_a_folder_and_on_from_a_part_that_is_not_xml` and
+  `a_part_is_reached_whichever_way_its_name_is_spelled`. And the custom
+  XML tests that save and reopen, in `customxml.rs` and in `wp-app`'s
+  `mapping.rs`, which failed while ink's kind took custom XML with it.
 - [ ] **H18. UI Automation's tables, as COM lays them out.** `RootVtbl` and
   `ItemVtbl` glue Simple, Fragment and FragmentRoot into one table and
   `QueryInterface` hands out one pointer for all three, where each inherits
@@ -7193,6 +7393,16 @@ work is in *The order of the work* at the end.
   through it. One table per interface, and the right pointer from
   `QueryInterface`, on the same object. Review R03; found against the
   Windows SDK headers.
+- [ ] **H19. The portal screenshot test that fails under load.**
+  `wayland::the_editor_takes_a_screenshot_through_the_desktop_s_portal`
+  drives a real compositor, D-Bus, PipeWire and the portal, and in a full
+  test run on a busy machine fails about one time in two — the menu it
+  presses is not there when it looks, or a step times out — and passes
+  alone every time. A test that fails for reasons that are not the
+  program's is a test nobody trusts: find what it is really waiting for
+  (the menu drawn, the portal answered, the picture in the document) and
+  wait for that, with a bound, rather than for a count of ticks; and run
+  the full suite several times under load to show it holds.
 
 ## I — The language of the interface
 
@@ -9061,6 +9271,16 @@ work is in *The order of the work* at the end.
   manifests inside the objects that were verified, refuse ambiguous
   identifiers, and trust a fingerprint or a public key, showing the Subject
   only. Reviews R01, R02.
+- [ ] **J35. Building blocks and comparisons carry their drawings.** Found
+  while **H17** was done. A building block is pasted from the model read out
+  of the glossary part, so a block holding a picture, a chart or any other
+  drawing that points at a part cannot be put down — the paste now refuses
+  it, where before it wrote an empty run — and Save Selection as a building
+  block leaves such drawings out of the block it saves. And
+  `compare_text_boxes` writes the revised document's model into this one,
+  so a drawing written from that model would name the revised document's
+  relationships. All three should carry what **H17** carries — the element,
+  its relationships and its parts — and put them down the same way.
 
 ## K — Proving it against Word rather than against ourselves
 
@@ -10059,8 +10279,8 @@ model and the files, kept in `docs/.reviews/` outside the repository — gave
 the next one. It is worked in this order, by harm first and then by what a
 person who knows Word notices first:
 
-1. *Crashes and lost data:* **C51**, **H16**, **C48**, **H17**, **C49**,
-   **C50**, **J34**.
+1. *Crashes and lost data:* **C51**, **H16**, **C48**, **H17**, **H19**,
+   **C49**, **C50**, **J34**.
 2. *Word as the judge:* **K4**.
 3. *Files Word opens without a word:* **G19**, **G20**, **G21** — each
    checked with **K4**.
@@ -10069,9 +10289,9 @@ person who knows Word notices first:
 5. *Tables:* **C61**, **C62**, **B8**, **C63**, **C64**, **C65**, **C66**,
    **C67**, **C68**, **C69**, **C70**, **C71**.
 6. *The interface, the large things:* **C72**, **C73**, **C74**, **C75**,
-   **C76**, **C77**.
+   **C76**, **C77**, **J35**.
 7. *Hostile files:* **G17**, **G18**, **H18**.
-8. *Layout and speed:* **E19**, **B7**.
+8. *Layout and speed:* **E19**, **E20**, **B7**.
 9. *The tails:* the 176 *Not done* paragraphs of the closed items, read
    through one by one, the ones the items above do not already cover
    turned into items of their own, and the ones that need something this
