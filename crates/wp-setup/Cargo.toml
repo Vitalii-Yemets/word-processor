@@ -13,6 +13,8 @@ path = "src/main.rs"
 [dependencies]
 wp-shell = { path = "../wp-shell" }
 wp-zip = { path = "../wp-zip" }
+# Each file installed goes beside the one it replaces and then into its place.
+wp-files = { path = "../wp-files" }
 
 [lints]
 workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "wp-files"
+description = "Writing a file over one that is already there, so that what is left at the path is always one whole file"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Nothing. What it asks of the system it declares itself, as the shell does:
+# the program, its command line, its macros, its installer and the shell all
+# write files for a person, and none of them should need a window to do it.
+
+[lints]
+workspace = true

@@ -535,14 +535,14 @@ direction = rtl
 = Cannot read {0}: {1}
 > לא ניתן לקרוא את {0}: {1}
 
+= Cannot save {0}: {1}. The file on disk has not been changed.
+> לא ניתן לשמור את {0}: {1}. הקובץ בדיסק לא שונה.
+
 = Cannot save: {0}
 > לא ניתן לשמור: {0}
 
 = Cannot set that: {0}
 > לא ניתן להגדיר זאת: {0}
-
-= Cannot write {0}: {1}
-> לא ניתן לכתוב את {0}: {1}
 
 = Capitalization
 > אותיות רישיות

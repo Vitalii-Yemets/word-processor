@@ -182,9 +182,9 @@
 = Cannot open {0}: {1}
 = Cannot read {0}
 = Cannot read {0}: {1}
+= Cannot save {0}: {1}. The file on disk has not been changed.
 = Cannot save: {0}
 = Cannot set that: {0}
-= Cannot write {0}: {1}
 = Capitalization
 = Capitalize first letter of sentences
 = Capitalize names of days

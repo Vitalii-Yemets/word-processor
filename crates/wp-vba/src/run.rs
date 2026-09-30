@@ -2945,8 +2945,12 @@ impl<'a> Machine<'a> {
         }
         for number in numbers {
             if let Some(file) = self.files.remove(&number) {
+                // Beside the file and then into its place, so that a macro
+                // appending to a log that fails halfway leaves the log that
+                // was there, not the first part of it.
                 if let Some(written) = file.written {
-                    std::fs::write(&file.path, written).map_err(|_| Fault::of(52))?;
+                    wp_files::replace_with(&file.path, written.as_bytes())
+                        .map_err(|_| Fault::of(52))?;
                 }
             }
         }

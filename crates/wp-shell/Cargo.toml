@@ -20,6 +20,10 @@ wp-ole = { path = "../wp-ole" }
 [target.'cfg(target_os = "linux")'.dependencies]
 wp-text = { path = "../wp-text" }
 wp-image = { path = "../wp-image" }
+# The desktop's own files this rewrites — the recent documents, the desktop
+# entry, `mimeapps.list` — each put in place whole or not at all: they are
+# every program's, and one left half written is every program's loss.
+wp-files = { path = "../wp-files" }
 
 # The workspace forbids unsafe everywhere else. Talking to an operating system
 # means calling C functions, which cannot be done any other way, so this one

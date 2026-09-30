@@ -190,6 +190,18 @@ pub fn is_template_path(path: &Path) -> bool {
     kind_of_path(path).is_some_and(Kind::is_template)
 }
 
+/// What a save that failed says: which file, why, and that the file on
+/// disk is as it was — which it is, since every save is written beside the
+/// file and only then put in its place (see [`wp_files`]). A person told
+/// only that a save failed is left to wonder whether the last good copy
+/// went with it.
+pub(super) fn not_saved(path: &Path, error: &std::io::Error) -> String {
+    crate::messages::with(
+        "Cannot save {0}: {1}. The file on disk has not been changed.",
+        &[&path.display().to_string(), &error.to_string()],
+    )
+}
+
 impl Editor {
     /// What the document is called, for the caption and for asking about it.
     pub(super) fn document_name(&self) -> String {
@@ -240,7 +252,7 @@ impl Editor {
     ///
     /// Whatever the kind, the file is written beside the one it replaces and
     /// renamed over it, so that a save that fails leaves the file that was
-    /// there as it was: see [`super::replacing`].
+    /// there as it was: see [`wp_files`].
     pub(super) fn write_document(&mut self, path: &Path) -> bool {
         self.write_document_as(path, false)
     }
@@ -261,12 +273,11 @@ impl Editor {
             let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("page.htm");
             let title = self.document.properties().title;
             let title = (!title.is_empty()).then_some(title.as_str());
-            // Each file replaced whole or not at all: see [`super::replacing`].
+            // Each file replaced whole or not at all: see [`wp_files`].
             let written = match kind {
-                WebKind::SingleFile => super::replacing::replace_with(
-                    path,
-                    &wp_html::write_mht(&self.document, name, title),
-                ),
+                WebKind::SingleFile => {
+                    wp_files::replace_with(path, &wp_html::write_mht(&self.document, name, title))
+                }
                 WebKind::Page => {
                     let page = if filtered {
                         wp_html::write_filtered(&self.document, name, title)
@@ -286,16 +297,13 @@ impl Editor {
                             if let Some(parent) = target.parent() {
                                 let _ = std::fs::create_dir_all(parent);
                             }
-                            super::replacing::replace_with(&target, &picture.bytes)
+                            wp_files::replace_with(&target, &picture.bytes)
                         })
-                        .and_then(|()| super::replacing::replace_with(path, page.html.as_bytes()))
+                        .and_then(|()| wp_files::replace_with(path, page.html.as_bytes()))
                 }
             };
             if let Err(error) = written {
-                let message = crate::messages::with(
-                    "Cannot write {0}: {1}",
-                    &[&path.display().to_string(), &error.to_string()],
-                );
+                let message = not_saved(path, &error);
                 wp_shell::dialog::show_error(&message);
                 self.status = message;
                 return false;
@@ -332,11 +340,8 @@ impl Editor {
                 }
             }
             let bytes = wp_doc::save(&self.document);
-            if let Err(error) = super::replacing::replace_with(path, &bytes) {
-                let message = crate::messages::with(
-                    "Cannot write {0}: {1}",
-                    &[&path.display().to_string(), &error.to_string()],
-                );
+            if let Err(error) = wp_files::replace_with(path, &bytes) {
+                let message = not_saved(path, &error);
                 wp_shell::dialog::show_error(&message);
                 self.status = message;
                 return false;
@@ -356,11 +361,8 @@ impl Editor {
         // and nothing of the package.
         if is_rtf_path(path) {
             let bytes = wp_rtf::write(&self.document);
-            if let Err(error) = super::replacing::replace_with(path, &bytes) {
-                let message = crate::messages::with(
-                    "Cannot write {0}: {1}",
-                    &[&path.display().to_string(), &error.to_string()],
-                );
+            if let Err(error) = wp_files::replace_with(path, &bytes) {
+                let message = not_saved(path, &error);
                 wp_shell::dialog::show_error(&message);
                 self.status = message;
                 return false;
@@ -387,11 +389,8 @@ impl Editor {
                     return false;
                 }
             };
-            if let Err(error) = super::replacing::replace_with(path, &bytes) {
-                let message = crate::messages::with(
-                    "Cannot write {0}: {1}",
-                    &[&path.display().to_string(), &error.to_string()],
-                );
+            if let Err(error) = wp_files::replace_with(path, &bytes) {
+                let message = not_saved(path, &error);
                 wp_shell::dialog::show_error(&message);
                 self.status = message;
                 return false;
@@ -440,11 +439,8 @@ impl Editor {
             }
         };
 
-        if let Err(error) = super::replacing::replace_with(path, &bytes) {
-            let message = crate::messages::with(
-                "Cannot write {0}: {1}",
-                &[&path.display().to_string(), &error.to_string()],
-            );
+        if let Err(error) = wp_files::replace_with(path, &bytes) {
+            let message = not_saved(path, &error);
             wp_shell::dialog::show_error(&message);
             self.status = message;
             return false;
@@ -1354,7 +1350,12 @@ mod tests {
 
         assert!(!editor.write_document(&path), "a folder was taken for a document");
         assert!(editor.document.is_modified(), "the work is marked saved when it is not");
-        assert!(editor.status.starts_with("Cannot write"), "{}", editor.status);
+        assert!(
+            editor.status.starts_with("Cannot save")
+                && editor.status.ends_with("has not been changed."),
+            "{}",
+            editor.status
+        );
         assert!(editor.file.is_none(), "the document took the folder for its file");
         assert!(path.is_dir(), "the folder was replaced");
         assert_eq!(names_in(&folder), ["Letter.docx"], "the temporary file was left behind");

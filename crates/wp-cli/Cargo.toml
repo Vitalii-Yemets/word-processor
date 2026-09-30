@@ -29,6 +29,8 @@ wp-raster = { path = "../wp-raster" }
 wp-asn1 = { path = "../wp-asn1" }
 wp-rsa = { path = "../wp-rsa" }
 wp-sign = { path = "../wp-sign" }
+# What it writes goes beside the file it replaces and then into its place.
+wp-files = { path = "../wp-files" }
 
 [lints]
 workspace = true

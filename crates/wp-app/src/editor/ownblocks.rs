@@ -107,9 +107,9 @@ impl Editor {
             let _ = std::fs::create_dir_all(folder);
         }
         // Every block the person has ever saved is in this one file, so it is
-        // replaced whole or not at all: see [`super::replacing`].
+        // replaced whole or not at all: see [`wp_files`].
         match template.save() {
-            Ok(bytes) => super::replacing::replace_with(&path, &bytes).is_ok(),
+            Ok(bytes) => wp_files::replace_with(&path, &bytes).is_ok(),
             Err(_) => false,
         }
     }

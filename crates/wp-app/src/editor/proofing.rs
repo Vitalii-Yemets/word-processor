@@ -239,7 +239,11 @@ impl Editor {
                 if let Some(directory) = path.parent() {
                     let _ = std::fs::create_dir_all(directory);
                 }
-                let _ = std::fs::write(&path, self.custom_words.join("\n") + "\n");
+                // The whole list is written each time, so a write cut short
+                // in place would lose every word added before this one: it
+                // goes beside the old list and into its place instead.
+                let words = self.custom_words.join("\n") + "\n";
+                let _ = wp_files::replace_with(&path, words.as_bytes());
             }
         }
         self.document.clear_selection();

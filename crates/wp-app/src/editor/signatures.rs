@@ -339,9 +339,9 @@ impl Editor {
         };
         // Over the document's own file, and so beside it and renamed into
         // place: a signing that fails on the way leaves the document as it
-        // was saved. See [`super::replacing`].
-        if let Err(error) = super::replacing::replace_with(&path, &bytes) {
-            return self.report(&format!("Cannot write {}: {error}", path.display()));
+        // was saved. See [`wp_files`].
+        if let Err(error) = wp_files::replace_with(&path, &bytes) {
+            return self.report(&super::files::not_saved(&path, &error));
         }
 
         // What is on disk is signed; what is open has to be the same thing,

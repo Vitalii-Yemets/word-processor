@@ -8,6 +8,12 @@
 //! together with `mimeapps.list` saying which entry is the one to use.
 //! Writing them is the whole of it — there is no service to ask, and the
 //! desktop notices because it watches those directories.
+//!
+//! Each is written beside itself and then put in its place (see
+//! [`wp_files`]), which is how the desktop's own library writes them too: the
+//! recent list and `mimeapps.list` belong to every program on the desktop,
+//! and one cut short halfway would take every other program's entries with
+//! it.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -155,7 +161,7 @@ pub(crate) fn remember_document(path: &Path, media_type: &str) {
     let now = stamp(SystemTime::now());
     let bookmark = one_bookmark(&uri, media_type, &now);
     let written = with_bookmark(&existing, &uri, &bookmark);
-    let _ = std::fs::write(&file, written);
+    let _ = wp_files::replace_with(&file, written.as_bytes());
 }
 
 /// One bookmark, as this program writes them.
@@ -276,7 +282,7 @@ pub(crate) fn associate_kinds(kinds: &[Kind], program_name: &str, program: &Path
         return false;
     }
     let entry = desktop_entry(program, program_name, kinds);
-    if std::fs::write(applications.join(ENTRY), entry).is_err() {
+    if wp_files::replace_with(&applications.join(ENTRY), entry.as_bytes()).is_err() {
         return false;
     }
 
@@ -289,7 +295,7 @@ pub(crate) fn associate_kinds(kinds: &[Kind], program_name: &str, program: &Path
         kinds.iter().filter(|kind| kind.becomes_default).map(|kind| kind.media_type).collect();
     let written = with_associations(&existing, &types, &claimed);
     let _ = std::fs::create_dir_all(&config);
-    if std::fs::write(&file, written).is_err() {
+    if wp_files::replace_with(&file, written.as_bytes()).is_err() {
         return false;
     }
     rebuild_index(&applications);
@@ -310,7 +316,7 @@ pub(crate) fn dissociate_kinds() -> bool {
     };
     let file = config.join("mimeapps.list");
     if let Ok(existing) = std::fs::read_to_string(&file) {
-        all &= std::fs::write(&file, without_associations(&existing)).is_ok();
+        all &= wp_files::replace_with(&file, without_associations(&existing).as_bytes()).is_ok();
     }
     rebuild_index(&applications);
     all

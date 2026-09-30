@@ -38,6 +38,9 @@ wp-rsa = { path = "../wp-rsa" }
 wp-sign = { path = "../wp-sign" }
 # Which way a line of the interface reads, in a window read right to left.
 wp-bidi = { path = "../wp-bidi" }
+# Every file written for a person over one that may be there, written beside
+# it and put in its place, so that a save that fails leaves the old one.
+wp-files = { path = "../wp-files" }
 
 [lints]
 workspace = true

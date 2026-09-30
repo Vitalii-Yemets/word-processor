@@ -15,6 +15,7 @@ members = [
     "crates/wp-dict",
     "crates/wp-doc",
     "crates/wp-docx",
+    "crates/wp-files",
     "crates/wp-font",
     "crates/wp-grammar",
     "crates/wp-hash",

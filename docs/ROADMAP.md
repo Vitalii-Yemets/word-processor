@@ -7266,21 +7266,69 @@ work is in *The order of the work* at the end.
   modified flag only after the rename. The same for every format that goes
   out through this path. Reviews #1, R16.
   *Done:* every file the program writes for a person over one that may
-  already be there is written beside it and renamed into its place.
-  **The helper** (`crates/wp-app/src/editor/replacing.rs`):
-  `write_replacing(target, write)` makes a new file in the target's own
-  folder, `.~Letter.docx.4120-7.tmp` — the name it will become, the
-  process and a count, made with `create_new`, so no two saves share one
-  and an old one is never written into — hands it to `write`, gives it the
-  old file's mode on Linux, syncs it, closes it and renames it over the
-  target, then syncs the folder on Linux; on any error the temporary file
-  is removed and the target is as it was. `replace_with(target, bytes)` is
-  the same for bytes in hand. A link is followed and left a link; a file
-  marked read-only is refused, as writing into it was, rather than
-  replaced by one that is not. On Windows `std::fs::rename` is
-  `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, and `FileRenameInfoEx`
-  with `FILE_RENAME_FLAG_REPLACE_IF_EXISTS` where that is denied: so the
-  standard library's documentation and source say.
+  already be there is written beside it and put in its place, with what
+  belonged to the old file carried over.
+  **The helper** (`crates/wp-files`, a workspace crate of its own with no
+  dependencies): `write_replacing(target, write)` makes a new file in the
+  target's own folder, `.~Letter.docx.4120-7.tmp` — the name it will
+  become, the process and a count, made with `create_new`, so no two saves
+  share one and an old one is never written into — gives it what belonged
+  to the old file, hands it to `write`, syncs it, closes it and puts it in
+  the target's place, then syncs the folder on Linux; on any error the
+  temporary file is removed and the target is as it was.
+  `replace_with(target, bytes)` is the same for bytes in hand. A link is
+  followed and left a link; a file marked read-only is refused, as writing
+  into it was, rather than replaced by one that is not. On Linux what
+  belonged to the old file is given before `write` runs, so that `write`
+  may change it: the installer makes its programs runnable whatever they
+  replace. The crate is its own so that the command line, the macros, the
+  installer and the shell can use it without reaching the window; the
+  shell depends on it and not the other way, and it declares the few
+  system calls it needs itself, as the shell does. Only its `windows.rs`
+  and `linux.rs` may use `unsafe`, and only for those calls.
+  **On Windows** the new file is put in place by `ReplaceFileW`, with
+  `REPLACEFILE_IGNORE_MERGE_ERRORS | REPLACEFILE_IGNORE_ACL_ERRORS`: the
+  new file takes the old one's access list, hidden and system attributes,
+  creation time, object identifier and alternate data streams, the mark
+  of the web among them; where the access list may not be set, the save
+  goes on without it. A backup name beside the target is given, which the
+  old file goes to and is removed from after: without one, the
+  documentation says, `ERROR_UNABLE_TO_MOVE_REPLACEMENT` leaves the old
+  file gone. With one, that error, `ERROR_UNABLE_TO_REMOVE_REPLACED` and
+  every other — the target held open, the files on two volumes, which in
+  one folder they are not — leave both files under their own names, and
+  the error is passed on; `ERROR_UNABLE_TO_MOVE_REPLACEMENT_2` leaves the
+  old file under the backup's, and it is moved back. Rather than trust
+  the codes alone, after every failure an empty target and a full backup
+  put the old file back. With no file at the target yet it is a plain
+  move. A path of 248 characters or more is written out in full with
+  `\\?\`, as the standard library does, so that every path it reaches
+  this reaches too.
+  **On Linux** the new file is given the old one's owner and group as far
+  as the system allows, its mode, and its extended attributes
+  (`listxattr`, `getxattr`, `fsetxattr`), among them its access list and
+  a browser's `user.xdg.origin.url`, each one best-effort. Only the
+  administrator may give a file to somebody else, and anybody else may
+  give it only to a group they are in, so a file saved by somebody other
+  than its owner becomes the saver's. Word on Windows likewise makes the
+  saver the owner of the file it saves, and so does this there.
+  **Leftovers:** a `.~Letter.docx.<pid>-<n>.tmp` beside the document
+  whose process is no longer running — on Linux no `/proc/<pid>`, on
+  Windows `OpenProcess` finding no such process or the exit code saying
+  it has ended — and that nothing has written to for ten minutes is
+  removed before the next save of that document. One whose process is
+  running is left, since it may be a save in progress; and so is one
+  written in the last ten minutes, or at a time ahead of this machine's
+  clock, since a process number means nothing across machines and in a
+  folder two share it may be the other's save in progress. Nothing is
+  swept while the document is not in its place, since the old file may
+  then be the one under such a name, and nothing where there is no
+  `/proc` to ask.
+  **The message** on a save that fails says which file, why, and that the
+  file on disk has not been changed — "Cannot save {0}: {1}. The file on
+  disk has not been changed.", in `en.txt`, `de.txt` and `he.txt` — for
+  Save and Save As in every kind, plain text, a signed document and
+  Export to PDF.
   **Where it is used:** Save and Save As in every kind
   (`crates/wp-app/src/editor/files.rs`): Word's four, `.doc`, `.rtf`,
   `.odt`, the single-file web page, and the web page with its pictures,
@@ -7290,48 +7338,58 @@ work is in *The order of the work* at the end.
   (`signatures.rs`); Export to PDF (`printpane.rs`); a file the document
   carries, saved out (`links.rs`); the typed address list and the letters
   of Merge to Files (`mailings.rs`); the person's own template of building
-  blocks (`ownblocks.rs`); and the AutoRecover copy and its sidecar
+  blocks (`ownblocks.rs`); the AutoRecover copy and its sidecar
   (`autorecover.rs`), where a crash during the write is the very thing the
-  copy is kept for. Everywhere the document is marked saved only once the
-  helper has returned, which is after the rename. Left as they were, being
-  nobody's document: the picture `--picture` draws of the window, and what
-  the tests write for themselves.
+  copy is kept for; the settings file (`settings.rs`) and the custom
+  dictionary (`proofing.rs`). Outside the window: `wp-cli`'s output, the
+  pictures of a web page it converts to and a document it signs
+  (`main.rs`); a macro's `Close` of a file it wrote (`wp-vba`'s
+  `run.rs`); the recent list, the desktop entry and `mimeapps.list`
+  (`wp-shell`'s `linux/files.rs`); and the installer's files (`wp-setup`'s
+  `write_whole`), which were written beside and renamed but are now
+  synced and leave nothing beside them on failure. `ReplaceFileW` moves a
+  running program aside and puts the new one in its place, where G16's
+  installer names a running program; so on Windows the installer first
+  opens the file to write, which a running program's refuses, and names
+  it as before. Everywhere the document is marked saved only once the
+  helper has returned, which is after it is in place. Left as they were,
+  being nobody's document: the picture `--picture` draws of the window,
+  and what the tests write for themselves.
+  **Word's own behaviour, and so not a gap:** another name for the old
+  file, a hard link, keeps the old bytes, since a save makes a new file
+  rather than rewriting the old; a file another program holds open
+  without sharing its deletion is refused (on Linux the rename goes
+  through and that program goes on reading the old one); and a folder
+  where a person may change a file but not make one refuses the save,
+  since the new file has to be made beside the old.
   *Proven by:* a file replaced holding exactly the new bytes with nothing
   beside it, and one made where there was none; a write failing halfway,
   its temporary file seen beside the target meanwhile, leaving the old
   bytes, no temporary file and the error; two saves of one name at once,
   each with a file of its own; a name of 250 bytes still finding room for
-  its temporary file; a read-only file refused and untouched; the mode
-  kept; a link followed and left a link; Save over a file already there in
-  six kinds — `.docx`, `.doc`, `.rtf`, `.odt`, `.htm`, `.mht` — marked
-  saved, with a second name for each old file, in another folder, still
-  holding the old bytes, which only a rename leaves, and nothing else in
-  the folder; and a save refused, over a folder of the document's name,
-  leaving the work marked unsaved and no temporary file.
-  *Not done, and named here:* a rename puts a new file in the old one's
-  place, and what belonged to the old file rather than to its bytes does
-  not come with it. Another name for it, a hard link, keeps the old bytes,
-  as the test shows. On Linux the owner and group become the saver's and
-  extended attributes are lost; only the mode is copied. On Windows the
-  access list, the hidden and system attributes, the creation time and
-  the alternate streams, the mark of the web among them, are the new
-  file's own; `ReplaceFileW` keeps those, and would need the shell's
-  Windows calls. None of the Windows side has been run, only built: the
-  build image is Linux. On Windows a file another program holds open is
-  refused unless that program shares its deletion, where writing into it
-  needed only shared writing; on Linux the rename goes through and that
-  program goes on reading the old one. A folder where a person may change
-  a file but not make one now refuses the save that writing in place let
-  through. A temporary file left by a crash stays beside the document
-  until somebody deletes it: nothing sweeps them up, since one may be
-  another copy of the program's save in progress. The message on failure
-  still says only "Cannot write", which is now the whole truth, but not
-  that the file on disk is unchanged.
-  Written in place still, not being documents: the settings file and the
-  custom dictionary, both silent on failure and the next to go this way;
-  and outside the window, `wp-cli`'s converted output, a macro's `Close`
-  of a file it wrote, and the desktop's `mimeapps.list` and recent list,
-  which `wp-shell` rewrites.
+  its temporary file; a path of over 300 characters replaced; a read-only
+  file refused and untouched; the mode kept, and changed by a writer
+  after; the owner and group kept, the tests running as the
+  administrator; an extended attribute kept; a link followed and left a
+  link; a leftover whose process is gone and that lay untouched for an
+  hour swept, and one of a dead process written just now, one of a
+  running process untouched as long, one of another document's and one
+  not of the shape left, and nothing swept with no document in place; a
+  name of each shape told from the others; Save over a file already
+  there in six kinds — `.docx`, `.doc`, `.rtf`, `.odt`, `.htm`, `.mht` —
+  marked saved, with a second name for each old file, in another folder,
+  still holding the old bytes, which only a rename leaves, and nothing
+  else in the folder; a save refused, over a folder of the document's
+  name, leaving the work marked unsaved, no temporary file and the
+  message saying the file on disk is unchanged; and the installer's file
+  written whole and runnable. On Windows, the tests built in the image
+  and run on Windows itself: a hidden and system file keeping both
+  attributes and its creation time; a `Zone.Identifier` stream still
+  there after; a file held open without its deletion shared refused,
+  with the old bytes and nothing beside it; a long path written out in
+  full; this process running and a number no process has not; every test
+  above that is not Linux's own; and a running program named by the
+  installer and left as it was, then replaced once it has stopped.
 - [x] **H17. What the clipboard carries within the program.** Copying a
   picture and pasting it reports success and pastes nothing, because the
   run writer skips `Picture`, `Chart`, `Ink`, `Diagram`, `Group` and

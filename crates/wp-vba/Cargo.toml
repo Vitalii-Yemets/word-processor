@@ -9,6 +9,8 @@ license.workspace = true
 [dependencies]
 wp-ole = { path = "../wp-ole" }
 wp-text = { path = "../wp-text" }
+# A file a macro wrote, put in place whole when the macro closes it.
+wp-files = { path = "../wp-files" }
 
 [lints]
 workspace = true

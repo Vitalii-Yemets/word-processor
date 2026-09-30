@@ -459,8 +459,8 @@ impl Editor {
         let bytes = wp_pdf::write(&pages, self.library, &name);
         // A PDF saved over another is one a person may already have sent
         // somewhere and be keeping: replaced whole or not at all. See
-        // [`super::replacing`].
-        match super::replacing::replace_with(&path, &bytes) {
+        // [`wp_files`].
+        match wp_files::replace_with(&path, &bytes) {
             Ok(()) => {
                 self.status = crate::messages::with(
                     "Saved {0} pages to {1}",
@@ -469,10 +469,7 @@ impl Editor {
                 true
             }
             Err(error) => {
-                wp_shell::dialog::show_error(&crate::messages::with(
-                    "Cannot write {0}: {1}",
-                    &[&path.display().to_string(), &error.to_string()],
-                ));
+                wp_shell::dialog::show_error(&super::files::not_saved(&path, &error));
                 self.status = String::from("Not saved");
                 false
             }

@@ -136,12 +136,17 @@ impl Settings {
     ///
     /// Failure is silent on purpose: a program that cannot write its
     /// preferences should still let a person write their document.
+    ///
+    /// Written beside the old file and put in its place, as a document is:
+    /// a program killed halfway through writing the file in place would
+    /// leave half of it, and the half not written — the recent documents,
+    /// the macros — would be gone at the next start without a word.
     pub fn save(&self) {
         let Some(path) = Self::path() else { return };
         if let Some(folder) = path.parent() {
             let _ = std::fs::create_dir_all(folder);
         }
-        let _ = std::fs::write(path, self.to_text());
+        let _ = wp_files::replace_with(&path, self.to_text().as_bytes());
     }
 
     /// Where the file lives on this machine.

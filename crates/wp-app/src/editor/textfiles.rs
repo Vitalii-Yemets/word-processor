@@ -330,9 +330,9 @@ impl Editor {
         let (bytes, lost) = encoding.encode(&text, dialog.ticked(SAVE_SUBSTITUTE));
 
         // Beside the file and renamed over it, so a failure leaves the file
-        // that was there: see [`super::replacing`].
-        if let Err(error) = super::replacing::replace_with(&file.path, &bytes) {
-            let message = format!("Cannot write {}: {error}", file.path.display());
+        // that was there: see [`wp_files`].
+        if let Err(error) = wp_files::replace_with(&file.path, &bytes) {
+            let message = super::files::not_saved(&file.path, &error);
             wp_shell::dialog::show_error(&message);
             self.status = message;
             return self.after_file_command();

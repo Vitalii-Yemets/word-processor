@@ -193,8 +193,12 @@ fn read(path: &str) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|error| format!("cannot read {path}: {error}"))
 }
 
+/// Writes a file whole or not at all: beside the one it replaces and then in
+/// its place, so that a conversion that fails halfway leaves what was there
+/// rather than the first part of something. See [`wp_files`].
 fn write(path: &str, bytes: &[u8]) -> Result<(), String> {
-    std::fs::write(path, bytes).map_err(|error| format!("cannot write {path}: {error}"))
+    wp_files::replace_with(Path::new(path), bytes)
+        .map_err(|error| format!("cannot write {path}: {error}"))
 }
 
 fn open(path: &str) -> Result<Document, String> {
@@ -470,7 +474,7 @@ fn convert(input: &str, output: &str, filtered: bool) -> Result<(), String> {
                 if let Some(parent) = target.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                std::fs::write(&target, &picture.bytes)
+                wp_files::replace_with(&target, &picture.bytes)
                     .map_err(|error| format!("cannot write {}: {error}", target.display()))?;
             }
             page.html.into_bytes()
@@ -1124,7 +1128,7 @@ fn sign(path: &str, out: &str, certificate: &str, key: &str, why: &str) -> Resul
         line: String::new(),
     };
     let bytes = document.save_signed(&signer).map_err(|error| error.to_string())?;
-    std::fs::write(out, bytes).map_err(|error| format!("cannot write {out}: {error}"))?;
+    write(out, &bytes)?;
     println!("wrote {out}");
     Ok(())
 }

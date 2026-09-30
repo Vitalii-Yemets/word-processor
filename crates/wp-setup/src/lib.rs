@@ -205,26 +205,46 @@ fn recorded(folder: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Writes a file whole or not at all: to a name beside it first, then over
-/// it. A program half written is worse than the old one left in place.
+/// Writes a file whole or not at all: to a name beside it first, made to
+/// reach the disk, then into its place, and on any failure nothing left
+/// beside it (see [`wp_files`]). A program half written is worse than the
+/// old one left in place.
 fn write_whole(path: &Path, data: &[u8], runnable: bool) -> Result<(), Failure> {
-    let mut beside = path.as_os_str().to_owned();
-    beside.push(".new");
-    let beside = PathBuf::from(beside);
-    std::fs::write(&beside, data).map_err(|error| failed(&beside, error))?;
-    #[cfg(unix)]
-    if runnable {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&beside, std::fs::Permissions::from_mode(0o755))
-            .map_err(|error| failed(&beside, error))?;
+    // A running program's file is one Windows will let be moved aside but
+    // not written, and its way of putting one file in another's place moves
+    // the old one aside: the program would be replaced under itself and go
+    // on running from a file of the temporary shape beside the new one,
+    // where nothing would say it was running. Opening it to write, which
+    // writes nothing, is what finds it, so that it is named instead. Linux
+    // replaces a running program's file as it replaces any other, and the
+    // program goes on running from the old one, which is not in the way.
+    #[cfg(windows)]
+    if let Err(error) = std::fs::OpenOptions::new().write(true).open(path) {
+        if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) {
+            return Err(Failure::InUse(path.to_owned()));
+        }
     }
-    #[cfg(not(unix))]
-    let _ = runnable;
-    std::fs::rename(&beside, path).map_err(|error| {
-        let _ = std::fs::remove_file(&beside);
-        failed(path, error)
+    wp_files::write_replacing(path, |file| {
+        use std::io::Write;
+        file.write_all(data)?;
+        // Runnable whatever the file it replaces was: the old one's mode is
+        // the new one's before this, and this has the last word.
+        #[cfg(unix)]
+        if runnable {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(std::fs::Permissions::from_mode(0o755))?;
+        }
+        #[cfg(not(unix))]
+        let _ = runnable;
+        Ok(())
     })
+    .map_err(|error| failed(path, error))
 }
+
+/// What Windows says of a file another program has open in a way that
+/// leaves no room for this one, a running program's own file among them.
+#[cfg(windows)]
+const ERROR_SHARING_VIOLATION: i32 = 32;
 
 /// Installs what the installer carries into the folder and tells the
 /// desktop. Returns what was installed and whether the desktop took all of
@@ -354,5 +374,75 @@ mod tests {
         if let Ok(installer) = installer {
             assert!(matches!(carried(&installer), Err(Failure::Damaged(_))));
         }
+    }
+
+    /// What a folder holds, by name, in order.
+    fn names_in(folder: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(folder)
+            .expect("the folder")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_file_is_written_whole_runnable_and_with_nothing_left_beside_it() {
+        let folder = std::env::temp_dir().join(format!("wp-setup-{}-whole", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).expect("a folder");
+        let program = folder.join(program_file());
+        std::fs::write(&program, b"the old program").expect("the old one");
+        write_whole(&program, b"the new program", true).expect("installed");
+        assert_eq!(std::fs::read(&program).expect("read back"), b"the new program");
+        assert_eq!(names_in(&folder), [program_file()], "something was left beside it");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&program).expect("its mode").permissions().mode();
+            assert_eq!(mode & 0o777, 0o755, "not runnable");
+        }
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_running_program_is_named_and_not_replaced_under_itself() {
+        let folder = std::env::temp_dir().join(format!("wp-setup-{}-running", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).expect("a folder");
+        // A program that waits, copied in as the installed one: the system's
+        // own `ping`, which every Windows has, told to take half a minute.
+        let windows = std::env::var_os("SystemRoot").map(PathBuf::from).expect("Windows' folder");
+        let program = folder.join(program_file());
+        std::fs::copy(windows.join("System32").join("PING.EXE"), &program).expect("a program");
+        let old = std::fs::read(&program).expect("the old program");
+        let mut running = std::process::Command::new(&program)
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("the program running");
+
+        let found = write_whole(&program, b"the new program", true);
+        let _ = running.kill();
+        let _ = running.wait();
+        assert!(matches!(found, Err(Failure::InUse(_))), "{found:?}");
+        assert_eq!(std::fs::read(&program).expect("read back"), old, "replaced under itself");
+        assert_eq!(names_in(&folder), [program_file()], "something was left beside it");
+
+        // Once it has stopped it is replaced; the system lets go of a
+        // program's file a moment after the program has gone.
+        let mut installed = write_whole(&program, b"the new program", true);
+        for _ in 0..50 {
+            if installed.is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            installed = write_whole(&program, b"the new program", true);
+        }
+        installed.expect("replaced once stopped");
+        assert_eq!(std::fs::read(&program).expect("read back"), b"the new program");
+        let _ = std::fs::remove_dir_all(folder);
     }
 }
