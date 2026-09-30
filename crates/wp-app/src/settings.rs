@@ -141,12 +141,56 @@ impl Settings {
     /// a program killed halfway through writing the file in place would
     /// leave half of it, and the half not written — the recent documents,
     /// the macros — would be gone at the next start without a word.
-    pub fn save(&self) {
-        let Some(path) = Self::path() else { return };
+    ///
+    /// The list of documents opened lately is written as the file has it,
+    /// not as this window does, for the reasons given at `write_back`.
+    pub fn save(&mut self) {
+        self.write_back(|_| true);
+    }
+
+    /// Puts a document at the top of the list of the ones opened lately, as
+    /// [`Self::remember`] does, and the list in the file.
+    pub fn remember_and_save(&mut self, path: &std::path::Path) {
+        self.write_back(|settings| settings.remember(path));
+    }
+
+    /// Writes this window's settings with the file's own list of documents
+    /// opened lately, once `change` has been made to them, and makes that
+    /// list this window's; nothing is written where `change` says nothing
+    /// changed.
+    ///
+    /// The list is the file's because every window changes it: one that
+    /// wrote the list it read when it started would take off it whatever
+    /// another window has put on it since. And the file is read and written
+    /// back under its lock (see [`wp_files::locked`]), because two windows
+    /// that read it at the same moment would each write the other's
+    /// document off it. Where the file cannot be written, the change is
+    /// made to this window's settings alone, as it always was.
+    fn write_back(&mut self, change: impl Fn(&mut Self) -> bool) {
+        let Some(path) = Self::path() else {
+            change(self);
+            return;
+        };
         if let Some(folder) = path.parent() {
             let _ = std::fs::create_dir_all(folder);
         }
-        let _ = wp_files::replace_with(&path, self.to_text().as_bytes());
+        let written = wp_files::locked(&path, || {
+            let mut settings = self.clone();
+            // With no file yet there is no list but this window's.
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                settings.recent = Self::parse(&text).recent;
+            }
+            if change(&mut settings) {
+                wp_files::replace_with(&path, settings.to_text().as_bytes())?;
+            }
+            Ok(settings.recent)
+        });
+        match written {
+            Ok(recent) => self.recent = recent,
+            Err(_) => {
+                change(self);
+            }
+        }
     }
 
     /// Where the file lives on this machine.

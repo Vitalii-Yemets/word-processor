@@ -1,5 +1,5 @@
 //! What Windows is asked: to put a new file in an old one's place, keeping
-//! what belonged to the old one, and whether a process is running.
+//! what belonged to the old one, whether a process is running, and a lock.
 //!
 //! # Why `ReplaceFileW` and not a rename
 //!
@@ -33,11 +33,38 @@
 #![allow(unsafe_code)]
 
 use std::ffi::c_void;
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::io::AsRawHandle;
 use std::path::Path;
 
 type Handle = *mut c_void;
+
+/// Where in a file a lock begins, for `LockFileEx` and `UnlockFileEx`: the
+/// system's `OVERLAPPED`. For a file not opened for overlapped work only the
+/// offset is read, and the call returns once it is done.
+#[repr(C)]
+struct Overlapped {
+    internal: usize,
+    internal_high: usize,
+    offset: u32,
+    offset_high: u32,
+    event: Handle,
+}
+
+impl Overlapped {
+    /// The start of the file.
+    fn at_start() -> Self {
+        Self {
+            internal: 0,
+            internal_high: 0,
+            offset: 0,
+            offset_high: 0,
+            event: core::ptr::null_mut(),
+        }
+    }
+}
 
 #[link(name = "kernel32")]
 extern "system" {
@@ -52,7 +79,25 @@ extern "system" {
     fn OpenProcess(access: u32, inherit: i32, process: u32) -> Handle;
     fn GetExitCodeProcess(process: Handle, code: *mut u32) -> i32;
     fn CloseHandle(handle: Handle) -> i32;
+    fn LockFileEx(
+        file: Handle,
+        flags: u32,
+        reserved: u32,
+        length_low: u32,
+        length_high: u32,
+        overlapped: *mut Overlapped,
+    ) -> i32;
+    fn UnlockFileEx(
+        file: Handle,
+        reserved: u32,
+        length_low: u32,
+        length_high: u32,
+        overlapped: *mut Overlapped,
+    ) -> i32;
 }
+
+/// `LockFileEx` asked for a lock nobody else may share.
+const LOCKFILE_EXCLUSIVE_LOCK: u32 = 0x2;
 
 /// Whatever of the old file's attributes and access list cannot be merged
 /// into the new one, the new one goes in regardless: without the right to
@@ -198,6 +243,48 @@ pub(crate) fn running(process: u32) -> bool {
     asked == 0 || code == STILL_ACTIVE
 }
 
+/// A lock held, by way of its file, open; let go of when dropped.
+#[derive(Debug)]
+pub(crate) struct Held {
+    file: File,
+}
+
+/// Takes the lock whose file is at `path`, waiting while anybody else has
+/// it.
+///
+/// `LockFileEx` on the whole of the file, which is the lock the standard
+/// library's own is made of, in a version newer than this workspace says it
+/// needs. A lock belongs to the handle it was taken through, and the file is
+/// opened anew for every lock, so each waits for every other, in this
+/// process or in another. The file stays where it is when the lock is let go
+/// of: nothing else on Windows asks for a lock of that name, and a file
+/// another process has open is not simply taken away under it.
+pub(crate) fn hold(path: &Path) -> io::Result<Held> {
+    // Nothing is written in it, and nothing emptied.
+    let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path)?;
+    let mut start = Overlapped::at_start();
+    // SAFETY: the handle is the open file's, not opened for overlapped work,
+    // so the call returns once the lock is given and `start` outlives it.
+    let given = unsafe {
+        LockFileEx(file.as_raw_handle(), LOCKFILE_EXCLUSIVE_LOCK, 0, u32::MAX, u32::MAX, &mut start)
+    };
+    if given == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(Held { file })
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        // Closing the handle would let go of it too, but only when the
+        // system gets round to it, the documentation says; it asks for the
+        // lock to be let go of first.
+        let mut start = Overlapped::at_start();
+        // SAFETY: as when the lock was taken, over the same bytes.
+        unsafe { UnlockFileEx(self.file.as_raw_handle(), 0, u32::MAX, u32::MAX, &mut start) };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +293,50 @@ mod tests {
     fn this_process_is_running_and_one_no_process_has_is_not() {
         assert!(running(std::process::id()));
         assert!(!running(4_000_000_000));
+    }
+
+    #[test]
+    fn a_lock_is_kept_from_another_opening_in_the_same_thread() {
+        // A lock not waited for, which says at once whether it was given.
+        const LOCKFILE_FAIL_IMMEDIATELY: u32 = 0x1;
+        const ERROR_LOCK_VIOLATION: i32 = 33;
+        let path = std::env::temp_dir().join(format!("wp-files-{}-held.lock", std::process::id()));
+        let held = hold(&path).expect("held");
+
+        // The same file opened again, by the same thread and process.
+        let again = OpenOptions::new().read(true).write(true).open(&path).expect("opened again");
+        let mut start = Overlapped::at_start();
+        // SAFETY: as in `hold`.
+        let given = unsafe {
+            LockFileEx(
+                again.as_raw_handle(),
+                LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                0,
+                u32::MAX,
+                u32::MAX,
+                &mut start,
+            )
+        };
+        let error = io::Error::last_os_error();
+        assert_eq!((given, error.raw_os_error()), (0, Some(ERROR_LOCK_VIOLATION)));
+
+        // Let go of, it is given to the other.
+        drop(held);
+        let mut start = Overlapped::at_start();
+        // SAFETY: as in `hold`.
+        let given = unsafe {
+            LockFileEx(
+                again.as_raw_handle(),
+                LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                0,
+                u32::MAX,
+                u32::MAX,
+                &mut start,
+            )
+        };
+        assert_ne!(given, 0, "{}", io::Error::last_os_error());
+        drop(again);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

@@ -2378,6 +2378,25 @@ work is in *The order of the work* at the end.
   Style Inspector ignores the measurement unit; and the dialog's own
   heading promises a dimmed document that is not dimmed. Review U09. Word's
   own answer to the first — light dialogs in every theme — is **C76**'s.
+  And the case the person meant by "a form loses its style", shown on
+  2026-09-30: four questions are still the system's message box —
+  `wp_shell::dialog::ask_to_save` on closing with changes, and
+  `ask_yes_no` for saving in a kind that loses the macros (twice) and in
+  recovery — a light box with the system's icon and buttons in the
+  system's language ("Да / Нет / Отмена" under an English interface). Word
+  asks with a dialog of its own: "Want to save your changes to Document?",
+  Save / Don't Save / Cancel. Each becomes this program's dialog, as the
+  question about signatures is, with Word's words in the three catalogues,
+  and closing waits for the answer rather than blocking in the shell.
+  Worse, while that box is up the **main window loses its own frame**: the
+  program's dark title bar goes, the system's basic caption and border
+  appear above the tab strip, and the horizontal scroll bar turns light.
+  The window draws its frame itself (`WM_NCCALCSIZE`, `WM_NCACTIVATE` with
+  `-1`, the DWM caption colours); something in the modal loop the box runs
+  inside the close handler makes the frame the system's. To be
+  reproduced on this Windows with the built `.exe` and screenshots, the
+  cause found, and both pictures — before and after — kept beside the
+  entry's proof.
 - [ ] **C54. The keys Word has.** Ctrl+= zooms in; in Word it is subscript,
   and Ctrl+Shift+= superscript. Missing altogether: Ctrl+G and F5 (Go To,
   which **C59** builds), F4 (repeat), F8 (extend selection), Shift+F3
@@ -7936,12 +7955,94 @@ work is in *The order of the work* at the end.
   the way **H19**'s did: named steps, real conditions, a bound. And a Screen
   Clipping that fails for want of a portal says "No picture was taken", the
   words of a cancel; `screen::clip` should tell the two apart and the
-  status say which it was. And the desktop's recent list
-  (`recently-used.xbel`) is read, changed and written back with no lock,
-  so two saves at once — two windows, or two tests — lose one entry; GTK
-  takes a lock on that file, and so should this. Seen once as
-  `a_document_saved_is_a_document_the_desktop_has_heard_of` failing in a
-  full run and passing alone.
+  status say which it was.
+- [x] **H21. The recent list under a lock.** The desktop's recent list
+  (`recently-used.xbel`, `wp-shell/src/linux/files.rs`) and the program's
+  own list of recent documents are each read, changed and written back
+  with no lock, so two saves at once — two windows, or two tests in one
+  run — lose one entry. GTK takes an advisory lock on that file
+  (`flock`, `~/.local/share/recently-used.xbel.lock` beside it) and so
+  should this, on both lists, on both platforms (a lock file, or
+  `LockFileEx` on Windows). Seen twice in three full runs as
+  `a_document_saved_is_a_document_the_desktop_has_heard_of` failing and
+  passing alone; the test then holds under load. Split off **H20** to be
+  done first, since it reddens every full run.
+- [ ] **H22. Settings shared between windows.** Found while **H21** was
+  done: each window writes the whole settings file from the copy it read
+  at its start, so a setting or a macro one window saved is lost the next
+  time another window saves anything. **H21** mended the recent list by
+  reading the file under its lock and putting the window's change onto
+  what is there; the rest of the settings go the same way — a save writes
+  what changed in this window onto the file as it stands, under the lock,
+  and a window reads the file again when it comes to the front, so what
+  one window set the others see. Word has one process for all its
+  windows and no such race; here the windows may be one process or
+  several, and the file is the one place they meet.
+  *Done:* both lists are read, changed and written back under a lock of
+  their own, held from before the reading to after the replacing.
+  **The lock** is written once, `wp_files::locked(path, change)`, beside
+  `replace_with` in `crates/wp-files`: the one crate that the shell and
+  the program's settings both write through, and the program's own list
+  is written on Windows too, where the shell's Linux side is not. Its
+  system calls are declared in that crate's `linux.rs` and `windows.rs`,
+  beside its others; the standard library's `File::lock` is the same
+  thing from Rust 1.89, and the workspace says 1.82. The lock is a file
+  beside the list, of its name with `.lock` after it:
+  `recently-used.xbel.lock` and `settings.txt.lock`. On Linux it is
+  `flock(LOCK_EX)`, not `fcntl`'s record locks, which are the process's
+  and let two of its threads in at once; a `flock` belongs to the file as
+  opened, and the file is opened anew for every lock. On Windows
+  `LockFileEx` over the whole file, which belongs to the handle, and
+  `UnlockFileEx` before the handle is closed. Either goes with the
+  process, so a crash while holding it leaves nobody waiting; where it
+  cannot be had, the change is not made.
+  **KDE, not GTK.** GTK takes no lock on the desktop's list: its
+  `gtkrecentmanager.c`, in 3.24 and in 4, reads and writes it with
+  `GBookmarkFile` and nothing round it. KDE's `KRecentDocument` does, a
+  `QLockFile` of that very name, which locks by the file's being there
+  with its holder's process written in it, waits 100 ms for it, and never
+  takes one for stale by its age: a file lying there with no process in
+  it would stop KDE remembering anything, for good. So on Linux the
+  lock's file is taken away while the lock is still held; a lock given on
+  a file taken away meanwhile is let go of and the path opened again; and
+  the process's number and program are written in it where Qt writes its
+  own, so that KDE waits while it is held and takes away one left by a
+  crash, which Qt does only once it has the file's `flock`. On Windows
+  the file stays.
+  **The lists.** The desktop's (`wp-shell`'s `linux/files.rs`) is read,
+  changed and replaced inside `locked`; on Windows that list is the
+  system's, told by `SHAddToRecentDocs`, and needs nothing. The program's
+  own lives in the settings file, which each window wrote whole from what
+  it had read at its start, so a document one window put on the list went
+  off it again at the next save of another's, of a document or of a
+  setting. Now `Settings::save` and the new `remember_and_save` write the
+  window's settings with the list as the file has it at that moment, the
+  document put on top, under the lock, and make that list the window's.
+  `mimeapps.list` too, in `associate_kinds` and `dissociate_kinds`, the
+  desktop entry written or taken away under the same lock so that the
+  two agree; KDE's configuration library locks every file it writes by
+  that kind of name, the list among them, and no other program is known
+  to, so its lock's file is handled as the recent list's is.
+  *Proven by:* two threads associating a hundred kinds each at once, all
+  200 on both halves of `mimeapps.list` (100, 100 and 177 without the
+  lock), then dissociating ten times each at once, nothing of the program
+  left and another program's choice kept. Two threads each putting a
+  hundred lines on one list under the lock, both hundreds there, and on
+  Linux no lock's file left. The same without the lock, a control run not
+  kept: on Linux 101, 100 and 100 of the 200 lines were there in three
+  runs; on Windows 95 of the 200 replacements failed,
+  `ERROR_UNABLE_TO_REMOVE_REPLACED` and
+  `ERROR_UNABLE_TO_MOVE_REPLACEMENT_2` among them, and 35 lines were
+  there. A lock's file left by a crash keeps nobody out, and an error in
+  the change is passed on with the lock let go of. A second opening of a
+  held lock's file, by the same thread, is refused the lock at once —
+  `EWOULDBLOCK`, on Windows `ERROR_LOCK_VIOLATION` — and on Windows given
+  it once the first lets go. `cargo test -p wp-files` in Docker and its
+  Windows binary on this machine, 16 passed each;
+  `cargo test -p wp-files -p wp-shell -p wp-app` green; and
+  `a_document_saved_is_a_document_the_desktop_has_heard_of`, unchanged,
+  in three full runs of `cargo test -p wp-app --bin word-processor` in a
+  row, 1293 passed and 1 ignored each time.
 
 ## I — The language of the interface
 
@@ -10977,16 +11078,17 @@ person who knows Word notices first:
 1. *Crashes and lost data:* **C51**, **H16**, **C48**, **H17**, **H19**,
    **C49**, **C50**, **J34**.
 2. *Word as the judge:* **K4**.
-3. *Files Word opens without a word:* **G19**, **G20**, **G21**, **G22** —
-   each checked with **K4**.
-4. *The interface, the small things that matter:* **C52**, **C53**, **C54**,
+3. *Files Word opens without a word:* **H21** first, since it reddens the
+   runs, then **C53** out of turn, since the person pointed at it, then
+   **G20**, **G21**, **G22** — each of the G's checked with **K4**.
+4. *The interface, the small things that matter:* **C52**, **C54**,
    **C55**, **C56**, **C57**, **C58**, **C59**, **C60**.
 5. *Tables:* **C61**, **C62**, **B8**, **C63**, **C64**, **C65**, **C66**,
    **C67**, **C68**, **C69**, **C70**, **C71**.
 6. *The interface, the large things:* **C72**, **C73**, **C74**, **C75**,
    **C76**, **C77**, **J35**, **J36**.
 7. *Hostile files, and the system's corners:* **G17**, **G18**, **H18**,
-   **H20**.
+   **H20**, **H22**.
 8. *Layout and speed:* **E19**, **E20**, **E21**, **B7**.
 9. *The tails:* the 176 *Not done* paragraphs of the closed items, read
    through one by one, the ones the items above do not already cover

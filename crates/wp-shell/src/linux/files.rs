@@ -151,17 +151,25 @@ fn escape(text: &str) -> String {
 /// that grows without one is a file that is read more slowly every day.
 const RECENT_LIMIT: usize = 100;
 
+/// Puts a document at the top of the desktop's list.
+///
+/// Read, changed and written back under the list's lock (see
+/// [`wp_files::locked`]): every program on the desktop changes the list, two
+/// windows of this one among them, and one that reads it while another is
+/// changing it writes the other's document off it again.
 pub(crate) fn remember_document(path: &Path, media_type: &str) {
     let Some(data) = data_home() else { return };
     let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let file = data.join("recently-used.xbel");
     let _ = std::fs::create_dir_all(&data);
-    let existing = std::fs::read_to_string(&file).unwrap_or_default();
     let uri = file_uri(&path);
     let now = stamp(SystemTime::now());
     let bookmark = one_bookmark(&uri, media_type, &now);
-    let written = with_bookmark(&existing, &uri, &bookmark);
-    let _ = wp_files::replace_with(&file, written.as_bytes());
+    let _ = wp_files::locked(&file, || {
+        let existing = std::fs::read_to_string(&file).unwrap_or_default();
+        let written = with_bookmark(&existing, &uri, &bookmark);
+        wp_files::replace_with(&file, written.as_bytes())
+    });
 }
 
 /// One bookmark, as this program writes them.
@@ -277,25 +285,46 @@ fn desktop_entry(program: &Path, program_name: &str, kinds: &[Kind]) -> String {
 
 pub(crate) fn associate_kinds(kinds: &[Kind], program_name: &str, program: &Path) -> bool {
     let (Some(data), Some(config)) = (data_home(), config_home()) else { return false };
+    associate_in(&data, &config, kinds, program_name, program)
+}
+
+/// [`associate_kinds`], with the desktop's two directories given.
+///
+/// The desktop entry and `mimeapps.list` are written together under the
+/// list's lock (see [`wp_files::locked`]). The list, because it is read,
+/// changed and written back, by other programs as well as by this one, and
+/// two changes at once would each write the other's away. The entry with
+/// it, so that taking the program off at the same moment cannot leave the
+/// list naming an entry that is gone. The lock's name is the one KDE's
+/// configuration library locks every file it writes by, `mimeapps.list`
+/// among them when a default program is chosen there; no other program is
+/// known to lock it. Its file is taken away with the lock, as the recent
+/// list's is.
+fn associate_in(
+    data: &Path,
+    config: &Path,
+    kinds: &[Kind],
+    program_name: &str,
+    program: &Path,
+) -> bool {
     let applications = data.join("applications");
-    if std::fs::create_dir_all(&applications).is_err() {
+    if std::fs::create_dir_all(&applications).is_err() || std::fs::create_dir_all(config).is_err() {
         return false;
     }
     let entry = desktop_entry(program, program_name, kinds);
-    if wp_files::replace_with(&applications.join(ENTRY), entry.as_bytes()).is_err() {
-        return false;
-    }
-
     // Which entry opens what. Both lists: one says this program can open the
     // kind, the other that it is the one to use.
     let file = config.join("mimeapps.list");
-    let existing = std::fs::read_to_string(&file).unwrap_or_default();
     let types: Vec<&str> = kinds.iter().map(|kind| kind.media_type).collect();
     let claimed: Vec<&str> =
         kinds.iter().filter(|kind| kind.becomes_default).map(|kind| kind.media_type).collect();
-    let written = with_associations(&existing, &types, &claimed);
-    let _ = std::fs::create_dir_all(&config);
-    if wp_files::replace_with(&file, written.as_bytes()).is_err() {
+    let written = wp_files::locked(&file, || {
+        wp_files::replace_with(&applications.join(ENTRY), entry.as_bytes())?;
+        let existing = std::fs::read_to_string(&file).unwrap_or_default();
+        let written = with_associations(&existing, &types, &claimed);
+        wp_files::replace_with(&file, written.as_bytes())
+    });
+    if written.is_err() {
         return false;
     }
     rebuild_index(&applications);
@@ -308,18 +337,31 @@ pub(crate) fn associate_kinds(kinds: &[Kind], program_name: &str, program: &Path
 /// took it going back to that one.
 pub(crate) fn dissociate_kinds() -> bool {
     let (Some(data), Some(config)) = (data_home(), config_home()) else { return false };
+    dissociate_in(&data, &config)
+}
+
+/// [`dissociate_kinds`], with the desktop's two directories given; under
+/// the same lock as [`associate_in`], for the same reasons.
+fn dissociate_in(data: &Path, config: &Path) -> bool {
     let applications = data.join("applications");
     let entry = applications.join(ENTRY);
-    let mut all = match std::fs::remove_file(&entry) {
-        Ok(()) => true,
-        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
-    };
     let file = config.join("mimeapps.list");
-    if let Ok(existing) = std::fs::read_to_string(&file) {
-        all &= wp_files::replace_with(&file, without_associations(&existing).as_bytes()).is_ok();
-    }
+    // The lock's file is made beside the list, so the folder has to be
+    // there whether the list is or not.
+    let _ = std::fs::create_dir_all(config);
+    let all = wp_files::locked(&file, || {
+        let mut all = match std::fs::remove_file(&entry) {
+            Ok(()) => true,
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        };
+        if let Ok(existing) = std::fs::read_to_string(&file) {
+            all &=
+                wp_files::replace_with(&file, without_associations(&existing).as_bytes()).is_ok();
+        }
+        Ok(all)
+    });
     rebuild_index(&applications);
-    all
+    all.unwrap_or(false)
 }
 
 /// The desktop keeps an index of which entry takes which kind. Where the
@@ -647,6 +689,71 @@ mod tests {
             &["application/msword"],
         );
         assert_eq!(again.matches("word-processor.desktop").count(), 3, "{again}");
+    }
+
+    #[test]
+    fn associating_and_dissociating_at_once_lose_nothing() {
+        let home =
+            std::env::temp_dir().join(format!("wp-shell-{}-associations", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let (data, config) = (home.join("data"), home.join("config"));
+        std::fs::create_dir_all(&config).expect("somewhere to write");
+        let list = config.join("mimeapps.list");
+        std::fs::write(&list, "[Default Applications]\nimage/png=viewer.desktop;\n")
+            .expect("what another program chose");
+        let (data, config, program) = (&data, &config, Path::new("/usr/bin/word-processor"));
+        // A hundred kinds for each of two threads, each told on its own.
+        let kinds = |who: &str| -> Vec<Kind> {
+            (0..100)
+                .map(|n| Kind {
+                    extension: ".x",
+                    description: "A kind",
+                    media_type: Box::leak(format!("application/x-{who}-{n}").into_boxed_str()),
+                    becomes_default: true,
+                    is_template: false,
+                    in_new_menu: false,
+                })
+                .collect()
+        };
+        let (one, other) = (kinds("one"), kinds("other"));
+        let named = |text: &str, kind: &Kind| text.contains(&format!("{}=", kind.media_type));
+
+        // Two windows telling the desktop at once, each its own kinds: every
+        // one of them ends up on both halves of the list.
+        std::thread::scope(|scope| {
+            for kinds in [&one, &other] {
+                scope.spawn(move || {
+                    for kind in kinds {
+                        let kind = std::slice::from_ref(kind);
+                        assert!(associate_in(data, config, kind, "Word Processor", program));
+                    }
+                });
+            }
+        });
+        let text = std::fs::read_to_string(&list).expect("the list");
+        let (defaults, added) = text.split_once("[Added Associations]").expect("both halves");
+        for kind in one.iter().chain(&other) {
+            let kept = named(defaults, kind) && named(added, kind);
+            assert!(kept, "{} was lost: {text}", kind.media_type);
+        }
+        assert!(text.contains("image/png=viewer.desktop;"), "{text}");
+
+        // And both taking the program off at once, ten times each: nothing of
+        // it is left, and the other program's choice is as it was.
+        std::thread::scope(|scope| {
+            for _ in 0..2 {
+                scope.spawn(|| {
+                    for _ in 0..10 {
+                        assert!(dissociate_in(data, config), "taken off");
+                    }
+                });
+            }
+        });
+        let text = std::fs::read_to_string(&list).expect("the list");
+        assert!(!text.contains(ENTRY), "{text}");
+        assert!(text.contains("image/png=viewer.desktop;"), "{text}");
+        assert!(!data.join("applications").join(ENTRY).exists(), "the entry is still there");
+        let _ = std::fs::remove_dir_all(home);
     }
 
     #[test]

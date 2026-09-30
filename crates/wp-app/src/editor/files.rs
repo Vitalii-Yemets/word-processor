@@ -463,9 +463,7 @@ impl Editor {
     /// which is why saving one under a new name puts the new name on the list
     /// and not the old one.
     pub(super) fn remember_recent(&mut self, path: &Path) {
-        if self.settings.remember(path) {
-            self.settings.save();
-        }
+        self.settings.remember_and_save(path);
         // And the desktop's own list, which is what the taskbar's jump list
         // and a file manager's Recent place show. A document opened here and
         // nowhere else is a document the rest of the machine has never heard

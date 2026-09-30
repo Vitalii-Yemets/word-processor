@@ -63,6 +63,17 @@
 //! the one failure of Windows' replacing that could not put the old file
 //! back leaves it under a name of this shape, and a file that may be the
 //! only copy of the document is not swept up as rubbish.
+//!
+//! # A file somebody else changes too
+//!
+//! A list kept in a file — the desktop's documents opened lately, the
+//! program's own — is read, changed and written back, and two that change
+//! it at once, two windows or two programs, have each read it before the
+//! other wrote: the one that writes last writes the other's change away.
+//! Replacing the file whole does nothing for that; it only makes each of
+//! them write a whole file. So the change is made under a lock that goes
+//! with the file ([`locked`]), held from before the reading to after the
+//! replacing, and whoever asks for the same lock waits for it.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
@@ -165,6 +176,44 @@ pub fn write_replacing(
     if let Ok(folder) = File::open(&folder) {
         let _ = folder.sync_all();
     }
+    Ok(())
+}
+
+/// What `change` gave, having run while this held the lock that goes with
+/// the file at `path`: whoever else asks for that lock waits until `change`
+/// has read what it reads and replaced what it replaces.
+///
+/// The lock is a file beside that one, of its name with `.lock` after it:
+/// `recently-used.xbel.lock` beside the desktop's list, which is the lock
+/// KDE's programs take on that list. On Linux it is held by `flock`, on
+/// Windows by `LockFileEx`, and either goes with the process that holds
+/// it: a crash while holding it leaves nobody waiting. Elsewhere nothing is
+/// held. The lock is not asked for again inside `change` for the same file,
+/// where it would wait for itself.
+///
+/// # Errors
+/// Where the lock cannot be had, what the system said, and `change` is not
+/// run: a change made without it is how somebody else's is lost. Otherwise
+/// whatever `change` gave.
+pub fn locked<T>(path: &Path, change: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
+    let mut lock = path.as_os_str().to_owned();
+    lock.push(".lock");
+    let _held = hold(Path::new(&lock))?;
+    change()
+}
+
+#[cfg(target_os = "linux")]
+fn hold(lock: &Path) -> io::Result<linux::Held> {
+    linux::hold(lock)
+}
+
+#[cfg(windows)]
+fn hold(lock: &Path) -> io::Result<windows::Held> {
+    windows::hold(lock)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn hold(_lock: &Path) -> io::Result<()> {
     Ok(())
 }
 
@@ -553,6 +602,75 @@ mod tests {
         expected.sort();
         assert_eq!(names_in(&folder), expected);
         assert_eq!(std::fs::read(&target).expect("read back"), b"second");
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    /// A line put at the end of a list, as a recent list has one put on it:
+    /// the list read, changed and written back.
+    fn add_line(list: &Path, line: &str) -> io::Result<()> {
+        let mut text = match std::fs::read_to_string(list) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+            read => read?,
+        };
+        text.push_str(line);
+        text.push('\n');
+        replace_with(list, text.as_bytes())
+    }
+
+    #[test]
+    fn two_writers_under_the_lock_lose_nothing_of_each_others() {
+        // Two windows, or two tests of one run, each putting a hundred
+        // documents on one list at the same time. Threads of one process,
+        // which is the harder case: a lock that belonged to the process
+        // would be given to both at once.
+        let folder = folder("locked");
+        let list = folder.join("recently-used.xbel");
+        let writer = |who: &'static str| {
+            let list = list.clone();
+            std::thread::spawn(move || {
+                for count in 0..100 {
+                    locked(&list, || add_line(&list, &format!("{who} {count}"))).expect("added");
+                }
+            })
+        };
+        let (one, other) = (writer("one"), writer("other"));
+        one.join().expect("the one finished");
+        other.join().expect("the other finished");
+
+        let text = std::fs::read_to_string(&list).expect("the list");
+        for who in ["one", "other"] {
+            let lines = text.lines().filter(|line| line.starts_with(&format!("{who} "))).count();
+            assert_eq!(lines, 100, "{who}'s documents lost: {text}");
+        }
+        assert_eq!(text.lines().count(), 200);
+        // On Linux the lock's file goes with the lock; on Windows it stays.
+        let mut expected = vec![String::from("recently-used.xbel")];
+        if cfg!(windows) {
+            expected.push(String::from("recently-used.xbel.lock"));
+        }
+        assert_eq!(names_in(&folder), expected);
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_lock_left_by_a_crash_keeps_nobody_out() {
+        // The lock's file as a process that died holding it left it: the
+        // lock went with the process, and the file is only a file.
+        let folder = folder("left-lock");
+        let list = folder.join("settings.txt");
+        std::fs::write(folder.join("settings.txt.lock"), format!("{NO_PROCESS}\n\n\n"))
+            .expect("a lock's file left behind");
+        locked(&list, || add_line(&list, "recent.0 = /a.docx")).expect("changed");
+        assert_eq!(std::fs::read_to_string(&list).expect("the list"), "recent.0 = /a.docx\n");
+        // And an error in the change is the change's, the lock let go of.
+        let failed = locked(&list, || -> io::Result<()> { Err(io::Error::other("full")) });
+        assert_eq!(failed.expect_err("passed on").to_string(), "full");
+        locked(&list, || add_line(&list, "recent.1 = /b.docx")).expect("changed again");
+        let lines = std::fs::read_to_string(&list).expect("the list").lines().count();
+        assert_eq!(lines, 2);
+        // Taken away on Linux with the first lock let go of; kept on Windows.
+        let left = names_in(&folder).contains(&String::from("settings.txt.lock"));
+        assert_eq!(left, cfg!(windows));
         let _ = std::fs::remove_dir_all(folder);
     }
 
