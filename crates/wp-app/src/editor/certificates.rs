@@ -287,10 +287,20 @@ impl Editor {
         Some(wp_sign::trust::chain(&signature.certificate, &signature.chain, &roots, &moment))
     }
 
-    /// One line about a signature: whose it is, whether it holds, and what
-    /// this machine thinks of the certificate behind it.
+    /// One line about a signature: whose it is, whether it holds, whether it
+    /// covers the whole document, and what this machine thinks of the
+    /// certificate behind it.
     pub(super) fn said_of(&self, signature: &wp_sign::Signature) -> String {
-        let standing = signature.standing.label();
+        let mut standing = signature.standing.label();
+        // One that holds for part of the document is Word's partial
+        // signature, and saying only that it holds would be saying it holds
+        // for all of it.
+        if signature.standing.is_good() && !signature.covers_whole(self.document.package()) {
+            standing = format!(
+                "{standing}. {}",
+                crate::messages::t("Partial signature: a portion of a file is signed")
+            );
+        }
         let trust = match self.trust_of(signature) {
             Some(trust) => trust.said(),
             None => crate::messages::t("This machine's list of trusted issuers could not be read")

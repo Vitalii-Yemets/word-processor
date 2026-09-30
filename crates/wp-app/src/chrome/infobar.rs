@@ -66,6 +66,10 @@ pub enum Because {
     /// They hold, and at least one is from somebody this machine does not
     /// trust, or cannot say it trusts. Word's word for that is recoverable.
     SignaturesRecoverable,
+    /// They hold, and at least one covers only part of the document: Word's
+    /// partial signature, "a portion of a file is signed". What it covers is
+    /// as it was; what it does not cover, it says nothing about.
+    SignaturesPartial,
     /// At least one does not hold: the document is not what was signed.
     SignaturesInvalid,
 }
@@ -80,6 +84,7 @@ impl Because {
         Self::Signed,
         Self::SignaturesValid,
         Self::SignaturesRecoverable,
+        Self::SignaturesPartial,
         Self::SignaturesInvalid,
     ];
 
@@ -91,9 +96,10 @@ impl Because {
     pub fn label(self) -> Option<&'static str> {
         match self {
             Self::Signed => Some("MARKED AS FINAL"),
-            Self::SignaturesValid | Self::SignaturesRecoverable | Self::SignaturesInvalid => {
-                Some("SIGNATURES")
-            }
+            Self::SignaturesValid
+            | Self::SignaturesRecoverable
+            | Self::SignaturesPartial
+            | Self::SignaturesInvalid => Some("SIGNATURES"),
             Self::ReadOnly | Self::Macros | Self::Recovered => None,
         }
     }
@@ -109,6 +115,9 @@ impl Because {
             // program's own verdict on them as Word's follow its own.
             Self::SignaturesValid => "This document contains valid signatures.",
             Self::SignaturesRecoverable => "This document contains recoverable signatures.",
+            // Word's name for such a signature is a partial signature; the
+            // sentence is said the way Word says the other three.
+            Self::SignaturesPartial => "This document contains partial signatures.",
             Self::SignaturesInvalid => "This document contains invalid signatures.",
             Self::ReadOnly => "This document is open read-only.",
             Self::Macros => {
@@ -127,9 +136,10 @@ impl Because {
             // document with macros in it is being asked to make.
             Self::Macros => Some("Enable Content"),
             Self::Recovered => Some("Save As"),
-            Self::SignaturesValid | Self::SignaturesRecoverable | Self::SignaturesInvalid => {
-                Some("View Signatures...")
-            }
+            Self::SignaturesValid
+            | Self::SignaturesRecoverable
+            | Self::SignaturesPartial
+            | Self::SignaturesInvalid => Some("View Signatures..."),
         }
     }
 }

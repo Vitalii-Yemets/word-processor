@@ -398,7 +398,7 @@ impl Editor {
             // and the line above the button is rewritten to say what came of
             // it — a button that reported nothing would leave the person
             // pressing it twice.
-            // The Trust Centre's two, which change a list and leave the
+            // The Trust Centre's four, which change a list and leave the
             // dialog standing.
             (Some(Asking::Options), super::optionsdialog::TRUST_FOLDER) => {
                 let dialog = self.dialog.clone()?;
@@ -407,6 +407,14 @@ impl Editor {
             (Some(Asking::Options), super::optionsdialog::FORGET_PLACE) => {
                 let dialog = self.dialog.clone()?;
                 Some(self.forget_trusted_place(&dialog))
+            }
+            (Some(Asking::Options), super::optionsdialog::TRUST_PUBLISHER) => {
+                let dialog = self.dialog.clone()?;
+                Some(self.trust_this_publisher(&dialog))
+            }
+            (Some(Asking::Options), super::optionsdialog::FORGET_PUBLISHER) => {
+                let dialog = self.dialog.clone()?;
+                Some(self.forget_trusted_publisher(&dialog))
             }
             (Some(Asking::Options), super::optionsdialog::MAKE_DEFAULT) => {
                 Some(self.make_default_program())

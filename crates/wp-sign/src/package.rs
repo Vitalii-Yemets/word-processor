@@ -29,6 +29,20 @@
 //! transform: take the relationships the signature names, put a `TargetMode`
 //! on any that has none, sort them by identifier, and canonicalise that. What
 //! is signed is what the relationships *say*, not how they were written down.
+//!
+//! # What a reader believes
+//!
+//! A signature file holds more than the signature covers: the value itself,
+//! the certificates beside it, the properties added after it was made. Any of
+//! that can be added to without the arithmetic noticing, so a signature is
+//! taken to say only what it signed — the elements its signed information
+//! names, each of which hashed to what the signed information says it does.
+//! The manifest, the time, the reason and the line are all read from those
+//! and from nowhere else, and an identifier that names two elements is
+//! refused rather than resolved, since which of the two was signed would be a
+//! matter of which one the reader happened to find first.
+
+use std::collections::BTreeMap;
 
 use wp_opc::{Package, Relationships};
 use wp_rsa::{Algorithm, PrivateKey, PublicKey};
@@ -93,19 +107,135 @@ pub struct Signature {
     /// chain: a signature whose middle certificate is only in the file would
     /// otherwise reach nothing.
     pub chain: Vec<wp_asn1::Certificate>,
-    /// When they say they signed.
+    /// When they say they signed, as the signed package object says it.
     pub signed_at: String,
-    /// What they said about why.
+    /// What they said about why, as the signed Office object says it.
     pub reason: String,
-    /// The parts the signature covers, in the order the manifest lists them.
+    /// The parts the signature covers, in the order its manifest lists them.
+    ///
+    /// Only the manifests the signature itself covers are read: a manifest
+    /// anywhere else in the file is one anybody could have put there.
     pub parts: Vec<String>,
+    /// What it covers of each relationship part among `parts`.
+    ///
+    /// A relationship part is signed for the relationships its transform
+    /// names, and a relationship added afterwards with an identifier of its
+    /// own changes nothing that was signed — so whether a relationship is
+    /// covered is a question of its own. See [`Signature::covers_relationship`].
+    pub relationships: BTreeMap<String, Covering>,
     /// The signature line it was made for, or empty where it is about the
-    /// document at large.
+    /// document at large. Read from the signed Office object, like the
+    /// reason.
     pub line: String,
     /// The signatures somebody else made over this one.
     pub counters: Vec<Counter>,
     /// Whether it holds, and what is wrong with it if it does not.
     pub standing: Standing,
+}
+
+/// How much of one relationship part a signature covers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Covering {
+    /// Every relationship in it: the part was signed as it stands, or its
+    /// transform named none and so signed them all.
+    Every,
+    /// Only these, by identifier. Any other relationship in the part is one
+    /// the signature says nothing about.
+    Only(Vec<String>),
+}
+
+impl Signature {
+    /// Whether a part is among those the signature covers.
+    ///
+    /// Compared as the package compares part names, without regard to case:
+    /// the part a reader is handed for a name is the one whose digest was
+    /// checked under it.
+    #[must_use]
+    pub fn covers_part(&self, name: &str) -> bool {
+        let name = name.trim_start_matches('/');
+        self.parts.iter().any(|part| part.eq_ignore_ascii_case(name))
+    }
+
+    /// Whether one relationship of a part is covered: the part that holds
+    /// the relationships of `source` is covered, and this one is among those
+    /// it was signed for. `source` is empty for the package's own.
+    #[must_use]
+    pub fn covers_relationship(&self, source: &str, id: &str) -> bool {
+        let holder = wp_opc::relationships_part_for(source);
+        self.relationships.iter().find(|(name, _)| name.eq_ignore_ascii_case(&holder)).is_some_and(
+            |(_, covering)| match covering {
+                Covering::Every => true,
+                Covering::Only(ids) => ids.iter().any(|one| one == id),
+            },
+        )
+    }
+
+    /// Whether what a part reaches by relationships of one kind is covered:
+    /// every such relationship, and every part it reaches.
+    ///
+    /// The question a reader following those relationships has to ask
+    /// before believing what it finds. A part added beside a signature
+    /// arrives with a relationship to it, and neither was signed; a signature
+    /// that holds says nothing about either. True where there are none,
+    /// since nothing reached is nothing left uncovered.
+    #[must_use]
+    pub fn covers_reached(&self, package: &Package, source: &str, kind: &str) -> bool {
+        let Ok(relationships) = package.relationships(source) else { return false };
+        relationships.all().iter().filter(|one| one.kind == kind).all(|relationship| {
+            self.covers_relationship(source, &relationship.id)
+                && match relationship.resolved_target(source) {
+                    Some(Ok(target)) => self.covers_part(&target),
+                    // Outside the package, or nowhere: not something a
+                    // signature over the package can vouch for.
+                    _ => false,
+                }
+        })
+    }
+
+    /// Whether the signature covers the whole document: every part but the
+    /// signatures themselves, and every relationship but the one that leads
+    /// to them.
+    ///
+    /// Word's partial signature — "a portion of a file is signed" — is one
+    /// that holds for what it covers and does not cover this much. The two
+    /// left out are left out by the format: a signature cannot cover itself,
+    /// and the content types are not a part.
+    #[must_use]
+    pub fn covers_whole(&self, package: &Package) -> bool {
+        package
+            .entries()
+            .iter()
+            .filter(|entry| !entry.is_directory())
+            .map(|entry| entry.name.trim_start_matches('/'))
+            .filter(|name| !name.starts_with("_xmlsignatures/"))
+            .filter(|name| !name.eq_ignore_ascii_case("[Content_Types].xml"))
+            .all(|name| {
+                if !self.covers_part(name) {
+                    return false;
+                }
+                if !is_a_relationship_part(name) {
+                    return true;
+                }
+                let Some(source) = source_of(name) else { return false };
+                let Ok(relationships) = package.relationships(&source) else { return false };
+                relationships
+                    .all()
+                    .iter()
+                    .filter(|relationship| relationship.kind != ORIGIN_RELATIONSHIP)
+                    .all(|relationship| self.covers_relationship(&source, &relationship.id))
+            })
+    }
+}
+
+/// The part whose relationships a relationship part holds: the reverse of
+/// [`wp_opc::relationships_part_for`], and empty for the package's own.
+fn source_of(relationships_part: &str) -> Option<String> {
+    let (directory, file) = match relationships_part.rsplit_once("_rels/") {
+        Some((directory, file)) => (directory, file),
+        None => return None,
+    };
+    let file = file.strip_suffix(".rels")?;
+    Some(format!("{directory}{file}"))
 }
 
 /// Whether a signature holds.
@@ -124,6 +254,15 @@ pub enum Standing {
     Broken,
     /// Written a way this program does not read.
     Unsupported(String),
+    /// More than one element in the signature goes by the same name — an
+    /// identifier used twice, or a second signed information or value — so
+    /// which of them was signed cannot be told. Named.
+    Ambiguous(String),
+    /// Everything it signed holds, and none of it is what the signature is
+    /// about: no manifest among what it signed, so no part of the document,
+    /// or for a countersignature, not the value of the signature it is over.
+    /// A signature over nothing vouches for nothing.
+    CoversNothing,
 }
 
 impl Standing {
@@ -141,6 +280,10 @@ impl Standing {
             Self::Missing(part) => format!("a signed part is gone: {part}"),
             Self::Broken => "not the signature of this certificate".to_owned(),
             Self::Unsupported(what) => format!("cannot be checked: {what}"),
+            Self::Ambiguous(what) => {
+                format!("cannot be checked: more than one thing in it is called {what}")
+            }
+            Self::CoversNothing => "it signs no part of the document".to_owned(),
         }
     }
 }
@@ -157,18 +300,24 @@ pub fn signatures(package: &Package) -> Vec<Signature> {
     out
 }
 
-/// Every `X509Certificate` in a signature, in the order they are written.
-fn collect_certificates(element: &Element, out: &mut Vec<wp_asn1::Certificate>) {
-    for child in element.child_elements() {
-        if child.local_name() == "X509Certificate" {
-            let der = wp_text::base64::decode(child.text_content().trim().as_bytes());
-            if let Some(certificate) = wp_asn1::Certificate::read(&der) {
-                out.push(certificate);
-            }
-        } else {
-            collect_certificates(child, out);
-        }
-    }
+/// The certificates one signature carries in its own key information: the
+/// signer's first, which is where the format puts it, and then the chain.
+///
+/// Its own and nobody else's. A countersignature sits inside the signature
+/// it is about and carries its countersigner's certificate, which is neither
+/// the signer's nor part of the signer's chain.
+fn certificates_in(
+    signature: &Element,
+) -> Option<(wp_asn1::Certificate, Vec<wp_asn1::Certificate>)> {
+    let mut carried =
+        along(signature, &[(DSIG, "KeyInfo"), (DSIG, "X509Data"), (DSIG, "X509Certificate")])
+            .into_iter()
+            .filter_map(|element| {
+                let der = wp_text::base64::decode(element.text_content().trim().as_bytes());
+                wp_asn1::Certificate::read(&der)
+            });
+    let signer = carried.next()?;
+    Some((signer, carried.collect()))
 }
 
 /// The names of the parts holding signatures.
@@ -191,35 +340,50 @@ fn read(package: &Package, part: &str) -> Option<Signature> {
     let root = &tree.root;
 
     let signed_info = child(root, "SignedInfo")?;
-    // Every certificate the signature carries. The first is the signer's -
-    // which is where the format puts it - and the rest are the chain.
-    let mut carried = Vec::new();
-    collect_certificates(root, &mut carried);
-    let mut carried = carried.into_iter();
-    let certificate = carried.next()?;
-    let chain: Vec<wp_asn1::Certificate> = carried.collect();
-    let signed_at = find(root, "Value").map(|value| value.text_content()).unwrap_or_default();
-    let reason =
-        find(root, "SignatureComments").map(|value| value.text_content()).unwrap_or_default();
+    let (certificate, chain) = certificates_in(root)?;
 
-    let mut parts = Vec::new();
-    if let Some(manifest) = find(root, "Manifest") {
-        for reference in manifest.child_elements() {
-            if let Some(name) = part_of(reference.attribute(None, "URI").unwrap_or_default()) {
-                parts.push(name);
-            }
+    // Refused before anything is resolved: with two elements answering to one
+    // name, every answer below would depend on which of them was met first.
+    let ids = match identifiers(root) {
+        Ok(ids) => ids,
+        Err(twice) => {
+            return Some(Signature {
+                part: part.to_owned(),
+                certificate,
+                chain,
+                signed_at: String::new(),
+                reason: String::new(),
+                parts: Vec::new(),
+                relationships: BTreeMap::new(),
+                line: String::new(),
+                counters: Vec::new(),
+                standing: Standing::Ambiguous(twice),
+            })
         }
-    }
+    };
 
+    let covered = signed_elements(root, signed_info, &ids);
+    let manifests = manifests_in(&covered.verified);
+    let mut parts = Vec::new();
+    let mut relationships = BTreeMap::new();
+    for reference in manifests.iter().flat_map(|manifest| children(manifest, "Reference")) {
+        let Some(name) = part_of(reference.attribute(None, "URI").unwrap_or_default()) else {
+            continue;
+        };
+        if is_a_relationship_part(&name) {
+            relationships.insert(name.clone(), covering_of(reference));
+        }
+        parts.push(name);
+    }
+    let signed_at = signed_property(&covered.verified, MDSSI, "SignatureTime", "Value");
+    let reason = signed_property(&covered.verified, OFFICE, "SignatureInfoV1", "SignatureComments");
     // Which line it was made for. Word writes this as the setup identifier of
     // the signature line, and a signature about the document at large leaves
     // it empty — which is what an absent element amounts to as well.
-    let line = find(root, "SetupID").map(|value| value.text_content()).unwrap_or_default();
+    let line = signed_property(&covered.verified, OFFICE, "SignatureInfoV1", "SetupID");
+    let counters = counters_of(root, &ids);
 
-    let mut counters = Vec::new();
-    collect_counters(root, root, &mut counters);
-
-    let standing = check(package, root, signed_info, &certificate);
+    let standing = check(package, root, signed_info, &certificate, &covered, &manifests);
     Some(Signature {
         part: part.to_owned(),
         certificate,
@@ -227,90 +391,306 @@ fn read(package: &Package, part: &str) -> Option<Signature> {
         signed_at,
         reason,
         parts,
+        relationships,
         line,
         counters,
         standing,
     })
 }
 
-/// Every signature made over this one, wherever it sits.
-fn collect_counters(outer: &Element, element: &Element, out: &mut Vec<Counter>) {
-    if element.local_name() == "CounterSignature" {
-        for signature in element.child_elements() {
-            if signature.local_name() != "Signature" {
-                continue;
-            }
-            let mut carried = Vec::new();
-            collect_certificates(signature, &mut carried);
-            let Some(certificate) = carried.into_iter().next() else { continue };
-            let signed_at =
-                find(signature, "SigningTime").map(|at| at.text_content()).unwrap_or_default();
-            let role =
-                find(signature, "ClaimedRole").map(|what| what.text_content()).unwrap_or_default();
-            let standing = check_counter(outer, signature, &certificate);
-            out.push(Counter { certificate, signed_at, role, standing });
+/// What one manifest reference to a relationship part covers of it.
+///
+/// The same reading [`transformed`] makes when it checks the digest, so that
+/// what is said to be covered is what was hashed: the identifiers each
+/// relationship transform names, narrowed by each further one, and every
+/// relationship where no transform names any.
+fn covering_of(reference: &Element) -> Covering {
+    let mut covering = Covering::Every;
+    let Some(transforms) = child(reference, "Transforms") else { return covering };
+    for transform in transforms.child_elements() {
+        if transform.attribute(None, "Algorithm") != Some(RELATIONSHIP_TRANSFORM) {
+            continue;
         }
-        return;
+        let named: Vec<String> = transform
+            .child_elements()
+            .filter(|child| child.local_name() == "RelationshipReference")
+            .filter_map(|child| child.attribute(None, "SourceId"))
+            .map(str::to_owned)
+            .collect();
+        if named.is_empty() {
+            continue;
+        }
+        covering = match covering {
+            Covering::Every => Covering::Only(named),
+            Covering::Only(before) => {
+                Covering::Only(before.into_iter().filter(|id| named.contains(id)).collect())
+            }
+        };
     }
-    for child in element.child_elements() {
-        collect_counters(outer, child, out);
+    covering
+}
+
+/// Every identifier in a signature file and the one element it names, or the
+/// first name that is not one element's.
+///
+/// Two elements with one identifier are two answers to "what does this
+/// reference cover", and a reader that took the first would be taking
+/// whichever one somebody put first. The same goes for a signature with two
+/// signed informations, two values or two sets of keys: the one that is
+/// checked and the one that is believed have to be the same one, and with
+/// two there is no telling that they are.
+fn identifiers(root: &Element) -> Result<BTreeMap<&str, &Element>, String> {
+    for local in ["SignedInfo", "SignatureValue", "KeyInfo"] {
+        if children(root, local).count() > 1 {
+            return Err(local.to_owned());
+        }
+    }
+    let mut out = BTreeMap::new();
+    let mut waiting = vec![root];
+    while let Some(element) = waiting.pop() {
+        if let Some(id) = element.attribute(None, "Id") {
+            if out.insert(id, element).is_some() {
+                return Err(id.to_owned());
+            }
+        }
+        waiting.extend(element.child_elements());
+    }
+    Ok(out)
+}
+
+/// What a signed information covers: the elements it names that hash to what
+/// it says they hash to, and the first thing wrong with the rest.
+///
+/// Everything a signature is taken to say is read from `verified` and from
+/// nothing else in the file.
+struct Covered<'a> {
+    verified: Vec<&'a Element>,
+    fault: Option<Standing>,
+}
+
+fn signed_elements<'a>(
+    root: &'a Element,
+    signed_info: &Element,
+    ids: &BTreeMap<&'a str, &'a Element>,
+) -> Covered<'a> {
+    // Each is canonicalised in what the whole signature declares, which is
+    // the scope it was hashed in when it was written.
+    let scope = c14n::context(&[root]);
+    let mut verified = Vec::new();
+    let mut fault = None;
+    for reference in children(signed_info, "Reference") {
+        match resolved(reference, ids, &scope) {
+            Ok(element) => verified.push(element),
+            Err(standing) => {
+                fault.get_or_insert(standing);
+            }
+        }
+    }
+    Covered { verified, fault }
+}
+
+/// The element one reference names, provided it hashes to what the
+/// reference says.
+fn resolved<'a>(
+    reference: &Element,
+    ids: &BTreeMap<&'a str, &'a Element>,
+    scope: &[(Option<String>, String)],
+) -> Result<&'a Element, Standing> {
+    let uri = reference.attribute(None, "URI").unwrap_or_default();
+    let Some(id) = uri.strip_prefix('#') else {
+        return Err(Standing::Unsupported(format!("a reference to {uri}")));
+    };
+    let Some(&element) = ids.get(id) else {
+        return Err(Standing::Changed(uri.to_owned()));
+    };
+    let Some((algorithm, wanted)) = digest_of(reference) else {
+        return Err(Standing::Unsupported(String::from("a digest this program has not")));
+    };
+    let bytes = c14n::canonical(element, scope);
+    if algorithm.of(bytes.as_bytes()) == wanted {
+        Ok(element)
+    } else {
+        Err(Standing::Changed(format!("the signature's own {id}")))
     }
 }
 
-/// Whether one of them holds.
+/// The manifests among what was signed.
+///
+/// One that was signed itself, or one inside an object that was — which is
+/// where the format puts the package's. A manifest anywhere else is one
+/// nobody signed, however it came to be in the file.
+fn manifests_in<'a>(verified: &[&'a Element]) -> Vec<&'a Element> {
+    let mut out = Vec::new();
+    for &element in verified {
+        if element.is(Some(DSIG), "Manifest") {
+            out.push(element);
+        } else if element.is(Some(DSIG), "Object") {
+            out.extend(children(element, "Manifest"));
+        }
+    }
+    out
+}
+
+/// Something a signature says about itself, read from the objects it signed.
+///
+/// A signature's properties sit inside an object, in a
+/// `SignatureProperties`, in a `SignatureProperty`; `holder` is the element
+/// a property is written in and `local` the one wanted inside that.
+fn signed_property(verified: &[&Element], namespace: &str, holder: &str, local: &str) -> String {
+    verified
+        .iter()
+        .filter(|element| element.is(Some(DSIG), "Object"))
+        .flat_map(|object| {
+            along(
+                object,
+                &[
+                    (DSIG, "SignatureProperties"),
+                    (DSIG, "SignatureProperty"),
+                    (namespace, holder),
+                    (namespace, local),
+                ],
+            )
+        })
+        .map(Element::text_content)
+        .next()
+        .unwrap_or_default()
+}
+
+/// Every signature made over this one.
+///
+/// Where the standard puts them and nowhere else: among this signature's
+/// unsigned properties. They are unsigned by this signature because they
+/// came after it, and each is checked on its own against the value it is
+/// about — so what one of them says is read from what it signed, as it is
+/// for the signature itself.
+fn counters_of(root: &Element, ids: &BTreeMap<&str, &Element>) -> Vec<Counter> {
+    let Some(value) = child(root, "SignatureValue") else { return Vec::new() };
+    along(
+        root,
+        &[
+            (DSIG, "Object"),
+            (XADES, "QualifyingProperties"),
+            (XADES, "UnsignedProperties"),
+            (XADES, "UnsignedSignatureProperties"),
+            (XADES, "CounterSignature"),
+            (DSIG, "Signature"),
+        ],
+    )
+    .into_iter()
+    .filter_map(|signature| counter(root, value, signature, ids))
+    .collect()
+}
+
+/// One of them, and whether it holds.
 ///
 /// The same arithmetic as a signature over a document, over less: there is no
 /// manifest, because what a countersignature covers is one element of one
-/// file and not a package. What it points at is resolved in the document it
-/// sits in — which is the signature it is about — because that is where the
+/// file and not a package — the value of the signature it is about. What it
+/// points at is resolved in the file it sits in, because that is where the
 /// value it signed is.
-fn check_counter(
-    outer: &Element,
-    counter: &Element,
-    certificate: &wp_asn1::Certificate,
-) -> Standing {
-    let Some(signed_info) = child(counter, "SignedInfo") else { return Standing::Broken };
-    let named = child(signed_info, "CanonicalizationMethod")
-        .and_then(|element| element.attribute(None, "Algorithm"))
-        .unwrap_or(c14n::NAME);
-    if named != c14n::NAME {
-        return Standing::Unsupported(named.to_owned());
+fn counter(
+    root: &Element,
+    value: &Element,
+    signature: &Element,
+    ids: &BTreeMap<&str, &Element>,
+) -> Option<Counter> {
+    let (certificate, _) = certificates_in(signature)?;
+    let unsaid = |standing| Counter {
+        certificate: certificate.clone(),
+        signed_at: String::new(),
+        role: String::new(),
+        standing,
+    };
+    if let Some(doubled) = ["SignedInfo", "SignatureValue", "KeyInfo"]
+        .into_iter()
+        .find(|local| children(signature, local).count() > 1)
+    {
+        return Some(unsaid(Standing::Ambiguous(doubled.to_owned())));
     }
-    let Some(algorithm) = child(signed_info, "SignatureMethod")
-        .and_then(|element| element.attribute(None, "Algorithm"))
-        .and_then(Algorithm::named)
-    else {
-        return Standing::Unsupported(String::from("an algorithm this program has not"));
+    let Some(signed_info) = child(signature, "SignedInfo") else {
+        return Some(unsaid(Standing::Broken));
     };
 
-    let scope = c14n::context(&[outer]);
-    for reference in signed_info.child_elements().filter(|child| child.local_name() == "Reference")
-    {
-        let uri = reference.attribute(None, "URI").unwrap_or_default();
-        let Some(id) = uri.strip_prefix('#') else {
-            return Standing::Unsupported(format!("a reference to {uri}"));
-        };
-        let Some(target) = by_id(outer, id) else {
-            return Standing::Changed(uri.to_owned());
-        };
-        let Some(wanted) = digest_of(reference) else {
-            return Standing::Unsupported(String::from("a digest this program has not"));
-        };
-        let bytes = c14n::canonical(target, &scope);
-        if wanted.0.of(bytes.as_bytes()) != wanted.1 {
-            return Standing::Changed(format!("the signature's own {id}"));
-        }
-    }
+    let covered = signed_elements(root, signed_info, ids);
+    let said = |steps: &[(&str, &str)]| {
+        covered
+            .verified
+            .iter()
+            .filter(|element| element.is(Some(XADES), "SignedProperties"))
+            .flat_map(|properties| along(properties, steps))
+            .map(Element::text_content)
+            .next()
+            .unwrap_or_default()
+    };
+    let signed_at = said(&[(XADES, "SignedSignatureProperties"), (XADES, "SigningTime")]);
+    let role = said(&[
+        (XADES, "SignedSignatureProperties"),
+        (XADES, "SignerRole"),
+        (XADES, "ClaimedRoles"),
+        (XADES, "ClaimedRole"),
+    ]);
+    let standing = check_counter(root, value, signature, signed_info, &certificate, &covered);
+    Some(Counter { certificate, signed_at, role, standing })
+}
 
-    let signed = c14n::canonical(signed_info, &scope);
-    let Some(value) = child(counter, "SignatureValue") else { return Standing::Broken };
-    let signature = wp_text::base64::decode(value.text_content().trim().as_bytes());
-    let key = PublicKey::new(&certificate.key.modulus, &certificate.key.exponent);
-    if key.verifies(algorithm, signed.as_bytes(), &signature) {
-        Standing::Good
-    } else {
-        Standing::Broken
+/// Whether a countersignature holds over the value it is about.
+fn check_counter(
+    root: &Element,
+    value: &Element,
+    counter: &Element,
+    signed_info: &Element,
+    certificate: &wp_asn1::Certificate,
+    covered: &Covered<'_>,
+) -> Standing {
+    let algorithm = match method_of(signed_info) {
+        Ok(algorithm) => algorithm,
+        Err(standing) => return standing,
+    };
+    if let Some(fault) = &covered.fault {
+        return fault.clone();
     }
+    // What makes it a countersignature at all. One that signed only what it
+    // says about itself would hold in any document it was copied into.
+    if !covered.verified.iter().any(|&element| std::ptr::eq(element, value)) {
+        return Standing::CoversNothing;
+    }
+    if !names_its_certificate(&covered.verified, certificate) {
+        return Standing::Broken;
+    }
+    made_by(root, signed_info, counter, certificate, algorithm)
+}
+
+/// Whether the certificate carried beside a signature is the one its signed
+/// properties name.
+///
+/// XAdES writes a digest of the signer's certificate into what is signed,
+/// because the certificate itself sits outside it: without the digest, a
+/// certificate with the same key and anything else written on it could be
+/// put in its place and the arithmetic would not notice. The signer's is the
+/// one that has to be there; the others the list may hold are its chain. A
+/// signature that says nothing about its certificate — one made before
+/// XAdES, as Office 2007 made them — has nothing to be held to here.
+fn names_its_certificate(verified: &[&Element], certificate: &wp_asn1::Certificate) -> bool {
+    let digests: Vec<&Element> = verified
+        .iter()
+        .filter(|element| element.is(Some(XADES), "SignedProperties"))
+        .flat_map(|properties| {
+            along(
+                properties,
+                &[
+                    (XADES, "SignedSignatureProperties"),
+                    (XADES, "SigningCertificate"),
+                    (XADES, "Cert"),
+                    (XADES, "CertDigest"),
+                ],
+            )
+        })
+        .collect();
+    digests.is_empty()
+        || digests.iter().any(|digest| {
+            digest_of(digest)
+                .is_some_and(|(algorithm, wanted)| algorithm.of(&certificate.der) == wanted)
+        })
 }
 
 /// Does the arithmetic.
@@ -319,60 +699,75 @@ fn check(
     root: &Element,
     signed_info: &Element,
     certificate: &wp_asn1::Certificate,
+    covered: &Covered<'_>,
+    manifests: &[&Element],
 ) -> Standing {
+    let algorithm = match method_of(signed_info) {
+        Ok(algorithm) => algorithm,
+        Err(standing) => return standing,
+    };
+
+    // Every reference inside the signed information points at an element in
+    // this same file, and each has to hash to what it says.
+    if let Some(fault) = &covered.fault {
+        return fault.clone();
+    }
+
+    // And every reference inside the manifests it signed points at a part of
+    // the package. A signature whose manifests point at nothing, or that
+    // signed no manifest at all, says nothing about the document, and saying
+    // it holds would be vouching for whatever the document now is.
+    let mut any = false;
+    for reference in manifests.iter().flat_map(|manifest| children(manifest, "Reference")) {
+        any = true;
+        match part_standing(package, reference) {
+            Standing::Good => {}
+            other => return other,
+        }
+    }
+    if !any {
+        return Standing::CoversNothing;
+    }
+
+    // The certificate beside it has to be the one it says it was made with.
+    if !names_its_certificate(&covered.verified, certificate) {
+        return Standing::Broken;
+    }
+
+    // Then the signature itself, over the signed information as it stands.
+    made_by(root, signed_info, root, certificate, algorithm)
+}
+
+/// The signature algorithm a signed information names, provided it is
+/// canonicalised the one way this program knows.
+fn method_of(signed_info: &Element) -> Result<Algorithm, Standing> {
     // The canonicalisation named in the file, which is the only one written.
     let named = child(signed_info, "CanonicalizationMethod")
         .and_then(|element| element.attribute(None, "Algorithm"))
         .unwrap_or(c14n::NAME);
     if named != c14n::NAME {
-        return Standing::Unsupported(named.to_owned());
+        return Err(Standing::Unsupported(named.to_owned()));
     }
-    let Some(algorithm) = child(signed_info, "SignatureMethod")
+    child(signed_info, "SignatureMethod")
         .and_then(|element| element.attribute(None, "Algorithm"))
         .and_then(Algorithm::named)
-    else {
-        return Standing::Unsupported(String::from("an algorithm this program has not"));
-    };
+        .ok_or_else(|| Standing::Unsupported(String::from("an algorithm this program has not")))
+}
 
-    // Every reference inside the signed information points at an object in
-    // this same file. Each has to hash to what it says.
-    for reference in signed_info.child_elements().filter(|child| child.local_name() == "Reference")
-    {
-        let uri = reference.attribute(None, "URI").unwrap_or_default();
-        let Some(id) = uri.strip_prefix('#') else {
-            return Standing::Unsupported(format!("a reference to {uri}"));
-        };
-        let Some(object) = by_id(root, id) else {
-            return Standing::Changed(uri.to_owned());
-        };
-        let Some(wanted) = digest_of(reference) else {
-            return Standing::Unsupported(String::from("a digest this program has not"));
-        };
-        let scope = c14n::context(&[root]);
-        let bytes = c14n::canonical(object, &scope);
-        if wanted.0.of(bytes.as_bytes()) != wanted.1 {
-            return Standing::Changed(format!("the signature's own {id}"));
-        }
-    }
-
-    // And every reference inside the manifest points at a part of the
-    // package.
-    if let Some(manifest) = find(root, "Manifest") {
-        for reference in manifest.child_elements() {
-            match part_standing(package, reference) {
-                Standing::Good => {}
-                other => return other,
-            }
-        }
-    }
-
-    // Then the signature itself, over the signed information as it stands.
-    let scope = c14n::context(&[root]);
-    let signed = c14n::canonical(signed_info, &scope);
-    let Some(value) = find(root, "SignatureValue") else { return Standing::Broken };
-    let signature = wp_text::base64::decode(value.text_content().trim().as_bytes());
+/// Whether the value beside a signed information was made with the key of
+/// the certificate, over that signed information as it stands.
+fn made_by(
+    root: &Element,
+    signed_info: &Element,
+    signature: &Element,
+    certificate: &wp_asn1::Certificate,
+    algorithm: Algorithm,
+) -> Standing {
+    let signed = c14n::canonical(signed_info, &c14n::context(&[root]));
+    let Some(value) = child(signature, "SignatureValue") else { return Standing::Broken };
+    let made = wp_text::base64::decode(value.text_content().trim().as_bytes());
     let key = PublicKey::new(&certificate.key.modulus, &certificate.key.exponent);
-    if key.verifies(algorithm, signed.as_bytes(), &signature) {
+    if key.verifies(algorithm, signed.as_bytes(), &made) {
         Standing::Good
     } else {
         Standing::Broken
@@ -488,25 +883,32 @@ fn part_of(uri: &str) -> Option<String> {
     Some(name.trim_start_matches('/').to_owned())
 }
 
-/// A child by its local name.
-fn child<'a>(element: &'a Element, local: &str) -> Option<&'a Element> {
-    element.child_elements().find(|child| child.local_name() == local)
+/// The first child of the signature's own namespace by its local name.
+fn child<'a>(element: &'a Element, local: &'a str) -> Option<&'a Element> {
+    children(element, local).next()
 }
 
-/// An element anywhere under this one, by its local name.
-fn find<'a>(element: &'a Element, local: &str) -> Option<&'a Element> {
-    if element.local_name() == local {
-        return Some(element);
-    }
-    element.child_elements().find_map(|child| find(child, local))
+/// Every child of the signature's own namespace by its local name.
+///
+/// Children only, and never a search of everything below: what sits where in
+/// a signature is what says whether it was signed, and an element found
+/// somewhere else by its name alone may be one that nobody signed.
+fn children<'a>(element: &'a Element, local: &'a str) -> impl Iterator<Item = &'a Element> + 'a {
+    element.child_elements().filter(move |child| child.is(Some(DSIG), local))
 }
 
-/// An element anywhere under this one, by its `Id`.
-fn by_id<'a>(element: &'a Element, id: &str) -> Option<&'a Element> {
-    if element.attribute(None, "Id") == Some(id) {
-        return Some(element);
+/// Every element reached from this one by a path of children, each step a
+/// namespace and a local name.
+fn along<'a>(from: &'a Element, steps: &[(&str, &str)]) -> Vec<&'a Element> {
+    let mut here = vec![from];
+    for &(namespace, local) in steps {
+        here = here
+            .into_iter()
+            .flat_map(|element| element.child_elements())
+            .filter(|child| child.is(Some(namespace), local))
+            .collect();
     }
-    element.child_elements().find_map(|child| by_id(child, id))
+    here
 }
 
 /// Something that can turn a message into a signature.
@@ -717,7 +1119,9 @@ pub fn countersign(package: &mut Package, part: &str, signer: &Signer) -> Result
     let tree = XmlTree::parse(&text).map_err(|_| format!("{part} is not a signature"))?;
     let root = &tree.root;
 
-    let value = find(root, "SignatureValue")
+    // The value of that signature and not any other element of the name: a
+    // countersignature in it carries a value of its own.
+    let value = child(root, "SignatureValue")
         .ok_or_else(|| String::from("that signature has no value to sign"))?;
     // What is signed is the value as it stands in that signature, which means
     // canonicalised where it stands and not as this program would write it.
@@ -725,7 +1129,16 @@ pub fn countersign(package: &mut Package, part: &str, signer: &Signer) -> Result
     let canonical_value = c14n::canonical(value, &scope);
     let digest = algorithm.of(canonical_value.as_bytes());
 
-    let properties_id = format!("idCounterSignedProperties{}", counters_in(root) + 1);
+    // A name for its properties that nothing in the file has already, since a
+    // reader refuses a signature in which two elements share one — and a
+    // signature that is refused already is not one to add a witness to.
+    let taken = identifiers(root).map_err(|twice| {
+        format!("that signature cannot be checked: more than one thing in it is called {twice}")
+    })?;
+    let properties_id = (1..)
+        .map(|number| format!("idCounterSignedProperties{number}"))
+        .find(|id| !taken.contains_key(id.as_str()))
+        .unwrap_or_default();
     let properties = signed_properties(signer, algorithm, &properties_id, Some(&signer.reason));
     let properties_digest = digest_of_xml(&properties, algorithm)?;
 
@@ -788,22 +1201,6 @@ pub fn countersign(package: &mut Package, part: &str, signer: &Signer) -> Result
     let written = put_countersignature(&text, &countersignature)?;
     package.add_part(part, SIGNATURE_TYPE, written.into_bytes());
     Ok(())
-}
-
-/// How many countersignatures a signature already carries.
-fn counters_in(root: &Element) -> usize {
-    let mut found = 0;
-    count_counters(root, &mut found);
-    found
-}
-
-fn count_counters(element: &Element, found: &mut usize) {
-    if element.local_name() == "CounterSignature" {
-        *found += 1;
-    }
-    for child in element.child_elements() {
-        count_counters(child, found);
-    }
 }
 
 /// Puts one into the signature's unsigned properties.

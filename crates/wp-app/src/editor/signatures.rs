@@ -703,11 +703,63 @@ mod tests {
         use crate::chrome::infobar::Because;
         assert_eq!(Because::SignaturesValid.said(), "This document contains valid signatures.");
         assert_eq!(Because::SignaturesInvalid.said(), "This document contains invalid signatures.");
-        for because in
-            [Because::SignaturesValid, Because::SignaturesRecoverable, Because::SignaturesInvalid]
-        {
+        assert_eq!(Because::SignaturesPartial.said(), "This document contains partial signatures.");
+        for because in [
+            Because::SignaturesValid,
+            Because::SignaturesRecoverable,
+            Because::SignaturesPartial,
+            Because::SignaturesInvalid,
+        ] {
             assert_eq!(because.label(), Some("SIGNATURES"));
             assert_eq!(because.button(), Some("View Signatures..."));
         }
+    }
+
+    #[test]
+    fn a_signature_over_part_of_the_document_is_called_partial() {
+        use crate::chrome::infobar::Because;
+        let folder = folder("hold-partial", "der");
+        let mine = own_certificates_in(&folder.0);
+        let own = mine.first().expect("a certificate");
+        let mut editor = editor();
+        let signer = wp_sign::Signer {
+            certificate: own.certificate.der.clone(),
+            chain: Vec::new(),
+            key: own.signs(),
+            reason: String::from("Approved"),
+            at: String::from("2027-01-01T00:00:00Z"),
+            line: String::new(),
+        };
+        let bytes = editor.document.save_signed(&signer).expect("signing");
+
+        // A part put in beside the signature, with a relationship to it.
+        // Nothing the signature covers changed, so it holds for what it
+        // covers — and that is not the whole document any more.
+        let mut package = wp_opc::Package::open(&bytes).expect("a package");
+        package.add_part("customXml/added.xml", "application/xml", b"<added/>".to_vec());
+        let mut root = package.relationships("").expect("the package's relationships");
+        root.add("urn:added", "customXml/added.xml", wp_opc::TargetMode::Internal);
+        package.set_relationships(&root).expect("writing them");
+        editor.set_document(
+            Document::open(&package.save().expect("saving")).expect("reopening"),
+            None,
+        );
+        editor.draw(1400, 900);
+
+        assert!(editor.document.signatures()[0].standing.is_good(), "it holds for what it covers");
+        assert_eq!(
+            editor.signatures_bar.as_ref().map(|bar| bar.because),
+            Some(Because::SignaturesPartial)
+        );
+        let shown = editor.signature_pane_shown();
+        assert!(shown.made[0].standing.contains("Partial signature"), "{}", shown.made[0].standing);
+
+        // And the whole of it signed is not partial, which is the difference.
+        editor.set_document(Document::open(&bytes).expect("reopening"), None);
+        assert_eq!(
+            editor.signatures_bar.as_ref().map(|bar| bar.because),
+            Some(Because::SignaturesRecoverable)
+        );
+        assert!(!editor.signature_pane_shown().made[0].standing.contains("Partial"));
     }
 }

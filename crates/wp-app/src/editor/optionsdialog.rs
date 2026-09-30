@@ -88,20 +88,29 @@ const MACRO_SETTINGS: usize = TAB_TRUST + 1;
 const MACRO_TRUST: usize = TAB_TRUST + 2;
 const TRUSTED_LOCATIONS: usize = TAB_TRUST + 3;
 pub(super) const TRUSTED_PLACES: usize = TAB_TRUST + 4;
+const TRUSTED_PUBLISHERS_GROUP: usize = TAB_TRUST + 5;
+pub(super) const TRUSTED_PUBLISHERS: usize = TAB_TRUST + 6;
 
 /// Which tab of the dialog Proofing is, so its button is drawn on that one.
 const TAB_PROOFING_PAGE: usize = 4;
 
-/// And which the Trust Centre is, for the two buttons that belong to it:
+/// And which the Trust Centre is, for the buttons that belong to it:
 /// after General, Display, Language, Save, Proofing, Advanced, and the two
 /// pages of lists.
-const TAB_TRUST_PAGE: usize = 8;
+pub(super) const TAB_TRUST_PAGE: usize = 8;
 
 /// The button that trusts the folder the document is in.
 pub(super) const TRUST_FOLDER: &str = "Trust This Folder";
 
 /// And the one that forgets a folder that was trusted.
 pub(super) const FORGET_PLACE: &str = "Remove Location";
+
+/// The button that trusts whoever signed the open document, by the
+/// certificate their signature carries.
+pub(super) const TRUST_PUBLISHER: &str = "Trust This Publisher";
+
+/// And the one that forgets a publisher that was trusted.
+pub(super) const FORGET_PUBLISHER: &str = "Remove Publisher";
 /// And which General is, for the button that registers the file types.
 const TAB_GENERAL_PAGE: usize = 0;
 
@@ -312,6 +321,22 @@ impl Editor {
                 current: 0,
                 scroll: 0,
             },
+            // Word's Trusted Publishers page, in its own columns: who the
+            // certificate is about, and who issued it until when. Shown and
+            // never matched by — what is trusted is the certificate.
+            Field::Group("Trusted publishers".to_owned()),
+            Field::Pairs {
+                label: "Issued To".to_owned(),
+                second: "Issued By".to_owned(),
+                rows: self
+                    .settings
+                    .trusted_publishers
+                    .iter()
+                    .map(|publisher| (publisher.subject.clone(), publisher.said()))
+                    .collect(),
+                current: 0,
+                scroll: 0,
+            },
         ]);
 
         let mut kinds = vec![
@@ -358,6 +383,8 @@ impl Editor {
             (MACRO_TRUST, "a list"),
             (TRUSTED_LOCATIONS, "a group"),
             (TRUSTED_PLACES, "a list of pairs"),
+            (TRUSTED_PUBLISHERS_GROUP, "a group"),
+            (TRUSTED_PUBLISHERS, "a list of pairs"),
         ]);
         crate::chrome::dialog::check_rows("Options", &fields, &kinds);
 
@@ -375,6 +402,8 @@ impl Editor {
                 named(MAKE_DEFAULT),
                 named(TRUST_FOLDER),
                 named(FORGET_PLACE),
+                named(TRUST_PUBLISHER),
+                named(FORGET_PUBLISHER),
                 named(ribbondialog::ADD),
                 named(ribbondialog::REMOVE),
                 named(ribbondialog::MOVE_UP),
@@ -385,12 +414,16 @@ impl Editor {
         )
         // Word's dialog is this wide because it holds two lists side by side,
         // and a dialog that changed size when a tab was pressed would jump
-        // about under the pointer.
+        // about under the pointer. The Trust Center's row of buttons is wider
+        // than this in English and wider still in German; the dialog makes
+        // itself as wide as that row, on every tab alike.
         .wide(760.0)
         .button_on_tab(Answer::Named(AUTOCORRECT_OPTIONS), TAB_PROOFING_PAGE)
         .button_on_tab(Answer::Named(MAKE_DEFAULT), TAB_GENERAL_PAGE)
         .button_on_tab(Answer::Named(TRUST_FOLDER), TAB_TRUST_PAGE)
-        .button_on_tab(Answer::Named(FORGET_PLACE), TAB_TRUST_PAGE);
+        .button_on_tab(Answer::Named(FORGET_PLACE), TAB_TRUST_PAGE)
+        .button_on_tab(Answer::Named(TRUST_PUBLISHER), TAB_TRUST_PAGE)
+        .button_on_tab(Answer::Named(FORGET_PUBLISHER), TAB_TRUST_PAGE);
         for label in [
             ribbondialog::ADD,
             ribbondialog::REMOVE,

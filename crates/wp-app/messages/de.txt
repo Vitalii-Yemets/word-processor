@@ -1952,8 +1952,14 @@ language = Deutsch
 = This document carries no custom XML. Add a part from a file to bind controls to it.
 > Dieses Dokument enthält kein benutzerdefiniertes XML. Fügen Sie eine Komponente aus einer Datei hinzu, um Steuerelemente zuzuordnen.
 
+= This document carries no signature that holds, so there is nobody to trust
+> Dieses Dokument trägt keine gültige Signatur, also gibt es niemanden, dem vertraut werden könnte
+
 = This document contains invalid signatures.
 > Dieses Dokument enthält ungültige Signaturen.
+
+= This document contains partial signatures.
+> Dieses Dokument enthält Teilsignaturen.
 
 = This document contains recoverable signatures.
 > Dieses Dokument enthält wiederherstellbare Signaturen.
@@ -2014,6 +2020,9 @@ language = Deutsch
 
 = Trust This Folder
 > Diesem Ordner vertrauen
+
+= Trust This Publisher
+> Diesem Herausgeber vertrauen
 
 = Trusted locations
 > Vertrauenswürdige Speicherorte
@@ -2447,6 +2456,9 @@ language = Deutsch
 = Paragraph…
 > Absatz…
 
+= Partial signature: a portion of a file is signed
+> Teilsignatur: Ein Teil der Datei ist signiert
+
 = Password
 > Kennwort
 
@@ -2593,6 +2605,9 @@ language = Deutsch
 
 = Remove Link
 > Link entfernen
+
+= Remove Publisher
+> Herausgeber entfernen
 
 = Remove Table
 > Tabelle entfernen
@@ -3386,6 +3401,9 @@ language = Deutsch
 = { }
 > { }
 
+= {0} (expires {1})
+> {0} (läuft ab am {1})
+
 = {0} added to the list
 > {0} zur Liste hinzugefügt
 
@@ -3821,6 +3839,12 @@ language = Deutsch
 = Irish
 > Irisch
 
+= Issued By
+> Ausgestellt von
+
+= Issued To
+> Ausgestellt für
+
 = Italian
 > Italienisch
 
@@ -4043,6 +4067,9 @@ language = Deutsch
 = Traditional
 > traditionell
 
+= Trusted publishers
+> Vertrauenswürdige Herausgeber
+
 = Turkish
 > Türkisch
 
@@ -4075,6 +4102,9 @@ language = Deutsch
 
 = Nobody has commented on this document
 > Zu diesem Dokument gibt es keine Kommentare
+
+= Not verified: a name alone, which trusts nobody
+> Nicht überprüft: ein Name allein vertraut niemandem
 
 = Nothing found
 > Nichts gefunden

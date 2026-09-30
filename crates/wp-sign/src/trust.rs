@@ -181,6 +181,22 @@ fn verify(child: &Certificate, parent: &Certificate) -> Result<bool, Fault> {
     Ok(key.verifies(algorithm, &child.signed_part, &child.signature))
 }
 
+/// What one certificate is known by: the SHA-256 of it exactly as it was
+/// written, in hex.
+///
+/// What a trusted publisher is remembered as, and matched by. The name on a
+/// certificate is whatever its maker wrote there, and anybody can make a key
+/// and a certificate with any name on it; a signature that holds proves only
+/// that it was made with the key of the certificate beside it. The
+/// certificate itself, byte for byte, is one thing and nobody else's, and
+/// this names it. It is the same idea as the thumbprint Windows shows for a
+/// certificate and keeps its Trusted Publishers by, with a hash nobody has
+/// broken.
+#[must_use]
+pub fn fingerprint(certificate: &Certificate) -> String {
+    wp_hash::to_hex(&wp_hash::sha256(&certificate.der))
+}
+
 /// Which hash an object identifier stands for.
 ///
 /// The three that appear on certificates in use. MD5 and the rest are left

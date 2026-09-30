@@ -1690,6 +1690,12 @@ direction = rtl
 = Irish
 > אירית
 
+= Issued By
+> הונפק על-ידי
+
+= Issued To
+> הונפק עבור
+
 = Italian
 > איטלקית
 
@@ -2119,6 +2125,9 @@ direction = rtl
 = Not saved
 > לא נשמר
 
+= Not verified: a name alone, which trusts nobody
+> לא מאומת: שם בלבד, ושם לבדו אינו הופך איש למהימן
+
 = Nothing found
 > לא נמצא דבר
 
@@ -2343,6 +2352,9 @@ direction = rtl
 
 = Paragraph…
 > פסקה…
+
+= Partial signature: a portion of a file is signed
+> חתימה חלקית: חלק מהקובץ חתום
 
 = Password
 > סיסמה
@@ -2589,6 +2601,9 @@ direction = rtl
 
 = Remove Location
 > הסר מיקום
+
+= Remove Publisher
+> הסר מפרסם
 
 = Remove Table
 > הסר טבלה
@@ -3433,8 +3448,14 @@ direction = rtl
 = This document carries no custom XML. Add a part from a file to bind controls to it.
 > מסמך זה אינו מכיל XML מותאם אישית. הוסף חלק מקובץ כדי לקשר אליו פקדים.
 
+= This document carries no signature that holds, so there is nobody to trust
+> מסמך זה אינו נושא חתימה תקפה, ולכן אין במי לתת אמון
+
 = This document contains invalid signatures.
 > מסמך זה מכיל חתימות לא חוקיות.
+
+= This document contains partial signatures.
+> מסמך זה מכיל חתימות חלקיות.
 
 = This document contains recoverable signatures.
 > מסמך זה מכיל חתימות הניתנות לשחזור.
@@ -3577,8 +3598,14 @@ direction = rtl
 = Trust This Folder
 > סמוך על תיקיה זו
 
+= Trust This Publisher
+> סמוך על מפרסם זה
+
 = Trusted locations
 > מיקומים מהימנים
+
+= Trusted publishers
+> מפרסמים מהימנים
 
 = Turkish
 > טורקית
@@ -3954,6 +3981,9 @@ direction = rtl
 
 = { }
 > { }
+
+= {0} (expires {1})
+> {0} (בתוקף עד {1})
 
 = {0} added to the list
 > {0} נוסף לרשימה

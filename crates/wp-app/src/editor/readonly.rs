@@ -205,11 +205,17 @@ impl Editor {
     /// all hold are valid when every certificate is one this machine trusts,
     /// and recoverable — Word's word — when any is not, or when the machine's
     /// list of trusted issuers cannot be read. A signature this program
-    /// cannot read at all does not hold.
+    /// cannot read at all does not hold. And ones that hold, where any covers
+    /// only part of the document, are partial — Word's word again — before
+    /// anything is said about who made them, since a signature over part of a
+    /// document says nothing about the rest whoever made it.
     fn signatures_verdict(&self) -> Because {
         let signatures = self.document.signatures();
         if signatures.is_empty() || signatures.iter().any(|one| !one.standing.is_good()) {
             return Because::SignaturesInvalid;
+        }
+        if signatures.iter().any(|one| !one.covers_whole(self.document.package())) {
+            return Because::SignaturesPartial;
         }
         let trusted =
             signatures.iter().all(|one| self.trust_of(one).is_some_and(|trust| trust.is_trusted()));

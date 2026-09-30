@@ -9544,7 +9544,7 @@ work is in *The order of the work* at the end.
   themselves are moved about, and nothing here writes `w:qFormat` — a
   document's own idea of what it is for survives a round trip untouched, but
   cannot yet be changed from inside this program.
-- [ ] **J34. A signature is only as good as what it covers.** The package's
+- [x] **J34. A signature is only as good as what it covers.** The package's
   parts are checked against the first `Manifest` in the whole signature,
   signed or not: an unsigned `<Object><Manifest/></Object>` put before the
   real one, with the real `SignedInfo` and signature value left as they
@@ -9555,6 +9555,69 @@ work is in *The order of the work* at the end.
   manifests inside the objects that were verified, refuse ambiguous
   identifiers, and trust a fingerprint or a public key, showing the Subject
   only. Reviews R01, R02.
+  *Done:* a signature is taken to say only what it signed. The parts are
+  checked against the manifests inside the objects its signed information
+  names, each hashed and matched before anything is read from it, and the
+  signing time, the reason and the line come from those objects too; a
+  countersignature's role and time come from the properties it signed.
+  Every identifier in the signature file is gathered first, and one that
+  names two elements — or a second signed information, value or set of
+  keys — refuses the signature as ambiguous rather than letting whichever
+  was met first decide. A signature whose signed objects hold no manifest,
+  or whose manifests name no part, covers nothing and does not hold, and
+  nor does a countersignature that did not sign the value it is about. The
+  signer's certificate is read from the signature's own key information
+  rather than from the first certificate anywhere in the file, and it has
+  to be the one the signed XAdES properties name by its digest: another
+  certificate for the same key does not hold.
+  **What holds is not all of it.** A part added beside a signature, with
+  its relationship and its content type, changes nothing that was signed,
+  so the signature holds and says nothing about it. The signature now
+  answers what it covers — a part, a relationship, what a part reaches by
+  relationships of a kind, the whole document — and "only signed macros"
+  asks it: the project the program runs, `word/vbaProject.bin`, and
+  whatever the main part's macro-project relationships reach have to be in
+  a signed manifest, and those relationships among the ones the signed
+  `.rels` transform names. A project put into a trusted publisher's signed
+  `.docx` is refused. A signature that holds and does not cover the whole
+  document is Word's partial signature: the Signatures pane says "Partial
+  signature: a portion of a file is signed", as Word's help puts it, and
+  the SIGNATURES bar says the document contains partial signatures.
+  A trusted publisher is a certificate — what Word's Trusted Publishers
+  store holds — named by the SHA-256 fingerprint of its bytes, with its
+  Subject, issuer and expiry kept beside it only to be shown. The Trust
+  Center lists them in Word's columns and gains Trust This Publisher, which
+  takes the certificate of each signature on the open document that holds,
+  and Remove Publisher. A name an earlier version wrote down alone stays on
+  the list as not verified and trusts nobody; trusting that publisher again
+  from a document they signed puts the certificate in its row. Remove
+  Location removes the folder chosen, where it removed the first whatever
+  was chosen. A dialog is as wide as the widest row of buttons on any of
+  its pages, in the language it is read in, so the Trust Center's six fit
+  in German too; `--picture` gains `settings=` and `trustpage` to show it.
+  *Proven by:* nineteen new tests; the review's two attacks, the added
+  project and Remove Location all failed the old code. A changed part
+  behind an unsigned empty manifest put first is named as changed, and the
+  same trick on a trusted publisher's swapped macro project no longer runs
+  it; a project, relationship and content type added to a trusted
+  publisher's signed `.docx` do not run, while the same publisher's signed
+  `.docm` does; a certificate with the trusted name and another key is
+  refused while the trusted one runs. A signature signed again with no
+  manifest among what it signed covers nothing; an identifier used twice
+  is refused on either side of the signed one; a forged time, reason and
+  line in an unsigned object, and a forged role and time inside a
+  countersignature, are not what is read; a countersignature over only
+  itself does not hold; a certificate the signature does not name, with
+  the same key, does not hold. Coverage is asked part by part and
+  relationship by relationship, and an added part makes a signature that
+  still holds partial, in the pane and on the bar. The fingerprint is the
+  one OpenSSL gives; the Trust Center takes the certificate in hand, shows
+  its name, issuer and expiry, and forgets it; an old name-only line is
+  shown as not verified and trusts nobody; a line break in a certificate's
+  name cannot write a setting; Remove Location removes the folder chosen;
+  the Trust Center's buttons fit inside the dialog in English and German.
+  The untouched package still holds, and an ordinary changed part is still
+  named.
 - [ ] **J35. Building blocks and comparisons carry their drawings.** Found
   while **H17** was done. A building block is pasted from the model read out
   of the glossary part, so a block holding a picture, a chart or any other
@@ -9565,6 +9628,16 @@ work is in *The order of the work* at the end.
   so a drawing written from that model would name the revised document's
   relationships. All three should carry what **H17** carries — the element,
   its relationships and its parts — and put them down the same way.
+- [ ] **J36. The security options behind Enable Content.** Word's yellow
+  bar for a document with macros has Enable Content, and behind it
+  "Advanced Options": a dialog, Microsoft Office Security Options, with
+  three choices — keep protecting me, enable content for this session, and
+  trust all documents from this publisher, the last only when the macros
+  are signed. That last is how a publisher gets into Word's Trusted
+  Publishers; here (**J34**) one is trusted from the Trust Center page
+  alone. Build the dialog with its three choices, wired to the session
+  trust **L6** has and the publisher trust **J34** has, named in the three
+  catalogues. Found while **J34** was done.
 
 ## K — Proving it against Word rather than against ourselves
 
@@ -9745,7 +9818,12 @@ work is in *The order of the work* at the end.
   to PDF, and hands the pages to **K2**'s comparison; a `WINWORD` that
   outlives `Quit` is ended by its PID. Run against what **G19**–**G21**
   write, and against the corpus. Not a test in `cargo test`: the machine
-  with Word is not the build image.
+  with Word is not the build image. One more question for it, from
+  **J34**: which parts a signature Word itself made leaves out of its
+  manifest — `covers_whole` there takes every part but the signatures and
+  the content types to be covered, and a Word-signed file was not at hand
+  to check; an unlicensed Word cannot sign, so the file has to come from
+  elsewhere, and then its manifest is read.
 
 ## L — Visual Basic for Applications
 
@@ -10573,7 +10651,7 @@ person who knows Word notices first:
 5. *Tables:* **C61**, **C62**, **B8**, **C63**, **C64**, **C65**, **C66**,
    **C67**, **C68**, **C69**, **C70**, **C71**.
 6. *The interface, the large things:* **C72**, **C73**, **C74**, **C75**,
-   **C76**, **C77**, **J35**.
+   **C76**, **C77**, **J35**, **J36**.
 7. *Hostile files, and the system's corners:* **G17**, **G18**, **H18**,
    **H20**.
 8. *Layout and speed:* **E19**, **E20**, **B7**.

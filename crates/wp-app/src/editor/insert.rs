@@ -1028,6 +1028,15 @@ impl Editor {
                     dialog.show_tab(2);
                 }
             }
+            // The Trust Center: what macros may do, and the two lists that
+            // say yes before that is asked. With `settings=` before it, the
+            // lists hold what that file holds.
+            "trustpage" => {
+                self.open_options();
+                if let Some(dialog) = &mut self.dialog {
+                    dialog.show_tab(super::optionsdialog::TAB_TRUST_PAGE);
+                }
+            }
             "quickaccess" | "customribbon" => {
                 // The two pages of Options that are two lists side by side,
                 // which is the only part of that dialog a picture of the first
@@ -3079,6 +3088,16 @@ ogg,lancre
                 self.show_mini_bar(520, 380);
             }
             other => {
+                // A settings file to look at the window with, in place of
+                // nothing remembered: what a person's own file would put on
+                // the screen — the lists of the Trust Center, say — shown
+                // without the picture depending on whoever ran it.
+                if let Some(path) = other.strip_prefix("settings=") {
+                    let text = std::fs::read_to_string(path)
+                        .map_err(|error| format!("cannot read {path}: {error}"))?;
+                    self.apply_settings(crate::settings::Settings::parse(&text));
+                    return Ok(());
+                }
                 // One of the View tab's ways of looking at the document.
                 if let Some(name) = other.strip_prefix("view=") {
                     let view = match name {

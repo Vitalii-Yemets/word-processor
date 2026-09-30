@@ -1055,10 +1055,39 @@ impl Dialog {
     /// A button named for no tab is drawn on all of them; one named for any is
     /// drawn on those and nowhere else.
     fn button_showing(&self, index: usize) -> bool {
+        self.button_on(index, self.tab)
+    }
+
+    /// Whether a button is drawn on one tab, showing or not.
+    fn button_on(&self, index: usize, tab: usize) -> bool {
         let Some(button) = self.buttons.get(index) else { return false };
         let mut named = self.button_tabs.iter().filter(|(answer, _)| *answer == button.answer);
         let Some(first) = named.next() else { return true };
-        first.1 == self.tab || named.any(|(_, tab)| *tab == self.tab)
+        first.1 == tab || named.any(|(_, on)| *on == tab)
+    }
+
+    /// How wide one button is drawn, in the language it is read in.
+    fn button_width(button: &Button, engine: &mut LayoutEngine<'_>, theme: &Theme) -> f32 {
+        let label = messages::translated(&button.label);
+        (engine.simple_line(&label, 0.0, 0.0, 9.0, theme.text).width + 32.0).max(80.0)
+    }
+
+    /// The widest row of buttons any tab puts along the bottom, with the
+    /// margins either side of it.
+    fn widest_button_row(&self, engine: &mut LayoutEngine<'_>, theme: &Theme) -> f32 {
+        let tabs = self.tabs().len().max(1);
+        let widths: Vec<f32> =
+            self.buttons.iter().map(|button| Self::button_width(button, engine, theme)).collect();
+        (0..tabs)
+            .map(|tab| {
+                let shown: Vec<f32> = (0..self.buttons.len())
+                    .filter(|index| self.button_on(*index, tab))
+                    .map(|index| widths[index])
+                    .collect();
+                let gaps = 8.0 * shown.len().saturating_sub(1) as f32;
+                shown.iter().sum::<f32>() + gaps + 2.0 * PADDING
+            })
+            .fold(0.0, f32::max)
     }
 
     /// Moves the keyboard on, or back.
@@ -1716,7 +1745,12 @@ impl Dialog {
         // reached until this is answered.
         canvas.fill_rect(0, 0, window_width as i32, window_height as i32, Color::rgba(0, 0, 0, 90));
 
-        let width = self.width;
+        // At least as wide as the widest row of buttons on any of its tabs,
+        // measured in the language it is read in: a label longer in German
+        // than in English would otherwise push the row out past the frame.
+        // The widest over every tab, so that pressing a tab does not change
+        // the size of the dialog under the pointer.
+        let width = self.width.max(self.widest_button_row(engine, theme));
         let height = self.height();
         let left = ((window_width - width) / 2.0).max(0.0);
         let top = ((window_height - height) / 2.0).max(0.0);
@@ -2562,11 +2596,9 @@ impl Dialog {
             if !self.button_showing(index) {
                 continue;
             }
+            let button_width = Self::button_width(&self.buttons[index], engine, theme);
             let mut button = self.buttons[index].clone();
             button.label = messages::translated(&button.label);
-            let measured =
-                engine.simple_line(&button.label, 0.0, 0.0, 9.0, theme.text).width + 32.0;
-            let button_width = measured.max(80.0);
             let button_left = right - button_width;
 
             let focused = self.focus == self.fields.len() + index;

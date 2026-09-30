@@ -567,6 +567,8 @@
 = Internet and network paths with hyperlinks
 = Ireland
 = Irish
+= Issued By
+= Issued To
 = Italian
 = Italic
 = Item added
@@ -710,6 +712,7 @@
 = Norwegian
 = Not in the dictionary
 = Not saved
+= Not verified: a name alone, which trusts nobody
 = Nothing found
 = Nothing is restricted: tick one of the two boxes
 = Nothing was typed, so no diagram was drawn
@@ -785,6 +788,7 @@
 = Paragraph Spacing for the whole document
 = Paragraph formatting
 = Paragraph…
+= Partial signature: a portion of a file is signed
 = Password
 = Password to modify
 = Password to modify (optional)
@@ -867,6 +871,7 @@
 = Remove Current Cover Page
 = Remove Link
 = Remove Location
+= Remove Publisher
 = Remove Table
 = Rename
 = Repeat Header Rows
@@ -1148,7 +1153,9 @@
 = This document also carries Visual Basic macros
 = This document carries macros. They are disabled until you say otherwise.
 = This document carries no custom XML. Add a part from a file to bind controls to it.
+= This document carries no signature that holds, so there is nobody to trust
 = This document contains invalid signatures.
+= This document contains partial signatures.
 = This document contains recoverable signatures.
 = This document contains valid signatures.
 = This document fixes its style set — Review ▸ Restrict Editing lifts it
@@ -1196,7 +1203,9 @@
 = Triangle
 = Trust Center
 = Trust This Folder
+= Trust This Publisher
 = Trusted locations
+= Trusted publishers
 = Turkish
 = Turquoise
 = Two Lines in One
@@ -1322,6 +1331,7 @@
 = take them all back
 = unsaved changes
 = { }
+= {0} (expires {1})
 = {0} added to the list
 = {0} characters
 = {0} chart, {1} points

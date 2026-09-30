@@ -411,3 +411,357 @@ fn what_a_signature_says_about_itself_is_signed_with_everything_else() {
         "the signing time could be changed without the signature noticing"
     );
 }
+
+/// The signature a test has changed, signed again by whoever holds the key.
+///
+/// What somebody who is also the signer could do, and so the case where the
+/// arithmetic comes out and only what was signed can say whether the
+/// signature is worth anything. `counter` picks the first countersignature
+/// rather than the signature itself.
+fn signed_again(text: &str, keys: &Keys, counter: bool) -> String {
+    fn named<'a>(
+        element: &'a wp_xml::tree::Element,
+        local: &str,
+    ) -> Option<&'a wp_xml::tree::Element> {
+        if element.local_name() == local {
+            return Some(element);
+        }
+        element.child_elements().find_map(|child| named(child, local))
+    }
+
+    let tree = wp_xml::tree::XmlTree::parse(text).expect("the signature");
+    let root = &tree.root;
+    let signature = if counter {
+        named(root, "CounterSignature")
+            .and_then(|wrapper| {
+                wrapper.child_elements().find(|one| one.local_name() == "Signature")
+            })
+            .expect("a countersignature")
+    } else {
+        root
+    };
+    let child = |local: &str| {
+        signature.child_elements().find(|child| child.local_name() == local).expect(local)
+    };
+    // Canonicalised the way the reader does it: in what the whole signature
+    // declares.
+    let canonical = wp_sign::c14n::canonical(child("SignedInfo"), &wp_sign::c14n::context(&[root]));
+    let private = wp_asn1::private_key(&keys.key).expect("a private key");
+    let key = wp_rsa::PrivateKey::new(&private.modulus, &private.exponent);
+    let value = key.sign(wp_rsa::Algorithm::Sha256, canonical.as_bytes()).expect("signing");
+    let old = child("SignatureValue").text_content();
+    text.replacen(old.trim(), &wp_text::base64::encode(&value), 1)
+}
+
+/// The text with the first stretch that runs from `from` to the next `to`
+/// taken out, both included.
+fn without(text: &str, from: &str, to: &str) -> String {
+    let start = text.find(from).unwrap_or_else(|| panic!("{from} is not there"));
+    let end = text[start..].find(to).expect("the end of it") + start + to.len();
+    format!("{}{}", &text[..start], &text[end..])
+}
+
+/// The one reference in the signed information that covers the manifest.
+const PACKAGE_REFERENCE: &str =
+    r##"<Reference Type="http://www.w3.org/2000/09/xmldsig#Object" URI="#idPackageObject">"##;
+
+#[test]
+fn an_unsigned_manifest_put_before_the_signed_one_does_not_hide_a_changed_part() {
+    // The attack the review found. The signed information and its value are
+    // left exactly as they were made; a changed part is covered for by an
+    // empty manifest nobody signed, put where a reader that takes the first
+    // manifest it meets would meet it first.
+    let keys = keys("decoy-manifest");
+    let mut package = package();
+    let part = wp_sign::sign(&mut package, &signer(&keys)).expect("signing");
+    assert_eq!(wp_sign::signatures(&package)[0].standing, Standing::Good, "the untouched one");
+
+    package.set_part(
+        "word/document.xml",
+        br#"<?xml version="1.0"?><document>The slow brown fox</document>"#.to_vec(),
+    );
+    let changed = Standing::Changed(String::from("word/document.xml"));
+    assert_eq!(wp_sign::signatures(&package)[0].standing, changed, "the ordinary case");
+
+    let text = package.xml_part(&part).expect("the signature").expect("text");
+    let decoy = text.replacen(
+        r#"<Object Id="idPackageObject">"#,
+        r#"<Object><Manifest></Manifest></Object><Object Id="idPackageObject">"#,
+        1,
+    );
+    assert_ne!(decoy, text, "the decoy did not go in");
+    package.set_part(&part, decoy.into_bytes());
+
+    let signature = &wp_sign::signatures(&package)[0];
+    assert_eq!(signature.standing, changed, "an unsigned manifest covered for a changed part");
+    assert!(
+        signature.parts.contains(&String::from("word/document.xml")),
+        "what it covers was read from the decoy: {:?}",
+        signature.parts
+    );
+}
+
+#[test]
+fn a_signature_whose_signed_objects_hold_no_manifest_covers_nothing() {
+    // Made by the key it names, and holding: but what it signed is only what
+    // it says about itself, and none of the document.
+    let keys = keys("no-manifest");
+    let mut package = package();
+    let part = wp_sign::sign(&mut package, &signer(&keys)).expect("signing");
+    let text = package.xml_part(&part).expect("the signature").expect("text");
+    let unreferenced = without(&text, PACKAGE_REFERENCE, "</Reference>");
+
+    // The manifest still in the file, but no longer among what is signed.
+    package.set_part(&part, signed_again(&unreferenced, &keys, false).into_bytes());
+    let signature = &wp_sign::signatures(&package)[0];
+    assert_eq!(signature.standing, Standing::CoversNothing, "an unsigned manifest was taken");
+    assert!(signature.parts.is_empty(), "{:?}", signature.parts);
+    // What it does sign is still read, and what it no longer signs is not:
+    // the reason is in the Office object, which is still covered, and the
+    // time is in the package object beside the manifest, which is not.
+    assert_eq!(signature.reason, "Because it is mine");
+    assert_eq!(signature.signed_at, "", "the time was read from an object nobody signed");
+
+    // And not in the file at all.
+    let gone = without(&unreferenced, r#"<Object Id="idPackageObject">"#, "</Object>");
+    package.set_part(&part, signed_again(&gone, &keys, false).into_bytes());
+    let signature = &wp_sign::signatures(&package)[0];
+    assert_eq!(signature.standing, Standing::CoversNothing, "a signature over nothing held");
+}
+
+#[test]
+fn an_identifier_used_twice_in_a_signature_is_refused() {
+    // Which of the two was signed would be a matter of which one a reader
+    // happens to look at first, and a signature that depends on that is not
+    // one. On either side of the signed one, the answer is the same.
+    let keys = keys("twice");
+    let mut package = package();
+    let part = wp_sign::sign(&mut package, &signer(&keys)).expect("signing");
+    let text = package.xml_part(&part).expect("the signature").expect("text");
+    let copy = r#"<Object Id="idPackageObject"><Manifest></Manifest></Object>"#;
+
+    let after = text.replacen(
+        r#"<Object Id="idOfficeObject">"#,
+        &format!(r#"{copy}<Object Id="idOfficeObject">"#),
+        1,
+    );
+    let before = text.replacen(
+        r#"<Object Id="idPackageObject">"#,
+        &format!(r#"{copy}<Object Id="idPackageObject">"#),
+        1,
+    );
+    for (side, changed) in [("after", after), ("before", before)] {
+        assert_ne!(changed, text);
+        package.set_part(&part, changed.into_bytes());
+        let signature = &wp_sign::signatures(&package)[0];
+        assert_eq!(
+            signature.standing,
+            Standing::Ambiguous(String::from("idPackageObject")),
+            "{side}: a doubled identifier was resolved"
+        );
+        // Refused before anything was read from either of them.
+        assert!(signature.parts.is_empty(), "{side}: {:?}", signature.parts);
+    }
+}
+
+#[test]
+fn what_a_signature_says_about_itself_is_read_from_what_it_signed() {
+    // A time, a reason and a line, written in an object nobody signed and
+    // put first. The signature still holds — an object it does not cover may
+    // be there, as its unsigned properties are — but what it says is what it
+    // signed.
+    let keys = keys("said");
+    let mut package = package();
+    let part = wp_sign::sign(&mut package, &signer(&keys)).expect("signing");
+    let text = package.xml_part(&part).expect("the signature").expect("text");
+    let forged = concat!(
+        r#"<Object><SignatureProperties><SignatureProperty>"#,
+        r#"<mdssi:SignatureTime"#,
+        r#" xmlns:mdssi="http://schemas.openxmlformats.org/package/2006/digital-signature">"#,
+        r#"<mdssi:Value>2001-01-01T00:00:00Z</mdssi:Value></mdssi:SignatureTime>"#,
+        r#"</SignatureProperty><SignatureProperty>"#,
+        r#"<SignatureInfoV1 xmlns="http://schemas.microsoft.com/office/2006/digsig">"#,
+        r#"<SetupID>forged</SetupID><SignatureComments>Forged</SignatureComments>"#,
+        r#"</SignatureInfoV1></SignatureProperty></SignatureProperties></Object>"#,
+    );
+    let changed = text.replacen(
+        r#"<Object Id="idPackageObject">"#,
+        &format!(r#"{forged}<Object Id="idPackageObject">"#),
+        1,
+    );
+    assert_ne!(changed, text);
+    package.set_part(&part, changed.into_bytes());
+
+    let signature = &wp_sign::signatures(&package)[0];
+    assert_eq!(signature.standing, Standing::Good, "{}", signature.standing.label());
+    assert_eq!(signature.signed_at, "2026-09-16T12:00:00Z");
+    assert_eq!(signature.reason, "Because it is mine");
+    assert_eq!(signature.line, "");
+}
+
+#[test]
+fn what_a_countersignature_says_is_read_from_what_it_signed() {
+    let mine = keys("counter-said");
+    let mut sealed = package();
+    let part = wp_sign::sign(&mut sealed, &signer(&mine)).expect("signing");
+    let mut witness = signer(&mine);
+    witness.reason = String::from("Witnessed");
+    witness.at = String::from("2026-09-17T09:00:00Z");
+    wp_sign::countersign(&mut sealed, &part, &witness).expect("countersigning");
+
+    // A role and a time nobody signed, put inside the countersignature ahead
+    // of the properties it did sign.
+    let text = sealed.xml_part(&part).expect("the part").expect("text");
+    let theirs = concat!(
+        r#"<Object><xd:QualifyingProperties"#,
+        r#" xmlns:xd="http://uri.etsi.org/01903/v1.3.2#" Target="">"#,
+    );
+    let forged = concat!(
+        r#"<Object><xd:SigningTime xmlns:xd="http://uri.etsi.org/01903/v1.3.2#">"#,
+        r#"2001-01-01T00:00:00Z</xd:SigningTime>"#,
+        r#"<xd:ClaimedRole xmlns:xd="http://uri.etsi.org/01903/v1.3.2#">Forged</xd:ClaimedRole>"#,
+        r#"</Object>"#,
+    );
+    let changed = text.replacen(theirs, &format!("{forged}{theirs}"), 1);
+    assert_ne!(changed, text, "the countersignature was not where it was looked for");
+    sealed.set_part(&part, changed.into_bytes());
+
+    let signatures = wp_sign::signatures(&sealed);
+    let counter = &signatures[0].counters[0];
+    assert_eq!(counter.standing, Standing::Good, "{:?}", counter.standing);
+    assert_eq!(counter.role, "Witnessed");
+    assert_eq!(counter.signed_at, "2026-09-17T09:00:00Z");
+}
+
+#[test]
+fn a_countersignature_that_does_not_cover_the_signature_is_not_one() {
+    // Made by the witness's own key and holding, but over nothing except
+    // what it says about itself: it could be lifted into any document.
+    let mine = keys("counter-nothing");
+    let mut sealed = package();
+    let part = wp_sign::sign(&mut sealed, &signer(&mine)).expect("signing");
+    let mut witness = signer(&mine);
+    witness.reason = String::from("Witnessed");
+    wp_sign::countersign(&mut sealed, &part, &witness).expect("countersigning");
+
+    let text = sealed.xml_part(&part).expect("the part").expect("text");
+    let cut = without(
+        &text,
+        r#"<Reference Type="http://uri.etsi.org/01903#CountersignedSignature""#,
+        "</Reference>",
+    );
+    sealed.set_part(&part, signed_again(&cut, &mine, true).into_bytes());
+
+    let signatures = wp_sign::signatures(&sealed);
+    assert_eq!(signatures[0].standing, Standing::Good, "the signature itself was not touched");
+    let counter = &signatures[0].counters[0];
+    assert_eq!(counter.standing, Standing::CoversNothing, "it held over nothing");
+}
+
+#[test]
+fn a_certificate_is_known_by_the_same_fingerprint_another_program_gives_it() {
+    // What a trusted publisher is remembered by, so it had better be the
+    // number everybody else means by the words: OpenSSL's SHA-256
+    // fingerprint, which it writes in capitals with colons between.
+    let keys = keys("fingerprint");
+    let output = run(Command::new("openssl")
+        .args(["x509", "-noout", "-fingerprint", "-sha256", "-in"])
+        .arg(keys.folder.join("cert.pem")));
+    let said = String::from_utf8_lossy(&output.stdout);
+    let theirs: String = said
+        .split('=')
+        .nth(1)
+        .expect("a fingerprint")
+        .trim()
+        .chars()
+        .filter(|character| *character != ':')
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let certificate = wp_asn1::Certificate::read(&keys.certificate).expect("a certificate");
+    assert_eq!(wp_sign::fingerprint(&certificate), theirs);
+    assert_eq!(theirs.len(), 64);
+}
+
+#[test]
+fn what_a_signature_covers_is_asked_part_by_part_and_relationship_by_relationship() {
+    let keys = keys("covers");
+    let mut package = package();
+    wp_sign::sign(&mut package, &signer(&keys)).expect("signing");
+    let signature = &wp_sign::signatures(&package)[0];
+    // The relationship to the signatures, which signing adds to the
+    // package's own after the manifest is made, is the one the format leaves
+    // out; everything else is covered.
+    assert!(signature.covers_whole(&package), "a signature over everything was partial");
+    assert!(signature.covers_part("word/document.xml"));
+    assert!(signature.covers_part("/WORD/Document.xml"), "part names are not case-sensitive");
+    let office = wp_opc::OFFICE_DOCUMENT_RELATIONSHIP;
+    let root = package.relationships("").expect("the package's relationships");
+    let main = root.by_type(office).next().expect("the main part's").id.clone();
+    assert!(signature.covers_relationship("", &main));
+    assert!(signature.covers_reached(&package, "", office));
+
+    // A part added beside the signature, with a relationship to it. Nothing
+    // that was signed changed, so the signature holds — for what it covers.
+    package.add_part("word/added.bin", "application/octet-stream", b"added".to_vec());
+    let mut root = package.relationships("").expect("the package's relationships");
+    let added = root.add("urn:added", "word/added.bin", wp_opc::TargetMode::Internal).id.clone();
+    package.set_relationships(&root).expect("writing them");
+
+    let signature = &wp_sign::signatures(&package)[0];
+    assert_eq!(signature.standing, Standing::Good, "{}", signature.standing.label());
+    assert!(!signature.covers_whole(&package), "an added part was taken as signed");
+    assert!(!signature.covers_part("word/added.bin"));
+    assert!(!signature.covers_relationship("", &added), "an added relationship was taken");
+    assert!(!signature.covers_reached(&package, "", "urn:added"));
+    assert!(signature.covers_relationship("", &main), "what was signed stopped being");
+    assert!(signature.covers_reached(&package, "", office));
+}
+
+#[test]
+fn a_certificate_other_than_the_one_the_signature_names_does_not_hold() {
+    // Another certificate for the same key, put where the signer's was. The
+    // arithmetic still comes out, since the key is the same; what says it is
+    // not the signer's is the digest of the signer's certificate, written
+    // into what was signed.
+    let keys = keys("other-certificate");
+    let mut package = package();
+    let part = wp_sign::sign(&mut package, &signer(&keys)).expect("signing");
+    let at = |file: &str| keys.folder.join(file).to_str().expect("a path").to_owned();
+    run(Command::new("openssl").args([
+        "req",
+        "-x509",
+        "-new",
+        "-key",
+        &at("key.pem"),
+        "-out",
+        &at("other.pem"),
+        "-days",
+        "30",
+        "-sha256",
+        "-subj",
+        "/CN=Somebody Else",
+    ]));
+    run(Command::new("openssl").args([
+        "x509",
+        "-in",
+        &at("other.pem"),
+        "-outform",
+        "DER",
+        "-out",
+        &at("other.der"),
+    ]));
+    let other = std::fs::read(keys.folder.join("other.der")).expect("the other certificate");
+
+    let text = package.xml_part(&part).expect("the signature").expect("text");
+    let swapped = text.replacen(
+        &wp_text::base64::encode(&keys.certificate),
+        &wp_text::base64::encode(&other),
+        1,
+    );
+    assert_ne!(swapped, text, "the certificate was not where it was looked for");
+    package.set_part(&part, swapped.into_bytes());
+
+    let signature = &wp_sign::signatures(&package)[0];
+    assert_eq!(signature.certificate.subject, "CN=Somebody Else");
+    assert_eq!(signature.standing, Standing::Broken, "a certificate it never named was taken");
+}

@@ -106,9 +106,11 @@ pub struct Settings {
     pub macro_trust: Option<String>,
     /// The folders whose documents may run macros without being asked about.
     pub trusted_places: Vec<String>,
-    /// And the people whose signatures are trusted, by the name in their
-    /// certificate.
-    pub trusted_publishers: Vec<String>,
+    /// And the people whose signatures are trusted, each by the fingerprint
+    /// of their certificate with its name beside it for showing. A name
+    /// written down alone, by an earlier version, is kept and trusts nobody:
+    /// see [`crate::editor::trust::Publisher`].
+    pub trusted_publishers: Vec<crate::editor::trust::Publisher>,
     /// The documents opened lately, the most recent first.
     ///
     /// Kept as written rather than as paths, because a path that no longer
@@ -243,7 +245,12 @@ impl Settings {
                 "confirm-conversion" => settings.confirm_conversion = parse_flag(value),
                 "macro-trust" => settings.macro_trust = Some(value.to_owned()),
                 "trusted-place" => settings.trusted_places.push(value.to_owned()),
-                "trusted-publisher" => settings.trusted_publishers.push(value.to_owned()),
+                // A name alone, the way an earlier version wrote a publisher
+                // down: kept so that it can be seen and removed, and trusting
+                // nobody.
+                "trusted-publisher" => settings
+                    .trusted_publishers
+                    .push(crate::editor::trust::Publisher::named_only(value)),
                 // Says that the replacements below are the whole list. It has
                 // to be said out loud, because a person who deletes the last
                 // replacement leaves a file with nothing to read, and nothing
@@ -263,6 +270,9 @@ impl Settings {
                 "theme-fonts" => settings.theme_fonts = Some(value.to_owned()),
                 "status-off" => settings.status_off = words(value),
                 other => {
+                    if read_publisher(&mut settings.trusted_publishers, other, value) {
+                        continue;
+                    }
                     // The ribbon and the toolbar read their own lines, because
                     // what is on them is a matter for the chrome and not for
                     // this file. See [`crate::chrome::customise`].
@@ -361,7 +371,23 @@ impl Settings {
             write("trusted-place", place.clone());
         }
         for publisher in &self.trusted_publishers {
-            write("trusted-publisher", publisher.clone());
+            // A name alone goes back as it came, so that an earlier version
+            // reading the file finds what it wrote.
+            if publisher.fingerprint.is_empty() {
+                write("trusted-publisher", publisher.subject.clone());
+                continue;
+            }
+            let fingerprint = &publisher.fingerprint;
+            write(&format!("{PUBLISHER_PREFIX}{fingerprint}"), publisher.subject.clone());
+            if !publisher.issuer.is_empty() {
+                write(&format!("{PUBLISHER_ISSUER_PREFIX}{fingerprint}"), publisher.issuer.clone());
+            }
+            if !publisher.expires.is_empty() {
+                write(
+                    &format!("{PUBLISHER_EXPIRES_PREFIX}{fingerprint}"),
+                    publisher.expires.clone(),
+                );
+            }
         }
         for (key, flagged) in [
             ("marks", self.marks),
@@ -426,6 +452,56 @@ const CORRECT_PREFIX: &str = "correct.";
 const REPLACE_PREFIX: &str = "replace.";
 /// What a Math AutoCorrect entry's line begins with: `math.\alpha = α`.
 const MATH_PREFIX: &str = "math.";
+
+/// What a trusted publisher's line begins with, the fingerprint of their
+/// certificate following it and the name on it as the value. The
+/// fingerprint is in the key because it is what the entry is: the name, and
+/// the two lines below, only say what to show beside it.
+const PUBLISHER_PREFIX: &str = "trusted-publisher.";
+/// Who issued that certificate, for Word's Issued By.
+const PUBLISHER_ISSUER_PREFIX: &str = "trusted-publisher-issuer.";
+/// And when it stops being good, for Word's Expiration Date.
+const PUBLISHER_EXPIRES_PREFIX: &str = "trusted-publisher-expires.";
+
+/// Reads one of a trusted publisher's lines, and says whether it was one.
+///
+/// The lines of one publisher are put together by the fingerprint in their
+/// keys, in whatever order a hand-edited file has them.
+fn read_publisher(
+    publishers: &mut Vec<crate::editor::trust::Publisher>,
+    key: &str,
+    value: &str,
+) -> bool {
+    let Some((prefix, fingerprint)) =
+        [PUBLISHER_PREFIX, PUBLISHER_ISSUER_PREFIX, PUBLISHER_EXPIRES_PREFIX]
+            .into_iter()
+            .find_map(|prefix| Some((prefix, key.strip_prefix(prefix)?)))
+    else {
+        return false;
+    };
+    let fingerprint = fingerprint.to_ascii_lowercase();
+    let found = publishers
+        .iter()
+        .position(|one| !one.fingerprint.is_empty() && one.fingerprint == fingerprint);
+    let at = match found {
+        Some(at) => at,
+        None => {
+            publishers.push(crate::editor::trust::Publisher {
+                fingerprint,
+                ..crate::editor::trust::Publisher::default()
+            });
+            publishers.len() - 1
+        }
+    };
+    let publisher = &mut publishers[at];
+    let field = match prefix {
+        PUBLISHER_ISSUER_PREFIX => &mut publisher.issuer,
+        PUBLISHER_EXPIRES_PREFIX => &mut publisher.expires,
+        _ => &mut publisher.subject,
+    };
+    *field = value.to_owned();
+    true
+}
 
 impl Settings {
     /// The corrections, as the file has them.
@@ -609,7 +685,15 @@ mod tests {
             confirm_conversion: Some(true),
             macro_trust: Some("signed".to_owned()),
             trusted_places: vec!["/home/somebody/Trusted".to_owned()],
-            trusted_publishers: vec!["CN=Somebody".to_owned()],
+            trusted_publishers: vec![
+                crate::editor::trust::Publisher {
+                    fingerprint: "0123456789abcdef".repeat(4),
+                    subject: "CN=Somebody, O=Somewhere".to_owned(),
+                    issuer: "CN=Somebody's Issuer".to_owned(),
+                    expires: "2036-01-01T00:00:00Z".to_owned(),
+                },
+                crate::editor::trust::Publisher::named_only("CN=Somebody Else"),
+            ],
             autocorrect: Some(crate::autocorrect::AutoCorrect::default()),
             recent: vec![
                 "C:\\Documents\\Report, final.docx".to_owned(),
@@ -619,6 +703,34 @@ mod tests {
             unknown: BTreeMap::new(),
         };
         assert_eq!(Settings::parse(&settings.to_text()), settings);
+    }
+
+    #[test]
+    fn a_trusted_publisher_is_written_by_the_fingerprint_of_their_certificate() {
+        let text = concat!(
+            "trusted-publisher-expires.ABCDEF0123456789ABCDEF0123456789",
+            "ABCDEF0123456789ABCDEF0123456789 = 2036-01-01T00:00:00Z\n",
+            "trusted-publisher.abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+            " = CN=A Signer, O=Nobody, C=GB\n",
+            "trusted-publisher = CN=Written Down Before\n",
+        );
+        let settings = Settings::parse(text);
+        // The lines of one publisher come together whatever order they are
+        // in and whatever case the fingerprint was typed in.
+        assert_eq!(settings.trusted_publishers.len(), 2, "{:?}", settings.trusted_publishers);
+        let first = &settings.trusted_publishers[0];
+        assert_eq!(first.fingerprint, "abcdef0123456789".repeat(4));
+        assert_eq!(first.subject, "CN=A Signer, O=Nobody, C=GB");
+        assert_eq!(first.expires, "2036-01-01T00:00:00Z");
+        assert!(first.is_verified());
+
+        // A name alone, as an earlier version wrote it, is read and kept and
+        // is not a certificate.
+        let named = &settings.trusted_publishers[1];
+        assert_eq!(named.subject, "CN=Written Down Before");
+        assert!(!named.is_verified());
+        let written = settings.to_text();
+        assert!(written.contains("trusted-publisher = CN=Written Down Before\n"), "{written}");
     }
 
     #[test]

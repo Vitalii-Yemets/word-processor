@@ -26,7 +26,8 @@
 //! - **Everything**: anything runs, which is the setting nobody should have.
 //!
 //! And two lists that say yes before the setting is asked: the folders whose
-//! documents are trusted, and the people whose signatures are.
+//! documents are trusted, and the people whose signatures are — each of them
+//! a certificate, never a name, see [`Publisher`].
 //!
 //! # Where this differs from Word, and why it is said out loud
 //!
@@ -95,6 +96,131 @@ impl Trusting {
             Self::Everything => "Enable all macros (not recommended)",
         }
     }
+}
+
+/// Where the macros a document runs are read from: the part is taken by this
+/// name, see [`super::macros`].
+const MACRO_PROJECT: &str = "word/vbaProject.bin";
+
+/// And what the format reaches them by, from the main part.
+const MACRO_PROJECT_RELATIONSHIP: &str =
+    "http://schemas.microsoft.com/office/2006/relationships/vbaProject";
+
+/// Whether a signature covers the macros a document would run.
+///
+/// A signature that holds says that what it covers is as it was, and
+/// nothing about anything beside it. A macro project added to a signed
+/// document — the part, the relationship that reaches it and the content
+/// type that makes the document a macro-enabled one — changes nothing the
+/// signature covers, so the signature still holds and says nothing about
+/// the project. So the question asked is the one Word asks of a project's
+/// own signature: whether it covers the project. The part the program runs,
+/// by its name, and whatever the main part's macro-project relationships
+/// reach, with those relationships.
+fn covers_the_macros(signature: &wp_sign::Signature, document: &wp_docx::Document) -> bool {
+    let package = document.package();
+    let Ok(main) = package.main_document_part() else { return false };
+    (package.part(MACRO_PROJECT).is_none() || signature.covers_part(MACRO_PROJECT))
+        && signature.covers_reached(package, &main, MACRO_PROJECT_RELATIONSHIP)
+}
+
+/// Somebody whose signature lets a document's macros run: Word's trusted
+/// publisher.
+///
+/// # What decides, and what is only shown
+///
+/// Their certificate, by its fingerprint — see [`wp_sign::fingerprint`] —
+/// and nothing else. A signature that holds proves that it was made with the
+/// key of the certificate beside it, and the name on that certificate is
+/// whatever its maker chose to write: anybody can make a key and a
+/// certificate reading `CN=Somebody Trusted`. So the name, the issuer and the
+/// date are kept only so that the Trust Center can say who this is, in the
+/// three columns Word's Trusted Publishers page has, and never to decide.
+/// Word keeps the certificate itself, in the system's Trusted Publishers
+/// store, and finds it there by its thumbprint; the fingerprint is the same
+/// idea with a stronger hash.
+///
+/// # A name alone
+///
+/// An earlier version remembered a publisher by the name on the certificate
+/// and nothing more. Such a line is still read, because it is the person's
+/// record of whom they meant to trust, and it stays on the list marked as not
+/// verified, where it can be seen and removed — but it trusts nobody.
+/// Dropping it quietly would leave a person wondering why a document that ran
+/// yesterday is refused today; trusting the publisher again from a document
+/// they signed puts the certificate in its place.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Publisher {
+    /// The SHA-256 of their certificate, in lower-case hex. Empty for a name
+    /// kept by an earlier version.
+    pub fingerprint: String,
+    /// Who the certificate says it is about: Word's Issued To.
+    pub subject: String,
+    /// Who says so: Word's Issued By.
+    pub issuer: String,
+    /// When it stops being good, as `YYYY-MM-DDTHH:MM:SSZ`: Word's
+    /// Expiration Date.
+    pub expires: String,
+}
+
+impl Publisher {
+    /// The publisher a certificate is, taken from the certificate in hand.
+    #[must_use]
+    pub fn of(certificate: &wp_asn1::Certificate) -> Self {
+        // The words are the certificate maker's, and they are going into a
+        // file of one setting per line: a line break written on a certificate
+        // would otherwise be a setting of its maker's choosing.
+        let shown = |text: &str| -> String {
+            text.chars().map(|at| if at.is_control() { ' ' } else { at }).collect()
+        };
+        Self {
+            fingerprint: wp_sign::fingerprint(certificate),
+            subject: shown(&certificate.subject),
+            issuer: shown(&certificate.issuer),
+            expires: shown(&certificate.not_after),
+        }
+    }
+
+    /// A name kept by an earlier version, with nothing to match it by.
+    #[must_use]
+    pub fn named_only(subject: &str) -> Self {
+        Self { subject: subject.to_owned(), ..Self::default() }
+    }
+
+    /// Whether there is a certificate behind it at all.
+    #[must_use]
+    pub fn is_verified(&self) -> bool {
+        self.fingerprint.len() == 64
+            && self.fingerprint.chars().all(|digit| digit.is_ascii_hexdigit())
+    }
+
+    /// Whether a certificate is this publisher's: the same certificate, byte
+    /// for byte, whatever name either of them bears.
+    #[must_use]
+    pub fn is(&self, certificate: &wp_asn1::Certificate) -> bool {
+        self.is_verified() && self.fingerprint == wp_sign::fingerprint(certificate)
+    }
+
+    /// What the Trust Center says beside the name: who issued it and until
+    /// when, as Word's list does — or that it is a name alone.
+    ///
+    /// The issuer by its common name, which is what Word's Issued By column
+    /// shows: the whole of an issuer's name is a line of its own, and the
+    /// date after it would be cut off the end of the column.
+    #[must_use]
+    pub fn said(&self) -> String {
+        if !self.is_verified() {
+            return t("Not verified: a name alone, which trusts nobody").to_owned();
+        }
+        let until = self.expires.get(..10).unwrap_or(&self.expires);
+        with("{0} (expires {1})", &[common_name(&self.issuer), until])
+    }
+}
+
+/// The common name in a name as a certificate prints it, or the whole name
+/// where it has none.
+fn common_name(name: &str) -> &str {
+    name.split(", ").find_map(|part| part.strip_prefix("CN=")).unwrap_or(name)
 }
 
 /// Whether a macro may run, and why not when it may not.
@@ -185,18 +311,92 @@ impl Editor {
         })
     }
 
-    /// Whether a document is signed by somebody in the trusted list, and
-    /// whether that signature still holds.
+    /// Whether a document is signed by somebody in the trusted list, whether
+    /// that signature still holds, and whether it covers the macros.
+    ///
+    /// By the certificate that made the signature, never by the name on it:
+    /// that the signature holds says the certificate's key made it, and only
+    /// the certificate being the one that was trusted says whose key that is.
     #[must_use]
     fn signed_by_somebody_trusted(&self, document: &wp_docx::Document) -> bool {
         document.signatures().iter().any(|signature| {
-            signature.standing == wp_sign::Standing::Good
+            signature.standing.is_good()
+                && covers_the_macros(signature, document)
                 && self
                     .settings
                     .trusted_publishers
                     .iter()
-                    .any(|publisher| publisher == &signature.certificate.subject)
+                    .any(|publisher| publisher.is(&signature.certificate))
         })
+    }
+
+    /// Trusts whoever holds the key of a certificate, and says whether they
+    /// were not trusted already: Word's "Trust all documents from this
+    /// publisher".
+    ///
+    /// Taken from the certificate in hand and from nothing a person could
+    /// type, since what is trusted is that certificate.
+    pub(super) fn trust_publisher(&mut self, certificate: &wp_asn1::Certificate) -> bool {
+        let publishers = &mut self.settings.trusted_publishers;
+        if publishers.iter().any(|publisher| publisher.is(certificate)) {
+            return false;
+        }
+        let publisher = Publisher::of(certificate);
+        // A name an earlier version kept alone is the person's note of whom
+        // they meant, and the certificate they have now chosen takes its row
+        // rather than sitting beside it. Which row it lands in is all the
+        // name decides; the trust is in the certificate either way.
+        match publishers
+            .iter()
+            .position(|one| !one.is_verified() && one.subject == publisher.subject)
+        {
+            Some(at) => publishers[at] = publisher,
+            None => publishers.push(publisher),
+        }
+        true
+    }
+
+    /// Trusts whoever signed the open document, from the Trust Centre.
+    ///
+    /// Only a signature that holds offers its certificate: a certificate is
+    /// public, and one pasted beside a signature it did not make is not a
+    /// publisher of this document.
+    pub(super) fn trust_this_publisher(&mut self, dialog: &Dialog) -> Response {
+        let mut names: Vec<String> = Vec::new();
+        let mut any = false;
+        for signature in self.document.signatures() {
+            if !signature.standing.is_good() {
+                continue;
+            }
+            any = true;
+            self.trust_publisher(&signature.certificate);
+            if !names.contains(&signature.certificate.subject) {
+                names.push(signature.certificate.subject.clone());
+            }
+        }
+        if !any {
+            return self.report(t(
+                "This document carries no signature that holds, so there is nobody to trust",
+            ));
+        }
+        self.settings.save();
+        let again = self.options_dialog();
+        let _ = dialog;
+        self.ask(super::dialogs::Asking::Options, again);
+        self.report(&with("{0} is trusted", &[&names.join("; ")]))
+    }
+
+    /// And forgets the publisher chosen on the list.
+    pub(super) fn forget_trusted_publisher(&mut self, dialog: &Dialog) -> Response {
+        let chosen = dialog.chose_pair(super::optionsdialog::TRUSTED_PUBLISHERS);
+        if chosen < self.settings.trusted_publishers.len() {
+            let gone = self.settings.trusted_publishers.remove(chosen);
+            self.settings.save();
+            let again = self.options_dialog();
+            self.ask(super::dialogs::Asking::Options, again);
+            return self.report(&with("{0} is not trusted any more", &[&gone.subject]));
+        }
+        Response::Ignored
     }
 
     /// Enables them for this document, which is what the bar's button does.
@@ -235,7 +435,9 @@ impl Editor {
 
     /// And forgets the one that is chosen.
     pub(super) fn forget_trusted_place(&mut self, dialog: &Dialog) -> Response {
-        let chosen = dialog.chose_row(super::optionsdialog::TRUSTED_PLACES);
+        // The list is one of pairs, and which row of it is chosen is asked as
+        // one: asked as a tree, it answered the first row whatever was chosen.
+        let chosen = dialog.chose_pair(super::optionsdialog::TRUSTED_PLACES);
         if chosen < self.settings.trusted_places.len() {
             let gone = self.settings.trusted_places.remove(chosen);
             self.settings.save();
@@ -252,6 +454,7 @@ mod tests {
     use super::*;
 
     use crate::chrome::infobar::{Because, Hit};
+    use crate::editor::certificates::Own;
     use wp_docx::kinds::Kind;
     use wp_docx::model::{Block, Body, Paragraph};
     use wp_docx::Document;
@@ -409,7 +612,7 @@ mod tests {
     #[test]
     fn only_signed_means_signed_by_somebody_on_the_list_and_still_holding() {
         // The one rule that leans on the certificates J12 and J24 read: a
-        // signature that holds, by a name somebody put on the list.
+        // signature that holds, by a certificate somebody put on the list.
         let folder = crate::editor::certificates::tests::folder("trust-signed", "der");
         let mine = crate::editor::certificates::own_certificates_in(&folder.0);
         let own = mine.first().expect("a certificate");
@@ -429,14 +632,327 @@ mod tests {
         editor.set_document(signed, None);
         assert!(matches!(editor.macros_allowed(), Allowed::No(_)), "nobody has trusted the signer");
 
-        let subject = editor.document.signatures()[0].certificate.subject.clone();
-        editor.settings.trusted_publishers.push(subject);
+        let certificate = editor.document.signatures()[0].certificate.clone();
+        assert!(editor.trust_publisher(&certificate));
+        assert!(!editor.trust_publisher(&certificate), "the same certificate was trusted twice");
         assert_eq!(editor.macros_allowed(), Allowed::Yes);
 
         // And an unsigned document is still refused, however trusted the
         // signer is.
         editor.set_document(with_auto_open(), None);
         assert!(matches!(editor.macros_allowed(), Allowed::No(_)));
+    }
+
+    /// A certificate of the person's own, made afresh: each one has the
+    /// same name and a key nobody else has.
+    fn a_certificate(name: &str) -> (crate::editor::certificates::tests::Folder, Own) {
+        let folder = crate::editor::certificates::tests::folder(name, "der");
+        let own = crate::editor::certificates::own_certificates_in(&folder.0)
+            .into_iter()
+            .next()
+            .expect("a certificate");
+        (folder, own)
+    }
+
+    /// Somebody signing with one of them.
+    fn signer_of(own: &Own) -> wp_sign::Signer {
+        wp_sign::Signer {
+            certificate: own.certificate.der.clone(),
+            chain: Vec::new(),
+            key: own.signs(),
+            reason: String::from("Approved"),
+            at: String::from("2027-01-01T00:00:00Z"),
+            line: String::new(),
+        }
+    }
+
+    /// The document carrying `AutoOpen`, signed with one of them.
+    fn signed_by(own: &Own) -> Vec<u8> {
+        with_auto_open().save_signed(&signer_of(own)).expect("signing")
+    }
+
+    #[test]
+    fn a_macro_project_added_beside_a_trusted_signature_does_not_run() {
+        // A trusted publisher's signed document with no macros in it, and a
+        // project put in afterwards: the part, the relationship from the main
+        // part that reaches it, and the content type that makes the document
+        // a macro-enabled one. Nothing the signature covers has changed, so
+        // it holds — and it says nothing whatever about the project.
+        let (_folder, own) = a_certificate("trust-added-project");
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("untouched")));
+        let plain = Document::create(&body).expect("a document");
+        let signed = plain.save_signed(&signer_of(&own)).expect("signing");
+
+        let mut package = wp_opc::Package::open(&signed).expect("a package");
+        package.add_part(
+            "word/vbaProject.bin",
+            "application/vnd.ms-office.vbaProject",
+            wp_vba::example(&[(
+                "Module1",
+                "Public Sub AutoOpen()\r\n    Selection.TypeText \"added \"\r\nEnd Sub\r\n",
+            )]),
+        );
+        let mut relationships = package.relationships("word/document.xml").expect("relationships");
+        relationships.add(
+            "http://schemas.microsoft.com/office/2006/relationships/vbaProject",
+            "vbaProject.bin",
+            wp_opc::TargetMode::Internal,
+        );
+        package.set_relationships(&relationships).expect("writing them");
+        let mut types = package.content_types().clone();
+        types.set_override("word/document.xml", Kind::MacroEnabledDocument.content_type());
+        package.set_content_types(types);
+        let added = Document::open(&package.save().expect("saving")).expect("reopening");
+        assert_eq!(added.kind(), Kind::MacroEnabledDocument);
+        assert!(added.signatures()[0].standing.is_good(), "it holds for what it covers");
+
+        let mut editor = opened(None);
+        editor.settings.macro_trust = Some(Trusting::Signed.name().to_owned());
+        editor.trust_publisher(&own.certificate);
+        editor.set_document(added, None);
+        assert!(
+            matches!(editor.macros_allowed(), Allowed::No(_)),
+            "a project nobody signed ran under a trusted publisher's signature"
+        );
+
+        // And the same publisher's macro-enabled document, signed with its
+        // project in it, runs.
+        editor.set_document(Document::open(&signed_by(&own)).expect("reopening"), None);
+        assert_eq!(editor.macros_allowed(), Allowed::Yes);
+    }
+
+    #[test]
+    fn the_trust_centers_buttons_fit_inside_the_dialog_in_english_and_in_german() {
+        // Four buttons of the page's own, with OK and Cancel, is the widest
+        // row any page of Options puts along the bottom, and German says each
+        // of them at greater length. None may hang outside the frame, and the
+        // page with its two lists has to fit the window.
+        use crate::chrome::dialog::Part;
+        for language in [crate::messages::ENGLISH, "de"] {
+            crate::messages::tests::in_language(language, || {
+                let mut editor = opened(None);
+                editor.open_options();
+                if let Some(dialog) = &mut editor.dialog {
+                    dialog.show_tab(super::super::optionsdialog::TAB_TRUST_PAGE);
+                }
+                editor.draw(1400, 900);
+                let dialog = editor.dialog.as_ref().expect("the dialog");
+                let (left, top, width, height) = dialog.frame();
+                assert!(top >= 0.0 && top + height <= 900.0, "{language}: taller than the window");
+                let buttons: Vec<(f32, f32, f32, f32)> = dialog
+                    .parts()
+                    .into_iter()
+                    .filter(|(part, _)| matches!(part, Part::Button(_)))
+                    .map(|(_, place)| place)
+                    .collect();
+                assert_eq!(buttons.len(), 6, "{language}: {buttons:?}");
+                for (x, y, across, down) in buttons {
+                    assert!(
+                        x >= left && x + across <= left + width,
+                        "{language}: a button from {x} to {} is outside {left} to {}",
+                        x + across,
+                        left + width
+                    );
+                    assert!(y >= top && y + down <= top + height, "{language}: below the frame");
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn remove_location_removes_the_folder_that_is_chosen() {
+        use crate::chrome::dialog::{Answer, Field};
+        let mut editor = opened(None);
+        editor.settings.trusted_places =
+            vec!["/one".to_owned(), "/two".to_owned(), "/three".to_owned()];
+        editor.open_options();
+        let list = editor
+            .dialog
+            .as_mut()
+            .and_then(|dialog| dialog.fields.get_mut(super::super::optionsdialog::TRUSTED_PLACES));
+        let Some(Field::Pairs { current, .. }) = list else { panic!("no list of folders") };
+        *current = 1;
+        editor.finish_dialog(Answer::Named(super::super::optionsdialog::FORGET_PLACE));
+        assert_eq!(
+            editor.settings.trusted_places,
+            vec!["/one".to_owned(), "/three".to_owned()],
+            "the folder removed was not the one chosen"
+        );
+        assert!(editor.status.contains("/two"), "{}", editor.status);
+    }
+
+    #[test]
+    fn a_certificate_with_a_trusted_name_and_another_key_is_not_trusted() {
+        // Anybody can make a key and write any name they like on a
+        // certificate for it. What was trusted is one certificate, and a
+        // stranger's with the same words in it is a stranger's.
+        let (_genuine_folder, genuine) = a_certificate("trust-genuine");
+        let (_impostor_folder, impostor) = a_certificate("trust-impostor");
+        assert_eq!(genuine.certificate.subject, impostor.certificate.subject);
+        assert_ne!(genuine.certificate.der, impostor.certificate.der);
+
+        let mut editor = opened(None);
+        editor.settings.macro_trust = Some(Trusting::Signed.name().to_owned());
+        editor.trust_publisher(&genuine.certificate);
+
+        let forged = Document::open(&signed_by(&impostor)).expect("reopening");
+        assert!(forged.signatures()[0].standing.is_good(), "the impostor's own signature holds");
+        editor.set_document(forged, None);
+        assert!(
+            matches!(editor.macros_allowed(), Allowed::No(_)),
+            "a certificate was trusted for the name written on it"
+        );
+
+        editor.set_document(Document::open(&signed_by(&genuine)).expect("reopening"), None);
+        assert_eq!(editor.macros_allowed(), Allowed::Yes, "the one that was trusted");
+    }
+
+    #[test]
+    fn a_changed_macro_project_does_not_run_behind_an_unsigned_manifest() {
+        // The whole of the attack on the gate: a trusted publisher's signed
+        // document, its macros swapped for others, and an empty manifest
+        // nobody signed put first in the signature to cover for them.
+        let (_folder, own) = a_certificate("trust-decoy");
+        let signed = signed_by(&own);
+        let mut editor = opened(None);
+        editor.settings.macro_trust = Some(Trusting::Signed.name().to_owned());
+        editor.trust_publisher(&own.certificate);
+        editor.set_document(Document::open(&signed).expect("reopening"), None);
+        assert_eq!(editor.macros_allowed(), Allowed::Yes, "the untouched document");
+
+        let mut package = wp_opc::Package::open(&signed).expect("a package");
+        package.set_part(
+            "word/vbaProject.bin",
+            wp_vba::example(&[(
+                "Module1",
+                "Public Sub AutoOpen()\r\n    Selection.TypeText \"swapped \"\r\nEnd Sub\r\n",
+            )]),
+        );
+        let part = "_xmlsignatures/sig1.xml";
+        let text = package.xml_part(part).expect("the signature").expect("text");
+        let decoy = text.replacen(
+            r#"<Object Id="idPackageObject">"#,
+            r#"<Object><Manifest></Manifest></Object><Object Id="idPackageObject">"#,
+            1,
+        );
+        assert_ne!(decoy, text, "the decoy did not go in");
+        package.set_part(part, decoy.into_bytes());
+        let tampered = Document::open(&package.save().expect("saving")).expect("reopening");
+
+        editor.set_document(tampered, None);
+        assert!(
+            matches!(editor.macros_allowed(), Allowed::No(_)),
+            "a changed macro project ran under a signature that no longer covers it"
+        );
+    }
+
+    /// The rows of the Trust Center's list of publishers, as the dialog
+    /// standing now shows them.
+    fn publishers_shown(editor: &Editor) -> Vec<(String, String)> {
+        let dialog = editor.dialog.as_ref().expect("the Options dialog is up");
+        match &dialog.fields[super::super::optionsdialog::TRUSTED_PUBLISHERS] {
+            crate::chrome::dialog::Field::Pairs { rows, .. } => rows.clone(),
+            other => panic!("not the list of publishers: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_trust_center_trusts_the_certificate_in_hand_and_shows_only_its_name() {
+        use super::super::optionsdialog::{FORGET_PUBLISHER, TRUST_PUBLISHER};
+        use crate::chrome::dialog::Answer;
+
+        let (_folder, own) = a_certificate("trust-centre");
+        let mut editor = opened(None);
+        editor.settings.macro_trust = Some(Trusting::Signed.name().to_owned());
+
+        // A document nobody signed has nobody to trust, and says so.
+        editor.open_options();
+        editor.finish_dialog(Answer::Named(TRUST_PUBLISHER));
+        assert!(editor.settings.trusted_publishers.is_empty());
+        assert!(editor.status.contains("nobody to trust"), "{}", editor.status);
+
+        editor.set_document(Document::open(&signed_by(&own)).expect("reopening"), None);
+        assert!(matches!(editor.macros_allowed(), Allowed::No(_)));
+        editor.open_options();
+        editor.finish_dialog(Answer::Named(TRUST_PUBLISHER));
+        assert!(editor.status.contains("is trusted"), "{}", editor.status);
+
+        // What was written down is the certificate's fingerprint, with the
+        // words on it beside it.
+        let publishers = &editor.settings.trusted_publishers;
+        assert_eq!(publishers.len(), 1, "{publishers:?}");
+        assert_eq!(publishers[0].fingerprint, wp_sign::fingerprint(&own.certificate));
+        assert_eq!(publishers[0].subject, own.certificate.subject);
+        assert_eq!(editor.macros_allowed(), Allowed::Yes);
+
+        // The page shows Word's three columns: who it is, who issued it, and
+        // until when.
+        let rows = publishers_shown(&editor);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, own.certificate.subject);
+        // The issuer by its common name, as Word's column has it, and the
+        // date the certificate stops being good.
+        assert!(rows[0].1.starts_with("A Signer ("), "{}", rows[0].1);
+        assert!(rows[0].1.contains(&own.certificate.not_after[..10]), "{}", rows[0].1);
+
+        // And removing it is removing the trust.
+        editor.finish_dialog(Answer::Named(FORGET_PUBLISHER));
+        assert!(editor.settings.trusted_publishers.is_empty());
+        assert!(editor.status.contains("not trusted any more"), "{}", editor.status);
+        assert!(publishers_shown(&editor).is_empty());
+        assert!(matches!(editor.macros_allowed(), Allowed::No(_)));
+    }
+
+    #[test]
+    fn a_name_an_earlier_version_kept_is_shown_as_not_verified_and_trusts_nobody() {
+        // What the settings file held before: the name on the certificate and
+        // nothing else. It is still the person's record of whom they meant,
+        // so it stays on the list — but a name is not a certificate.
+        let (_folder, own) = a_certificate("trust-earlier");
+        let mut editor = opened(None);
+        editor.settings = crate::settings::Settings::parse(&format!(
+            "macro-trust = signed\ntrusted-publisher = {}\n",
+            own.certificate.subject
+        ));
+        editor.set_document(Document::open(&signed_by(&own)).expect("reopening"), None);
+        assert!(
+            matches!(editor.macros_allowed(), Allowed::No(_)),
+            "a name written down alone was trusted"
+        );
+
+        editor.open_options();
+        let rows = publishers_shown(&editor);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, own.certificate.subject);
+        assert!(rows[0].1.contains("Not verified"), "{}", rows[0].1);
+
+        // Trusting the publisher again from a document they signed puts the
+        // certificate in the name's place, rather than beside it.
+        editor.finish_dialog(crate::chrome::dialog::Answer::Named(
+            super::super::optionsdialog::TRUST_PUBLISHER,
+        ));
+        let publishers = &editor.settings.trusted_publishers;
+        assert_eq!(publishers.len(), 1, "{publishers:?}");
+        assert!(publishers[0].is(&own.certificate));
+        assert_eq!(editor.macros_allowed(), Allowed::Yes);
+    }
+
+    #[test]
+    fn the_words_on_a_certificate_cannot_write_a_setting() {
+        // The name is the certificate maker's, and the settings file is one
+        // setting to a line. A line break in the name would otherwise be a
+        // line of the maker's choosing in the person's settings.
+        let (_folder, own) = a_certificate("trust-lines");
+        let mut certificate = own.certificate.clone();
+        certificate.subject = String::from("CN=Somebody\nmacro-trust = all");
+        let mut editor = opened(None);
+        editor.trust_publisher(&certificate);
+
+        let read = crate::settings::Settings::parse(&editor.settings.to_text());
+        assert_eq!(read.macro_trust, None, "{}", editor.settings.to_text());
+        assert_eq!(read.trusted_publishers, editor.settings.trusted_publishers);
+        assert!(read.trusted_publishers[0].is(&certificate));
     }
 
     #[test]
