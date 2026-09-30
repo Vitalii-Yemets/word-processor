@@ -7393,7 +7393,7 @@ work is in *The order of the work* at the end.
   through it. One table per interface, and the right pointer from
   `QueryInterface`, on the same object. Review R03; found against the
   Windows SDK headers.
-- [ ] **H19. The portal screenshot test that fails under load.**
+- [x] **H19. The portal screenshot test that fails under load.**
   `wayland::the_editor_takes_a_screenshot_through_the_desktop_s_portal`
   drives a real compositor, D-Bus, PipeWire and the portal, and in a full
   test run on a busy machine fails about one time in two — the menu it
@@ -7403,6 +7403,148 @@ work is in *The order of the work* at the end.
   (the menu drawn, the portal answered, the picture in the document) and
   wait for that, with a bound, rather than for a count of ticks; and run
   the full suite several times under load to show it holds.
+  *Found while it was done, and taken up in **H20**:* an input method
+  that starts after the window is never connected to; a many-message XIM
+  property written back in Replace mode where Xlib prepends; two tests of
+  `wp-shell` that still wait by tick counts and sleeps; and a clipping that
+  fails for want of a portal reported in the words of a cancel.
+  *Done:* the portal test raced three things, two of them the program's;
+  the two other tests on a display that waited by counting go the same
+  way, and under one of them lay another of the program's.
+  **The list without Screen Clipping** — the failures at the `offered`
+  assertion, and before that at the press of Screen Clipping — was the
+  program's. `portal::offers_screenshot`
+  (`crates/wp-shell/src/linux/portal.rs`) asked the portal, with three
+  seconds to answer, every time the Screenshot list opened, and the first
+  time that question is what starts it: the portal, the document portal,
+  the permission store, the GTK half and the wlr half, one after another.
+  A tenth of a second on a quiet machine; 2.2 to 3.9 s with the
+  container's processors taken by sixty busy loops, and the list then
+  opened without Screen Clipping — `left: ["The whole screen"]`,
+  reproduced. Waiting longer would have frozen the window for as long as
+  the portal took. The Wayland shell now wakes the portal as its window
+  comes up (`portal::warm_up`): a thread asks the bus whether it is
+  running (`NameHasOwner`, which the bus answers itself), then the portal,
+  with three seconds if it is and the 25 s any D-Bus call is given if it
+  is not, and the answer is kept, by bus (`Known`). The list asks nothing
+  of the bus once it is in. Until it is, the list offers Screen Clipping,
+  as Word does whatever the desktop: a portal still starting is one that
+  is there, and where there is none the bus says so at once, long before
+  anybody opens the list; one that never comes up fails the clipping,
+  which says no picture was taken. A question nothing answered in time is
+  not kept as a no but asked again the next time the list opens — a run
+  in which the portal took longer than that had it take the whole screen
+  a moment later, and the list without Screen Clipping the second time.
+  The screenshot itself waits as long for a portal still starting.
+  **The picture with the list in it** was the program's too. A screenshot
+  chosen from the list was taken on the next tick, meant as after the
+  window had been drawn without the list; but the shell answers a click
+  and then, in the same turn of its loop and before it draws, a tick that
+  has come due — and the test pressed inside a tick and handed that tick
+  on, so every whole screen it took had the list over it. The choice now
+  waits (`screenshot::Due`) until the window it was made in has been
+  drawn — in `App::draw`, which is what the shell puts on the screen
+  before its next tick — and is taken on the tick after that.
+  **The five-minute clipping** was the test's. Escape was pressed at slurp
+  once, 2.5 s after the clipping was chosen; on a busy machine slurp was
+  running by then but did not yet have the keyboard, the Escape went to
+  the editor, and the portal's call waited out its 300 s. It passed, in
+  341 s — two of three plain runs of the whole suite.
+  **The portal test** (`crates/wp-app/src/wayland.rs`) is now a machine of
+  named steps, each waiting for what it needs and for no count of ticks:
+  the window drawn with the Insert tab, then with the Screenshot button,
+  then with the list offering the whole screen; the status strip saying
+  something new, which is the portal's answer, seen on the tick it comes;
+  the window drawn with the picture; the list offering Screen Clipping;
+  the status strip again. A press is made before the tick is handed on,
+  as a click can be, and the whole screen has to have been taken after a
+  drawing. The person at slurp is a thread: it waits for a new slurp in
+  `/proc`, gives it two seconds, and presses Escape every half second
+  until slurp has gone; the test asks that slurp went at Escape and was
+  not stopped. PipeWire, without which the wlr half will not start, is
+  waited for by its socket rather than for half a second. The bus is the
+  test's own, so the portal is cold every time and the shell's warm-up is
+  what starts it. And the compositor's `stop`, which killed `su` and left
+  sway running — one for every test, found there long after — stops sway
+  as well.
+  **The Korean test**,
+  `xserver::korean_typed_through_an_input_method_goes_into_the_document`,
+  failed beside sixty busy loops every time, in two ways. uim-xim had not
+  yet taken its name when the window came up, two seconds after it was
+  started, and the shell, which looks for it once, typed without it:
+  " Gksrmf ". Where it had, the keys went at xdotool's pace, three
+  seconds after the window was found; uim-xim fell behind, answered a key
+  before sending what the key drew, and handed the space back ahead of
+  the drawing of 글 — the order it wrote them in, read message by message
+  — so the space went in first: "한 글". Under both lay the program's own
+  race. The shell makes a window's input context by messages that go
+  back and forth in its loop, where Xlib makes it before the window takes
+  a key, and keys pressed meanwhile were typed as they were: Shift and
+  Space pressed as the window came up, to switch the Korean method on,
+  went in as a space, and the letters after them as Latin letters. They
+  now wait for the context (`Early`, in `crates/wp-shell/src/linux/xim.rs`)
+  and go through the input method in the order they were pressed once it
+  is made, or are typed as they were if the server never answers, on the
+  same three seconds' patience as a key it has not answered. The test
+  waits for uim-xim to own `@server=uim` before the window comes up —
+  asked of the X server over a line of its own (`selection_owned`:
+  InternAtom, then GetSelectionOwner), since nothing on the image says
+  it — then finds the window, gives it the keyboard, waits for it to have
+  been drawn, and presses each key once the editor shows what the one
+  before did: ㅎ, 하, 한, 한ㄱ, 한그, 한글, and 한글 finished.
+  **The typing test on sway**,
+  `wayland::the_editor_comes_up_on_a_compositor_takes_typing_and_closes`,
+  typed at tick 10, photographed at 80 and asked to close at 84 and 90,
+  with two spaces in front of the words for the keyboard wtype makes to
+  be taken up. It did not fail in five runs beside sixty busy loops, and
+  is rewritten for the same reason, as steps named by what they wait for:
+  the window drawn; a space from wtype reaching the editor, one every
+  quarter second until one does, while a wtype that only sleeps keeps a
+  keyboard on the seat, so that the editor does not let its keyboard go
+  between one wtype and the next; everything typed; the window drawn
+  after the last key, and photographed; the close refused while the
+  typing is unsaved; and, saved, accepted. All three tests give every
+  step 60 s (`xserver::STEP_BOUND`) and fail naming the step, what it
+  waited for and what there was instead.
+  *Proven by:* `the_picture_is_taken_once_the_list_is_off_the_screen`,
+  with a tick before the drawing that has to leave the picture waiting;
+  it and the portal test both fail with the picture taken on the next
+  tick as it was. `the_portal_is_asked_once_and_its_answer_kept`: with
+  the answer in, the list's question goes to no bus — the stand-in for
+  the bus panics if it is asked — while it is still being asked the
+  answer is yes and it is not asked twice, another bus is asked afresh,
+  and a question nothing answered is asked again where an answer stands.
+  With the portal asked as it was, when the list opens and given three
+  seconds, the portal test fails beside sixty busy loops, naming the step
+  and the list that offers only the whole screen.
+  `keys_pressed_before_the_context_is_made_go_through_it_once_it_is` and
+  `keys_pressed_before_the_server_answers_are_typed_if_it_never_does`;
+  with such keys typed as they were, the new Korean test fails eight
+  times in eight, quiet or busy, with " g" where 한 was to be built.
+  Beside sixty busy loops: the Korean test ten times running, 12 to 22 s
+  each, where it failed six times in six before, and it now takes a
+  second on a quiet machine; the portal test twenty-two times, twenty-one
+  of them green in 13 to 40 s, and the other a portal slower to start
+  than the 25 s a call gives it, which the test said — the screen could
+  not be photographed; the typing test nine times, 10 to 18 s.
+  `cargo test -p wp-shell`, whose own portal, Wayland and input method
+  tests go through the same code. And
+  `cargo test -p wp-app --bin word-processor` three times in a row, 1249
+  passed each time, in 32 s where it took 41 to 44.
+- [ ] **H20. The input method that comes late, and the shell's own tests.**
+  Found while **H19** was done. The X shell looks for an input method once,
+  as its window opens, and never connects to one that starts afterwards;
+  Xlib watches `XIM_SERVERS` on the root window through
+  `XRegisterIMInstantiateCallback`, and so should this. When a property
+  holds several XIM messages the shell writes the rest back in Replace mode
+  where Xlib prepends, so a message the server appends in between is lost
+  (`xshell.rs`, `input_method_message`). Two tests of `wp-shell` — the
+  Portrait test in `tests/wayland.rs` and the Korean one in
+  `tests/x_input_method.rs` — still wait by tick counts and sleeps, and go
+  the way **H19**'s did: named steps, real conditions, a bound. And a Screen
+  Clipping that fails for want of a portal says "No picture was taken", the
+  words of a cancel; `screen::clip` should tell the two apart and the
+  status say which it was.
 
 ## I — The language of the interface
 
@@ -10290,7 +10432,8 @@ person who knows Word notices first:
    **C67**, **C68**, **C69**, **C70**, **C71**.
 6. *The interface, the large things:* **C72**, **C73**, **C74**, **C75**,
    **C76**, **C77**, **J35**.
-7. *Hostile files:* **G17**, **G18**, **H18**.
+7. *Hostile files, and the system's corners:* **G17**, **G18**, **H18**,
+   **H20**.
 8. *Layout and speed:* **E19**, **E20**, **B7**.
 9. *The tails:* the 176 *Not done* paragraphs of the closed items, read
    through one by one, the ones the items above do not already cover
@@ -10307,7 +10450,7 @@ paragraph — everything the item names is done before it is ticked, and
 what this machine cannot do (a printer that is not connected, a licence) is
 asked about rather than written down. The two entries closed on this queue
 before that was settled, **C51** and **H16**, have their tails finished
-next, not left.
+within the first wave, after **J34**, not left.
 
 ---
 

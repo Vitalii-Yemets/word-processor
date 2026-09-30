@@ -185,6 +185,29 @@ pub(crate) struct Xim {
     /// to be answered first; the keys pressed meanwhile wait.
     in_flight: bool,
     held: VecDeque<(u32, [u8; 32])>,
+    /// Keys pressed in a window whose context is still to be made — while
+    /// the conversation is being opened, or the context asked for — which
+    /// wait for it. See [`Early`].
+    early: VecDeque<Early>,
+}
+
+/// A key pressed before its window's input context was made, kept with
+/// what it means so that it can be put through the input method as though
+/// it were pressed once the context is there.
+///
+/// Xlib makes a window's context before the window takes a key, and so a
+/// program typing through it never has keys that come too soon. This
+/// program makes it by messages that go back and forth in the event loop,
+/// and the keys pressed meanwhile used to be typed as they were: Shift and
+/// Space pressed as the window came up, to switch a Korean method on, went
+/// in as a space, and the letters after them as Latin letters.
+#[derive(Clone, Debug, PartialEq)]
+struct Early {
+    window: u32,
+    event: [u8; 32],
+    keysym: u32,
+    state: u16,
+    press: bool,
 }
 
 impl Xim {
@@ -210,6 +233,7 @@ impl Xim {
             off_keys: Vec::new(),
             in_flight: false,
             held: VecDeque::new(),
+            early: VecDeque::new(),
         }
     }
 
@@ -232,9 +256,10 @@ impl Xim {
         self.step == Step::Failed
     }
 
-    /// Whether a key has gone to the server and not come back.
+    /// Whether a key is waiting on the server: gone to it and not come
+    /// back, or waiting for its window's context to be made.
     pub(crate) fn is_waiting(&self) -> bool {
-        self.in_flight
+        self.in_flight || !self.early.is_empty()
     }
 
     /// A window that is to type through the input method.
@@ -251,6 +276,7 @@ impl Xim {
     /// A window that has gone.
     pub(crate) fn remove_window(&mut self, window: u32) -> Vec<Action> {
         self.held.retain(|(held, _)| *held != window);
+        self.early.retain(|early| early.window != window);
         if self.focus == Some(window) {
             self.focus = None;
         }
@@ -294,11 +320,17 @@ impl Xim {
         press: bool,
     ) -> (bool, Vec<Action>) {
         let mut actions = Vec::new();
-        if self.step != Step::Ready {
+        if self.step == Step::Failed {
             return (false, actions);
         }
         let im = self.im;
         let Some(index) = self.contexts.iter().position(|context| context.window == window) else {
+            // A window whose context is still to be made keeps its keys
+            // until it is: see [`Early`].
+            if self.waiting.contains(&window) {
+                self.early.push_back(Early { window, event: *event, keysym, state, press });
+                return (true, actions);
+            }
             return (false, actions);
         };
         // A key means the window has the keyboard, whatever the focus
@@ -373,7 +405,9 @@ impl Xim {
     pub(crate) fn abandon(&mut self) -> Vec<Action> {
         self.step = Step::Failed;
         self.in_flight = false;
-        self.held.drain(..).map(|(window, event)| Action::Key(window, event)).collect()
+        let early = self.early.drain(..).map(|early| (early.window, early.event));
+        let held: Vec<_> = early.chain(self.held.drain(..)).collect();
+        held.into_iter().map(|(window, event)| Action::Key(window, event)).collect()
     }
 
     /// Where the caret is in a window, in its pixels, so that the input
@@ -622,6 +656,20 @@ impl Xim {
             actions.push(Action::Send(
                 Message::new(opcode::SET_IC_FOCUS).u16(self.im).u16(id).finish(),
             ));
+        }
+        // The keys that waited for this context, in the order they were
+        // pressed, as though pressed now; one the input method does not
+        // take is typed as it was.
+        let (mine, others): (VecDeque<Early>, VecDeque<Early>) =
+            std::mem::take(&mut self.early).into_iter().partition(|early| early.window == window);
+        self.early = others;
+        for early in mine {
+            let (taken, sent) =
+                self.key(early.window, &early.event, early.keysym, early.state, early.press);
+            actions.extend(sent);
+            if !taken {
+                actions.push(Action::Key(early.window, early.event));
+            }
         }
         actions.extend(self.make_next_context());
         actions
@@ -1211,6 +1259,18 @@ mod tests {
     /// A conversation taken to the point where a window has its context:
     /// the server's replies as a server writes them.
     fn ready(style: u32, utf8: bool) -> Xim {
+        let mut xim = agreed(style, utf8);
+        let create = xim.add_window(0x0040_0001);
+        let Action::Send(create) = &create[0] else { panic!("no context asked for") };
+        assert_eq!(create[0], opcode::CREATE_IC);
+        let made = xim.receive(&from_server(opcode::CREATE_IC_REPLY, &[7, 0, 3, 0]));
+        assert!(made.is_empty(), "no focus yet, so nothing more to say");
+        xim
+    }
+
+    /// A conversation taken to the point where contexts can be made, and
+    /// none has been asked for.
+    fn agreed(style: u32, utf8: bool) -> Xim {
         let mut xim = Xim::new("ko_KR.UTF-8");
         let connect = xim.connect();
         assert_eq!(connect, vec![1, 0, 2, 0, 0x6C, 0, 1, 0, 0, 0, 0, 0]);
@@ -1254,12 +1314,6 @@ mod tests {
         values.extend_from_slice(&attribute);
         assert!(xim.receive(&from_server(opcode::GET_IM_VALUES_REPLY, &values)).is_empty());
         assert!(xim.is_ready());
-
-        let create = xim.add_window(0x0040_0001);
-        let Action::Send(create) = &create[0] else { panic!("no context asked for") };
-        assert_eq!(create[0], opcode::CREATE_IC);
-        let made = xim.receive(&from_server(opcode::CREATE_IC_REPLY, &[7, 0, 3, 0]));
-        assert!(made.is_empty(), "no focus yet, so nothing more to say");
         xim
     }
 
@@ -1394,6 +1448,54 @@ mod tests {
         assert_eq!(back, vec![Action::Key(0x0040_0001, event)], "the key that waited is typed");
         assert!(xim.has_failed());
         assert!(!xim.key(0x0040_0001, &event, 'c' as u32, 0, true).0, "and the next is typed");
+    }
+
+    /// Keys pressed while a window's context is still being asked for wait
+    /// for it, and then go to the server in the order they were pressed —
+    /// the first at once, the next once the first is answered.
+    #[test]
+    fn keys_pressed_before_the_context_is_made_go_through_it_once_it_is() {
+        let mut xim = agreed(PREEDIT_CALLBACKS | STATUS_NOTHING, true);
+        let create = xim.add_window(0x0040_0001);
+        assert_eq!(sent(&create), vec![opcode::CREATE_IC]);
+        let mut shift = [0u8; 32];
+        shift[0] = 2;
+        shift[1] = 50;
+        let mut space = shift;
+        space[1] = 65;
+        let (taken, actions) = xim.key(0x0040_0001, &shift, 0xFFE1, 0, true);
+        assert!(taken && actions.is_empty(), "kept, not typed");
+        let (taken, actions) = xim.key(0x0040_0001, &space, 0x20, 1, true);
+        assert!(taken && actions.is_empty(), "kept, not typed");
+        assert!(xim.is_waiting(), "and waited for");
+        assert!(!xim.key(0x0040_0002, &space, 0x20, 0, true).0, "a window nobody asked for types");
+
+        let made = xim.receive(&from_server(opcode::CREATE_IC_REPLY, &[7, 0, 3, 0]));
+        assert_eq!(sent(&made), vec![opcode::SET_IC_FOCUS, opcode::FORWARD_EVENT]);
+        let Action::Send(forward) = &made[1] else { panic!() };
+        assert_eq!(&forward[12..44], &shift, "the first key pressed goes first");
+        assert!(xim.is_waiting(), "the second waits for the first to be answered");
+        let answered = xim.receive(&from_server(opcode::SYNC_REPLY, &[7, 0, 3, 0]));
+        assert_eq!(sent(&answered), vec![opcode::FORWARD_EVENT]);
+        let Action::Send(forward) = &answered[0] else { panic!() };
+        assert_eq!(&forward[12..44], &space);
+    }
+
+    /// Keys pressed before the server has so much as answered wait as
+    /// well — and are typed as they were if it never does.
+    #[test]
+    fn keys_pressed_before_the_server_answers_are_typed_if_it_never_does() {
+        let mut xim = Xim::new("ko_KR.UTF-8");
+        let _ = xim.connect();
+        assert!(xim.add_window(0x0040_0001).is_empty(), "nothing to ask until it answers");
+        let mut event = [0u8; 32];
+        event[0] = 2;
+        event[1] = 42;
+        let (taken, actions) = xim.key(0x0040_0001, &event, 'g' as u32, 0, true);
+        assert!(taken && actions.is_empty());
+        assert!(xim.is_waiting());
+        assert_eq!(xim.abandon(), vec![Action::Key(0x0040_0001, event)], "typed after all");
+        assert!(!xim.is_waiting());
     }
 
     #[test]

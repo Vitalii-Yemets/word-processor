@@ -228,6 +228,10 @@ impl App for Editor {
 
     fn draw(&mut self, width: usize, height: usize) -> &Canvas {
         self.paint(width, height);
+        // What the shell is handed now is what goes on the screen before
+        // its next tick, which is when a screenshot waiting for the list to
+        // be off the screen is taken.
+        self.screenshot_drawn();
         self.canvas()
     }
 

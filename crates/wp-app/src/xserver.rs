@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use wp_docx::Document;
@@ -232,28 +233,122 @@ fn the_editor_comes_up_on_a_real_server_and_closes_from_its_frame() {
     assert_ne!(top[0].0, (0, 0, 0), "the caption bar is painted: {:?}", &top[..top.len().min(3)]);
 }
 
-/// The editor with a word typed into it through an input method: it keeps
-/// the document's text once the word is there, and closes.
+/// How long a test on a display gives any one step to happen. On a quiet
+/// machine every step takes a moment; on one busy with the rest of the
+/// suite, some have taken several seconds, and a step that has not happened
+/// in a minute is not going to.
+pub(crate) const STEP_BOUND: Duration = Duration::from_secs(60);
+
+/// Waits, up to [`STEP_BOUND`], for something to be so; if it is not, says
+/// which step it was, what it waited for, and what there was instead.
+fn within<T>(
+    step: &str,
+    mut ready: impl FnMut() -> Option<T>,
+    instead: impl Fn() -> String,
+) -> Result<T, String> {
+    let started = Instant::now();
+    loop {
+        if let Some(found) = ready() {
+            return Ok(found);
+        }
+        if started.elapsed() > STEP_BOUND {
+            return Err(format!("waited {STEP_BOUND:?} for {step}; {}", instead()));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Whether a selection has an owner on a display — asked of the X server
+/// over a line of the test's own, since nothing on the image says it. An
+/// input method takes the selection of its name once programs can find it,
+/// and the shell looks for that owner as its window comes up.
+fn selection_owned(display: u32, name: &str) -> bool {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+    let Ok(mut line) = UnixStream::connect(format!("/tmp/.X11-unix/X{display}")) else {
+        return false;
+    };
+    let _ = line.set_read_timeout(Some(Duration::from_secs(5)));
+    // Least significant byte first, protocol 11.0, and no authorisation,
+    // which Xvfb asks none of.
+    if line.write_all(&[b'l', 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0]).is_err() {
+        return false;
+    }
+    let mut head = [0u8; 8];
+    if line.read_exact(&mut head).is_err() || head[0] != 1 {
+        return false;
+    }
+    let mut setup = vec![0u8; usize::from(u16::from_le_bytes([head[6], head[7]])) * 4];
+    if line.read_exact(&mut setup).is_err() {
+        return false;
+    }
+    let ask = |line: &mut UnixStream, request: &[u8]| -> Option<u32> {
+        line.write_all(request).ok()?;
+        let mut reply = [0u8; 32];
+        line.read_exact(&mut reply).ok()?;
+        (reply[0] == 1).then(|| u32::from_le_bytes([reply[8], reply[9], reply[10], reply[11]]))
+    };
+    // InternAtom for the selection's atom, only if somebody has named it —
+    // an atom nobody has named is a selection nobody owns — and then
+    // GetSelectionOwner.
+    let padded = name.len().div_ceil(4) * 4;
+    let mut intern = vec![16, 1];
+    intern.extend_from_slice(&((2 + padded / 4) as u16).to_le_bytes());
+    intern.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    intern.extend_from_slice(&[0, 0]);
+    intern.extend_from_slice(name.as_bytes());
+    intern.resize(8 + padded, 0);
+    let Some(atom) = ask(&mut line, &intern).filter(|&atom| atom != 0) else { return false };
+    let mut owner = vec![23, 0, 2, 0];
+    owner.extend_from_slice(&atom.to_le_bytes());
+    ask(&mut line, &owner).is_some_and(|owner| owner != 0)
+}
+
+/// What the person typing Korean can see of the editor.
+#[derive(Default)]
+struct Page {
+    /// Whether the window has been drawn.
+    drawn: bool,
+    /// The syllable being built, as the input method last showed it, and
+    /// whether one was ever shown.
+    composing: String,
+    composed: bool,
+    /// The document's text, the syllable being built included.
+    text: String,
+    /// Whether the person has finished, and the window is to close.
+    finished: bool,
+}
+
+fn look(page: &Mutex<Page>) -> MutexGuard<'_, Page> {
+    page.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The editor with a word typed into it through an input method: it shows
+/// the person what they are typing, and closes once they have finished.
 struct Composing {
     editor: Editor,
-    text: Rc<RefCell<Option<String>>>,
-    composed: Rc<RefCell<bool>>,
-    started: Instant,
+    page: Arc<Mutex<Page>>,
 }
 
 impl App for Composing {
     fn handle(&mut self, event: Event) -> Response {
-        if matches!(&event, Event::Compose { text, .. } if !text.is_empty()) {
-            *self.composed.borrow_mut() = true;
+        if event == Event::Tick && look(&self.page).finished {
+            return Response::Close;
         }
-        if event == Event::Tick {
-            let text = self.editor.document.plain_text();
-            if text.contains("한글") || self.started.elapsed() > Duration::from_secs(60) {
-                *self.text.borrow_mut() = Some(text);
-                return Response::Close;
-            }
+        let composing = match &event {
+            Event::Compose { text, .. } => Some(text.clone()),
+            Event::ComposeEnd => Some(String::new()),
+            _ => None,
+        };
+        let response = self.editor.handle(event);
+        let text = self.editor.document.plain_text();
+        let mut page = look(&self.page);
+        if let Some(composing) = composing {
+            page.composed |= !composing.is_empty();
+            page.composing = composing;
         }
-        self.editor.handle(event)
+        page.text = text;
+        response
     }
 
     fn cursor(&mut self, x: i32, y: i32) -> Cursor {
@@ -269,8 +364,76 @@ impl App for Composing {
     }
 
     fn draw(&mut self, width: usize, height: usize) -> &Canvas {
+        look(&self.page).drawn = true;
         self.editor.draw(width, height)
     }
+}
+
+/// The keys that spell 한글 on the two-set layout, and what the editor
+/// shows once each has been through the input method: the syllable being
+/// built, and what the document holds by then, that syllable included and
+/// a space at the end not counted.
+const KOREAN: [(&str, &str, &str); 7] = [
+    ("g", "ㅎ", "ㅎ"),
+    ("k", "하", "하"),
+    ("s", "한", "한"),
+    // Not a final consonant: 한 is finished, and ㄱ begins the next.
+    ("r", "ㄱ", "한ㄱ"),
+    ("m", "그", "한그"),
+    ("f", "글", "한글"),
+    // Space finishes 글, and goes in after it.
+    ("space", "", "한글"),
+];
+
+/// The person at the keyboard: they find the editor's window, give it the
+/// keyboard, switch the input method on and type 한글 — each key once the
+/// editor shows what the one before did, as a person looks at what they
+/// type. The keys used to go at a fixed pace, three seconds after the
+/// window was found; on a busy machine uim-xim fell behind, answered a key
+/// before drawing what it did, and gave the space back ahead of the
+/// syllable it was to follow: "한 글".
+fn type_korean(display: &str, page: &Mutex<Page>) -> Result<(), String> {
+    let xdotool = |arguments: &[&str]| {
+        Command::new("xdotool")
+            .args(arguments)
+            .env("DISPLAY", display)
+            .output()
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+            .unwrap_or_default()
+    };
+    let instead = || {
+        let page = look(page);
+        format!("the editor shows {:?} being built, in {:?}", page.composing, page.text)
+    };
+    let window = within(
+        "the editor's window, found by its name",
+        || xdotool(&["search", "--name", "Word Processor"]).lines().next().map(str::to_owned),
+        || "no window of that name".to_owned(),
+    )?;
+    within(
+        "the editor's window with the keyboard",
+        || {
+            xdotool(&["windowfocus", &window]);
+            (xdotool(&["getwindowfocus"]) == window).then_some(())
+        },
+        || format!("the keyboard is with {}", xdotool(&["getwindowfocus"])),
+    )?;
+    within("the window drawn", || look(page).drawn.then_some(()), instead)?;
+    // Shift and Space switch the method on; that it did shows with the
+    // first letter.
+    xdotool(&["key", "shift+space"]);
+    for (key, composing, text) in KOREAN {
+        xdotool(&["key", key]);
+        within(
+            &format!("{key} to show {composing:?} being built, in {text:?}"),
+            || {
+                let page = look(page);
+                (page.composing == composing && page.text.trim_end() == text).then_some(())
+            },
+            instead,
+        )?;
+    }
+    Ok(())
 }
 
 /// Korean typed on a real X server through a real input method — uim-xim
@@ -298,54 +461,53 @@ fn korean_typed_through_an_input_method_goes_into_the_document() {
         .stderr(Stdio::null())
         .spawn()
         .expect("the input method server starts");
-    std::thread::sleep(Duration::from_secs(2));
+    // The shell looks for the input method once, as its window comes up;
+    // what is waited for is the input method taking its name, where it used
+    // to be two seconds, which on a busy machine it had not.
+    let registered = within(
+        "uim-xim to take the name @server=uim",
+        || selection_owned(88, "@server=uim").then_some(()),
+        || "nobody owns it".to_owned(),
+    );
+    if let Err(why) = registered {
+        let _ = method.kill();
+        let _ = method.wait();
+        panic!("{why}");
+    }
     std::env::set_var("XMODIFIERS", "@im=uim");
     std::env::set_var("LC_CTYPE", "ko_KR.UTF-8");
 
-    let keys = std::thread::spawn(move || {
-        let run = |arguments: &[&str]| {
-            Command::new("xdotool")
-                .args(arguments)
-                .env("DISPLAY", display)
-                .output()
-                .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-                .unwrap_or_default()
-        };
-        let window = run(&["search", "--sync", "--name", "Word Processor"]);
-        let window = window.lines().next().unwrap_or("").to_owned();
-        run(&["windowfocus", "--sync", &window]);
-        // The editor draws its first page before it takes keys in earnest.
-        std::thread::sleep(Duration::from_secs(3));
-        run(&["key", "--delay", "250", "shift+space"]);
-        run(&["type", "--delay", "250", "gksrmf"]);
-        run(&["key", "--delay", "250", "space"]);
-    });
+    let page = Arc::new(Mutex::new(Page::default()));
+    let typist = {
+        let page = Arc::clone(&page);
+        std::thread::spawn(move || {
+            let typed = type_korean(display, &page);
+            look(&page).finished = true;
+            typed
+        })
+    };
 
     let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
     let mut body = wp_docx::model::Body::default();
     body.blocks.push(wp_docx::model::Block::Paragraph(wp_docx::model::Paragraph::default()));
     let document = Document::create(&body).expect("a blank document");
     let editor = Editor::opened(library, document, None::<PathBuf>);
-    let text = Rc::new(RefCell::new(None));
-    let composed = Rc::new(RefCell::new(false));
-    let composing = Composing {
-        editor,
-        text: Rc::clone(&text),
-        composed: Rc::clone(&composed),
-        started: Instant::now(),
-    };
+    let composing = Composing { editor, page: Arc::clone(&page) };
     let options =
         WindowOptions { title: "Document — Word Processor".to_owned(), width: 1400, height: 900 };
     wp_shell::run(options, Box::new(composing)).expect("the editor's window opens");
-    keys.join().expect("the keys were pressed");
+    let typed = typist.join().expect("the keys were pressed");
     let _ = method.kill();
     let _ = method.wait();
     std::env::remove_var("XMODIFIERS");
 
-    let text = text.borrow().clone().unwrap_or_default();
-    assert!(text.contains("한글"), "the word is in the document: {text:?}");
-    assert!(!text.contains("gksrmf"), "and not the letters that spelled it: {text:?}");
-    assert!(*composed.borrow(), "the syllable was shown in the document as it was built");
+    if let Err(why) = typed {
+        panic!("{why}");
+    }
+    let page = look(&page);
+    assert!(page.text.contains("한글"), "the word is in the document: {:?}", page.text);
+    assert!(!page.text.contains("gksrmf"), "and not the letters that spelled it: {:?}", page.text);
+    assert!(page.composed, "the syllable was shown in the document as it was built");
 }
 
 /// The editor with something dropped on it from another program: it keeps

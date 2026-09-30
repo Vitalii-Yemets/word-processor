@@ -535,6 +535,11 @@ pub(crate) fn run(options: WindowOptions, app: Box<dyn App>) -> Result<(), Error
     STATE.with(|slot| *slot.borrow_mut() = Some(state));
     WINDOW.with(|slot| slot.set(window));
     deliver(window, Event::ScaleChanged { scale });
+    // The desktop's portal, which is the only way a program here may
+    // photograph the screen, woken now and asked what it offers, so that
+    // the Screenshot list neither waits for it to start nor opens without
+    // what it could have offered.
+    super::portal::warm_up();
 
     let mut last_tick = Instant::now();
     let mut accessible = false;

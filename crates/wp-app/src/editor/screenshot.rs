@@ -25,6 +25,17 @@ use wp_docx::EMU_PER_INCH;
 
 use super::{Editor, DPI};
 
+/// A screenshot chosen from the list and not yet taken.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Due {
+    /// Which of the list's lines was chosen.
+    index: usize,
+    /// The window it was chosen in, and whether that window has been drawn
+    /// since — without the list, which is what the picture waits for.
+    window: usize,
+    drawn: bool,
+}
+
 impl Editor {
     /// Drops open the whole screen and every window that is open.
     pub(super) fn open_screenshot(&mut self) -> Response {
@@ -48,24 +59,39 @@ impl Editor {
         Response::Redraw
     }
 
-    /// Takes the list away, and the picture that was chosen on the next
-    /// tick.
+    /// Takes the list away, and the picture that was chosen once the window
+    /// has been drawn without it.
     ///
     /// Nothing of this program should be in the picture, so the list it was
     /// chosen from is off the screen before the shutter goes — which means
     /// drawn again without it first. Taken at once, the picture was of the
-    /// window as it last was: with the list still open over it.
+    /// window as it last was: with the list still open over it. Nor is the
+    /// next tick enough on its own: the shell answers a click and then, in
+    /// the same turn of its loop and before it draws, a tick that has come
+    /// due, and the picture taken on that tick had the list in it too.
     pub(super) fn choose_screenshot(&mut self, index: usize) -> Response {
         self.popup = None;
-        self.screenshot_due = Some(index);
+        self.screenshot_due = Some(Due { index, window: self.active_window, drawn: false });
         self.needs_redraw = true;
         Response::Redraw
     }
 
-    /// Takes the picture chosen, if one is due, and puts it in the document.
+    /// Notes that the window has just been drawn, and so, if a picture is
+    /// waiting to be taken of the screen, that the list it was chosen from
+    /// is off it.
+    pub(super) fn screenshot_drawn(&mut self) {
+        let active = self.active_window;
+        if let Some(due) = self.screenshot_due.as_mut().filter(|due| due.window == active) {
+            due.drawn = true;
+        }
+    }
+
+    /// Takes the picture chosen, if one is due and the list is off the
+    /// screen, and puts it in the document.
     pub(super) fn take_screenshot_due(&mut self) -> Option<Response> {
-        let index = self.screenshot_due.take()?;
-        Some(self.take_screenshot(index))
+        let due = self.screenshot_due.filter(|due| due.drawn)?;
+        self.screenshot_due = None;
+        Some(self.take_screenshot(due.index))
     }
 
     fn take_screenshot(&mut self, index: usize) -> Response {
@@ -152,7 +178,8 @@ mod tests {
     }
 
     /// The list is taken off the screen, and the window drawn again without
-    /// it, before the picture is taken: on the next tick, not at the press.
+    /// it, before the picture is taken: on the tick after that drawing, not
+    /// at the press, and not on a tick that comes before it.
     #[test]
     fn the_picture_is_taken_once_the_list_is_off_the_screen() {
         let mut editor = editor();
@@ -164,8 +191,14 @@ mod tests {
 
         assert_eq!(editor.choose_screenshot(0), Response::Redraw);
         assert!(editor.popup.is_none(), "the list is gone");
-        assert_eq!(editor.screenshot_due, Some(0), "and the picture waits for the next tick");
+        assert!(editor.screenshot_due.is_some_and(|due| due.index == 0 && !due.drawn));
         assert!(editor.status.is_empty(), "nothing has been tried yet");
+
+        // A tick in the same turn of the shell's loop as the click, before
+        // the window has been drawn: the list is still on the screen.
+        editor.handle(Event::Tick);
+        assert!(editor.screenshot_due.is_some(), "the picture waits for the window to be drawn");
+        assert!(editor.status.is_empty(), "and nothing has been tried yet");
 
         editor.draw(1200, 800);
         editor.handle(Event::Tick);

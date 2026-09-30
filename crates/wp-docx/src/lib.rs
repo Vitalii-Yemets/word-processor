@@ -3591,11 +3591,6 @@ fn without_what_nothing_reaches(package: &mut Package) {
     });
 }
 
-/// The named child of an element, made if it is not there.
-///
-/// Used where a chain of elements has to exist before something can be written
-/// at the bottom of it — `docDefaults`, then `rPrDefault`, then `rPr` — and
-/// where any of them may be missing in a document that never needed it.
 /// A table of empty cells with columns of the widths given.
 ///
 /// Every cell states the width of its column, which is what Word writes and
@@ -3621,6 +3616,11 @@ fn empty_table(rows: usize, widths: &[i32]) -> Table {
     .with_borders(model::TableBorders::grid())
 }
 
+/// The named child of an element, made if it is not there.
+///
+/// Used where a chain of elements has to exist before something can be written
+/// at the bottom of it — `docDefaults`, then `rPrDefault`, then `rPr` — and
+/// where any of them may be missing in a document that never needed it.
 fn child_or_new<'a>(parent: &'a mut Element, local: &str, prefix: Option<&str>) -> &'a mut Element {
     if parent.child(Some(WORDPROCESSING_NAMESPACE), local).is_none() {
         parent.push_element(Element::new(

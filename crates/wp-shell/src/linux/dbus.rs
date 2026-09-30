@@ -568,6 +568,17 @@ impl Message {
 #[derive(Debug)]
 pub(crate) struct Failure(pub(crate) String);
 
+/// What a call comes to when nothing has answered it in time.
+const NO_ANSWER: &str = "no answer in time";
+
+impl Failure {
+    /// Whether nothing answered in time — which says nothing of what the
+    /// answer would have been, where an error in answer does.
+    pub(crate) fn is_no_answer(&self) -> bool {
+        self.0 == NO_ANSWER
+    }
+}
+
 impl core::fmt::Display for Failure {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(&self.0)
@@ -740,7 +751,7 @@ impl Connection {
             }
             let left = deadline
                 .checked_duration_since(Instant::now())
-                .ok_or_else(|| Failure("no answer in time".to_owned()))?;
+                .ok_or_else(|| Failure(NO_ANSWER.to_owned()))?;
             self.read_some(left.max(Duration::from_millis(1)))?;
         }
     }
