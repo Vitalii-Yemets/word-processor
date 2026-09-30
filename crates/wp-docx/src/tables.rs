@@ -213,24 +213,80 @@ impl Document {
     /// a row it goes on to the first cell of the next one, and at the very last
     /// cell it answers `None`: that is where Word adds a row instead, which is
     /// a decision for the editor and not for the document.
+    ///
+    /// Only through cells that are drawn. A cell merged down is written once
+    /// per row it covers, and every row but its first holds a continuation
+    /// that nothing draws; counting those, Tab went into them — and in a
+    /// table merged into one cell went from the one cell there is into the
+    /// second row, where there is nothing to see and nowhere to type.
     #[must_use]
     pub fn cell_beside(&self, forwards: bool) -> Option<(usize, usize)> {
         let place = self.table_here()?;
+        let table = element_at(&self.tree().root, &place.table)?;
+        let drawn = crate::cells::Shape::of(table).drawn();
+        // A row and a place along it, compared as a pair, is reading order —
+        // which also answers for a caret that is in a continuation, where a
+        // press can put it: on from there, not from the cell it continues.
+        let here = (place.row, place.column);
         if forwards {
-            if place.column + 1 < place.columns {
-                return Some((place.row, place.column + 1));
-            }
-            if place.row + 1 < place.rows {
-                return Some((place.row + 1, 0));
-            }
-            None
+            drawn.into_iter().find(|cell| *cell > here)
         } else {
-            if place.column > 0 {
-                return Some((place.row, place.column - 1));
-            }
-            let above = place.row.checked_sub(1)?;
-            Some((above, self.cells_in_row(above).checked_sub(1)?))
+            drawn.into_iter().rev().find(|cell| *cell < here)
         }
+    }
+
+    /// The cell the down arrow takes the caret into, or the up arrow — or
+    /// `None` where the table ends that way.
+    ///
+    /// By what is drawn, as Tab goes: down out of a cell merged over three
+    /// rows is into the row after the third, and up into a merged cell is into
+    /// the cell itself, never into one of the continuations that stand for it
+    /// in the rows below its first. The column is the one the caret's cell
+    /// starts at, counted on the grid, so that a row whose cells do not line
+    /// up with this one still gives the cell under it rather than the one that
+    /// happens to be as far along the row.
+    #[must_use]
+    pub fn cell_over_or_under(&self, downwards: bool) -> Option<(usize, usize)> {
+        let place = self.table_here()?;
+        let table = element_at(&self.tree().root, &place.table)?;
+        let shape = crate::cells::Shape::of(table);
+        let (row, column) = shape.head_of(place.row, place.column);
+        let start = shape.start_of(row, column)?;
+        if downwards {
+            let mut next = row + shape.height_of(row, column);
+            loop {
+                let found = shape.nearest(next, start)?;
+                if !shape.hidden(next, found) {
+                    return Some((next, found));
+                }
+                next += 1;
+            }
+        } else {
+            let above = row.checked_sub(1)?;
+            let found = shape.nearest(above, start)?;
+            Some(shape.head_of(above, found))
+        }
+    }
+
+    /// The paragraphs of the cell a paragraph is in, when that cell is a
+    /// continuation of a merge down — in the file and not on the page.
+    ///
+    /// Asked by the arrows, which step over such a cell rather than put the
+    /// caret where nobody can see it.
+    #[must_use]
+    pub fn hidden_cell_at(&self, paragraph: usize) -> Option<(usize, usize)> {
+        let place = self.table_at(paragraph)?;
+        let table = element_at(&self.tree().root, &place.table)?;
+        if !crate::cells::Shape::of(table).hidden(place.row, place.column) {
+            return None;
+        }
+        let row_at = child_index_of(table, "tr", place.row)?;
+        let row = table.children_named(Some(read::W), "tr").nth(place.row)?;
+        let cell_at = child_index_of(row, "tc", place.column)?;
+        let mut path = place.table.clone();
+        path.push(row_at);
+        path.push(cell_at);
+        paragraphs_under(&self.tree().root, &path)
     }
 
     /// Everything in one cell of the table at the caret, as a stretch.
@@ -312,6 +368,45 @@ impl Document {
         };
         let fresh = empty_row(&model, prefix.as_deref());
         table.insert_element(if below { position + 1 } else { position }, fresh);
+
+        self.note_change();
+        true
+    }
+
+    /// Adds a row after the last row of the table at the caret.
+    ///
+    /// What Tab does after the last cell that is drawn. After the last row
+    /// rather than after the caret's: where the last cells of a table are
+    /// merged down from above, the caret's row is not the last, and a row put
+    /// under it would cut the merge in two. The row is a copy of the last one,
+    /// emptied, with any merge down taken off it — a merge ends at the last
+    /// row it was made over, and a row added under the table is cells of its
+    /// own, as Word adds it.
+    pub fn append_table_row(&mut self) -> bool {
+        let Some(place) = self.table_here() else { return false };
+        let caret = self.caret();
+        self.record(EditKind::Structural, caret, false);
+        let prefix = self.prefix();
+
+        let Some(table) = edit::element_at_path_mut(&mut self.tree_to_edit().root, &place.table)
+        else {
+            return false;
+        };
+        let Some(position) =
+            place.rows.checked_sub(1).and_then(|last| child_position(table, "tr", last))
+        else {
+            return false;
+        };
+        let Some(model) = table.children.get(position).and_then(Node::as_element).cloned() else {
+            return false;
+        };
+        let mut fresh = empty_row(&model, prefix.as_deref());
+        for cell in fresh.child_elements_mut().filter(|child| child.is(Some(read::W), "tc")) {
+            if let Some(properties) = cell.child_mut(Some(read::W), "tcPr") {
+                properties.remove_children_named(Some(read::W), "vMerge");
+            }
+        }
+        table.insert_element(position + 1, fresh);
 
         self.note_change();
         true
@@ -508,10 +603,15 @@ impl Document {
     /// Puts the caret in one cell of a table named by its path.
     ///
     /// By the path rather than by [`Document::cell_paragraphs`], because what
-    /// asks is a row or a column being deleted: the caret is about to be
-    /// nowhere, and asking where the caret is would be asking the question
-    /// backwards.
-    fn caret_into_cell(&mut self, table_path: &[usize], row: usize, column: usize) -> bool {
+    /// asks is a row or a column being deleted, or cells merged or split: the
+    /// caret is about to be nowhere, and asking where the caret is would be
+    /// asking the question backwards.
+    pub(crate) fn caret_into_cell(
+        &mut self,
+        table_path: &[usize],
+        row: usize,
+        column: usize,
+    ) -> bool {
         let Some(table) = element_at(&self.tree().root, table_path) else { return false };
         let rows = count_children(table, "tr");
         if rows == 0 {

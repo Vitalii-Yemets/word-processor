@@ -23,8 +23,14 @@ impl Editor {
     /// the cell it lands on, and at the last cell of the last row it adds a row
     /// rather than doing nothing — which is how a table is filled in without
     /// ever reaching for the ribbon.
+    ///
+    /// Only through the cells that are drawn: the continuations a merge down
+    /// leaves in the rows below its first are passed over. See
+    /// [`wp_docx::Document::cell_beside`].
     pub(super) fn step_cell(&mut self, forwards: bool) -> Response {
-        let Some(place) = self.document.table_here() else { return Response::Ignored };
+        if self.document.table_here().is_none() {
+            return Response::Ignored;
+        }
 
         match self.document.cell_beside(forwards) {
             Some((row, column)) => {
@@ -36,14 +42,51 @@ impl Editor {
             // Before the first cell there is nowhere to go back to.
             None if !forwards => Response::Ignored,
             // Past the last one there is: Word adds a row and carries on into
-            // it, which is how a table grows while it is being filled in.
+            // it, which is how a table grows while it is being filled in. The
+            // row goes under the last row of the table, which is not always
+            // the caret's: a table whose last cells are merged down from above
+            // ends below the row the last cell that is drawn starts in.
             None => {
-                if !self.document.insert_table_row(true) {
+                if !self.document.append_table_row() {
                     return Response::Ignored;
                 }
-                self.take_cell(place.row + 1, 0);
+                let Some(last) =
+                    self.document.table_here().and_then(|place| place.rows.checked_sub(1))
+                else {
+                    return Response::Ignored;
+                };
+                self.take_cell(last, 0);
                 self.edited(true, "Row added")
             }
+        }
+    }
+
+    /// Carries the caret on past a cell that a merge down hid, after the left
+    /// or right arrow put it in one.
+    ///
+    /// Those arrows move through the text in the order it is written, and a
+    /// continuation of a merge is written in each row the merged cell covers:
+    /// one arrow too many at the end of a row put the caret in an empty
+    /// paragraph nobody can see, where whatever was typed next went unseen
+    /// too — Word draws nothing of a continuation either. So the caret goes
+    /// on, the way it was going, to the next place that is drawn.
+    pub(super) fn step_over_hidden_cells(&mut self, forwards: bool, extend: bool) {
+        // One cell at a time, and never more times than there are paragraphs:
+        // a table of nothing but continuations cannot keep the arrow going.
+        for _ in 0..self.document.paragraph_count() {
+            let here = self.document.caret().paragraph;
+            let Some((first, last)) = self.document.hidden_cell_at(here) else { return };
+            let to = if forwards {
+                if last + 1 >= self.document.paragraph_count() {
+                    return;
+                }
+                wp_docx::TextPosition::new(last + 1, 0)
+            } else {
+                let Some(before) = first.checked_sub(1) else { return };
+                let end = self.document.paragraph_text(before).map_or(0, |text| text.len());
+                wp_docx::TextPosition::new(before, end)
+            };
+            self.document.move_caret(to, extend);
         }
     }
 
@@ -232,24 +275,26 @@ impl Editor {
 
         // Off the end of the table, the caret leaves it — for the paragraph
         // after the table going down, and the one before it going up, which is
-        // where Word puts it.
-        let row = if downwards { place.row + 1 } else { place.row.wrapping_sub(1) };
-        if row >= place.rows {
+        // where Word puts it. The row next door is the next one that is drawn
+        // there: down from a cell merged over several rows is past the last
+        // of them, and up into one is into the cell itself rather than into a
+        // continuation of it. See [`wp_docx::Document::cell_over_or_under`].
+        let Some((row, column)) = self.document.cell_over_or_under(downwards) else {
             let Some((above, below)) = self.document.table_paragraphs() else { return false };
             let outside = if downwards { below + 1 } else { above.wrapping_sub(1) };
             if outside >= self.document.paragraph_count() {
                 return true;
             }
             return self.caret_onto_paragraph(outside, !downwards, wanted_x, extend);
-        }
+        };
 
         // Into the cell below or above. The wanted place across the page is
         // held inside that cell, so that a row whose columns do not line up
         // with this one — a merge, most often — still takes the caret rather
         // than handing it to the cell next door.
-        let Some((_, cell)) = self.placed_cell(row, place.column) else { return false };
+        let Some((_, cell)) = self.placed_cell(row, column) else { return false };
         let across = wanted_x.clamp(cell.x + 1.0, cell.x + cell.width - 1.0);
-        let Some((below, above)) = self.document.cell_paragraphs(row, place.column) else {
+        let Some((below, above)) = self.document.cell_paragraphs(row, column) else {
             return false;
         };
         let paragraph = if downwards { below } else { above };
@@ -1114,6 +1159,141 @@ mod tests {
         let filled = editor.placed_cell(0, 0).expect("a cell").1.height;
         let empty = editor.placed_cell(1, 0).expect("a cell").1.height;
         assert!((filled - empty).abs() < 0.5, "filled {filled} against empty {empty}");
+    }
+
+    /// Merges a block of cells as a person does: dragged across, and Merge
+    /// Cells pressed.
+    fn merge(editor: &mut Editor, from: (usize, usize), to: (usize, usize)) {
+        drag(editor, from, to);
+        editor.run(crate::chrome::Command::MergeCells);
+        editor.relayout();
+    }
+
+    /// Puts the caret at the start of one cell, as a press in it would.
+    fn caret_into(editor: &mut Editor, row: usize, column: usize) {
+        // Cells are found through the table the caret is in, and the table
+        // begins at the paragraph after the one it was put in after.
+        if editor.document.table_here().is_none() {
+            editor.document.set_caret(TextPosition::new(1, 0));
+        }
+        let (first, _) = editor.document.cell_paragraphs(row, column).expect("a cell");
+        editor.document.set_caret(TextPosition::new(first, 0));
+    }
+
+    #[test]
+    fn merging_leaves_the_caret_at_the_start_of_the_merged_cell() {
+        // It was left on the paragraph number it had been on, which after the
+        // merge belonged to the next cell along.
+        let mut editor = with_table();
+        fill(&mut editor);
+        merge(&mut editor, (0, 0), (0, 1));
+
+        assert_eq!(cell_of_caret(&editor), Some((0, 0)), "the caret is not in the merged cell");
+        let (first, last) = editor.document.cell_paragraphs(0, 0).expect("a cell");
+        assert_eq!(editor.document.caret(), TextPosition::new(first, 0), "nor at its start");
+        let said: Vec<String> = (first..=last)
+            .map(|paragraph| editor.document.paragraph_text(paragraph).unwrap_or_default())
+            .collect();
+        assert_eq!(said, ["00", "01"], "the merged cell lost what the second cell held");
+    }
+
+    #[test]
+    fn merging_the_whole_table_keeps_the_caret_in_it() {
+        // Every cell merged left the caret in the paragraph after the table,
+        // and the table's two tabs went with it.
+        let mut editor = with_table();
+        fill(&mut editor);
+        merge(&mut editor, (0, 0), (2, 2));
+
+        assert_eq!(cell_of_caret(&editor), Some((0, 0)), "the caret was thrown out of the table");
+        let state = editor.toolbar_state();
+        assert!(
+            crate::chrome::ribbon::Tab::TableLayout.applies(&state),
+            "the table tabs went away"
+        );
+    }
+
+    #[test]
+    fn tab_in_a_table_merged_into_one_cell_adds_a_row() {
+        // Tab went into the second row's continuation, which nothing draws.
+        let mut editor = with_table();
+        fill(&mut editor);
+        merge(&mut editor, (0, 0), (2, 2));
+        // Wherever the merge left it: this is about Tab.
+        editor.document.set_caret(TextPosition::new(1, 0));
+
+        key(&mut editor, Key::Tab, false);
+        assert_eq!(grid(&editor).len(), 4, "Tab should have added a row");
+        assert_eq!(cell_of_caret(&editor), Some((3, 0)), "and put the caret in it");
+        typed(&mut editor, "New");
+        assert_eq!(grid(&editor)[3][0], "New");
+    }
+
+    #[test]
+    fn tab_and_the_arrows_walk_a_table_with_a_merge_down() {
+        // The first column merged down the whole table: Tab and Shift+Tab go
+        // through the cells that are drawn, the arrows step over the ones that
+        // are not, and a block dragged over it is still the cells it covers.
+        let mut editor = with_table();
+        fill(&mut editor);
+        merge(&mut editor, (0, 0), (2, 0));
+        caret_into(&mut editor, 0, 0);
+
+        let mut visited = vec![cell_of_caret(&editor)];
+        for _ in 0..6 {
+            key(&mut editor, Key::Tab, false);
+            visited.push(cell_of_caret(&editor));
+        }
+        let drawn = [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 1), (2, 2)];
+        assert_eq!(visited, drawn.map(Some), "Tab went into a cell that is not drawn");
+
+        let mut back = vec![cell_of_caret(&editor)];
+        for _ in 0..6 {
+            key(&mut editor, Key::Tab, true);
+            back.push(cell_of_caret(&editor));
+        }
+        let mut reversed = drawn;
+        reversed.reverse();
+        assert_eq!(back, reversed.map(Some), "Shift+Tab went into a cell that is not drawn");
+
+        // Down out of the merged cell — from its last line, the ones above it
+        // being lines of the same cell — is past the rows it covers, which
+        // here is past the table.
+        let (_, last) = editor.document.cell_paragraphs(0, 0).expect("the merged cell");
+        editor.document.set_caret(TextPosition::new(last, 0));
+        key(&mut editor, Key::Down, false);
+        assert!(editor.document.table_here().is_none(), "down went into a continuation");
+
+        caret_into(&mut editor, 0, 1);
+        key(&mut editor, Key::Down, false);
+        assert_eq!(cell_of_caret(&editor), Some((1, 1)), "down left its column");
+        caret_into(&mut editor, 2, 1);
+        key(&mut editor, Key::Up, false);
+        assert_eq!(cell_of_caret(&editor), Some((1, 1)), "up left its column");
+
+        let (last, _) = editor.document.cell_paragraphs(0, 2).expect("a cell");
+        let end = editor.document.paragraph_text(last).unwrap_or_default().len();
+        editor.document.set_caret(TextPosition::new(last, end));
+        key(&mut editor, Key::Right, false);
+        assert_eq!(cell_of_caret(&editor), Some((1, 1)), "right went into a continuation");
+        caret_into(&mut editor, 2, 1);
+        key(&mut editor, Key::Left, false);
+        assert_eq!(cell_of_caret(&editor), Some((1, 2)), "left went into a continuation");
+
+        drag(&mut editor, (0, 1), (2, 2));
+        let taken = editor.document.selected_cells().expect("a block of cells");
+        assert_eq!(
+            (taken.rows, taken.columns),
+            ((0, 2), (1, 2)),
+            "the block is not the one dragged"
+        );
+        assert_eq!(editor.selected_cell_rects().len(), 6, "the block is not drawn as six cells");
+
+        // And the last Tab of all adds a row.
+        caret_into(&mut editor, 2, 2);
+        key(&mut editor, Key::Tab, false);
+        assert_eq!(grid(&editor).len(), 4, "Tab after the last cell did not add a row");
+        assert_eq!(cell_of_caret(&editor), Some((3, 0)));
     }
 
     #[test]

@@ -323,10 +323,94 @@ fn merge_and_split_go_both_ways() {
     editor.relayout();
     assert_eq!(grid(&editor)[0].len(), 2, "the cells did not merge");
 
+    // Split Cells asks, and what it offers a merged cell is what it was made
+    // of: OK alone takes the merge apart.
     caret_into(&mut editor, 0, 0);
     editor.run(Command::SplitCells);
+    assert!(editor.dialog.is_some(), "the Split Cells dialog did not open");
+    editor.finish_dialog(Answer::Accept);
     editor.relayout();
     assert_eq!(grid(&editor)[0].len(), 3, "the cell did not split again");
+}
+
+/// What each row of a dialog is called, and what it says: a number for a box,
+/// "on" or "off" for a tick box.
+fn rows_of(editor: &Editor) -> Vec<(String, String)> {
+    let dialog = editor.dialog.as_ref().expect("a dialog");
+    dialog
+        .fields
+        .iter()
+        .map(|field| match field {
+            crate::chrome::dialog::Field::Number { label, value, .. } => {
+                (label.clone(), value.clone())
+            }
+            crate::chrome::dialog::Field::Check { label, on } => {
+                (label.clone(), if *on { "on" } else { "off" }.to_owned())
+            }
+            other => (format!("{other:?}"), String::new()),
+        })
+        .collect()
+}
+
+#[test]
+fn split_cells_asks_how_many_and_splits_a_cell_that_was_never_merged() {
+    // Word's Split Cells is a dialog, and it splits any cell. Here it split
+    // only a cell that had been merged, and asked nothing.
+    let mut editor = editor();
+    caret_into(&mut editor, 1, 1);
+    editor.run(Command::SplitCells);
+    let dialog = editor.dialog.as_ref().expect("the Split Cells dialog did not open");
+    assert_eq!(dialog.title, "Split Cells");
+    let owned = |label: &str, value: &str| (label.to_owned(), value.to_owned());
+    assert_eq!(
+        rows_of(&editor),
+        [owned("Number of columns", "2"), owned("Number of rows", "1")],
+        "one cell selected: two columns, one row, and nothing to merge first"
+    );
+
+    editor.finish_dialog(Answer::Accept);
+    editor.relayout();
+    let grid = grid(&editor);
+    assert_eq!(grid[1].len(), 4, "the cell was not split in two");
+    assert_eq!(grid[0].len(), 3, "the row above gained a cell: it should span the two");
+    assert_eq!(grid.len(), 3, "the table gained a row");
+}
+
+#[test]
+fn split_cells_offers_to_merge_first_when_several_cells_are_selected() {
+    let mut editor = editor();
+    for (column, text) in [(0, "One"), (1, "Two"), (2, "Three")] {
+        caret_into(&mut editor, 0, column);
+        write(&mut editor, text);
+    }
+    editor.relayout();
+    assert!(editor.select_cells((0, 0), (0, 2)), "the cells would not select");
+    editor.run(Command::SplitCells);
+    let owned = |label: &str, value: &str| (label.to_owned(), value.to_owned());
+    assert_eq!(
+        rows_of(&editor),
+        [
+            owned("Number of columns", "3"),
+            owned("Number of rows", "1"),
+            owned("Merge cells before split", "on"),
+        ]
+    );
+
+    // Two columns out of three merged cells: the three paragraphs are shared
+    // out over the two, and one undo takes the whole of it back.
+    if let Some(crate::chrome::dialog::Field::Number { value, .. }) =
+        editor.dialog.as_mut().and_then(|dialog| dialog.fields.first_mut())
+    {
+        *value = "2".to_owned();
+    }
+    editor.finish_dialog(Answer::Accept);
+    editor.relayout();
+    assert_eq!(grid(&editor)[0], ["One Two", "Three"], "the row was not merged and split in two");
+    assert_eq!(grid(&editor)[1].len(), 3, "the row below changed");
+
+    editor.document.undo();
+    editor.relayout();
+    assert_eq!(grid(&editor)[0], ["One", "Two", "Three"], "one undo did not take it all back");
 }
 
 #[test]

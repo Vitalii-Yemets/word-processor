@@ -121,6 +121,8 @@ pub(super) enum Asking {
     Sort,
     /// Arithmetic over the cells of a table.
     Formula,
+    /// How many columns and rows a cell of a table becomes.
+    SplitCells,
     /// What a reader of this document may do to it, and the password behind
     /// the answer.
     FormattingLimits,
@@ -238,6 +240,7 @@ impl Editor {
             Some(Asking::Layout) => self.apply_layout_dialog(&dialog),
             Some(Asking::Sort) => self.apply_sort(&dialog),
             Some(Asking::Formula) => self.apply_formula(&dialog),
+            Some(Asking::SplitCells) => self.apply_split_cells(&dialog),
             Some(Asking::FormattingLimits) => self.apply_formatting_limits(&dialog),
             Some(Asking::Enforce) => self.apply_enforcement(&dialog),
             Some(Asking::MoreUsers) => self.apply_more_users(&dialog),

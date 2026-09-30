@@ -105,6 +105,7 @@ mod signature;
 mod signatures;
 mod sortdialog;
 mod split;
+mod splitcells;
 mod stationery;
 mod statusmenu;
 mod styledialog;

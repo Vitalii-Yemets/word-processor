@@ -2102,7 +2102,7 @@ work is in *The order of the work* at the end.
   `what_the_signatures_are_worth_is_said_in_words_for_each_verdict`; and
   the window drawn with a signed document open, both bars and the question
   (`--picture … signedquestion`), beside Word's with the same file.
-- [ ] **C49. Merging and splitting cells without losing anything.** Merge
+- [x] **C49. Merging and splitting cells without losing anything.** Merge
   Cells drops the text of every cell but the first when merging sideways,
   hides it in `vMerge` continuations when merging down, and leaves the caret
   in the next cell — or, when the whole table is merged, outside the table.
@@ -2112,6 +2112,75 @@ work is in *The order of the work* at the end.
   paragraphs in the merged cell, puts the caret there, splits any cell by a
   count of rows and columns, and Tab skips what is not drawn. Reviews T30,
   T31, T21, T60.
+  *Done:* all four, which had one cause: merge, split and Tab named a cell
+  by its place along its row and never looked at the grid. Merge threw
+  away the `w:tc` elements it took out and kept the caret's paragraph
+  number; split could only undo a `gridSpan`, in one row; Tab counted every
+  `w:tc`. Now `Shape` in `wp-docx/src/cells.rs` reads a table onto its
+  grid — where each cell starts and ends, and whether it starts or
+  continues a merge down — and all of them ask it. `merge_cells` takes the
+  selection whole, grown until no merged cell is cut by its edge as Word's
+  selection is; gives the top-left cell the paragraphs of every cell in
+  reading order, along each row and then down, a cell holding only its
+  empty paragraph adding nothing; leaves each continuation one empty
+  paragraph, as Word writes one; states the merged width in `w:tcW`; and
+  puts the caret at the start of the merged cell, so the table's tabs stay.
+  `split_cells` splits any cell into columns and rows. Across, the cell's
+  width is shared evenly — or it is given back the grid columns it covers
+  when split into as many — the grid gains the new edges, and a cell above
+  or below that crosses one covers both halves by `w:gridSpan`
+  (`gridBefore` and `gridAfter` are moved as well). Down, a cell of one row
+  gets rows under it and every other cell of the row is merged down over
+  them, `restart` above and continuations below; a cell merged over
+  several rows is shared out over those, and the rows asked for have to
+  divide them. What it held is shared out over the new cells in reading
+  order, so merge and split undo each other: a table merged into one cell
+  and split three by three is the table it was, text and all, with no
+  `vMerge` left. "Merge cells before split" merges first; without it each
+  selected cell is split. Each is one step to undo. Split Cells is Word's
+  dialog (`editor/splitcells.rs`): Number of columns, Number of rows, and
+  Merge cells before split, ticked, only with several cells selected. It
+  starts from what the selection covers: a merged cell's columns and rows,
+  so that OK alone takes the merge apart; two by one for a plain cell; the
+  rectangle for several. Tab and Shift+Tab (`cell_beside` in `tables.rs`)
+  go through the cells that are drawn, and Tab after the last adds a row
+  under the table's last row, without a merge down (`append_table_row`),
+  so a table merged into one cell grows one. Up and down
+  (`cell_over_or_under`) step past the rows a merged cell covers and into
+  a merged cell rather than a continuation of it; left and right step over
+  a continuation (`step_over_hidden_cells` in `editor/tablework.rs`). The
+  new words are in English, German and Hebrew.
+  *Proven by:* in `tests/cells.rs`,
+  `merging_across_keeps_the_paragraphs_of_every_cell_in_order`,
+  `merging_down_keeps_the_paragraphs_and_leaves_the_continuations_empty`,
+  `merging_a_block_takes_the_paragraphs_across_and_then_down` and
+  `an_empty_cell_adds_no_empty_paragraph_to_a_merge`, which kept the first
+  cell's text alone before;
+  `merging_puts_the_caret_at_the_start_of_the_merged_cell`, which found it
+  in the next cell, and
+  `merging_the_whole_table_leaves_the_caret_in_it`, which found it outside
+  the table; `a_plain_cell_can_be_split_into_columns_and_rows`, which would
+  not split, and
+  `splitting_a_whole_table_merged_into_one_cell_leaves_no_merge_behind`,
+  which left rows 1 and 2 one cell wide;
+  `tab_passes_over_the_cells_a_merge_down_hid` and
+  `a_table_merged_into_one_cell_has_nowhere_for_tab_to_go`, which went to
+  the continuation at 1,0; and
+  `undoing_a_merge_brings_back_every_cell_and_its_text`,
+  `the_split_dialog_starts_from_what_the_selection_covers`,
+  `a_cell_merged_down_is_split_only_into_rows_that_divide_it`,
+  `several_cells_are_each_split_when_they_are_not_merged_first` and
+  `merging_before_a_split_shares_the_paragraphs_out_and_is_one_undo`. In
+  the program, `merging_leaves_the_caret_at_the_start_of_the_merged_cell`,
+  `merging_the_whole_table_keeps_the_caret_in_it`,
+  `tab_in_a_table_merged_into_one_cell_adds_a_row` and
+  `tab_and_the_arrows_walk_a_table_with_a_merge_down`, which all failed
+  as the review says; in `tablecheck.rs`,
+  `split_cells_asks_how_many_and_splits_a_cell_that_was_never_merged` and
+  `split_cells_offers_to_merge_first_when_several_cells_are_selected`,
+  which found no dialog; and the Split Cells dialog's own tests. And the
+  window drawn with the dialog open (`--picture … splitcells`) and with a
+  filled table's top row merged (`mergedrow`).
 - [ ] **C50. Shift+arrows in a table select cells.** They extend a text
   selection through every cell between, in file order; the selection is
   drawn as cells but acted on as text, so Delete, typing, Enter and paste
@@ -2253,7 +2322,13 @@ work is in *The order of the work* at the end.
   win as Word's rules say; the painter paints one edge a press rather than
   along a drag; and a vertically merged cell is laid out as several
   rectangles, so its vertical alignment, its selection and its caret are
-  those of the pieces. Reviews T34, T46, T47.
+  those of the pieces — the layout even places the continuation cells'
+  content, which nothing should draw, a press in the lower part of a
+  merged cell puts the caret in a continuation's hidden paragraph
+  (`position_at`), the Draw Table pen (`split_cell_across`,
+  `split_cell_down`) finds cells by their place along the row and not on
+  the grid **C49** built, and the old `w:hMerge` is not read at all.
+  Reviews T34, T46, T47; the last four found while **C49** was done.
 - [ ] **C64. Backspace, Ctrl+Shift+Enter and Enter, as Word has them in a
   table.** Backspace on selected rows, columns or a whole table deletes
   them (Delete empties them); Ctrl+Shift+Enter splits the table before the
@@ -2271,7 +2346,9 @@ work is in *The order of the work* at the end.
   selected inserts one; a width typed in Cell Size widens one cell and
   cannot narrow it, where Word sets the column; and the four pixels inside
   a cell's left edge are the column line, so a press there starts a drag
-  and no press selects the cell. Reviews T06, T32, T35, T05.
+  and no press selects the cell. And Insert Above and Below copy the row's
+  `vMerge` marks, so a row inserted under the first row of a merge cuts the
+  merge in two (found while **C49** was done). Reviews T06, T32, T35, T05.
 - [ ] **C67. A table that reaches past the margin, and the drags with
   modifiers.** The last line and the size handle cannot take a table past
   the right margin: the other columns shrink instead. Shift, Ctrl and

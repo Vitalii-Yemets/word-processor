@@ -2393,10 +2393,12 @@ impl Editor {
             Key::Function(_) => Response::Ignored,
             Key::Left => {
                 self.document.caret_left(extend);
+                self.step_over_hidden_cells(false, extend);
                 self.moved()
             }
             Key::Right => {
                 self.document.caret_right(extend);
+                self.step_over_hidden_cells(true, extend);
                 self.moved()
             }
             Key::Up | Key::Down => {

@@ -979,6 +979,22 @@ impl Editor {
                 self.relayout();
                 self.open_table_properties();
             }
+            // A table with every cell filled in and its top row merged: the
+            // merged cell holds what all three held, one paragraph each.
+            "mergedrow" => {
+                self.fill_a_table_for_a_picture();
+                self.select_cells((0, 0), (0, 2));
+                self.run(crate::chrome::Command::MergeCells);
+                self.relayout();
+            }
+            // Word's Split Cells, over two cells of such a table taken
+            // together, which is when it offers to merge them first.
+            "splitcells" => {
+                self.fill_a_table_for_a_picture();
+                self.select_cells((1, 1), (0, 1));
+                self.relayout();
+                self.run(crate::chrome::Command::SplitCells);
+            }
             "options" => {
                 self.open_options();
             }
@@ -3138,6 +3154,28 @@ ogg,lancre
         // that forgot to say so would be a picture of the window without it.
         self.needs_redraw = true;
         Ok(())
+    }
+
+    /// A three by three table at the caret with every cell saying where it
+    /// is, the Layout tab showing, and the caret in the first cell: what the
+    /// pictures of merging and splitting start from.
+    fn fill_a_table_for_a_picture(&mut self) {
+        self.document.insert_table(3, 3);
+        self.relayout();
+        for row in 0..3 {
+            for column in 0..3 {
+                let Some((paragraph, _)) = self.document.cell_paragraphs(row, column) else {
+                    continue;
+                };
+                self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+                self.document.type_text(&format!("Cell {row}{column}"));
+            }
+        }
+        if let Some((paragraph, _)) = self.document.cell_paragraphs(0, 0) {
+            self.document.set_caret(wp_docx::TextPosition::new(paragraph, 0));
+        }
+        self.ribbon.tab = crate::chrome::ribbon::Tab::TableLayout;
+        self.relayout();
     }
 }
 

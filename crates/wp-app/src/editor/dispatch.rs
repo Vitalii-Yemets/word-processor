@@ -253,10 +253,7 @@ impl Editor {
                 let changed = self.document.merge_cells();
                 self.edited(changed, "Cells merged")
             }
-            Command::SplitCells => {
-                let changed = self.document.split_cell();
-                self.edited(changed, "Cell split")
-            }
+            Command::SplitCells => self.open_split_cells(),
             Command::DistributeColumns => {
                 let changed = self.document.distribute_columns();
                 self.edited(changed, "Columns distributed")

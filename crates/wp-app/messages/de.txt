@@ -2186,6 +2186,9 @@ language = Deutsch
 = Merge Formatting
 > Formatierung zusammenführen
 
+= Merge cells before split
+> Zellen vor dem Teilen zusammenführen
+
 = Millimeters
 > Millimeter
 
@@ -2275,6 +2278,12 @@ language = Deutsch
 
 = Number format
 > Zahlenformat
+
+= Number of columns
+> Spaltenanzahl
+
+= Number of rows
+> Zeilenanzahl
 
 = Numbering
 > Nummerierung

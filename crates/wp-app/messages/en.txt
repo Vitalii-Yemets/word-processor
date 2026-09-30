@@ -657,6 +657,7 @@
 = Merge Cells
 = Merge Field
 = Merge Formatting
+= Merge cells before split
 = Mexico
 = Millimeters
 = Mirror indents
@@ -713,6 +714,8 @@
 = Nothing is restricted: tick one of the two boxes
 = Nothing was typed, so no diagram was drawn
 = Number format
+= Number of columns
+= Number of rows
 = Numbering
 = Nynorsk
 = OK

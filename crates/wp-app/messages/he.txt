@@ -1960,6 +1960,9 @@ direction = rtl
 = Merge Formatting
 > מזג עיצוב
 
+= Merge cells before split
+> מזג תאים לפני פיצול
+
 = Mexico
 > מקסיקו
 
@@ -2127,6 +2130,12 @@ direction = rtl
 
 = Number format
 > תבנית מספר
+
+= Number of columns
+> מספר עמודות
+
+= Number of rows
+> מספר שורות
 
 = Numbering
 > מספור
