@@ -329,15 +329,10 @@ impl Editor {
                 self.status = message;
                 return false;
             }
-            if self.document.has_macros() {
-                let question = crate::messages::with(
-                    "The following features cannot be saved in macro-free documents:\n\n    \u{2022} VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?",
-                    &[path.file_name().and_then(|name| name.to_str()).unwrap_or(UNTITLED)],
-                );
-                if !wp_shell::dialog::ask_yes_no(&question) {
-                    self.status = String::from("Not saved");
-                    return false;
-                }
+            // Asked in a dialog of this program's own, and the save waits
+            // on the answer: see [`super::unsaved`].
+            if self.document.has_macros() && !self.macros_may_go(path, filtered) {
+                return false;
             }
             let bytes = wp_doc::save(&self.document);
             if let Err(error) = wp_files::replace_with(path, &bytes) {
@@ -406,15 +401,11 @@ impl Editor {
             return true;
         }
         if let Some(kind) = kind_of_path(path) {
-            if !kind.allows_macros() && self.document.has_macros() {
-                let question = crate::messages::with(
-                    "The following features cannot be saved in macro-free documents:\n\n    \u{2022} VBA project\n\nTo save a file with these features, choose No, and then choose a macro-enabled file type in the file type list.\n\nTo continue saving as a macro-free document, choose Yes.\n\nSave {0} as a macro-free document?",
-                    &[path.file_name().and_then(|name| name.to_str()).unwrap_or(UNTITLED)],
-                );
-                if !wp_shell::dialog::ask_yes_no(&question) {
-                    self.status = String::from("Not saved");
-                    return false;
-                }
+            if !kind.allows_macros()
+                && self.document.has_macros()
+                && !self.macros_may_go(path, filtered)
+            {
+                return false;
             }
             self.document.set_kind(kind);
         }
@@ -511,12 +502,7 @@ impl Editor {
     /// name is not, and the dialog opens where the folder is rather than
     /// wherever it happened to be last.
     pub(super) fn save_into(&mut self, suggested: &Path) -> bool {
-        let chosen = wp_shell::dialog::save_file_typed(
-            t("Save as"),
-            &readable(SAVE_FILTERS),
-            Some(suggested),
-        );
-        match chosen {
+        match self.where_to_save(suggested) {
             Some((path, kind)) => {
                 let filtered = kind
                     .and_then(|index| SAVE_FILTERS.get(index))
@@ -536,41 +522,21 @@ impl Editor {
         Response::Redraw
     }
 
-    /// Asks about unsaved changes before they are thrown away.
-    ///
-    /// Returns whether it is all right to go ahead. A document with no changes
-    /// asks nothing, because there is nothing to lose.
-    pub(super) fn may_discard(&mut self) -> bool {
-        // The document is being closed, which it has macros for; they run
-        // before the question about saving, as Word runs them, so that
-        // what they change is part of what is asked about. Once for one
-        // closing, however many times the closing asks.
-        if !self.closing_raised {
-            self.closing_raised = true;
-            self.raise(super::autoevents::Moment::Closing);
-        }
-        if !self.document.is_modified() {
-            return true;
-        }
-        match wp_shell::dialog::ask_to_save(&self.document_name()) {
-            wp_shell::dialog::Answer::Yes => self.save_now(),
-            // Word's setting: work thrown away on purpose can still be got
-            // back, because "don't save" is answered by people in a hurry.
-            // The copy is left where the next start will find it.
-            wp_shell::dialog::Answer::No => {
-                if self.keep_autosaved {
-                    self.keep_unsaved_copy();
-                } else {
-                    self.drop_recovery_copy();
-                }
-                true
-            }
-            // Not closing after all, so the next attempt is a new one.
-            wp_shell::dialog::Answer::Cancel => {
-                self.closing_raised = false;
-                false
-            }
-        }
+    /// The system's Save As dialog: where the document goes, and which of the
+    /// types it goes as.
+    #[cfg(not(test))]
+    fn where_to_save(&mut self, suggested: &Path) -> Option<(PathBuf, Option<usize>)> {
+        wp_shell::dialog::save_file_typed(t("Save as"), &readable(SAVE_FILTERS), Some(suggested))
+    }
+
+    /// The same, answered by the test instead of by the system: the system's
+    /// is a window nobody is there to answer, and a test that opened one
+    /// would wait for ever. What it was asked is kept, so that a test can
+    /// say Save As was asked, and asked first.
+    #[cfg(test)]
+    fn where_to_save(&mut self, suggested: &Path) -> Option<(PathBuf, Option<usize>)> {
+        self.asked_where.push(suggested.to_path_buf());
+        self.answer_where.take().map(|path| (path, None))
     }
 
     /// What the last window does on its way out: the copy goes, unless one
@@ -625,10 +591,14 @@ impl Editor {
         self.update_title();
     }
 
+    /// File ▸ New, once the document open now is safe: see
+    /// [`super::unsaved`].
     pub(super) fn new_document(&mut self) -> Response {
-        if !self.may_discard() {
-            return Response::Ignored;
-        }
+        self.after_asking_to_save(Self::new_document_now)
+    }
+
+    /// The new document itself, once nothing is left to ask about the old.
+    pub(super) fn new_document_now(&mut self) -> Response {
         // A person's own defaults live in a template called Normal, which is
         // Word's name for it and Word's behaviour: a new blank document is
         // made from that template where there is one. See
@@ -706,10 +676,12 @@ impl Editor {
         Response::Redraw
     }
 
+    /// File ▸ Open, once the document open now is safe.
     pub(super) fn open_document(&mut self) -> Response {
-        if !self.may_discard() {
-            return Response::Ignored;
-        }
+        self.after_asking_to_save(Self::open_document_now)
+    }
+
+    fn open_document_now(&mut self) -> Response {
         let Some((path, chosen)) =
             wp_shell::dialog::open_file_typed(t("Open"), &readable(DOCUMENT_FILTERS))
         else {

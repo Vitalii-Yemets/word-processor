@@ -43,16 +43,14 @@ impl Editor {
 
     /// Puts a written-here document in the window, keeping the open one safe.
     fn open_written(&mut self, body: Body, name: &str) -> Response {
-        if !self.may_discard() {
-            return Response::Ignored;
-        }
-        match Document::create(&body) {
+        let name = name.to_owned();
+        self.after_asking_to_save(move |editor| match Document::create(&body) {
             Ok(document) => {
-                self.set_document(document, None);
-                self.report(name)
+                editor.set_document(document, None);
+                editor.report(&name)
             }
-            Err(error) => self.report(&format!("{name} could not be opened: {error}")),
-        }
+            Err(error) => editor.report(&format!("{name} could not be opened: {error}")),
+        })
     }
 }
 

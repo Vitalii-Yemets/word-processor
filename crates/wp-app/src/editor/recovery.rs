@@ -12,7 +12,7 @@ use wp_shell::Response;
 use super::autorecover::Recovered;
 use super::dialogs::Asking;
 use super::Editor;
-use crate::chrome::dialog::{Dialog, Field};
+use crate::chrome::dialog::{Answer, Button, Dialog, Field};
 use crate::chrome::recoverypane::{Hit, RecoveryPane};
 use crate::chrome::{Choice, Popup};
 use crate::messages::t;
@@ -104,11 +104,15 @@ impl Editor {
     /// Once it is kept, the copy has done its work and goes, as a copy does
     /// whenever the work reaches the disk.
     fn save_recovered_as(&mut self, index: usize) -> Response {
+        self.after_asking_to_save(move |editor| editor.save_recovered_as_now(index))
+    }
+
+    fn save_recovered_as_now(&mut self, index: usize) -> Response {
         let Some(entry) = self.recovery.as_ref().and_then(|pane| pane.entries.get(index).cloned())
         else {
             return Response::Ignored;
         };
-        self.open_recovered(index);
+        self.open_recovered_now(index);
         let opened = self.recovery.as_ref().is_some_and(|pane| pane.opened == Some(index));
         if !opened {
             return Response::Redraw;
@@ -166,12 +170,16 @@ impl Editor {
     /// saved: the copy is not the document, and where it goes is the
     /// person's to say. Which is why the file it points at is the original
     /// and not the copy — Save puts it back where it came from.
+    ///
+    /// The document open now is asked about first, and the copy waits on the
+    /// answer.
     pub(super) fn open_recovered(&mut self, index: usize) -> Response {
+        self.after_asking_to_save(move |editor| editor.open_recovered_now(index))
+    }
+
+    fn open_recovered_now(&mut self, index: usize) -> Response {
         let Some(pane) = &self.recovery else { return Response::Ignored };
         let Some(entry) = pane.entries.get(index).cloned() else { return Response::Ignored };
-        if !self.may_discard() {
-            return Response::Ignored;
-        }
         let Ok(bytes) = std::fs::read(&entry.copy) else {
             self.status = crate::messages::with("{0} could not be read", &[&entry.name]);
             return Response::Redraw;
@@ -223,28 +231,41 @@ impl Editor {
     }
 
     /// Shuts the pane. Anything still in it is gone for good, so it is asked
-    /// about first — which is Word's question, in Word's words.
+    /// about first — which is Word's question, in Word's words, in a dialog
+    /// of this program's own, and the pane stays until it is answered.
     pub(super) fn close_recovery(&mut self) -> Response {
         let Some(pane) = &self.recovery else { return Response::Ignored };
-        let left: Vec<Recovered> = pane.entries.clone();
-        if !left.is_empty() {
-            let question = if left.len() == 1 {
-                format!(
-                    "You have a recovered file that you have not saved.\n\n\
-                     {} will be removed if you close this pane. Close it?",
-                    left[0].name
-                )
-            } else {
-                format!(
-                    "You have {} recovered files that you have not saved.\n\n\
-                     They will be removed if you close this pane. Close it?",
-                    left.len()
-                )
-            };
-            if !wp_shell::dialog::ask_yes_no(&question) {
-                return Response::Ignored;
-            }
+        let left = pane.entries.len();
+        if left == 0 {
+            return self.close_recovery_now();
         }
+        let question = if left == 1 {
+            crate::messages::with(
+                "You have a recovered file that you have not saved.\n\n{0} will be removed if you close this pane. Close it?",
+                &[&pane.entries[0].name],
+            )
+        } else {
+            crate::messages::with(
+                "You have {0} recovered files that you have not saved.\n\nThey will be removed if you close this pane. Close it?",
+                &[&left.to_string()],
+            )
+        };
+        let dialog = Dialog::with_buttons(
+            "Word Processor",
+            Field::notes(&question),
+            vec![
+                Button { label: "Yes".to_owned(), answer: Answer::Accept, default: true },
+                Button { label: "No".to_owned(), answer: Answer::Cancel, default: false },
+            ],
+        )
+        .wide(560.0);
+        self.ask(Asking::CloseRecovery, dialog)
+    }
+
+    /// Yes: the copies go, and the pane with them.
+    pub(super) fn close_recovery_now(&mut self) -> Response {
+        let left: Vec<Recovered> =
+            self.recovery.as_ref().map(|pane| pane.entries.clone()).unwrap_or_default();
         for entry in &left {
             entry.remove();
         }
@@ -377,6 +398,53 @@ mod tests {
         editor.choose_recovered(1);
         assert!(editor.document.paragraph_text(0).is_some_and(|text| text.contains("Whole")));
         assert!(good.copy.exists(), "not saved, so still the only copy of the work");
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// Shutting the pane with copies still in it asks first, in a dialog of
+    /// this program's own rather than the system's box, and the pane waits
+    /// for the answer: No keeps everything, Yes takes the copies with it.
+    #[test]
+    fn closing_the_pane_with_copies_in_it_asks_and_waits_for_the_answer() {
+        let folder = folder("close");
+        let entry = copy_of(&folder, "kept", "Something");
+        let mut editor = editor();
+        editor.show_recovered(vec![entry.clone()]);
+        let key = |editor: &mut Editor, key: wp_shell::Key| {
+            editor.handle(Event::KeyDown { key, modifiers: wp_shell::Modifiers::default() })
+        };
+
+        editor.close_recovery();
+        assert_eq!(editor.asking, Some(Asking::CloseRecovery), "nothing was asked");
+        assert!(editor.recovering(), "the pane went before the answer");
+        let dialog = editor.dialog.as_ref().expect("a question");
+        let said: Vec<String> = dialog
+            .fields
+            .iter()
+            .filter_map(|field| match field {
+                Field::Said { value, .. } => Some(value.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            said,
+            [
+                "You have a recovered file that you have not saved.",
+                "kept.docx will be removed if you close this pane. Close it?",
+            ]
+        );
+        let buttons: Vec<&str> =
+            dialog.buttons.iter().map(|button| button.label.as_str()).collect();
+        assert_eq!(buttons, ["Yes", "No"]);
+
+        key(&mut editor, wp_shell::Key::Escape);
+        assert!(editor.recovering(), "No shut the pane");
+        assert!(entry.copy.exists(), "No threw the copy away");
+
+        editor.close_recovery();
+        key(&mut editor, wp_shell::Key::Enter);
+        assert!(!editor.recovering(), "Yes left the pane up");
+        assert!(!entry.copy.exists(), "and the copy on the disk");
         let _ = std::fs::remove_dir_all(&folder);
     }
 

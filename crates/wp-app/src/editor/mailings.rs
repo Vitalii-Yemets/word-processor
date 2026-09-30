@@ -532,10 +532,11 @@ impl Editor {
     pub(super) fn merge_to_a_document(&mut self) -> Response {
         // The letters go where the letter is, this program having one window.
         // So the letter it came from has to be safe first, which is the same
-        // question New and Open ask.
-        if !self.may_discard() {
-            return Response::Ignored;
-        }
+        // question New and Open ask, and the letters wait on its answer.
+        self.after_asking_to_save(Self::merge_to_a_document_now)
+    }
+
+    fn merge_to_a_document_now(&mut self) -> Response {
         let (body, written, skipped) = self.merged_body();
         if written == 0 {
             return self.report("Every recipient was left out");
@@ -569,11 +570,13 @@ impl Editor {
     /// first, which is the same journey with the sheet of paper still in the
     /// tray: a merge that goes wrong goes wrong a hundred times.
     pub(super) fn merge_to_the_printer(&mut self) -> Response {
-        let response = self.merge_to_a_document();
-        if self.recipients.is_empty() {
-            return response;
-        }
-        self.open_print()
+        self.after_asking_to_save(|editor| {
+            let response = editor.merge_to_a_document_now();
+            if editor.recipients.is_empty() {
+                return response;
+            }
+            editor.open_print()
+        })
     }
 
     /// Each letter handed to the machine's mail program.

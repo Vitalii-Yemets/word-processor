@@ -55,21 +55,21 @@ impl Editor {
             return Response::Ignored;
         };
 
-        // The open document is not thrown away without asking.
-        if !self.may_discard() {
-            return Response::Ignored;
-        }
-
-        // Semicolons rather than line breaks, because the strip takes one line.
-        let delivery = typed.replace(';', "\n");
-        let sender = self.document.properties().company;
-        match wp_docx::Document::create_envelope(envelope, &delivery, &sender) {
-            Ok(document) => {
-                self.set_document(document, None);
-                self.report(&format!("Envelope: {}", envelope.name))
+        // The open document is not thrown away without asking, and the
+        // envelope waits on the answer.
+        self.after_asking_to_save(move |editor| {
+            // Semicolons rather than line breaks, because the strip takes
+            // one line.
+            let delivery = typed.replace(';', "\n");
+            let sender = editor.document.properties().company;
+            match wp_docx::Document::create_envelope(envelope, &delivery, &sender) {
+                Ok(document) => {
+                    editor.set_document(document, None);
+                    editor.report(&format!("Envelope: {}", envelope.name))
+                }
+                Err(error) => editor.report(&format!("The envelope could not be made: {error}")),
             }
-            Err(error) => self.report(&format!("The envelope could not be made: {error}")),
-        }
+        })
     }
 
     /// Drops open the sheets of labels.
@@ -112,17 +112,17 @@ impl Editor {
         let Some(sheet) = LABEL_SHEETS.get(self.stationery_choice) else {
             return Response::Ignored;
         };
-        if !self.may_discard() {
-            return Response::Ignored;
-        }
-
-        let text = typed.replace(';', "\n");
-        match wp_docx::Document::create_labels(sheet, &text) {
-            Ok(document) => {
-                self.set_document(document, None);
-                self.report(&format!("{} labels: {}", sheet.rows * sheet.columns, sheet.name))
+        // Not thrown away without asking either, and the labels wait on the
+        // answer.
+        self.after_asking_to_save(move |editor| {
+            let text = typed.replace(';', "\n");
+            match wp_docx::Document::create_labels(sheet, &text) {
+                Ok(document) => {
+                    editor.set_document(document, None);
+                    editor.report(&format!("{} labels: {}", sheet.rows * sheet.columns, sheet.name))
+                }
+                Err(error) => editor.report(&format!("The labels could not be made: {error}")),
             }
-            Err(error) => self.report(&format!("The labels could not be made: {error}")),
-        }
+        })
     }
 }

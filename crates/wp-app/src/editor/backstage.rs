@@ -372,14 +372,12 @@ impl Editor {
                 self.close_backstage();
                 self.open_print()
             }
-            Place::Close => {
-                if self.may_discard() {
-                    self.close_backstage();
-                    self.new_document()
-                } else {
-                    Response::Ignored
-                }
-            }
+            // The question about the changes is put over the File page, and
+            // Cancel leaves it there, as Word's does.
+            Place::Close => self.after_asking_to_save(|editor| {
+                editor.close_backstage();
+                editor.new_document_now()
+            }),
             Place::Options => {
                 self.close_backstage();
                 self.open_options()
@@ -416,10 +414,7 @@ impl Editor {
                 let Some(template) = personal_templates().get(index - 1).cloned() else {
                     return Response::Ignored;
                 };
-                if !self.may_discard() {
-                    return Response::Ignored;
-                }
-                self.new_from_template(&template)
+                self.after_asking_to_save(move |editor| editor.new_from_template(&template))
             }
             Place::Open => self.open_from_page(index),
             Place::SaveAs => self.save_from_page(index),
@@ -446,11 +441,10 @@ impl Editor {
         let Some(path) = self.settings.recent.get(index - 1).cloned() else {
             return Response::Ignored;
         };
-        if !self.may_discard() {
-            return Response::Ignored;
-        }
-        self.close_backstage();
-        self.open_path(Path::new(&path))
+        self.after_asking_to_save(move |editor| {
+            editor.close_backstage();
+            editor.open_path(Path::new(&path))
+        })
     }
 
     /// The first line of the Save As page browses; the rest are the folders the

@@ -10,7 +10,9 @@
 //!
 //! # What a dialog is here
 //!
-//! A panel drawn over the document, with the document dimmed behind it. Not a
+//! A panel drawn over the document, with the document dimmed behind it: a
+//! translucent veil over the whole window, dark enough to be seen in either
+//! theme (see [`Theme::veil`]). Not a
 //! window of the operating system: everything else in this program is drawn on
 //! the one canvas, and a dialog drawn the same way works on any machine the
 //! program is ever ported to and can be photographed for a test. What it gives
@@ -57,8 +59,15 @@ const TAB_HEIGHT: f32 = 30.0;
 const PREVIEW_HEIGHT: f32 = 64.0;
 
 /// The box a paragraph's shape is drawn inside, which needs room for three
-/// paragraphs rather than one line.
-const SHAPE_HEIGHT: f32 = 108.0;
+/// paragraphs rather than one line. Word's own is ninety pixels high.
+const SHAPE_HEIGHT: f32 = 90.0;
+
+/// How long a line of a note is let run before it is broken, in characters.
+///
+/// A dialog measures nothing when it is built, and a note has one row; so a
+/// question of several sentences is broken into rows by length, short
+/// enough for the widest of the dialogs that say one.
+const NOTE_LINE: usize = 84;
 
 /// The room a label takes when it stands above its field rather than beside it.
 const LABEL_HEIGHT: f32 = 18.0;
@@ -353,6 +362,39 @@ impl Field {
         Self::Said { label: String::new(), value: text.to_owned() }
     }
 
+    /// A question of several sentences, as notes: one a line, the text's own
+    /// line breaks kept, and a line too long for the panel broken between
+    /// words. The empty lines between paragraphs are left out, since each
+    /// note is a row with room round it already.
+    ///
+    /// For what is already in the reader's language: the question is looked
+    /// up whole, with the name in it, before it is broken up here, and a
+    /// piece of it would be found in no catalogue.
+    #[must_use]
+    pub fn notes(text: &str) -> Vec<Self> {
+        let mut out = Vec::new();
+        for paragraph in text.lines().map(str::trim_end).filter(|line| !line.is_empty()) {
+            // The indent a line starts with is part of it: Word sets its
+            // bullets in.
+            let indent = paragraph.len() - paragraph.trim_start().len();
+            let mut line = paragraph[..indent].to_owned();
+            for word in paragraph.split_whitespace() {
+                let wanted = line.chars().count() + 1 + word.chars().count();
+                if line.trim().is_empty() || wanted <= NOTE_LINE {
+                    if !line.trim().is_empty() {
+                        line.push(' ');
+                    }
+                    line.push_str(word);
+                } else {
+                    out.push(Self::note(&line));
+                    line = word.to_owned();
+                }
+            }
+            out.push(Self::note(&line));
+        }
+        out
+    }
+
     /// Whether the keyboard can land on it.
     #[must_use]
     pub fn takes_focus(&self) -> bool {
@@ -626,6 +668,9 @@ pub struct Dialog {
     button_tabs: Vec<(Answer, usize)>,
     /// Where the panel was last drawn: left, top, width, height.
     frame: (f32, f32, f32, f32),
+    /// Whether the rows are set as close as Word sets its own: see
+    /// [`Self::tight`].
+    tight: bool,
 }
 
 impl Dialog {
@@ -666,6 +711,7 @@ impl Dialog {
             tab: 0,
             button_tabs: Vec::new(),
             frame: (0.0, 0.0, 0.0, 0.0),
+            tight: false,
         };
         // The keyboard starts on the first thing that can take it, which is
         // where a person expects to start typing.
@@ -777,6 +823,71 @@ impl Dialog {
     pub fn wide(mut self, width: f32) -> Self {
         self.width = width.max(240.0);
         self
+    }
+
+    /// The same dialog, with its rows set as close together as Word sets
+    /// them: less room under a row of boxes, a row of tick boxes no taller
+    /// than a tick box and its label, and less under the last row of a
+    /// group.
+    ///
+    /// For a dialog that holds so much that the room this machinery
+    /// otherwise gives every row would make it taller than the window it
+    /// stands in — Word's Paragraph dialog is 552 pixels high, and with the
+    /// usual room this one was 716, in a window of 900, over the ribbon.
+    #[must_use]
+    pub fn tight(mut self) -> Self {
+        self.tight = true;
+        self
+    }
+
+    /// Puts the panel back in the middle of a window that has changed size.
+    ///
+    /// Everything that was drawn goes with it, so that a press before the
+    /// next drawing lands on what is under the pointer rather than on where
+    /// the panel used to be — and a panel that stayed where it was put for
+    /// the larger window would have its foot under the status bar of the
+    /// smaller one. A dialog never drawn has no place yet, and gets one when
+    /// it is.
+    pub fn recentre(&mut self, window_width: f32, window_height: f32) {
+        let (left, top, width, height) = self.frame;
+        if width <= 0.0 || height <= 0.0 {
+            return;
+        }
+        let (to_left, to_top) = placed_in(width, height, window_width, window_height);
+        let (across, down) = (to_left - left, to_top - top);
+        self.frame = (to_left, to_top, width, height);
+        for (_, x, y, _, _) in &mut self.placed {
+            *x += across;
+            *y += down;
+        }
+    }
+
+    /// The room under a row of boxes whose labels stand over them.
+    fn gap_under_boxes(&self) -> f32 {
+        if self.tight {
+            4.0
+        } else {
+            10.0
+        }
+    }
+
+    /// How tall a row with nothing on it but tick boxes, or a label and
+    /// its box side by side, is.
+    fn plain_row(&self) -> f32 {
+        if self.tight {
+            26.0
+        } else {
+            ROW + 4.0
+        }
+    }
+
+    /// How tall a field is on a row of its own, in this dialog.
+    fn height_of(&self, field: &Field) -> f32 {
+        match field {
+            Field::Check { .. } => self.plain_row(),
+            Field::Shape(_) if self.tight => SHAPE_HEIGHT + 8.0,
+            other => other.height(),
+        }
     }
 
     /// Whether a box is ticked.
@@ -1585,10 +1696,11 @@ impl Dialog {
 
         // A group's rectangle needs room under its last field for its own
         // bottom edge, and only the row before knows where that is.
+        let below = if self.tight { 6.0 } else { GROUP_INSET };
         let finish_group = |out: &mut Vec<Row>, inside: &mut bool| {
             if *inside {
                 if let Some(last) = out.last_mut() {
-                    last.height += GROUP_INSET;
+                    last.height += below;
                 }
             }
             *inside = false;
@@ -1649,12 +1761,14 @@ impl Dialog {
                     // which case that is what decides it. Without this a row
                     // holding two lists would be drawn over the buttons under
                     // it, because the panel was measured for boxes.
-                    let tallest =
-                        together.iter().map(|at| self.fields[*at].height()).fold(0.0f32, f32::max);
+                    let tallest = together
+                        .iter()
+                        .map(|at| self.height_of(&self.fields[*at]))
+                        .fold(0.0f32, f32::max);
                     let height = if labels_above {
-                        (LABEL_HEIGHT + BOX_HEIGHT + 10.0).max(tallest)
+                        (LABEL_HEIGHT + BOX_HEIGHT + self.gap_under_boxes()).max(tallest)
                     } else {
-                        (ROW + 4.0).max(tallest)
+                        self.plain_row().max(tallest)
                     };
                     out.push(Row { fields: together, height, labels_above, inside_group });
                     index = at;
@@ -1662,7 +1776,7 @@ impl Dialog {
                 field => {
                     out.push(Row {
                         fields: vec![index],
-                        height: field.height(),
+                        height: self.height_of(field),
                         labels_above: false,
                         inside_group,
                     });
@@ -1743,7 +1857,7 @@ impl Dialog {
 
         // The document behind is dimmed, which is what says that it cannot be
         // reached until this is answered.
-        canvas.fill_rect(0, 0, window_width as i32, window_height as i32, Color::rgba(0, 0, 0, 90));
+        canvas.fill_rect(0, 0, window_width as i32, window_height as i32, theme.veil());
 
         // At least as wide as the widest row of buttons on any of its tabs,
         // measured in the language it is read in: a label longer in German
@@ -1752,8 +1866,7 @@ impl Dialog {
         // the size of the dialog under the pointer.
         let width = self.width.max(self.widest_button_row(engine, theme));
         let height = self.height();
-        let left = ((window_width - width) / 2.0).max(0.0);
-        let top = ((window_height - height) / 2.0).max(0.0);
+        let (left, top) = placed_in(width, height, window_width, window_height);
         self.frame = (left, top, width, height);
 
         // A shadow under the panel, so it reads as being in front rather than
@@ -2120,13 +2233,17 @@ impl Dialog {
             Field::Preview(sample) => {
                 // Word's Preview: a box with the text drawn in it as it will be
                 // drawn on the page. Not an approximation — the same engine,
-                // the same font choice, the same shaping.
+                // the same font choice, the same shaping — and on the page's
+                // own colour, with "automatic" text in the colour that reads
+                // against it, as the page draws it. On the field's colour the
+                // dark theme showed automatic text black on near black,
+                // which is a sample nobody can read.
                 canvas.fill_rect(
                     label_x as i32,
                     box_y as i32,
                     (box_x + box_width - label_x) as i32,
                     PREVIEW_HEIGHT as i32,
-                    theme.field,
+                    theme.page,
                 );
                 outline(
                     canvas,
@@ -2136,6 +2253,7 @@ impl Dialog {
                     PREVIEW_HEIGHT,
                     theme.field_edge,
                 );
+                engine.set_automatic_colors(theme.page_text, theme.table_line);
 
                 // Measured first so it can be centred: a sample pushed against
                 // the left edge reads as a mistake.
@@ -2444,7 +2562,17 @@ impl Dialog {
                     theme.field,
                 );
                 outline(canvas, label_x, box_y, room, SHAPE_HEIGHT, theme.field_edge);
+                // Kept inside its box: double spacing and wide gaps before
+                // and after run the three paragraphs past the foot of one of
+                // Word's height.
+                let held = canvas.set_clip(
+                    label_x as i32 + 1,
+                    box_y as i32 + 1,
+                    room as i32 - 2,
+                    SHAPE_HEIGHT as i32 - 2,
+                );
                 draw_paragraph_shape(canvas, &sample.properties, label_x, box_y, room, theme);
+                canvas.restore_clip(held);
             }
 
             Field::Heading(text) => {
@@ -2502,12 +2630,14 @@ impl Dialog {
                 let line =
                     engine.simple_line(&label, label_x + size + 8.0, box_y + 16.0, 9.0, theme.text);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                // No taller than its row, or a press on the top of the row
+                // under a tight one would land on this.
                 self.placed.push((
                     Hit::Field(index),
                     label_x,
                     box_y,
                     box_x + box_width - label_x,
-                    ROW,
+                    ROW.min(self.plain_row()),
                 ));
             }
 
@@ -2679,7 +2809,7 @@ fn hidden(value: &str) -> String {
 /// Word writes an inch as `1"`, with the mark against the digit, and a
 /// centimetre as `2.54 cm`, with a space. So the space belongs to the word
 /// rather than to the number, and a unit that is a mark gets none.
-fn with_unit(value: &str, unit: &str) -> String {
+pub(crate) fn with_unit(value: &str, unit: &str) -> String {
     if unit.is_empty() {
         return value.to_owned();
     }
@@ -2751,6 +2881,15 @@ fn draw_tick_box(canvas: &mut Canvas, x: f32, y: f32, size: f32, on: bool, theme
             theme.accent,
         );
     }
+}
+
+/// Where a panel of a size goes in a window of a size: in the middle, and
+/// inside it. A panel larger than the window keeps its top-left corner in
+/// it, which keeps its caption and its first fields where they can be seen.
+fn placed_in(width: f32, height: f32, window_width: f32, window_height: f32) -> (f32, f32) {
+    let left = ((window_width - width) / 2.0).max(0.0);
+    let top = ((window_height - height) / 2.0).max(0.0);
+    (left, top)
 }
 
 fn outline(canvas: &mut Canvas, x: f32, y: f32, width: f32, height: f32, colour: Color) {
@@ -2897,6 +3036,32 @@ mod tests {
         }
         assert_eq!(dialog.focus, 5);
         assert_eq!(dialog.key(Key::Enter, false, false), Reaction::Closed(Answer::Cancel));
+    }
+
+    /// A question of several sentences comes out a line a row: its own
+    /// breaks kept, the empty lines between paragraphs left out, a line too
+    /// long for the panel broken between words, and a bullet set in as the
+    /// text sets it.
+    #[test]
+    fn a_long_question_is_broken_into_notes_between_words() {
+        let long = "word ".repeat(40);
+        let text = format!("First.\n\n    \u{2022} VBA project\n\n{}", long.trim_end());
+        let lines: Vec<String> = Field::notes(&text)
+            .into_iter()
+            .map(|field| match field {
+                Field::Said { label, value } if label.is_empty() => value,
+                other => panic!("{other:?} is not a note"),
+            })
+            .collect();
+        assert_eq!(lines[0], "First.");
+        assert_eq!(lines[1], "    \u{2022} VBA project");
+        assert!(lines.len() >= 4, "the long line was not broken: {lines:?}");
+        for line in &lines[2..] {
+            assert!(line.chars().count() <= super::NOTE_LINE, "{line:?} is too long");
+            assert!(!line.starts_with(' ') && !line.ends_with(' '), "{line:?}");
+        }
+        let joined = lines[2..].join(" ");
+        assert_eq!(joined, long.trim_end(), "a word was lost or split");
     }
 
     #[test]

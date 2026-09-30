@@ -272,9 +272,9 @@ impl Timed {
                 self.next(Typing::Refused);
             }
             // The first request is refused: there is typing in the document
-            // that is not on disk, and the question about that cannot be
-            // asked where there is no dialog program — so the window stays,
-            // which is the safe answer and the right one. Saved, it closes.
+            // that is not on disk, and the question about that is put up in
+            // the window — so the window stays until it is answered. Saved,
+            // there is nothing left to ask, and the next request closes it.
             Typing::Refused if self.seen.borrow().asked_to_close == 1 => {
                 let _ = self.editor.document.mark_saved();
                 wp_shell::window_command(WindowCommand::Close);

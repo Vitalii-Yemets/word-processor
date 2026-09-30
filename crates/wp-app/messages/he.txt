@@ -4162,3 +4162,18 @@ direction = rtl
 = “{0}” will be formatted automatically.
 > ”{0}” יעוצב באופן אוטומטי.
 
+= Want to save your changes to "{0}"?
+> האם ברצונך לשמור את השינויים שלך ב-"{0}"?
+
+= Don't Save
+> אל תשמור
+
+= left {0}, right {1}, first line {2}
+> שמאל {0}, ימין {1}, שורה ראשונה {2}
+
+= You have a recovered file that you have not saved.\n\n{0} will be removed if you close this pane. Close it?
+> יש לך קובץ משוחזר שלא שמרת.\n\n{0} יוסר אם תסגור חלונית זו. לסגור אותה?
+
+= You have {0} recovered files that you have not saved.\n\nThey will be removed if you close this pane. Close it?
+> יש לך {0} קבצים משוחזרים שלא שמרת.\n\nהם יוסרו אם תסגור חלונית זו. לסגור אותה?
+

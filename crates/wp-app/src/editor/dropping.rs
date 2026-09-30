@@ -64,10 +64,8 @@ impl Editor {
             } else if is_document_path(path) {
                 // One document opens; the others would each need a window
                 // of their own, and the first is what was meant.
-                if !self.may_discard() {
-                    return Response::Redraw;
-                }
-                return self.open_path(path);
+                let path = path.clone();
+                return self.after_asking_to_save(move |editor| editor.open_path(&path));
             }
         }
         self.needs_redraw = true;

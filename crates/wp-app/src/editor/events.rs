@@ -435,6 +435,11 @@ impl Editor {
             Event::Resized { width, height } => {
                 self.view_width = width as usize;
                 self.view_height = height as usize;
+                // A dialog goes back to the middle of the window at once, so
+                // that nothing reaches it at the place it had in the old one.
+                if let Some(dialog) = &mut self.dialog {
+                    dialog.recentre(width as f32, height as f32);
+                }
                 self.clamp_scroll();
                 // The first size arrives once the window exists, which is the
                 // first moment its caption can be set.
@@ -810,16 +815,32 @@ impl Editor {
             // of several windows is closing a view, not the document, and a
             // view has nothing to lose.
             Event::Closing => {
-                if self.is_last_window() && !self.may_discard() {
+                if !self.is_last_window() {
+                    return Response::Ignored;
+                }
+                // One question at a time: while another dialog is up, it is
+                // answered first, and the window stays.
+                if self.in_dialog() && !self.asking_to_save() {
                     return Response::Refuse;
                 }
-                // A run that ends properly takes its copy with it, which is
-                // how the next start knows that a copy still lying there
-                // means a run that did not.
-                if self.is_last_window() {
-                    self.finish_autorecover();
+                // Word's Visual Basic Editor is a window of its own and goes
+                // with Word's; here it is a page of the window, and it is
+                // shut first — what was written in it going into the
+                // document, and so into what the question asks about.
+                if self.editing_basic() {
+                    self.close_basic();
                 }
-                Response::Ignored
+                // The question goes up, and the window is kept until it is
+                // answered: the answer is what closes it. With nothing to
+                // lose it closes now, the shell doing the closing — which is
+                // also what a second request does, if what the question was
+                // about has reached the disk in the meantime.
+                let _ = self.after_asking_to_save(Self::close_now);
+                if self.asking_to_save() {
+                    Response::Refuse
+                } else {
+                    Response::Ignored
+                }
             }
         }
     }

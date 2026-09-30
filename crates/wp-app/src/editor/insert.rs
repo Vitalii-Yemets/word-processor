@@ -2871,6 +2871,13 @@ Katherine Johnson,Hampton,katherine@example.com
             "signedquestion" => {
                 self.ask_to_take_the_signatures_off();
             }
+            // The window asked to close with a change in the document: Word's
+            // question about saving it, which the close waits on.
+            "savequestion" => {
+                self.document.mark_modified();
+                self.update_title();
+                let _ = self.handle(wp_shell::Event::Closing);
+            }
             // Word's General Options, which holds both passwords.
             "generaloptions" => {
                 self.open_read_only_settings();

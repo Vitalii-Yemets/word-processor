@@ -885,8 +885,10 @@ impl Editor {
         // Anything floating over the page may have been drawn on top of the
         // caret after it was drawn, and putting back what was under the caret
         // would put it back over that. So while something floats, a blink is
-        // an ordinary repaint.
-        if self.popup.is_some()
+        // an ordinary repaint. A dialog floats over everything: without it
+        // here the caret blinked through the middle of whatever it asked.
+        if self.dialog.is_some()
+            || self.popup.is_some()
             || self.mini_bar.is_some()
             || self.palette.is_some()
             || self.table_grid.is_some()
@@ -993,6 +995,9 @@ impl Editor {
             self.draw_title_bar();
             self.draw_backstage();
             self.draw_open_popup();
+            // A question asked from the File page — Close, a document
+            // from the list — is put over it, as Word puts its own.
+            self.draw_dialog();
             return;
         }
 
@@ -1012,6 +1017,7 @@ impl Editor {
             self.draw_title_bar();
             self.draw_print_pane();
             self.draw_open_popup();
+            self.draw_dialog();
             return;
         }
 

@@ -50,6 +50,13 @@ pub(super) enum Asking {
     /// Whether to go on editing a signed document, which takes its
     /// signatures off: Word's question when Edit Anyway is pressed on one.
     RemoveSignatures,
+    /// Whether to save the changes before they are thrown away, with what
+    /// was waiting on the answer. See [`super::unsaved`].
+    SaveChanges,
+    /// Whether to save in a kind that cannot hold the document's macros.
+    MacroFree,
+    /// Whether to shut the Document Recovery pane with copies still in it.
+    CloseRecovery,
     /// Word's two Asian Layout dialogs: a run set across a vertical line,
     /// and a run set as two lines in one.
     HorizontalInVertical,
@@ -164,7 +171,16 @@ impl Editor {
     /// list of stops and leave the dialog standing, and its Paragraph dialog
     /// has one that opens the Tabs dialog instead of answering. Those are dealt
     /// with first, and only what is left is an answer.
+    ///
+    /// And a dialog a save put up — the macros a kind cannot hold, how to
+    /// write a text file — may have something waiting on the save, which is
+    /// seen to once it is answered: see [`super::unsaved`].
     pub(super) fn finish_dialog(&mut self, answer: Answer) -> Response {
+        let response = self.answer_dialog(answer);
+        self.after_a_question_of_the_save(response)
+    }
+
+    fn answer_dialog(&mut self, answer: Answer) -> Response {
         if let Answer::Named(button) = answer {
             if let Some(response) = self.pressed_without_answering(button) {
                 return response;
@@ -207,6 +223,8 @@ impl Editor {
                 Some(Asking::ManualHyphenation) => self.cancel_manual_hyphenation(),
                 Some(Asking::OpenReadOnly) => self.cancel_open_read_only(),
                 Some(Asking::TextSave) => self.cancel_text_save(),
+                Some(Asking::SaveChanges) => self.cancel_save_changes(),
+                Some(Asking::MacroFree) => self.keep_the_macros(),
                 Some(Asking::MacroMessage) => return self.answer_macro_message(None),
                 Some(Asking::MacroInput) => return self.answer_macro_input(None),
                 _ => {}
@@ -263,6 +281,19 @@ impl Editor {
             Some(Asking::Signatures) => self.apply_signature(&dialog),
             Some(Asking::OpenReadOnly) => self.apply_open_read_only(&dialog),
             Some(Asking::RemoveSignatures) => self.take_the_signatures_off(),
+            // Three questions with nothing to read back but which button.
+            Some(Asking::SaveChanges) => {
+                let _ = dialog;
+                self.answer_save_changes(answer)
+            }
+            Some(Asking::MacroFree) => {
+                let _ = dialog;
+                self.save_without_macros()
+            }
+            Some(Asking::CloseRecovery) => {
+                let _ = dialog;
+                self.close_recovery_now()
+            }
             Some(Asking::ReadOnlySettings) => self.apply_read_only_settings(&dialog),
             Some(Asking::Unprotect) => self.apply_unprotection(&dialog),
             Some(Asking::Recipients) => self.apply_recipient_list(&dialog),
@@ -845,6 +876,82 @@ mod tests {
         // Word puts an underscore where a space was, because a name with a
         // space in it is not one a field can refer to.
         assert_eq!(names, vec!["Chapter_One".to_owned()]);
+    }
+
+    /// The window made smaller under a dialog: the dialog is put back in the
+    /// middle of it straight away, with everything on it, rather than left
+    /// where it was for the larger window with its foot under the status bar.
+    #[test]
+    fn a_dialog_is_centred_again_when_the_window_changes_size() {
+        let mut editor = editor();
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor.open_paragraph_dialog();
+        editor.draw(1400, 900);
+        let (_, _, width, height) = editor.dialog.as_ref().expect("a dialog").frame();
+
+        editor.handle(Event::Resized { width: 1000, height: 700 });
+        let dialog = editor.dialog.as_ref().expect("a dialog");
+        let (left, top, ..) = dialog.frame();
+        assert_eq!((left, top), ((1000.0 - width) / 2.0, (700.0 - height) / 2.0));
+        assert!(top + height <= 700.0, "the foot of the dialog is under the status bar");
+        // What a press lands on moved with it.
+        for (part, (x, y, across, down)) in dialog.parts() {
+            assert!(
+                x >= left && y >= top && x + across <= left + width && y + down <= top + height,
+                "{part:?} was left behind at {x}, {y}"
+            );
+        }
+        // And drawing it puts it where it already is.
+        editor.draw(1000, 700);
+        assert_eq!(editor.dialog.as_ref().expect("a dialog").frame(), (left, top, width, height));
+
+        // A window smaller than the dialog keeps its caption in sight.
+        editor.handle(Event::Resized { width: 500, height: 300 });
+        let (left, top, ..) = editor.dialog.as_ref().expect("a dialog").frame();
+        assert!(left >= 0.0 && top >= 0.0, "the dialog went off the window: {left}, {top}");
+    }
+
+    /// The document behind a dialog is dimmed, as the dialog's own heading
+    /// says, and visibly in either theme: the veil had been drawn at a
+    /// strength that took the dark page from #333333 to #212121.
+    #[test]
+    fn the_document_is_dimmed_behind_a_dialog_in_either_theme() {
+        let light = |colour: wp_raster::Color| {
+            (u32::from(colour.red) + u32::from(colour.green) + u32::from(colour.blue)) / 3
+        };
+        for mode in [crate::chrome::theme::Mode::Dark, crate::chrome::theme::Mode::Light] {
+            let mut editor = editor();
+            editor.theme = crate::chrome::theme::Theme::of(mode);
+            editor.relayout();
+            editor.handle(Event::Resized { width: 1400, height: 900 });
+            editor.draw(1400, 900);
+            // A corner of the paper, inside its margin, well clear of the
+            // middle of the window where the dialog goes.
+            let (x, y) = editor.page_origin_for_test(0);
+            let (x, y) = (x as usize + 12, y as usize + 12);
+            let before = editor.draw(1400, 900).pixel(x, y);
+            assert_eq!(before, editor.theme.page, "{mode:?}: not the paper at {x}, {y}");
+
+            editor.open_word_count();
+            let after = editor.draw(1400, 900).pixel(x, y);
+            let (was, now) = (light(before), light(after));
+            let (most, of) = match mode {
+                crate::chrome::theme::Mode::Dark => (1, 2),
+                crate::chrome::theme::Mode::Light => (2, 3),
+            };
+            assert!(now * of <= was * most, "{mode:?}: the paper went from {was} to only {now}");
+        }
+    }
+
+    /// A blink puts back what was under the caret and draws the caret again,
+    /// which over a dialog drew a line through the middle of the question.
+    #[test]
+    fn the_caret_does_not_blink_through_a_dialog() {
+        let mut editor = editor();
+        editor.open_word_count();
+        editor.draw(1200, 800);
+        assert!(editor.under_caret.is_some(), "no caret was drawn to blink");
+        assert!(!editor.blink_caret(), "the caret was drawn over the dialog");
     }
 
     #[test]

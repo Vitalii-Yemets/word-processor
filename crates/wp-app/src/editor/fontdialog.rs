@@ -205,20 +205,23 @@ impl Editor {
                 label: "Spacing".to_owned(),
                 // Twentieths of a point in the file, points on the screen:
                 // nobody types a twentieth of a point.
-                value: format!("{:.2}", f64::from(now.spacing_twentieths) / 20.0),
+                value: crate::locale::number(f64::from(now.spacing_twentieths) / 20.0, 2),
                 unit: "pt",
             },
             Field::Columns(2),
             Field::Number {
                 label: "Position".to_owned(),
-                value: format!("{:.1}", f64::from(now.position_half_points) / 2.0),
+                value: crate::locale::number(f64::from(now.position_half_points) / 2.0, 1),
                 unit: "pt",
             },
             Field::Number {
                 label: "Kerning from".to_owned(),
                 // Zero is Word's own way of saying "never", and a document that
                 // says nothing gets the kerning this program has always drawn.
-                value: format!("{:.1}", f64::from(now.kerning_half_points.unwrap_or(0)) / 2.0),
+                value: crate::locale::number(
+                    f64::from(now.kerning_half_points.unwrap_or(0)) / 2.0,
+                    1,
+                ),
                 unit: "pt",
             },
             Field::Group("OpenType Features".to_owned()),
@@ -697,6 +700,44 @@ mod editor_tests {
         }
         let dialog = editor.dialog.as_ref().expect("a dialog");
         assert_eq!(dialog.said(SCALE), "100150", "the keyboard did not follow the tab");
+    }
+
+    /// The sample is drawn on the page's colour, with automatic text in the
+    /// colour that reads against it: in the dark theme it had been black on
+    /// the near black of a field, which nobody could read.
+    #[test]
+    fn the_preview_is_readable_in_the_dark_theme() {
+        let mut editor = editor();
+        editor.theme = crate::chrome::theme::Theme::dark();
+        editor.relayout();
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor.open_font_dialog();
+        let theme = editor.theme;
+        let canvas = editor.draw(1400, 900).clone();
+        let (left, top, width, height) = editor.dialog.as_ref().expect("a dialog").frame();
+
+        // The preview is the one thing in the panel of the page's colour.
+        let (mut from, mut to) = ((usize::MAX, usize::MAX), (0usize, 0usize));
+        for y in top as usize..(top + height) as usize {
+            for x in left as usize..(left + width) as usize {
+                if canvas.pixel(x, y) == theme.page {
+                    from = (from.0.min(x), from.1.min(y));
+                    to = (to.0.max(x), to.1.max(y));
+                }
+            }
+        }
+        assert!(to.0 > from.0 + 100 && to.1 > from.1 + 40, "no box of the page's colour");
+
+        let light = |colour: wp_raster::Color| {
+            (u32::from(colour.red) + u32::from(colour.green) + u32::from(colour.blue)) / 3
+        };
+        let paper = light(theme.page);
+        let ink = (from.1..=to.1)
+            .flat_map(|y| (from.0..=to.0).map(move |x| (x, y)))
+            .map(|(x, y)| light(canvas.pixel(x, y)).abs_diff(paper))
+            .max()
+            .unwrap_or(0);
+        assert!(ink >= 120, "the sample is {ink} from the paper it is on, which cannot be read");
     }
 
     #[test]

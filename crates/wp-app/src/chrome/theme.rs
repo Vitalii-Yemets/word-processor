@@ -259,6 +259,20 @@ impl Theme {
             Mode::Light => Color::rgb(0x10, 0x20, 0x30),
         }
     }
+
+    /// The veil drawn over the window while a dialog is up, which is what
+    /// says that nothing behind it can be reached until it is answered.
+    ///
+    /// Darker in the dark theme, because it has less to darken: the same
+    /// veil that turns white paper grey took the dark page from #333333 to
+    /// #212121, which nobody sees, and left its text as bright as ever.
+    #[must_use]
+    pub fn veil(&self) -> Color {
+        match self.mode {
+            Mode::Dark => Color::rgba(0, 0, 0, 150),
+            Mode::Light => Color::rgba(0, 0, 0, 90),
+        }
+    }
 }
 
 impl Default for Theme {

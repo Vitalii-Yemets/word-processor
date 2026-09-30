@@ -4160,3 +4160,18 @@ language = Deutsch
 = Type in the box above to search
 > Geben Sie oben einen Suchbegriff ein
 
+= Want to save your changes to "{0}"?
+> Möchten Sie die Änderungen an "{0}" speichern?
+
+= Don't Save
+> Nicht speichern
+
+= left {0}, right {1}, first line {2}
+> links {0}, rechts {1}, erste Zeile {2}
+
+= You have a recovered file that you have not saved.\n\n{0} will be removed if you close this pane. Close it?
+> Sie haben eine wiederhergestellte Datei, die Sie nicht gespeichert haben.\n\n{0} wird entfernt, wenn Sie diesen Bereich schließen. Schließen?
+
+= You have {0} recovered files that you have not saved.\n\nThey will be removed if you close this pane. Close it?
+> Sie haben {0} wiederhergestellte Dateien, die Sie nicht gespeichert haben.\n\nSie werden entfernt, wenn Sie diesen Bereich schließen. Schließen?
+

@@ -33,7 +33,9 @@ use crate::measure;
 use super::dialogs::Asking;
 use super::Editor;
 
-// Indents and Spacing.
+// Indents and Spacing. Left, Right, Special and By share one row, and
+// Before, After, Line spacing and At another, which is as many rows as
+// Word's own takes for them.
 const TAB_GENERAL: usize = 0;
 const GENERAL: usize = 1;
 const ROW_GENERAL: usize = 2;
@@ -43,36 +45,34 @@ const INDENTATION: usize = 5;
 const ROW_INDENT: usize = 6;
 const INDENT_LEFT: usize = 7;
 const INDENT_RIGHT: usize = 8;
-const ROW_SPECIAL: usize = 9;
-const SPECIAL: usize = 10;
-const SPECIAL_BY: usize = 11;
-const MIRROR: usize = 12;
-const SPACING: usize = 13;
-const ROW_SPACE: usize = 14;
-const SPACE_BEFORE: usize = 15;
-const SPACE_AFTER: usize = 16;
-const ROW_LINES: usize = 17;
-const LINE_SPACING: usize = 18;
-const LINE_SPACING_AT: usize = 19;
-const CONTEXTUAL: usize = 20;
-const PREVIEW_GROUP_GENERAL: usize = 21;
-const PREVIEW_GENERAL: usize = 22;
+const SPECIAL: usize = 9;
+const SPECIAL_BY: usize = 10;
+const MIRROR: usize = 11;
+const SPACING: usize = 12;
+const ROW_SPACE: usize = 13;
+const SPACE_BEFORE: usize = 14;
+const SPACE_AFTER: usize = 15;
+const LINE_SPACING: usize = 16;
+const LINE_SPACING_AT: usize = 17;
+const CONTEXTUAL: usize = 18;
+const PREVIEW_GROUP_GENERAL: usize = 19;
+const PREVIEW_GENERAL: usize = 20;
 
 // Line and Page Breaks.
-const TAB_BREAKS: usize = 23;
-const PAGINATION: usize = 24;
-const ROW_PAGE_ONE: usize = 25;
-const WIDOW_CONTROL: usize = 26;
-const KEEP_NEXT: usize = 27;
-const ROW_PAGE_TWO: usize = 28;
-const KEEP_LINES: usize = 29;
-const PAGE_BREAK_BEFORE: usize = 30;
-const EXCEPTIONS: usize = 31;
-const ROW_EXCEPTIONS: usize = 32;
-const SUPPRESS_LINE_NUMBERS: usize = 33;
-const NO_HYPHENATION: usize = 34;
-const PREVIEW_GROUP_BREAKS: usize = 35;
-const PREVIEW_BREAKS: usize = 36;
+const TAB_BREAKS: usize = 21;
+const PAGINATION: usize = 22;
+const ROW_PAGE_ONE: usize = 23;
+const WIDOW_CONTROL: usize = 24;
+const KEEP_NEXT: usize = 25;
+const ROW_PAGE_TWO: usize = 26;
+const KEEP_LINES: usize = 27;
+const PAGE_BREAK_BEFORE: usize = 28;
+const EXCEPTIONS: usize = 29;
+const ROW_EXCEPTIONS: usize = 30;
+const SUPPRESS_LINE_NUMBERS: usize = 31;
+const NO_HYPHENATION: usize = 32;
+const PREVIEW_GROUP_BREAKS: usize = 33;
+const PREVIEW_BREAKS: usize = 34;
 
 /// Word's third and fourth buttons on this dialog.
 pub(super) const TABS: &str = "Tabs…";
@@ -100,6 +100,10 @@ const LINE_SPACINGS: &[&str] =
 /// Word's list mixes two things: three named multiples, and three rules that
 /// take a number. Which of the six a paragraph has is worked out from the rule
 /// the file stores and, for the automatic rule, from the multiple itself.
+///
+/// The number is written with this machine's decimal mark, as the lengths
+/// beside it are by [`measure::format`]: one column showing "0,00 cm" over
+/// "1.08" is a dialog that cannot make up its mind.
 fn spacing_row(spacing: Option<LineSpacing>) -> (usize, String) {
     let Some(spacing) = spacing else { return (0, "1".to_owned()) };
     match spacing.rule {
@@ -115,11 +119,11 @@ fn spacing_row(spacing: Option<LineSpacing>) -> (usize, String) {
             } else {
                 5
             };
-            (row, format!("{multiple:.2}"))
+            (row, crate::locale::number(multiple, 2))
         }
         // Twentieths of a point, shown as the points a person types.
-        LineRule::AtLeast => (3, format!("{:.1}", f64::from(spacing.value) / 20.0)),
-        LineRule::Exact => (4, format!("{:.1}", f64::from(spacing.value) / 20.0)),
+        LineRule::AtLeast => (3, crate::locale::number(f64::from(spacing.value) / 20.0, 1)),
+        LineRule::Exact => (4, crate::locale::number(f64::from(spacing.value) / 20.0, 1)),
     }
 }
 
@@ -184,7 +188,7 @@ impl Editor {
         } else if now.indent_first_line < 0 {
             (2, measure::format(-now.indent_first_line, self.unit))
         } else {
-            (0, "0.00".to_owned())
+            (0, measure::format(0, self.unit))
         };
 
         let (spacing_row, spacing_at) = spacing_row(now.line_spacing);
@@ -206,18 +210,16 @@ impl Editor {
             ),
             Field::Choice { label: "Outline level".to_owned(), items: levels, current: outline },
             Field::Group("Indentation".to_owned()),
-            Field::Columns(2),
+            Field::Columns(4),
             number("Left", measure::format(now.indent_start, self.unit), self.unit.mark()),
             number("Right", measure::format(now.indent_end, self.unit), self.unit.mark()),
-            Field::Columns(2),
             choice("Special", SPECIALS, special),
             number("By", special_by, self.unit.mark()),
             check("Mirror indents", now.mirror_indents),
             Field::Group("Spacing".to_owned()),
-            Field::Columns(2),
+            Field::Columns(4),
             number("Before", points(now.space_before), "pt"),
             number("After", points(now.space_after), "pt"),
-            Field::Columns(2),
             choice("Line spacing", LINE_SPACINGS, spacing_row),
             number("At", spacing_at, ""),
             check("Don't add space between paragraphs of the same style", now.contextual_spacing),
@@ -255,7 +257,11 @@ impl Editor {
                 Button { label: "Cancel".to_owned(), answer: Answer::Cancel, default: false },
             ],
         )
-        .wide(520.0)
+        .wide(540.0)
+        // Word's proportions: its dialog is 552 pixels high, and this one
+        // with the room every row is usually given was 716 — in a window
+        // of 900, over the ribbon.
+        .tight()
     }
 
     /// What the dialog's fields say, as formatting.
@@ -344,7 +350,6 @@ fn check_rows(fields: &[Field]) {
             (ROW_INDENT, "a row"),
             (INDENT_LEFT, "a number"),
             (INDENT_RIGHT, "a number"),
-            (ROW_SPECIAL, "a row"),
             (SPECIAL, "a list"),
             (SPECIAL_BY, "a number"),
             (MIRROR, "a tick box"),
@@ -352,7 +357,6 @@ fn check_rows(fields: &[Field]) {
             (ROW_SPACE, "a row"),
             (SPACE_BEFORE, "a number"),
             (SPACE_AFTER, "a number"),
-            (ROW_LINES, "a row"),
             (LINE_SPACING, "a list"),
             (LINE_SPACING_AT, "a number"),
             (CONTEXTUAL, "a tick box"),
@@ -629,6 +633,58 @@ mod editor_tests {
                 assert_eq!(sample.properties.alignment, Alignment::End);
             }
             other => panic!("row {PREVIEW_GENERAL} is {other:?}, not a shape"),
+        }
+    }
+
+    /// Word's Paragraph dialog is 552 pixels high; this one was 716, which in
+    /// a window 900 high put its top over the ribbon.
+    #[test]
+    fn the_dialog_is_word_s_height_and_stands_clear_of_the_ribbon() {
+        let mut editor = editor();
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor.open_paragraph_dialog();
+        editor.draw(1400, 900);
+
+        let (_, top, _, height) = editor.dialog.as_ref().expect("a dialog").frame();
+        assert!(height <= 560.0, "the dialog is {height} pixels high");
+        assert!(
+            top >= editor.ribbon_bottom(),
+            "the dialog's top, {top}, is over the ribbon, which ends at {}",
+            editor.ribbon_bottom()
+        );
+        // And the other tab is no taller, or pressing it would move the
+        // buttons out from under the pointer.
+        editor.handle(Event::KeyDown {
+            key: Key::Tab,
+            modifiers: Modifiers { control: true, ..Modifiers::default() },
+        });
+        editor.draw(1400, 900);
+        assert_eq!(editor.dialog.as_ref().expect("a dialog").frame().3, height);
+    }
+
+    /// "0,00 cm" beside "0.00": every number the dialog shows is written with
+    /// the mark this machine writes a fraction with, and none with the other.
+    #[test]
+    fn every_number_in_the_dialog_has_the_same_decimal_mark() {
+        let mut editor = editor();
+        editor.document.set_paragraph_format(&ParagraphProperties {
+            line_spacing: Some(LineSpacing { value: 259, rule: LineRule::Auto }),
+            ..ParagraphProperties::default()
+        });
+        editor.open_paragraph_dialog();
+        let dialog = editor.dialog.as_ref().expect("a dialog");
+
+        // The two that were written by hand: By with no special indent, and
+        // At for Word's own 1.08.
+        assert_eq!(dialog.said(SPECIAL_BY), measure::format(0, editor.unit));
+        assert_eq!(dialog.said(LINE_SPACING_AT), crate::locale::number(259.0 / 240.0, 2));
+
+        let mark = crate::locale::current().decimal;
+        let other = if mark == '.' { ',' } else { '.' };
+        for (row, field) in dialog.fields.iter().enumerate() {
+            if let Field::Number { value, .. } = field {
+                assert!(!value.contains(other), "row {row} says {value:?}, not with {mark:?}");
+            }
         }
     }
 

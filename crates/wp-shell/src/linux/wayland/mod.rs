@@ -702,7 +702,9 @@ fn deliver(surface: u32, event: Event) -> Response {
     }
     let response = with_application(|app| app.handle(event)).unwrap_or(Response::Ignored);
     match response {
-        Response::Redraw => {
+        // Refused is a question put up in the window, which has to be
+        // drawn before it can be answered.
+        Response::Redraw | Response::Refuse => {
             with_state(|state| {
                 if let Some(index) = state.window_index(surface) {
                     state.windows[index].dirty = true;
@@ -710,7 +712,7 @@ fn deliver(surface: u32, event: Event) -> Response {
             });
         }
         Response::Close => close_window(surface),
-        Response::Ignored | Response::Refuse => {}
+        Response::Ignored => {}
     }
     response
 }

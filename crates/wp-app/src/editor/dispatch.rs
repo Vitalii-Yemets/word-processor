@@ -51,13 +51,10 @@ impl Editor {
                 self.after_file_command()
             }
             Command::Print => self.open_print(),
-            Command::CloseDocument => {
-                if self.may_discard() {
-                    self.new_document()
-                } else {
-                    Response::Ignored
-                }
-            }
+            // New asks about the changes itself, and asks once: asking here
+            // as well had put the question twice to a person who said Don't
+            // Save.
+            Command::CloseDocument => self.new_document(),
             Command::About => self.report(concat!(
                 "A word processor written from nothing: no toolkit, no libraries, ",
                 "no crates but the standard one."

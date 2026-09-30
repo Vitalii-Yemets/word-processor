@@ -262,6 +262,13 @@ impl Editor {
             .unwrap_or_else(|| crate::names::shown("Normal"));
 
         let said = |label: &str, value: String| Field::Said { label: label.to_owned(), value };
+        // In the unit the person chose, and with their machine's decimal
+        // mark, as every other length in the program is: see
+        // [`crate::measure`]. It had been inches whatever was chosen.
+        let unit = self.unit;
+        let length = |twips: i32| {
+            crate::chrome::dialog::with_unit(&crate::measure::format(twips, unit), unit.mark())
+        };
         let dialog = Dialog::message(
             "Style Inspector",
             vec![
@@ -270,11 +277,13 @@ impl Editor {
                 said("Alignment", format!("{:?}", paragraph.alignment)),
                 said(
                     "Indents",
-                    format!(
-                        "left {:.2}\", right {:.2}\", first line {:.2}\"",
-                        f64::from(paragraph.indent_start) / 1440.0,
-                        f64::from(paragraph.indent_end) / 1440.0,
-                        f64::from(paragraph.indent_first_line) / 1440.0,
+                    crate::messages::with(
+                        "left {0}, right {1}, first line {2}",
+                        &[
+                            &length(paragraph.indent_start),
+                            &length(paragraph.indent_end),
+                            &length(paragraph.indent_first_line),
+                        ],
                     ),
                 ),
                 said(
@@ -432,6 +441,33 @@ mod tests {
             other => panic!("row 1 is {other:?}"),
         };
         assert!(shown.contains("eading"), "the chain does not name the heading: {shown}");
+    }
+
+    /// The indents in the unit Options says, as every other length is; they
+    /// were in inches, with a hand-written mark, whatever it said.
+    #[test]
+    fn the_inspector_gives_the_indents_in_the_unit_that_was_chosen() {
+        let mut editor = editor();
+        editor.unit = crate::measure::Unit::Centimetres;
+        editor.document.set_caret(wp_docx::TextPosition::new(1, 0));
+        editor.document.set_paragraph_format(&wp_docx::model::ParagraphProperties {
+            indent_start: Some(567),
+            ..Default::default()
+        });
+        editor.open_style_inspector();
+
+        let dialog = editor.dialog.as_ref().expect("a dialog");
+        let indents = dialog
+            .fields
+            .iter()
+            .find_map(|field| match field {
+                Field::Said { label, value } if label == "Indents" => Some(value.clone()),
+                _ => None,
+            })
+            .expect("a line for the indents");
+        let one = crate::measure::format(567, crate::measure::Unit::Centimetres);
+        assert!(indents.contains(&format!("{one} cm")), "{indents}");
+        assert!(!indents.contains('"'), "still in inches: {indents}");
     }
 
     #[test]

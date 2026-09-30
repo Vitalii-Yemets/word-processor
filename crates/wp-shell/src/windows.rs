@@ -184,6 +184,10 @@ const MESSAGE_NON_CLIENT_CALC_SIZE: u32 = 0x0083;
 const MESSAGE_NON_CLIENT_PAINT: u32 = 0x0085;
 const MESSAGE_NON_CLIENT_ACTIVATE: u32 = 0x0086;
 const MESSAGE_NON_CLIENT_HIT_TEST: u32 = 0x0084;
+/// Undocumented, and sent to every themed window: the system's request to
+/// draw its own caption and its own frame, outside the paint message.
+const MESSAGE_NON_CLIENT_DRAW_CAPTION: u32 = 0x00AE;
+const MESSAGE_NON_CLIENT_DRAW_FRAME: u32 = 0x00AF;
 const MESSAGE_DESTROY: u32 = 0x0002;
 const MESSAGE_SIZE: u32 = 0x0005;
 const MESSAGE_PAINT: u32 = 0x000F;
@@ -1056,9 +1060,23 @@ unsafe extern "system" fn window_procedure(
         // explicitly so that a restore or a theme change cannot get one drawn.
         MESSAGE_NON_CLIENT_PAINT => 0,
         // Activating and deactivating repaints the caption, which this window
-        // does not have. Passing -1 for the region is what tells the system
-        // there is nothing of its own to redraw.
-        MESSAGE_NON_CLIENT_ACTIVATE => DefWindowProcW(window, message, word, -1),
+        // does not have — and the system repaints it anyway, in the classic
+        // style, straight over the top of what this program drew: its light
+        // caption with the old buttons over the title bar, and its light
+        // frame round the edge, across the horizontal scroll bar at the
+        // foot. Passing -1 for the region does not stop it. Most of the time
+        // nobody sees it, because the window is drawn again, whole, a moment
+        // later; but a box of the system's — a question, the file dialogs,
+        // the printer's — deactivates this window from inside the
+        // application's own handling of a press, when the application is in
+        // hand and nothing can be drawn until the box is gone. So the system
+        // is not asked: yes is answered for it, which lets the activation
+        // change, and the frame stays this program's.
+        MESSAGE_NON_CLIENT_ACTIVATE => 1,
+        // The same request made another way: the system asks for its caption
+        // and its frame to be drawn after the title changes. Answered with
+        // nothing drawn, for the same reason.
+        MESSAGE_NON_CLIENT_DRAW_CAPTION | MESSAGE_NON_CLIENT_DRAW_FRAME => 0,
         MESSAGE_NON_CLIENT_HIT_TEST => hit_test(window, long),
         MESSAGE_SET_CURSOR if long & 0xFFFF == HIT_CLIENT_AREA => {
             if set_cursor_for_pointer(window) {
@@ -1297,11 +1315,19 @@ unsafe extern "system" fn window_procedure(
         }
         MESSAGE_CLOSE => {
             // The application gets to refuse, which is what lets it ask about
-            // unsaved changes and act on "cancel".
+            // unsaved changes and act on the answer when it comes.
             point_at(window);
+            // An application that is in hand — a file dialog of the system's
+            // is up inside something it is doing — cannot be asked, and a
+            // question nobody could put is not permission to throw the
+            // person's work away.
             let response =
-                with_application(|app| app.handle(Event::Closing)).unwrap_or(Response::Ignored);
-            if response != Response::Refuse {
+                with_application(|app| app.handle(Event::Closing)).unwrap_or(Response::Refuse);
+            if response == Response::Refuse {
+                // Refused because a question has been put up, which has to
+                // be drawn before it can be answered.
+                InvalidateRect(window, core::ptr::null(), 0);
+            } else {
                 DestroyWindow(window);
             }
             0

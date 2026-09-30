@@ -283,8 +283,10 @@ pub enum Response {
     /// Do not carry out what the event was about.
     ///
     /// Only means anything for [`Event::Closing`], where it keeps the window
-    /// open — which is what a program has to be able to do when the user
-    /// answers "cancel" to being asked about unsaved changes.
+    /// open, and draws it again: the program has put up its question about
+    /// unsaved changes, and closes the window itself, with [`Self::Close`],
+    /// once the question is answered — or keeps it, when the answer is
+    /// Cancel.
     Refuse,
     /// Close the window.
     Close,

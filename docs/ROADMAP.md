@@ -2369,7 +2369,7 @@ work is in *The order of the work* at the end.
   menus, galleries, the mini toolbar and the navigation pane it is a hand,
   which is a browser's answer and not Word's: Word shows an arrow over all
   of them, and a hand only over a link under Ctrl. Review U07.
-- [ ] **C53. Dialogs that fit, read and stay put.** The Font dialog's sample
+- [x] **C53. Dialogs that fit, read and stay put.** The Font dialog's sample
   is drawn in the document's automatic colour, black, on the dark theme's
   field, so it cannot be read; the Paragraph dialog is 716 px tall in a
   900 px window and covers the ribbon (Word's is 552); a dialog is not
@@ -2397,12 +2397,93 @@ work is in *The order of the work* at the end.
   reproduced on this Windows with the built `.exe` and screenshots, the
   cause found, and both pictures — before and after — kept beside the
   entry's proof.
+  *Done:* the frame was the system's answer to `WM_NCACTIVATE`. The window
+  procedure in `wp-shell/src/windows.rs` handed it to `DefWindowProcW` with
+  -1 for the region, and the system still painted its classic caption and
+  frame straight over the window: the light caption with the old buttons
+  over the title bar, the light border round the edge and across the
+  scroll bar at the foot. Most of the time the window is drawn again,
+  whole, a moment later; but a box of the system's deactivates it from
+  inside the application's own handling of a press, when the application
+  is in hand and nothing can be drawn until the box goes. Reproduced here
+  with the built program: a letter typed, the close posted as the title
+  bar's button posts it, the window photographed (`c53_before.png`). A log
+  of what the window procedure was sent while the box was up, and each of
+  those messages swallowed in turn, named `WM_NCACTIVATE` alone; the
+  system's Save As dialog took the frame the same way. It is answered yes
+  now without asking the system, which lets the activation change, and the
+  undocumented requests to draw the caption and the frame (0xAE, 0xAF) are
+  answered with nothing drawn; the message box and Save As both left the
+  frame alone after that. A close that cannot reach the application,
+  because a dialog of the system's has it, is refused rather than taken
+  for consent, and a refused close draws the window again on every shell.
+  The four questions are this program's dialogs (`editor/unsaved.rs`,
+  `recovery.rs`): Word's "Want to save your changes to "Document"?" with
+  Save, Don't Save and Cancel; Word's question about a macro-free kind,
+  with Yes and No, wherever a save asks it; and the Document Recovery
+  pane's, with Yes and No. A question of several sentences is set a line a
+  row (`Field::notes`). In the three catalogues: in German "Möchten Sie die
+  Änderungen an "{0}" speichern?", Speichern, Nicht speichern, Abbrechen.
+  Closing waits for the answer: `Event::Closing` puts the question up and
+  is refused, and the answer closes — Save saves, asking where first for a
+  new document and waiting on a save's own question of macros or of text;
+  Don't Save closes; Cancel keeps the window and the changes. New, Open,
+  File ▸ Close, a document dropped or chosen from the recent list or the
+  recovery pane, a merge's letters, an envelope and labels hand what they
+  were about to do to the same question and wait on it; Close had asked
+  twice of somebody who said Don't Save, and asks once. One question a
+  window, as Word asks: a view of several closes without one, the last
+  asks, and a close while another dialog is up is refused.
+  And the six: the Font dialog's sample is on the page's colour, automatic
+  text in the colour that reads against it; the Paragraph dialog is set as
+  close as Word's (`Dialog::tight`), Left, Right, Special and By on one row
+  and Before, After, Line spacing and At on another, the preview 90 pixels
+  high, 536 in all where it was 716; a dialog is centred again, with
+  everything a press can land on, when the window changes size, and kept
+  inside it (`Dialog::recentre`); By and At go through `measure::format`
+  and the machine's decimal mark, and so do the Font dialog's Spacing,
+  Position and Kerning; the Style Inspector gives the indents in the unit
+  chosen; and the veil over the window is darker in the dark theme
+  (`Theme::veil`), where it had taken the page from #333333 to #212121.
+  On the way: the caret's blink drew it again over whatever dialog was up,
+  a line through the middle of the question in the first photograph of
+  it, and a dialog now makes a blink a whole repaint, as a menu does.
+  *Proven by:* in `unsaved.rs`,
+  `closing_with_changes_asks_in_word_s_words_and_closes_nothing`,
+  `closing_with_nothing_to_lose_asks_nothing`,
+  `cancel_leaves_the_window_open_and_the_changes_in_it`,
+  `don_t_save_closes_the_window`,
+  `save_on_a_document_with_a_file_saves_it_and_then_closes`,
+  `save_on_a_new_document_asks_where_first_and_closes_once_it_is_there`,
+  `save_as_cancelled_keeps_the_window_open`,
+  `new_and_open_ask_the_same_question_and_wait_for_it`,
+  `saving_macros_away_asks_in_a_dialog_of_its_own_and_yes_saves`,
+  `no_keeps_the_macros_and_writes_nothing` and
+  `a_close_waits_on_the_question_the_save_asks`, all through `handle`;
+  `closing_the_pane_with_copies_in_it_asks_and_waits_for_the_answer`;
+  `a_long_question_is_broken_into_notes_between_words`;
+  `the_preview_is_readable_in_the_dark_theme`, which read black on near
+  black; `the_dialog_is_word_s_height_and_stands_clear_of_the_ribbon` and
+  `every_number_in_the_dialog_has_the_same_decimal_mark`;
+  `a_dialog_is_centred_again_when_the_window_changes_size`;
+  `the_inspector_gives_the_indents_in_the_unit_that_was_chosen`;
+  `the_document_is_dimmed_behind_a_dialog_in_either_theme`; and
+  `the_caret_does_not_blink_through_a_dialog`. The pictures,
+  in `.tmpwork/`: `c53_before.png`, the frame lost under the system's box,
+  and `c53_after.png`, the frame kept with the question of this program's
+  own up, both of the built `.exe` on this machine; `c53_font_dark.png`
+  (`--picture … dark fontdialog`), `c53_paragraph.png`
+  (`… paragraphdialog`, 1400 by 900, clear of the ribbon) and
+  `c53_savequestion.png` (`… savequestion`).
 - [ ] **C54. The keys Word has.** Ctrl+= zooms in; in Word it is subscript,
   and Ctrl+Shift+= superscript. Missing altogether: Ctrl+G and F5 (Go To,
   which **C59** builds), F4 (repeat), F8 (extend selection), Shift+F3
   (change case), Ctrl+F1 (collapse the ribbon, **C73**), F6 (move between
   panes), F10 (key tips), Ctrl+Q, Ctrl+1/2/5, Ctrl+[ and Ctrl+],
-  Ctrl+Shift+< and >, Ctrl+W. Reviews U33, U34.
+  Ctrl+Shift+< and >, Ctrl+W. And on Windows Alt+F4 does nothing at all:
+  the window procedure takes `WM_SYSKEYDOWN` for F4 as an ordinary key
+  and never hands it to `DefWindowProcW`, so `SC_CLOSE` is never sent
+  (found while **C53** was done). Reviews U33, U34.
 - [ ] **C55. The dialog launchers, as Word draws them and where.** Word's is
   a 16 px square with a border and an arrow pointing down and right, in the
   text colour; ours is a 9 px corner in the dim colour with the arrow
@@ -11047,6 +11128,12 @@ interpreter is reachable only from the macro list a person opened themselves.
   and a control emptied of its answer is empty. The read back by Word of a
   control marked as showing its placeholder is, like the rest of block
   **L**'s, not something the corpus can show.
+- [ ] **L11. A macro's MsgBox on the Visual Basic page.** A `MsgBox` run
+  from the Visual Basic page cannot be seen or answered: the page draws no
+  dialogs, and its event block takes the keys and the presses before the
+  dialog does. Draw the program's dialogs over the page as over the
+  document, and let them have the keys first. Found while **C53** was
+  done.
 
 ---
 
@@ -11086,7 +11173,7 @@ person who knows Word notices first:
 5. *Tables:* **C61**, **C62**, **B8**, **C63**, **C64**, **C65**, **C66**,
    **C67**, **C68**, **C69**, **C70**, **C71**.
 6. *The interface, the large things:* **C72**, **C73**, **C74**, **C75**,
-   **C76**, **C77**, **J35**, **J36**.
+   **C76**, **C77**, **J35**, **J36**, **L11**.
 7. *Hostile files, and the system's corners:* **G17**, **G18**, **H18**,
    **H20**, **H22**.
 8. *Layout and speed:* **E19**, **E20**, **E21**, **B7**.

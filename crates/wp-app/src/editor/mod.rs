@@ -126,6 +126,7 @@ mod themes;
 mod thesaurus;
 mod translate;
 mod translator;
+mod unsaved;
 pub(crate) mod vertical;
 mod video;
 mod views;
@@ -552,6 +553,24 @@ pub struct Editor {
     /// Whether the closing macros have run for this attempt to close the
     /// document, so that a close that asks twice runs them once.
     closing_raised: bool,
+    /// What waits on the question about unsaved changes while it is up —
+    /// the window closing, another document opening — and what waits on a
+    /// save that Save answered to it, while that save has a question of its
+    /// own up. See [`unsaved`].
+    waiting_on_save: Option<unsaved::Then>,
+    after_saving: Option<unsaved::Then>,
+    /// A save waiting on Word's question about the macros a kind cannot
+    /// hold: where it goes and whether as a filtered page; and whether Yes
+    /// has just been said to it.
+    saving_without_macros: Option<(PathBuf, bool)>,
+    macros_agreed: bool,
+    /// What the Save As dialog was asked, and what it is to answer next, in
+    /// a test: the system's own is never opened there. See `where_to_save`
+    /// in [`files`].
+    #[cfg(test)]
+    asked_where: Vec<PathBuf>,
+    #[cfg(test)]
+    answer_where: Option<PathBuf>,
     /// A list of people being typed from nothing, which is Word's Type a New
     /// List: it is not the merge's list until it has been saved. See
     /// [`mailings`].
@@ -968,6 +987,14 @@ impl Editor {
             control_here: None,
             last_caret_seen: None,
             closing_raised: false,
+            waiting_on_save: None,
+            after_saving: None,
+            saving_without_macros: None,
+            macros_agreed: false,
+            #[cfg(test)]
+            asked_where: Vec::new(),
+            #[cfg(test)]
+            answer_where: None,
             filling_in: None,
             left_out: std::collections::BTreeSet::new(),
             waiting_to_unseal: None,
