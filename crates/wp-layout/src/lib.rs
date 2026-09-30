@@ -50,7 +50,7 @@ pub use device::{Device, Unprintable};
 pub use layout::{
     author_color, Decoration, Drawing, Frame, GlyphEffect, LayoutEngine, Page, PageLine,
     PageMetrics, PlacedCell, PlacedImage, PlacedInk, PlacedPath, PlacedShape, PositionedGlyph,
-    TextStyle, Turn,
+    TextStyle, Turn, OUTLINE_STEP,
 };
 pub use library::{Face, FontLibrary, Likeness};
 pub use render::Renderer;

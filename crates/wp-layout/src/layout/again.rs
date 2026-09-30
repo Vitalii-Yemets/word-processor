@@ -203,6 +203,11 @@ pub(crate) struct Conditions {
     table_gridlines: bool,
     show_marks: bool,
     outline: Option<u8>,
+    /// What an outline folds away, cuts to its first line and draws plain:
+    /// see [`LayoutEngine::set_outline_folded`].
+    outline_folded: Vec<core::ops::Range<usize>>,
+    outline_first_line: bool,
+    outline_plain: bool,
     default_tab: i32,
     generation: u64,
     merge_record: Vec<(String, String)>,
@@ -494,6 +499,9 @@ impl LayoutEngine<'_> {
             table_gridlines: self.table_gridlines,
             show_marks: self.show_marks,
             outline: self.outline,
+            outline_folded: self.outline_folded.clone(),
+            outline_first_line: self.outline_first_line,
+            outline_plain: self.outline_plain,
             default_tab: self.default_tab,
             generation: self.generation,
             merge_record: self.merge_record.clone(),

@@ -104,6 +104,25 @@ pub enum Command {
     Split,
     SideToSide,
     OutlineView,
+    /// The Outlining tab's, which comes with the outline view: a paragraph
+    /// made a first-level heading, a level higher, a level chosen from a
+    /// list, a level lower, and body text; moved past its neighbour with
+    /// everything under it; what is under a heading shown or folded away;
+    /// how deep the outline is shown, whether in its formatting and whether
+    /// a line of body text at a time; and the way out of the view.
+    OutlinePromoteToTop,
+    OutlinePromote,
+    OutlineLevelBox,
+    OutlineDemote,
+    OutlineDemoteToBody,
+    OutlineMoveUp,
+    OutlineMoveDown,
+    OutlineExpand,
+    OutlineCollapse,
+    OutlineShowLevel,
+    OutlineShowFormatting,
+    OutlineFirstLineOnly,
+    CloseOutlineView,
     Screenshot,
     BlockAuthors,
     /// The stretch of a protected document that stays editable.
@@ -493,6 +512,15 @@ impl Command {
                 | Self::Gridlines
                 | Self::PrintLayout
                 | Self::WebLayout
+                // The outline is a way of looking, and folding it, showing
+                // it to a level and shutting it change nothing in it.
+                | Self::OutlineView
+                | Self::OutlineExpand
+                | Self::OutlineCollapse
+                | Self::OutlineShowLevel
+                | Self::OutlineShowFormatting
+                | Self::OutlineFirstLineOnly
+                | Self::CloseOutlineView
                 | Self::JoinPages
                 | Self::ZoomIn
                 | Self::ZoomOut
@@ -780,6 +808,15 @@ pub struct ToolbarState {
     pub in_furniture: bool,
     /// Whether a diagram is chosen, which is when its two tabs show.
     pub in_diagram: bool,
+    /// Whether the document is shown as an outline, which is when the
+    /// Outlining tab shows; what level the paragraph at the caret is, as
+    /// the tab's box says it; how deep the outline is shown, as the other
+    /// box says it; and the tab's two ticks.
+    pub in_outline: bool,
+    pub outline_level: String,
+    pub show_level: String,
+    pub outline_formatting: bool,
+    pub outline_first_line: bool,
     /// Whether the diagram's Text Pane is open, for its button to show
     /// pressed.
     pub text_pane_open: bool,
@@ -899,6 +936,11 @@ pub fn is_active(command: Command, state: &ToolbarState) -> bool {
         Command::PrintLayout => state.view_is("Print layout"),
         Command::DraftView => state.view_is("Draft"),
         Command::ReadMode => state.view_is("Read mode"),
+        Command::OutlineView => state.view_is("Outline"),
+        Command::OutlineShowFormatting => state.outline_formatting,
+        Command::OutlineFirstLineOnly => state.outline_first_line,
+        Command::OutlineLevelBox => state.open == Some(Choice::ParagraphLevel),
+        Command::OutlineShowLevel => state.open == Some(Choice::OutlineLevel),
         Command::ChooseFont => state.open == Some(Choice::Font),
         Command::ChooseSize => state.open == Some(Choice::Size),
         Command::ChooseStyle => state.open == Some(Choice::Style),
@@ -918,6 +960,8 @@ pub fn is_enabled(command: Command, state: &ToolbarState) -> bool {
         Command::Redo => state.can_redo,
         Command::Save => state.modified,
         Command::Cut | Command::Copy => state.has_selection,
+        // Word offers no ruler in the outline, and greys its tick there.
+        Command::ToggleRulers => !state.view_is("Outline"),
         _ => true,
     }
 }

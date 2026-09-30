@@ -13,6 +13,7 @@ use wp_shell::Response;
 use crate::chrome::palette::Kind as PaletteKind;
 use crate::chrome::{Choice, Command, TableBorderChoice};
 
+use super::outline::LevelChange;
 use super::paste;
 use super::{Editor, INDENT_STEP};
 
@@ -342,7 +343,22 @@ impl Editor {
             Command::MatchFields => self.open_match_fields(),
             Command::Split => self.toggle_split(),
             Command::SideToSide => self.toggle_movement(),
-            Command::OutlineView => self.open_outline(),
+            // Word's Outline button goes to the outline, and the Outlining
+            // tab that comes with it is where it is worked from.
+            Command::OutlineView => self.set_view(crate::editor::views::View::Outline),
+            Command::OutlinePromoteToTop => self.change_outline_level(LevelChange::ToTop),
+            Command::OutlinePromote => self.change_outline_level(LevelChange::Promote),
+            Command::OutlineLevelBox => self.open_paragraph_level(),
+            Command::OutlineDemote => self.change_outline_level(LevelChange::Demote),
+            Command::OutlineDemoteToBody => self.change_outline_level(LevelChange::ToBody),
+            Command::OutlineMoveUp => self.move_outline(true),
+            Command::OutlineMoveDown => self.move_outline(false),
+            Command::OutlineExpand => self.expand_outline(true),
+            Command::OutlineCollapse => self.expand_outline(false),
+            Command::OutlineShowLevel => self.open_outline(),
+            Command::OutlineShowFormatting => self.toggle_outline_look(false),
+            Command::OutlineFirstLineOnly => self.toggle_outline_look(true),
+            Command::CloseOutlineView => self.set_view(crate::editor::views::View::Print),
             Command::Screenshot => self.open_screenshot(),
             Command::BlockAuthors => self.toggle_block_authors(),
             Command::AllowEveryone => self.toggle_everyone(),
@@ -428,8 +444,9 @@ impl Editor {
 
             // --- View ---------------------------------------------------------
             Command::ToggleRulers => {
-                self.show_rulers = !self.show_rulers;
-                self.remembered_rulers = self.show_rulers;
+                // The person's setting, which a view that hides the rulers
+                // keeps for when they come back.
+                self.set_rulers_setting(!self.rulers_setting());
                 self.remember_window();
                 self.clamp_scroll();
                 self.needs_redraw = true;

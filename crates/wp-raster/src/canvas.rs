@@ -265,14 +265,16 @@ impl Canvas {
     /// spilling into the other.
     pub fn set_clip(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<Clip> {
         let previous = self.clip;
+        // A band is a rectangle like any other, and one reaching as far as an
+        // i32 goes is brought within reach before its edges are added up, as
+        // `fill_rect` brings one: see `within_reach`.
+        let (x, width) = within_reach(x, width);
+        let (y, height) = within_reach(y, height);
         let (x, width) = self.device_span(self.across(x, width), width);
         let (y, height) = self.device_span(y, height);
-        let wanted = Clip {
-            left: x.max(0) as usize,
-            top: y.max(0) as usize,
-            right: (x + width).clamp(0, self.width as i32) as usize,
-            bottom: (y + height).clamp(0, self.height as i32) as usize,
-        };
+        let (left, right) = edges(x, width, self.width);
+        let (top, bottom) = edges(y, height, self.height);
+        let wanted = Clip { left, top, right, bottom };
         // A band inside a band is the overlap of the two, so nesting works.
         self.clip = Some(match previous {
             None => wanted,
@@ -331,13 +333,20 @@ impl Canvas {
             self.blend_device(x, y, color, coverage);
             return;
         }
-        let (left, width) = self.device_span(self.across(x as i32, 1), 1);
-        let (top, height) = self.device_span(y as i32, 1);
-        for row in top..top + height.max(1) {
-            for column in left..left + width.max(1) {
-                if row >= 0 && column >= 0 {
-                    self.blend_device(column as usize, row as usize, color, coverage);
-                }
+        // A place past what an i32 holds is past the canvas, and is taken as
+        // far as an i32 goes rather than wrapped round to a negative number,
+        // which a window turned about would bring back onto the canvas.
+        let x = i32::try_from(x).unwrap_or(i32::MAX);
+        let y = i32::try_from(y).unwrap_or(i32::MAX);
+        let (x, width) = within_reach(x, 1);
+        let (y, height) = within_reach(y, 1);
+        let (left, width) = self.device_span(self.across(x, width), width);
+        let (top, height) = self.device_span(y, height);
+        let (left, right) = edges(left, width.max(1), self.width);
+        let (top, bottom) = edges(top, height.max(1), self.height);
+        for row in top..bottom {
+            for column in left..right {
+                self.blend_device(column, row, color, coverage);
             }
         }
     }
@@ -403,21 +412,20 @@ impl Canvas {
     /// Draws a coverage mask in one colour, with its top-left corner at
     /// `(x, y)`.
     pub fn draw_mask(&mut self, mask: &Mask, x: i32, y: i32, color: Color) {
-        let x = self.across(x, mask.width() as i32);
+        // The corner is brought within reach and the mask's rows and columns
+        // counted from it wide, so that one put down as far across as an i32
+        // goes is clipped rather than overflowing as its columns are added.
+        let (mask_width, mask_height) = (span_of(mask.width()), span_of(mask.height()));
+        let (x, _) = within_reach(x, mask_width);
+        let (y, _) = within_reach(y, mask_height);
+        let x = self.across(x, mask_width);
         if self.scale == 1.0 {
-            for row in 0..mask.height() {
-                let target_y = y + row as i32;
-                if target_y < 0 || target_y >= self.height as i32 {
-                    continue;
-                }
-                for column in 0..mask.width() {
-                    let target_x = x + column as i32;
-                    if target_x < 0 || target_x >= self.width as i32 {
-                        continue;
-                    }
+            let (x, y) = (i64::from(x), i64::from(y));
+            for row in visible(y, mask.height(), self.height) {
+                for column in visible(x, mask.width(), self.width) {
                     self.blend_device(
-                        target_x as usize,
-                        target_y as usize,
+                        (x + column as i64) as usize,
+                        (y + row as i64) as usize,
                         color,
                         mask.at(column, row),
                     );
@@ -427,20 +435,18 @@ impl Canvas {
         }
         // Scaled: every pixel of the canvas inside the mask's place asks the
         // mask which of its own it stands for.
-        let (left, width) = self.device_span(x, mask.width() as i32);
-        let (top, height) = self.device_span(y, mask.height() as i32);
-        for row in top.max(0)..(top + height).min(self.height as i32) {
-            let source_row =
-                (((row - top) as f32 / self.scale) as usize).min(mask.height().saturating_sub(1));
-            for column in left.max(0)..(left + width).min(self.width as i32) {
-                let source_column = (((column - left) as f32 / self.scale) as usize)
+        let (left, width) = self.device_span(x, mask_width);
+        let (top, height) = self.device_span(y, mask_height);
+        let (from_x, to_x) = edges(left, width, self.width);
+        let (from_y, to_y) = edges(top, height, self.height);
+        for row in from_y..to_y {
+            let source_row = (((row as i64 - i64::from(top)) as f32 / self.scale) as usize)
+                .min(mask.height().saturating_sub(1));
+            for column in from_x..to_x {
+                let source_column = (((column as i64 - i64::from(left)) as f32 / self.scale)
+                    as usize)
                     .min(mask.width().saturating_sub(1));
-                self.blend_device(
-                    column as usize,
-                    row as usize,
-                    color,
-                    mask.at(source_column, source_row),
-                );
+                self.blend_device(column, row, color, mask.at(source_column, source_row));
             }
         }
     }
@@ -554,6 +560,8 @@ impl Canvas {
     #[must_use]
     pub fn copy_rect(&self, x: i32, y: i32, width: i32, height: i32) -> Vec<u8> {
         let mut out = Vec::new();
+        let (x, width) = within_reach(x, width);
+        let (y, height) = within_reach(y, height);
         let (x, width) = self.device_span(self.across(x, width), width);
         let (y, height) = self.device_span(y, height);
         let (left, top, right, bottom) = self.clamped(x, y, width, height);
@@ -571,6 +579,8 @@ impl Canvas {
     /// The rectangle must be the one they were taken from; anything else is
     /// ignored rather than drawn askew.
     pub fn paste_rect(&mut self, x: i32, y: i32, width: i32, height: i32, pixels: &[u8]) {
+        let (x, width) = within_reach(x, width);
+        let (y, height) = within_reach(y, height);
         let (x, width) = self.device_span(self.across(x, width), width);
         let (y, height) = self.device_span(y, height);
         let (left, top, right, bottom) = self.clamped(x, y, width, height);
@@ -587,31 +597,37 @@ impl Canvas {
 
     /// A rectangle cut down to what is actually on the canvas, as left, top,
     /// right and bottom.
+    ///
+    /// Its far edges are added up wide, so that one reaching as far as an
+    /// i32 goes is cut down rather than overflowing on the way.
     fn clamped(&self, x: i32, y: i32, width: i32, height: i32) -> (usize, usize, usize, usize) {
-        let left = (x.max(0) as usize).min(self.width);
-        let top = (y.max(0) as usize).min(self.height);
-        let right = ((x + width.max(0)).max(0) as usize).min(self.width);
-        let bottom = ((y + height.max(0)).max(0) as usize).min(self.height);
-        (left, top, right.max(left), bottom.max(top))
+        let (left, right) = edges(x, width, self.width);
+        let (top, bottom) = edges(y, height, self.height);
+        (left, top, right, bottom)
     }
 
     /// Draws another canvas on top of this one, pixel for pixel, at a place
     /// of the caller's.
+    ///
+    /// Only the part that lands on this canvas is walked, and its place is
+    /// counted wide from a corner brought within reach: one put down as far
+    /// across as an i32 goes is clipped rather than overflowing as its
+    /// columns are added.
     pub fn draw_canvas(&mut self, other: &Canvas, x: i32, y: i32) {
-        let x = self.across(x, other.width as i32);
-        let (x, y) = (self.device(x), self.device(y));
-        for row in 0..other.height {
-            for column in 0..other.width {
+        let (other_width, other_height) = (span_of(other.width), span_of(other.height));
+        let (x, _) = within_reach(x, other_width);
+        let (y, _) = within_reach(y, other_height);
+        let x = self.across(x, other_width);
+        let (x, y) = (i64::from(self.device(x)), i64::from(self.device(y)));
+        for row in visible(y, other.height, self.height) {
+            for column in visible(x, other.width, self.width) {
                 let source = other.pixel(column, row);
                 if source.alpha == 0 {
                     continue;
                 }
-                let target_x = x + column as i32;
-                let target_y = y + row as i32;
-                if target_x < 0 || target_y < 0 {
-                    continue;
-                }
-                self.blend_device(target_x as usize, target_y as usize, source, 255);
+                let (target_x, target_y) =
+                    ((x + column as i64) as usize, (y + row as i64) as usize);
+                self.blend_device(target_x, target_y, source, 255);
             }
         }
     }
@@ -647,8 +663,14 @@ impl Canvas {
             self.draw_pixels(pixels, source_width, source_height, x, y, width, height);
             return;
         }
-        let (x, width) = self.device_span(self.across(x, width as i32), width as i32);
-        let (y, height) = self.device_span(y, height as i32);
+        // Brought within reach as a rectangle is — see `within_reach` — which
+        // keeps the middle it is turned about near enough for a float to
+        // place a pixel by, and a size past what an i32 holds from wrapping
+        // round to a negative one and not being drawn at all.
+        let (x, width) = within_reach(x, span_of(width));
+        let (y, height) = within_reach(y, span_of(height));
+        let (x, width) = self.device_span(self.across(x, width), width);
+        let (y, height) = self.device_span(y, height);
         let (width, height) = (width.max(0) as usize, height.max(0) as usize);
         if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
             return;
@@ -750,27 +772,29 @@ impl Canvas {
         width: usize,
         height: usize,
     ) {
-        let (x, width) = self.device_span(self.across(x, width as i32), width as i32);
-        let (y, height) = self.device_span(y, height as i32);
+        // Brought within reach as a rectangle is — see `within_reach` — and
+        // only the rows and columns that land on the canvas walked, counted
+        // wide: a picture reaching as far as an i32 goes is clipped rather
+        // than overflowing, and not walked a column at a time out past the
+        // edge of the window either.
+        let (x, width) = within_reach(x, span_of(width));
+        let (y, height) = within_reach(y, span_of(height));
+        let (x, width) = self.device_span(self.across(x, width), width);
+        let (y, height) = self.device_span(y, height);
         let (width, height) = (width.max(0) as usize, height.max(0) as usize);
         if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
             return;
         }
+        let (x, y) = (i64::from(x), i64::from(y));
 
-        for row in 0..height {
-            let target_y = y + row as i32;
-            if target_y < 0 || target_y as usize >= self.height {
-                continue;
-            }
+        for row in visible(y, height, self.height) {
+            let target_y = (y + row as i64) as usize;
             // The band of source rows this destination row stands for.
             let from_y = row * source_height / height;
             let to_y = (((row + 1) * source_height).div_ceil(height)).min(source_height);
 
-            for column in 0..width {
-                let target_x = x + column as i32;
-                if target_x < 0 || target_x as usize >= self.width {
-                    continue;
-                }
+            for column in visible(x, width, self.width) {
+                let target_x = (x + column as i64) as usize;
                 let from_x = column * source_width / width;
                 let to_x = (((column + 1) * source_width).div_ceil(width)).min(source_width);
 
@@ -802,7 +826,7 @@ impl Canvas {
                     blue: (totals[2] / counted) as u8,
                     alpha,
                 };
-                self.blend_device(target_x as usize, target_y as usize, color, alpha);
+                self.blend_device(target_x, target_y, color, alpha);
             }
         }
     }
@@ -833,6 +857,34 @@ fn within_reach(start: i32, length: i32) -> (i32, i32) {
     let from = i64::from(start).clamp(-REACH, REACH);
     let to = (i64::from(start) + i64::from(length)).clamp(-REACH, REACH);
     (from as i32, (to - from) as i32)
+}
+
+/// A size of a caller's as a span, or as far as an i32 reaches where it is
+/// more than one holds: a size past `i32::MAX` cast to an i32 wraps round to
+/// a negative one, and a picture that large would not be drawn at all.
+fn span_of(size: usize) -> i32 {
+    i32::try_from(size).unwrap_or(i32::MAX)
+}
+
+/// The two edges of a span of the canvas's own pixels, cut down to the
+/// canvas: from `0` to `limit`, the far one never before the near one.
+///
+/// Added up wide, so that a span reaching as far as an i32 goes is cut down
+/// rather than overflowing on its way.
+fn edges(start: i32, length: i32, limit: usize) -> (usize, usize) {
+    let limit = limit as i64;
+    let from = i64::from(start).clamp(0, limit);
+    let to = (i64::from(start) + i64::from(length.max(0))).clamp(from, limit);
+    (from as usize, to as usize)
+}
+
+/// Which of `length` rows or columns put down from `start` land on a canvas
+/// `limit` long: the ones whose place, counted wide, is inside it.
+fn visible(start: i64, length: usize, limit: usize) -> core::ops::Range<usize> {
+    let length = i64::try_from(length).unwrap_or(i64::MAX);
+    let from = (-start).clamp(0, length);
+    let to = (limit as i64).saturating_sub(start).clamp(from, length);
+    from as usize..to as usize
 }
 
 /// The bounding box of a path, if it has any points.
@@ -976,6 +1028,134 @@ mod tests {
         assert_eq!(canvas.pixel(0, 9), Color::BLACK, "where it starts, turned");
         assert_eq!(canvas.pixel(9, 9), Color::BLACK, "all the way across");
         assert_eq!(canvas.pixel(0, 2), Color::WHITE, "above it");
+    }
+
+    /// Whether every pixel of a canvas is the one colour.
+    fn all_of(canvas: &Canvas, colour: Color) -> bool {
+        canvas
+            .pixels()
+            .chunks_exact(4)
+            .all(|pixel| pixel == [colour.red, colour.green, colour.blue, colour.alpha].as_slice())
+    }
+
+    #[test]
+    fn a_band_whose_end_is_past_what_an_i32_holds_is_clipped() {
+        // The band a pane is drawn inside, reaching as far as an i32 goes:
+        // its far edges were added up in an i32 and overflowed.
+        let mut canvas = Canvas::filled(10, 10, Color::WHITE);
+        canvas.set_clip(2, 3, i32::MAX, i32::MAX);
+        canvas.fill_rect(0, 0, 10, 10, Color::BLACK);
+        assert_eq!(canvas.pixel(2, 3), Color::BLACK, "where it starts");
+        assert_eq!(canvas.pixel(9, 9), Color::BLACK, "all the way to the corner");
+        assert_eq!(canvas.pixel(1, 3), Color::WHITE, "left of it");
+        assert_eq!(canvas.pixel(2, 2), Color::WHITE, "above it");
+
+        // Turned right to left and at twice the size, it still covers what
+        // it reaches and nothing above it.
+        let mut canvas = Canvas::filled(20, 20, Color::WHITE);
+        canvas.set_scale(2.0);
+        canvas.set_mirror(Some(10.0));
+        canvas.set_clip(-5, 3, i32::MAX, i32::MAX);
+        canvas.fill_rect(0, 0, 10, 10, Color::BLACK);
+        assert_eq!(canvas.pixel(0, 9), Color::BLACK);
+        assert_eq!(canvas.pixel(9, 9), Color::BLACK);
+        assert_eq!(canvas.pixel(0, 2), Color::WHITE);
+    }
+
+    #[test]
+    fn a_mask_put_down_past_what_an_i32_holds_is_clipped() {
+        // A letter's coverage put down as far across or down as an i32 goes:
+        // its columns and rows were counted on from there in an i32.
+        let mask = Mask::empty(4, 4).inverted();
+        for scale in [1.0, 2.0] {
+            let mut canvas = Canvas::filled(20, 20, Color::WHITE);
+            canvas.set_scale(scale);
+            canvas.draw_mask(&mask, i32::MAX - 1, 3, Color::BLACK);
+            canvas.draw_mask(&mask, 3, i32::MAX - 1, Color::BLACK);
+            canvas.draw_mask(&mask, i32::MIN, i32::MIN, Color::BLACK);
+            assert!(all_of(&canvas, Color::WHITE), "something off the canvas was drawn on it");
+            canvas.draw_mask(&mask, 2, 3, Color::BLACK);
+            assert_eq!(canvas.pixel(2, 3), Color::BLACK, "at {scale}");
+            assert_eq!(canvas.pixel(5, 6), Color::BLACK, "at {scale}");
+            assert_eq!(canvas.pixel(6, 6), Color::WHITE, "at {scale}");
+        }
+    }
+
+    #[test]
+    fn a_pixel_past_what_an_i32_holds_is_not_drawn() {
+        // One pixel of the caller's is a block of the canvas's at twice the
+        // size, and a block begun as far across as an i32 goes ran on past
+        // it.
+        let mut canvas = Canvas::filled(20, 20, Color::WHITE);
+        canvas.set_scale(2.0);
+        canvas.blend(i32::MAX as usize, 3, Color::BLACK, 255);
+        canvas.blend(3, i32::MAX as usize, Color::BLACK, 255);
+        canvas.set_mirror(Some(10.0));
+        canvas.blend(i32::MAX as usize, 3, Color::BLACK, 255);
+        canvas.blend(usize::MAX, 3, Color::BLACK, 255);
+        assert!(all_of(&canvas, Color::WHITE), "something off the canvas was drawn on it");
+        canvas.blend(2, 3, Color::BLACK, 255);
+        assert_eq!(canvas.pixel(2, 3), Color::BLACK, "a pixel on the canvas is still drawn");
+    }
+
+    #[test]
+    fn a_rectangle_copied_past_what_an_i32_holds_is_clipped() {
+        // What is under the caret, copied out and put back, with the
+        // rectangle reaching as far as an i32 goes: its far edges were added
+        // up in an i32 on both roads.
+        let mut canvas = Canvas::filled(10, 10, Color::WHITE);
+        canvas.fill_rect(2, 3, 1, 1, Color::BLACK);
+        let under = canvas.copy_rect(2, 3, i32::MAX, i32::MAX);
+        assert_eq!(under.len(), 8 * 7 * 4, "the part on the canvas, and no more");
+
+        canvas.fill_rect(0, 0, 10, 10, Color::rgb(1, 2, 3));
+        canvas.paste_rect(2, 3, i32::MAX, i32::MAX, &under);
+        assert_eq!(canvas.pixel(2, 3), Color::BLACK, "put back where it came from");
+        assert_eq!(canvas.pixel(9, 9), Color::WHITE, "all the way to the corner");
+        assert_eq!(canvas.pixel(1, 3), Color::rgb(1, 2, 3), "left of it is left alone");
+    }
+
+    #[test]
+    fn a_canvas_put_down_past_what_an_i32_holds_is_clipped() {
+        let other = Canvas::filled(4, 4, Color::BLACK);
+        let mut canvas = Canvas::filled(10, 10, Color::WHITE);
+        canvas.draw_canvas(&other, i32::MAX - 1, 3);
+        canvas.draw_canvas(&other, 3, i32::MAX - 1);
+        canvas.draw_canvas(&other, i32::MIN, i32::MIN);
+        assert!(all_of(&canvas, Color::WHITE), "something off the canvas was drawn on it");
+        canvas.draw_canvas(&other, 2, 3);
+        assert_eq!(canvas.pixel(2, 3), Color::BLACK);
+        assert_eq!(canvas.pixel(5, 6), Color::BLACK);
+        assert_eq!(canvas.pixel(6, 6), Color::WHITE);
+    }
+
+    #[test]
+    fn a_picture_reaching_past_what_an_i32_holds_is_clipped() {
+        let red = [255, 0, 0, 255].repeat(4);
+        let red_colour = Color::rgb(255, 0, 0);
+
+        // As far as an i32 reaches: its rows were counted on in an i32, and
+        // every one of them walked, on the canvas or not.
+        let mut canvas = Canvas::filled(10, 10, Color::WHITE);
+        canvas.draw_pixels(&red, 2, 2, 2, 3, i32::MAX as usize, i32::MAX as usize);
+        assert_eq!(canvas.pixel(2, 3), red_colour, "where it starts");
+        assert_eq!(canvas.pixel(9, 9), red_colour, "all the way to the corner");
+        assert_eq!(canvas.pixel(1, 3), Color::WHITE, "left of it");
+        assert_eq!(canvas.pixel(2, 2), Color::WHITE, "above it");
+
+        // And further than one holds at all, which wrapped round to a
+        // negative size and was not drawn.
+        let mut canvas = Canvas::filled(10, 10, Color::WHITE);
+        canvas.draw_pixels(&red, 2, 2, 2, 3, usize::MAX, usize::MAX);
+        assert_eq!(canvas.pixel(9, 9), red_colour, "a picture too big for an i32 is drawn");
+
+        // Turned, the same: the box walked is the canvas, and the picture is
+        // there to be found in it.
+        let mut canvas = Canvas::filled(10, 10, Color::WHITE);
+        let flipped = Turned { flipped_down: true, ..Turned::default() };
+        canvas.draw_pixels_turned(&red, 2, 2, 2, 3, usize::MAX, usize::MAX, flipped);
+        assert_eq!(canvas.pixel(9, 9), red_colour, "a turned picture too big is drawn");
+        assert_eq!(canvas.pixel(0, 0), Color::WHITE, "and not outside its place");
     }
 
     #[test]

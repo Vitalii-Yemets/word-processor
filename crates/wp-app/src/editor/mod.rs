@@ -332,6 +332,9 @@ pub struct Editor {
     screenshot_due: Option<screenshot::Due>,
     /// How deep the outline goes when the document is shown as one.
     outline_depth: u8,
+    /// What else the outline view keeps about itself: which headings are
+    /// folded, and how the outline is shown. See [`outline`].
+    outlining: outline::Outlining,
     /// Which way the pages run, and therefore which way the view scrolls.
     movement: views::Movement,
     /// Whether the zoom slider is being dragged.
@@ -847,6 +850,7 @@ impl Editor {
             screen_windows: Vec::new(),
             screenshot_due: None,
             outline_depth: outline::ALL_LEVELS,
+            outlining: outline::Outlining::default(),
             movement: views::Movement::default(),
             split: None,
             other_scroll: 0.0,
@@ -1261,8 +1265,9 @@ impl Editor {
         // the visible band when the top margin has been trimmed away.
         let width = self.pages.get(index).map_or(0.0, |page| page.width);
         // A page on the web fills the window from its left edge, with no desk
-        // round it; a sheet of paper sits in the middle of the desk.
-        let gap = if self.view == views::View::Web { 0.0 } else { PAGE_GAP };
+        // round it, and so does an outline; a sheet of paper sits in the
+        // middle of the desk.
+        let gap = if self.view.is_one_sheet() { 0.0 } else { PAGE_GAP };
         let x = self.content_left() + ((self.viewport_width() - width) / 2.0).max(gap)
             - self.scroll_across;
         (x, y - trim_top)
@@ -1336,7 +1341,8 @@ impl Editor {
             return 0.0;
         }
         let widest = self.pages.iter().fold(0.0f32, |widest, page| widest.max(page.width));
-        let desk = if self.view == views::View::Web { 0.0 } else { PAGE_GAP * 2.0 };
+        // A sheet as wide as the window has no desk beside it to scroll to.
+        let desk = if self.view.is_one_sheet() { 0.0 } else { PAGE_GAP * 2.0 };
         (widest + desk - self.viewport_width()).max(0.0)
     }
 
@@ -1695,7 +1701,13 @@ impl Editor {
         self.engine.set_formatting_markup(self.show_formatting_markup);
         self.engine.set_table_gridlines(self.show_table_gridlines);
         self.engine.set_marks(self.show_marks);
+        // The outline is told as the outline, and not only as the web's
+        // sheet it is laid out on below: it shows no notes where a web page
+        // shows them after its text, and what it folds away, how much of its
+        // body text it shows and whether in its formatting are the view's to
+        // say. See [`outline`].
         self.engine.set_outline(self.outline_for_layout());
+        self.prepare_outline();
         // An outline runs on as a web page does, and is finished as one: no
         // page breaks, no headers or footers, and a sheet as long as its
         // text. See [`views::View::is_one_sheet`].
@@ -2614,7 +2626,8 @@ mod tests {
     fn leaving_the_outline_puts_the_whole_document_back() {
         let mut editor = outlined();
         editor.choose_outline_level(0);
-        editor.choose_outline_level(usize::from(super::outline::ALL_LEVELS));
+        editor.run(crate::chrome::Command::CloseOutlineView);
+        assert_eq!(editor.view, super::views::View::Print);
         assert!(shown(&editor).iter().any(|text| text.starts_with("Body")));
     }
 

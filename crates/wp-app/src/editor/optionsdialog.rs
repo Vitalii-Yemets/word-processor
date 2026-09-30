@@ -220,7 +220,7 @@ impl Editor {
             check("Formatting marks", self.show_marks),
             check("Gridlines", self.show_gridlines),
             Field::Group("Page display".to_owned()),
-            check("Rulers", self.show_rulers),
+            check("Rulers", self.rulers_setting()),
             check("Navigation pane", self.show_navigation),
             check("White space between pages", !self.joined_pages),
             // --- Language --------------------------------------------------
@@ -451,7 +451,7 @@ impl Editor {
 
         self.show_marks = dialog.ticked(MARKS);
         self.show_gridlines = dialog.ticked(GRIDLINES);
-        self.show_rulers = dialog.ticked(RULERS);
+        self.set_rulers_setting(dialog.ticked(RULERS));
         self.show_navigation = dialog.ticked(NAVIGATION);
         // Word's wording is the white space; the editor keeps whether the
         // pages are joined, which is the other way round.
@@ -493,7 +493,7 @@ impl Editor {
         self.settings.keep_autosaved = Some(self.keep_autosaved);
         self.settings.confirm_conversion = Some(self.confirm_conversion);
         self.settings.dark = Some(dark);
-        self.settings.rulers = Some(self.show_rulers);
+        self.settings.rulers = Some(self.rulers_setting());
         self.settings.navigation = Some(self.show_navigation);
         self.settings.zoom = Some(self.zoom);
         self.settings.marks = Some(self.show_marks);

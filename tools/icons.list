@@ -216,3 +216,14 @@ InkToText draw_text
 # Which way the text of a section runs, and the Asian Layout menu.
 VerticalText text_direction_vertical
 AsianLayout text_direction_rotate_90_right
+# The Outlining tab: promote to the top, promote, demote, demote to body
+# text, move up and down, expand and collapse, and the first line only.
+PromoteToTop @outline_promote_top
+Promote @outline_promote
+Demote @outline_demote
+DemoteToBody @outline_demote_body
+MoveUp @outline_move_up
+MoveDown @outline_move_down
+Expand @outline_expand
+Collapse @outline_collapse
+FirstLine @outline_first_line

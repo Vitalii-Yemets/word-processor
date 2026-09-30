@@ -224,10 +224,19 @@ pub enum Icon {
     InkToText = 206,
     VerticalText = 207,
     AsianLayout = 208,
+    PromoteToTop = 209,
+    Promote = 210,
+    Demote = 211,
+    DemoteToBody = 212,
+    MoveUp = 213,
+    MoveDown = 214,
+    Expand = 215,
+    Collapse = 216,
+    FirstLine = 217,
 }
 
 /// How many there are, so the drawings can be kept in a flat array.
-pub const COUNT: usize = 209;
+pub const COUNT: usize = 218;
 
 /// Every icon, in the order the catalogue declares them.
 ///
@@ -443,6 +452,15 @@ pub static ALL: [Icon; COUNT] = [
     Icon::InkToText,
     Icon::VerticalText,
     Icon::AsianLayout,
+    Icon::PromoteToTop,
+    Icon::Promote,
+    Icon::Demote,
+    Icon::DemoteToBody,
+    Icon::MoveUp,
+    Icon::MoveDown,
+    Icon::Expand,
+    Icon::Collapse,
+    Icon::FirstLine,
 ];
 
 impl Icon {
@@ -1957,6 +1975,69 @@ impl Icon {
                     include_str!("../../assets/icons/ic_fluent_text_direction_rotate_90_right_24_regular.svg")
                 } else {
                     include_str!("../../assets/icons/ic_fluent_text_direction_rotate_90_right_20_regular.svg")
+                }
+            }
+            Self::PromoteToTop => {
+                if large {
+                    include_str!("../../assets/icons/outline_promote_top_24.svg")
+                } else {
+                    include_str!("../../assets/icons/outline_promote_top_20.svg")
+                }
+            }
+            Self::Promote => {
+                if large {
+                    include_str!("../../assets/icons/outline_promote_24.svg")
+                } else {
+                    include_str!("../../assets/icons/outline_promote_20.svg")
+                }
+            }
+            Self::Demote => {
+                if large {
+                    include_str!("../../assets/icons/outline_demote_24.svg")
+                } else {
+                    include_str!("../../assets/icons/outline_demote_20.svg")
+                }
+            }
+            Self::DemoteToBody => {
+                if large {
+                    include_str!("../../assets/icons/outline_demote_body_24.svg")
+                } else {
+                    include_str!("../../assets/icons/outline_demote_body_20.svg")
+                }
+            }
+            Self::MoveUp => {
+                if large {
+                    include_str!("../../assets/icons/outline_move_up_24.svg")
+                } else {
+                    include_str!("../../assets/icons/outline_move_up_20.svg")
+                }
+            }
+            Self::MoveDown => {
+                if large {
+                    include_str!("../../assets/icons/outline_move_down_24.svg")
+                } else {
+                    include_str!("../../assets/icons/outline_move_down_20.svg")
+                }
+            }
+            Self::Expand => {
+                if large {
+                    include_str!("../../assets/icons/outline_expand_24.svg")
+                } else {
+                    include_str!("../../assets/icons/outline_expand_20.svg")
+                }
+            }
+            Self::Collapse => {
+                if large {
+                    include_str!("../../assets/icons/outline_collapse_24.svg")
+                } else {
+                    include_str!("../../assets/icons/outline_collapse_20.svg")
+                }
+            }
+            Self::FirstLine => {
+                if large {
+                    include_str!("../../assets/icons/outline_first_line_24.svg")
+                } else {
+                    include_str!("../../assets/icons/outline_first_line_20.svg")
                 }
             }
         }

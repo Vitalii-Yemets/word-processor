@@ -151,8 +151,11 @@ pub enum Choice {
     PrintPerSheet,
     /// The windows a picture can be taken of.
     Screenshot,
-    /// How deep the outline goes.
+    /// How deep the outline goes: Word's Show Level.
     OutlineLevel,
+    /// What level the paragraph at the caret is in the outline: a heading's
+    /// nine, or body text.
+    ParagraphLevel,
     /// The parts of an address, and the columns they can come from.
     MatchField,
     MatchColumn,

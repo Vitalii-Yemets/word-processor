@@ -2270,27 +2270,98 @@ work is in *The order of the work* at the end.
   it adds them up, so one running past what an i32 holds is clipped rather
   than overflowing, and the side ruler in `chrome/rulers.rs` walks only the
   marks beside the window.
+  And the outline is Word's now, not the web's sheet with the headings on
+  it. The engine is told it is laying out an outline as well as the web's
+  sheet, and so shows no footnotes and no endnotes, which a web page keeps
+  after its text (`set_outline` in `wp-layout`). It puts each paragraph at
+  its level and nowhere else — body text a step in from its heading, a
+  title before the first heading a step in, as Word's is — and takes no
+  notice of a paragraph's own indents or alignment; it places a table a
+  step in as body text, and leaves it out whole where body text is hidden;
+  and it leaves out what the view folds, cuts body text to its first line
+  and an ellipsis, and sets everything in the document's own font, when it
+  is told to (`set_outline_folded`, `set_outline_first_line`,
+  `set_outline_plain`). A paragraph it leaves out is no longer taken for
+  one that began a page, which had sent the heading kept with it a quarter
+  of the largest float down the sheet. The sheet fits the view and does not
+  scroll sideways, as the web's does not (`is_one_sheet` in
+  `page_origin_as_laid_out` and `across_limit`). The rulers go with the
+  outline and come back as the person had them (`View::shows_rulers`,
+  `Editor::rulers_setting`), and the Ruler tick is grey there, as Word's
+  is. The rest of the canvas is brought within reach as `fill_rect` is:
+  `set_clip`, `draw_mask`, `blend`, `clamped`, `copy_rect`, `paste_rect`,
+  `draw_canvas`, `draw_pixels` and `draw_pixels_turned` clamp a span's
+  edges, add them up wide and walk only what lands on the canvas.
+  The view itself is `editor/outline.rs`. The Outlining tab comes with the
+  view and goes with it, first after File as Word's is (`Tab::leads`), with
+  Word's Outline Tools — Promote to Heading 1, Promote, the level box,
+  Demote, Demote to Body Text, Move Up, Move Down, Expand, Collapse, Show
+  Level, Show Text Formatting, Show First Line Only — and Close Outline
+  View; its arrows and signs are drawings of the program's own in the
+  catalogue (`tools/icons.list`). Word's Master Document group is not
+  there, because it is for documents made of other documents, which this
+  program neither makes nor opens. Beside each paragraph is Word's mark, as
+  the review's picture and Word 365 draw it: a grey disc with a plus cut
+  out of it for a heading with something under it, with a minus for one
+  with nothing, and a dot for body text and for each row of a table. Two
+  clicks on a heading's mark, or Expand and Collapse, fold what is under it
+  away and draw the grey line under the heading; Show Level shows the
+  headings down to its level and no body text. A click on a mark selects
+  the heading with all it holds, and a drag moves that among the headings
+  of its level, as Move Up and Move Down do by one (`move_paragraphs` in
+  `wp-docx/src/outlining.rs`, which takes the elements themselves).
+  Promoting and demoting go through the heading styles, Heading 1 to
+  Heading 9 and body text, a step to take back each. What is folded is the
+  view's: kept in memory beside the window, followed through edits by the
+  heading's words, and never written to the file. The tab's words are in
+  the three catalogues, in Word's German where it has them, and its key
+  tips and what a screen reader is told come from the tab's names like any
+  other tab's.
   *Proven by:* `every_view_draws`, which chooses each view in turn and
   draws the window, and panicked on Outline before;
   `an_outline_is_one_sheet_as_long_as_its_text`;
   `a_page_far_longer_than_the_window_is_marked_only_beside_it`, which
   overflowed before; and in wp-raster
   `a_rectangle_whose_end_is_past_what_an_i32_holds_is_clipped`, plain,
-  turned right to left and scaled, which overflowed before.
-  *Not done, and named here:* being finished as the web's, the outline now
-  shows the footnotes and endnotes after its text, under a rule, as the web
-  page does; Word's outline shows none. The sheet is as wide as the window
-  but set a desk's gap in from its left, so it runs that far past the right
-  edge and the view scrolls sideways, as it did before. Word offers no ruler
-  in outline view, and both are still drawn here. Only `fill_rect` of the
-  canvas was hardened: `set_clip`, `draw_mask`, `blend`, `clamped` and the
-  picture copies still add a size to a position in i32, which is safe for
-  the sizes they are given and not for a position near `i32::MAX`. And
-  what is drawn is not Word's outline: Word's is a view of its own, with an
-  Outlining tab, ⊕ and ∘ marks beside headings and body text, and levels
-  folded and dragged by them; this is the web's sheet showing the headings
-  and their text to the chosen depth (the review's picture
-  `word-outline-dark.png` is what it should come to look like).
+  turned right to left and scaled, which overflowed before. And in
+  wp-raster `a_band_whose_end_is_past_what_an_i32_holds_is_clipped`,
+  `a_mask_put_down_past_what_an_i32_holds_is_clipped`,
+  `a_pixel_past_what_an_i32_holds_is_not_drawn`,
+  `a_rectangle_copied_past_what_an_i32_holds_is_clipped`,
+  `a_canvas_put_down_past_what_an_i32_holds_is_clipped` and
+  `a_picture_reaching_past_what_an_i32_holds_is_clipped`, each of which
+  overflowed before. In wp-layout, `tests/outline.rs`:
+  `an_outline_shows_no_notes_where_the_web_shows_them_after_the_text`,
+  `what_a_heading_is_folded_over_is_left_out_and_the_rest_is_not`,
+  `a_table_is_body_text_to_an_outline`,
+  `first_line_only_leaves_body_text_a_line_and_an_ellipsis`,
+  `an_outline_without_its_formatting_draws_every_run_in_one_font_and_size`,
+  `body_text_is_a_step_in_from_its_heading_and_a_title_where_body_text_is`
+  and `a_heading_kept_with_what_is_left_out_stays_where_it_is`.
+  In wp-docx, `headings_stand_at_their_level_and_the_rest_is_body`,
+  `a_heading_moves_up_with_what_is_under_it_and_back_in_one_step`,
+  `a_heading_moves_down_to_the_end` and `nowhere_new_is_no_move`. In the
+  program, each by pressing what a person presses:
+  `the_outline_shows_no_notes_where_the_web_page_shows_them`,
+  `neither_the_outline_nor_the_web_page_scrolls_sideways`,
+  `the_rulers_go_with_the_outline_and_come_back_as_they_were`,
+  `reading_and_the_outline_draw_no_rulers`,
+  `the_outlining_tab_comes_with_the_outline_and_goes_with_it`,
+  `each_paragraph_has_the_mark_of_what_it_is`, which reads the marks off
+  the window, `two_clicks_on_a_mark_fold_the_heading_and_two_more_open_it`,
+  `collapse_and_expand_fold_the_heading_the_caret_is_under`,
+  `a_fold_stays_with_its_heading_when_a_paragraph_goes_in_above_it`,
+  `show_level_shows_the_headings_down_to_it_and_no_body_text`,
+  `first_line_only_shows_a_line_of_each_paragraph_of_body_text`,
+  `without_its_formatting_the_outline_is_one_font_at_one_size`,
+  `promote_and_demote_change_a_level_and_each_is_one_step_back`,
+  `move_up_and_down_take_a_heading_with_everything_under_it`,
+  `a_click_on_a_mark_selects_the_heading_and_all_it_holds`,
+  `a_mark_dragged_moves_its_heading_among_the_headings_of_its_level`,
+  `the_outlining_tab_and_all_on_it_are_named_to_a_screen_reader` and
+  `the_outlining_tab_has_word_s_letter_and_a_letter_for_all_on_it`. And
+  the window drawn in the outline (`--picture … view=outline`), and with
+  its first heading folded (`… view=outline collapse-first`).
 - [ ] **C52. The pointer is an arrow over the furniture.** Over a dialog's
   body and its OK button the pointer is an I-beam, and over the desk beside
   the page too, because `cursor()` has no branch for the dialog or the
@@ -2472,7 +2543,13 @@ work is in *The order of the work* at the end.
   yellow badges under the tab names rather than grey ones over them, with
   digits over the Quick Access Toolbar; Undo's drop-down list of steps and
   the toolbar's customize arrow; Draw and Developer hidden by default as
-  Word hides them. Reviews U26, U29, U28, U30.
+  Word hides them. And a command that sits only on a contextual tab —
+  Close Header and Footer, Merge Cells and the rest — has no name from
+  `ribbon::name_of`, which searches the fixed tabs alone, so its key tip
+  falls back to a digit and a screen reader hears its internal name; the
+  Outlining tab names its own through `tip::label_of`, and the others
+  should be named the same way (found while **C51** was finished). Reviews
+  U26, U29, U28, U30.
 - [ ] **C74. The pop-ups as Word has them.** The mini toolbar in two rows,
   in Word's order, placed above the selection rather than on it; the
   context menu with Paragraph… and Synonyms ▸ and without Styles, Bullets
@@ -2481,7 +2558,10 @@ work is in *The order of the work* at the end.
   ticked and Line Spacing Options…; the Layout Options button beside a
   chosen picture and the anchor mark; Paste Options as tiles with Set
   Default Paste…; ScreenTips light, with a bold title and a line of
-  description. Reviews U17, U18, U21, U22, U23, U19, U20.
+  description. And Home and End in a pop-up list move from the item in
+  force rather than to the first and the last (`move_to_end` starts from
+  `hovered.or(current)`; found while **C51** was finished). Reviews U17,
+  U18, U21, U22, U23, U19, U20.
 - [ ] **C75. The pointer's shapes, and three clicks.** Word's pointers that
   are not here: the mirrored arrow in the selection bar, the four-way move
   over a drawing and a table's handle, the diagonals over corner handles,
@@ -7744,7 +7824,12 @@ work is in *The order of the work* at the end.
   the way **H19**'s did: named steps, real conditions, a bound. And a Screen
   Clipping that fails for want of a portal says "No picture was taken", the
   words of a cancel; `screen::clip` should tell the two apart and the
-  status say which it was.
+  status say which it was. And the desktop's recent list
+  (`recently-used.xbel`) is read, changed and written back with no lock,
+  so two saves at once — two windows, or two tests — lose one entry; GTK
+  takes a lock on that file, and so should this. Seen once as
+  `a_document_saved_is_a_document_the_desktop_has_heard_of` failing in a
+  full run and passing alone.
 
 ## I — The language of the interface
 

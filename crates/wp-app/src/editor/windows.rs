@@ -49,6 +49,9 @@ pub(super) struct WindowState {
     view: View,
     movement: Movement,
     outline_depth: u8,
+    /// What its outline has folded and how it shows it, which is the view's
+    /// and so the window's. See [`super::outline`].
+    outlining: super::outline::Outlining,
     show_rulers: bool,
     show_navigation: bool,
     /// The density of the screen the window is on, as a scale.
@@ -85,6 +88,7 @@ impl Editor {
             view: self.view,
             movement: self.movement,
             outline_depth: self.outline_depth,
+            outlining: self.outlining.clone(),
             show_rulers: self.show_rulers,
             show_navigation: self.show_navigation,
             scale: self.scale,
@@ -121,6 +125,7 @@ impl Editor {
         self.view = stored.view;
         self.movement = stored.movement;
         self.outline_depth = stored.outline_depth;
+        self.outlining = stored.outlining;
         self.show_rulers = stored.show_rulers;
         self.show_navigation = stored.show_navigation;
         self.scale = stored.scale;

@@ -107,6 +107,9 @@ language = Deutsch
 = Against a rule, to the right
 > An einer Linie, rechts
 
+= All Levels
+> Alle Ebenen
+
 = Allow AutoFormat to override formatting restrictions
 > AutoFormat darf Formatierungseinschränkungen überschreiben
 
@@ -569,11 +572,17 @@ language = Deutsch
 = City
 > Ort
 
+= Close Outline View
+> Gliederungsansicht schließen
+
 = Clustered Bar
 > Gruppierte Balken
 
 = Clustered Column
 > Gruppierte Säulen
+
+= Collapse
+> Reduzieren
 
 = Colored Fill - Accent 1
 > Farbige Füllung - Akzent 1
@@ -836,6 +845,9 @@ language = Deutsch
 = Demote
 > Tiefer stufen
 
+= Demote to Body Text
+> Zu Textkörper tiefer stufen
+
 = Design Mode
 > Entwurfsmodus
 
@@ -1060,6 +1072,9 @@ language = Deutsch
 
 = Exceptions...
 > Ausnahmen...
+
+= Expand
+> Erweitern
 
 = Export
 > Exportieren
@@ -1499,6 +1514,9 @@ language = Deutsch
 = Left:
 > Links:
 
+= Level {0}
+> Ebene {0}
+
 = Lime
 > Limette
 
@@ -1631,6 +1649,15 @@ language = Deutsch
 = Orange
 > Orange
 
+= Outline Level
+> Gliederungsebene
+
+= Outline Tools
+> Gliederungstools
+
+= Outlining
+> Gliederung
+
 = Oval
 > Ellipse
 
@@ -1711,6 +1738,9 @@ language = Deutsch
 
 = Promote
 > Höher stufen
+
+= Promote to Heading 1
+> Auf Überschrift 1 höher stufen
 
 = Purple
 > Lila
@@ -1807,6 +1837,18 @@ language = Deutsch
 
 = Show All Regions I Can Edit
 > Alle bearbeitbaren Bereiche anzeigen
+
+= Show First Line Only
+> Nur erste Zeile anzeigen
+
+= Show Level
+> Ebene anzeigen
+
+= Show Level:
+> Ebene anzeigen:
+
+= Show Text Formatting
+> Textformatierung anzeigen
 
 = Sign
 > Signieren

@@ -292,6 +292,69 @@ mod tests {
         }
     }
 
+    /// The Outlining tab is lettered only while the outline shows, with
+    /// Word's letter; every command on it has a letter of its own out of
+    /// the words it is called by; and the letters open the tab and run what
+    /// is on it — here Collapse, which folds the heading the caret is in.
+    #[test]
+    fn the_outlining_tab_has_word_s_letter_and_a_letter_for_all_on_it() {
+        use wp_shell::{App, Event, Key, Modifiers};
+        let library: &'static FontLibrary = Box::leak(Box::new(FontLibrary::scan_system()));
+        let mut body = Body::default();
+        body.blocks.push(Block::Paragraph(Paragraph::text("A heading").with_style("Heading1")));
+        body.blocks.push(Block::Paragraph(Paragraph::text("Text under it")));
+        let bytes = Document::create(&body).expect("a document").save().expect("saving");
+        let mut editor = Editor::new(library, Document::open(&bytes).expect("reopening"), None);
+        editor.handle(Event::Resized { width: 1400, height: 900 });
+        editor.draw(1400, 900);
+        let letter = |editor: &mut Editor, letter: char| {
+            let key = Key::Letter(letter.to_ascii_lowercase());
+            editor.handle(Event::KeyDown { key, modifiers: Modifiers::default() });
+            editor.draw(1400, 900);
+        };
+        let outlining = |editor: &Editor| {
+            editor.tab_tips().into_iter().find(|(tab, ..)| *tab == Tab::Outlining)
+        };
+        assert!(outlining(&editor).is_none(), "the tab is lettered before the outline");
+
+        // Alt, W for View, and Outline's letter.
+        editor.handle(Event::MenuKey);
+        letter(&mut editor, 'w');
+        let (_, outline, ..) = editor
+            .command_tips()
+            .into_iter()
+            .find(|(command, ..)| *command == Command::OutlineView)
+            .expect("Outline has a letter");
+        letter(&mut editor, outline.chars().next().expect("a letter"));
+        assert_eq!(editor.view, super::super::views::View::Outline);
+
+        let (_, tab_letter, ..) = outlining(&editor).expect("the tab is not lettered");
+        assert_eq!(tab_letter, "U");
+        editor.handle(Event::MenuKey);
+        letter(&mut editor, 'u');
+        assert_eq!(editor.ribbon.tab, Tab::Outlining);
+        let tips = editor.command_tips();
+        let mut seen = Vec::new();
+        for (command, letter, ..) in &tips {
+            let label = editor.key_label(*command).to_uppercase();
+            assert!(
+                !letter.is_empty() && label.contains(letter.as_str()),
+                "{command:?}: {letter} over {label}"
+            );
+            assert!(!seen.contains(letter), "{letter} twice");
+            seen.push(letter.clone());
+        }
+        let (_, collapse, ..) = tips
+            .iter()
+            .find(|(command, ..)| *command == Command::OutlineCollapse)
+            .expect("Collapse has a letter");
+        editor.document.set_caret(wp_docx::TextPosition::new(1, 2));
+        letter(&mut editor, collapse.chars().next().expect("a letter"));
+        let shown =
+            editor.pages.iter().flat_map(|page| &page.lines).any(|line| line.paragraph == 1);
+        assert!(!shown, "Collapse's letter did not fold the heading");
+    }
+
     /// In German, each tab's letter and each command's is in the German
     /// word under it, all different; and a tab's letter opens it.
     #[test]

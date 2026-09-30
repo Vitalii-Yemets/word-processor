@@ -49,7 +49,10 @@ const POINTS_PER_INCH: f32 = 72.0;
 
 /// How far one level of an outline is indented past the one above it, in
 /// points. A quarter of an inch, which is what Word steps by.
-const OUTLINE_STEP: f32 = 18.0;
+///
+/// Public because the marks beside the paragraphs of an outline are drawn
+/// by the window, a step to the left of where each level begins.
+pub const OUTLINE_STEP: f32 = 18.0;
 
 /// The level that means "everything": nine headings and the body text under
 /// them. What Word offers as All Levels.
@@ -1924,6 +1927,24 @@ pub struct LayoutEngine<'a> {
     /// The level of the last heading passed, so the body text under it can be
     /// indented one step further in.
     outline_heading: u8,
+    /// The paragraphs of an outline folded away under a heading, as runs of
+    /// their numbers: Word's collapsed headings. See
+    /// [`LayoutEngine::set_outline_folded`].
+    outline_folded: Vec<core::ops::Range<usize>>,
+    /// Whether an outline shows only the first line of each paragraph of
+    /// body text, as Word's Show First Line Only does.
+    outline_first_line: bool,
+    /// Whether an outline is drawn in one plain font, as Word's is with Show
+    /// Text Formatting turned off.
+    outline_plain: bool,
+    /// Whether the paragraph just given to be placed was left out of an
+    /// outline, which put nothing on the page — and so did not begin one,
+    /// whatever the page's count of lines says. See [`Self::place_blocks`].
+    left_out: bool,
+    /// How many tables deep the paragraph being placed is. An outline places
+    /// a table where body text goes and leaves what is in its cells as it
+    /// is: a cell's paragraph is not indented to a level inside its cell.
+    in_table: usize,
     /// Whether the document is being shown as a browser would show it: see
     /// [`LayoutEngine::set_web`].
     web: bool,
@@ -2016,6 +2037,11 @@ impl<'a> LayoutEngine<'a> {
             merge_record: Vec::new(),
             outline: None,
             outline_heading: 0,
+            outline_folded: Vec::new(),
+            outline_first_line: false,
+            outline_plain: false,
+            left_out: false,
+            in_table: 0,
             web: false,
             font_table: HashMap::new(),
             hyphenation: Hyphenation::default(),
@@ -2161,11 +2187,73 @@ impl<'a> LayoutEngine<'a> {
     }
 
     /// The same, on an engine that is being kept and used again.
+    ///
+    /// An outline shows no footnotes and no endnotes, as Word's does not:
+    /// it is the document's headings and its text, and a note is neither.
     pub fn set_outline(&mut self, depth: Option<u8>) {
         if self.outline != depth {
             self.outline = depth;
             self.measured.clear();
         }
+    }
+
+    /// Leaves out of an outline the paragraphs folded away under a heading:
+    /// runs of paragraph numbers, a table left out whole when every
+    /// paragraph of it is in one. Nothing outside an outline.
+    ///
+    /// Which they are is the window's to say. A heading is folded in the
+    /// view, not in the document, and what is under it is worked out there
+    /// from where each paragraph stands — see [`wp_docx::outlining`].
+    pub fn set_outline_folded(&mut self, folded: Vec<core::ops::Range<usize>>) {
+        self.outline_folded = folded;
+    }
+
+    /// Shows only the first line of each paragraph of body text in an
+    /// outline, with an ellipsis after it where there was more: Word's Show
+    /// First Line Only.
+    pub fn set_outline_first_line(&mut self, on: bool) {
+        self.outline_first_line = on;
+    }
+
+    /// Draws an outline in one plain font, the document's own at its own
+    /// size, with none of the formatting its text carries: Word's Show Text
+    /// Formatting turned off.
+    pub fn set_outline_plain(&mut self, on: bool) {
+        if self.outline_plain != on {
+            self.outline_plain = on;
+            self.measured.clear();
+        }
+    }
+
+    /// Whether a paragraph of an outline is folded away under a heading.
+    fn folded_away(&self, paragraph: usize) -> bool {
+        self.outline.is_some()
+            && self.outline_folded.iter().any(|folded| folded.contains(&paragraph))
+    }
+
+    /// How deep the outline goes, when what is being placed is a paragraph
+    /// of it: in an outline, and not in a table's cell.
+    fn outlining(&self) -> Option<u8> {
+        self.outline.filter(|_| self.in_table == 0)
+    }
+
+    /// Whether an outline leaves a table out: while it shows no body text at
+    /// all, which a table is, or when every paragraph of the table is folded
+    /// away under a heading.
+    fn outline_leaves_out(&self, first: usize, count: usize) -> bool {
+        match self.outlining() {
+            Some(depth) => {
+                depth < OUTLINE_ALL
+                    || (count > 0 && (first..first + count).all(|at| self.folded_away(at)))
+            }
+            None => false,
+        }
+    }
+
+    /// Whether the text of the document is being drawn plain: in an outline
+    /// with its formatting turned off.
+    fn plain(&self) -> bool {
+        self.outline.is_some() && self.outline_plain
     }
     /// An engine that lays out for a device: a screen, or a printer.
     ///
@@ -2478,7 +2566,13 @@ impl<'a> LayoutEngine<'a> {
         // answers are almost always still right, and then one pass is all
         // it takes. Without pages back it starts, as a new engine does, from
         // no room and no pages.
-        let footnotes = document.notes(wp_docx::notes::Kind::Footnote);
+        // An outline shows no notes, as Word's does not: see
+        // [`Self::set_outline`].
+        let footnotes = if self.outline.is_some() {
+            Vec::new()
+        } else {
+            document.notes(wp_docx::notes::Kind::Footnote)
+        };
         let body = document.body();
         let metrics = if self.web { PageMetrics { columns: 1, ..metrics } } else { metrics };
         // The pages of a section written down the page were turned before
@@ -2890,6 +2984,16 @@ impl<'a> LayoutEngine<'a> {
                     self.place_paragraph(*index, paragraph, document, pages, y, column, area);
                     *index += 1;
 
+                    // One an outline left out put nothing on the page, which
+                    // is not the same as beginning a page: taken for one, the
+                    // heading kept with it was moved to a page of its own —
+                    // on the outline's one sheet, a quarter of the largest
+                    // float down.
+                    if core::mem::take(&mut self.left_out) {
+                        position += 1;
+                        continue;
+                    }
+
                     // Nothing of this paragraph landed on the page it began
                     // on, so it started a page — and whatever asked to stay
                     // with it has been left behind.
@@ -2919,7 +3023,27 @@ impl<'a> LayoutEngine<'a> {
                     kept = resolved.keep_next.then(|| kept.unwrap_or((position, counted, before)));
                 }
                 Block::Table(table) => {
-                    self.place_table(table, index, document, pages, y, column, area);
+                    let count = blocks[position].paragraph_count();
+                    if self.outline_leaves_out(*index, count) {
+                        *index += count;
+                    } else {
+                        // An outline shows a table where body text goes: one
+                        // step in from the heading above it.
+                        let area = match self.outlining() {
+                            Some(_) => {
+                                let step = self.outline_step(None) * self.pixels_per_point();
+                                Placement {
+                                    left: area.left + step,
+                                    text_width: (area.text_width - step).max(1.0),
+                                    ..area
+                                }
+                            }
+                            None => area,
+                        };
+                        self.in_table += 1;
+                        self.place_table(table, index, document, pages, y, column, area);
+                        self.in_table -= 1;
+                    }
                     kept = None;
                 }
             }
@@ -2953,21 +3077,26 @@ impl<'a> LayoutEngine<'a> {
         // counts as one step past the heading above it, which is where a reader
         // expects to find it.
         let mut outline_indent = 0.0;
-        if let Some(depth) = self.outline {
-            let heading = resolved.outline_level.map(|level| level + 1);
+        // Whether this is body text in an outline, which Show First Line Only
+        // cuts down to its first line.
+        let mut outline_body = false;
+        if let Some(depth) = self.outlining() {
+            // Level nine is Word's way of writing "body text" down, and is
+            // no heading.
+            let heading = resolved.outline_level.filter(|level| *level < 9).map(|level| level + 1);
             if let Some(level) = heading {
                 self.outline_heading = level;
             }
             // A heading is shown down to its own level; body text only when
             // every level is being shown, which is what Word's list calls All
-            // Levels and what nine headings plus one comes to.
-            if heading.unwrap_or(OUTLINE_ALL) > depth {
+            // Levels and what nine headings plus one comes to. And nothing a
+            // heading above it has been folded over.
+            if heading.unwrap_or(OUTLINE_ALL) > depth || self.folded_away(index) {
+                self.left_out = true;
                 return;
             }
-            // It is still indented as though it were a level below the heading
-            // above it, which is where a reader looks for it.
-            let level = heading.unwrap_or_else(|| self.outline_heading.saturating_add(1)).max(1);
-            outline_indent = f32::from(level - 1) * OUTLINE_STEP * scale;
+            outline_indent = self.outline_step(heading) * scale;
+            outline_body = heading.is_none();
         }
 
         // The mark a list paragraph carries, and the indents its level asks
@@ -3006,14 +3135,29 @@ impl<'a> LayoutEngine<'a> {
         };
         // A list level's indents apply only where nothing else set one: a
         // paragraph that says where it sits has already been believed.
-        let authored_indent = resolved.indent_start != 0 || resolved.indent_first_line != 0;
+        //
+        // An outline shows none of a paragraph's own indents, as Word's does
+        // not: where a paragraph sits there is its level's place and nothing
+        // else. A list keeps its mark's room.
+        let authored_indent = self.outlining().is_none()
+            && (resolved.indent_start != 0 || resolved.indent_first_line != 0);
         let (indent_twips, first_twips) = if authored_indent {
             (resolved.indent_start, resolved.indent_first_line)
         } else {
             (level_indent_start, -level_indent_hanging)
         };
         let indent_start = indent_twips as f32 / TWIPS_PER_POINT * scale + outline_indent;
-        let indent_end = resolved.indent_end as f32 / TWIPS_PER_POINT * scale;
+        let indent_end = if self.outlining().is_some() {
+            0.0
+        } else {
+            resolved.indent_end as f32 / TWIPS_PER_POINT * scale
+        };
+        // Nor how it is aligned: every paragraph of an outline begins at its
+        // level's place, which is what makes the levels readable. The start
+        // is the paragraph's own, so text written right to left still runs
+        // from the right.
+        let alignment =
+            if self.outlining().is_some() { Alignment::Start } else { resolved.alignment };
         let indent_first = first_twips as f32 / TWIPS_PER_POINT * scale;
 
         if resolved.page_break_before
@@ -3378,7 +3522,7 @@ impl<'a> LayoutEngine<'a> {
                         baseline,
                         ascent,
                         descent,
-                        alignment: resolved.alignment,
+                        alignment,
                         paragraph_rtl: resolved.right_to_left,
                         // Only the piece that ends the paragraph is a last
                         // line: a justified line broken round a drawing is
@@ -3431,6 +3575,21 @@ impl<'a> LayoutEngine<'a> {
                 cursor += 1;
             } else {
                 cursor = next;
+            }
+
+            // Word's Show First Line Only: body text in an outline is its
+            // first line and an ellipsis, where there was more to it.
+            if outline_body && self.outline_first_line && cursor < items.len() {
+                let style =
+                    next.checked_sub(1).and_then(|last| items.get(last)).map(|item| item.style);
+                if let (Some(style), Some(page)) =
+                    (style.and_then(|style| styles.get(style)), pages.get_mut(page_index))
+                {
+                    let style = style.clone();
+                    let end = page.lines.last().map_or(0.0, |line| line.right);
+                    self.place_ellipsis(&style, page, end, baseline);
+                }
+                break;
             }
         }
 
@@ -4044,9 +4203,53 @@ impl<'a> LayoutEngine<'a> {
         }
     }
 
+    /// The ellipsis after the first line of a paragraph an outline shows only
+    /// the first line of, in the style the line ends in.
+    ///
+    /// Put down after the line is, so that it lies outside every line's range
+    /// of glyphs, as a list mark does: it is not text, and a click or a
+    /// selection never lands on it.
+    fn place_ellipsis(&mut self, style: &RunStyle, page: &mut Page, x: f32, baseline: f32) {
+        let mut pen = x;
+        for glyph in self.shape("…", style, 0) {
+            page.glyphs.push(PositionedGlyph {
+                face: glyph.face,
+                glyph: glyph.glyph,
+                x: pen,
+                baseline,
+                advance: glyph.advance,
+                size: style.size,
+                stretch: 1.0,
+                color: style.color,
+                effect: style.effect,
+                source: TextPosition::default(),
+                source_length: 0,
+                invisible: false,
+                shift_x: 0.0,
+                shift_y: 0.0,
+            });
+            pen += glyph.advance;
+        }
+    }
+
+    /// How far in an outline puts a paragraph, in points: a heading one step
+    /// in for each level above its own, and body text one step in from the
+    /// heading above it — or from a heading at the top level, before there
+    /// is any, which is where Word shows a title.
+    ///
+    /// `heading` is the paragraph's level counted from one, if it is a
+    /// heading.
+    fn outline_step(&self, heading: Option<u8>) -> f32 {
+        let level = heading.unwrap_or_else(|| self.outline_heading.max(1).saturating_add(1));
+        f32::from(level.saturating_sub(1)) * OUTLINE_STEP
+    }
+
     /// The height an empty paragraph occupies.
     pub(crate) fn empty_line_height(&mut self, paragraph: &Paragraph, document: &Document) -> f32 {
-        let properties = document.styles().resolve_run(paragraph.style(), &Default::default());
+        let mut properties = document.styles().resolve_run(paragraph.style(), &Default::default());
+        if self.plain() {
+            properties = plain_run(document, properties);
+        }
         match self.style_for(&properties) {
             Some(style) => style.line_height,
             None => 0.0,
@@ -4092,7 +4295,10 @@ impl<'a> LayoutEngine<'a> {
                 continue;
             }
 
-            let resolved = document.resolve_run(paragraph, run);
+            let mut resolved = document.resolve_run(paragraph, run);
+            if self.plain() {
+                resolved = plain_run(document, resolved);
+            }
             let Some(mut style) = self.style_for(&resolved) else {
                 continue;
             };
@@ -8842,6 +9048,24 @@ fn content_bottom(page: &Page) -> f32 {
     lines.chain(images).chain(shapes).chain(cells).chain(decorations).fold(0.0, f32::max)
 }
 
+/// What a run is drawn as in an outline with its formatting turned off: the
+/// document's own font at its own size, upright, unmarked and in the
+/// automatic colour — Word's Show Text Formatting unticked.
+///
+/// What says what the text is rather than how it looks stays: which way it
+/// reads, what language it is in, whether it is hidden, and whether it is
+/// raised as a footnote's mark is.
+fn plain_run(document: &Document, run: ResolvedRunProperties) -> ResolvedRunProperties {
+    ResolvedRunProperties {
+        right_to_left: run.right_to_left,
+        language: run.language,
+        hidden: run.hidden,
+        no_proof: run.no_proof,
+        vertical_align: run.vertical_align,
+        ..document.styles().resolve_run(None, &Default::default())
+    }
+}
+
 fn merge_page(page: &mut Page, from: Page, offset: f32) {
     let first = page.glyphs.len();
     for mut glyph in from.glyphs {
@@ -9030,10 +9254,14 @@ impl LayoutEngine<'_> {
         y
     }
 
-    /// Draws the footnotes of each page at its foot, under a short rule.
     /// Ends the one sheet of a page on the web: the footnotes and then the
     /// endnotes after the text, under a rule, and the sheet as long as all of
     /// it and its bottom margin.
+    ///
+    /// An outline is ended on the same sheet and shows no notes at all: Word's
+    /// outline is the headings and the text under them, and the web page it
+    /// shares this sheet with is the one that carries the notes after the
+    /// text. See [`Self::set_outline`].
     fn finish_web_page(&mut self, pages: &mut [Page], document: &Document, metrics: PageMetrics) {
         let Some(last) = pages.len().checked_sub(1) else { return };
         let scale = self.pixels_per_point();
@@ -9041,8 +9269,11 @@ impl LayoutEngine<'_> {
         let width = metrics.text_width() * scale;
         let mut y = pages.iter().map(content_bottom).fold(metrics.margin_top * scale, f32::max);
 
-        let mut notes = document.notes(wp_docx::notes::Kind::Footnote);
-        notes.extend(document.notes(wp_docx::notes::Kind::Endnote));
+        let mut notes = Vec::new();
+        if self.outline.is_none() {
+            notes = document.notes(wp_docx::notes::Kind::Footnote);
+            notes.extend(document.notes(wp_docx::notes::Kind::Endnote));
+        }
         if !notes.is_empty() {
             y += SEPARATOR_SPACE * scale;
             pages[last].decorations.push(Decoration {
@@ -9074,6 +9305,7 @@ impl LayoutEngine<'_> {
         pages[last].height = y + metrics.margin_bottom * scale;
     }
 
+    /// Draws the footnotes of each page at its foot, under a short rule.
     fn place_footnotes(
         &mut self,
         pages: &mut [Page],

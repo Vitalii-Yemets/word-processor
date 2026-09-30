@@ -35,8 +35,9 @@ pub(super) enum View {
     Web,
     /// The pages of print layout with the furniture taken away.
     Draft,
-    /// The headings alone, each indented to its level, with the body text
-    /// under them shown or hidden a level at a time.
+    /// Every paragraph indented to its level with a mark beside it, the text
+    /// under a heading shown or folded away, worked from a tab of its own.
+    /// See [`crate::editor::outline`].
     Outline,
     /// Print layout with nothing round it: no ribbon, no rulers, no pane.
     Reading,
@@ -59,6 +60,18 @@ impl View {
     #[must_use]
     pub(super) fn shows_furniture(self) -> bool {
         self != Self::Reading
+    }
+
+    /// Whether the rulers are drawn in this mode, where the person has them
+    /// on.
+    ///
+    /// Not in reading mode, which shows nothing round the document, and not
+    /// in the outline, where Word offers none: a paragraph there sits at its
+    /// level and not at its indents, and a ruler would measure nothing on
+    /// the page.
+    #[must_use]
+    pub(super) fn shows_rulers(self) -> bool {
+        !matches!(self, Self::Reading | Self::Outline)
     }
 
     /// Whether pages are drawn as sheets with edges and gaps between them.
@@ -89,23 +102,54 @@ impl Editor {
         if self.view == view {
             return Response::Ignored;
         }
-        self.view = view;
-        // Reading mode takes the ribbon and the panes away and gives them back
-        // on the way out, so leaving it looks like arriving.
-        if view == View::Reading {
+        // What the person has the rulers and the pane set to is what the
+        // view being left showed, if it showed them at all: a view that hides
+        // them says nothing about whether they are wanted.
+        if self.view.shows_rulers() {
             self.remembered_rulers = self.show_rulers;
+        }
+        if self.view.shows_furniture() {
             self.remembered_navigation = self.show_navigation;
-            self.show_rulers = false;
-            self.show_navigation = false;
-        } else {
-            self.show_rulers = self.remembered_rulers;
-            self.show_navigation = self.remembered_navigation;
+        }
+        let leaving_outline = self.view == View::Outline;
+        self.view = view;
+        // Reading mode takes the ribbon and the panes away and the outline
+        // the rulers, and both give them back on the way out, so leaving
+        // looks like arriving.
+        self.show_rulers = self.remembered_rulers && view.shows_rulers();
+        self.show_navigation = self.remembered_navigation && view.shows_furniture();
+        // The Outlining tab comes with the outline and goes with it, as
+        // Word's does: arriving opens it, and leaving it open goes back to
+        // Home, the way a tab that no longer applies always does.
+        if view == View::Outline {
+            self.ribbon.tab = crate::chrome::ribbon::Tab::Outlining;
+        } else if leaving_outline && self.ribbon.tab == crate::chrome::ribbon::Tab::Outlining {
+            self.ribbon.tab = crate::chrome::ribbon::Tab::Home;
         }
 
         self.relayout();
         self.clamp_scroll();
         self.reveal_caret();
         self.report(view.label())
+    }
+
+    /// Whether the rulers are on as the person set them, whatever the view
+    /// is showing: what the Ruler tick and Options say, and what is kept
+    /// between one run and the next.
+    #[must_use]
+    pub(super) fn rulers_setting(&self) -> bool {
+        if self.view.shows_rulers() {
+            self.show_rulers
+        } else {
+            self.remembered_rulers
+        }
+    }
+
+    /// Sets the rulers on or off as the person asks, and shows them if the
+    /// view shows rulers at all.
+    pub(super) fn set_rulers_setting(&mut self, on: bool) {
+        self.remembered_rulers = on;
+        self.show_rulers = on && self.view.shows_rulers();
     }
 
     /// The paper the current view lays the document out on.
@@ -126,11 +170,9 @@ impl Editor {
                 margin_left: VIEW_MARGIN,
                 ..document
             },
-            // The pages of print layout, with the margins taken away so the
-            // text fills the sheet. The pages themselves are still the
-            // document's, so a page break falls where it would when printed.
             // An outline has no pages: it is one long sheet as wide as the
-            // window, with room down the left for the levels to step into.
+            // window, with room down the left for the marks beside the
+            // paragraphs and for the levels to step into.
             View::Outline => PageMetrics {
                 width: self.viewport_points().max(document.width / 4.0),
                 height: f32::MAX / 4.0,
@@ -140,6 +182,9 @@ impl Editor {
                 margin_left: VIEW_MARGIN,
                 ..document
             },
+            // The pages of print layout, with the margins taken away so the
+            // text fills the sheet. The pages themselves are still the
+            // document's, so a page break falls where it would when printed.
             View::Draft => PageMetrics {
                 margin_top: VIEW_MARGIN / 2.0,
                 margin_right: VIEW_MARGIN,
@@ -170,6 +215,15 @@ mod tests {
             assert!(view.shows_furniture(), "{}", view.label());
         }
         assert!(!View::Reading.shows_furniture());
+    }
+
+    #[test]
+    fn reading_and_the_outline_draw_no_rulers() {
+        for view in [View::Print, View::Web, View::Draft] {
+            assert!(view.shows_rulers(), "{}", view.label());
+        }
+        assert!(!View::Reading.shows_rulers());
+        assert!(!View::Outline.shows_rulers());
     }
 
     #[test]

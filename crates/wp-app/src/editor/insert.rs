@@ -3074,6 +3074,9 @@ ogg,lancre
                     self.open_context_menu(x as i32, (y + height / 2.0) as i32);
                 }
             }
+            // The outline with its first heading folded, for a picture of a
+            // folded one: after `view=outline`.
+            "collapse-first" => self.fold_first_heading(),
             "tip" => {
                 // A button with the pointer resting on it, which is the only
                 // way to see what a tip looks like without one.

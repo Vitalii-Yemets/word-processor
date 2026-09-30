@@ -562,6 +562,11 @@ impl Editor {
                 if self.ink_release(x, y) {
                     return Response::Redraw;
                 }
+                // A mark of the outline let go: a click, or the end of a drag
+                // that moves a heading with everything under it.
+                if let Some(response) = self.release_outline_mark(x, y) {
+                    return response;
+                }
                 self.release_shape();
                 if self.pending_text_drag.is_some() || self.dragging_text() {
                     return self.drop_text(x, y, false);
@@ -627,6 +632,11 @@ impl Editor {
             }
 
             Event::DoubleClick { x, y } => {
+                // Two clicks on a heading's mark in the outline fold what is
+                // under it away, or bring it back.
+                if let Some(response) = self.double_click_outline_mark(x, y) {
+                    return response;
+                }
                 // Two clicks on a signature line ask to sign it, which is
                 // Word's own shortcut and the thing a person tries first.
                 if let Some(response) = self.sign_line_at(x, y) {
@@ -1083,6 +1093,13 @@ impl Editor {
             return Response::Redraw;
         }
 
+        // A mark of the outline is taken hold of before the page is asked
+        // about the press: it stands in the margin beside its paragraph, and
+        // a press on it selects the heading with everything under it.
+        if let Some(response) = self.press_outline_mark(x, y) {
+            return response;
+        }
+
         // Three clicks take the paragraph, and a click in the margin down the
         // left of the page takes the line. Both are asked before the page is,
         // because both are presses on the page.
@@ -1426,6 +1443,12 @@ impl Editor {
             }
         }
 
+        // A mark of the outline held down, being dragged to where its
+        // heading is to go.
+        if let Some(response) = self.drag_outline_mark(x, y, held) {
+            return response;
+        }
+
         // Text taken hold of inside the selection is carried until it is let
         // go. The press itself decided nothing; this is where it becomes a
         // drag. See [`dragtext`].
@@ -1760,7 +1783,10 @@ impl Editor {
             }
             Choice::EraserKind => return self.open_erasers(),
             Choice::Screenshot => Command::Screenshot,
-            Choice::OutlineLevel => Command::OutlineView,
+            // The outline's two boxes fill their own lists, which hang under
+            // them on the Outlining tab.
+            Choice::OutlineLevel => return self.open_outline(),
+            Choice::ParagraphLevel => return self.open_paragraph_level(),
             Choice::MatchField | Choice::MatchColumn => Command::MatchFields,
             Choice::TextEffect => Command::TextEffects,
             Choice::Envelope => Command::Envelopes,
@@ -1926,6 +1952,7 @@ impl Editor {
             | Choice::EraserKind
             | Choice::Screenshot
             | Choice::OutlineLevel
+            | Choice::ParagraphLevel
             | Choice::MatchField
             | Choice::MatchColumn
             | Choice::TextEffect
@@ -2038,6 +2065,7 @@ impl Editor {
             Choice::Screenshot => self.choose_screenshot(index),
             Choice::Recovered => self.choose_recovered(index),
             Choice::OutlineLevel => self.choose_outline_level(index),
+            Choice::ParagraphLevel => self.choose_paragraph_level(index),
             Choice::MatchField => self.choose_match_field(index),
             Choice::MatchColumn => self.choose_match_column(index),
             Choice::TextEffect => self.choose_text_effect(index),

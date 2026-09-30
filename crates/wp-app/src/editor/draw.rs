@@ -53,6 +53,11 @@ impl Editor {
             can_edit_here: !self.is_locked(),
             in_table: self.document.table_here().is_some(),
             in_diagram: self.chosen_diagram().is_some(),
+            in_outline: self.view == super::views::View::Outline,
+            outline_level: self.paragraph_level_name(),
+            show_level: self.show_level_name(),
+            outline_formatting: self.outlining.show_formatting,
+            outline_first_line: self.outlining.first_line_only,
             text_pane_open: self.show_text_pane,
             pen_in_hand: self.ink_tool()
                 == Some(super::inking::InkTool::Draw(super::inking::PenKind::Pen)),
@@ -175,6 +180,11 @@ impl Editor {
                 self.draw_marks(index, origin_x, y);
             }
         }
+
+        // The outline's marks beside its paragraphs, which are not part of
+        // the document either: they are what a heading is folded and moved
+        // by.
+        self.draw_outline();
 
         // A table's own two handles, over everything on the page: they are not
         // part of the document, they are what the pointer takes hold of.

@@ -123,6 +123,12 @@ pub fn points_the_reading_way(icon: Icon) -> bool {
             | Icon::Previous
             | Icon::Next
             | Icon::NextFootnote
+            // The outline's levels, which step in from the start as the
+            // indents do.
+            | Icon::PromoteToTop
+            | Icon::Promote
+            | Icon::Demote
+            | Icon::DemoteToBody
     )
 }
 

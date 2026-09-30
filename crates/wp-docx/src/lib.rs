@@ -86,6 +86,7 @@ pub mod model;
 pub mod notes;
 pub mod numberformat;
 pub mod numbering;
+pub mod outlining;
 pub mod page;
 pub mod pageborders;
 pub mod permissions;

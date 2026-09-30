@@ -97,6 +97,8 @@ pub enum Tab {
     /// The two that appear while a diagram is chosen, as Word's do.
     SmartArtDesign,
     SmartArtFormat,
+    /// And the one that comes with the outline view and goes with it.
+    Outlining,
 }
 
 impl Tab {
@@ -124,6 +126,7 @@ impl Tab {
         Tab::HeaderFooter,
         Tab::SmartArtDesign,
         Tab::SmartArtFormat,
+        Tab::Outlining,
     ];
 
     #[must_use]
@@ -146,6 +149,7 @@ impl Tab {
             Self::HeaderFooter => "Header & Footer",
             Self::SmartArtDesign => "SmartArt Design",
             Self::SmartArtFormat => "Format",
+            Self::Outlining => "Outlining",
         }
     }
 
@@ -195,6 +199,8 @@ impl Tab {
             // letter nothing else has.
             Self::SmartArtDesign => "D",
             Self::SmartArtFormat => "O",
+            // Word's own letter for it.
+            Self::Outlining => "U",
         }
     }
 
@@ -206,8 +212,20 @@ impl Tab {
             Self::TableDesign | Self::TableLayout => state.in_table,
             Self::HeaderFooter => state.in_furniture,
             Self::SmartArtDesign | Self::SmartArtFormat => state.in_diagram,
+            Self::Outlining => state.in_outline,
             _ => true,
         }
+    }
+
+    /// Whether a contextual tab stands before Home rather than after the
+    /// fixed tabs.
+    ///
+    /// Word puts the Outlining tab first, straight after File: while the
+    /// document is an outline, that tab is what it is worked from. The ones
+    /// for a table or a header are extras beside the tabs, and go last.
+    #[must_use]
+    pub fn leads(self) -> bool {
+        self == Self::Outlining
     }
 }
 
@@ -226,6 +244,9 @@ pub enum Item {
     Field(Command, Choice, f32),
     /// A box showing a measurement, with the label that names it.
     Measure(Command, &'static str, f32),
+    /// A box with a list under it, the words that say what it is set
+    /// before it: Word's Show Level.
+    Labelled(Command, Choice, &'static str, f32),
     /// The gallery of paragraph styles, each shown in its own formatting.
     StyleGallery,
     /// Starts a new row within the group.
@@ -608,11 +629,20 @@ impl Ribbon {
         let mut x = 8.0f32;
 
         // The contextual tabs come after the fixed ones and only while they
-        // apply, which is what Word does with Table Design and Table Layout.
-        let showing: Vec<Tab> = Tab::ALL
+        // apply, which is what Word does with Table Design and Table Layout —
+        // except the one that leads, which goes straight after File.
+        let contextual = |leading: bool| {
+            Tab::CONTEXTUAL
+                .iter()
+                .copied()
+                .filter(move |tab| tab.leads() == leading && tab.applies(state))
+        };
+        let showing: Vec<Tab> = Tab::ALL[..1]
             .iter()
             .copied()
-            .chain(Tab::CONTEXTUAL.iter().copied().filter(|tab| tab.applies(state)))
+            .chain(contextual(true))
+            .chain(Tab::ALL[1..].iter().copied())
+            .chain(contextual(false))
             .collect();
 
         for tab in &showing {
@@ -825,6 +855,9 @@ impl Ribbon {
                     engine.simple_line(t(label), 0.0, 0.0, 8.0, colour).width + width + 14.0
                 }
                 Item::Field(_, _, width) => *width,
+                Item::Labelled(_, _, label, width) => {
+                    engine.simple_line(t(label), 0.0, 0.0, 8.0, colour).width + width + 14.0
+                }
                 Item::StyleGallery => STYLE_TILE_WIDTH * self.style_tiles as f32,
                 Item::Break | Item::NewColumn => 0.0,
             }
@@ -1004,7 +1037,8 @@ impl Ribbon {
             | Item::Button(command, _)
             | Item::Letter(command, ..)
             | Item::Measure(command, ..)
-            | Item::Field(command, ..) => *command,
+            | Item::Field(command, ..)
+            | Item::Labelled(command, ..) => *command,
             Item::Break | Item::NewColumn | Item::StyleGallery => return 0.0,
         };
 
@@ -1172,6 +1206,19 @@ impl Ribbon {
                 let line = engine.simple_line(&text, left + 6.0, top + 17.0, 8.5, color);
                 renderer.draw_onto(canvas, &line, 0.0, 0.0);
                 chevron(canvas, left + width - 12.0, top + ROW_HEIGHT / 2.0, color);
+            }
+            Item::Labelled(_, choice, label, box_width) => {
+                // The words, and the box after them: the whole of it is the
+                // one control, and a press anywhere on it drops the list.
+                let line = engine.simple_line(t(label), left + 4.0, top + 17.0, 8.0, color);
+                let measured = line.width - (left + 4.0);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                let box_left = left + measured + 10.0;
+                field_box(canvas, box_left, top, *box_width, theme);
+                let text = field_text(*choice, state);
+                let line = engine.simple_line(&text, box_left + 6.0, top + 17.0, 8.5, color);
+                renderer.draw_onto(canvas, &line, 0.0, 0.0);
+                chevron(canvas, box_left + box_width - 12.0, top + ROW_HEIGHT / 2.0, color);
             }
             Item::Break | Item::NewColumn | Item::StyleGallery => {}
         }
@@ -2193,8 +2240,47 @@ pub fn groups_of(tab: Tab) -> &'static [Group] {
         Tab::HeaderFooter => HEADER_FOOTER_GROUPS,
         Tab::SmartArtDesign => SMARTART_DESIGN_GROUPS,
         Tab::SmartArtFormat => SMARTART_FORMAT_GROUPS,
+        Tab::Outlining => OUTLINING_GROUPS,
     }
 }
+
+/// The tab that comes with the outline view, and goes with it.
+///
+/// Word's, in Word's arrangement: the levels and the moves in two rows —
+/// promote to the top, promote, the level of the paragraph, demote, demote
+/// to body text; move up, move down, expand, collapse — and beside them how
+/// the outline is shown; then the way out. Word has a Master Document group
+/// between the two, for documents made of other documents, which this
+/// program does not make or open, so there is nothing for it to hold here.
+static OUTLINING_GROUPS: &[Group] = &[
+    Group {
+        label: "Outline Tools",
+        items: &[
+            Item::Button(Command::OutlinePromoteToTop, Icon::PromoteToTop),
+            Item::Button(Command::OutlinePromote, Icon::Promote),
+            Item::Field(Command::OutlineLevelBox, Choice::ParagraphLevel, 96.0),
+            Item::Button(Command::OutlineDemote, Icon::Demote),
+            Item::Button(Command::OutlineDemoteToBody, Icon::DemoteToBody),
+            Item::Break,
+            Item::Button(Command::OutlineMoveUp, Icon::MoveUp),
+            Item::Button(Command::OutlineMoveDown, Icon::MoveDown),
+            Item::Button(Command::OutlineExpand, Icon::Expand),
+            Item::Button(Command::OutlineCollapse, Icon::Collapse),
+            Item::NewColumn,
+            Item::Labelled(Command::OutlineShowLevel, Choice::OutlineLevel, "Show Level:", 96.0),
+            Item::Break,
+            Item::Small(Command::OutlineShowFormatting, Icon::Letter, "Show Text Formatting"),
+            Item::Break,
+            Item::Small(Command::OutlineFirstLineOnly, Icon::FirstLine, "Show First Line Only"),
+        ],
+        launcher: None,
+    },
+    Group {
+        label: "Close",
+        items: &[Item::Large(Command::CloseOutlineView, Icon::Close, "Close Outline View")],
+        launcher: None,
+    },
+];
 
 /// Word's SmartArt Design tab: the words of the chosen diagram and how it
 /// is drawn.
@@ -2340,6 +2426,7 @@ pub fn name_of(command: Command) -> Option<&'static str> {
                     Item::Letter(found, label, _) | Item::Measure(found, label, _) => {
                         (*found, *label)
                     }
+                    Item::Labelled(found, _, label, _) => (*found, label.trim_end_matches(':')),
                     Item::Button(..)
                     | Item::Field(..)
                     | Item::StyleGallery
@@ -2423,6 +2510,7 @@ pub fn command_named(name: &str) -> Option<Command> {
                     Item::Letter(found, label, _) | Item::Measure(found, label, _) => {
                         (*found, *label)
                     }
+                    Item::Labelled(found, _, label, _) => (*found, label.trim_end_matches(':')),
                     Item::Button(..)
                     | Item::Field(..)
                     | Item::StyleGallery
@@ -2462,6 +2550,9 @@ fn commands_in(items: &[Item]) -> Vec<(Command, &'static str)> {
             Item::Letter(command, label, _) | Item::Measure(command, label, _) => {
                 Some((*command, *label))
             }
+            // A box with words before it is called what the words say, less
+            // the colon that joins them to the box.
+            Item::Labelled(command, _, label, _) => Some((*command, label.trim_end_matches(':'))),
             // A button with no label and a box showing a value are named by
             // what they are about, which the catalogue of icons knows.
             Item::Button(command, _) | Item::Field(command, ..) => {
@@ -2503,6 +2594,10 @@ pub fn field_text(choice: Choice, state: &ToolbarState) -> String {
         Choice::Size => super::format_size(state.size),
         Choice::Style => state.style_name.clone(),
         Choice::Zoom => format!("{}%", state.zoom.round() as i32),
+        // The Outlining tab's two: the level of the paragraph at the caret,
+        // and how deep the outline is shown.
+        Choice::ParagraphLevel => state.outline_level.clone(),
+        Choice::OutlineLevel => state.show_level.clone(),
         _ => String::new(),
     }
 }
@@ -2521,7 +2616,9 @@ pub enum Boxed {
 #[must_use]
 pub fn box_of(command: Command) -> Option<Boxed> {
     every_item().find_map(|item| match item {
-        Item::Field(found, choice, _) if *found == command => Some(Boxed::Field(*choice)),
+        Item::Field(found, choice, _) | Item::Labelled(found, choice, ..) if *found == command => {
+            Some(Boxed::Field(*choice))
+        }
         Item::Measure(found, ..) if *found == command => Some(Boxed::Measure),
         _ => None,
     })
@@ -2532,7 +2629,9 @@ pub fn box_of(command: Command) -> Option<Boxed> {
 #[must_use]
 pub fn field_of(choice: Choice) -> Option<Command> {
     every_item().find_map(|item| match item {
-        Item::Field(command, found, _) if *found == choice => Some(*command),
+        Item::Field(command, found, _) | Item::Labelled(command, found, ..) if *found == choice => {
+            Some(*command)
+        }
         _ => None,
     })
 }
@@ -2564,7 +2663,8 @@ pub fn every_command() -> &'static [Command] {
                     | Item::Letter(command, ..)
                     | Item::Measure(command, ..)
                     | Item::Button(command, _)
-                    | Item::Field(command, ..) => add(*command),
+                    | Item::Field(command, ..)
+                    | Item::Labelled(command, ..) => add(*command),
                     Item::StyleGallery => add(Command::ChooseStyle),
                     Item::Break | Item::NewColumn => {}
                 }
@@ -2671,7 +2771,8 @@ mod tests {
                     | Item::Button(command, _)
                     | Item::Letter(command, ..)
                     | Item::Measure(command, ..)
-                    | Item::Field(command, ..) => *command == menu.command,
+                    | Item::Field(command, ..)
+                    | Item::Labelled(command, ..) => *command == menu.command,
                     Item::Break | Item::NewColumn | Item::StyleGallery => false,
                 });
             assert!(on_a_tab, "{:?} drops a menu and is on no tab", menu.command);

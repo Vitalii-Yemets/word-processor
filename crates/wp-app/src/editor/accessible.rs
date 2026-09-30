@@ -1212,6 +1212,8 @@ fn toggled(command: Command, state: &crate::chrome::ToolbarState) -> Option<bool
             | Command::ReviewingPane
             | Command::ShowComments
             | Command::DesignMode
+            | Command::OutlineShowFormatting
+            | Command::OutlineFirstLineOnly
     );
     toggles.then(|| crate::chrome::is_active(command, state))
 }

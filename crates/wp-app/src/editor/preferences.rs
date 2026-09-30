@@ -26,8 +26,7 @@ impl Editor {
             self.theme = Theme::of(if dark { Mode::Dark } else { Mode::Light });
         }
         if let Some(rulers) = settings.rulers {
-            self.show_rulers = rulers;
-            self.remembered_rulers = rulers;
+            self.set_rulers_setting(rulers);
         }
         if let Some(navigation) = settings.navigation {
             self.show_navigation = navigation;
@@ -83,7 +82,9 @@ impl Editor {
     /// Writes down how the window is now.
     pub(super) fn remember_window(&mut self) {
         self.settings.dark = Some(self.theme.mode == Mode::Dark);
-        self.settings.rulers = Some(self.show_rulers);
+        // The person's own setting, which a view that hides the rulers does
+        // not change.
+        self.settings.rulers = Some(self.rulers_setting());
         self.settings.navigation = Some(self.show_navigation);
         self.settings.zoom = Some(self.zoom);
         self.settings.save();

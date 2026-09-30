@@ -57,7 +57,8 @@ fn from_the_tables() -> BTreeSet<String> {
                 match item {
                     Item::Large(_, _, label)
                     | Item::Small(_, _, label)
-                    | Item::Measure(_, label, _) => {
+                    | Item::Measure(_, label, _)
+                    | Item::Labelled(_, _, label, _) => {
                         out.insert((*label).to_owned());
                     }
                     // A letter is a letter in every language: the B of Bold

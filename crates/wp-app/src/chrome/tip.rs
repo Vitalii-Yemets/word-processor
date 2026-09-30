@@ -140,6 +140,24 @@ pub fn label_of(command: Command) -> Option<&'static str> {
         Command::Format(CharacterFormat::Italic) => "Italic",
         Command::Format(CharacterFormat::Underline) => "Underline",
         Command::Format(CharacterFormat::Strikethrough) => "Strikethrough",
+        // The Outlining tab's arrows and boxes carry no words, and the rest
+        // of it is on a tab that comes and goes, which the ribbon's own list
+        // of names does not look through: every one of them is named here,
+        // in Word's words, for the tip, the letter over it and a screen
+        // reader alike.
+        Command::OutlinePromoteToTop => "Promote to Heading 1",
+        Command::OutlinePromote => "Promote",
+        Command::OutlineLevelBox => "Outline Level",
+        Command::OutlineDemote => "Demote",
+        Command::OutlineDemoteToBody => "Demote to Body Text",
+        Command::OutlineMoveUp => "Move Up",
+        Command::OutlineMoveDown => "Move Down",
+        Command::OutlineExpand => "Expand",
+        Command::OutlineCollapse => "Collapse",
+        Command::OutlineShowLevel => "Show Level",
+        Command::OutlineShowFormatting => "Show Text Formatting",
+        Command::OutlineFirstLineOnly => "Show First Line Only",
+        Command::CloseOutlineView => "Close Outline View",
         // Everything else says what it is on its own face.
         _ => return super::ribbon::name_of(command),
     };

@@ -56,6 +56,7 @@
 = Align Right
 = Alignment
 = All
+= All Levels
 = All caps
 = All files
 = All files (*.*)
@@ -234,11 +235,13 @@
 = Clipboard
 = Close
 = Close Header and Footer
+= Close Outline View
 = Close the Comparison
 = Closing
 = Clustered Bar
 = Clustered Column
 = Code
+= Collapse
 = Color
 = Colored Fill - Accent 1
 = Colored Fill - Accent 2
@@ -327,6 +330,7 @@
 = Delete Table
 = Delete part
 = Demote
+= Demote to Body Text
 = Description
 = Design
 = Design Mode
@@ -405,6 +409,7 @@
 = Everyone
 = Everyone May Edit
 = Exceptions...
+= Expand
 = Export
 = Feedback
 = Fields
@@ -602,6 +607,7 @@
 = Left:
 = Legacy
 = Legacy Tools
+= Level {0}
 = Lime
 = Limit consecutive hyphens to
 = Limit formatting to a selection of styles
@@ -749,7 +755,10 @@
 = Orientation
 = Original
 = Outline
+= Outline Level
+= Outline Tools
 = Outline level
+= Outlining
 = Outside
 = Oval
 = PDF Files (*.pdf)
@@ -838,6 +847,7 @@
 = Printing stopped after {0} sheets
 = Project
 = Promote
+= Promote to Heading 1
 = Proofing
 = Properties
 = Protect
@@ -966,10 +976,14 @@
 = Shapes
 = Show
 = Show All Regions I Can Edit
+= Show First Line Only
+= Show Level
+= Show Level:
 = Show Marks
 = Show Markup
 = Show Preview
 = Show Repairs
+= Show Text Formatting
 = Show changes
 = Show changes in
 = Show measurements in
