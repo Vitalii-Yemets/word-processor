@@ -226,6 +226,12 @@ impl Editor {
 
         let Some(at) = self.position_at(x, y) else { return Response::Ignored };
 
+        // And out of the table it began in, whole rows and the text past the
+        // table. See [`super::tablework::drag_out_of_the_table`].
+        if self.drag_out_of_the_table(at) {
+            return Response::Redraw;
+        }
+
         match self.drag_by {
             Granularity::Character => {
                 self.document.move_caret(at, true);

@@ -654,23 +654,129 @@ pub fn merge_with_previous(root: &mut Element, paragraph_index: usize) -> bool {
 /// Removes a paragraph outright.
 ///
 /// Used when a selection covers a whole paragraph: its text is not deleted so
-/// much as the paragraph itself stops existing.
+/// much as the paragraph itself stops existing — unless it is what keeps a
+/// table cell whole. See [`remove_or_empty_paragraph`].
 pub fn remove_paragraph(root: &mut Element, index: usize) -> bool {
-    let Some(path) = paragraph_path(root, index) else {
-        return false;
-    };
-    let Some((position, parent_path)) = path.split_last() else {
-        return false;
-    };
+    remove_or_empty_paragraph(root, index).is_some()
+}
+
+/// Removes a paragraph, or empties it where it has to stay: answers whether it
+/// went, or `None` when there is no such paragraph.
+///
+/// # Why a cell's last paragraph stays
+///
+/// Because a cell always has a paragraph and ends with one. A cell left with
+/// none, or ending with a table, is a file Word opens only after calling it
+/// damaged — and that is what deleting a stretch of text running through the
+/// cells of a table used to leave behind. So the paragraph that would leave
+/// its cell that way is emptied instead: it keeps its own properties and loses
+/// everything in it, which is the cell Word leaves when its text is deleted.
+pub(crate) fn remove_or_empty_paragraph(root: &mut Element, index: usize) -> Option<bool> {
+    let path = paragraph_path(root, index)?;
+    remove_or_empty_at(root, &path)
+}
+
+/// The same for the paragraph at a path, for a caller that found its paths
+/// before it changed anything.
+pub(crate) fn remove_or_empty_at(root: &mut Element, path: &[usize]) -> Option<bool> {
+    let (position, parent_path) = path.split_last()?;
     let parent_path = parent_path.to_vec();
     let position = *position;
 
-    let Some(parent) = element_at_path_mut(root, &parent_path) else {
-        return false;
-    };
-    if position >= parent.children.len() {
-        return false;
+    let parent = element_at_path_mut(root, &parent_path)?;
+    let is_paragraph = parent
+        .children
+        .get(position)
+        .and_then(Node::as_element)
+        .is_some_and(|child| child.is(Some(W), "p"));
+    if !is_paragraph {
+        return None;
+    }
+    if parent.is(Some(W), "tc") && !ends_with_a_paragraph_without(parent, position) {
+        let Node::Element(paragraph) = &mut parent.children[position] else { return None };
+        paragraph
+            .children
+            .retain(|node| node.as_element().is_some_and(|child| child.is(Some(W), "pPr")));
+        return Some(false);
     }
     parent.children.remove(position);
-    true
+    Some(true)
+}
+
+/// Whether a cell would still end with a paragraph with one of its children
+/// taken out.
+///
+/// Its last block — a paragraph, a table, or a control or custom markup
+/// holding either — is what it ends with; a bookmark's end or a comment's
+/// after it is not a block and does not count.
+fn ends_with_a_paragraph_without(cell: &Element, without: usize) -> bool {
+    const BLOCKS: &[&str] = &["p", "tbl", "sdt", "customXml"];
+    cell.children
+        .iter()
+        .enumerate()
+        .filter(|(at, _)| *at != without)
+        .filter_map(|(_, node)| node.as_element())
+        .rfind(|child| BLOCKS.iter().any(|local| child.is(Some(W), local)))
+        .is_some_and(|last| !last.is(Some(W), "tbl"))
+}
+
+/// The paths to two paragraphs, found in one walk.
+///
+/// What deciding whether a selection runs through the cells of a table has to
+/// ask about both of its ends; two walks from the top would cost twice as
+/// much for every selection that spans a paragraph break.
+#[must_use]
+pub(crate) fn paragraph_paths(
+    root: &Element,
+    one: usize,
+    other: usize,
+) -> (Option<Vec<usize>>, Option<Vec<usize>>) {
+    fn walk(
+        element: &Element,
+        path: &mut Vec<usize>,
+        counter: &mut usize,
+        wanted: (usize, usize),
+        found: &mut (Option<Vec<usize>>, Option<Vec<usize>>),
+    ) {
+        for (child_index, node) in element.children.iter().enumerate() {
+            if found.0.is_some() && found.1.is_some() {
+                return;
+            }
+            let Node::Element(child) = node else { continue };
+            if child.namespace.as_deref() != Some(W) {
+                continue;
+            }
+            path.push(child_index);
+            if child.is(Some(W), "p") {
+                if *counter == wanted.0 {
+                    found.0 = Some(path.clone());
+                }
+                if *counter == wanted.1 {
+                    found.1 = Some(path.clone());
+                }
+                *counter += 1;
+            } else {
+                walk(child, path, counter, wanted, found);
+            }
+            path.pop();
+        }
+    }
+
+    let mut found = (None, None);
+    walk(root, &mut Vec::new(), &mut 0, (one, other), &mut found);
+    found
+}
+
+/// How many paragraphs one child of an element stands for: one for a
+/// paragraph, every paragraph inside anything else of the format's, and none
+/// for what is not the format's — counted the way every paragraph number is.
+#[must_use]
+pub(crate) fn paragraphs_in(child: &Element) -> usize {
+    if child.namespace.as_deref() != Some(W) {
+        0
+    } else if child.is(Some(W), "p") {
+        1
+    } else {
+        paragraph_count(child)
+    }
 }

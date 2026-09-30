@@ -2391,6 +2391,13 @@ impl Editor {
             Key::Function(12) => self.run(Command::SaveAs),
             Key::Function(1) => self.run(Command::ShowTraining),
             Key::Function(_) => Response::Ignored,
+            // With Shift, in a table, the arrows select cells once they reach
+            // the edge of one. See [`Editor::shift_arrow_in_table`].
+            Key::Left | Key::Right | Key::Up | Key::Down
+                if extend && self.shift_arrow_in_table(key) =>
+            {
+                self.moved()
+            }
             Key::Left => {
                 self.document.caret_left(extend);
                 self.step_over_hidden_cells(false, extend);

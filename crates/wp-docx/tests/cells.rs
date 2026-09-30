@@ -510,3 +510,228 @@ fn merged_ruled_and_shaded_cells_are_written_from_the_model() {
     let xml = document.package().xml_part("word/document.xml").expect("there").expect("text");
     assert!(xml.contains(r#"<w:vMerge w:val="restart"/>"#), "{xml}");
 }
+
+/// Whether every cell of every table has a paragraph and ends with one.
+///
+/// The schema's rule, and Word's: a cell with no paragraph in it, or one that
+/// ends with a table, is a file Word opens only after calling it damaged.
+fn cells_are_whole(blocks: &[Block]) -> bool {
+    blocks.iter().all(|block| match block {
+        Block::Paragraph(_) => true,
+        Block::Table(table) => table.rows.iter().flat_map(|row| &row.cells).all(|cell| {
+            matches!(cell.blocks.last(), Some(Block::Paragraph(_))) && cells_are_whole(&cell.blocks)
+        }),
+    })
+}
+
+/// Holds a document to that rule, as it is and as it opens again once saved.
+fn assert_whole(document: &Document, after: &str) {
+    let tables: Vec<_> = document
+        .body()
+        .blocks
+        .into_iter()
+        .filter_map(|block| match block {
+            Block::Table(table) => Some(every_text(&table)),
+            Block::Paragraph(_) => None,
+        })
+        .collect();
+    assert!(
+        cells_are_whole(&document.body().blocks),
+        "{after} left a cell with no paragraph: {tables:?}"
+    );
+    let reopened = round_trip(document);
+    assert!(cells_are_whole(&reopened.body().blocks), "{after}: reopened, a cell has no paragraph");
+}
+
+/// A place some way into the first paragraph of a cell.
+fn inside(document: &Document, row: usize, column: usize, offset: usize) -> TextPosition {
+    let (first, _) = document.cell_paragraphs(row, column).expect("a cell");
+    TextPosition::new(first, offset)
+}
+
+#[test]
+fn every_edit_over_a_stretch_through_cells_leaves_every_cell_a_paragraph() {
+    // A stretch from inside the second cell of the first row to inside the
+    // first of the second runs, in the order the file is written, through the
+    // third cell of the first row — which is not between them on the page.
+    // Every edit that takes a selection away took that cell's only paragraph
+    // with it. The stretch is the rectangle its two ends make, as Word's
+    // selection is: the first two cells of the first two rows, and nothing of
+    // the third column or the third row.
+    type Edit = fn(&mut Document) -> bool;
+    let edits: [(&str, Edit); 11] = [
+        ("Delete", Document::delete_selection),
+        ("Backspace", Document::backspace),
+        ("Delete forward", Document::delete_forward),
+        ("Ctrl+Backspace", Document::delete_word_back),
+        ("Ctrl+Delete", Document::delete_word_forward),
+        ("typing", |document| document.type_text("X")),
+        ("typing a tab", |document| document.type_text("a\tb")),
+        ("Enter", Document::press_enter),
+        ("pasting text", |document| document.paste("Z\nW")),
+        ("pasting paragraphs", |document| {
+            document.paste_blocks(&[
+                Block::Paragraph(Paragraph::text("Z")),
+                Block::Paragraph(Paragraph::text("W")),
+            ])
+        }),
+        // Joining the third cell's paragraph onto the second's, across the
+        // first cell boundary the stretch crosses.
+        ("joining", |document| {
+            let (third, _) = document.cell_paragraphs(0, 2).expect("a cell");
+            document.merge_with_previous(third)
+        }),
+    ];
+    for (name, edit) in edits {
+        let mut document = filled(3, 3);
+        let (from, to) = (inside(&document, 0, 1, 1), inside(&document, 1, 0, 1));
+        document.set_caret(from);
+        document.extend_selection_to(to);
+        edit(&mut document);
+
+        assert_whole(&document, name);
+        let table = table_of(&document);
+        assert_eq!(table.rows.len(), 3, "{name} took a row");
+        for (row, column, text) in [(0, 2, "02"), (1, 2, "12"), (2, 0, "20"), (2, 1, "21")] {
+            assert_eq!(
+                texts(&table, row, column),
+                [text],
+                "{name} reached the cell at {row},{column}, outside the rectangle"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_stretch_from_one_cell_into_another_is_the_rectangle_between_them() {
+    // Selected as text from the middle of 0,1 to the middle of 1,0; taken, as
+    // Word takes it, as the four cells of the rectangle, each whole.
+    let mut document = filled(3, 3);
+    document.set_caret(inside(&document, 0, 1, 1));
+    document.extend_selection_to(inside(&document, 1, 0, 1));
+
+    let expected: Vec<(TextPosition, TextPosition)> = [(0, 0), (0, 1), (1, 0), (1, 1)]
+        .iter()
+        .map(|&(row, column)| document.cell_text_range(row, column).expect("a cell"))
+        .collect();
+    assert_eq!(document.selections(), expected, "the selection is not the rectangle");
+
+    assert!(document.delete_selection());
+    let table = table_of(&document);
+    for (row, column) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+        assert_eq!(texts(&table, row, column), [""], "the cell at {row},{column} was not emptied");
+    }
+    assert_eq!(texts(&table, 0, 2), ["02"]);
+    assert_eq!(document.caret(), inside(&document, 0, 0, 0), "the caret is not in the first cell");
+}
+
+#[test]
+fn typing_over_a_block_of_cells_types_into_the_first_even_when_it_is_empty() {
+    // Word empties every cell and types into the first. A block of cells that
+    // hold nothing has nothing to select, and the typing went into the last
+    // cell instead, where the caret of the selection was left.
+    let mut document = document(3, 3);
+    select_block(&mut document, (0, 1), (0, 0));
+    assert!(document.type_text("X"));
+    let table = table_of(&document);
+    assert_eq!(texts(&table, 0, 0), ["X"], "the typing did not go into the first cell");
+    assert_eq!(texts(&table, 1, 0), [""]);
+    assert!(document.undo(), "the typing was not a step to undo");
+    assert_eq!(texts(&table_of(&document), 0, 0), [""]);
+}
+
+#[test]
+fn a_stretch_from_a_cell_out_of_the_table_takes_its_rows_whole() {
+    // Word's rule when a selection leaves a table: the rows it covers are
+    // taken whole, from the row it began in. Deleting them takes them out,
+    // and whatever of the text outside was selected with them.
+    let mut document = filled(3, 3);
+    let (_, last) = document.table_paragraphs().expect("the table");
+    let (row, from) = (inside(&document, 1, 0, 0), inside(&document, 1, 1, 1));
+    document.set_caret(TextPosition::new(last + 1, 0));
+    assert!(document.type_text("after the table"));
+    document.set_caret(from);
+    document.extend_selection_to(TextPosition::new(last + 1, 6));
+
+    let (start, end) = document.selection().expect("a selection");
+    assert_eq!(start, row, "the selection does not start with the row");
+    assert_eq!(end, TextPosition::new(last + 1, 6));
+
+    assert!(document.delete_selection());
+    assert_whole(&document, "deleting rows and text");
+    let table = table_of(&document);
+    assert_eq!(every_text(&table), [[["00"], ["01"], ["02"]]], "the rows did not go");
+    let after = document.table_paragraphs_at(1).expect("the table").1 + 1;
+    assert_eq!(document.paragraph_text(after).as_deref(), Some("the table"));
+    assert_eq!(document.caret(), TextPosition::new(after, 0), "the caret is not after the table");
+}
+
+#[test]
+fn a_stretch_into_a_table_from_above_takes_its_rows_whole() {
+    let mut document = filled(3, 3);
+    let to = inside(&document, 1, 1, 1);
+    document.set_caret(TextPosition::new(0, 3));
+    document.extend_selection_to(to);
+
+    assert!(document.delete_selection());
+    assert_whole(&document, "deleting text and rows");
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("bef"));
+    assert_eq!(every_text(&table_of(&document)), [[["20"], ["21"], ["22"]]]);
+}
+
+#[test]
+fn a_cell_that_is_a_whole_row_is_emptied_and_not_taken_out() {
+    // In a table one column wide the text of a cell is the whole of its row.
+    // Deleting it empties the cell: a row goes only when the selection
+    // reaches past it, out of the table.
+    let mut document = filled(3, 1);
+    document.set_caret(inside(&document, 1, 0, 2));
+    assert!(document.press_enter());
+    assert!(document.type_text("more"));
+    let (from, to) = document.cell_text_range(1, 0).expect("a cell");
+    document.set_caret(from);
+    document.extend_selection_to(to);
+    assert!(document.delete_selection());
+    assert_whole(&document, "deleting the text of a cell");
+    assert_eq!(every_text(&table_of(&document)), [[["00"]], [[""]], [["20"]]], "a row went");
+
+    // And a block of two of its cells: emptied, not taken out either.
+    select_block(&mut document, (0, 1), (0, 0));
+    assert!(document.delete_selection());
+    assert_whole(&document, "deleting a block of cells");
+    assert_eq!(every_text(&table_of(&document)), [[[""]], [[""]], [["20"]]], "a row went");
+}
+
+#[test]
+fn select_all_and_delete_takes_the_table_with_everything_else() {
+    // Word's Ctrl+A and Delete leave one empty paragraph. The table stayed,
+    // every one of its cells without a paragraph.
+    let mut document = filled(3, 3);
+    document.select_all();
+    assert!(document.delete_selection());
+    assert_whole(&document, "Ctrl+A and Delete");
+    let blocks = document.body().blocks;
+    assert!(blocks.iter().all(|block| matches!(block, Block::Paragraph(_))), "the table stayed");
+    assert_eq!(document.plain_text().trim(), "", "something was left");
+}
+
+#[test]
+fn removing_the_last_paragraph_of_a_cell_leaves_it_one_empty_paragraph() {
+    // A cell always has a paragraph. Taking its last one out is emptying it.
+    let mut document = filled(2, 2);
+    let count = document.paragraph_count();
+    let (only, _) = document.cell_paragraphs(0, 1).expect("a cell");
+    assert!(wp_docx::position::remove_paragraph(&mut document.tree_mut().root, only));
+    assert_eq!(document.paragraph_count(), count, "the cell's only paragraph went");
+    assert_eq!(document.paragraph_text(only).as_deref(), Some(""), "and was not emptied");
+    assert_whole(&document, "removing a cell's last paragraph");
+
+    // One of two is taken out, as it always was.
+    document.set_caret(inside(&document, 1, 1, 2));
+    assert!(document.press_enter());
+    let (first, last) = document.cell_paragraphs(1, 1).expect("a cell");
+    assert_eq!(last, first + 1);
+    assert!(wp_docx::position::remove_paragraph(&mut document.tree_mut().root, last));
+    document.set_caret(TextPosition::new(first, 0));
+    assert_eq!(document.cell_paragraphs(1, 1), Some((first, first)));
+}

@@ -122,7 +122,7 @@ pub mod workbook;
 
 use history::History;
 use wp_opc::{Package, Relationship, Relationships, TargetMode};
-use wp_xml::tree::{Element, XmlTree};
+use wp_xml::tree::{Element, Node, XmlTree};
 
 pub use format::CharacterFormat;
 pub use history::EditKind;
@@ -1069,14 +1069,26 @@ impl Document {
     /// of the others. What a command that can work on only one stretch should
     /// use: a comment is about one piece of text, and so is a hyperlink.
     /// Everything that can work on all of them uses [`Self::selections`].
+    ///
+    /// A stretch dragged from one cell of a table into another is the first
+    /// cell of the rectangle it makes, and one that runs out of a table is
+    /// grown to whole rows there: see [`Self::selections`].
     #[must_use]
     pub fn selection(&self) -> Option<(TextPosition, TextPosition)> {
-        match self.anchor {
+        let live = match self.anchor {
             Some(anchor) if anchor != self.caret => {
-                Some(if anchor <= self.caret { (anchor, self.caret) } else { (self.caret, anchor) })
+                if anchor <= self.caret {
+                    (anchor, self.caret)
+                } else {
+                    (self.caret, anchor)
+                }
             }
-            _ => self.selections().into_iter().next(),
-        }
+            _ => return self.selections().into_iter().next(),
+        };
+        self.as_selected(live.0, live.1)
+            .into_iter()
+            .find(|(start, end)| start != end)
+            .or_else(|| self.selections().into_iter().next())
     }
 
     /// Every selected stretch, in document order, with none of them touching.
@@ -1085,8 +1097,39 @@ impl Document {
     /// the same words twice selected them once, and a command that ran over
     /// them twice would bold what was already bold and delete what was already
     /// gone.
+    ///
+    /// # What a stretch through a table selects
+    ///
+    /// Not the text between its ends. One from a cell into another is the
+    /// rectangle of cells its two ends make, one stretch per cell — the cells
+    /// between two cells in the order the file is written are not the cells
+    /// between them on the page — and one that runs out of a table takes whole
+    /// rows there. That is Word's selection, it is what is drawn, and so it is
+    /// what every command that works on the selection is given: a stretch run
+    /// through the cells as text emptied cells nobody saw selected of their
+    /// only paragraph. See [`Self::as_selected`].
     #[must_use]
     pub fn selections(&self) -> Vec<(TextPosition, TextPosition)> {
+        let mut out = self.stretches_as_made();
+        // Within a paragraph a stretch is only ever itself, which is nearly
+        // every stretch there is: the paths need not be looked for.
+        if out.iter().any(|(start, end)| start.paragraph != end.paragraph) {
+            out = out
+                .into_iter()
+                .flat_map(|(start, end)| self.as_selected(start, end))
+                .filter(|(start, end)| start != end)
+                .collect();
+        }
+        Self::in_order(out)
+    }
+
+    /// The stretches of the selection as they were made — dragged, or set —
+    /// before a table has any say in what they select.
+    ///
+    /// What tells which cells a block is: its two ends. See
+    /// [`Self::selected_cells`].
+    #[must_use]
+    pub(crate) fn stretches_as_made(&self) -> Vec<(TextPosition, TextPosition)> {
         let mut out = self.extra.clone();
         if let Some(anchor) = self.anchor {
             if anchor != self.caret {
@@ -1097,6 +1140,11 @@ impl Document {
                 });
             }
         }
+        Self::in_order(out)
+    }
+
+    /// Stretches in document order, those that overlap made one.
+    fn in_order(mut out: Vec<(TextPosition, TextPosition)>) -> Vec<(TextPosition, TextPosition)> {
         if out.len() < 2 {
             return out;
         }
@@ -1172,47 +1220,222 @@ impl Document {
     /// A selection spanning paragraphs takes the tail of the first, all of the
     /// ones between, and the head of the last, and then joins what remains —
     /// which is what deleting a stretch of text across a paragraph break means.
+    /// A block of cells is emptied, every cell of it, and the table stays:
+    /// taking the cells out is what Delete Rows is for.
     pub fn delete_selection(&mut self) -> bool {
         let stretches = self.selections();
         let Some((first, _)) = stretches.first().copied() else {
             return false;
         };
         self.record(EditKind::Structural, first, false);
+        let removed = self.take_away_selection();
+        if removed {
+            self.modified = true;
+        }
+        removed
+    }
+
+    /// Whether anything is selected: a stretch of text, or a block of cells —
+    /// which may be cells with nothing in them to select.
+    #[must_use]
+    pub(crate) fn has_selection(&self) -> bool {
+        !self.selections().is_empty() || self.selected_block().is_some()
+    }
+
+    /// Takes what is selected out, and puts the caret where it began, without
+    /// recording a step: for callers that record their own, and put something
+    /// in its place.
+    ///
+    /// For a block of cells, where it began is the start of its first cell.
+    /// That is where Word leaves the caret, and where what is typed over the
+    /// block goes — even when that cell held nothing, and so had nothing of
+    /// it in the selection. Answers whether anything was taken out.
+    pub(crate) fn take_away_selection(&mut self) -> bool {
+        let first_cell = self.selected_block().and_then(|range| self.block_start(&range));
+        let stretches = self.selections();
+        let mut caret = stretches.first().map_or(self.caret, |(start, _)| *start);
 
         // Last first. Removing a stretch shortens the text after it and moves
         // every position past it; taking the last one out first means the ones
         // still to go are where they were when they were found.
         let mut removed = false;
         for (start, end) in stretches.into_iter().rev() {
-            removed |= self.remove_range(start, end);
+            let (gone, at) = self.remove_range(start, end);
+            removed |= gone;
+            caret = at;
         }
-        if removed {
-            self.caret = first;
-            self.anchor = None;
-            self.extra.clear();
-            self.modified = true;
-        }
+        // Emptying the cells of a block joins each one's paragraphs into its
+        // first, and so moves nothing before the last paragraph of each: the
+        // first cell starts where it started.
+        self.caret = self.clamp(first_cell.unwrap_or(caret));
+        self.anchor = None;
+        self.extra.clear();
         removed
     }
 
     /// Deletes a range without recording history, for callers that already did.
-    fn remove_range(&mut self, start: TextPosition, end: TextPosition) -> bool {
+    ///
+    /// Answers whether anything went, and where the caret belongs afterwards:
+    /// where the range began, unless that went with it.
+    ///
+    /// A range from one cell into another, or out of a table, is taken as what
+    /// it selects rather than as the text between its ends — the cells of the
+    /// rectangle it makes, or whole rows. See [`Self::as_selected`].
+    fn remove_range(&mut self, start: TextPosition, end: TextPosition) -> (bool, TextPosition) {
         if start.paragraph == end.paragraph {
-            return self.erase_range(start.paragraph, start.offset, end.offset);
+            return (self.erase_range(start.paragraph, start.offset, end.offset), start);
         }
 
+        let selected = self.as_selected(start, end);
+        if selected != [(start, end)] {
+            let mut removed = false;
+            let mut caret = selected.first().map_or(start, |(first, _)| *first);
+            for (from, to) in selected.into_iter().rev() {
+                let (gone, at) = self.remove_range(from, to);
+                removed |= gone;
+                caret = at;
+            }
+            return (removed, caret);
+        }
+        self.remove_stretch(start, end)
+    }
+
+    /// Deletes a stretch that runs over paragraph breaks, where
+    /// [`Self::as_selected`] has already said it is text: in one cell, or
+    /// outside every table, or taking the rows of a table whole.
+    ///
+    /// The tail of the first paragraph goes, the head of the last, and
+    /// everything between: a table or a row of one that lies wholly inside it
+    /// as a whole, and every other paragraph on its own. What is left of the
+    /// last paragraph then joins what is left of the first — but never across
+    /// the edge of a cell, and a cell's last paragraph is emptied rather than
+    /// taken (see [`position::remove_or_empty_paragraph`]): a cell always has
+    /// a paragraph.
+    fn remove_stretch(&mut self, start: TextPosition, end: TextPosition) -> (bool, TextPosition) {
         let first_length = self.paragraph_text(start.paragraph).unwrap_or_default().len();
+        let last_length = self.paragraph_text(end.paragraph).unwrap_or_default().len();
+        // Whether every paragraph from one to another is inside the stretch,
+        // and the stretch reaches past them. A row that holds both its ends is
+        // where the stretch is rather than what it takes: all the text of the
+        // one cell of a row is emptied, not taken out with its row.
+        let covers = |first: usize, last: usize| {
+            (first > start.paragraph || (first == start.paragraph && start.offset == 0))
+                && (last < end.paragraph || (last == end.paragraph && end.offset >= last_length))
+                && (first != start.paragraph || last != end.paragraph)
+        };
+
+        // What goes is worked out before anything does, while every paragraph
+        // still has the number the stretch was given in: once a row is out,
+        // the paragraphs after it are numbered differently, and a table asked
+        // about then looked as if the stretch covered all of it. From the
+        // back, so taking each one out moves nothing still to be taken.
+        let (mut first_kept, mut last_kept) = (true, true);
+        let mut going = Vec::new();
+        let mut index = end.paragraph;
+        while index >= start.paragraph {
+            let next = match self.whole_block_at(index, &covers) {
+                Some((first, last, path)) => {
+                    first_kept &= first > start.paragraph;
+                    last_kept &= last < end.paragraph;
+                    going.push((path, true));
+                    first.checked_sub(1)
+                }
+                None => {
+                    if index != start.paragraph && index != end.paragraph {
+                        if let Some(path) = position::paragraph_path(&self.tree.root, index) {
+                            going.push((path, false));
+                        }
+                    }
+                    index.checked_sub(1)
+                }
+            };
+            let Some(next) = next else { break };
+            index = next;
+        }
+
         self.erase_range(start.paragraph, start.offset, first_length);
         self.erase_range(end.paragraph, 0, end.offset);
-
-        // The paragraphs wholly inside the selection go from the back, so the
-        // indices of those still to be removed do not shift.
-        for index in (start.paragraph + 1..end.paragraph).rev() {
-            position::remove_paragraph(&mut self.tree.root, index);
+        let mut between_kept = false;
+        for (path, whole) in going {
+            if whole {
+                self.remove_block(&path);
+            } else {
+                let gone = position::remove_or_empty_at(&mut self.tree.root, &path);
+                between_kept |= gone == Some(false);
+            }
         }
-        // What is left of the last paragraph joins what is left of the first.
-        position::merge_with_previous(&mut self.tree.root, start.paragraph + 1);
-        true
+
+        // What is left of the last paragraph joins what is left of the first,
+        // when both are still there with nothing left between them. Across
+        // the edge of a cell the join is refused, which is what keeps the text
+        // of one cell out of the next.
+        if first_kept && last_kept && !between_kept {
+            position::merge_with_previous(&mut self.tree.root, start.paragraph + 1);
+        }
+        let caret = if first_kept { start } else { TextPosition::new(start.paragraph, 0) };
+        (true, caret)
+    }
+
+    /// The outermost table, or row of one, that a paragraph is in and that
+    /// lies wholly inside a stretch being deleted, the stretch reaching past
+    /// it: its first and last paragraph and its path.
+    ///
+    /// Those go whole. A table whose every paragraph is selected with text
+    /// beside it is selected, and so is a row: what Word deletes when a
+    /// selection takes in a table and the text beside it, and the only way
+    /// rows can go from a table without leaving cells behind with nothing in
+    /// them.
+    fn whole_block_at(
+        &self,
+        index: usize,
+        covers: &impl Fn(usize, usize) -> bool,
+    ) -> Option<(usize, usize, Vec<usize>)> {
+        let root = &self.tree.root;
+        let path = position::paragraph_path(root, index)?;
+        for depth in 1..path.len() {
+            let element = edit::element_at_path(root, &path[..depth])?;
+            if !element.is(Some(read::W), "tbl") && !element.is(Some(read::W), "tr") {
+                continue;
+            }
+            // Its paragraphs are counted from the one the path leads to: those
+            // before it inside the element, and all of them.
+            let mut before = 0;
+            let mut inside = element;
+            for &step in &path[depth..] {
+                before += inside.children[..step]
+                    .iter()
+                    .filter_map(Node::as_element)
+                    .map(position::paragraphs_in)
+                    .sum::<usize>();
+                inside = inside.children.get(step)?.as_element()?;
+            }
+            let first = index.checked_sub(before)?;
+            let last = first + position::paragraph_count(element).checked_sub(1)?;
+            if covers(first, last) {
+                return Some((first, last, path[..depth].to_vec()));
+            }
+        }
+        None
+    }
+
+    /// Takes a table or a row out of the tree. A table left with rows after
+    /// one of them went has its merges down mended: see
+    /// [`cells::mend_merges`].
+    fn remove_block(&mut self, path: &[usize]) {
+        let Some((&at, parent_path)) = path.split_last() else { return };
+        let prefix = self.prefix();
+        let Some(parent) = edit::element_at_path_mut(&mut self.tree.root, parent_path) else {
+            return;
+        };
+        if at >= parent.children.len() {
+            return;
+        }
+        let row =
+            parent.children[at].as_element().is_some_and(|element| element.is(Some(read::W), "tr"));
+        parent.children.remove(at);
+        if row {
+            cells::mend_merges(parent, prefix.as_deref());
+        }
     }
 
     /// Keeps a position inside the document.
@@ -1248,19 +1471,21 @@ impl Document {
         // Typing over a selection made of several stretches — a block of the
         // cells of a table, or pieces picked out with Ctrl held — empties all
         // of them and types where the first of them was. Word does the same:
-        // what was selected is what is replaced, not the last piece of it.
-        if self.selections().len() > 1 {
-            self.begin_gesture();
-            let emptied = self.delete_selection();
+        // what was selected is what is replaced, not the last piece of it. A
+        // block goes this way even when its cells hold nothing to select: the
+        // typing goes into its first cell.
+        if self.selections().len() > 1 || self.selected_block().is_some() {
+            let caret = self.caret;
+            self.record(EditKind::Structural, caret, false);
+            self.take_away_selection();
             let at = self.caret;
-            let typed = emptied && self.write_text(at, text);
-            if typed {
+            if self.write_text(at, text) {
                 self.caret = TextPosition::new(at.paragraph, at.offset + text.len());
                 self.apply_pending(at, self.caret);
-                self.modified = true;
             }
-            self.end_gesture();
-            return emptied || typed;
+            self.modified = true;
+            self.history.break_merge();
+            return true;
         }
 
         // Typing over a selection is one change, not two: taking it back has to
@@ -1294,7 +1519,10 @@ impl Document {
                 }
             }
             self.record(EditKind::Structural, start, false);
-            self.remove_range(start, end);
+            // What the stretch began with may have gone with it — the first
+            // of the rows of a table it took whole — and the text then goes
+            // where that was.
+            let (_, start) = self.remove_range(start, end);
             self.anchor = None;
 
             let prefix = self.prefix();
@@ -1433,20 +1661,19 @@ impl Document {
     ///
     /// With something selected this replaces it with the break, and the two
     /// together are one change, so one undo brings the selection back.
+    ///
+    /// Over a block of cells it empties them and breaks the first, as typing
+    /// over them types into the first.
     pub fn press_enter(&mut self) -> bool {
-        let at = match self.selection() {
-            Some((start, end)) => {
-                self.record(EditKind::Structural, start, false);
-                self.remove_range(start, end);
-                self.anchor = None;
-                self.caret = start;
-                start
-            }
-            None => {
-                let at = self.caret;
-                self.record(EditKind::Structural, TextPosition::new(at.paragraph + 1, 0), false);
-                at
-            }
+        let at = if self.has_selection() {
+            let start = self.selection().map_or(self.caret, |(start, _)| start);
+            self.record(EditKind::Structural, start, false);
+            self.take_away_selection();
+            self.caret
+        } else {
+            let at = self.caret;
+            self.record(EditKind::Structural, TextPosition::new(at.paragraph + 1, 0), false);
+            at
         };
 
         let prefix = self.prefix();
@@ -1469,16 +1696,16 @@ impl Document {
             return false;
         }
 
-        let start = match self.selection() {
-            Some((start, end)) => {
-                self.record(EditKind::Structural, start, false);
-                self.remove_range(start, end);
-                start
-            }
-            None => {
-                self.record(EditKind::Structural, self.caret, false);
-                self.caret
-            }
+        // Over a block of cells the paste goes into the first of them, once
+        // every one is emptied, as typing does.
+        let start = if self.has_selection() {
+            let start = self.selection().map_or(self.caret, |(start, _)| start);
+            self.record(EditKind::Structural, start, false);
+            self.take_away_selection();
+            self.caret
+        } else {
+            self.record(EditKind::Structural, self.caret, false);
+            self.caret
         };
         self.caret = start;
         self.anchor = None;

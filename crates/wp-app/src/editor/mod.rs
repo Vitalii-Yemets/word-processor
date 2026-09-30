@@ -236,7 +236,8 @@ pub struct Editor {
     /// over. Remembered because the selection itself cannot say: once it covers
     /// the rectangle, both its ends are corners of the rectangle and neither of
     /// them says which corner the hand started from. See
-    /// [`tablework::extend_cell_drag`].
+    /// [`tablework::extend_cell_drag`]. Shift and the arrows keep their block
+    /// of cells anchored here too: see [`tablework::shift_arrow_in_table`].
     cell_anchor: Option<(usize, usize)>,
     /// The line of a table being dragged, while one is being dragged.
     ///

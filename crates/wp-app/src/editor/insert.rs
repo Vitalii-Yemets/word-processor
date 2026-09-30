@@ -995,6 +995,21 @@ impl Editor {
                 self.relayout();
                 self.run(crate::chrome::Command::SplitCells);
             }
+            // Such a table with the caret in its first cell and Shift+Down
+            // pressed twice, as a person presses it: the first column taken,
+            // and drawn as the selection cell by cell.
+            "shiftdown" => {
+                self.fill_a_table_for_a_picture();
+                for _ in 0..2 {
+                    self.handle(wp_shell::Event::KeyDown {
+                        key: wp_shell::Key::Down,
+                        modifiers: wp_shell::Modifiers {
+                            shift: true,
+                            ..wp_shell::Modifiers::default()
+                        },
+                    });
+                }
+            }
             "options" => {
                 self.open_options();
             }

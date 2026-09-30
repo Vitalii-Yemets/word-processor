@@ -324,8 +324,12 @@ impl Document {
         // options depend on that — choosing another one takes the last paste
         // back and puts it down again the other way.
         self.begin_gesture();
-        if self.selection().is_some() {
-            self.delete_selection();
+        // A block of cells is emptied and the paste goes into its first cell,
+        // even when that cell held nothing to select.
+        if self.has_selection() {
+            let caret = self.caret();
+            self.record(crate::history::EditKind::Structural, caret, false);
+            self.take_away_selection();
         }
 
         let mut changed = false;

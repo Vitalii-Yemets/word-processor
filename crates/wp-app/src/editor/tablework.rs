@@ -16,6 +16,14 @@ use wp_shell::Response;
 
 use super::Editor;
 
+/// What is drawn as the selection. See [`Editor::selection_as_drawn`].
+pub(super) struct DrawnSelection {
+    /// The cells shown selected, each with the page it is on.
+    pub(super) cells: Vec<(usize, wp_layout::PlacedCell)>,
+    /// And the stretches of text shown selected.
+    pub(super) text: Vec<(wp_docx::TextPosition, wp_docx::TextPosition)>,
+}
+
 impl Editor {
     /// Moves the caret a cell on, or with Shift a cell back.
     ///
@@ -103,11 +111,63 @@ impl Editor {
     ///
     /// Empty when the selection is a stretch of text — inside one cell or
     /// anywhere outside a table — because then it is the text that is shown as
-    /// selected and not the cells.
+    /// selected and not the cells. The rows a selection takes whole by
+    /// running out of a table are cells as well, as Word draws them: the text
+    /// on either side of them is drawn as text. See
+    /// [`Self::selection_as_drawn`], which is what drawing asks; this is the
+    /// half of it the tests look at.
+    #[cfg(test)]
     pub(super) fn selected_cell_rects(&self) -> Vec<(usize, wp_layout::PlacedCell)> {
-        let Some(range) = self.document.selected_cells() else { return Vec::new() };
+        self.selection_as_drawn().cells
+    }
+
+    /// What is drawn as the selection: the cells shown selected, and the
+    /// stretches of text — none when the selection is a block of cells, and
+    /// otherwise every stretch but for the rows of a table it takes whole,
+    /// which are among the cells.
+    pub(super) fn selection_as_drawn(&self) -> DrawnSelection {
+        if let Some(block) = self.block_cell_rects() {
+            return DrawnSelection { cells: block, text: Vec::new() };
+        }
+        let rows = self.document.whole_rows_selected();
+        let mut cells = Vec::new();
+        if !rows.is_empty() {
+            for (index, page) in self.pages.iter().enumerate() {
+                for cell in &page.cells {
+                    let at = cell.at.paragraph;
+                    if rows.iter().any(|(first, last)| (*first..=*last).contains(&at)) {
+                        cells.push((index, *cell));
+                    }
+                }
+            }
+        }
+
+        let mut text = Vec::new();
+        for (start, end) in self.document.selections() {
+            let mut from = start;
+            for &(first, last) in &rows {
+                if last < from.paragraph || first > end.paragraph {
+                    continue;
+                }
+                // Up to the end of the paragraph before the row — an offset
+                // past the end of a line is the end of it.
+                if let Some(before) = first.checked_sub(1).filter(|_| from.paragraph < first) {
+                    text.push((from, wp_docx::TextPosition::new(before, usize::MAX)));
+                }
+                from = wp_docx::TextPosition::new(last + 1, 0);
+            }
+            if from < end {
+                text.push((from, end));
+            }
+        }
+        DrawnSelection { cells, text }
+    }
+
+    /// The cells of a block of more than one, when that is what is selected.
+    fn block_cell_rects(&self) -> Option<Vec<(usize, wp_layout::PlacedCell)>> {
+        let range = self.document.selected_cells()?;
         if range.rows.0 == range.rows.1 && range.columns.0 == range.columns.1 {
-            return Vec::new();
+            return None;
         }
         let mut out = Vec::new();
         for row in range.rows.0..=range.rows.1 {
@@ -117,7 +177,7 @@ impl Editor {
                 }
             }
         }
-        out
+        Some(out)
     }
 
     /// Selects a rectangle of the cells of the table at the caret.
@@ -254,21 +314,9 @@ impl Editor {
     /// row below. Word moves down a row, into the cell under the one the caret
     /// is in, and that is what this does.
     pub(super) fn step_table_row(&mut self, downwards: bool, extend: bool) -> bool {
-        let Some(place) = self.document.table_here() else { return false };
-        let Some((first, last)) = self.document.cell_paragraphs(place.row, place.column) else {
-            return false;
-        };
-
         // Another line of the same cell that way is an ordinary move.
-        let lines = self.lines();
-        let Some(current) = self.caret_line() else { return false };
-        let Some(index) = lines.iter().position(|entry| *entry == current) else { return false };
-        let beside = if downwards { index + 1 } else { index.wrapping_sub(1) };
-        if let Some(&(page, line)) = lines.get(beside) {
-            let paragraph = self.pages[page].lines[line].paragraph;
-            if (first..=last).contains(&paragraph) {
-                return false;
-            }
+        if self.document.table_here().is_none() || self.cell_goes_on(downwards) != Some(false) {
+            return false;
         }
 
         let wanted_x = self.caret_across();
@@ -299,6 +347,182 @@ impl Editor {
         };
         let paragraph = if downwards { below } else { above };
         self.caret_onto_paragraph(paragraph, !downwards, across, extend)
+    }
+
+    /// Whether the caret's cell has another line of its own above the caret,
+    /// or below it: `None` when the caret is in no cell, or on no line.
+    fn cell_goes_on(&self, downwards: bool) -> Option<bool> {
+        let place = self.document.table_here()?;
+        let (first, last) = self.document.cell_paragraphs(place.row, place.column)?;
+        let lines = self.lines();
+        let current = self.caret_line()?;
+        let index = lines.iter().position(|entry| *entry == current)?;
+        let beside = if downwards { index + 1 } else { index.wrapping_sub(1) };
+        Some(lines.get(beside).is_some_and(|&(page, line)| {
+            (first..=last).contains(&self.pages[page].lines[line].paragraph)
+        }))
+    }
+
+    /// Shift and an arrow in a table, which select cells rather than text.
+    ///
+    /// Returns whether it took the key. Word's rules: inside the text of a
+    /// cell, Shift+Left and Shift+Right select letters as anywhere else, and
+    /// the step past the cell's edge takes the cell and the one beside it,
+    /// whole; Shift+Up and Shift+Down take the cell and the one above or
+    /// below — unless the cell has another line that way, which is text too.
+    /// Once the selection is cells, each arrow moves the far corner of the
+    /// block a cell, and out of the top or the bottom of the table it takes
+    /// the rows from the one it began in, and the text beyond them.
+    ///
+    /// # Why not the ordinary move with Shift
+    ///
+    /// Because that moved the caret into the next cell as text, and the
+    /// selection became a stretch from one cell to another running through
+    /// every cell between them in the order the file is written: drawn as a
+    /// block of two cells, and acted on as the text of five. Delete then took
+    /// the only paragraph of cells nobody saw selected, which is a file Word
+    /// calls damaged. This goes through [`Self::select_cells`], as a drag and
+    /// Shift and a press do.
+    pub(super) fn shift_arrow_in_table(&mut self, key: wp_shell::Key) -> bool {
+        use wp_shell::Key;
+
+        let Some(place) = self.document.table_here() else { return false };
+        let here = (place.row, place.column);
+
+        // A block already: its far corner moves a cell.
+        if let Some(block) = self.document.selected_block() {
+            if block.table != place.table {
+                return false;
+            }
+            let anchor = self.block_anchor(&block);
+            // The corner of the block across from where it is anchored.
+            let corner = (
+                if anchor.0 == block.rows.0 { block.rows.1 } else { block.rows.0 },
+                if anchor.1 == block.columns.0 { block.columns.1 } else { block.columns.0 },
+            );
+            let corner = match key {
+                Key::Left => (corner.0, corner.1.saturating_sub(1)),
+                Key::Right => (corner.0, corner.1 + 1),
+                Key::Up if corner.0 == 0 => {
+                    return self.take_rows_out_of_the_table(anchor.0, false)
+                }
+                Key::Up => (corner.0 - 1, corner.1),
+                Key::Down if corner.0 + 1 >= place.rows => {
+                    return self.take_rows_out_of_the_table(anchor.0, true);
+                }
+                Key::Down => (corner.0 + 1, corner.1),
+                _ => return false,
+            };
+            return self.select_block_from(anchor, corner);
+        }
+
+        // Text inside the one cell — an anchor anywhere else is a selection
+        // from outside the table, and moves as text does.
+        let anchor = self.document.selection_anchor().unwrap_or(self.document.caret());
+        let anchored = self.document.table_at(anchor.paragraph);
+        if anchored.is_none_or(|at| at.table != place.table || (at.row, at.column) != here) {
+            return false;
+        }
+        let Some((first, last)) = self.document.cell_paragraphs(here.0, here.1) else {
+            return false;
+        };
+        let caret = self.document.caret();
+        let end = self.document.paragraph_text(last).map_or(0, |text| text.len());
+        let corner = match key {
+            Key::Left if caret == wp_docx::TextPosition::new(first, 0) => {
+                (here.0, here.1.saturating_sub(1))
+            }
+            Key::Right if caret == wp_docx::TextPosition::new(last, end) => (here.0, here.1 + 1),
+            Key::Up | Key::Down => {
+                let downwards = key == Key::Down;
+                if self.cell_goes_on(downwards) != Some(false) {
+                    return false;
+                }
+                match self.document.cell_over_or_under(downwards) {
+                    Some(cell) => cell,
+                    None => return self.take_rows_out_of_the_table(here.0, downwards),
+                }
+            }
+            _ => return false,
+        };
+        self.cell_anchor = Some(here);
+        self.select_block_from(here, corner)
+    }
+
+    /// Which corner a block is anchored at: the cell a drag or the keyboard
+    /// began it in, when that is a corner of it, and its first cell when the
+    /// block was made some other way — by the Select menu, say.
+    fn block_anchor(&self, block: &wp_docx::cells::CellRange) -> (usize, usize) {
+        self.cell_anchor
+            .filter(|&(row, column)| {
+                (row == block.rows.0 || row == block.rows.1)
+                    && (column == block.columns.0 || column == block.columns.1)
+            })
+            .unwrap_or((block.rows.0, block.columns.0))
+    }
+
+    /// Selects the block from one cell to another, the second held inside the
+    /// row it is in — a row ends where its cells do, and a merged one has
+    /// fewer.
+    fn select_block_from(&mut self, anchor: (usize, usize), corner: (usize, usize)) -> bool {
+        let cells = self.document.cells_in_row(corner.0);
+        let corner = (corner.0, corner.1.min(cells.saturating_sub(1)));
+        let rows = (anchor.0.min(corner.0), anchor.0.max(corner.0));
+        let columns = (anchor.1.min(corner.1), anchor.1.max(corner.1));
+        self.select_cells(rows, columns)
+    }
+
+    /// Takes the rows of the table from one to its end, or to its start, and
+    /// the caret on out of it: Word's Shift+Down out of the last row, or
+    /// Shift+Up out of the first.
+    ///
+    /// The selection is anchored at the edge of the row it began in and ends
+    /// where the caret lands past the table; the document takes every row
+    /// between whole. See [`wp_docx::Document::selections`].
+    fn take_rows_out_of_the_table(&mut self, row: usize, downwards: bool) -> bool {
+        let Some((above, below)) = self.document.table_paragraphs() else { return false };
+        let outside = if downwards { below + 1 } else { above.wrapping_sub(1) };
+        // Nothing past the table that way: there is nowhere for the
+        // selection to go, and the key has done all it can.
+        if outside >= self.document.paragraph_count() {
+            return true;
+        }
+        let edge = if downwards {
+            self.document
+                .cell_paragraphs(row, 0)
+                .map(|(first, _)| wp_docx::TextPosition::new(first, 0))
+        } else {
+            let last_cell = self.document.cells_in_row(row).saturating_sub(1);
+            self.document.cell_text_range(row, last_cell).map(|(_, end)| end)
+        };
+        let Some(edge) = edge else { return false };
+        let wanted_x = self.caret_across();
+        self.document.set_caret(edge);
+        self.caret_onto_paragraph(outside, !downwards, wanted_x, true)
+    }
+
+    /// A drag that began in a cell and has gone out of its table: from the
+    /// start of the cell it began in to where the pointer is, which the
+    /// document takes as whole rows from that cell's row, and the text past
+    /// the table as far as the pointer — Word's. A block of cells the drag
+    /// made on its way out is given up for them.
+    ///
+    /// Returns whether it took the drag.
+    pub(super) fn drag_out_of_the_table(&mut self, at: wp_docx::TextPosition) -> bool {
+        let Some((row, column)) = self.cell_anchor else { return false };
+        let inside = self.document.selection_anchor().unwrap_or(self.document.caret());
+        let Some(began) = self.document.table_at(inside.paragraph) else { return false };
+        if self.document.table_at(at.paragraph).is_some_and(|there| there.table == began.table) {
+            return false;
+        }
+        let Some((first, _)) = self.document.cell_paragraphs_at(inside.paragraph, row, column)
+        else {
+            return false;
+        };
+        self.document.set_caret(wp_docx::TextPosition::new(first, 0));
+        self.document.move_caret(at, true);
+        self.needs_redraw = true;
+        true
     }
 
     /// Where the caret is across the page, which a vertical move keeps.
@@ -1309,5 +1533,384 @@ mod tests {
         assert_eq!(rows.len(), 3, "the table did not survive");
         assert_eq!(rows[0][0], "One");
         assert_eq!(rows[0][1], "Two");
+    }
+
+    /// A key pressed with Control held, and Shift as well if asked.
+    fn control(editor: &mut Editor, key: Key, shift: bool) {
+        editor.handle(Event::KeyDown {
+            key,
+            modifiers: Modifiers { control: true, shift, ..Modifiers::default() },
+        });
+    }
+
+    /// What each cell of the table holds, paragraph by paragraph: what a
+    /// review writes as `(P[00])(P[01])…`. A cell with no paragraph at all is
+    /// an empty list.
+    fn shapes(editor: &Editor) -> Vec<Vec<Vec<String>>> {
+        let Some(table) = editor.document.body().blocks.into_iter().find_map(|block| match block {
+            Block::Table(table) => Some(table),
+            Block::Paragraph(_) => None,
+        }) else {
+            return Vec::new();
+        };
+        let words = |blocks: &[Block]| -> Vec<String> {
+            blocks
+                .iter()
+                .filter_map(|block| match block {
+                    Block::Paragraph(paragraph) => Some(paragraph.plain_text()),
+                    Block::Table(_) => None,
+                })
+                .collect()
+        };
+        table
+            .rows
+            .iter()
+            .map(|row| row.cells.iter().map(|cell| words(&cell.blocks)).collect())
+            .collect()
+    }
+
+    /// The same, written out by hand for a test to expect.
+    fn cells(rows: &[&[&[&str]]]) -> Vec<Vec<Vec<String>>> {
+        rows.iter()
+            .map(|row| {
+                row.iter()
+                    .map(|cell| cell.iter().map(|text| (*text).to_owned()).collect())
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Whether every cell of every table has a paragraph and ends with one —
+    /// a cell that does not is a file Word calls damaged.
+    fn cells_are_whole(blocks: &[Block]) -> bool {
+        blocks.iter().all(|block| match block {
+            Block::Paragraph(_) => true,
+            Block::Table(table) => table.rows.iter().flat_map(|row| &row.cells).all(|cell| {
+                matches!(cell.blocks.last(), Some(Block::Paragraph(_)))
+                    && cells_are_whole(&cell.blocks)
+            }),
+        })
+    }
+
+    /// Holds the document to that, as it is and as it opens again once saved.
+    fn assert_whole(editor: &Editor) {
+        assert!(
+            cells_are_whole(&editor.document.body().blocks),
+            "a cell has no paragraph: {:?}",
+            shapes(editor)
+        );
+        let bytes = editor.document.save().expect("saving");
+        let reopened = Document::open(&bytes).expect("the file does not open again");
+        assert!(cells_are_whole(&reopened.body().blocks), "reopened, a cell has no paragraph");
+    }
+
+    /// The table filled in, with the caret at the start of one cell.
+    fn filled_at(row: usize, column: usize) -> Editor {
+        let mut editor = with_table();
+        fill(&mut editor);
+        caret_into(&mut editor, row, column);
+        editor
+    }
+
+    #[test]
+    fn shift_and_down_takes_the_cell_and_the_one_below_it() {
+        // Word's Shift+Down in a table: the caret's cell and the one below,
+        // and a row more at each press. It was a stretch of text from one
+        // cell to the next row, through every cell between in the order the
+        // file is written — drawn as two cells and acted on as five.
+        let mut editor = filled_at(0, 0);
+        key(&mut editor, Key::Down, true);
+        let taken = editor.document.selected_cells().expect("a block of cells");
+        assert_eq!((taken.rows, taken.columns), ((0, 1), (0, 0)));
+        for row in 0..3 {
+            for column in 0..3 {
+                let wanted = column == 0 && row < 2;
+                assert_eq!(
+                    is_selected(&editor, row, column),
+                    wanted,
+                    "the cell at {row},{column} is {} the selection",
+                    if wanted { "not in" } else { "in" }
+                );
+            }
+        }
+
+        key(&mut editor, Key::Down, true);
+        let taken = editor.document.selected_cells().expect("a block of cells");
+        assert_eq!((taken.rows, taken.columns), ((0, 2), (0, 0)), "it did not grow by a row");
+        assert_eq!(editor.selected_cell_rects().len(), 3, "the column is not drawn");
+
+        key(&mut editor, Key::Up, true);
+        let taken = editor.document.selected_cells().expect("a block of cells");
+        assert_eq!((taken.rows, taken.columns), ((0, 1), (0, 0)), "Shift+Up did not give it back");
+    }
+
+    #[test]
+    fn delete_after_shift_and_down_empties_the_two_cells_and_nothing_else() {
+        // It emptied the whole first row and took the only paragraph of the
+        // second and third cells — a file Word calls damaged.
+        let mut editor = filled_at(0, 0);
+        key(&mut editor, Key::Down, true);
+        key(&mut editor, Key::Delete, false);
+        assert_eq!(
+            shapes(&editor),
+            cells(&[
+                &[&[""], &["01"], &["02"]],
+                &[&[""], &["11"], &["12"]],
+                &[&["20"], &["21"], &["22"]],
+            ])
+        );
+        assert_whole(&editor);
+    }
+
+    #[test]
+    fn typing_after_shift_and_down_empties_the_cells_and_types_in_the_first() {
+        let mut editor = filled_at(0, 0);
+        key(&mut editor, Key::Down, true);
+        typed(&mut editor, "X");
+        assert_eq!(
+            shapes(&editor),
+            cells(&[
+                &[&["X"], &["01"], &["02"]],
+                &[&[""], &["11"], &["12"]],
+                &[&["20"], &["21"], &["22"]],
+            ])
+        );
+        assert_whole(&editor);
+    }
+
+    #[test]
+    fn enter_after_shift_and_down_empties_the_cells_and_breaks_the_first() {
+        let mut editor = filled_at(0, 0);
+        key(&mut editor, Key::Down, true);
+        key(&mut editor, Key::Enter, false);
+        assert_eq!(
+            shapes(&editor),
+            cells(&[
+                &[&["", ""], &["01"], &["02"]],
+                &[&[""], &["11"], &["12"]],
+                &[&["20"], &["21"], &["22"]],
+            ])
+        );
+        assert_whole(&editor);
+    }
+
+    #[test]
+    fn pasting_after_shift_and_down_empties_the_cells_and_pastes_into_the_first() {
+        use crate::editor::paste::PasteAs;
+        for how in [PasteAs::TextOnly, PasteAs::KeepSource] {
+            let mut editor = filled_at(0, 0);
+            key(&mut editor, Key::Down, true);
+            let blocks = [Block::Paragraph(Paragraph::text("Z"))];
+            editor.put_down("Z", &blocks, how);
+            assert_eq!(
+                shapes(&editor),
+                cells(&[
+                    &[&["Z"], &["01"], &["02"]],
+                    &[&[""], &["11"], &["12"]],
+                    &[&["20"], &["21"], &["22"]],
+                ]),
+                "pasted {how:?}"
+            );
+            assert_whole(&editor);
+        }
+    }
+
+    #[test]
+    fn bold_after_shift_and_down_twice_bolds_the_column_it_shows() {
+        // It bolded everything from the second cell of the first row to the
+        // first of the third: seven cells, while the drawing showed three.
+        let mut editor = filled_at(0, 1);
+        key(&mut editor, Key::Down, true);
+        key(&mut editor, Key::Down, true);
+        control(&mut editor, Key::Letter('b'), false);
+
+        let bold: Vec<Vec<bool>> = (0..3)
+            .map(|row| {
+                (0..3)
+                    .map(|column| {
+                        let (first, _) =
+                            editor.document.cell_paragraphs(row, column).expect("a cell");
+                        editor.document.formatting_at(TextPosition::new(first, 1)).0.bold
+                    })
+                    .collect()
+            })
+            .collect();
+        let column = vec![false, true, false];
+        assert_eq!(bold, vec![column.clone(), column.clone(), column]);
+    }
+
+    #[test]
+    fn shift_and_right_goes_through_the_text_and_then_takes_the_cell_beside() {
+        // Inside the text of a cell, Shift+Right selects letters; the step
+        // past the cell's end takes the cell and the next one, whole. It ran
+        // into the next cell as text, and Delete then did nothing to it.
+        let mut editor = filled_at(0, 0);
+        key(&mut editor, Key::Right, true);
+        key(&mut editor, Key::Right, true);
+        assert!(editor.selected_cell_rects().is_empty(), "letters were taken as cells");
+        assert_eq!(editor.document.selected_text(), "00");
+
+        key(&mut editor, Key::Right, true);
+        let taken = editor.document.selected_cells().expect("a block of cells");
+        assert_eq!((taken.rows, taken.columns), ((0, 0), (0, 1)));
+        assert_eq!(editor.selected_cell_rects().len(), 2, "the two cells are not drawn");
+        key(&mut editor, Key::Delete, false);
+        assert_eq!(
+            shapes(&editor)[0],
+            cells(&[&[&[""], &[""], &["02"]]])[0],
+            "Delete did not empty the two cells"
+        );
+        assert_whole(&editor);
+
+        // And the other way, from the start of a cell.
+        let mut editor = filled_at(1, 2);
+        key(&mut editor, Key::Left, true);
+        let taken = editor.document.selected_cells().expect("a block of cells");
+        assert_eq!((taken.rows, taken.columns), ((1, 1), (1, 2)), "Shift+Left did not take cells");
+    }
+
+    #[test]
+    fn a_plain_arrow_or_escape_gives_up_the_block() {
+        let mut editor = filled_at(0, 0);
+        key(&mut editor, Key::Down, true);
+        assert_eq!(editor.selected_cell_rects().len(), 2);
+        key(&mut editor, Key::Escape, false);
+        assert!(editor.selected_cell_rects().is_empty(), "Escape kept the block");
+
+        key(&mut editor, Key::Down, true);
+        key(&mut editor, Key::Left, false);
+        assert!(editor.selected_cell_rects().is_empty(), "the arrow kept the block");
+        assert!(editor.document.selection().is_none());
+    }
+
+    #[test]
+    fn select_all_in_a_table_and_delete_takes_the_table_with_everything_else() {
+        // Word's Ctrl+A selects the whole document from inside a table too,
+        // and Delete leaves one empty paragraph. The table stayed, with not a
+        // paragraph in any of its cells.
+        let mut editor = filled_at(1, 1);
+        control(&mut editor, Key::Letter('a'), false);
+        key(&mut editor, Key::Delete, false);
+        assert!(shapes(&editor).is_empty(), "the table stayed: {:?}", shapes(&editor));
+        assert_eq!(editor.document.plain_text().trim(), "");
+        assert_whole(&editor);
+    }
+
+    #[test]
+    fn shift_ctrl_end_and_home_from_a_cell_take_whole_rows() {
+        // Out of a table the selection is rows: from the caret's row to the
+        // end of the table and on, or to its start and back.
+        let mut editor = filled_at(1, 1);
+        control(&mut editor, Key::End, true);
+        key(&mut editor, Key::Delete, false);
+        assert_eq!(shapes(&editor), cells(&[&[&["00"], &["01"], &["02"]]]));
+        assert_whole(&editor);
+
+        let mut editor = filled_at(1, 1);
+        control(&mut editor, Key::Home, true);
+        key(&mut editor, Key::Delete, false);
+        assert_eq!(shapes(&editor), cells(&[&[&["20"], &["21"], &["22"]]]));
+        assert_eq!(editor.document.paragraph_text(0).as_deref(), Some(""));
+        assert_whole(&editor);
+    }
+
+    /// The paragraph after the table, with some words typed into it, and a
+    /// point on its line.
+    fn words_after_the_table(editor: &mut Editor) -> (usize, (i32, i32)) {
+        let (_, last) = editor.document.table_paragraphs().expect("the table");
+        let after = last + 1;
+        editor.document.set_caret(TextPosition::new(after, 0));
+        typed(editor, "After the table");
+        editor.relayout();
+        let line = editor.pages[0]
+            .lines
+            .iter()
+            .find(|line| line.paragraph == after)
+            .expect("a line after the table")
+            .clone();
+        let (origin_x, origin_y) = editor.page_origin(0);
+        let top = editor.content_top() + origin_y - editor.scroll_down();
+        let x = (origin_x + line.left + 30.0) as i32;
+        let y = (top + (line.top() + line.bottom()) / 2.0) as i32;
+        (after, (x, y))
+    }
+
+    #[test]
+    fn a_drag_from_a_cell_out_past_the_table_takes_the_rows_and_the_paragraph() {
+        // Word takes the rows from the one the drag began in to the end of
+        // the table, and the words after it as far as the pointer. By way of
+        // another cell first, too: the block it made there is given up for
+        // the rows.
+        for by_way_of_another_cell in [false, true] {
+            let mut editor = filled_at(1, 0);
+            let row_start = editor.document.caret();
+            let (after, (to_x, to_y)) = words_after_the_table(&mut editor);
+            // Cells are found through the table the caret is in.
+            caret_into(&mut editor, 1, 1);
+
+            let (x, y) = cell_middle(&editor, 1, 1);
+            editor.handle(Event::MouseDown { x, y, modifiers: Modifiers::default() });
+            if by_way_of_another_cell {
+                let (x, y) = cell_middle(&editor, 2, 2);
+                editor.handle(Event::MouseMove {
+                    x,
+                    y,
+                    held: true,
+                    modifiers: Modifiers::default(),
+                });
+            }
+            editor.handle(Event::MouseMove {
+                x: to_x,
+                y: to_y,
+                held: true,
+                modifiers: Modifiers::default(),
+            });
+            editor.handle(Event::MouseUp { x: to_x, y: to_y });
+
+            let stretches = editor.document.selections();
+            assert_eq!(stretches.len(), 1, "the rows and the words are one stretch");
+            assert_eq!(stretches[0].0, row_start, "the row is not taken whole");
+            assert_eq!(stretches[0].1.paragraph, after, "the words after it are not taken");
+            assert_eq!(
+                editor.selected_cell_rects().len(),
+                6,
+                "the two rows are not drawn as cells"
+            );
+
+            key(&mut editor, Key::Delete, false);
+            assert_eq!(shapes(&editor), cells(&[&[&["00"], &["01"], &["02"]]]));
+            assert_whole(&editor);
+        }
+    }
+
+    #[test]
+    fn shift_and_down_out_of_the_last_row_takes_the_rows_and_the_paragraph_after() {
+        // From the middle row: the first press takes its cell and the one
+        // below, the second leaves the table with both rows.
+        let mut editor = filled_at(1, 0);
+        let row_start = editor.document.caret();
+        caret_into(&mut editor, 1, 1);
+        key(&mut editor, Key::Down, true);
+        key(&mut editor, Key::Down, true);
+        assert!(editor.document.table_here().is_none(), "the caret did not leave the table");
+        let (start, _) = editor.document.selection().expect("a selection");
+        assert_eq!(start, row_start, "the rows are not taken from the first");
+        assert_eq!(editor.selected_cell_rects().len(), 6, "the two rows are not drawn as cells");
+
+        key(&mut editor, Key::Delete, false);
+        assert_eq!(shapes(&editor), cells(&[&[&["00"], &["01"], &["02"]]]));
+        assert_whole(&editor);
+
+        // And from the text of a cell in the last row, in one press.
+        let mut editor = filled_at(2, 0);
+        let row_start = editor.document.caret();
+        caret_into(&mut editor, 2, 1);
+        key(&mut editor, Key::Down, true);
+        let (start, _) = editor.document.selection().expect("a selection");
+        assert_eq!(start, row_start, "the row is not taken from its first cell");
+        assert_eq!(editor.selected_cell_rects().len(), 3, "the row is not drawn as cells");
+        key(&mut editor, Key::Delete, false);
+        assert_eq!(shapes(&editor).len(), 2, "the last row did not go");
+        assert_whole(&editor);
     }
 }

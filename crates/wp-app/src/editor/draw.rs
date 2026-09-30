@@ -88,11 +88,13 @@ impl Editor {
 
     /// Draws the pages, and everything on them.
     pub(super) fn draw_pages(&mut self) {
-        let selections = self.document.selections();
         // A block of cells is shown as the cells themselves rather than as the
         // text in them, which is how Word shows it — and the only way an empty
-        // cell can be seen to be selected at all.
-        let cells = self.selected_cell_rects();
+        // cell can be seen to be selected at all. So are the rows a selection
+        // takes whole by running out of a table, and the text round them is
+        // shown as text.
+        let super::tablework::DrawnSelection { cells, text: selections } =
+            self.selection_as_drawn();
 
         for index in 0..self.pages.len() {
             let (origin_x, origin_y) = self.page_origin(index);
@@ -152,7 +154,7 @@ impl Editor {
             // stay the colour they were written in. Every stretch of it: a
             // person who held Ctrl and dragged out a second one has to see
             // both, or the next thing they press will surprise them.
-            for (start, end) in selections.iter().filter(|_| cells.is_empty()) {
+            for (start, end) in &selections {
                 for (rect_x, rect_y, rect_width, rect_height) in
                     self.pages[index].selection_rects(*start, *end)
                 {

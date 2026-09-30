@@ -24,7 +24,7 @@
 use wp_xml::tree::{Element, Node};
 
 use crate::history::EditKind;
-use crate::{edit, read, Document, TextPosition};
+use crate::{edit, position, read, Document, TextPosition};
 
 /// The most columns a split may leave a table with, which is the most a table
 /// may have in Word.
@@ -101,7 +101,7 @@ impl Document {
             }
         }
 
-        let stretches = self.selections();
+        let stretches = self.stretches_as_made();
         let (Some(&(start, _)), Some(&(_, end))) = (stretches.first(), stretches.last()) else {
             return Some(CellRange {
                 table: here.table,
@@ -140,6 +140,214 @@ impl Document {
     fn cell_block_now(&self) -> Option<CellRange> {
         let (range, anchor, caret) = self.cell_block.as_ref()?;
         (*anchor == self.anchor && *caret == self.caret).then(|| range.clone())
+    }
+
+    /// The block of cells the selection is, when it is more than one cell.
+    ///
+    /// A block taken cell by cell says so itself (see
+    /// [`Document::select_cell_block`]); a stretch of text from one cell into
+    /// another is the block its two ends make, as Word's selection is. Either
+    /// way what is done to it is done to the cells: Delete empties them, and
+    /// what is typed over them goes into the first.
+    #[must_use]
+    pub fn selected_block(&self) -> Option<CellRange> {
+        if let Some(range) = self.cell_block_now() {
+            if range.rows.0 != range.rows.1 || range.columns.0 != range.columns.1 {
+                return Some(range);
+            }
+        }
+        let anchor = self.anchor.filter(|anchor| *anchor != self.caret)?;
+        let (start, end) =
+            if anchor <= self.caret { (anchor, self.caret) } else { (self.caret, anchor) };
+        let (from, to) = self.paths_of(start, end)?;
+        self.cells_between(&from, &to)
+    }
+
+    /// Where the first cell of a block starts: where what is typed over the
+    /// block goes, and where Word leaves the caret once it is emptied.
+    #[must_use]
+    pub(crate) fn block_start(&self, range: &CellRange) -> Option<TextPosition> {
+        self.block_stretches(range).first().map(|(start, _)| *start)
+    }
+
+    /// What a stretch of text selects.
+    ///
+    /// # Not always the text between its ends
+    ///
+    /// Because the cells of a table are not written in the order they are
+    /// read. A stretch from one cell into another runs, in the order of the
+    /// file, through every cell between them along the rows — which are not
+    /// the cells between them on the page. Word takes the rectangle its two
+    /// ends make, and so does this: every cell of it whole, one stretch per
+    /// cell, and nothing outside it. Taking the text between instead is what
+    /// emptied cells the selection never showed of their only paragraph.
+    ///
+    /// A stretch that runs out of a table — from a cell on past the table's
+    /// end, or into a cell from before its start — takes whole rows, as Word's
+    /// does: its end in the table goes to the edge of its row. Whole rows are
+    /// what can go from a table without leaving a cell with nothing in it.
+    ///
+    /// Every cell of a block is given, the empty ones as empty stretches: the
+    /// first is where the block starts whatever it holds.
+    pub(crate) fn as_selected(
+        &self,
+        start: TextPosition,
+        end: TextPosition,
+    ) -> Vec<(TextPosition, TextPosition)> {
+        if start.paragraph == end.paragraph {
+            return vec![(start, end)];
+        }
+        let Some((from, to)) = self.paths_of(start, end) else { return vec![(start, end)] };
+        if let Some(range) = self.cells_between(&from, &to) {
+            let cells = self.block_stretches(&range);
+            if !cells.is_empty() {
+                return cells;
+            }
+        }
+        vec![self.rows_taken_whole(start, end, &from, &to)]
+    }
+
+    /// The paths to the paragraphs two places are in.
+    fn paths_of(&self, start: TextPosition, end: TextPosition) -> Option<(Vec<usize>, Vec<usize>)> {
+        let (from, to) =
+            position::paragraph_paths(&self.tree().root, start.paragraph, end.paragraph);
+        Some((from?, to?))
+    }
+
+    /// The rectangle of cells between two paragraphs, when they are in
+    /// different cells of one table.
+    ///
+    /// Told by where their paths part: at the rows of a table, or at the cells
+    /// of one row. Parting anywhere else — inside one cell, or outside every
+    /// table — they are not in two cells of the same table, and there is no
+    /// rectangle. A paragraph in a table inside a cell counts as being in
+    /// that cell, which is what the table it is in is to the outer one.
+    fn cells_between(&self, from: &[usize], to: &[usize]) -> Option<CellRange> {
+        let root = &self.tree().root;
+        let common = from.iter().zip(to).take_while(|(one, other)| one == other).count();
+        let parting = edit::element_at_path(root, from.get(..common)?)?;
+        let depth = if parting.is(Some(read::W), "tbl") {
+            common
+        } else if parting.is(Some(read::W), "tr") {
+            common.checked_sub(1)?
+        } else {
+            return None;
+        };
+        let table = edit::element_at_path(root, &from[..depth])?;
+        if !table.is(Some(read::W), "tbl") {
+            return None;
+        }
+        // The row and the cell along it a path goes through.
+        let place = |path: &[usize]| -> Option<(usize, usize)> {
+            let (row_at, cell_at) = (*path.get(depth)?, *path.get(depth + 1)?);
+            let row = table.children.get(row_at)?.as_element()?;
+            let cell = row.children.get(cell_at)?.as_element()?;
+            if !row.is(Some(read::W), "tr") || !cell.is(Some(read::W), "tc") {
+                return None;
+            }
+            let rank = |element: &Element, local: &str, at: usize| {
+                positions_of(element, local).iter().position(|position| *position == at)
+            };
+            Some((rank(table, "tr", row_at)?, rank(row, "tc", cell_at)?))
+        };
+        let (one, other) = (place(from)?, place(to)?);
+        Some(CellRange {
+            table: from[..depth].to_vec(),
+            rows: (one.0.min(other.0), one.0.max(other.0)),
+            columns: (one.1.min(other.1), one.1.max(other.1)),
+        })
+    }
+
+    /// Every cell of a block, each as a stretch from the start of its first
+    /// paragraph to the end of its last, in reading order.
+    ///
+    /// The block is grown until no merged cell is cut by its edge, as Word's
+    /// selection is (see [`Shape`]), and a cell of it that holds nothing is an
+    /// empty stretch at its one paragraph.
+    fn block_stretches(&self, range: &CellRange) -> Vec<(TextPosition, TextPosition)> {
+        let root = &self.tree().root;
+        let Some(table) = edit::element_at_path(root, &range.table) else { return Vec::new() };
+        let shape = Shape::of(table);
+        let Some(block) = shape.block_of(range) else { return Vec::new() };
+        let Some((first, _)) = crate::tables::paragraphs_under(root, &range.table) else {
+            return Vec::new();
+        };
+        let spans = cell_spans(table, first);
+
+        let mut out = Vec::new();
+        for row in block.rows.0..=block.rows.1 {
+            for column in 0..shape.rows[row].len() {
+                if !shape.overlaps(row, column, &block) {
+                    continue;
+                }
+                if let Some(Some((first, last, length))) =
+                    spans.get(row).and_then(|row| row.get(column))
+                {
+                    out.push((TextPosition::new(*first, 0), TextPosition::new(*last, *length)));
+                }
+            }
+        }
+        out
+    }
+
+    /// A stretch that runs out of a table, grown to the edges of the rows it
+    /// takes there.
+    ///
+    /// Its start goes back to the start of its row in the outermost table it
+    /// is in and its end is not, and its end on to the end of its row in the
+    /// outermost table it is in and its start is not. A stretch that leaves
+    /// no table is what it was.
+    fn rows_taken_whole(
+        &self,
+        start: TextPosition,
+        end: TextPosition,
+        from: &[usize],
+        to: &[usize],
+    ) -> (TextPosition, TextPosition) {
+        let root = &self.tree().root;
+        // The depth of the outermost table a path is in and another is not.
+        let left = |path: &[usize], other: &[usize]| {
+            (0..path.len()).find(|&depth| {
+                !other.starts_with(&path[..depth])
+                    && edit::element_at_path(root, &path[..depth])
+                        .is_some_and(|element| element.is(Some(read::W), "tbl"))
+            })
+        };
+
+        let mut start = start;
+        if let Some(depth) = left(from, to) {
+            if let Some((first, _)) = crate::tables::paragraphs_under(root, &from[..=depth]) {
+                start = TextPosition::new(first, 0);
+            }
+        }
+        let mut end = end;
+        if let Some(depth) = left(to, from) {
+            if let Some((_, last)) = crate::tables::paragraphs_under(root, &to[..=depth]) {
+                end =
+                    TextPosition::new(last, self.paragraph_text(last).map_or(0, |text| text.len()));
+            }
+        }
+        (start, end)
+    }
+
+    /// The rows of tables the selection takes whole by running out of them,
+    /// each as its first and last paragraph.
+    ///
+    /// What is drawn as cells, the way Word draws them, while the rest of such
+    /// a selection is drawn as text. A row of the table both ends of a stretch
+    /// are in is not one: that is a block of cells, or text inside one.
+    #[must_use]
+    pub fn whole_rows_selected(&self) -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        for (start, end) in self.selections() {
+            if start.paragraph == end.paragraph {
+                continue;
+            }
+            let length = self.paragraph_text(end.paragraph).map_or(0, |text| text.len());
+            let stretch = Stretch { start, end, end_whole: end.offset >= length };
+            gather_rows(&self.tree().root, &mut 0, &stretch, true, &mut out);
+        }
+        out
     }
 
     /// Puts a line on one edge of the cell a place in the document is inside,
@@ -560,6 +768,131 @@ impl Document {
         widths[first] += total - each * count;
 
         self.set_table_grid(&widths)
+    }
+}
+
+/// The paragraphs of every cell of a table, row by row: the first and the
+/// last, and how long the last is — or nothing, for a cell with no paragraph.
+///
+/// One walk of the table, counting on from the number of its first paragraph,
+/// rather than one walk of the document per cell: a block of cells is asked
+/// for every time the selection is drawn.
+fn cell_spans(table: &Element, first: usize) -> Vec<Vec<Option<(usize, usize, usize)>>> {
+    let mut counter = first;
+    let mut rows = Vec::new();
+    for child in table.child_elements() {
+        if !child.is(Some(read::W), "tr") {
+            counter += position::paragraphs_in(child);
+            continue;
+        }
+        let mut cells = Vec::new();
+        for inside in child.child_elements() {
+            if !inside.is(Some(read::W), "tc") {
+                counter += position::paragraphs_in(inside);
+                continue;
+            }
+            let paragraphs = position::paragraphs(inside);
+            cells.push(paragraphs.last().map(|last| {
+                let length = position::paragraph_text(last).len();
+                (counter, counter + paragraphs.len() - 1, length)
+            }));
+            counter += paragraphs.len();
+        }
+        rows.push(cells);
+    }
+    rows
+}
+
+/// A stretch of the selection, and whether its end takes the whole of the
+/// paragraph it is in.
+struct Stretch {
+    start: TextPosition,
+    end: TextPosition,
+    end_whole: bool,
+}
+
+impl Stretch {
+    /// Whether every paragraph from one to another is inside it, whole.
+    fn covers(&self, first: usize, last: usize) -> bool {
+        (first > self.start.paragraph || (first == self.start.paragraph && self.start.offset == 0))
+            && (last < self.end.paragraph || (last == self.end.paragraph && self.end_whole))
+    }
+}
+
+/// Finds the rows a stretch takes whole under an element, counting paragraphs
+/// as it goes. See [`Document::whole_rows_selected`].
+///
+/// `holds_both` says whether the table the element is in holds both ends of
+/// the stretch, in which case its rows are not taken whole by it.
+fn gather_rows(
+    element: &Element,
+    counter: &mut usize,
+    stretch: &Stretch,
+    holds_both: bool,
+    out: &mut Vec<(usize, usize)>,
+) {
+    for child in element.child_elements() {
+        let count = position::paragraphs_in(child);
+        if count == 0 {
+            continue;
+        }
+        let (first, last) = (*counter, *counter + count - 1);
+        // Everything from here on is past the stretch.
+        if first > stretch.end.paragraph {
+            return;
+        }
+        if child.is(Some(read::W), "p") || last < stretch.start.paragraph {
+            *counter += count;
+            continue;
+        }
+        if child.is(Some(read::W), "tr") && !holds_both && stretch.covers(first, last) {
+            out.push((first, last));
+            *counter += count;
+            continue;
+        }
+        let holds = if child.is(Some(read::W), "tbl") {
+            first <= stretch.start.paragraph && stretch.end.paragraph <= last
+        } else {
+            holds_both
+        };
+        gather_rows(child, counter, stretch, holds, out);
+    }
+}
+
+/// Mends the merges down a table after rows were taken out of it.
+///
+/// A cell that continued a merge whose first row went is where the merge
+/// starts now — or a cell of its own, when nothing below it continues it.
+/// Left as it was, it would go on saying it continues a cell that is not
+/// there.
+pub(crate) fn mend_merges(table: &mut Element, prefix: Option<&str>) {
+    let shape = Shape::of(table);
+    // Whether a cell of a row continues one of the same columns above it.
+    let continues = |row: usize, slot: Slot, above: bool| {
+        let other = if above { row.checked_sub(1) } else { Some(row + 1) };
+        other
+            .and_then(|other| Some((other, shape.covering(other, slot.start)?)))
+            .and_then(|(other, column)| shape.slot(other, column))
+            .is_some_and(|found| {
+                found.start == slot.start
+                    && found.span == slot.span
+                    && if above { found.down != Down::Alone } else { found.down == Down::Continues }
+            })
+    };
+    for (number, row_at) in positions_of(table, "tr").into_iter().enumerate() {
+        let Some(row) = table.children.get_mut(row_at).and_then(Node::as_element_mut) else {
+            continue;
+        };
+        for (column, cell_at) in positions_of(row, "tc").into_iter().enumerate() {
+            let Some(slot) = shape.slot(number, column) else { continue };
+            if slot.down != Down::Continues || continues(number, slot, true) {
+                continue;
+            }
+            let down = if continues(number, slot, false) { Down::Starts } else { Down::Alone };
+            if let Some(cell) = row.children.get_mut(cell_at).and_then(Node::as_element_mut) {
+                set_down(properties_of(cell, prefix), down, prefix);
+            }
+        }
     }
 }
 

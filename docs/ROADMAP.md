@@ -2181,7 +2181,7 @@ work is in *The order of the work* at the end.
   which found no dialog; and the Split Cells dialog's own tests. And the
   window drawn with the dialog open (`--picture … splitcells`) and with a
   filled table's top row merged (`mergedrow`).
-- [ ] **C50. Shift+arrows in a table select cells.** They extend a text
+- [x] **C50. Shift+arrows in a table select cells.** They extend a text
   selection through every cell between, in file order; the selection is
   drawn as cells but acted on as text, so Delete, typing, Enter and paste
   after Shift+Down empty the intermediate cells of their only paragraph — a
@@ -2189,6 +2189,68 @@ work is in *The order of the work* at the end.
   showed. Go through `select_cells`, as Shift+click does; refuse a text
   range that crosses a cell boundary in `remove_range` and `press_enter`;
   and hold to it that a cell always has a paragraph. Review T14.
+  *Done:* Shift and an arrow moved the caret as text — Up and Down through
+  `step_table_row` to `move_caret(position, true)`, Left and Right through
+  `caret_right` — so the selection was one stretch from one cell into
+  another; `selected_cells` and the drawing made a rectangle of its two
+  ends, and every command took the text between them in file order. Now
+  they go through `shift_arrow_in_table` in `editor/tablework.rs` to
+  `select_cells`. Inside a cell's text Shift+Left and Shift+Right select
+  letters, and the step past its edge takes the cell and the next; Shift+Up
+  and Shift+Down take the cell and the one above or below, a row more at
+  each press; the far corner of a block moves a cell at a time; out of the
+  table's top or bottom it takes the rows from the one it began in and the
+  text past them; a plain arrow or Escape gives the block up. The document
+  holds the rule itself, for a selection made any other way:
+  `Document::selections` gives a stretch from one cell into another as the
+  cells of the rectangle its ends make, one stretch per cell, on the grid
+  of `Shape` (`as_selected` in `cells.rs`), and one that runs out of a
+  table as whole rows there. So Bold, Delete, typing, Enter and both pastes
+  act on what is drawn, and over a block typing, Enter and paste empty
+  every cell and go into the first, even one that held nothing.
+  `remove_range` takes a range as what it selects: a table or a row it
+  reaches past goes whole, its merges down mended, and
+  `position::remove_paragraph` empties a cell's last paragraph rather than
+  taking it, so a cell always has one; a join across a cell's edge was
+  refused already. Ctrl+A and Delete take a table with the rest, as in
+  Word; Ctrl+Shift+End or Home from a cell, a drag out of the table and
+  Shift+Down out of its last row take whole rows, drawn as cells, and the
+  text beside them is drawn as text.
+  *Proven by:* in `tests/cells.rs`,
+  `every_edit_over_a_stretch_through_cells_leaves_every_cell_a_paragraph`,
+  which tries Delete, Backspace, Delete forward, Ctrl+Backspace,
+  Ctrl+Delete, typing, typing a tab, Enter, both pastes and a join over a
+  stretch from inside 0,1 to inside 1,0, and found the third cell of the
+  first row with no paragraph;
+  `a_stretch_from_one_cell_into_another_is_the_rectangle_between_them`,
+  `typing_over_a_block_of_cells_types_into_the_first_even_when_it_is_empty`,
+  `a_stretch_from_a_cell_out_of_the_table_takes_its_rows_whole`,
+  `a_stretch_into_a_table_from_above_takes_its_rows_whole`,
+  `select_all_and_delete_takes_the_table_with_everything_else` and
+  `removing_the_last_paragraph_of_a_cell_leaves_it_one_empty_paragraph`,
+  which all failed before; and
+  `a_cell_that_is_a_whole_row_is_emptied_and_not_taken_out`. In the
+  program, `shift_and_down_takes_the_cell_and_the_one_below_it`, which
+  found the rest of the first row selected;
+  `delete_after_shift_and_down_empties_the_two_cells_and_nothing_else`,
+  `typing_after_shift_and_down_empties_the_cells_and_types_in_the_first`,
+  `enter_after_shift_and_down_empties_the_cells_and_breaks_the_first` and
+  `pasting_after_shift_and_down_empties_the_cells_and_pastes_into_the_first`,
+  which found `(P[])()()`, `(P[X])()()`, `(P[] P[])()()` and
+  `(P[Z ])()()`; `bold_after_shift_and_down_twice_bolds_the_column_it_shows`,
+  which bolded `[[F,T,T],[T,T,T],[T,F,F]]`;
+  `shift_and_right_goes_through_the_text_and_then_takes_the_cell_beside`,
+  `select_all_in_a_table_and_delete_takes_the_table_with_everything_else`,
+  `shift_ctrl_end_and_home_from_a_cell_take_whole_rows`,
+  `a_drag_from_a_cell_out_past_the_table_takes_the_rows_and_the_paragraph`
+  and
+  `shift_and_down_out_of_the_last_row_takes_the_rows_and_the_paragraph_after`,
+  which all failed as the review says; and
+  `a_plain_arrow_or_escape_gives_up_the_block`. Shift and a press from one
+  cell into another went through `select_cells` already
+  (`shift_and_a_press_in_another_cell_takes_the_cells_between`). And the
+  window drawn with a filled table's first column taken by Shift+Down
+  twice (`--picture … shiftdown`).
 - [x] **C51. Outline view draws.** Switching to Outline hangs the release
   build and panics the debug one — "attempt to add with overflow" in
   `fill_rect`, from a page given a height of `f32::MAX / 4` and a rectangle
@@ -2348,7 +2410,10 @@ work is in *The order of the work* at the end.
   a cell's left edge are the column line, so a press there starts a drag
   and no press selects the cell. And Insert Above and Below copy the row's
   `vMerge` marks, so a row inserted under the first row of a merge cuts the
-  merge in two (found while **C49** was done). Reviews T06, T32, T35, T05.
+  merge in two (found while **C49** was done); and Shift+click after a block
+  of cells made with the keyboard or a drag anchors at the caret's cell
+  rather than at the block's own anchor (found while **C50** was done).
+  Reviews T06, T32, T35, T05.
 - [ ] **C67. A table that reaches past the margin, and the drags with
   modifiers.** The last line and the size handle cannot take a table past
   the right margin: the other columns shrink instead. Shift, Ctrl and

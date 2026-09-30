@@ -109,7 +109,20 @@ impl Document {
     /// and may hold several, so a cell is a range and not a number.
     #[must_use]
     pub fn cell_paragraphs(&self, row: usize, column: usize) -> Option<(usize, usize)> {
-        let place = self.table_here()?;
+        self.cell_paragraphs_at(self.caret().paragraph, row, column)
+    }
+
+    /// The same for the table round any paragraph: what a drag that began in
+    /// a cell asks once the pointer, and the caret with it, has left the
+    /// table.
+    #[must_use]
+    pub fn cell_paragraphs_at(
+        &self,
+        paragraph: usize,
+        row: usize,
+        column: usize,
+    ) -> Option<(usize, usize)> {
+        let place = self.table_at(paragraph)?;
         let table = element_at(&self.tree().root, &place.table)?;
 
         // The path to the cell: the table, then the row's place among its
@@ -816,7 +829,7 @@ fn child_index_of(parent: &Element, local: &str, wanted: usize) -> Option<usize>
 ///
 /// Counted the same way every paragraph index in this program is counted: in
 /// reading order from the start of the part, tables included.
-fn paragraphs_under(root: &Element, prefix: &[usize]) -> Option<(usize, usize)> {
+pub(crate) fn paragraphs_under(root: &Element, prefix: &[usize]) -> Option<(usize, usize)> {
     let mut counter = 0usize;
     let mut path = Vec::new();
     let mut found: Option<(usize, usize)> = None;
