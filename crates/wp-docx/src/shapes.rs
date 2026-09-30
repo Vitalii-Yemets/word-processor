@@ -455,7 +455,10 @@ fn word_shape(shape: &Shape, prefix: Option<&str>) -> Element {
     wsp.declarations.push((Some("wps".to_owned()), WPS.to_owned()));
 
     let mut visible = Element::new("wps:cNvPr", Some(WPS));
-    visible.set_attribute("id", &shape.id.max(1).to_string());
+    // Nought for a shape nobody has numbered yet, which is given one from the
+    // document's count as it goes in: see [`crate::identifiers`]. Every new
+    // shape was 1, and two of them grouped could not be told apart.
+    visible.set_attribute("id", &shape.id.to_string());
     visible.set_attribute("name", &shape.name);
     wsp.push_element(visible);
     // A connector says so here, and says what it is fastened to. Everything
@@ -683,7 +686,7 @@ impl Document {
         let shape = &shape;
 
         let prefix = self.prefix();
-        let element = crate::shapes::shape_element(shape, prefix.as_deref());
+        let element = self.numbered(crate::shapes::shape_element(shape, prefix.as_deref()));
         if !crate::position::insert_element_at(
             &mut self.tree_to_edit().root,
             caret,
@@ -985,12 +988,41 @@ impl Document {
         shape: &crate::shapes::Shape,
     ) -> bool {
         let caret = self.caret();
-        if self.shape_at(at).is_none() {
-            return false;
-        }
+        let Some(old) = self.shape_at(at) else { return false };
+        // What the drawing there is known by, which it goes on being known by:
+        // anything that told it from the others went by it.
+        let kept = self.drawing_element_at(at).and_then(|drawing| find(drawing, "docPr")).map(
+            |properties| {
+                let attribute = |name| properties.attribute_by_name(name).map(str::to_owned);
+                (attribute("id"), attribute("name"))
+            },
+        );
         self.record(crate::history::EditKind::Structural, caret, false);
 
         let prefix = self.prefix();
+        // The same shape, changed: its own number stays, which a connector
+        // may be naming it by. Numbered as a new drawing for whatever it did
+        // not have — a shape of the old kind, drawn in VML, has no `docPr` —
+        // and then given back what it had: its number, and its name unless the
+        // change is to the name.
+        let mut shape = shape.clone();
+        if shape.id == 0 {
+            shape.id = old.id;
+        }
+        let mut replacement = self.numbered(shape_element(&shape, prefix.as_deref()));
+        if let Some((id, name)) = kept {
+            if let Some(properties) = edit::find_named_mut(&mut replacement, "docPr") {
+                let name = if shape.name == old.name { name } else { Some(shape.name.clone()) };
+                for (attribute, value) in [("id", id), ("name", name)] {
+                    if let Some(value) = value {
+                        properties.set_attribute(attribute, &value);
+                    }
+                }
+            }
+        }
+        if let Some(own) = edit::find_named_mut(&mut replacement, "cNvPr") {
+            own.set_attribute("name", &shape.name);
+        }
         let Some(path) = crate::position::paragraph_path(&self.tree().root, at.paragraph) else {
             return false;
         };
@@ -999,7 +1031,6 @@ impl Document {
             return false;
         };
 
-        let replacement = shape_element(shape, prefix.as_deref());
         let mut offset = 0usize;
         let replaced = replace_shape(paragraph, &mut offset, at.offset, replacement);
         if replaced {

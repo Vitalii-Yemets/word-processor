@@ -267,8 +267,13 @@ impl Document {
                 continue;
             }
             entry.children.clear();
-            for block in &body.blocks {
-                entry.push_element(edit::block_element(block, Some("w")));
+            // A drawing in the comment is new to the document, whatever number
+            // it was written with: see [`crate::identifiers`].
+            let mut elements: Vec<Element> =
+                body.blocks.iter().map(|block| edit::block_element(block, Some("w"))).collect();
+            self.number_drawings(&mut elements);
+            for element in elements {
+                entry.push_element(element);
             }
             written = true;
             break;

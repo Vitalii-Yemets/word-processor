@@ -32,28 +32,6 @@ pub const MARGIN_PRESETS: &[(&str, i32, i32, i32, i32)] = &[
     ("Wide", 1440, 2880, 1440, 2880),
 ];
 
-/// The order the schema requires for the children of `w:sectPr`.
-const SECTION_PROPERTY_ORDER: &[&str] = &[
-    "footnotePr",
-    "endnotePr",
-    "type",
-    "pgSz",
-    "pgMar",
-    "paperSrc",
-    "pgBorders",
-    "lnNumType",
-    "pgNumType",
-    "cols",
-    "formProt",
-    "vAlign",
-    "noEndnote",
-    "titlePg",
-    "textDirection",
-    "bidi",
-    "rtlGutter",
-    "docGrid",
-];
-
 impl Document {
     /// What the paper is called, when it is one of the sizes with a name.
     ///
@@ -359,7 +337,7 @@ pub(crate) fn section_child<'a>(
 ) -> &'a mut Element {
     if section.child(Some(read::W), local).is_none() {
         let new = Element::new(&edit::name_with(prefix, local), Some(read::W));
-        edit::insert_ordered(section, new, SECTION_PROPERTY_ORDER);
+        edit::insert_ordered(section, new, edit::SECTION_PROPERTY_ORDER);
     }
     section.child_mut(Some(read::W), local).expect("just inserted, or already there")
 }

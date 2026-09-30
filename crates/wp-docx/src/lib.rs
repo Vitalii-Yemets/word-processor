@@ -73,6 +73,7 @@ pub mod furniture;
 pub mod gallery;
 pub mod group;
 mod history;
+mod identifiers;
 pub mod ink;
 pub mod joins;
 pub mod kinds;
@@ -359,6 +360,15 @@ pub struct Document {
     /// kept in the file, obviously, and not written anywhere: it lives as
     /// long as the document is open and no longer.
     password: Option<String>,
+    /// The lowest number a drawing may be given next, whatever the parts say.
+    ///
+    /// Numbers a paste has handed to the shapes of its copy before any of it
+    /// is in the tree: the rest of the paste — its other paragraphs, a note
+    /// it carries — is numbered afterwards, and must not be handed them
+    /// again. Not kept by undo and not saved: a number handed out is not
+    /// handed out again while the document is open, which is how Word's
+    /// count goes too. See [`identifiers`].
+    drawing_floor: u32,
 }
 
 impl Document {
@@ -412,6 +422,7 @@ impl Document {
             gesture_depth: 0,
             gesture_noted: false,
             gesture_caret: TextPosition::new(0, 0),
+            drawing_floor: 0,
         };
         document.tracking = document.read_tracking_setting();
         Ok(document)
@@ -478,6 +489,7 @@ impl Document {
             gesture_depth: 0,
             gesture_noted: false,
             gesture_caret: TextPosition::new(0, 0),
+            drawing_floor: 0,
         })
     }
 
@@ -3145,6 +3157,8 @@ impl Document {
         self.record(EditKind::Structural, self.caret, false);
 
         let prefix = self.prefix();
+        // What its cells hold may be drawings, and they are new here.
+        let written = self.numbered(edit::table_element(table, prefix.as_deref()));
         let Some(path) = position::paragraph_path(&self.tree.root, self.caret.paragraph) else {
             return false;
         };
@@ -3163,7 +3177,7 @@ impl Document {
         };
         parent
             .insert_element(at, edit::paragraph_element(&Paragraph::default(), prefix.as_deref()));
-        parent.insert_element(at, edit::table_element(table, prefix.as_deref()));
+        parent.insert_element(at, written);
 
         let first_cell = if in_place { self.caret.paragraph } else { self.caret.paragraph + 1 };
         self.caret = TextPosition::new(first_cell, 0);
@@ -3193,7 +3207,8 @@ impl Document {
         let id = self.adopt_picture(bytes, extension)?;
 
         let prefix = self.prefix();
-        let drawing = edit::drawing_element(&id, width_emu, height_emu, prefix.as_deref());
+        let drawing =
+            self.numbered(edit::drawing_element(&id, width_emu, height_emu, prefix.as_deref()));
         let inserted = position::insert_element_at(
             &mut self.tree.root,
             self.caret,
@@ -3629,9 +3644,12 @@ impl Document {
     /// One step to take back, like any other edit: a macro's `Paragraphs.Add`
     /// comes here, and Word takes back what a macro did.
     pub fn append_block(&mut self, block: &Block) -> bool {
-        self.edit_tree_as_one_step(|root, prefix| {
+        // Whatever drawings it holds are new to the document, and each is
+        // given a number of its own: see [`identifiers`].
+        let written = self.numbered(edit::block_element(block, self.prefix().as_deref()));
+        self.edit_tree_as_one_step(|root, _| {
             let Some(body) = read::find_body_mut(root) else { return false };
-            edit::append_block(body, block, prefix);
+            edit::append_element(body, written);
             true
         })
     }
@@ -3918,6 +3936,9 @@ fn build_document(body: &Body) -> XmlTree {
     for block in &body.blocks {
         edit::append_block(&mut body_element, block, Some("w"));
     }
+    // Every drawing a number of its own, from one: nothing else in a document
+    // just made has one. Written from the model, each would be 1.
+    identifiers::Numbering::fresh().number_all(core::slice::from_mut(&mut body_element));
     body_element.push_element(section_properties());
     root.push_element(body_element);
 
@@ -3952,12 +3973,10 @@ fn uses_extensions(element: &Element) -> bool {
 /// Page size and margins, which must be the last child of the body.
 fn section_properties() -> Element {
     let namespace = WORDPROCESSING_NAMESPACE;
-    let mut section = Element::new("w:sectPr", Some(namespace));
 
     let mut size = Element::new("w:pgSz", Some(namespace));
     size.set_namespaced_attribute("w:w", namespace, A4_WIDTH_TWIPS);
     size.set_namespaced_attribute("w:h", namespace, A4_HEIGHT_TWIPS);
-    section.push_element(size);
 
     let mut margins = Element::new("w:pgMar", Some(namespace));
     for (name, value) in [
@@ -3971,9 +3990,8 @@ fn section_properties() -> Element {
     ] {
         margins.set_namespaced_attribute(name, namespace, value);
     }
-    section.push_element(margins);
 
-    section
+    edit::ordered("w:sectPr", vec![size, margins], edit::SECTION_PROPERTY_ORDER)
 }
 
 /// Document settings.
@@ -4088,32 +4106,32 @@ fn default_styles() -> String {
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading1">
 <w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:qFormat/>
-<w:pPr><w:keepNext/><w:keepLines/><w:outlineLvl w:val="0"/><w:spacing w:before="240" w:after="120"/></w:pPr>
+<w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="0"/></w:pPr>
 <w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading2">
 <w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:qFormat/>
-<w:pPr><w:keepNext/><w:keepLines/><w:outlineLvl w:val="1"/><w:spacing w:before="200" w:after="100"/></w:pPr>
+<w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="200" w:after="100"/><w:outlineLvl w:val="1"/></w:pPr>
 <w:rPr><w:b/><w:bCs/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading3">
 <w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:qFormat/>
-<w:pPr><w:keepNext/><w:keepLines/><w:outlineLvl w:val="2"/><w:spacing w:before="180" w:after="80"/></w:pPr>
+<w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="180" w:after="80"/><w:outlineLvl w:val="2"/></w:pPr>
 <w:rPr><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading4">
 <w:name w:val="heading 4"/><w:basedOn w:val="Normal"/><w:qFormat/>
-<w:pPr><w:keepNext/><w:keepLines/><w:outlineLvl w:val="3"/><w:spacing w:before="160" w:after="80"/></w:pPr>
+<w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="160" w:after="80"/><w:outlineLvl w:val="3"/></w:pPr>
 <w:rPr><w:b/><w:bCs/><w:i/><w:iCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading5">
 <w:name w:val="heading 5"/><w:basedOn w:val="Normal"/><w:qFormat/>
-<w:pPr><w:keepNext/><w:keepLines/><w:outlineLvl w:val="4"/><w:spacing w:before="140" w:after="60"/></w:pPr>
+<w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="140" w:after="60"/><w:outlineLvl w:val="4"/></w:pPr>
 <w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>
 </w:style>
 <w:style w:type="paragraph" w:styleId="Heading6">
 <w:name w:val="heading 6"/><w:basedOn w:val="Normal"/><w:qFormat/>
-<w:pPr><w:keepNext/><w:keepLines/><w:outlineLvl w:val="5"/><w:spacing w:before="120" w:after="60"/></w:pPr>
+<w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="120" w:after="60"/><w:outlineLvl w:val="5"/></w:pPr>
 <w:rPr><w:b/><w:bCs/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>
 </w:style>
 </w:styles>"#

@@ -198,13 +198,16 @@ impl Document {
 
         let prefix = self.prefix();
         let (width, height) = (right - left, bottom - top);
-        let element = match anchor {
+        // A number no drawing in any part of the document has, in the line
+        // as well as floating: see [`crate::identifiers`]. It was the highest
+        // in the part being edited, and ink in the line had none but 1.
+        let number = self.next_drawing_id();
+        let element = self.numbered(match anchor {
             None => content_part_element(&id, width, height),
             Some(anchor) => {
-                let number = self.next_drawing_id();
                 ink_drawing_element(&id, width, height, anchor, number, prefix.as_deref())
             }
-        };
+        });
         let inserted = crate::position::insert_element_at(
             &mut self.tree_to_edit().root,
             caret,
@@ -229,23 +232,6 @@ impl Document {
             }
             index += 1;
         }
-    }
-
-    /// A number no drawing in the document has yet, for a new one's `docPr`.
-    fn next_drawing_id(&self) -> u32 {
-        fn largest(element: &Element, found: &mut u32) {
-            if element.local_name() == "docPr" {
-                if let Some(id) = element.attribute_by_name("id").and_then(|id| id.parse().ok()) {
-                    *found = (*found).max(id);
-                }
-            }
-            for child in element.child_elements() {
-                largest(child, found);
-            }
-        }
-        let mut found = 0;
-        largest(&self.tree().root, &mut found);
-        found + 1
     }
 
     /// The ink drawing at one place in the text, if that is what is there.

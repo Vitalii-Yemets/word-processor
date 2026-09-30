@@ -180,6 +180,10 @@ impl Document {
             return false;
         }
         let prefix = self.prefix();
+        // Its drawings numbered from the document's count, as anything put in
+        // is: written from the model, each would be 1. See
+        // [`crate::identifiers`].
+        let written = self.numbered(write_block(block, body, prefix.as_deref()));
         let mut root = self.glossary_root().unwrap_or_else(|| new_glossary(prefix.as_deref()));
         let name = |local: &str| edit::name_with(prefix.as_deref(), local);
 
@@ -193,7 +197,7 @@ impl Document {
                 !child.is(Some(read::W), "docPart") || read_block(child).name != block.name
             })
         });
-        parts.push_element(write_block(block, body, prefix.as_deref()));
+        parts.push_element(written);
 
         self.save_glossary_root(root)
     }

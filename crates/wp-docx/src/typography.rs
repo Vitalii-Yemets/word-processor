@@ -331,6 +331,11 @@ pub fn remove_open_type(properties: &mut Element) {
 }
 
 /// Writes the OpenType features into a `w:rPr`, in the namespace of their own.
+///
+/// Each where the order of the properties puts it: after the standard ones
+/// and after the text effects, and among themselves in the order of Word's
+/// schema — ligatures, number forms, number spacing, stylistic sets,
+/// contextual alternates — which is not the order they are asked about in.
 pub fn write_open_type(properties: &mut Element, wanted: &OpenType) {
     if wanted.is_empty() {
         return;
@@ -338,7 +343,7 @@ pub fn write_open_type(properties: &mut Element, wanted: &OpenType) {
     let mut valued = |local: &str, value: &str| {
         let mut element = Element::new(&format!("{W14_PREFIX}:{local}"), Some(W14));
         element.set_namespaced_attribute(&format!("{W14_PREFIX}:val"), W14, value);
-        properties.push_element(element);
+        crate::edit::insert_ordered(properties, element, crate::edit::RUN_PROPERTY_ORDER);
     };
 
     if wanted.ligatures != Ligatures::default() {
@@ -360,7 +365,7 @@ pub fn write_open_type(properties: &mut Element, wanted: &OpenType) {
             one.set_namespaced_attribute(&format!("{W14_PREFIX}:id"), W14, &id.to_string());
             sets.push_element(one);
         }
-        properties.push_element(sets);
+        crate::edit::insert_ordered(properties, sets, crate::edit::RUN_PROPERTY_ORDER);
     }
 }
 

@@ -457,7 +457,7 @@ impl Document {
         };
 
         let prefix = self.prefix();
-        let frame = frame_element(&ids, width_emu, height, prefix.as_deref());
+        let frame = self.numbered(frame_element(&ids, width_emu, height, prefix.as_deref()));
         let inserted = crate::position::insert_element_at(
             &mut self.tree_to_edit().root,
             caret,

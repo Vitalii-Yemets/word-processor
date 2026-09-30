@@ -394,7 +394,7 @@ impl Document {
             edit::insert_ordered(
                 properties,
                 Element::new(&edit::name_with(prefix.as_deref(), "tcBorders"), Some(read::W)),
-                CELL_PROPERTY_ORDER,
+                edit::CELL_PROPERTY_ORDER,
             );
         }
         let Some(borders) = properties.child_mut(Some(read::W), "tcBorders") else { return false };
@@ -896,23 +896,6 @@ pub(crate) fn mend_merges(table: &mut Element, prefix: Option<&str>) {
     }
 }
 
-/// The order the schema requires for the children of `w:tcPr`.
-const CELL_PROPERTY_ORDER: &[&str] = &[
-    "cnfStyle",
-    "tcW",
-    "gridSpan",
-    "hMerge",
-    "vMerge",
-    "tcBorders",
-    "shd",
-    "noWrap",
-    "tcMar",
-    "textDirection",
-    "tcFitText",
-    "vAlign",
-    "hideMark",
-];
-
 /// The `w:tcPr` of a cell, made if it is not there.
 fn properties_of<'a>(cell: &'a mut Element, prefix: Option<&str>) -> &'a mut Element {
     if cell.child(Some(read::W), "tcPr").is_none() {
@@ -933,7 +916,7 @@ fn properties_insert(
     if let Some(value) = value {
         element.set_namespaced_attribute(&edit::name_with(prefix, "val"), read::W, value);
     }
-    edit::insert_ordered(properties, element, CELL_PROPERTY_ORDER);
+    edit::insert_ordered(properties, element, edit::CELL_PROPERTY_ORDER);
 }
 
 /// How many columns of the grid a cell covers.

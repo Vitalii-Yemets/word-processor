@@ -388,7 +388,7 @@ impl Document {
     ) -> Result<bool, Error> {
         let caret = self.caret();
         self.record(EditKind::Structural, caret, false);
-        let xml = part_xml(kind, body)?;
+        let xml = part_xml(kind, body, self.drawing_numbering())?;
 
         let part = match self.own_part_for(kind, self.section_here(), which) {
             Some(existing) => existing,
@@ -452,7 +452,7 @@ impl Document {
         }
 
         let body = preset_body(preset, alignment, caption);
-        let xml = part_xml(kind, &body)?;
+        let xml = part_xml(kind, &body, self.drawing_numbering())?;
 
         // Re-use the part if this section has one of its own, so a header
         // changed twice does not leave an orphan behind in the package. A
@@ -521,8 +521,10 @@ impl Document {
         reference.declarations.push((Some("r".to_owned()), read::RELATIONSHIPS.to_owned()));
 
         // Both references come before everything else the schema allows in a
-        // section, so the front is the right place.
-        section.insert_element(0, reference);
+        // section, and the order of the section's properties says so: they
+        // are first in it, so a property added after one — the first page's
+        // `w:titlePg` — goes behind them rather than in front.
+        edit::insert_ordered(section, reference, edit::SECTION_PROPERTY_ORDER);
     }
 
     /// A part name nothing in the package is using.
@@ -630,7 +632,16 @@ fn preset_body(preset: Preset, alignment: Alignment, caption: &str) -> Body {
 }
 
 /// The XML of a header or footer part.
-fn part_xml(which: Furniture, body: &Body) -> Result<String, Error> {
+///
+/// Its drawings numbered and named by `numbering`, from above every number
+/// the rest of the document has: a body taken from another header — what
+/// breaking a link does — would otherwise bring that header's numbers with
+/// it, and a body written from a model would number every drawing 1.
+fn part_xml(
+    which: Furniture,
+    body: &Body,
+    mut numbering: crate::identifiers::Numbering,
+) -> Result<String, Error> {
     let mut root = Element::new(&format!("w:{}", which.root()), Some(read::W));
     root.declarations.push((Some("w".to_owned()), read::W.to_owned()));
     root.declarations.push((Some("r".to_owned()), read::RELATIONSHIPS.to_owned()));
@@ -638,6 +649,7 @@ fn part_xml(which: Furniture, body: &Body) -> Result<String, Error> {
     for block in &body.blocks {
         root.push_element(edit::block_element(block, Some("w")));
     }
+    numbering.number_all(core::slice::from_mut(&mut root));
 
     let tree = XmlTree {
         standalone: Some(true),

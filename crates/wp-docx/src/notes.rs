@@ -447,6 +447,7 @@ impl Document {
                 continue;
             }
             entry.children.clear();
+            let mut elements = Vec::new();
             for (number, block) in body.blocks.iter().enumerate() {
                 let mut block = block.clone();
                 // The reference mark goes back on the first paragraph, since
@@ -471,7 +472,13 @@ impl Document {
                         );
                     }
                 }
-                entry.push_element(edit::block_element(&block, Some("w")));
+                elements.push(edit::block_element(&block, Some("w")));
+            }
+            // A drawing in the note is new to the document, whatever number it
+            // was written with: see [`crate::identifiers`].
+            self.number_drawings(&mut elements);
+            for element in elements {
+                entry.push_element(element);
             }
             written = true;
             break;

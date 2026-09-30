@@ -635,12 +635,14 @@ fn level_element(level: i32, shape: Shape, prefix: Option<&str>) -> Element {
 
     // Half an inch per level, with the mark hanging a quarter of an inch back
     // into it, which is what Word's own lists use.
-    let mut properties = Element::new(&named(prefix, "pPr"), Some(W));
     let mut indent = Element::new(&named(prefix, "ind"), Some(W));
     indent.set_namespaced_attribute(&named(prefix, "left"), W, &(720 * (level + 1)).to_string());
     indent.set_namespaced_attribute(&named(prefix, "hanging"), W, "360");
-    properties.push_element(indent);
-    element.push_element(properties);
+    element.push_element(crate::edit::ordered(
+        &named(prefix, "pPr"),
+        vec![indent],
+        crate::edit::PARAGRAPH_PROPERTY_ORDER,
+    ));
     element
 }
 

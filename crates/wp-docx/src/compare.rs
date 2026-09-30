@@ -665,13 +665,18 @@ impl Document {
             let Some(ours) = edit::element_at_path(&self.tree().root, path) else { continue };
             let (ours, theirs) = (read::read_part(ours), read::read_part(theirs));
             let Some(body) = Self::compared_body(&ours, &theirs, author, options) else { continue };
+            // Written from the model, a drawing in the box would be numbered
+            // 1: it is given a number of its own, see [`crate::identifiers`].
+            let mut elements: Vec<wp_xml::tree::Element> =
+                body.blocks.iter().map(|block| edit::block_element(block, Some("w"))).collect();
+            self.number_drawings(&mut elements);
 
             let Some(into) = edit::element_at_path_mut(&mut self.tree_to_edit().root, path) else {
                 continue;
             };
             into.children.clear();
-            for block in &body.blocks {
-                into.push_element(edit::block_element(block, Some("w")));
+            for element in elements {
+                into.push_element(element);
             }
             marked += 1;
         }

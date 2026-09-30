@@ -1331,7 +1331,7 @@ impl crate::Document {
 
         let id = self.point_at_chart(&name)?;
         let prefix = self.prefix();
-        let drawing = chart_drawing(&id, width_emu, height_emu, prefix.as_deref());
+        let drawing = self.numbered(chart_drawing(&id, width_emu, height_emu, prefix.as_deref()));
         let inserted = crate::position::insert_element_at(
             &mut self.tree_to_edit().root,
             caret,

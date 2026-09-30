@@ -27,10 +27,27 @@ use crate::read::W;
 /// The namespace of the reserved `xml` prefix, which `xml:space` belongs to.
 pub(crate) const XML_NAMESPACE: &str = "http://www.w3.org/XML/1998/namespace";
 
-/// The order the schema requires for the children of `w:pPr`.
-///
-/// Word rejects a document whose properties are out of sequence, so anything
-/// inserted has to go in the right place rather than simply at the end.
+// --- The order of properties --------------------------------------------------
+//
+// Every property container is a sequence in the schema, not a bag: its
+// children have one order, and a file with them in any other is one the
+// schema forbids. Word happens to open such a file without a word — K4 asked
+// it — but a validator flags it and another reader may hold to it. So the
+// lists below are the schema's whole sequences, ECMA-376 Part 1 in its
+// transitional form, and every element this program builds or changes one of
+// these containers with goes in through [`insert_ordered`] with the list for
+// that container: one order for each, kept here and nowhere else.
+//
+// An entry may name more than one element, separated by `|`: those are a
+// choice the schema lets come in any order among themselves. An entry with
+// `w14:` in front names one of Word 2010's elements — the text effects and
+// the OpenType features of a run — in the place Word's schema gives it. And
+// `*` is where any other element of another namespace goes: after the
+// schema's own properties and before the record of a change to them.
+
+/// The order the schema requires for the children of `w:pPr` — `CT_PPr`, of
+/// which a style's, a list level's and a recorded change's paragraph
+/// properties are each a part, in the same order.
 pub(crate) const PARAGRAPH_PROPERTY_ORDER: &[&str] = &[
     "pStyle",
     "keepNext",
@@ -40,25 +57,50 @@ pub(crate) const PARAGRAPH_PROPERTY_ORDER: &[&str] = &[
     "widowControl",
     "numPr",
     "suppressLineNumbers",
-    "suppressAutoHyphens",
     "pBdr",
     "shd",
     "tabs",
+    "suppressAutoHyphens",
+    "kinsoku",
+    "wordWrap",
+    "overflowPunct",
+    "topLinePunct",
+    "autoSpaceDE",
+    "autoSpaceDN",
     "bidi",
+    "adjustRightInd",
+    "snapToGrid",
     "spacing",
     "ind",
     "contextualSpacing",
     "mirrorIndents",
+    "suppressOverlap",
     "jc",
     "textDirection",
     "textAlignment",
+    "textboxTightWrap",
     "outlineLvl",
+    "divId",
+    "cnfStyle",
     "rPr",
     "sectPr",
+    "*",
+    "pPrChange",
 ];
 
-/// The same, for the children of `w:rPr`.
+/// The same, for the children of `w:rPr` — `CT_RPr`. The four marks of a
+/// tracked change at the front belong only to the paragraph mark's run
+/// properties, `CT_ParaRPr`, which is the same sequence with them first.
+///
+/// Word 2010's own properties come after the standard's, in the order of its
+/// extension of the type ([MS-DOCX]): the text effects, then the OpenType
+/// features. Word writes them there — every run of the templates that come
+/// with Office that has one has it after the last `w:` property.
 pub(crate) const RUN_PROPERTY_ORDER: &[&str] = &[
+    "ins",
+    "del",
+    "moveFrom",
+    "moveTo",
     "rStyle",
     "rFonts",
     "b",
@@ -69,8 +111,14 @@ pub(crate) const RUN_PROPERTY_ORDER: &[&str] = &[
     "smallCaps",
     "strike",
     "dstrike",
-    "vanish",
+    "outline",
+    "shadow",
+    "emboss",
+    "imprint",
     "noProof",
+    "snapToGrid",
+    "vanish",
+    "webHidden",
     "color",
     "spacing",
     "w",
@@ -83,12 +131,122 @@ pub(crate) const RUN_PROPERTY_ORDER: &[&str] = &[
     "effect",
     "bdr",
     "shd",
+    "fitText",
     "vertAlign",
     "rtl",
     "cs",
     "em",
     "lang",
     "eastAsianLayout",
+    "specVanish",
+    "oMath",
+    "w14:glow",
+    "w14:shadow",
+    "w14:reflection",
+    "w14:textOutline",
+    "w14:textFill",
+    "w14:scene3d",
+    "w14:props3d",
+    "w14:ligatures",
+    "w14:numForm",
+    "w14:numSpacing",
+    "w14:stylisticSets",
+    "w14:cntxtAlts",
+    "*",
+    "rPrChange",
+];
+
+/// And of `w:tblPr` — `CT_TblPr`, a table style's being the same without
+/// the change.
+pub(crate) const TABLE_PROPERTY_ORDER: &[&str] = &[
+    "tblStyle",
+    "tblpPr",
+    "tblOverlap",
+    "bidiVisual",
+    "tblStyleRowBandSize",
+    "tblStyleColBandSize",
+    "tblW",
+    "jc",
+    "tblCellSpacing",
+    "tblInd",
+    "tblBorders",
+    "shd",
+    "tblLayout",
+    "tblCellMar",
+    "tblLook",
+    "tblCaption",
+    "tblDescription",
+    "*",
+    "tblPrChange",
+];
+
+/// And of `w:trPr` — `CT_TrPr`.
+pub(crate) const ROW_PROPERTY_ORDER: &[&str] = &[
+    "cnfStyle",
+    "divId",
+    "gridBefore",
+    "gridAfter",
+    "wBefore",
+    "wAfter",
+    "cantSplit",
+    "trHeight",
+    "tblHeader",
+    "tblCellSpacing",
+    "jc",
+    "hidden",
+    "ins",
+    "del",
+    "*",
+    "trPrChange",
+];
+
+/// And of `w:tcPr` — `CT_TcPr`.
+pub(crate) const CELL_PROPERTY_ORDER: &[&str] = &[
+    "cnfStyle",
+    "tcW",
+    "gridSpan",
+    "hMerge",
+    "vMerge",
+    "tcBorders",
+    "shd",
+    "noWrap",
+    "tcMar",
+    "textDirection",
+    "tcFitText",
+    "vAlign",
+    "hideMark",
+    "headers",
+    "cellIns|cellDel|cellMerge",
+    "*",
+    "tcPrChange",
+];
+
+/// And of `w:sectPr` — `CT_SectPr`. The header and footer references come
+/// before everything else, in any order among themselves; a list without
+/// them put a property added later in front of them.
+pub(crate) const SECTION_PROPERTY_ORDER: &[&str] = &[
+    "headerReference|footerReference",
+    "footnotePr",
+    "endnotePr",
+    "type",
+    "pgSz",
+    "pgMar",
+    "paperSrc",
+    "pgBorders",
+    "lnNumType",
+    "pgNumType",
+    "cols",
+    "formProt",
+    "vAlign",
+    "noEndnote",
+    "titlePg",
+    "textDirection",
+    "bidi",
+    "rtlGutter",
+    "docGrid",
+    "printerSettings",
+    "*",
+    "sectPrChange",
 ];
 
 /// Finds the prefix a document uses for a namespace.
@@ -131,30 +289,49 @@ pub(crate) fn name_with(prefix: Option<&str>, local: &str) -> String {
 
 /// Inserts a property where the schema says it belongs.
 pub(crate) fn insert_ordered(parent: &mut Element, child: Element, order: &[&str]) {
-    let local = child.local_name().to_owned();
-    let rank = order.iter().position(|name| *name == local);
-
     // An unknown property goes at the end, which is the least surprising place
     // for something the order list does not mention.
-    let Some(rank) = rank else {
+    let Some(rank) = rank_in(order, &child) else {
         parent.push_element(child);
         return;
     };
 
+    // After everything that comes before it or beside it, and so in front of
+    // the first thing that comes after it — or that the list does not know,
+    // which is taken to come after everything it does.
     let position = parent
         .children
         .iter()
         .position(|node| {
             node.as_element().is_some_and(|existing| {
-                order
-                    .iter()
-                    .position(|name| *name == existing.local_name())
-                    .is_none_or(|existing_rank| existing_rank > rank)
+                rank_in(order, existing).is_none_or(|existing_rank| existing_rank > rank)
             })
         })
         .unwrap_or(parent.children.len());
 
     parent.insert_element(position, child);
+}
+
+/// Where an element stands in an order, or `None` when the order does not
+/// name it.
+///
+/// By its name and its namespace, not its name alone: Word 2010's shadow is
+/// `w14:shadow`, and taken for `w:shadow` it would be put among the schema's
+/// own properties, ahead of the colour. An entry without a prefix is a name
+/// in the word-processing namespace and one with `w14:` a name in Word 2010's;
+/// any other element — and one of Word 2010's the list does not name — stands
+/// at the order's `*`, or is unknown to an order without one.
+#[must_use]
+pub(crate) fn rank_in(order: &[&str], element: &Element) -> Option<usize> {
+    let local = element.local_name();
+    let named =
+        |wanted: &dyn Fn(&str) -> bool| order.iter().position(|entry| entry.split('|').any(wanted));
+    let found = match element.namespace.as_deref() {
+        Some(W) => return named(&|name| name == local),
+        Some(crate::effects::W14) => named(&|name| name.strip_prefix("w14:") == Some(local)),
+        _ => None,
+    };
+    found.or_else(|| order.iter().position(|entry| *entry == "*"))
 }
 
 // --- Finding and replacing text ---------------------------------------------
@@ -682,56 +859,59 @@ pub fn paragraph_properties_element(
     properties: &ParagraphProperties,
     prefix: Option<&str>,
 ) -> Element {
-    let mut element = Element::new(&name_with(prefix, "pPr"), Some(W));
-    // Built in schema order, so nothing has to be sorted afterwards.
+    // Each property made in whatever order is easiest to read, and put where
+    // the schema has it at the end: the order is the list's to know, not the
+    // order of the lines below — which had `w:contextualSpacing` in front of
+    // the spacing and the indents it follows.
+    let mut children = Vec::new();
     if let Some(style) = &properties.style {
-        element.push_element(valued(prefix, "pStyle", style));
+        children.push(valued(prefix, "pStyle", style));
     }
     if let Some(state) = properties.keep_next {
-        element.push_element(toggle(prefix, "keepNext", state));
+        children.push(toggle(prefix, "keepNext", state));
     }
     if let Some(state) = properties.keep_lines {
-        element.push_element(toggle(prefix, "keepLines", state));
+        children.push(toggle(prefix, "keepLines", state));
     }
     if let Some(state) = properties.page_break_before {
-        element.push_element(toggle(prefix, "pageBreakBefore", state));
+        children.push(toggle(prefix, "pageBreakBefore", state));
     }
     if let Some(state) = properties.widow_control {
-        element.push_element(toggle(prefix, "widowControl", state));
+        children.push(toggle(prefix, "widowControl", state));
     }
     if let Some(state) = properties.suppress_line_numbers {
-        element.push_element(toggle(prefix, "suppressLineNumbers", state));
+        children.push(toggle(prefix, "suppressLineNumbers", state));
     }
     if let Some(state) = properties.no_hyphenation {
-        element.push_element(toggle(prefix, "suppressAutoHyphens", state));
+        children.push(toggle(prefix, "suppressAutoHyphens", state));
     }
     if let Some(state) = properties.contextual_spacing {
-        element.push_element(toggle(prefix, "contextualSpacing", state));
+        children.push(toggle(prefix, "contextualSpacing", state));
     }
     if let Some(state) = properties.mirror_indents {
-        element.push_element(toggle(prefix, "mirrorIndents", state));
+        children.push(toggle(prefix, "mirrorIndents", state));
     }
     if let Some(numbering) = properties.numbering {
         let mut reference = Element::new(&name_with(prefix, "numPr"), Some(W));
         reference.push_element(valued(prefix, "ilvl", &numbering.level.to_string()));
         reference.push_element(valued(prefix, "numId", &numbering.id.to_string()));
-        element.push_element(reference);
+        children.push(reference);
     }
     if !properties.borders.is_empty() {
-        element.push_element(paragraph_borders_element(&properties.borders, prefix));
+        children.push(paragraph_borders_element(&properties.borders, prefix));
     }
     if let Some(fill) = &properties.shading {
         let mut shading = Element::new(&name_with(prefix, "shd"), Some(W));
         shading.set_namespaced_attribute(&name_with(prefix, "val"), W, "clear");
         shading.set_namespaced_attribute(&name_with(prefix, "color"), W, "auto");
         shading.set_namespaced_attribute(&name_with(prefix, "fill"), W, fill);
-        element.push_element(shading);
+        children.push(shading);
     }
     if !properties.tab_stops.is_empty() {
-        element.push_element(tab_stops_element(&properties.tab_stops, prefix));
+        children.push(tab_stops_element(&properties.tab_stops, prefix));
     }
     if let Some(state) = properties.right_to_left {
-        element.push_element(toggle(prefix, "bidi", state));
+        children.push(toggle(prefix, "bidi", state));
     }
     if properties.space_before.is_some()
         || properties.space_after.is_some()
@@ -757,7 +937,7 @@ pub fn paragraph_properties_element(
             };
             spacing.set_namespaced_attribute(&name_with(prefix, "lineRule"), W, rule);
         }
-        element.push_element(spacing);
+        children.push(spacing);
     }
     if properties.indent_start.is_some()
         || properties.indent_end.is_some()
@@ -775,15 +955,25 @@ pub fn paragraph_properties_element(
             let (name, amount) = if first < 0 { ("hanging", -first) } else { ("firstLine", first) };
             indent.set_namespaced_attribute(&name_with(prefix, name), W, &amount.to_string());
         }
-        element.push_element(indent);
+        children.push(indent);
     }
     if let Some(alignment) = properties.alignment {
-        element.push_element(valued(prefix, "jc", alignment.to_attribute()));
+        children.push(valued(prefix, "jc", alignment.to_attribute()));
     }
     if let Some(level) = properties.outline_level {
-        element.push_element(valued(prefix, "outlineLvl", &level.to_string()));
+        children.push(valued(prefix, "outlineLvl", &level.to_string()));
     }
 
+    ordered(&name_with(prefix, "pPr"), children, PARAGRAPH_PROPERTY_ORDER)
+}
+
+/// A property container holding these children, each where the order puts
+/// it, whatever order they were made in.
+pub(crate) fn ordered(name: &str, children: Vec<Element>, order: &[&str]) -> Element {
+    let mut element = Element::new(name, Some(W));
+    for child in children {
+        insert_ordered(&mut element, child, order);
+    }
     element
 }
 
@@ -906,10 +1096,12 @@ fn unlinked_elements(runs: &[Run], prefix: Option<&str>) -> Vec<Element> {
 /// Turns run properties into a `w:rPr`.
 #[must_use]
 pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) -> Element {
-    let mut element = Element::new(&name_with(prefix, "rPr"), Some(W));
-
+    // As for a paragraph: made in any order and put in the schema's. The
+    // lines below had the strike in front of the capitals, the scale in
+    // front of the spacing and the size behind the highlight.
+    let mut children = Vec::new();
     if let Some(style) = &properties.style {
-        element.push_element(valued(prefix, "rStyle", style));
+        children.push(valued(prefix, "rStyle", style));
     }
     if let Some(font) = &properties.font {
         let mut fonts = Element::new(&name_with(prefix, "rFonts"), Some(W));
@@ -918,60 +1110,60 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
         for attribute in ["ascii", "hAnsi", "cs", "eastAsia"] {
             fonts.set_namespaced_attribute(&name_with(prefix, attribute), W, font);
         }
-        element.push_element(fonts);
+        children.push(fonts);
     }
     if let Some(state) = properties.bold {
-        element.push_element(toggle(prefix, "b", state));
+        children.push(toggle(prefix, "b", state));
         // Complex-script text takes its weight from w:bCs, not w:b.
-        element.push_element(toggle(prefix, "bCs", state));
+        children.push(toggle(prefix, "bCs", state));
     }
     if let Some(state) = properties.italic {
-        element.push_element(toggle(prefix, "i", state));
-        element.push_element(toggle(prefix, "iCs", state));
+        children.push(toggle(prefix, "i", state));
+        children.push(toggle(prefix, "iCs", state));
     }
     if let Some(state) = properties.strike {
-        element.push_element(toggle(prefix, "strike", state));
+        children.push(toggle(prefix, "strike", state));
     }
     if let Some(state) = properties.double_strike {
-        element.push_element(toggle(prefix, "dstrike", state));
+        children.push(toggle(prefix, "dstrike", state));
     }
     if let Some(state) = properties.caps {
-        element.push_element(toggle(prefix, "caps", state));
+        children.push(toggle(prefix, "caps", state));
     }
     if let Some(state) = properties.small_caps {
-        element.push_element(toggle(prefix, "smallCaps", state));
+        children.push(toggle(prefix, "smallCaps", state));
     }
     if let Some(state) = properties.hidden {
-        element.push_element(toggle(prefix, "vanish", state));
+        children.push(toggle(prefix, "vanish", state));
     }
     if let Some(state) = properties.no_proof {
-        element.push_element(toggle(prefix, "noProof", state));
+        children.push(toggle(prefix, "noProof", state));
     }
     if let Some(scale) = properties.scale {
-        element.push_element(valued(prefix, "w", &scale.to_string()));
+        children.push(valued(prefix, "w", &scale.to_string()));
     }
     if let Some(spacing) = properties.spacing_twentieths {
-        element.push_element(valued(prefix, "spacing", &spacing.to_string()));
+        children.push(valued(prefix, "spacing", &spacing.to_string()));
     }
     if let Some(position) = properties.position_half_points {
-        element.push_element(valued(prefix, "position", &position.to_string()));
+        children.push(valued(prefix, "position", &position.to_string()));
     }
     if let Some(kerning) = properties.kerning_half_points {
-        element.push_element(valued(prefix, "kern", &kerning.to_string()));
+        children.push(valued(prefix, "kern", &kerning.to_string()));
     }
     if let Some(color) = &properties.color {
-        element.push_element(valued(prefix, "color", color));
+        children.push(valued(prefix, "color", color));
     }
     if let Some(highlight) = &properties.highlight {
-        element.push_element(valued(prefix, "highlight", highlight));
+        children.push(valued(prefix, "highlight", highlight));
     }
     if let Some(alignment) = properties.vertical_align {
-        element.push_element(valued(prefix, "vertAlign", alignment.to_attribute()));
+        children.push(valued(prefix, "vertAlign", alignment.to_attribute()));
     }
     if let Some(half_points) = properties.size_half_points {
         let size = half_points.to_string();
-        element.push_element(valued(prefix, "sz", &size));
-        element.push_element(valued(prefix, "szCs", &size));
+        children.push(valued(prefix, "sz", &size));
+        children.push(valued(prefix, "szCs", &size));
     }
     if let Some(underline) = &properties.underline {
         let mut line = valued(prefix, "u", underline.to_attribute());
@@ -980,23 +1172,24 @@ pub fn run_properties_element(properties: &RunProperties, prefix: Option<&str>) 
         if let Some(color) = &properties.underline_color {
             line.set_namespaced_attribute(&name_with(prefix, "color"), W, color);
         }
-        element.push_element(line);
+        children.push(line);
     }
     if let Some(state) = properties.right_to_left {
-        element.push_element(toggle(prefix, "rtl", state));
+        children.push(toggle(prefix, "rtl", state));
     }
     if let Some(language) = &properties.language {
-        element.push_element(valued(prefix, "lang", language));
+        children.push(valued(prefix, "lang", language));
     }
-    // Last, because it is in a namespace of its own and the schema wants the
-    // standard properties in their standard order before it.
+    if let Some(layout) = properties.east_asian_layout.filter(|layout| !layout.is_empty()) {
+        children.push(layout.element(prefix));
+    }
+
+    let mut element = ordered(&name_with(prefix, "rPr"), children, RUN_PROPERTY_ORDER);
+    // In a namespace of their own, which the order puts after the standard
+    // properties; the writer of them puts them there, and in their own order.
     if let Some(wanted) = &properties.open_type {
         crate::typography::write_open_type(&mut element, wanted);
     }
-    if let Some(layout) = properties.east_asian_layout.filter(|layout| !layout.is_empty()) {
-        element.push_element(layout.element(prefix));
-    }
-
     element
 }
 
@@ -1060,7 +1253,7 @@ fn run_shell(run: &Run, prefix: Option<&str>) -> Element {
                 record.set_namespaced_attribute(&name_with(prefix, "date"), W, &change.date);
             }
             record.push_element(run_properties_element(&change.before, prefix));
-            properties.push_element(record);
+            insert_ordered(&mut properties, record, RUN_PROPERTY_ORDER);
         }
         element.push_element(properties);
     }
@@ -1463,9 +1656,12 @@ pub(crate) fn declare_extension(root: &mut Element, prefix: &str, uri: &str) {
 pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
     let mut element = Element::new(&name_with(prefix, "tbl"), Some(W));
 
-    let mut properties = Element::new(&name_with(prefix, "tblPr"), Some(W));
+    // Each container's properties are put where the schema has them, as a
+    // paragraph's are: the lines below had the table's borders and its layout
+    // in front of the spacing between its cells.
+    let mut properties = Vec::new();
     if let Some(style) = &table.style {
-        properties.push_element(valued(prefix, "tblStyle", style));
+        properties.push(valued(prefix, "tblStyle", style));
     }
     // How wide the table would like to be, which is half of Word's AutoFit; the
     // other half is `w:tblLayout` below. See [`crate::model::TableFit`].
@@ -1481,24 +1677,24 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
             width.set_namespaced_attribute(&name_with(prefix, "type"), W, "auto");
         }
     }
-    properties.push_element(width);
+    properties.push(width);
     if !table.borders.is_empty() {
-        properties.push_element(table_borders_element(&table.borders, prefix));
+        properties.push(table_borders_element(&table.borders, prefix));
     }
     if table.fit == crate::model::TableFit::Fixed {
         let mut layout = Element::new(&name_with(prefix, "tblLayout"), Some(W));
         layout.set_namespaced_attribute(&name_with(prefix, "type"), W, "fixed");
-        properties.push_element(layout);
+        properties.push(layout);
     }
     // The room inside every cell, and the room between them. Written only when
     // the table asks for something other than what Word does by itself.
     if let Some(spacing) = table.cell_spacing.filter(|twips| *twips > 0) {
-        properties.push_element(measured(prefix, "tblCellSpacing", spacing));
+        properties.push(measured(prefix, "tblCellSpacing", spacing));
     }
     if !table.cell_margins.is_empty() {
-        properties.push_element(cell_margins_element("tblCellMar", &table.cell_margins, prefix));
+        properties.push(cell_margins_element("tblCellMar", &table.cell_margins, prefix));
     }
-    element.push_element(properties);
+    element.push_element(ordered(&name_with(prefix, "tblPr"), properties, TABLE_PROPERTY_ORDER));
 
     // The grid decides the geometry, so it is written even when every column is
     // the same width: a table without one is a table whose columns are guesses.
@@ -1540,7 +1736,7 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
         // happened to be and a header row that was a header no longer — which
         // is what a spreadsheet pasted in, a list converted to a table and a
         // new table all went through.
-        let mut row_properties = Element::new(&name_with(prefix, "trPr"), Some(W));
+        let mut row_properties = Vec::new();
         if let Some(twips) = row.height {
             let mut height = Element::new(&name_with(prefix, "trHeight"), Some(W));
             height.set_namespaced_attribute(&name_with(prefix, "val"), W, &twips.to_string());
@@ -1549,19 +1745,23 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
                 W,
                 if row.height_exact { "exact" } else { "atLeast" },
             );
-            row_properties.push_element(height);
+            row_properties.push(height);
         }
         if row.is_header {
-            row_properties.push_element(valued(prefix, "tblHeader", "true"));
+            row_properties.push(valued(prefix, "tblHeader", "true"));
         }
-        if !row_properties.children.is_empty() {
-            row_element.push_element(row_properties);
+        if !row_properties.is_empty() {
+            row_element.push_element(ordered(
+                &name_with(prefix, "trPr"),
+                row_properties,
+                ROW_PROPERTY_ORDER,
+            ));
         }
 
         for (cell_index, cell) in row.cells.iter().enumerate() {
             let mut cell_element = Element::new(&name_with(prefix, "tc"), Some(W));
 
-            let mut cell_properties = Element::new(&name_with(prefix, "tcPr"), Some(W));
+            let mut cell_properties = Vec::new();
             let mut cell_width = Element::new(&name_with(prefix, "tcW"), Some(W));
             match cell.width {
                 Some(twips) => {
@@ -1577,9 +1777,9 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
                     cell_width.set_namespaced_attribute(&name_with(prefix, "type"), W, "auto");
                 }
             }
-            cell_properties.push_element(cell_width);
+            cell_properties.push(cell_width);
             if cell.span > 1 {
-                cell_properties.push_element(valued(prefix, "gridSpan", &cell.span.to_string()));
+                cell_properties.push(valued(prefix, "gridSpan", &cell.span.to_string()));
             }
             // A cell merged with the one above it, and the first of such a
             // run, which the format marks as where the merge restarts.
@@ -1592,42 +1792,42 @@ pub fn table_element(table: &Table, prefix: Option<&str>) -> Element {
                     .any(|(under, at)| *at == column && under.merged_upwards)
             });
             if cell.merged_upwards {
-                cell_properties.push_element(Element::new(&name_with(prefix, "vMerge"), Some(W)));
+                cell_properties.push(Element::new(&name_with(prefix, "vMerge"), Some(W)));
             } else if continued_below {
-                cell_properties.push_element(valued(prefix, "vMerge", "restart"));
+                cell_properties.push(valued(prefix, "vMerge", "restart"));
             }
             // Its own lines and its own colour, over whatever the table says.
             if !cell.borders.is_empty() {
-                cell_properties.push_element(borders_element("tcBorders", &cell.borders, prefix));
+                cell_properties.push(borders_element("tcBorders", &cell.borders, prefix));
             }
             if let Some(fill) = &cell.shading {
                 let mut shading = Element::new(&name_with(prefix, "shd"), Some(W));
                 shading.set_namespaced_attribute(&name_with(prefix, "val"), W, "clear");
                 shading.set_namespaced_attribute(&name_with(prefix, "color"), W, "auto");
                 shading.set_namespaced_attribute(&name_with(prefix, "fill"), W, fill);
-                cell_properties.push_element(shading);
+                cell_properties.push(shading);
             }
             // Room this cell keeps clear inside itself, where it asks for
             // something other than the table's.
             if !cell.margins.is_empty() {
-                cell_properties.push_element(cell_margins_element("tcMar", &cell.margins, prefix));
+                cell_properties.push(cell_margins_element("tcMar", &cell.margins, prefix));
             }
             // Written only when the text is turned, because the ordinary way up
             // is what a cell that says nothing means.
             if cell.direction.is_turned() {
-                cell_properties.push_element(valued(
-                    prefix,
-                    "textDirection",
-                    cell.direction.word(),
-                ));
+                cell_properties.push(valued(prefix, "textDirection", cell.direction.word()));
             }
             // Written only when the text does not sit where a cell that says
             // nothing puts it, which is at the top. After the direction,
             // which is where the schema has it.
             if cell.vertical != crate::table_properties::CellAlignment::Top {
-                cell_properties.push_element(valued(prefix, "vAlign", cell.vertical.word()));
+                cell_properties.push(valued(prefix, "vAlign", cell.vertical.word()));
             }
-            cell_element.push_element(cell_properties);
+            cell_element.push_element(ordered(
+                &name_with(prefix, "tcPr"),
+                cell_properties,
+                CELL_PROPERTY_ORDER,
+            ));
 
             if cell.blocks.is_empty() {
                 // A cell must contain at least one paragraph; Word rejects a
@@ -1659,7 +1859,11 @@ pub(crate) fn block_element(block: &Block, prefix: Option<&str>) -> Element {
 /// `w:sectPr` must remain the last child of `w:body`; a document with anything
 /// after it is rejected.
 pub fn append_block(body: &mut Element, block: &Block, prefix: Option<&str>) {
-    let element = block_element(block, prefix);
+    append_element(body, block_element(block, prefix));
+}
+
+/// The same for a block already written.
+pub(crate) fn append_element(body: &mut Element, element: Element) {
     match body.position_of(Some(W), "sectPr") {
         Some(index) => body.insert_element(index, element),
         None => body.push_element(element),
@@ -1977,5 +2181,90 @@ mod tests {
         let mut holder = Element::new("w:r", Some(W));
         holder.push_element(alternate);
         assert_eq!(measured_length(&holder), 1);
+    }
+
+    /// An element for each name of an order, the extensions in their own
+    /// namespace and the choices one name each.
+    fn every_child_of(order: &[&str]) -> Vec<Element> {
+        order
+            .iter()
+            .filter(|entry| **entry != "*")
+            .map(|entry| {
+                let name = entry.split('|').next().expect("a name");
+                match name.strip_prefix("w14:") {
+                    Some(local) => Element::new(&format!("w14:{local}"), Some(crate::effects::W14)),
+                    None => Element::new(&format!("w:{name}"), Some(W)),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_child_of_every_container_goes_in_where_its_order_puts_it() {
+        for order in [
+            PARAGRAPH_PROPERTY_ORDER,
+            RUN_PROPERTY_ORDER,
+            TABLE_PROPERTY_ORDER,
+            ROW_PROPERTY_ORDER,
+            CELL_PROPERTY_ORDER,
+            SECTION_PROPERTY_ORDER,
+        ] {
+            let wanted: Vec<String> =
+                every_child_of(order).iter().map(|child| child.name.clone()).collect();
+            // Backwards, then from the middle outwards: no order the list has.
+            let mut scrambled = every_child_of(order);
+            scrambled.reverse();
+            let middle = scrambled.len() / 2;
+            scrambled.rotate_left(middle);
+            let mut container = Element::new("w:container", Some(W));
+            for child in scrambled {
+                insert_ordered(&mut container, child, order);
+            }
+            let found: Vec<String> =
+                container.child_elements().map(|child| child.name.clone()).collect();
+            assert_eq!(found, wanted);
+        }
+    }
+
+    #[test]
+    fn an_extension_goes_by_its_namespace_and_not_by_its_local_name() {
+        // Word 2010's shadow and the standard's share a local name; the
+        // extension's goes after the colour, the standard's before it.
+        let mut properties = Element::new("w:rPr", Some(W));
+        insert_ordered(&mut properties, valued(Some("w"), "color", "FF0000"), RUN_PROPERTY_ORDER);
+        let extension = Element::new("w14:shadow", Some(crate::effects::W14));
+        insert_ordered(&mut properties, extension, RUN_PROPERTY_ORDER);
+        insert_ordered(&mut properties, Element::new("w:shadow", Some(W)), RUN_PROPERTY_ORDER);
+        let found: Vec<&str> =
+            properties.child_elements().map(|child| child.name.as_str()).collect();
+        assert_eq!(found, ["w:shadow", "w:color", "w14:shadow"]);
+
+        // And one the lists do not name goes where their `*` is: after the
+        // standard's properties and before the record of a change.
+        let change = Element::new("w:rPrChange", Some(W));
+        insert_ordered(&mut properties, change, RUN_PROPERTY_ORDER);
+        let unknown = Element::new("w15:something", Some("urn:elsewhere"));
+        insert_ordered(&mut properties, unknown, RUN_PROPERTY_ORDER);
+        let found: Vec<&str> =
+            properties.child_elements().map(|child| child.name.as_str()).collect();
+        assert_eq!(found, ["w:shadow", "w:color", "w14:shadow", "w15:something", "w:rPrChange"]);
+    }
+
+    #[test]
+    fn a_header_and_a_footer_reference_stand_together_in_front() {
+        let mut section = Element::new("w:sectPr", Some(W));
+        for name in ["w:pgSz", "w:titlePg", "w:headerReference", "w:footerReference"] {
+            insert_ordered(&mut section, Element::new(name, Some(W)), SECTION_PROPERTY_ORDER);
+        }
+        insert_ordered(
+            &mut section,
+            Element::new("w:headerReference", Some(W)),
+            SECTION_PROPERTY_ORDER,
+        );
+        let found: Vec<&str> = section.child_elements().map(|child| child.name.as_str()).collect();
+        assert_eq!(
+            found,
+            ["w:headerReference", "w:footerReference", "w:headerReference", "w:pgSz", "w:titlePg"]
+        );
     }
 }

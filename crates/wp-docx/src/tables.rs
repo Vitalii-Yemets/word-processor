@@ -606,7 +606,7 @@ impl Document {
         edit::insert_ordered(
             properties,
             edit::table_borders_element(borders, prefix.as_deref()),
-            TABLE_PROPERTY_ORDER,
+            edit::TABLE_PROPERTY_ORDER,
         );
 
         self.note_change();
@@ -668,25 +668,6 @@ impl Document {
         }
     }
 }
-
-/// The order the schema requires for the children of `w:tblPr`.
-const TABLE_PROPERTY_ORDER: &[&str] = &[
-    "tblStyle",
-    "tblpPr",
-    "tblOverlap",
-    "bidiVisual",
-    "tblStyleRowBandSize",
-    "tblStyleColBandSize",
-    "tblW",
-    "jc",
-    "tblCellSpacing",
-    "tblInd",
-    "tblBorders",
-    "shd",
-    "tblLayout",
-    "tblCellMar",
-    "tblLook",
-];
 
 /// The `w:tblPr` of a table, made if it is not there.
 fn table_properties_of<'a>(table: &'a mut Element, prefix: Option<&str>) -> &'a mut Element {

@@ -440,7 +440,9 @@ fn drawings_become_shapes_and_framed_pictures_float() {
     assert_eq!(text_box.body().plain_text(), "Inside the box.");
     assert_eq!(text_box.text[0].runs[0].properties.bold, Some(true));
     assert_eq!(text_box.fill, Fill::None);
-    assert_eq!(text_box.name, "Text Box");
+    // Named as Word names a drawing nobody named, after its number.
+    let number = text_box.name.strip_prefix("Text Box ").unwrap_or_default();
+    assert!(number.parse::<u32>().is_ok(), "{:?}", text_box.name);
     assert_eq!(text_box.description, "A note to the reader");
     assert_eq!(text_box.anchor.as_ref().map(|anchor| anchor.wrap), Some(Wrap::Square));
 

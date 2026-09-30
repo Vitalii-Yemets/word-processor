@@ -303,7 +303,7 @@ impl Document {
 
     /// The same, told how much of the copied formatting to bring.
     pub fn paste_blocks_as(&mut self, blocks: &[Block], formatting: Formatting) -> bool {
-        let paragraphs: Vec<Paragraph> = blocks
+        let mut paragraphs: Vec<Paragraph> = blocks
             .iter()
             .filter_map(|block| match block {
                 Block::Paragraph(paragraph) => Some(paragraph.clone()),
@@ -318,6 +318,11 @@ impl Document {
         {
             return false;
         }
+
+        // The copy's shapes numbered again, all of it at once and before any
+        // of it goes in, so that a connector in one paragraph of it still
+        // finds a shape in another. See [`Document::renumber_copied_shapes`].
+        self.renumber_copied_shapes(copied_elements(&mut paragraphs));
 
         // One gesture: a paste is one thing, however many paragraphs it is
         // made of, and one undo has to take the whole of it back. The paste
@@ -357,7 +362,7 @@ impl Document {
                 Formatting::Source => paragraph.runs.clone(),
                 Formatting::Merged => paragraph.runs.iter().map(merged).collect(),
             };
-            if self.insert_runs(&runs) {
+            if self.put_runs(&runs, true) {
                 changed = true;
             }
         }
@@ -400,6 +405,12 @@ impl Document {
     /// one read from another document rather than copied out of it — is not
     /// something that can be put down, and neither is an empty run.
     pub fn insert_runs(&mut self, runs: &[Run]) -> bool {
+        self.put_runs(runs, false)
+    }
+
+    /// The same, told whether the shapes of what is put in have been numbered
+    /// again already — by a paste, which numbers the whole of its copy at once.
+    fn put_runs(&mut self, runs: &[Run], shapes_numbered: bool) -> bool {
         let tracking = self.tracking_changes();
         let mut runs = pastable(runs, tracking);
         if runs.is_empty() {
@@ -446,7 +457,16 @@ impl Document {
                 run.revision = Some(paste.clone());
             }
         }
-        let elements = edit::runs_elements(&runs, prefix.as_deref());
+        let mut elements = edit::runs_elements(&runs, prefix.as_deref());
+        // And every drawing a number of its own. A copy is its element as it
+        // was, number and all, so a picture pasted beside the one it was
+        // copied from was two drawings the document could not tell apart. Its
+        // name it keeps, unless the document has a drawing of that name; and
+        // its shapes are numbered again, their connectors with them.
+        if !shapes_numbered {
+            self.renumber_copied_shapes(elements.iter_mut().collect());
+        }
+        self.number_copies(&mut elements);
 
         let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return false;
@@ -707,6 +727,13 @@ impl Document {
                 });
             }
         }
+        // Its shapes, numbered again as the copy's others are.
+        self.renumber_copied_shapes(copied_elements(blocks.iter_mut().filter_map(
+            |block| match block {
+                Block::Paragraph(paragraph) => Some(paragraph),
+                Block::Table(_) => None,
+            },
+        )));
         if !self.set_note_body(kind, id, &crate::model::Body { blocks }) {
             return false;
         }
@@ -1002,6 +1029,22 @@ fn group_holds_a_picture(group: &crate::group::Group) -> bool {
         crate::group::Inside::Group(inner) => group_holds_a_picture(inner),
         crate::group::Inside::Shape(_) => false,
     })
+}
+
+/// The element of every copied piece in some paragraphs: what a paste puts
+/// down as it was, and so what has to be numbered again.
+fn copied_elements<'a>(
+    paragraphs: impl IntoIterator<Item = &'a mut Paragraph>,
+) -> Vec<&'a mut Element> {
+    paragraphs
+        .into_iter()
+        .flat_map(|paragraph| paragraph.runs.iter_mut())
+        .flat_map(|run| run.content.iter_mut())
+        .filter_map(|piece| match piece {
+            RunContent::Copied(copied) => Some(&mut copied.element),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Gives every tracked change in a paste a number of its own in the document

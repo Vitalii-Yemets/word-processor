@@ -230,6 +230,8 @@ impl Document {
         self.record(EditKind::Structural, caret, false);
         let id = self.adopt_picture(bytes, extension)?;
         let prefix = self.prefix();
+        let drawing =
+            self.numbered(edit::drawing_element(&id, width_emu, height_emu, prefix.as_deref()));
 
         let Some(path) = crate::position::paragraph_path(&self.tree().root, caret.paragraph) else {
             return Ok(false);
@@ -244,7 +246,7 @@ impl Document {
         if let Some(content) = control.child_mut(Some(read::W), "sdtContent") {
             content.children.clear();
             let mut run = Element::new(&edit::name_with(prefix.as_deref(), "r"), Some(read::W));
-            run.push_element(edit::drawing_element(&id, width_emu, height_emu, prefix.as_deref()));
+            run.push_element(drawing);
             content.push_element(run);
         }
         paragraph.insert_element(at, control);
@@ -269,10 +271,16 @@ impl Document {
             return Ok(false);
         }
         let id = self.adopt_picture(bytes, extension)?;
+        let drawing = self.numbered(edit::drawing_element(
+            &id,
+            width_emu,
+            height_emu,
+            self.prefix().as_deref(),
+        ));
         Ok(self.change_control(&control, move |_, content, prefix| {
             content.children.clear();
             let mut run = Element::new(&edit::name_with(prefix, "r"), Some(read::W));
-            run.push_element(edit::drawing_element(&id, width_emu, height_emu, prefix));
+            run.push_element(drawing);
             content.push_element(run);
         }))
     }

@@ -389,9 +389,11 @@ fn style_as_link(link: &mut Element, prefix: Option<&str>) {
         properties.remove_children_named(Some(read::W), "rStyle");
         properties.remove_children_named(Some(read::W), "color");
         properties.remove_children_named(Some(read::W), "u");
-        properties.insert_element(0, style);
-        properties.push_element(color);
-        properties.push_element(underline);
+        // Each where the schema has it: the colour and the line went on the
+        // end, behind the size and the language a run already had.
+        for element in [style, color, underline] {
+            edit::insert_ordered(properties, element, edit::RUN_PROPERTY_ORDER);
+        }
     }
 }
 

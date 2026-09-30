@@ -119,7 +119,7 @@ impl Document {
         edit::insert_ordered(
             properties,
             edit::table_borders_element(borders, prefix.as_deref()),
-            crate::table_properties::TABLE_PROPERTY_ORDER,
+            crate::edit::TABLE_PROPERTY_ORDER,
         );
         self.save_styles_for_tables(&tree);
         self.note_change();
@@ -144,11 +144,12 @@ fn definition(wanted: &TableStyle, prefix: Option<&str>) -> Element {
     style.push_element(Element::new(&name("uiPriority"), Some(read::W)));
 
     // The table's own properties: the lines, which every cell gets.
-    let mut properties = Element::new(&name("tblPr"), Some(read::W));
-    if let Some(line) = wanted.lines {
-        properties.push_element(borders("tblBorders", line, prefix));
-    }
-    style.push_element(properties);
+    let properties = wanted.lines.map(|line| borders("tblBorders", line, prefix));
+    style.push_element(edit::ordered(
+        &name("tblPr"),
+        properties.into_iter().collect(),
+        edit::TABLE_PROPERTY_ORDER,
+    ));
 
     for (kind, part) in wanted.parts {
         style.push_element(part_element(*kind, *part, prefix));
@@ -179,26 +180,28 @@ fn part_element(kind: Conditional, part: Part, prefix: Option<&str>) -> Element 
     element.set_namespaced_attribute(&name("type"), read::W, kind.word());
 
     if part.bold || part.color.is_some() {
-        let mut run = Element::new(&name("rPr"), Some(read::W));
+        let mut run = Vec::new();
         if part.bold {
-            run.push_element(Element::new(&name("b"), Some(read::W)));
+            run.push(Element::new(&name("b"), Some(read::W)));
         }
         if let Some(colour) = part.color {
             let mut element = Element::new(&name("color"), Some(read::W));
             element.set_namespaced_attribute(&name("val"), read::W, colour);
-            run.push_element(element);
+            run.push(element);
         }
-        element.push_element(run);
+        element.push_element(edit::ordered(&name("rPr"), run, edit::RUN_PROPERTY_ORDER));
     }
 
     if let Some(fill) = part.shading {
-        let mut cell = Element::new(&name("tcPr"), Some(read::W));
         let mut shading = Element::new(&name("shd"), Some(read::W));
         shading.set_namespaced_attribute(&name("val"), read::W, "clear");
         shading.set_namespaced_attribute(&name("color"), read::W, "auto");
         shading.set_namespaced_attribute(&name("fill"), read::W, fill);
-        cell.push_element(shading);
-        element.push_element(cell);
+        element.push_element(edit::ordered(
+            &name("tcPr"),
+            vec![shading],
+            edit::CELL_PROPERTY_ORDER,
+        ));
     }
     element
 }

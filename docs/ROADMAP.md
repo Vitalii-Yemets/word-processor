@@ -6528,7 +6528,7 @@ work is in *The order of the work* at the end.
   a million nested `[` and an XML of a hundred thousand nested `w:sdt`
   recurse until the stack goes. Limits checked before the allocation or
   the recursion, and a test each. Reviews R06/#3, R07, R08, R10, R11.
-- [ ] **G19. Properties in the order the schema wants, and identifiers that
+- [x] **G19. Properties in the order the schema wants, and identifiers that
   are unique.** The writer has the ordered lists and does not always use
   them: `contextualSpacing` before `ind`, `strike` before `caps`, `w`
   before `spacing`, `tblBorders` and `tblLayout` before `tblCellSpacing`;
@@ -6543,6 +6543,88 @@ work is in *The order of the work* at the end.
   of the first is one a cross-reference, a caption or a field cannot tell
   apart. Done for that reason, and checked again with K4 after. Reviews
   #8/R20, #9/R19, #12, #13.
+  *Done:* one order for each container, the schema's whole sequence, kept
+  in `crates/wp-docx/src/edit.rs` and nowhere else: `CT_PPr`; `CT_RPr`, with
+  `CT_ParaRPr`'s marks of a change in front and Word 2010's text effects
+  and OpenType features after the standard's properties, in [MS-DOCX]'s
+  order; `CT_TblPr`, `CT_TrPr`, `CT_TcPr`; and `CT_SectPr` with the header
+  and footer references first. The shorter copies in `tables.rs`,
+  `cells.rs`, `table_properties.rs` and `page.rs` are gone. Every writer
+  puts a property in through `insert_ordered`, which now knows an element
+  by its namespace as well as its name — `w14:shadow` is not `w:shadow`.
+  What had it wrong, found by a walker run over every document the tests
+  leave behind: the model's paragraph, its on-off properties first; its
+  run, the strike before the capitals, the scale before the spacing, the
+  position before the kerning, the size behind the highlight, the East
+  Asian layout behind the OpenType features and those in their own wrong
+  order; its table, the borders and the layout before the spacing between
+  cells; the Paragraph dialog, whose on-off properties went in by the run's
+  order and so all went on the end; a text effect, put at the front; a
+  link's colour and underline, put at the end; a header or footer
+  reference, put at the front, where the short list then put `titlePg`
+  ahead of it; the headings of a new document's styles, their outline
+  level before their spacing. The model's containers are now made in any
+  order and put in the schema's, and so are a new section's, a list
+  level's and a table style's. And a number for each drawing:
+  `crates/wp-docx/src/identifiers.rs` gives a new one one more than the
+  highest `docPr` or `cNvPr` in the part being edited and in every body,
+  header, footer, note, comment and the glossary. That is Word's one
+  count, as the templates that come with Office show: the drawings of a
+  body, its headers and its footers are numbered from one count, a group's
+  shapes from the same one, and a picture's own `pic:cNvPr` is 0.
+  It is asked by every drawing put in — a picture, a shape, a chart, a
+  diagram, ink in the line (its `w14:cNvPr`) and floating, a group and
+  each drawing out of one, a picture control; by a paste, which brought
+  the copy's number with it (**H17**); by a table, a block, a header, a
+  note, a comment or a text box written from a model; and a new document
+  numbers from 1. A shape changed where it stands keeps its number, and a
+  group's shapes keep theirs, which is what a connector names. A new
+  shape's own number, `wps:cNvPr/@id`, comes from the same count after its
+  drawing's: it was 1 for every new shape, so two of them grouped were
+  members a connector could not tell apart; a shape that has a number
+  keeps it. And a new drawing is named as Word names one, after its
+  number — "Picture 3", "Chart 4", "Diagram 5", "Shape 6", "Ink 7",
+  "Group 8" — where its writer had "Picture 1" for every picture; a name
+  somebody chose is kept, and a shape's own name is its drawing's. A
+  pasted copy keeps the name it came with unless the document already has
+  a drawing of that name, and then takes its number's. Its shapes, a
+  group's members among them, are numbered again as it goes down, as Word
+  numbers them, and a connector in the copy is pointed at the new numbers
+  of the shapes it joined; one that joined a shape outside the copy goes on
+  joining it.
+  *Proven by:* `crates/wp-docx/tests/schema_order.rs`, which holds the
+  standard's sequences itself rather than the writer's: each container from
+  the model with everything it can say, and set a command at a time in no
+  order the schema has — the paragraph, the run with its changes tracked
+  from halfway, a link, the table, its row and its cell, the section with a
+  first page's header added last but one — coming out in exactly the
+  schema's order; and a walker over every part of those, saved, and of a
+  document with styles, defaults, a comment, a note, headers, sections and
+  a paste done to it, which finds nothing, and does find a run written the
+  old way. `edit.rs`: every list filled in a scrambled order.
+  `crates/wp-docx/tests/drawing_ids.rs`: two shapes, two pictures, a chart,
+  ink in the line and floating and a diagram all numbered apart, each shape
+  taking two, its drawing's and its own; a header's picture counted from
+  the body and the body's from the header; a document that came with 41
+  and 57 giving the next 58; a picture pasted twice, 1 to 3; a group above
+  its shapes, and what comes out of it apart; a model's shapes 1, 3 and 5
+  with their own 2, 4 and 6; a changed shape keeping both its numbers; two
+  new shapes grouped in the document that came with 57, members apart,
+  above 57 and apart from every drawing; a drawing of each kind named after
+  its number, and a shape named Logo keeping it; a copy pasted into
+  another document keeping "Picture 3" under the number 2, and beside the
+  one it was copied from taking "Picture 4"; a box, a connector and a box
+  pasted beside themselves, six numbers, the pasted connector joining the
+  pasted boxes and the first still its own, and a box pasted with the
+  connector alone joined to the box left behind. **K4** again, with
+  `dist\wp.exe` rebuilt: its five files written anew, and a document with
+  shapes, pictures, charts, diagrams, a group and a pasted copy in the body
+  and a picture in the header — all six **opened**; and that document once
+  more after the shapes' own numbers and the names, its two new shapes
+  grouped as members 15 and 17 of group 18 and its pasted copy "Picture
+  19": **opened**. Ink is not in it: Word refuses ink in the line as this
+  program writes it and repairs the floating kind, with the number 1
+  either had before this.
 - [ ] **G20. What the reader keeps and the writer drops.** A run's theme
   colour, theme font and text effect are read into the model and not
   written from it, so text pasted with Keep Source Formatting stops
@@ -6557,6 +6639,15 @@ work is in *The order of the work* at the end.
   the original compressed streams of the untouched parts for a save with
   them; **K1**'s "identical" is then reachable for a file this program did
   not make. Review #4.
+- [ ] **G22. Ink that Word opens.** Found by **K4** while **G19** was
+  checked: a document with ink in the line, as this program writes it, Word
+  refuses (error 5121), and one with floating ink Word repairs — and both
+  were so before **G19**, which changed nothing but the number. Every
+  other kind of drawing opens. Find what Word wants of an ink element that
+  the writer in `ink.rs` does not give — compare with ink a Word document
+  holds, the InkML part, the `w14:contentPart` in the line and the
+  `wp:anchor` around a floating one — write it so, and run **K4**'s check
+  on both kinds until they open.
 
 ## H — The system around the window
 
@@ -9791,7 +9882,13 @@ work is in *The order of the work* at the end.
   `compare_text_boxes` writes the revised document's model into this one,
   so a drawing written from that model would name the revised document's
   relationships. All three should carry what **H17** carries — the element,
-  its relationships and its parts — and put them down the same way.
+  its relationships and its parts — and put them down the same way. And two
+  more of the comparison's, found while **G19** was done:
+  `format::note_properties_change` copies a paragraph's `rPr` and `sectPr`
+  into `pPrChange/pPr`, which `CT_PPrBase` does not allow, and in the other
+  direction `revisions::resolve_format_change` replaces the whole `pPr` on
+  reject, so a record written as the schema wants would drop a section
+  break.
 - [ ] **J36. The security options behind Enable Content.** Word's yellow
   bar for a document with macros has Enable Content, and behind it
   "Advanced Options": a dialog, Microsoft Office Security Options, with
@@ -10880,8 +10977,8 @@ person who knows Word notices first:
 1. *Crashes and lost data:* **C51**, **H16**, **C48**, **H17**, **H19**,
    **C49**, **C50**, **J34**.
 2. *Word as the judge:* **K4**.
-3. *Files Word opens without a word:* **G19**, **G20**, **G21** — each
-   checked with **K4**.
+3. *Files Word opens without a word:* **G19**, **G20**, **G21**, **G22** —
+   each checked with **K4**.
 4. *The interface, the small things that matter:* **C52**, **C53**, **C54**,
    **C55**, **C56**, **C57**, **C58**, **C59**, **C60**.
 5. *Tables:* **C61**, **C62**, **B8**, **C63**, **C64**, **C65**, **C66**,

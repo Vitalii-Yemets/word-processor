@@ -464,7 +464,8 @@ impl crate::Document {
         }
 
         let prefix = self.prefix();
-        let element = group_element(union, &graphics, &anchor, &name, prefix.as_deref());
+        let element =
+            self.numbered(group_element(union, &graphics, &anchor, &name, prefix.as_deref()));
         if !crate::position::insert_element_at(
             &mut self.tree_to_edit().root,
             where_it_goes,
@@ -534,7 +535,10 @@ impl crate::Document {
                 height: scaled(fraction_height, group.height_emu),
             };
             let hangs = grouped_anchor(anchor.clone(), rect.x, rect.y, depth + index as u32);
-            let element = loose_element(rect, &inner, &hangs, prefix.as_deref());
+            // Each a drawing in its own right again, with a number of its own
+            // and the name it had in the group: see [`crate::identifiers`].
+            let mut element = loose_element(rect, &inner, &hangs, prefix.as_deref());
+            self.number_copies(core::slice::from_mut(&mut element));
             let place = TextPosition::new(at.paragraph, at.offset + index);
             if crate::position::insert_element_at(
                 &mut self.tree_to_edit().root,

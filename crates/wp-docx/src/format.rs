@@ -487,8 +487,9 @@ fn record_format_change(
     let mut change = Element::new(&name_with(prefix, "rPrChange"), Some(W));
     crate::revisions::stamp(&mut change, id, reviser, prefix);
     change.push_element(before);
-    // Word writes it last inside the properties, after everything it is about.
-    properties.push_element(change);
+    // Word writes it last inside the properties, after everything it is about,
+    // and so does the order.
+    insert_ordered(properties, change, RUN_PROPERTY_ORDER);
 }
 
 /// Replaces one element's properties with another's, keeping what they said.
@@ -510,6 +511,7 @@ pub(crate) fn note_properties_change(
     prefix: Option<&str>,
 ) -> bool {
     let recorded = if local == "pPr" { "pPrChange" } else { "rPrChange" };
+    let order = if local == "pPr" { PARAGRAPH_PROPERTY_ORDER } else { RUN_PROPERTY_ORDER };
     let mine = element.child(Some(W), local);
 
     // What each says, without the record of an earlier change, which is not
@@ -543,12 +545,12 @@ pub(crate) fn note_properties_change(
         crate::revisions::stamp(&mut change, id, reviser, prefix);
         change.push_element(copy);
         properties.children = after;
-        properties.push_element(change);
+        insert_ordered(properties, change, order);
     } else {
         let record = properties.child(Some(W), recorded).cloned();
         properties.children = after;
         if let Some(record) = record {
-            properties.push_element(record);
+            insert_ordered(properties, record, order);
         }
     }
     true
@@ -700,11 +702,12 @@ pub(crate) fn write_run_properties(
     }
     if let Some(effect) = &change.effect {
         // The effects are in Microsoft's namespace rather than the standard
-        // one, and Word writes them at the front of the properties. Taking one
-        // off is saying "no effect", which writes no element at all.
+        // one, and go after the standard's properties, where Word writes
+        // them and its schema has them. Taking one off is saying "no effect",
+        // which writes no element at all.
         crate::effects::remove_effects(properties);
         if let Some(element) = crate::effects::effect_element(effect, crate::effects::W14_PREFIX) {
-            properties.insert_element(0, element);
+            insert_ordered(properties, element, RUN_PROPERTY_ORDER);
         }
     }
     if let Some(font) = &change.font {
@@ -1093,7 +1096,11 @@ pub(crate) fn write_paragraph_properties(
         ("mirrorIndents", change.mirror_indents),
     ] {
         let Some(state) = state else { continue };
-        set_toggle(properties, local, state, prefix);
+        // By the paragraph's order. They went in by the run's, which names
+        // none of them, and so every one of them went on the end — after the
+        // alignment and the spacing they come before.
+        properties.remove_children_named(Some(W), local);
+        insert_ordered(properties, toggle(prefix, local, state), PARAGRAPH_PROPERTY_ORDER);
     }
 
     if let Some(alignment) = change.alignment {

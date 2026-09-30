@@ -59,54 +59,10 @@ impl CellAlignment {
     pub const ALL: &'static [Self] = &[Self::Top, Self::Middle, Self::Bottom];
 }
 
-/// The order the schema wants the children of `w:tblPr` in.
-pub(crate) const TABLE_PROPERTY_ORDER: &[&str] = &[
-    "tblStyle",
-    "tblpPr",
-    "tblOverlap",
-    "bidiVisual",
-    "tblStyleRowBandSize",
-    "tblStyleColBandSize",
-    "tblW",
-    "jc",
-    "tblCellSpacing",
-    "tblInd",
-    "tblBorders",
-    "shd",
-    "tblLayout",
-    "tblCellMar",
-    "tblLook",
-];
-
-/// And of `w:trPr`.
-const ROW_PROPERTY_ORDER: &[&str] = &[
-    "cnfStyle",
-    "divId",
-    "gridBefore",
-    "gridAfter",
-    "wBefore",
-    "wAfter",
-    "cantSplit",
-    "trHeight",
-    "tblHeader",
-];
-
-/// And of `w:tcPr`.
-const CELL_PROPERTY_ORDER: &[&str] = &[
-    "cnfStyle",
-    "tcW",
-    "gridSpan",
-    "hMerge",
-    "vMerge",
-    "tcBorders",
-    "shd",
-    "noWrap",
-    "tcMar",
-    "textDirection",
-    "tcFitText",
-    "vAlign",
-    "hideMark",
-];
+// The orders the schema wants the children of `w:tblPr`, `w:trPr` and
+// `w:tcPr` in are the writer's, one list for each container: see
+// [`crate::edit`].
+use crate::edit::{CELL_PROPERTY_ORDER, ROW_PROPERTY_ORDER, TABLE_PROPERTY_ORDER};
 
 impl Document {
     /// How the table at the caret sits across the page.
