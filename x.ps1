@@ -26,6 +26,14 @@ switch ($Cmd) {
     'fidelity' { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'fidelity') + $Rest) }
     'conformance' { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'conformance') + $Rest) }
     'vba'      { Invoke-InContainer (@('cargo', 'run', '-q', '--release', '-p', 'wp-cli', '--', 'vba') + $Rest) }
+    'word-check' {
+        # The one command that runs here and not in the container: it drives
+        # the Word installed on this machine, which the container cannot see.
+        # It scores with dist\wp.exe, so .\x.ps1 win comes first.
+        if (-not $Rest) { $Rest = @('corpus') }
+        & (Join-Path $PSScriptRoot 'tools\word-check.ps1') @Rest
+        exit $LASTEXITCODE
+    }
     'shell'    { docker compose run --rm dev bash }
     'win' {
         # Cross-compile the Windows .exes and copy them to ./dist, which is
@@ -54,6 +62,8 @@ Usage: .\x.ps1 <command>
   fidelity   score the pages drawn for them against Word's own
   conformance  run the Unicode test suites in .\unicode against the engine
   vba        read every macro in .\corpus and write it back out
+  word-check open every document in .\corpus in Word and keep Word's pages
+             for fidelity; runs on this machine, with its Word, not in Docker
   win        release build of the Windows .exe and its installer -> ./dist
   linux      release build for Linux and its installer -> ./dist
   shell      interactive bash inside the container

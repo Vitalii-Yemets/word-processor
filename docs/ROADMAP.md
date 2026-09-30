@@ -4677,6 +4677,21 @@ work is in *The order of the work* at the end.
   `spacing_for_paste`) treats a pasted picture as a word and puts a space
   beside it. One walk, used by all three, and a test that a document with
   each of those in it gives the same count everywhere.
+- [ ] **E21. What Word's own pages showed.** **K4** put Word's pages of
+  thirty documents beside this program's, and **K2**'s score — the ink the
+  two agree on — came to 19.6% tolerant and 8.5% exact over all of them:
+  the demonstration 23.4% and 7.1%, its `.rtf` one page in Word and two
+  here, seven older files in `dist/` two pages in Word and one here, the
+  `.odt` 12.6%. The pages look alike; what moves the ink is named in the
+  run and has to be found page by page with the harness and put right: a
+  heading's spacing that pushes everything under it down, a Chinese line
+  set in a fallback font Word does not choose, a right-to-left paragraph
+  breaking a word a line earlier, and whatever makes a page more or fewer
+  than Word's. Also **K2**'s reference folder is named without the file's
+  extension, so `demo.docx` and `demo.rtf` share one and the second is
+  never scored; name it with the extension. Done when the demonstration and
+  the files in `dist/` each score with Word above what the run gives now
+  by a margin the entry states, and every page count is Word's.
 
 ## F — Proofing
 
@@ -6520,8 +6535,14 @@ work is in *The order of the work* at the end.
   `sectPr`'s order leaves out the header and footer references, so adding
   a first-page header puts `titlePg` between them. And every drawing,
   shape, chart, ink, diagram and group is written with `wp:docPr id="1"`.
-  LibreOffice opens all of it; whether Word does is **K4**'s to say, and
-  this item is not closed until it has. Reviews #8/R20, #9/R19, #12, #13.
+  LibreOffice opens all of it, and **K4** has now asked Word: Word opens
+  every one of them too, without a word of repair (the five files written
+  to show each fault are in K4's run). So none of this is a file Word
+  refuses; it is a file the schema forbids, which another reader may hold
+  to and which a validator flags, and a second drawing with the identifier
+  of the first is one a cross-reference, a caption or a field cannot tell
+  apart. Done for that reason, and checked again with K4 after. Reviews
+  #8/R20, #9/R19, #12, #13.
 - [ ] **G20. What the reader keeps and the writer drops.** A run's theme
   colour, theme font and text effect are read into the model and not
   written from it, so text pasted with Keep Source Formatting stops
@@ -9950,7 +9971,7 @@ work is in *The order of the work* at the end.
   normalization changes what the text says and nothing here asks for it.
   **E14** wants pattern data and is still open, but it is now the only one of
   these left without an answer to where data comes from: this is the shape.
-- [ ] **K4. Word on this machine.** A copy of Word is installed here, without
+- [x] **K4. Word on this machine.** A copy of Word is installed here, without
   a licence: it opens and prints but does not edit, and its COM automation
   answers — `Documents.Open` and `ExportAsFixedFormat` were tried on
   `dist/demo.docx` and gave a two-page PDF. That is two questions **K1**
@@ -9967,6 +9988,78 @@ work is in *The order of the work* at the end.
   the content types to be covered, and a Word-signed file was not at hand
   to check; an unlicensed Word cannot sign, so the file has to come from
   elsewhere, and then its manifest is read.
+  *Done:* `tools/word-check.ps1`, run on the host as `.\x.ps1 word-check`;
+  `./x.sh word-check` says why it cannot run in the container. It takes a
+  directory or a list of documents — the four packages, `.doc`, `.rtf`,
+  `.odt` — starts one Word for the run, knows it as the new `WINWORD` whose
+  command line says `/Automation`, and opens each document read-only with
+  alerts off, macros forced off (automation's own default is to trust what
+  it opens, `AutoOpen` and all) and repair not asked for. Every method is
+  called with its parameters named: Word's optional ones are by reference,
+  and PowerShell will not pass those by position. **A file Word would
+  repair is not told by an error alone**, which broken copies of the
+  demonstration showed. A table cell with no paragraph — met in Word's
+  window by "Word found unreadable content ... Do you want to recover the
+  contents?" — fails `Documents.Open` with Word error 5792, "The file
+  appears to be corrupted", and opens when `OpenAndRepair` is true, always
+  as an untitled copy. A run straight in the body, a `w:jc` of `nowhere`
+  and XML that is not well formed fail both ways, with error 5121. And
+  properties out of schema order — in `pPr`, `rPr`, `tblPr` and `sectPr`,
+  a `pPr` after its paragraph's run — and an element nobody defined open
+  under COM without a word; `sectPr`'s, tried in the window as well,
+  opened there without a prompt. So the verdicts are **opened**,
+  **repaired** — the plain open fails and the one asking for repair works
+  — **refused**, **timeout** and **crashed**. A watchdog on a thread of its
+  own ends Word by its process number when a document outlasts the limit,
+  which is the only thing that returns a COM call Word never answers, and
+  the next document gets a fresh Word. What opened is exported with
+  `ExportAsFixedFormat` to `reference/<document>.pdf` and closed without
+  saving; Word quits without saving, and is ended by its number if it
+  outlives that. **The pages go to K2 as K2 takes them.** `wp-pdf` reads a
+  PDF's text — where each glyph lands, the rules and the pictures — and
+  draws nothing, so it cannot make Word's pages. Word gives a page as a
+  picture only as a metafile, `Pages(n).EnhMetaFileBits`, and GDI+ plays
+  that metafile's text back heavier than Word drew it. So Word's own PDF is
+  drawn by the renderer Windows has, `Windows.Data.Pdf`, into
+  `reference/<document>/page-N.png` at 150 dots to the inch; then
+  `dist\wp.exe fidelity` is run over the directory, on the host and with
+  the fonts Word used, and each document's line of it is put beside its
+  verdict. The report is text and JSON: the file, the verdict, what Word
+  said, Word's page count, the PDF and the two scores. Two documents named
+  alike share one folder under **K2**'s naming, so the second is judged
+  and its pages are not drawn over the first's.
+  *Proven by:* a run over thirty documents. The ten `.docx` in `dist/`;
+  `wp new` in all four packages, `wp convert` of it to `.doc`, `.rtf` and
+  `.odt`, and its `roundtrip`, `append` and `replace`; **G19**'s five,
+  written through the program's own model — `contextualSpacing` before
+  `spacing` and `ind`, `strike` before `caps` and `w` before `spacing`,
+  `tblBorders` and `tblLayout` before `tblCellSpacing`, `titlePg` before
+  the header references, two pictures both `wp:docPr id="1"`; for **G21**
+  a LibreOffice document and this program's unedited and edited saves of
+  it; and the two broken ones. All twenty-seven this program wrote
+  **opened** without repair, and LibreOffice's too: what **G19** lists is
+  not what makes Word repair a file. The cell with no paragraph came back
+  **repaired**, the run in the body **refused**. The scores, tolerant and
+  exact: the demonstration 23.4% and 7.1%, the same in every package and
+  after a round trip; its `.doc` 29.6% and 11.4%, its `.odt` 12.6% and
+  3.2%, its `.rtf` 8.2% and 4.4%, one page in Word and two here; seven of
+  the older files in `dist/` about 6%, two pages in Word and one here;
+  **G19**'s between 29.0% and 89.9%; LibreOffice's document 20.3% and
+  5.2%, and this program's unedited save of it exactly the same; all
+  twenty-nine drawn, 19.6% and 8.5%. The pages look alike, and the score is
+  low because an overlap of ink forgives nothing out of place: a heading's
+  spacing moves everything under it down, a Chinese line falls back to
+  another font, a right-to-left paragraph breaks a word earlier. At 96 dots
+  to the inch the total is 24.2% and 8.7%, which says less than it seems
+  about which layout is Word's, since the tolerant squares are four pixels
+  at any resolution. The timeout was met for real: two files Word had been
+  ended on while showing them in its window, which it then stops to ask
+  about; each was ended at 120 seconds and the run went on in a new Word.
+  **J34**: no document on this machine carries `_xmlsignatures/` — three
+  packages in Documents, Downloads and the Desktop, seventeen in the whole
+  profile outside AppData, forty-two that come with Office — so what Word's
+  own manifest leaves out is still unread, and nothing was downloaded to
+  find one.
 
 ## L — Visual Basic for Applications
 
@@ -10797,7 +10890,7 @@ person who knows Word notices first:
    **C76**, **C77**, **J35**, **J36**.
 7. *Hostile files, and the system's corners:* **G17**, **G18**, **H18**,
    **H20**.
-8. *Layout and speed:* **E19**, **E20**, **B7**.
+8. *Layout and speed:* **E19**, **E20**, **E21**, **B7**.
 9. *The tails:* the 176 *Not done* paragraphs of the closed items, read
    through one by one, the ones the items above do not already cover
    turned into items of their own, and the ones that need something this

@@ -49,3 +49,29 @@ than counted as nothing.
 To get the pages out of Word: **File > Save as** a PDF and export its pages
 as images, or print to an image printer. Whatever produces them, they are
 yours and stay here.
+
+## Asking Word itself
+
+On a Windows machine with Word installed, one command does all of that and
+asks a question of its own:
+
+```powershell
+.\x.ps1 win           # builds dist\wp.exe, which does the scoring
+.\x.ps1 word-check    # or: powershell -File tools\word-check.ps1 <directory>
+```
+
+It runs here on the machine and not in the container, because Word is here
+and the container cannot see it; a licence is not needed, since nothing is
+edited or saved. Every document is opened in Word, read-only, with macros
+forced off, and comes back **opened**, **repaired** (Word would have offered
+to recover its contents — under automation that is Word error 5792, "The file
+appears to be corrupted", and the file opening once repair is asked for),
+**refused**, **timeout** (Word was ended and started again) or **crashed**
+(Word went away by itself). What opened
+is exported as `reference/<document>.pdf`, its pages drawn from that PDF into
+`reference/<document>/`, and `fidelity` run over the lot. The report, one
+line per document with its verdict, Word's page count and its score, is
+`reference/word-check.txt`, and `.json` beside it.
+
+Two documents named alike — `report.docx` and `report.rtf` — share one
+reference folder; the second is judged but its pages are not drawn.

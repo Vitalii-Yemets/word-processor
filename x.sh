@@ -16,6 +16,13 @@ case "${1:-help}" in
   fidelity) shift; run cargo run -q --release -p wp-cli -- fidelity "${1:-corpus}" ;;
   conformance) shift; run cargo run -q --release -p wp-cli -- conformance "${1:-unicode}" ;;
   vba)      shift; run cargo run -q --release -p wp-cli -- vba "${1:-corpus}" ;;
+  word-check)
+    # Word is on the Windows host and the container cannot see it.
+    echo "word-check runs on the Windows host, where Word is, not in the container:" >&2
+    echo "  .\\x.ps1 word-check [directory]" >&2
+    echo "  powershell -File tools\\word-check.ps1 <directory or documents>" >&2
+    exit 2
+    ;;
   bench)    shift; run cargo run -q --release -p wp-cli -- bench "${1:-100}" ;;
   shell)    run bash ;;
   win)
@@ -43,6 +50,8 @@ Usage: ./x.sh <command>
   fidelity   score the pages drawn for them against Word's own
   conformance  run the Unicode test suites in ./unicode against the engine
   vba        read every macro in ./corpus and write it back out
+  word-check open every document in Word and keep Word's pages for fidelity;
+             Windows host only, through .\x.ps1, as Word is not in the container
   win        release build of the Windows .exe and its installer -> ./dist
   linux      release build for Linux and its installer -> ./dist
   shell      interactive bash inside the container
