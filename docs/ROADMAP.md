@@ -10355,6 +10355,27 @@ work is in *The order of the work* at the end.
   the content types to be covered, and a Word-signed file was not at hand
   to check; an unlicensed Word cannot sign, so the file has to come from
   elsewhere, and then its manifest is read.
+- [ ] **K5. The judge runs itself.** What **K4** made is run by hand and
+  answers with one number a document; the work of waves 4 to 8 wants it
+  run after every item and answering where. Three parts, one set of
+  scripts beside `tools/word-check.ps1`, and a report of what is new
+  since the last run written to `docs/.reviews/`, outside the repository.
+  *The pages:* K4's run over the corpus and the generated documents, with
+  a map of the difference on each page — ours and Word's overlaid, the
+  places the ink parts marked — so that the next item knows which line
+  moved and not only that something did; the score kept run by run, and a
+  fall named. *The window:* a list of scenes — each tab, the Font,
+  Paragraph, Page Setup and Find dialogs, the context menu, the galleries,
+  the status bar, the mini toolbar — each taken of Word through UI
+  Automation (as the review of 29 September took them) and of this program
+  through `--picture`, side by side, for an agent with eyes to list the
+  differences in; a review that repeats at no cost of attention. *The
+  documents:* a corpus fetched by script into `corpus/`, which git
+  ignores — the `.docx` files LibreOffice keeps from real bug reports in
+  its own test suite, documents that broke other readers — put through
+  **K1** and **K4**: opened here, opened in Word, the pages compared.
+  Placed before the printer, by the person's decision, so that it judges
+  the whole of the queue above it before the last two waves.
   *Done:* `tools/word-check.ps1`, run on the host as `.\x.ps1 word-check`;
   `./x.sh word-check` says why it cannot run in the container. It takes a
   directory or a list of documents — the four packages, `.doc`, `.rtf`,
@@ -11269,7 +11290,10 @@ person who knows Word notices first:
    through one by one, the ones the items above do not already cover
    turned into items of their own, and the ones that need something this
    machine has not got — a printer, a licence — named as such.
-10. *Last, by decision:* what needs the printer (**A**'s tails), and the
+10. *The judge that runs itself:* **K5**, before the printer by the
+    person's decision, so that everything above is judged once more by
+    Word's pages, Word's window and the documents of others.
+11. *Last, by decision:* what needs the printer (**A**'s tails), and the
     Arabic catalogue and the rest of a window read right to left (**I**'s).
 
 Each item is closed as before: tests, `./x.sh check` on both targets, the
