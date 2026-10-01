@@ -35,6 +35,30 @@ offer. Each such limit is stated in the module that owns it. See
 whole window into a PNG instead of onto a screen, which is how the interface is
 checked on a machine with no display.
 
+## What it looks like
+
+Every picture below was drawn by the program itself, with `--picture`, and no
+pixel of them comes from anywhere else.
+
+The window, in the dark theme and in the light one, with the sample document:
+
+![The window, dark theme](docs/pictures/window-dark.png)
+
+![The window, light theme](docs/pictures/window-light.png)
+
+A table whose top row has just been merged, with the Table Layout tab up:
+
+![A merged row in a table](docs/pictures/table.png)
+
+The outline view, with its Outlining tab and a mark beside every paragraph:
+
+![The outline view](docs/pictures/outline.png)
+
+The question asked on closing a document with changes, drawn by the program and
+not by the system:
+
+![Want to save your changes?](docs/pictures/save-question.png)
+
 ## Principles
 
 These constraints are deliberate and shape every decision in the codebase.
