@@ -1,5 +1,7 @@
 //! The package itself: the parts of a document and how they are saved back.
 
+use std::sync::Arc;
+
 use wp_zip::{Compression, DosDateTime, ZipArchive, ZipWriter};
 
 use crate::content_types::ContentTypes;
@@ -11,10 +13,11 @@ use crate::{
     OFFICE_DOCUMENT_RELATIONSHIP,
 };
 
-/// One entry of the package, kept exactly as it was stored.
+/// One entry of the package.
 ///
-/// The compression method and timestamp travel with the data so that saving a
-/// document that was not edited reproduces the original file.
+/// The compression method and timestamp travel with the data, for an entry
+/// that has to be written again. One that has not is not written at all: it
+/// is copied from the file as the file stores it. See [`Package::save`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PackageEntry {
     /// Archive name, without a leading slash.
@@ -22,6 +25,9 @@ pub struct PackageEntry {
     pub data: Vec<u8>,
     pub compression: Compression,
     pub last_modified: DosDateTime,
+    /// Whether the data is still what the file the package was opened from
+    /// holds under this name.
+    as_opened: bool,
 }
 
 impl PackageEntry {
@@ -29,6 +35,52 @@ impl PackageEntry {
     #[must_use]
     pub fn is_directory(&self) -> bool {
         self.name.ends_with('/')
+    }
+
+    /// An entry this program made, which no file holds.
+    fn made(name: String, data: Vec<u8>) -> Self {
+        Self {
+            name,
+            data,
+            compression: Compression::Deflate,
+            last_modified: DosDateTime::EPOCH,
+            as_opened: false,
+        }
+    }
+
+    /// Puts new contents in the entry.
+    ///
+    /// Contents the same as before leave it as it was opened: a part written
+    /// back unchanged — the main document of a file this program wrote,
+    /// serialized again — is still the file's, and is copied from it as it
+    /// was rather than compressed again.
+    fn replace(&mut self, data: Vec<u8>) {
+        if data != self.data {
+            self.data = data;
+            self.as_opened = false;
+        }
+    }
+}
+
+/// The file a package was opened from.
+#[derive(Clone)]
+struct Original {
+    /// Its bytes, shared rather than copied: a package is cloned for every
+    /// save, and a copy of the whole file each time would cost more than
+    /// the save.
+    bytes: Arc<[u8]>,
+    /// How many entries it holds, so that one taken out shows.
+    entries: usize,
+}
+
+impl core::fmt::Debug for Original {
+    /// The size and not the bytes, which are the file and say nothing a
+    /// person reading this wants.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Original")
+            .field("bytes", &self.bytes.len())
+            .field("entries", &self.entries)
+            .finish()
     }
 }
 
@@ -40,6 +92,10 @@ impl PackageEntry {
 #[derive(Clone, Debug)]
 pub struct Package {
     entries: Vec<PackageEntry>,
+    /// The file the package was opened from, if it was: what a save that
+    /// changed nothing gives back, and where an entry nothing changed is
+    /// copied from by a save that changed something else.
+    original: Option<Original>,
     content_types: ContentTypes,
     /// How many times a part has been written or taken away.
     ///
@@ -70,8 +126,10 @@ impl Package {
                 data,
                 compression: entry.compression,
                 last_modified: entry.last_modified,
+                as_opened: true,
             });
         }
+        let original = Original { bytes: Arc::from(bytes), entries: entries.len() };
 
         let content_types_bytes = entries
             .iter()
@@ -85,7 +143,13 @@ impl Package {
                     .map_err(|source| Error::Xml { part: CONTENT_TYPES_PART.to_owned(), source })
             })?;
 
-        Ok(Self { entries, content_types, generation: 0, written: Vec::new() })
+        Ok(Self {
+            entries,
+            original: Some(original),
+            content_types,
+            generation: 0,
+            written: Vec::new(),
+        })
     }
 
     /// Builds an empty package with no parts and no declared types.
@@ -93,6 +157,7 @@ impl Package {
     pub fn empty() -> Self {
         Self {
             entries: Vec::new(),
+            original: None,
             content_types: ContentTypes::default(),
             generation: 0,
             written: Vec::new(),
@@ -169,13 +234,8 @@ impl Package {
         let name = normalize(name);
         self.stamp(&name);
         match self.entries.iter_mut().find(|entry| entry.name.eq_ignore_ascii_case(&name)) {
-            Some(entry) => entry.data = data,
-            None => self.entries.push(PackageEntry {
-                name,
-                data,
-                compression: Compression::Deflate,
-                last_modified: DosDateTime::EPOCH,
-            }),
+            Some(entry) => entry.replace(data),
+            None => self.entries.push(PackageEntry::made(name, data)),
         }
     }
 
@@ -428,10 +488,61 @@ impl Package {
     }
 
     /// Writes the package back out as `.docx` bytes.
+    ///
+    /// # A package nothing changed is the file it was opened from
+    ///
+    /// Not a file with the same parts in it: the same file. A zip is more
+    /// than its parts — an order, a compression of each part out of the
+    /// many a compressor may choose, a timestamp, extra fields, a comment —
+    /// and writing the parts again gives this program's choice of all of
+    /// those, which is never quite the choice of whoever wrote the file, so
+    /// that a file from another program came back a different size with
+    /// nothing in it touched. So while every entry is the one opened, none
+    /// taken out and none put in, the bytes opened are the bytes saved.
+    ///
+    /// # A package something changed keeps what nothing did
+    ///
+    /// Every entry still the one opened is copied from the file as the file
+    /// stores it — local header, compressed bytes, data descriptor and its
+    /// header in the central directory, with only where it starts changed —
+    /// and only the entries written since are compressed here. The entries
+    /// stay in the order the file had them, with what was added after them
+    /// in the order it was added, and the file's comment is kept; the
+    /// central directory and its end are this program's, as they have to be
+    /// once an entry has moved. An entry whose records cannot be found whole
+    /// is written again from its contents, which is how every entry was
+    /// written before, and the one thing it costs is the producer's bytes.
     pub fn save(&self) -> Result<Vec<u8>, Error> {
+        let untouched = |original: &Original| {
+            self.entries.len() == original.entries
+                && self.entries.iter().all(|entry| entry.as_opened)
+        };
+        if let Some(original) = self.original.as_ref().filter(|original| untouched(original)) {
+            return Ok(original.bytes.to_vec());
+        }
+
+        // It opened once, so it opens again; and if it somehow did not, every
+        // entry is written from its contents, as one that was never opened is.
+        let archive =
+            self.original.as_ref().and_then(|original| ZipArchive::open(&original.bytes).ok());
         let mut writer = ZipWriter::new();
+        if let Some(archive) = &archive {
+            writer.set_comment(archive.comment())?;
+        }
         for entry in &self.entries {
-            writer.add_with(&entry.name, &entry.data, entry.compression, entry.last_modified)?;
+            let copied = archive.as_ref().filter(|_| entry.as_opened).is_some_and(|archive| {
+                archive
+                    .entry(&entry.name)
+                    .is_some_and(|stored| writer.copy_from(archive, stored).is_ok())
+            });
+            if !copied {
+                writer.add_with(
+                    &entry.name,
+                    &entry.data,
+                    entry.compression,
+                    entry.last_modified,
+                )?;
+            }
         }
         Ok(writer.finish()?)
     }
@@ -453,18 +564,12 @@ impl Package {
             .iter_mut()
             .find(|entry| entry.name.eq_ignore_ascii_case(CONTENT_TYPES_PART))
         {
-            Some(entry) => entry.data = bytes,
+            Some(entry) => entry.replace(bytes),
             // The stream is first in every package Word writes, and putting it
             // first here keeps the archive layout conventional.
-            None => self.entries.insert(
-                0,
-                PackageEntry {
-                    name: CONTENT_TYPES_PART.to_owned(),
-                    data: bytes,
-                    compression: Compression::Deflate,
-                    last_modified: DosDateTime::EPOCH,
-                },
-            ),
+            None => {
+                self.entries.insert(0, PackageEntry::made(CONTENT_TYPES_PART.to_owned(), bytes));
+            }
         }
     }
 }

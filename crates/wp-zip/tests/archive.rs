@@ -1,5 +1,7 @@
 //! Tests for the ZIP reader and writer.
 
+mod foreign;
+
 use wp_zip::{Compression, DosDateTime, Error, NameEncoding, ZipArchive, ZipWriter};
 
 /// Builds a small archive resembling the shape of a `.docx` package.
@@ -255,4 +257,217 @@ fn large_entry_crosses_the_zip64_threshold_for_counts() {
     let archive = ZipArchive::open(&bytes).unwrap();
     assert_eq!(archive.entries().len(), 70_000);
     assert_eq!(archive.read_by_name("p69999").unwrap().unwrap(), b"x");
+}
+
+// --- Entries copied as they are stored ----------------------------------------
+
+/// An archive another program might have written, every choice in it made
+/// otherwise than this crate makes it: the order, stored entries and
+/// compressed ones, a raw timestamp of nought, extra fields, entry comments,
+/// data descriptors with their signature and without, Zip64 entries — one of
+/// them with a descriptor, its sizes eight bytes wide — and a directory
+/// entry, and the whole with a comment.
+fn a_foreign_archive() -> Vec<u8> {
+    use foreign::Entry;
+    foreign::archive(
+        &[
+            Entry::new("word/document.xml", DOCUMENT.as_bytes())
+                .with_extra_fields()
+                .with_comment("the text"),
+            Entry::new("word/media/image1.bin", &[0xDE, 0xAD, 0xBE, 0xEF]).stored().at(0, 0),
+            Entry::new("[Content_Types].xml", CONTENT_TYPES.as_bytes()).described(true),
+            Entry::new("_rels/.rels", RELATIONSHIPS.as_bytes())
+                .described(false)
+                .with_extra_fields(),
+            // Long enough to take several stored blocks.
+            Entry::new("word/styles.xml", "<w:style/>".repeat(300).as_bytes()).zip64(),
+            Entry::new("docProps/app.xml", b"<Properties/>").zip64().described(true),
+            Entry::new("word/", b"").stored(),
+        ],
+        b"written by hand",
+    )
+}
+
+/// A central directory header with where its entry starts taken out, which
+/// is the one thing a copy changes: the four bytes of its slot, and the
+/// eight of its Zip64 field when the slot holds the sentinel.
+fn without_offset(record: &[u8]) -> Vec<u8> {
+    let mut record = record.to_vec();
+    let word =
+        |record: &[u8], at: usize| u32::from_le_bytes(record[at..at + 4].try_into().unwrap());
+    if word(&record, 42) == u32::MAX {
+        let extra_start = 46 + usize::from(u16::from_le_bytes([record[28], record[29]]));
+        assert_eq!(record[extra_start..extra_start + 2], [1, 0], "the Zip64 field comes first");
+        let sizes = [20, 24].iter().filter(|at| word(&record, **at) == u32::MAX).count() * 8;
+        let at = extra_start + 4 + sizes;
+        record[at..at + 8].fill(0);
+    }
+    record[42..46].fill(0);
+    record
+}
+
+#[test]
+fn the_records_of_every_entry_are_where_the_archive_has_them() {
+    // Written one after another with nothing between, the local records are
+    // the archive up to its central directory, and the central records come
+    // next: a record that stopped short of its data descriptor, or ran on
+    // into the next entry, would not tile the file.
+    let bytes = a_foreign_archive();
+    let archive = ZipArchive::open(&bytes).unwrap();
+    let mut local = Vec::new();
+    let mut central = Vec::new();
+    for entry in archive.entries() {
+        local.extend_from_slice(archive.local_record(entry).unwrap());
+        central.extend_from_slice(archive.central_record(entry).unwrap());
+    }
+    assert!(bytes.starts_with(&local), "the local records are not the start of the archive");
+    assert_eq!(&bytes[local.len()..local.len() + central.len()], central.as_slice());
+    assert_eq!(archive.comment(), b"written by hand");
+
+    let described = archive.entry("[Content_Types].xml").unwrap();
+    let record = archive.local_record(described).unwrap();
+    let mut descriptor = 0x0807_4B50u32.to_le_bytes().to_vec();
+    descriptor.extend_from_slice(&described.crc32.to_le_bytes());
+    descriptor.extend_from_slice(&(described.compressed_size as u32).to_le_bytes());
+    descriptor.extend_from_slice(&(described.uncompressed_size as u32).to_le_bytes());
+    assert!(record.ends_with(&descriptor), "the descriptor is not the end of the record");
+}
+
+#[test]
+fn an_entry_copied_into_another_archive_is_the_entry_it_was() {
+    let bytes = a_foreign_archive();
+    let archive = ZipArchive::open(&bytes).unwrap();
+
+    // In the other order, so that every entry starts somewhere else.
+    let mut writer = ZipWriter::new();
+    for entry in archive.entries().iter().rev() {
+        writer.copy_from(&archive, entry).unwrap();
+    }
+    writer.set_comment(archive.comment()).unwrap();
+    let copied = writer.finish().unwrap();
+
+    let copy = ZipArchive::open(&copied).unwrap();
+    assert_eq!(copy.comment(), b"written by hand");
+    let names: Vec<&str> = copy.entries().iter().map(|entry| entry.name.as_str()).collect();
+    assert_eq!(names.first(), Some(&"word/"), "the order given is not the order written");
+    for entry in archive.entries() {
+        let name = &entry.name;
+        let moved = copy.entry(name).unwrap_or_else(|| panic!("{name} was not copied"));
+        assert_eq!(
+            copy.local_record(moved).unwrap(),
+            archive.local_record(entry).unwrap(),
+            "{name}: the header, the stored bytes or the descriptor changed"
+        );
+        assert_eq!(
+            without_offset(copy.central_record(moved).unwrap()),
+            without_offset(archive.central_record(entry).unwrap()),
+            "{name}: the central directory says something else of it"
+        );
+        assert_eq!(
+            (moved.compression, moved.crc32, moved.last_modified, moved.compressed_size),
+            (entry.compression, entry.crc32, entry.last_modified, entry.compressed_size),
+            "{name}"
+        );
+        // And it is found where it now is, Zip64 offsets included.
+        assert_eq!(copy.read(moved).unwrap(), archive.read(entry).unwrap(), "{name}");
+    }
+}
+
+#[test]
+fn copied_entries_and_written_ones_make_one_archive() {
+    let bytes = a_foreign_archive();
+    let archive = ZipArchive::open(&bytes).unwrap();
+    let document = archive.entry("word/document.xml").unwrap();
+    let image = archive.entry("word/media/image1.bin").unwrap();
+
+    let mut writer = ZipWriter::new();
+    writer.add("word/new.xml", b"<new/>").unwrap();
+    writer.copy_from(&archive, document).unwrap();
+    writer.add_stored("word/other.bin", b"other").unwrap();
+    writer.copy_from(&archive, image).unwrap();
+    // A name is in the archive once, however it got there.
+    assert_eq!(
+        writer.copy_from(&archive, document),
+        Err(Error::DuplicateName("word/document.xml".to_owned()))
+    );
+    assert_eq!(
+        writer.add("word/media/image1.bin", b"again"),
+        Err(Error::DuplicateName("word/media/image1.bin".to_owned()))
+    );
+    let bytes = writer.finish().unwrap();
+
+    let mixed = ZipArchive::open(&bytes).unwrap();
+    let names: Vec<&str> = mixed.entries().iter().map(|entry| entry.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["word/new.xml", "word/document.xml", "word/other.bin", "word/media/image1.bin"]
+    );
+    assert_eq!(mixed.read_by_name("word/new.xml").unwrap().unwrap(), b"<new/>");
+    assert_eq!(mixed.read_by_name("word/document.xml").unwrap().unwrap(), DOCUMENT.as_bytes());
+    assert_eq!(mixed.read_by_name("word/other.bin").unwrap().unwrap(), b"other");
+    assert_eq!(
+        mixed.read_by_name("word/media/image1.bin").unwrap().unwrap(),
+        [0xDE, 0xAD, 0xBE, 0xEF]
+    );
+    assert!(mixed.comment().is_empty(), "a comment nobody set");
+}
+
+#[test]
+fn an_entry_whose_descriptor_disagrees_is_not_copied_and_still_reads() {
+    // The descriptor's checksum, damaged. Reading does not need it — the
+    // central directory has the checksum — but a copy that cannot say where
+    // the entry ends must not guess, and must leave nothing half written.
+    let mut bytes = a_foreign_archive();
+    let archive = ZipArchive::open(&bytes).unwrap();
+    let entry = archive.entry("[Content_Types].xml").unwrap().clone();
+    let record = archive.local_record(&entry).unwrap();
+    let end = record.as_ptr() as usize - bytes.as_ptr() as usize + record.len();
+    // Signature, checksum and two sizes of four: the checksum is twelve back.
+    bytes[end - 12] ^= 0xFF;
+
+    let archive = ZipArchive::open(&bytes).unwrap();
+    assert_eq!(archive.local_record(&entry), Err(Error::CorruptHeader("data descriptor")));
+    assert_eq!(archive.read(&entry).unwrap(), CONTENT_TYPES.as_bytes());
+
+    let mut writer = ZipWriter::new();
+    assert!(writer.copy_from(&archive, &entry).is_err());
+    writer.add("[Content_Types].xml", CONTENT_TYPES.as_bytes()).unwrap();
+    let bytes = writer.finish().unwrap();
+    let rewritten = ZipArchive::open(&bytes).unwrap();
+    assert_eq!(rewritten.entries().len(), 1);
+    assert_eq!(
+        rewritten.read_by_name("[Content_Types].xml").unwrap().unwrap(),
+        CONTENT_TYPES.as_bytes()
+    );
+}
+
+#[test]
+fn copying_from_a_damaged_archive_fails_without_panicking() {
+    let bytes = a_foreign_archive();
+    for index in 0..bytes.len() {
+        for bit in [0u8, 4, 7] {
+            let mut damaged = bytes.clone();
+            damaged[index] ^= 1 << bit;
+            let Ok(archive) = ZipArchive::open(&damaged) else { continue };
+            let mut writer = ZipWriter::new();
+            for entry in archive.entries() {
+                let _ = archive.central_record(entry);
+                let _ = writer.copy_from(&archive, entry);
+            }
+            let _ = writer.finish();
+        }
+    }
+}
+
+#[test]
+fn a_comment_is_written_after_the_end_record_and_read_back() {
+    let mut writer = ZipWriter::new();
+    writer.add("a.xml", b"<a/>").unwrap();
+    writer.set_comment(b"a comment").unwrap();
+    let bytes = writer.finish().unwrap();
+    assert!(bytes.ends_with(b"a comment"));
+    assert_eq!(ZipArchive::open(&bytes).unwrap().comment(), b"a comment");
+
+    let mut writer = ZipWriter::new();
+    assert!(matches!(writer.set_comment(&[b'x'; 70_000]), Err(Error::TooLarge(_))));
 }

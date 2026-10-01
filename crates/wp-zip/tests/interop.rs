@@ -6,6 +6,8 @@
 //!
 //! Both tools live in the build container, so these run wherever the suite runs.
 
+mod foreign;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -219,4 +221,64 @@ fn unzip_accepts_a_zip64_archive() {
     let output = run("unzip", &["-t", "big.zip"], &directory);
     let report = String::from_utf8_lossy(&output.stdout);
     assert!(report.contains("No errors detected"), "unzip reported problems:\n{report}");
+}
+
+#[test]
+fn unzip_accepts_entries_copied_from_archives_other_writers_made() {
+    // Two archives this crate did not write: zip's own, written to a pipe so
+    // that it cannot go back to its headers and leaves the checksums and the
+    // sizes to data descriptors, its extra fields left in; and one put
+    // together by hand, Zip64 entries and all. Each is copied entry by entry
+    // in the other order, and unzip, which had no part in any of it, tests
+    // every checksum of the copy.
+    let directory = scratch("copied");
+    let files = write_source_tree(&directory);
+    let mut args = vec!["-q", "-"];
+    args.extend(files.iter().map(|(name, _)| name.as_str()));
+    let streamed = run("zip", &args, &directory).stdout;
+    let by_hand = foreign::archive(
+        &[
+            foreign::Entry::new("word/document.xml", b"<w:document/>").with_extra_fields(),
+            foreign::Entry::new("[Content_Types].xml", b"<Types/>").stored().described(true),
+            foreign::Entry::new("word/styles.xml", "<w:style/>".repeat(300).as_bytes())
+                .zip64()
+                .described(false),
+        ],
+        b"by hand",
+    );
+
+    for (producer, original) in [("zip", streamed), ("by hand", by_hand)] {
+        let archive = ZipArchive::open(&original)
+            .unwrap_or_else(|error| panic!("{producer}: the archive was refused: {error}"));
+        let described = archive
+            .entries()
+            .iter()
+            .any(|entry| archive.local_record(entry).is_ok_and(|record| record[6] & (1 << 3) != 0));
+        assert!(described, "{producer}: no entry has a data descriptor, so none is tested");
+
+        let mut writer = ZipWriter::new();
+        for entry in archive.entries().iter().rev() {
+            writer.copy_from(&archive, entry).unwrap_or_else(|error| {
+                panic!("{producer}: {} was not copied: {error}", entry.name)
+            });
+        }
+        writer.set_comment(archive.comment()).unwrap();
+        let copied = writer.finish().unwrap();
+        std::fs::write(directory.join("copied.zip"), &copied).unwrap();
+
+        let output = run("unzip", &["-t", "copied.zip"], &directory);
+        let report = String::from_utf8_lossy(&output.stdout);
+        assert!(report.contains("No errors detected"), "{producer}: unzip says:\n{report}");
+
+        let copy = ZipArchive::open(&copied).unwrap();
+        for entry in archive.entries() {
+            let moved = copy.entry(&entry.name).expect("copied");
+            assert_eq!(
+                copy.local_record(moved).unwrap(),
+                archive.local_record(entry).unwrap(),
+                "{producer}: {} is not stored as it was",
+                entry.name
+            );
+        }
+    }
 }

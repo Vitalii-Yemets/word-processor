@@ -6,7 +6,10 @@
 //! files comparable, which is what lets a round-trip test prove that opening and
 //! saving a document changed nothing.
 
-use crate::{check_name, Compression, DosDateTime, Error};
+use crate::{
+    check_name, read_u16, read_u32, zip64_field, Compression, DosDateTime, Error, ZipArchive,
+    ZipEntry,
+};
 
 const SIGNATURE_LOCAL_HEADER: u32 = 0x0403_4B50;
 const SIGNATURE_CENTRAL_HEADER: u32 = 0x0201_4B50;
@@ -28,6 +31,30 @@ const MAX_32_BIT: u64 = 0xFFFF_FFFF;
 /// Above this the 16-bit entry count in the end record cannot hold the value.
 const MAX_16_BIT_COUNT: usize = 0xFFFF;
 
+/// Fixed part of a central directory header, before the variable-length fields.
+const CENTRAL_HEADER_SIZE: usize = 46;
+/// Where a central directory header keeps the offset of its local header.
+const CENTRAL_OFFSET_FIELD: usize = 42;
+
+/// An entry already in the archive, as the central directory will list it.
+#[derive(Debug)]
+enum Pending {
+    /// Written here, so its header is made from what is known of it.
+    Written(PendingEntry),
+    /// Copied from another archive, so its header is the one that archive
+    /// had, pointed at where the entry starts in this one.
+    Copied { name: String, record: Vec<u8>, local_header_offset: u64 },
+}
+
+impl Pending {
+    fn name(&self) -> &str {
+        match self {
+            Self::Written(entry) => &entry.name,
+            Self::Copied { name, .. } => name,
+        }
+    }
+}
+
 /// What the central directory needs to remember about an entry already written.
 #[derive(Debug)]
 struct PendingEntry {
@@ -45,7 +72,8 @@ struct PendingEntry {
 #[derive(Debug, Default)]
 pub struct ZipWriter {
     out: Vec<u8>,
-    entries: Vec<PendingEntry>,
+    entries: Vec<Pending>,
+    comment: Vec<u8>,
 }
 
 impl ZipWriter {
@@ -74,9 +102,7 @@ impl ZipWriter {
         modified: DosDateTime,
     ) -> Result<(), Error> {
         check_name(name)?;
-        if self.entries.iter().any(|entry| entry.name == name) {
-            return Err(Error::DuplicateName(name.to_owned()));
-        }
+        self.check_unique(name)?;
 
         let payload = match compression {
             Compression::Stored => data.to_vec(),
@@ -130,7 +156,7 @@ impl ZipWriter {
 
         self.out.extend_from_slice(&payload);
 
-        self.entries.push(PendingEntry {
+        self.entries.push(Pending::Written(PendingEntry {
             name: name.to_owned(),
             compression,
             modified,
@@ -139,8 +165,55 @@ impl ZipWriter {
             uncompressed_size,
             local_header_offset,
             name_is_utf8,
-        });
+        }));
 
+        Ok(())
+    }
+
+    /// Adds an entry of another archive as that archive stores it.
+    ///
+    /// Nothing is decompressed or compressed again: the local header, the
+    /// compressed bytes and any data descriptor after them go in as they
+    /// were, and so does the entry's header in the central directory — its
+    /// attributes, its extra fields, its comment — with only where the entry
+    /// starts changed. An entry nobody changed is then the entry its
+    /// producer wrote, and not this crate's compression of the same content,
+    /// which is a different stream of bytes.
+    ///
+    /// Nothing is written when the entry's records cannot be found whole, so
+    /// a caller can fall back to [`Self::add_with`] on an error.
+    pub fn copy_from(&mut self, archive: &ZipArchive<'_>, entry: &ZipEntry) -> Result<(), Error> {
+        self.check_unique(&entry.name)?;
+        let local = archive.local_record(entry)?;
+        let record = archive.central_record(entry)?.to_vec();
+        // Read before anything is written, so that a header that cannot be
+        // pointed elsewhere fails here and not when the archive is finished.
+        pointed_at(&record, 0)?;
+
+        let local_header_offset = self.out.len() as u64;
+        self.out.extend_from_slice(local);
+        self.entries.push(Pending::Copied {
+            name: entry.name.clone(),
+            record,
+            local_header_offset,
+        });
+        Ok(())
+    }
+
+    /// Sets the archive's comment, written after its end record.
+    pub fn set_comment(&mut self, comment: &[u8]) -> Result<(), Error> {
+        if comment.len() > usize::from(u16::MAX) {
+            return Err(Error::TooLarge("archive comment longer than 65535 bytes"));
+        }
+        self.comment = comment.to_vec();
+        Ok(())
+    }
+
+    /// Refuses a name already in the archive.
+    fn check_unique(&self, name: &str) -> Result<(), Error> {
+        if self.entries.iter().any(|entry| entry.name() == name) {
+            return Err(Error::DuplicateName(name.to_owned()));
+        }
         Ok(())
     }
 
@@ -150,7 +223,13 @@ impl ZipWriter {
 
         let entries = std::mem::take(&mut self.entries);
         for entry in &entries {
-            self.write_central_header(entry)?;
+            match entry {
+                Pending::Written(entry) => self.write_central_header(entry)?,
+                Pending::Copied { record, local_header_offset, .. } => {
+                    let record = pointed_at(record, *local_header_offset)?;
+                    self.out.extend_from_slice(&record);
+                }
+            }
         }
 
         let directory_size = self.out.len() as u64 - directory_offset;
@@ -190,7 +269,10 @@ impl ZipWriter {
         self.write_u16(entry_count.min(MAX_16_BIT_COUNT) as u16);
         self.write_u32(directory_size.min(MAX_32_BIT) as u32);
         self.write_u32(directory_offset.min(MAX_32_BIT) as u32);
-        self.write_u16(0); // archive comment length
+        // No longer than a 16-bit length can say: see [`Self::set_comment`].
+        let comment = std::mem::take(&mut self.comment);
+        self.write_u16(comment.len() as u16);
+        self.out.extend_from_slice(&comment);
 
         Ok(self.out)
     }
@@ -268,5 +350,167 @@ impl ZipWriter {
 
     fn write_u64(&mut self, value: u64) {
         self.out.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// A central directory header copied from another archive, pointed at where
+/// its entry starts in this one.
+///
+/// Only the offset changes, and where it is kept is the header's own
+/// choice: in the Zip64 extra field when the header put the sentinel in the
+/// offset's slot, in the slot otherwise. A slot too small for where the
+/// entry now is gives way to the Zip64 field as the format says — the
+/// sentinel in the slot and the offset in the field, after whichever sizes
+/// the field already carries — so that a copied entry may land past 4 GiB
+/// as a written one may.
+fn pointed_at(record: &[u8], offset: u64) -> Result<Vec<u8>, Error> {
+    let mut record = record.to_vec();
+    let name_length = usize::from(read_u16(&record, 28)?);
+    let extra_length = usize::from(read_u16(&record, 30)?);
+    let extra_start = CENTRAL_HEADER_SIZE + name_length;
+    let extra = record.get(extra_start..extra_start + extra_length).ok_or(Error::Truncated)?;
+    let field = zip64_field(extra).map(|(at, size)| (extra_start + at, size));
+    // The Zip64 field holds only the values whose slots overflowed, in a
+    // fixed order, and the offset comes after the two sizes.
+    let mut before_offset = 0usize;
+    for slot in [20, 24] {
+        if read_u32(&record, slot)? == u32::MAX {
+            before_offset += 8;
+        }
+    }
+
+    if read_u32(&record, CENTRAL_OFFSET_FIELD)? == u32::MAX {
+        let missing = Error::CorruptHeader("missing Zip64 extended information field");
+        let (field, size) = field.ok_or(missing)?;
+        if before_offset + 8 > size {
+            return Err(Error::CorruptHeader("Zip64 extended information field too short"));
+        }
+        let at = field + 4 + before_offset;
+        record[at..at + 8].copy_from_slice(&offset.to_le_bytes());
+        return Ok(record);
+    }
+    if offset <= MAX_32_BIT {
+        record[CENTRAL_OFFSET_FIELD..CENTRAL_OFFSET_FIELD + 4]
+            .copy_from_slice(&(offset as u32).to_le_bytes());
+        return Ok(record);
+    }
+
+    record[CENTRAL_OFFSET_FIELD..CENTRAL_OFFSET_FIELD + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    let (at, grown) = match field {
+        Some((field, size)) => {
+            let longer = u16::try_from(size + 8)
+                .map_err(|_| Error::TooLarge("Zip64 extended information field"))?;
+            record[field + 2..field + 4].copy_from_slice(&longer.to_le_bytes());
+            (field + 4 + before_offset.min(size), 8)
+        }
+        None => {
+            let at = extra_start + extra_length;
+            let mut header = EXTRA_FIELD_ZIP64.to_le_bytes().to_vec();
+            header.extend_from_slice(&8u16.to_le_bytes());
+            record.splice(at..at, header);
+            (at + 4, 12)
+        }
+    };
+    record.splice(at..at, offset.to_le_bytes());
+    let extra_length = u16::try_from(extra_length + grown)
+        .map_err(|_| Error::TooLarge("extra fields longer than 65535 bytes"))?;
+    record[30..32].copy_from_slice(&extra_length.to_le_bytes());
+    Ok(record)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The central directory header of a small entry, as this crate writes it.
+    fn record() -> Vec<u8> {
+        let mut writer = ZipWriter::new();
+        writer.add("word/document.xml", b"<w:document/>").unwrap();
+        let bytes = writer.finish().unwrap();
+        let archive = ZipArchive::open(&bytes).unwrap();
+        archive.central_record(&archive.entries()[0]).unwrap().to_vec()
+    }
+
+    fn u16_at(record: &[u8], at: usize) -> u16 {
+        read_u16(record, at).unwrap()
+    }
+
+    fn u32_at(record: &[u8], at: usize) -> u32 {
+        read_u32(record, at).unwrap()
+    }
+
+    fn u64_at(record: &[u8], at: usize) -> u64 {
+        crate::read_u64(record, at).unwrap()
+    }
+
+    #[test]
+    fn a_copied_header_says_where_its_entry_now_starts_and_nothing_else() {
+        let before = record();
+        let after = pointed_at(&before, 0x1234).unwrap();
+        assert_eq!(u32_at(&after, CENTRAL_OFFSET_FIELD), 0x1234);
+        assert_eq!(after[..CENTRAL_OFFSET_FIELD], before[..CENTRAL_OFFSET_FIELD]);
+        assert_eq!(after[CENTRAL_OFFSET_FIELD + 4..], before[CENTRAL_OFFSET_FIELD + 4..]);
+    }
+
+    #[test]
+    fn a_copied_header_past_four_gigabytes_takes_a_zip64_field() {
+        let before = record();
+        let far = 5 << 30;
+        let after = pointed_at(&before, far).unwrap();
+
+        assert_eq!(u32_at(&after, CENTRAL_OFFSET_FIELD), u32::MAX);
+        let name_length = usize::from(u16_at(&after, 28));
+        assert_eq!(u16_at(&after, 30), 12, "the field and its header");
+        let field = CENTRAL_HEADER_SIZE + name_length;
+        assert_eq!(u16_at(&after, field), EXTRA_FIELD_ZIP64);
+        assert_eq!(u16_at(&after, field + 2), 8);
+        assert_eq!(u64_at(&after, field + 4), far);
+        assert_eq!(after[CENTRAL_HEADER_SIZE..field], before[CENTRAL_HEADER_SIZE..field]);
+    }
+
+    /// A header whose sizes overflowed, with them in its Zip64 field and,
+    /// when asked, the offset too.
+    fn zip64_record(with_offset: bool) -> Vec<u8> {
+        let mut record = record();
+        let name_length = usize::from(u16_at(&record, 28));
+        record[20..28].copy_from_slice(&[0xFF; 8]);
+        let mut field = EXTRA_FIELD_ZIP64.to_le_bytes().to_vec();
+        field.extend_from_slice(&(if with_offset { 24u16 } else { 16 }).to_le_bytes());
+        field.extend_from_slice(&13u64.to_le_bytes());
+        field.extend_from_slice(&15u64.to_le_bytes());
+        if with_offset {
+            record[CENTRAL_OFFSET_FIELD..CENTRAL_OFFSET_FIELD + 4].copy_from_slice(&[0xFF; 4]);
+            field.extend_from_slice(&7u64.to_le_bytes());
+        }
+        record[30..32].copy_from_slice(&(field.len() as u16).to_le_bytes());
+        let at = CENTRAL_HEADER_SIZE + name_length;
+        record.splice(at..at, field);
+        record
+    }
+
+    #[test]
+    fn an_offset_kept_in_the_zip64_field_is_changed_there() {
+        let before = zip64_record(true);
+        let after = pointed_at(&before, 0x99).unwrap();
+        assert_eq!(after.len(), before.len());
+        let field = CENTRAL_HEADER_SIZE + usize::from(u16_at(&after, 28));
+        assert_eq!(u64_at(&after, field + 4), 13, "the uncompressed size moved");
+        assert_eq!(u64_at(&after, field + 12), 15, "the compressed size moved");
+        assert_eq!(u64_at(&after, field + 20), 0x99);
+        assert_eq!(u32_at(&after, CENTRAL_OFFSET_FIELD), u32::MAX);
+    }
+
+    #[test]
+    fn an_offset_that_overflows_goes_after_the_sizes_in_the_zip64_field() {
+        let before = zip64_record(false);
+        let far = 6 << 30;
+        let after = pointed_at(&before, far).unwrap();
+        let field = CENTRAL_HEADER_SIZE + usize::from(u16_at(&after, 28));
+        assert_eq!(u16_at(&after, field + 2), 24);
+        assert_eq!(u16_at(&after, 30), 28);
+        assert_eq!(u64_at(&after, field + 4), 13);
+        assert_eq!(u64_at(&after, field + 12), 15);
+        assert_eq!(u64_at(&after, field + 20), far);
+        assert_eq!(u32_at(&after, CENTRAL_OFFSET_FIELD), u32::MAX);
     }
 }

@@ -3717,10 +3717,14 @@ impl Document {
     /// Writes the document back out.
     ///
     /// A document that is exactly what was opened is written from the
-    /// package's own bytes, so it comes out identical. Any other has only its
+    /// package's own bytes, so it comes out identical: the file it was
+    /// opened from, byte for byte, whoever wrote it. Any other has only its
     /// main part re-serialized, and every other part is written back exactly
-    /// as the package holds it — except a part nothing reaches any more, which
-    /// is left out, as Word leaves it out. See [`without_what_nothing_reaches`].
+    /// as the package holds it — one nothing has written since it was opened
+    /// copied from the file as the file stores it, compressed bytes and all
+    /// (see [`wp_opc::Package::save`]) — except a part nothing reaches any
+    /// more, which is left out, as Word leaves it out. See
+    /// [`without_what_nothing_reaches`].
     pub fn save(&self) -> Result<Vec<u8>, Error> {
         if self.is_as_saved() && self.package_is_the_file {
             return Ok(self.package.save()?);

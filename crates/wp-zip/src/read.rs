@@ -6,8 +6,8 @@
 //! fields that decide where an entry's bytes actually begin.
 
 use crate::{
-    check_name, cp437, read_u16, read_u32, read_u64, Compression, DosDateTime, Error, NameEncoding,
-    ZipEntry,
+    check_name, cp437, read_u16, read_u32, read_u64, zip64_field, Compression, DosDateTime, Error,
+    NameEncoding, ZipEntry,
 };
 
 const SIGNATURE_LOCAL_HEADER: u32 = 0x0403_4B50;
@@ -15,6 +15,7 @@ const SIGNATURE_CENTRAL_HEADER: u32 = 0x0201_4B50;
 const SIGNATURE_END_OF_CENTRAL_DIRECTORY: u32 = 0x0605_4B50;
 const SIGNATURE_ZIP64_END_OF_CENTRAL_DIRECTORY: u32 = 0x0606_4B50;
 const SIGNATURE_ZIP64_LOCATOR: u32 = 0x0706_4B50;
+const SIGNATURE_DATA_DESCRIPTOR: u32 = 0x0807_4B50;
 
 /// Fixed part of an end-of-central-directory record, before the comment.
 const END_OF_CENTRAL_DIRECTORY_SIZE: usize = 22;
@@ -62,6 +63,7 @@ pub const DEFAULT_MAX_ENTRY_SIZE: u64 = 512 * 1024 * 1024;
 pub struct ZipArchive<'a> {
     data: &'a [u8],
     entries: Vec<ZipEntry>,
+    comment: &'a [u8],
     max_entry_size: u64,
 }
 
@@ -71,6 +73,7 @@ impl<'a> ZipArchive<'a> {
     pub fn open(data: &'a [u8]) -> Result<Self, Error> {
         let directory = Directory::locate(data)?;
         let entries = parse_central_directory(data, &directory)?;
+        let comment = data.get(directory.comment..).ok_or(Error::Truncated)?;
 
         // Duplicate names are a known attack: different tools resolve them
         // differently, so one program acts on a part another never sees. A
@@ -81,7 +84,13 @@ impl<'a> ZipArchive<'a> {
             return Err(Error::DuplicateName(pair[0].to_owned()));
         }
 
-        Ok(Self { data, entries, max_entry_size: DEFAULT_MAX_ENTRY_SIZE })
+        Ok(Self { data, entries, comment, max_entry_size: DEFAULT_MAX_ENTRY_SIZE })
+    }
+
+    /// The archive's comment, the bytes after its end record.
+    #[must_use]
+    pub fn comment(&self) -> &'a [u8] {
+        self.comment
     }
 
     /// Overrides the per-entry decompressed size ceiling.
@@ -161,12 +170,104 @@ impl<'a> ZipArchive<'a> {
 
         header.checked_add(LOCAL_HEADER_SIZE + name_length + extra_length).ok_or(Error::Truncated)
     }
+
+    /// The entry exactly as the archive stores it: the local header with its
+    /// name and extra fields, the data still compressed, and the data
+    /// descriptor after it when the entry has one.
+    ///
+    /// What [`crate::ZipWriter::copy_from`] writes into another archive, so
+    /// that an entry nothing has changed goes on as it came — its method, its
+    /// checksum, its timestamp, its extra fields and the very bytes its
+    /// producer's compressor chose — rather than compressed again by this one.
+    pub fn local_record(&self, entry: &ZipEntry) -> Result<&'a [u8], Error> {
+        let start = usize::try_from(entry.local_header_offset).map_err(|_| Error::Truncated)?;
+        let data_start = self.data_offset(entry)?;
+        let data_end = data_start
+            .checked_add(usize::try_from(entry.compressed_size).map_err(|_| Error::Truncated)?)
+            .ok_or(Error::Truncated)?;
+        // The data first, so that what is read after it is read inside the
+        // file and not at an offset a damaged size made up.
+        self.data.get(start..data_end).ok_or(Error::Truncated)?;
+        let flags = read_u16(self.data, start + 6)?;
+        let end = if flags & FLAG_DATA_DESCRIPTOR == 0 {
+            data_end
+        } else {
+            self.descriptor_end(entry, start, data_end)?
+        };
+        self.data.get(start..end).ok_or(Error::Truncated)
+    }
+
+    /// The entry's header in the central directory, as the archive stores
+    /// it: with its extra fields, its attributes and its comment.
+    pub fn central_record(&self, entry: &ZipEntry) -> Result<&'a [u8], Error> {
+        let start = entry.central_header_offset;
+        let name_length = usize::from(read_u16(self.data, start + 28)?);
+        let extra_length = usize::from(read_u16(self.data, start + 30)?);
+        let comment_length = usize::from(read_u16(self.data, start + 32)?);
+        let end = start + CENTRAL_HEADER_SIZE + name_length + extra_length + comment_length;
+        self.data.get(start..end).ok_or(Error::Truncated)
+    }
+
+    /// Where the data descriptor after an entry's data ends.
+    ///
+    /// A producer that did not know the checksum and the sizes when it wrote
+    /// the header — one writing to a stream it cannot go back in — writes
+    /// them after the data instead. The descriptor's signature is optional,
+    /// and its sizes are eight bytes each for a Zip64 entry and four
+    /// otherwise, so its length has to be worked out; what it says is held
+    /// against the central directory, and a descriptor that disagrees under
+    /// either width is one whose end is not known.
+    fn descriptor_end(
+        &self,
+        entry: &ZipEntry,
+        header: usize,
+        data_end: usize,
+    ) -> Result<usize, Error> {
+        let corrupt = || Error::CorruptHeader("data descriptor");
+        let mut at = data_end;
+        if read_u32(self.data, at)? == SIGNATURE_DATA_DESCRIPTOR
+            && read_u32(self.data, at + 4).ok() == Some(entry.crc32)
+        {
+            at += 4;
+        }
+        if read_u32(self.data, at)? != entry.crc32 {
+            return Err(corrupt());
+        }
+
+        // The format says the sizes are wide when the local header carries a
+        // Zip64 field; a producer that did otherwise is still read, by
+        // trying the other width when the first does not agree.
+        let name_length = usize::from(read_u16(self.data, header + 26)?);
+        let extra_length = usize::from(read_u16(self.data, header + 28)?);
+        let extra_start = header + LOCAL_HEADER_SIZE + name_length;
+        let extra =
+            self.data.get(extra_start..extra_start + extra_length).ok_or(Error::Truncated)?;
+        let wide_first = zip64_field(extra).is_some();
+        for wide in [wide_first, !wide_first] {
+            let width = if wide { 8 } else { 4 };
+            let size = |at: usize| {
+                if wide {
+                    read_u64(self.data, at)
+                } else {
+                    read_u32(self.data, at).map(u64::from)
+                }
+            };
+            let sizes = (size(at + 4), size(at + 4 + width));
+            if sizes == (Ok(entry.compressed_size), Ok(entry.uncompressed_size)) {
+                return Ok(at + 4 + 2 * width);
+            }
+        }
+        Err(corrupt())
+    }
 }
 
 /// Where the central directory is and how many entries it holds.
 struct Directory {
     offset: u64,
     entry_count: u64,
+    /// Where the archive's comment starts, which is the end of the file
+    /// less the comment's length.
+    comment: usize,
 }
 
 impl Directory {
@@ -180,13 +281,14 @@ impl Directory {
 
         let entry_count = u64::from(read_u16(data, end_offset + 10)?);
         let offset = u64::from(read_u32(data, end_offset + 16)?);
+        let comment = end_offset + END_OF_CENTRAL_DIRECTORY_SIZE;
 
         // A sentinel in either field means the real values live in the Zip64
         // record, which sits immediately before the locator.
         let needs_zip64 =
             entry_count == u64::from(ZIP64_SENTINEL_16) || offset == u64::from(ZIP64_SENTINEL_32);
         if !needs_zip64 {
-            return Ok(Self { offset, entry_count });
+            return Ok(Self { offset, entry_count, comment });
         }
 
         let locator_offset = end_offset.checked_sub(ZIP64_LOCATOR_SIZE).ok_or(Error::Truncated)?;
@@ -203,6 +305,7 @@ impl Directory {
         Ok(Self {
             entry_count: read_u64(data, record_offset + 32)?,
             offset: read_u64(data, record_offset + 48)?,
+            comment,
         })
     }
 }
@@ -287,6 +390,7 @@ fn parse_central_directory(data: &[u8], directory: &Directory) -> Result<Vec<Zip
                 read_u16(data, offset + 12)?,
             ),
             local_header_offset: u64::from(read_u32(data, offset + 42)?),
+            central_header_offset: offset,
             name_encoding,
         };
 

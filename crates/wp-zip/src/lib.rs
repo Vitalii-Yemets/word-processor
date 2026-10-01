@@ -9,6 +9,10 @@
 //! and deflated entries, single-volume archives, no encryption. Anything else
 //! is reported as an error rather than guessed at.
 //!
+//! An entry of one archive can be copied into another as it is stored —
+//! [`ZipWriter::copy_from`] — so that an entry nothing has changed keeps the
+//! bytes its producer wrote rather than this crate's idea of them.
+//!
 //! # Example
 //!
 //! ```no_run
@@ -164,6 +168,9 @@ pub struct ZipEntry {
     pub last_modified: DosDateTime,
     /// Byte offset of this entry's local header.
     pub(crate) local_header_offset: u64,
+    /// Byte offset of this entry's header in the central directory, which is
+    /// what a copy of the entry into another archive carries over.
+    pub(crate) central_header_offset: usize,
     /// Which rule was used to turn the stored name bytes into text.
     pub name_encoding: NameEncoding,
 }
@@ -278,6 +285,30 @@ pub(crate) fn check_name(name: &str) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+/// Header id of the Zip64 extended information extra field.
+const EXTRA_FIELD_ZIP64: u16 = 0x0001;
+
+/// Where a block of extra fields holds its Zip64 one, and how long that
+/// field's body is.
+///
+/// A field that runs past the end of the block is not believed, and the
+/// fields after it are not looked for.
+pub(crate) fn zip64_field(extra: &[u8]) -> Option<(usize, usize)> {
+    let mut cursor = 0usize;
+    while cursor + 4 <= extra.len() {
+        let field_id = u16::from_le_bytes([extra[cursor], extra[cursor + 1]]);
+        let field_size = usize::from(u16::from_le_bytes([extra[cursor + 2], extra[cursor + 3]]));
+        if cursor + 4 + field_size > extra.len() {
+            return None;
+        }
+        if field_id == EXTRA_FIELD_ZIP64 {
+            return Some((cursor, field_size));
+        }
+        cursor += 4 + field_size;
+    }
+    None
 }
 
 /// Reads a little-endian `u16` at `offset`.

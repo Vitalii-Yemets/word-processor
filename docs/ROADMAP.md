@@ -6820,13 +6820,74 @@ work is in *The order of the work* at the end.
   `auto`, the theme's heading font, the four effects and both indents; and
   a paragraph in a style set with ligatures and a glow, its styles part
   declaring nothing on its root, **opened**, drawn with both.
-- [ ] **G21. An unedited document saved as it came.** `Document::save` on a
+- [x] **G21. An unedited document saved as it came.** `Document::save` on a
   document nobody changed rebuilds the zip, so the file's bytes change on a
   save that changed nothing — a LibreOffice file of 5 580 bytes comes back
   as 6 093. Keep the original archive's bytes for a save without edits, and
   the original compressed streams of the untouched parts for a save with
   them; **K1**'s "identical" is then reachable for a file this program did
   not make. Review #4.
+  *Done:* `wp_opc::Package` keeps the file it was opened from — shared by
+  its clones and not copied, since every save clones it — and each entry
+  knows whether it is still what the file holds under its name; a part
+  written back with the same bytes still is. While every entry is, none
+  taken out and none put in, `Package::save` gives back the bytes it was
+  opened from, and that is where `Document::save`'s shortcut for the
+  document on disk now lands: straight after opening, and after an edit
+  taken back. Once something has changed, every entry still the file's is
+  copied as the file stores it, by `ZipWriter::copy_from` in `wp-zip`: the
+  local header, the compressed bytes and the data descriptor as they were,
+  and the header in the central directory — attributes, extra fields,
+  comment — with only the offset changed: in its 32-bit slot, in its Zip64
+  field when it kept it there, moved into one when the entry lands past
+  4 GiB. `ZipArchive::local_record` works out where a descriptor ends,
+  signed or not, four bytes wide or eight, and holds it against the
+  central directory; an entry whose records cannot be found whole is
+  compressed again from its contents, as every entry was before. The
+  file's order is kept and a new part goes after the rest in the order it
+  was added — this program's order rather than a guess at Word's, which no
+  reader goes by; the archive's comment is kept, and the central directory
+  and its end are this program's. **H17** is as it was: a save after an
+  edit leaves out a part nothing reaches and copies the rest, a save of a
+  document nobody changed keeps it. **K1**'s harness, which opens and
+  saves, now says identical of a file another program wrote. Measured with
+  `wp roundtrip`, the old `dist\wp.exe` and the new: a file LibreOffice 7.4
+  wrote, 6 192 bytes, came back as 6 737 and now as 6 192, identical; the
+  tests' hand-built document, 3 236 bytes, as 2 661 and now identical; its
+  twin with every entry in Zip64, 3 454 bytes, as 2 146 and now identical.
+  *Proven by:* a writer of zips by hand, `crates/wp-zip/tests/foreign/`,
+  that calls nothing of this program's — its own CRC, DEFLATE as stored
+  blocks, which no compressor that compresses writes, raw timestamps,
+  extra fields that differ between the two headers, comments, descriptors,
+  Zip64 — included by path in the tests of four crates. `wp-zip`: the local
+  and central records of an archive tile it, a signed descriptor ending
+  its entry's; every entry copied into another archive in the other order
+  is its local record byte for byte and its central one but for where it
+  starts, Zip64 offsets found; copied and written entries make one
+  archive, a name in it once; a descriptor that disagrees leaves its entry
+  uncopied, nothing half written, and still readable; every bit flipped,
+  no panic; the comment written and read back; the offset in its slot, in
+  the Zip64 field, and moved past 4 GiB with a field to grow and without;
+  and `unzip -t` passes the entries copied from zip's own archive, written
+  to a pipe and so all descriptors, and from the hand-built one. `wp-opc`:
+  a package nothing changed is its file, the content types in the middle,
+  first, and in Zip64, and so is one with a part written back as it was;
+  an edited one keeps the file's order and comment, its new part last,
+  and copies every entry but the edited one; a part taken out is left
+  out, the content types written again and the rest copied.
+  `crates/wp-docx/tests/foreign_files.rs`: the hand-built document saved
+  as it came; saved straight after opening, then after an edit and its
+  undo, the file both times; edited, every other part as stored and in
+  the file's order; a picture nothing reaches kept by an untouched save
+  and left out of an edited one; and a file LibreOffice wrote in the build
+  image — which writing its parts again does not give back — saved as it
+  came, and edited with the rest of it copied. `wp-cli`'s corpus: a
+  hand-built document identical, and edited, differing by
+  `word/document.xml` alone until the edit is undone. `cargo test` for
+  wp-zip, wp-opc, wp-docx, wp-cli and wp-app: 3 176 passed, none failed.
+  **K4**, with `dist\wp.exe` rebuilt: the three documents, each as it
+  came, saved unedited and saved with a paragraph appended — all nine
+  **opened**, and `wp corpus` over them, nine identical.
 - [ ] **G22. Ink that Word opens.** Found by **K4** while **G19** was
   checked: a document with ink in the line, as this program writes it, Word
   refuses (error 5121), and one with floating ink Word repairs — and both

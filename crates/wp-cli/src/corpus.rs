@@ -459,7 +459,7 @@ mod tests {
         directory
     }
 
-    /// A document this program wrote, which is the only kind the suite has.
+    /// A document this program wrote.
     fn a_document() -> Vec<u8> {
         Document::create(&crate::demonstration_body())
             .expect("the demonstration document")
@@ -480,6 +480,65 @@ mod tests {
         assert_eq!(summary.identical, 1);
         assert_eq!(summary.failed, 0);
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A document another program wrote, put together by hand: the content
+    /// types neither first nor compressed, the parts stored and compressed in
+    /// turn, with data descriptors, extra fields and comments of their own,
+    /// and a comment on the whole.
+    fn a_foreign_document() -> Vec<u8> {
+        let mut parts = crate::foreign::document_parts("Written by hand");
+        parts.rotate_left(2);
+        let parts: Vec<crate::foreign::Entry> = parts
+            .into_iter()
+            .enumerate()
+            .map(|(index, entry)| match index % 3 {
+                0 => entry.stored(),
+                1 => entry.described(true).with_extra_fields(),
+                _ => entry.with_comment("a part"),
+            })
+            .collect();
+        crate::foreign::archive(&parts, b"written by another program")
+    }
+
+    #[test]
+    fn a_document_another_program_wrote_comes_back_identical() {
+        // Identical used to be an answer only this program's own documents
+        // could get: a save wrote the zip again, and another writer's zip
+        // written again by this one is never the same bytes.
+        let directory = scratch("foreign");
+        std::fs::write(directory.join("theirs.docx"), a_foreign_document()).expect("writing it");
+
+        let reports = survey(&directory);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].outcome, Outcome::Identical, "another program's file changed");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_document_another_program_wrote_differs_by_what_was_edited_and_by_no_more() {
+        let original = a_foreign_document();
+        let mut document = Document::open(&original).expect("opening it");
+        document.set_caret(wp_docx::TextPosition::new(0, 0));
+        document.type_text("Edited: ");
+
+        match compare(&original, &document.save().expect("saving it")) {
+            Outcome::Different { same, differences } => {
+                assert_eq!(same, 5, "the parts not edited were not all counted");
+                assert!(
+                    matches!(
+                        differences.as_slice(),
+                        [Difference::Changed { part, .. }] if part == "word/document.xml"
+                    ),
+                    "{differences:?}"
+                );
+            }
+            other => panic!("an edited document was reported as {other:?}"),
+        }
+
+        // And with the edit taken back it is the file again, byte for byte.
+        assert!(document.undo());
+        assert_eq!(compare(&original, &document.save().expect("saving it")), Outcome::Identical);
     }
 
     #[test]

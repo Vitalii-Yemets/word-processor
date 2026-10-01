@@ -1,7 +1,12 @@
 //! Tests for the package layer.
 
+/// Archives put together by hand, which no writer of this program made: see
+/// the file itself.
+#[path = "../../wp-zip/tests/foreign/mod.rs"]
+mod foreign;
+
 use wp_opc::{Package, Relationships, TargetMode};
-use wp_zip::{Compression, DosDateTime, ZipWriter};
+use wp_zip::{Compression, DosDateTime, ZipArchive, ZipWriter};
 
 const MAIN_DOCUMENT: &[u8] = br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>"#;
@@ -395,4 +400,154 @@ fn a_part_is_reached_whichever_way_its_name_is_spelled() {
     assert!(package.part("word/media/a picture.png").is_some());
     assert!(package.part("word/media/another%20picture.png").is_some());
     assert!(package.part("word/stray.xml").is_none());
+}
+
+// --- A file another program wrote ---------------------------------------------
+
+/// A package as another program might write it: the content types neither
+/// first nor compressed and described after their data, the parts in an
+/// order of its own — a folder entry among them — stored and compressed,
+/// stamped nought or 2019, with extra fields, comments of their own and a
+/// descriptor without its signature, and a comment on the whole.
+fn written_elsewhere() -> Vec<u8> {
+    let parts = foreign::document_parts("Written by hand");
+    let [types, package_relationships, document, document_relationships, styles, core] =
+        <[foreign::Entry; 6]>::try_from(parts).unwrap();
+    foreign::archive(
+        &[
+            document.with_extra_fields().with_comment("the text"),
+            styles.stored().at(0, 0),
+            types.stored().described(true),
+            foreign::Entry::new("docProps/", b"").stored(),
+            core.described(false).with_extra_fields(),
+            package_relationships,
+            document_relationships.with_comment("its relationships"),
+        ],
+        b"written by another program",
+    )
+}
+
+/// The same parts with the content types first, every one stored.
+fn written_elsewhere_types_first() -> Vec<u8> {
+    let parts: Vec<foreign::Entry> =
+        foreign::document_parts("Stored").into_iter().map(foreign::Entry::stored).collect();
+    foreign::archive(&parts, b"")
+}
+
+/// And every part in Zip64, half of them with descriptors.
+fn written_elsewhere_in_zip64() -> Vec<u8> {
+    let parts: Vec<foreign::Entry> = foreign::document_parts("Zip64")
+        .into_iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let entry = entry.zip64();
+            if index % 2 == 0 {
+                entry.described(true)
+            } else {
+                entry
+            }
+        })
+        .collect();
+    foreign::archive(&parts, b"zip64")
+}
+
+#[test]
+fn a_package_nothing_changed_is_saved_as_the_file_it_was() {
+    for (what, original) in [
+        ("content types in the middle", written_elsewhere()),
+        ("content types first", written_elsewhere_types_first()),
+        ("Zip64", written_elsewhere_in_zip64()),
+    ] {
+        let package = Package::open(&original).unwrap();
+        assert_eq!(package.main_document_part().unwrap(), "word/document.xml", "{what}");
+        assert_eq!(package.save().unwrap(), original, "{what}: the file came back different");
+    }
+}
+
+#[test]
+fn a_part_written_back_as_it_was_leaves_the_file_as_it_was() {
+    // Written is not changed: the same bytes put back are the file's bytes.
+    let original = written_elsewhere();
+    let mut package = Package::open(&original).unwrap();
+    let document = package.part("word/document.xml").unwrap().to_vec();
+    package.set_part("word/document.xml", document);
+    let types = package.content_types().clone();
+    package.set_content_types(types);
+    assert_eq!(package.save().unwrap(), original);
+}
+
+/// Where each entry of an archive starts, taken out of its central
+/// directory header, so that two headers can be held against each other.
+fn without_offset(record: &[u8]) -> Vec<u8> {
+    let mut record = record.to_vec();
+    record[42..46].fill(0);
+    record
+}
+
+#[test]
+fn an_edited_package_copies_every_part_it_did_not_write() {
+    let original = written_elsewhere();
+    let mut package = Package::open(&original).unwrap();
+    let edited = br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Edited</w:t></w:r></w:p></w:body></w:document>"#;
+    package.set_part("word/document.xml", edited.to_vec());
+    // A part of a type the package already declares, so the declarations
+    // are left as they were.
+    package.set_part("customXml/item1.xml", b"<data/>".to_vec());
+    let saved = package.save().unwrap();
+
+    let before = ZipArchive::open(&original).unwrap();
+    let after = ZipArchive::open(&saved).unwrap();
+    let names = |archive: &ZipArchive| -> Vec<String> {
+        archive.entries().iter().map(|entry| entry.name.clone()).collect()
+    };
+    let mut expected = names(&before);
+    expected.push("customXml/item1.xml".to_owned());
+    assert_eq!(names(&after), expected, "the file's order was not kept, the new part last");
+    assert_eq!(after.comment(), b"written by another program");
+
+    for entry in before.entries() {
+        let name = &entry.name;
+        let kept = after.entry(name).unwrap_or_else(|| panic!("{name} was lost"));
+        if name == "word/document.xml" {
+            assert_ne!(after.local_record(kept).unwrap(), before.local_record(entry).unwrap());
+            assert_eq!(after.read(kept).unwrap(), edited);
+            continue;
+        }
+        assert_eq!(
+            after.local_record(kept).unwrap(),
+            before.local_record(entry).unwrap(),
+            "{name}: not copied as it was stored"
+        );
+        assert_eq!(
+            without_offset(after.central_record(kept).unwrap()),
+            without_offset(before.central_record(entry).unwrap()),
+            "{name}: the central directory says something else of it"
+        );
+    }
+    assert_eq!(after.read_by_name("customXml/item1.xml").unwrap().unwrap(), b"<data/>");
+    let reopened = Package::open(&saved).unwrap();
+    assert_eq!(reopened.part("word/document.xml"), Some(edited.as_slice()));
+}
+
+#[test]
+fn a_part_taken_out_is_left_out_and_the_rest_are_copied() {
+    // Taking a part out takes its declaration out too, so the content types
+    // are written again; everything else is as the file had it.
+    let original = written_elsewhere_in_zip64();
+    let mut package = Package::open(&original).unwrap();
+    package.remove_part("docProps/core.xml");
+    let saved = package.save().unwrap();
+
+    let before = ZipArchive::open(&original).unwrap();
+    let after = ZipArchive::open(&saved).unwrap();
+    assert!(after.entry("docProps/core.xml").is_none(), "the part taken out is in the file");
+    assert_eq!(after.entries().len(), before.entries().len() - 1);
+    for entry in before.entries().iter().filter(|entry| entry.name != "docProps/core.xml") {
+        let name = &entry.name;
+        let kept = after.entry(name).unwrap_or_else(|| panic!("{name} was lost"));
+        let same = after.local_record(kept).unwrap() == before.local_record(entry).unwrap();
+        assert_eq!(same, name != "[Content_Types].xml", "{name}");
+        assert_eq!(after.read(kept).unwrap(), package.part(name).unwrap(), "{name}");
+    }
 }

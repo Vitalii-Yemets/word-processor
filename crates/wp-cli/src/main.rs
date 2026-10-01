@@ -74,6 +74,12 @@ mod corpus;
 mod fidelity;
 mod vba;
 
+/// Archives put together by hand, for the tests that need a document no
+/// writer of this program made: see the file itself.
+#[cfg(test)]
+#[path = "../../wp-zip/tests/foreign/mod.rs"]
+mod foreign;
+
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let command = arguments.first().map(String::as_str);
